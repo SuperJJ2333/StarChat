@@ -13,8 +13,8 @@ function Assert-True {
     }
 }
 
-$gitignore = Get-Content (Join-Path $root '.gitignore') -Raw -Encoding UTF8
-Assert-True ($gitignore -match '(?m)^\.superpowers/$') '.superpowers/ must be ignored'
+$gitignoreLines = Get-Content (Join-Path $root '.gitignore') -Encoding UTF8
+Assert-True (@($gitignoreLines) -contains '.superpowers/') '.superpowers/ must be ignored'
 Assert-True (Test-Path (Join-Path $root 'AGENTS.md')) 'root AGENTS.md is required'
 Assert-True (Test-Path (Join-Path $root 'infra\AGENTS.md')) 'infra AGENTS.md is required'
 Assert-True (Test-Path (Join-Path $root 'services\matrix-bot\AGENTS.md')) 'matrix-bot AGENTS.md is required'
