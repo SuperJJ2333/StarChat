@@ -59,14 +59,27 @@ Additional verified properties:
 - The committed contract contains only `/api/v1/health/live` and
   `/api/v1/health/ready`.
 
-## Environment availability
+## Environment availability and runtime smoke test
 
-- Docker CLI is installed, but the Docker Desktop Linux daemon was unavailable:
-  `npipe:////./pipe/dockerDesktopLinuxEngine` did not exist. Image builds and
-  runtime container health were therefore not executed in this verification run.
-- The PostgreSQL integration test remains explicitly skipped unless
-  `RUN_POSTGRES_TESTS=1` is set. SQLAlchemy behavior was tested with SQLite and all
-  PostgreSQL migrations were validated in Alembic offline mode.
+Docker Desktop is now available. The following command completed successfully:
 
-These two environment-dependent checks remain deployment gates; they do not cause
-fallback to floating images, an alternate database, or unversioned migrations.
+```powershell
+docker compose --env-file .env.example build business-api business-worker
+docker compose --env-file .env.example up -d business-postgres business-redis business-api business-worker
+```
+
+Runtime results:
+
+- `business-postgres`: healthy.
+- `business-redis`: healthy.
+- `business-api`: healthy on `127.0.0.1:8082`.
+- `business-worker`: healthy heartbeat.
+- `/api/v1/health/live`: HTTP 200.
+- `/api/v1/health/ready`: HTTP 200 with database `ready`.
+- PostgreSQL `alembic_version`: `0003_outbox_events`.
+- PostgreSQL contains `idempotency_records` and `outbox_events`.
+- In-container SQLAlchemy connectivity check: `database: True`.
+
+The dedicated PostgreSQL pytest remains explicitly skipped unless
+`RUN_POSTGRES_TESTS=1` is set; the live container smoke test and migration query
+cover the currently available PostgreSQL environment.

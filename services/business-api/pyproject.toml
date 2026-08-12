@@ -21,3 +21,8 @@ dependencies = [
 pythonpath = ["app"]
 testpaths = ["../../tests/business_api"]
 addopts = "-q"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["migrations*"]
