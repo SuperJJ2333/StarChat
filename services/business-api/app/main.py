@@ -15,3 +15,6 @@ def create_app(settings: Settings, session_factory=None) -> FastAPI:
         prefix="/api/v1",
     )
     return app
+
+
+app = create_app(Settings())

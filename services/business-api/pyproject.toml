@@ -14,10 +14,10 @@ dependencies = [
   "alembic>=1.14,<2.0",
   "psycopg[binary]>=3.2,<4.0",
   "redis>=5.0,<6.0",
+  "uvicorn[standard]>=0.30,<1.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["app"]
 testpaths = ["../../tests/business_api"]
 addopts = "-q"
-
