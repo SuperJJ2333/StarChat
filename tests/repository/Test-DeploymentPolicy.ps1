@@ -4,7 +4,9 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $files = @(
     (Join-Path $root 'docker-compose.yml'),
     (Join-Path $root '.env.example'),
-    (Join-Path $root 'services\matrix-bot\Dockerfile')
+    (Join-Path $root 'services\matrix-bot\Dockerfile'),
+    (Join-Path $root 'services\business-api\Dockerfile'),
+    (Join-Path $root 'services\business-worker\Dockerfile')
 )
 $localEnvironment = Join-Path $root '.env'
 if (Test-Path -LiteralPath $localEnvironment) {

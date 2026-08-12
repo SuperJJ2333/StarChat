@@ -60,17 +60,51 @@ try {
     & python -m pytest tests/matrix_bot -q
     Assert-LastExitCode 'Matrix Bot tests'
 
+    Write-Output '== Business API and Worker tests =='
+    $env:PYTHONPATH = "services/business-api;$projectRoot"
+    & py -3.12 -m pytest tests/business_api tests/business_worker -q
+    Assert-LastExitCode 'Business API and Worker tests'
+
+    Write-Output '== Business API import smoke test =='
+    & py -3.12 -c "import app.main; print('Business API import: PASS')"
+    Assert-LastExitCode 'Business API import smoke test'
+
     Write-Output '== Python AST parse =='
     @'
 import ast
 from pathlib import Path
 
 files = sorted(Path("services/matrix-bot/app").glob("*.py"))
+files += sorted(Path("services/business-api/app").rglob("*.py"))
+files += sorted(Path("services/business-worker/app").rglob("*.py"))
 for path in files:
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 print(f"AST parse: PASS ({len(files)} files)")
-'@ | & python -
+'@ | & py -3.12 -
     Assert-LastExitCode 'Python AST parse'
+
+    Write-Output '== Business database migrations =='
+    Push-Location -LiteralPath 'services/business-api'
+    try {
+        $env:PYTHONPATH = '.'
+        $heads = @(& py -3.12 -m alembic heads)
+        Assert-LastExitCode 'Alembic heads'
+        $headCount = @($heads | Where-Object { $_ -match '\(head\)' }).Count
+        if ($headCount -ne 1) {
+            throw "Expected exactly one Alembic head, found $headCount"
+        }
+        & py -3.12 -m alembic upgrade head --sql | Out-Null
+        Assert-LastExitCode 'Alembic offline upgrade'
+        Write-Output 'Alembic migrations: PASS'
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Output '== OpenAPI drift check =='
+    $env:PYTHONPATH = "services/business-api;$projectRoot"
+    & py -3.12 scripts/export_openapi.py --check
+    Assert-LastExitCode 'OpenAPI drift check'
 
     Write-Output '== Docker Compose render =='
     & docker compose --env-file .env.example config --quiet

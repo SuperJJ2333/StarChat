@@ -6,8 +6,10 @@ from sqlalchemy import engine_from_config, pool
 from app.core.database import Base
 from app.core import idempotency as _idempotency  # noqa: F401
 from app.core import outbox as _outbox  # noqa: F401
+from app.core.migrations import configure_database_url
 
 config = context.config
+configure_database_url(config)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 

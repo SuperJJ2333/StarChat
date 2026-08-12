@@ -4,6 +4,24 @@ from typing import Any
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+
+class ErrorFieldModel(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ErrorBody(BaseModel):
+    code: str
+    message: str
+    trace_id: str
+    fields: list[ErrorFieldModel]
+
+
+class ErrorEnvelope(BaseModel):
+    error: ErrorBody
 
 
 @dataclass(frozen=True)

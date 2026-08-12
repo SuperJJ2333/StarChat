@@ -5,6 +5,8 @@ from sqlalchemy import text
 
 from app.core.database import Base, check_database, create_engine, create_session_factory
 from app.core.config import Settings
+from app.core.migrations import configure_database_url
+from alembic.config import Config
 
 
 def test_sqlite_engine_and_session_factory() -> None:
@@ -22,6 +24,21 @@ def test_sqlite_engine_and_session_factory() -> None:
 
     assert check_database(engine) is True
     engine.dispose()
+
+
+def test_alembic_uses_namespaced_business_database_url() -> None:
+    config = Config()
+    config.set_main_option("sqlalchemy.url", "postgresql://localhost/wrong")
+
+    configure_database_url(
+        config,
+        {"BUSINESS_DATABASE_URL": "postgresql+psycopg://business-postgres/liuhetong"},
+    )
+
+    assert (
+        config.get_main_option("sqlalchemy.url")
+        == "postgresql+psycopg://business-postgres/liuhetong"
+    )
 
 
 @pytest.mark.skipif(

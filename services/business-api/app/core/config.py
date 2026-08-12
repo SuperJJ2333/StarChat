@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -10,24 +10,18 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        env_prefix="BUSINESS_",
         extra="ignore",
         populate_by_name=True,
     )
 
-    app_name: str = Field(default="六合通 Business API", alias="BUSINESS_APP_NAME")
-    environment: Literal["development", "test", "staging", "production"] = Field(
-        default="development", alias="BUSINESS_ENVIRONMENT"
-    )
-    database_url: str = Field(
-        default="postgresql+psycopg://liuhetong:liuhetong@localhost:5432/liuhetong",
-        alias="BUSINESS_DATABASE_URL",
-    )
-    redis_url: str = Field(
-        default="redis://localhost:6379/1", alias="BUSINESS_REDIS_URL"
-    )
-    jwt_issuer: str = Field(default="liuhetong", alias="BUSINESS_JWT_ISSUER")
-    jwt_secret: str | None = Field(default=None, alias="BUSINESS_JWT_SECRET")
-    totp_issuer: str | None = Field(default=None, alias="BUSINESS_TOTP_ISSUER")
+    app_name: str = "六合通 Business API"
+    environment: Literal["development", "test", "staging", "production"] = "development"
+    database_url: str = "postgresql+psycopg://liuhetong:liuhetong@localhost:5432/liuhetong"
+    redis_url: str = "redis://localhost:6379/1"
+    jwt_issuer: str = "liuhetong"
+    jwt_secret: str | None = None
+    totp_issuer: str | None = None
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
