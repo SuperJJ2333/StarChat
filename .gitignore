@@ -10,6 +10,7 @@ data/
 .superpowers/
 .worktrees/
 .venv/
+*.egg-info/
 coverage.xml
 htmlcov/
 docs/verification/**/*.tmp
