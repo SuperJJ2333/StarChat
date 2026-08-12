@@ -12,14 +12,16 @@ abstract interface class MatrixE2eeClient {
   Future<String> sendEncryptedMedia(String roomId, List<int> ciphertext, String mimeType);
 }
 final class MatrixSdkE2eeClient implements MatrixE2eeClient {
-  MatrixSdkE2eeClient(this.client);
+  MatrixSdkE2eeClient(this.client, {required this.homeserver});
   final Client client;
+  final Uri homeserver;
   String? _lastRecoveryKey;
 
   /// Recovery key is exposed only to the caller so it can be written to the
   /// platform secure store; it is never sent to the business API.
   String? get lastRecoveryKey => _lastRecoveryKey;
   @override Future<void> login(String userId, String password) async {
+    await client.checkHomeserver(homeserver);
     await client.login('m.login.password', identifier: AuthenticationUserIdentifier(user: userId), password: password, initialDeviceDisplayName: '六合通移动端');
   }
   @override Future<void> sync() async { await client.sync(); }

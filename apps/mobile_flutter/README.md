@@ -33,3 +33,15 @@ Android applicationId 与 iOS Bundle ID 统一为 `com.liuhetong.mobile`。
 ## 无 Apple 账号的 iOS 方案
 
 没有 Apple Developer 账号时可以在 macOS 上构建 iOS Simulator 的 `.app` 用于界面和 Dart 集成测试，但不能将签名应用安装到普通 iPhone，也不能使用 TestFlight。真机测试需要 Apple ID（免费个人签名通常有有效期限制），长期分发需要 Apple Developer Program。当前 GitHub Actions TestFlight 工作流保留给正式账号环境。
+
+## 环境地址配置
+
+客户端通过 Dart defines 注入地址，不把生产地址硬编码进源码：
+
+```powershell
+flutter build apk --release `
+  --dart-define=LIUHETONG_MATRIX_HOMESERVER=https://matrix.example.com `
+  --dart-define=LIUHETONG_BUSINESS_API_URL=https://api.example.com
+```
+
+当前默认值适用于 Android Emulator 访问本机 Docker：`http://10.0.2.2:8008` 和 `http://10.0.2.2:8082`。真机必须替换为局域网 HTTPS 地址或正式域名。
