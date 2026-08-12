@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "liuhetong-business-api"
+version = "0.1.0"
+description = "六合通 business API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.110,<1.0",
+  "pydantic-settings>=2.2,<3.0",
+  "sqlalchemy>=2.0,<3.0",
+  "alembic>=1.14,<2.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "redis>=5.0,<6.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["app"]
+testpaths = ["../../tests/business_api"]
+addopts = "-q"
+

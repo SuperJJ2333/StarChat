@@ -1,15 +1,15 @@
-# StarChat Matrix/Element Private Messaging Stack
+# 六合通 Matrix/Element Private Messaging Stack
 
 This repository provides a private encrypted messaging stack based on Matrix Synapse, Element Web, and a custom Matrix Bot service. It is designed as an integration skeleton that can be connected to an existing business system through an internal webhook instead of rebuilding an IM protocol from scratch.
 
 ## Product Modernization Status
 
-The repository is being upgraded from the original integration skeleton into the approved StarChat product. The authoritative design and delivery roadmap are:
+The repository is being upgraded from the original integration skeleton into the approved 六合通 product. The authoritative design and delivery roadmap are:
 
 - [`docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md`](docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md)
 - [`docs/superpowers/plans/2026-08-12-starchat-master-implementation-roadmap.md`](docs/superpowers/plans/2026-08-12-starchat-master-implementation-roadmap.md)
 
-Phase 0 repairs configuration rendering, locks deployment inputs, establishes tests and Agent rules, and restricts the existing Bot to explicitly authorized notification rooms. Flutter, the business backend, POINT ledger/red packets, USDT custody integration, encrypted calls, and the React administration application are delivered by later phases and must not be inferred from the current skeleton.
+Phase 0 repairs configuration rendering, locks deployment inputs, establishes tests and Agent rules, and restricts the existing Bot to explicitly authorized notification rooms. Flutter, the business backend, 彩币 ledger/red packets, USDT custody integration, encrypted calls, and the React administration application are delivered by later phases and must not be inferred from the current skeleton.
 
 The approved privacy boundary requires E2EE for messages, attachments, support rooms, and calls. The platform does not perform server-side message scanning. The existing Bot must not join ordinary private or group rooms.
 

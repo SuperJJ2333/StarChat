@@ -20,9 +20,9 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 - Matrix is the encrypted communications domain; business APIs are authoritative for identity, support, ledger, red packets, and wallets.
 - Never derive or mutate financial state from Matrix messages, bot callbacks, push notifications, or client display state.
 - Never give the server user recovery keys, room keys, message plaintext, plaintext attachments, or decrypted call media.
-- POINT uses two decimal places and USDT uses six. Use `Decimal`/`NUMERIC`; never use binary floating point for assets.
+- CAIBI（展示名：彩币） uses two decimal places and USDT uses six. Use `Decimal`/`NUMERIC`; never use binary floating point for assets.
 - Ledger transactions and entries are append-only and balanced per asset. Correct errors with linked reversal transactions.
-- POINT and USDT are isolated. Do not add conversion, USDT P2P transfer, or USDT red packets.
+- CAIBI and USDT are isolated. Do not add conversion, USDT P2P transfer, or USDT red packets.
 - Every financial write requires an idempotency key, a stable reason code, actor identity, audit record, and transactional Outbox event.
 
 ## Development workflow

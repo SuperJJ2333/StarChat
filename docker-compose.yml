@@ -48,7 +48,7 @@ services:
     depends_on:
       - synapse
     environment:
-      APP_NAME: ${BOT_APP_NAME:-StarChat Matrix Bot}
+      APP_NAME: ${BOT_APP_NAME:-六合通 Matrix Bot}
       LOG_LEVEL: ${BOT_LOG_LEVEL:-INFO}
       SERVICE_PORT: 8081
       MATRIX_HOMESERVER_URL: ${SYNAPSE_INTERNAL_BASEURL:-http://synapse:8008/}

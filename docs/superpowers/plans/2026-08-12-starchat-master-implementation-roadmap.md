@@ -1,8 +1,8 @@
-# StarChat Master Implementation Roadmap
+# 六合通 Master Implementation Roadmap
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert the current Matrix/Element/Bot skeleton into the approved StarChat product while preserving E2EE boundaries and immutable financial accounting.
+**Goal:** Convert the current Matrix/Element/Bot skeleton into the approved 六合通 product while preserving E2EE boundaries and immutable financial accounting.
 
 **Architecture:** Keep Matrix as an isolated encrypted communications domain. Add a FastAPI modular monolith as the authoritative business and financial domain, a Flutter Android/iOS client, a React administration client, and asynchronous workers backed by PostgreSQL Outbox. Deliver the system in independently testable phases; write a detailed phase plan before changing that phase.
 
@@ -12,9 +12,9 @@
 
 - Every private chat, group chat, support room, attachment, voice message, and call is end-to-end encrypted.
 - The platform never stores user recovery keys, room keys, message plaintext, or plaintext attachments.
-- POINT uses two decimal places; USDT uses six; application code uses Decimal and database code uses NUMERIC, never float.
+- CAIBI uses two decimal places; USDT uses six; application code uses Decimal and database code uses NUMERIC, never float.
 - Ledger transactions and entries are append-only and balanced per asset; corrections use reversal transactions.
-- POINT and USDT are isolated; no exchange, USDT P2P transfer, or USDT red packets.
+- CAIBI and USDT are isolated; no exchange, USDT P2P transfer, or USDT red packets.
 - Financial write APIs require Idempotency-Key and stable error codes.
 - Matrix messages and bots never determine authoritative financial state.
 - Production containers and dependencies are version/digest locked; production never uses latest.
@@ -125,7 +125,7 @@ All phases ─> Phase 10 Production Readiness
 
 **Exit gate:** Ordinary Matrix profiles cannot display a trusted badge; queue assignment follows online status, skills, and least-active ordering; transfer rotates future room keys through the clients.
 
-## Phase 4: POINT Ledger, Adjustments, Approvals, and Transfers
+## Phase 4: CAIBI Ledger, Adjustments, Approvals, and Transfers
 
 **Detailed plan output:** `docs/superpowers/plans/2026-08-12-point-ledger-implementation.md`
 
@@ -144,7 +144,7 @@ All phases ─> Phase 10 Production Readiness
 
 **Exit gate:** Property tests prove per-asset zero-sum entries, non-negative user balance, exact rounding, replay safety, and legal approval transitions under concurrency.
 
-## Phase 5: POINT Red Packets and Encrypted Business Cards
+## Phase 5: CAIBI Red Packets and Encrypted Business Cards
 
 **Detailed plan output:** `docs/superpowers/plans/2026-08-12-red-packet-implementation.md`
 
@@ -186,7 +186,7 @@ All phases ─> Phase 10 Production Readiness
 - Generate: `packages/api-contracts/dart/`
 - Create: `tests/mobile/`
 
-**Interfaces produced:** Secure auth/session storage, Matrix sync, cross-signing, encrypted key backup, encrypted text/media/voice messages, support UI, POINT transfer/red packet cards, wallet UI, generic push payload handling, APK and TestFlight build pipelines.
+**Interfaces produced:** Secure auth/session storage, Matrix sync, cross-signing, encrypted key backup, encrypted text/media/voice messages, support UI, CAIBI transfer/red packet cards, wallet UI, generic push payload handling, APK and TestFlight build pipelines.
 
 **Exit gate:** A fresh user registers without phone/real name, verifies email, saves a recovery key, logs into two verified devices, exchanges E2EE content, and completes all Sandbox business flows on Android and iOS.
 
