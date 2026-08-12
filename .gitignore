@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 data/
 .superpowers/
+.worktrees/
 .venv/
 coverage.xml
 htmlcov/
