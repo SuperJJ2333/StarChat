@@ -12,6 +12,7 @@ from app.modules.audit import models as _audit_models  # noqa: F401
 from app.modules.support import service as _support_models  # noqa: F401
 from app.modules.ledger import models as _ledger_models  # noqa: F401
 from app.modules.ledger import adjustment_models as _adjustment_models  # noqa: F401
+from app.modules.redpacket import models as _redpacket_models  # noqa: F401
 
 config = context.config
 configure_database_url(config)
@@ -44,4 +45,5 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
 

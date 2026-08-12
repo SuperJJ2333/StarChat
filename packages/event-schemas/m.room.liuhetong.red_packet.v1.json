@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "m.room.liuhetong.red_packet.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "red_packet_id", "asset"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "red_packet_id": {"type": "string", "format": "uuid"},
+    "asset": {"const": "CAIBI"},
+    "hint": {"type": "string", "maxLength": 32}
+  }
+}

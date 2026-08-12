@@ -40,7 +40,7 @@ class LedgerService:
                     raise ValueError("idempotency key reused with different payload")
                 return existing
             for account, delta in normalized.items():
-                if delta < 0 and not account.startswith("PLATFORM_"):
+                if delta < 0 and account not in {"PLATFORM_CLEARING", "PLATFORM_FEE"}:
                     current = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account, LedgerEntry.asset == "CAIBI"))
                     if money(Decimal(current)) + delta < 0:
                         raise ValueError("insufficient balance")
@@ -85,4 +85,5 @@ class PointTransferService:
         fee = max(CENT, money(amount * Decimal("0.005")))
         tx = self.ledger.post(entries={sender_id: -(amount + fee), receiver_id: amount, "PLATFORM_FEE": fee}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="caibi.transfer")
         return TransferResult(tx, fee)
+
 
