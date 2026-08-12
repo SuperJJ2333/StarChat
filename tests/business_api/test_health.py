@@ -51,6 +51,8 @@ def test_production_accepts_required_secrets() -> None:
         environment="production",
         jwt_secret="test-jwt-secret",
         totp_issuer="六合通",
+        email_verification_secret="test-email-verification-secret",
+        password_reset_secret="test-password-reset-secret",
     )
 
     assert settings.environment == "production"

@@ -22,9 +22,22 @@ class Settings(BaseSettings):
     jwt_issuer: str = "liuhetong"
     jwt_secret: str | None = None
     totp_issuer: str | None = None
+    email_verification_secret: str | None = None
+    password_reset_secret: str | None = None
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        if self.environment == "production" and (not self.jwt_secret or not self.totp_issuer):
-            raise ValueError("production requires BUSINESS_JWT_SECRET and BUSINESS_TOTP_ISSUER")
+        if self.environment == "production" and any(
+            not value
+            for value in (
+                self.jwt_secret,
+                self.totp_issuer,
+                self.email_verification_secret,
+                self.password_reset_secret,
+            )
+        ):
+            raise ValueError(
+                "production requires BUSINESS_JWT_SECRET, BUSINESS_TOTP_ISSUER, "
+                "BUSINESS_EMAIL_VERIFICATION_SECRET and BUSINESS_PASSWORD_RESET_SECRET"
+            )
         return self
