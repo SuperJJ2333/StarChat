@@ -55,3 +55,9 @@ class WalletControl(Base):
     id: Mapped[str] = mapped_column(String(20), primary_key=True)
     withdrawals_paused: Mapped[bool] = mapped_column(nullable=False, default=False)
     pause_reason: Mapped[str | None] = mapped_column(String(255))
+
+class WalletWebhookEvent(Base):
+    __tablename__ = "wallet_webhook_events"
+    event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

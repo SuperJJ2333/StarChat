@@ -1,1 +1,1 @@
-"""Asynchronous 六合通 business tasks."""
+from tasks.wallet import WalletMaintenanceTask

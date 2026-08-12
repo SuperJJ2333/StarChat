@@ -13,6 +13,7 @@ class SandboxCustodyProvider:
     def __init__(self, *, secret: str):
         self.secret = secret.encode()
         self.withdrawals = {}
+        self.custody_balance = Decimal("0")
 
     def create_deposit_address(self, user_id: str) -> str:
         return f"T_SANDBOX_{user_id[:16]}"
@@ -24,6 +25,11 @@ class SandboxCustodyProvider:
 
     def get_withdrawal(self, client_order_id: str) -> dict:
         return self.withdrawals.get(client_order_id, {"client_order_id": client_order_id, "status": "UNKNOWN"})
+
+    def withdrawal_event(self, *, client_order_id: str, status: str, confirmations: int, event_id: str) -> SandboxWebhook:
+        row = self.withdrawals.get(client_order_id, {})
+        payload = {"event_id": event_id, "type": "WITHDRAWAL_STATUS", "asset": "USDT-TRC20", "client_order_id": client_order_id, "txid": row.get("txid", f"sandbox-tx-{client_order_id}"), "status": status, "confirmations": confirmations}
+        return SandboxWebhook(payload, self.sign(payload))
 
     def deposit_event(self, *, user_id: str, amount: Decimal, confirmations: int, event_id: str) -> SandboxWebhook:
         payload = {"event_id": event_id, "type": "DEPOSIT_CONFIRMED", "asset": "USDT-TRC20", "user_id": user_id, "amount": str(Decimal(amount).quantize(Decimal("0.000001"))), "confirmations": confirmations, "txid": f"sandbox-deposit-{event_id}"}

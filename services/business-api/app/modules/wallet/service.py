@@ -1,10 +1,11 @@
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 import hmac
 from sqlalchemy import func, select
 from app.core.errors import AppError
-from app.modules.wallet.models import Deposit, WalletControl, WalletLedgerEntry, WalletLedgerTransaction, Withdrawal
+from app.modules.wallet.models import Deposit, WalletControl, WalletLedgerEntry, WalletLedgerTransaction, WalletWebhookEvent, Withdrawal
 USDT = Decimal("0.000001")
 def usdt(value): return Decimal(value).quantize(USDT, rounding=ROUND_HALF_UP)
 class WalletLedger:
@@ -52,6 +53,50 @@ class WalletService:
             existing=session.scalar(select(Withdrawal).where(Withdrawal.user_id==user_id,Withdrawal.client_order_id==client_order_id))
             if existing: return existing
             row=Withdrawal(id=str(uuid4()),user_id=user_id,client_order_id=client_order_id,address=address,amount=amount,status="REQUESTED",created_at=now,updated_at=now); session.add(row); session.flush(); return row
+
+    def handle_withdrawal_webhook(self, payload, signature):
+        if not hmac.compare_digest(self.provider.sign(payload), signature): raise AppError(code="CUSTODY_SIGNATURE_INVALID", message="托管回调签名无效", status_code=401)
+        if payload.get("asset") != "USDT-TRC20" or payload.get("type") != "WITHDRAWAL_STATUS": raise ValueError("unsupported custody event")
+        event_id, status = payload["event_id"], payload["status"]
+        if status not in {"CHAIN_CONFIRMED", "FAILED"}: raise ValueError("unsupported withdrawal status")
+        with self.factory.begin() as session:
+            event = session.get(WalletWebhookEvent, event_id)
+            row = session.scalar(select(Withdrawal).where(Withdrawal.client_order_id == payload["client_order_id"]).with_for_update())
+            if row is None: raise ValueError("withdrawal order not found")
+            if event is not None: return row.status
+            session.add(WalletWebhookEvent(event_id=event_id, event_type="WITHDRAWAL_STATUS", received_at=datetime.now(timezone.utc)))
+            if row.status == "PROVIDER_SUBMITTED": row.status, row.updated_at = status, datetime.now(timezone.utc)
+            session.flush()
+            return row.status
+
+    def resolve_unknown_withdrawal(self, withdrawal_id: str, *, actor_id: str) -> Withdrawal:
+        with self.factory() as session:
+            row = session.get(Withdrawal, withdrawal_id)
+            if row is None: raise ValueError("withdrawal not found")
+            result = self.provider.get_withdrawal(row.client_order_id)
+        status = result.get("status")
+        if status == "UNKNOWN": raise ValueError("custody result unknown")
+        with self.factory.begin() as session:
+            row = session.get(Withdrawal, withdrawal_id)
+            if row.status == "PROVIDER_SUBMITTED" and status in {"CHAIN_CONFIRMED", "FAILED"}:
+                row.status, row.provider_txid, row.updated_at = status, result.get("txid"), datetime.now(timezone.utc)
+            session.flush()
+            return row
+
+    def reconcile_incremental(self, *, actor_id: str):
+        return self._reconcile(actor_id=actor_id, mode="INCREMENTAL")
+
+    def reconcile_full(self, *, actor_id: str):
+        return self._reconcile(actor_id=actor_id, mode="FULL")
+
+    def _reconcile(self, *, actor_id: str, mode: str):
+        with self.factory() as session:
+            internal = session.scalar(select(func.coalesce(func.sum(WalletLedgerEntry.amount), 0)).where(WalletLedgerEntry.account_id == "PLATFORM_CUSTODY", WalletLedgerEntry.asset == "USDT-TRC20"))
+        expected = usdt(-Decimal(internal))
+        actual = usdt(getattr(self.provider, "custody_balance", expected))
+        matched = actual == expected
+        if not matched: self.pause_on_reconciliation_mismatch(f"{mode}: custody={actual} internal={expected}")
+        return ReconciliationResult(mode=mode, expected=expected, actual=actual, matched=matched)
     def finance_approve(self,id,approver_id): return self._approve(id,approver_id,"finance_approver_id","REQUESTED","FINANCE_APPROVED")
     def admin_approve(self,id,approver_id):
         with self.factory() as s:
@@ -85,3 +130,10 @@ class WalletService:
         with self.factory() as s:
             row=s.get(WalletControl,"global")
             return bool(row and row.withdrawals_paused)
+
+@dataclass(frozen=True)
+class ReconciliationResult:
+    mode: str
+    expected: Decimal
+    actual: Decimal
+    matched: bool
