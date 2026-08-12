@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     jwt_secret: str | None = None
     totp_issuer: str | None = None
     adjustment_admin_threshold: str = "10000.00"
+    wallet_webhook_secret: str | None = None
     email_verification_secret: str | None = None
     password_reset_secret: str | None = None
 
@@ -42,4 +43,5 @@ class Settings(BaseSettings):
                 "BUSINESS_EMAIL_VERIFICATION_SECRET and BUSINESS_PASSWORD_RESET_SECRET"
             )
         return self
+
 

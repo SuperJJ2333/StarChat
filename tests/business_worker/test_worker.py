@@ -73,3 +73,12 @@ def test_worker_failure_keeps_event_for_retry() -> None:
         assert event.attempt_count == 1
         assert event.last_error == "handler failed"
     engine.dispose()
+
+def test_worker_runs_maintenance_before_outbox_poll():
+    calls = []
+    engine, factory, now, _worker = _components(calls.append)
+    consumer = OutboxConsumer(factory, now_factory=lambda: now)
+    worker = Worker(consumer=consumer, handlers={}, worker_id="test-worker", now_factory=lambda: now, maintenance_tasks=[lambda: calls.append("maintenance")])
+    assert worker.run_once(limit=10) == 0
+    assert calls == ["maintenance"]
+    engine.dispose()

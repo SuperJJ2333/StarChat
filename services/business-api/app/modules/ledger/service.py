@@ -25,35 +25,37 @@ class LedgerService:
             value = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account_id, LedgerEntry.asset == "CAIBI"))
             return money(Decimal(value))
 
-    def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None) -> LedgerTransaction:
+    def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None, session=None) -> LedgerTransaction:
+        if session is None:
+            with self.session_factory.begin() as owned_session:
+                return self.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=owned_session)
         if not idempotency_key or not reason_code or not actor_id:
             raise ValueError("idempotency key, actor and reason code are required")
         normalized = {account: money(amount) for account, amount in entries.items() if money(amount) != 0}
         if not normalized or sum(normalized.values(), Decimal("0.00")) != Decimal("0.00"):
             raise ValueError("ledger entries must be balanced")
         now = datetime.now(timezone.utc)
-        with self.session_factory.begin() as session:
-            existing = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(LedgerTransaction.scope == scope, LedgerTransaction.idempotency_key == idempotency_key))
-            if existing:
-                persisted = {entry.account_id: money(entry.amount) for entry in existing.entries}
-                if persisted != normalized or existing.actor_id != actor_id or existing.reason_code != reason_code or existing.reversal_of_id != reversal_of_id:
-                    raise ValueError("idempotency key reused with different payload")
-                return existing
-            for account, delta in normalized.items():
-                if delta < 0 and account not in {"PLATFORM_CLEARING", "PLATFORM_FEE"}:
-                    current = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account, LedgerEntry.asset == "CAIBI"))
-                    if money(Decimal(current)) + delta < 0:
-                        raise ValueError("insufficient balance")
-            tx = LedgerTransaction(id=str(uuid4()), asset="CAIBI", scope=scope, idempotency_key=idempotency_key, actor_id=actor_id, reason_code=reason_code, reversal_of_id=reversal_of_id, created_at=now)
-            session.add(tx)
-            session.flush()
-            for account, amount in normalized.items():
-                session.add(LedgerEntry(id=str(uuid4()), transaction_id=tx.id, account_id=account, asset="CAIBI", amount=amount, created_at=now))
-            session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id, subject_type="ledger_transaction", subject_id=tx.id, action="ledger.post", result="SUCCESS", reason_code=reason_code, trace_id=hashlib.sha256(idempotency_key.encode()).hexdigest()[:32], after_data={"asset": "CAIBI", "entry_count": len(normalized)}, created_at=now))
-            OutboxPublisher.enqueue(session, topic="ledger", event_type="ledger.posted", aggregate_type="ledger_transaction", aggregate_id=tx.id, payload={"transaction_id": tx.id, "asset": "CAIBI"}, now=now)
-            session.flush()
-            _ = tx.entries
-            return tx
+        existing = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(LedgerTransaction.scope == scope, LedgerTransaction.idempotency_key == idempotency_key))
+        if existing:
+            persisted = {entry.account_id: money(entry.amount) for entry in existing.entries}
+            if persisted != normalized or existing.actor_id != actor_id or existing.reason_code != reason_code or existing.reversal_of_id != reversal_of_id:
+                raise ValueError("idempotency key reused with different payload")
+            return existing
+        for account, delta in normalized.items():
+            if delta < 0 and account not in {"PLATFORM_CLEARING", "PLATFORM_FEE"}:
+                current = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account, LedgerEntry.asset == "CAIBI"))
+                if money(Decimal(current)) + delta < 0:
+                    raise ValueError("insufficient balance")
+        tx = LedgerTransaction(id=str(uuid4()), asset="CAIBI", scope=scope, idempotency_key=idempotency_key, actor_id=actor_id, reason_code=reason_code, reversal_of_id=reversal_of_id, created_at=now)
+        session.add(tx)
+        session.flush()
+        for account, amount in normalized.items():
+            session.add(LedgerEntry(id=str(uuid4()), transaction_id=tx.id, account_id=account, asset="CAIBI", amount=amount, created_at=now))
+        session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id, subject_type="ledger_transaction", subject_id=tx.id, action="ledger.post", result="SUCCESS", reason_code=reason_code, trace_id=hashlib.sha256(idempotency_key.encode()).hexdigest()[:32], after_data={"asset": "CAIBI", "entry_count": len(normalized)}, created_at=now))
+        OutboxPublisher.enqueue(session, topic="ledger", event_type="ledger.posted", aggregate_type="ledger_transaction", aggregate_id=tx.id, payload={"transaction_id": tx.id, "asset": "CAIBI"}, now=now)
+        session.flush()
+        _ = tx.entries
+        return tx
 
     def adjust(self, *, user_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str) -> LedgerTransaction:
         amount = money(amount)

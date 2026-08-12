@@ -12,6 +12,7 @@ class Permission(StrEnum):
     SUPPORT_TICKET_TRANSFER = "support.ticket.transfer"
     SUPPORT_SCOPE_MANAGE = "support.scope.manage"
     ADJUSTMENT_SUBMIT = "adjustment.submit"
+    RED_PACKET_CANCEL = "red_packet.cancel"
     FINANCE_REVIEW = "finance.review"
     FINANCE_ADJUSTMENT_SUBMIT = "finance.adjustment.submit"
     SUPERVISOR_APPROVE = "supervisor.approve"
@@ -22,7 +23,7 @@ class Permission(StrEnum):
 ROLE_PERMISSIONS: dict[RoleCode, frozenset[Permission]] = {
     RoleCode.USER: frozenset(),
     RoleCode.SUPPORT_AGENT: frozenset(
-        {Permission.SUPPORT_TICKET_ASSIGN, Permission.SUPPORT_TICKET_TRANSFER, Permission.ADJUSTMENT_SUBMIT}
+        {Permission.SUPPORT_TICKET_ASSIGN, Permission.SUPPORT_TICKET_TRANSFER, Permission.ADJUSTMENT_SUBMIT, Permission.RED_PACKET_CANCEL}
     ),
     RoleCode.FINANCE_SUPPORT: frozenset(
         {Permission.FINANCE_REVIEW, Permission.FINANCE_ADJUSTMENT_SUBMIT}
@@ -34,6 +35,7 @@ ROLE_PERMISSIONS: dict[RoleCode, frozenset[Permission]] = {
             Permission.SUPPORT_SCOPE_MANAGE,
             Permission.SUPERVISOR_APPROVE,
             Permission.AUDIT_VIEW,
+            Permission.RED_PACKET_CANCEL,
         }
     ),
     RoleCode.SUPER_ADMIN: frozenset(Permission),
@@ -65,4 +67,5 @@ class RbacService:
     @staticmethod
     def _denied() -> None:
         raise AppError(code="PERMISSION_DENIED", message="无权执行此操作", status_code=403)
+
 

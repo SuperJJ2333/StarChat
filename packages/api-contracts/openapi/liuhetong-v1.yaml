@@ -37,6 +37,85 @@
         "title": "AdjustmentRequestBody",
         "type": "object"
       },
+      "CancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_code"
+        ],
+        "title": "CancelRequest",
+        "type": "object"
+      },
+      "CreateRedPacketRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "EQUAL",
+              "RANDOM"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "recipient_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Id"
+          },
+          "room_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Id"
+          },
+          "share_count": {
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Share Count",
+            "type": "integer"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "mode",
+          "total",
+          "share_count"
+        ],
+        "title": "CreateRedPacketRequest",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -441,6 +520,50 @@
           "refresh_token"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "WithdrawalBody": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Address",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,6}0*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "client_order_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Order Id",
+            "type": "string"
+          },
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "address",
+          "client_order_id",
+          "reason_code"
+        ],
+        "title": "WithdrawalBody",
         "type": "object"
       },
       "app__api__ledger__TransferRequest": {
@@ -1867,6 +1990,272 @@
         ]
       }
     },
+    "/api/v1/red-packets": {
+      "post": {
+        "operationId": "create_api_v1_red_packets_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRedPacketRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Create",
+        "tags": [
+          "red-packets"
+        ]
+      }
+    },
+    "/api/v1/red-packets/{packet_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_v1_red_packets__packet_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "packet_id",
+            "required": true,
+            "schema": {
+              "title": "Packet Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Cancel",
+        "tags": [
+          "red-packets"
+        ]
+      }
+    },
+    "/api/v1/red-packets/{packet_id}/claims": {
+      "post": {
+        "operationId": "claim_api_v1_red_packets__packet_id__claims_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "packet_id",
+            "required": true,
+            "schema": {
+              "title": "Packet Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Claim",
+        "tags": [
+          "red-packets"
+        ]
+      }
+    },
     "/api/v1/support/agents/{agent_id}/presence": {
       "put": {
         "operationId": "presence_api_v1_support_agents__agent_id__presence_put",
@@ -2320,6 +2709,498 @@
         "summary": "Transfer",
         "tags": [
           "support"
+        ]
+      }
+    },
+    "/api/v1/wallet/balances/me": {
+      "get": {
+        "operationId": "balance_api_v1_wallet_balances_me_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Balance",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/webhooks/custody": {
+      "post": {
+        "operationId": "webhook_api_v1_wallet_webhooks_custody_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Custody-Signature",
+            "required": true,
+            "schema": {
+              "title": "X-Custody-Signature",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Webhook",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/withdrawals": {
+      "post": {
+        "operationId": "request_api_v1_wallet_withdrawals_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Request",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/withdrawals/{withdrawal_id}/admin-approve": {
+      "post": {
+        "operationId": "admin_api_v1_wallet_withdrawals__withdrawal_id__admin_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "withdrawal_id",
+            "required": true,
+            "schema": {
+              "title": "Withdrawal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-TOTP-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Admin",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/withdrawals/{withdrawal_id}/finance-approve": {
+      "post": {
+        "operationId": "finance_api_v1_wallet_withdrawals__withdrawal_id__finance_approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "withdrawal_id",
+            "required": true,
+            "schema": {
+              "title": "Withdrawal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-TOTP-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Finance",
+        "tags": [
+          "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/withdrawals/{withdrawal_id}/submit": {
+      "post": {
+        "operationId": "submit_api_v1_wallet_withdrawals__withdrawal_id__submit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "withdrawal_id",
+            "required": true,
+            "schema": {
+              "title": "Withdrawal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-TOTP-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Totp-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Submit",
+        "tags": [
+          "wallet"
         ]
       }
     }

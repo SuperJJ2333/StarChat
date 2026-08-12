@@ -4,10 +4,12 @@ import secrets
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.modules.ledger.service import LedgerService, money
 from app.modules.redpacket.models import RedPacket, RedPacketShare
+from app.modules.redpacket.claims import RedPacketClaim
 
 class RedPacketService:
     def __init__(self, session_factory, ledger: LedgerService):
@@ -69,14 +71,18 @@ class RedPacketService:
                 raise ValueError("red packet unavailable")
             if packet.recipient_id and packet.recipient_id != user_id:
                 raise ValueError("recipient mismatch")
-            prior = session.scalar(select(RedPacketShare).where(RedPacketShare.packet_id == packet_id, RedPacketShare.claimed_by == user_id))
-            if prior:
+            existing_claim = session.scalar(select(RedPacketClaim).where(RedPacketClaim.packet_id == packet_id, RedPacketClaim.user_id == user_id))
+            if existing_claim:
+                if existing_claim.idempotency_key == idempotency_key:
+                    return session.get(RedPacketShare, existing_claim.share_id)
                 raise ValueError("user already claimed")
             share = session.scalar(select(RedPacketShare).where(RedPacketShare.packet_id == packet_id, RedPacketShare.claimed_by.is_(None)).order_by(RedPacketShare.ordinal).limit(1).with_for_update(skip_locked=True))
             if not share:
                 raise ValueError("red packet exhausted")
+            session.add(RedPacketClaim(id=str(uuid4()), packet_id=packet_id, share_id=share.id, user_id=user_id, idempotency_key=idempotency_key, created_at=now))
+            session.flush()
             escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
-            self.ledger.post(entries={escrow: -share.amount, user_id: share.amount}, actor_id=user_id, reason_code="RED_PACKET_CLAIM", idempotency_key=idempotency_key, scope="redpacket.claim")
+            self.ledger.post(entries={escrow: -share.amount, user_id: share.amount}, actor_id=user_id, reason_code="RED_PACKET_CLAIM", idempotency_key=idempotency_key, scope="redpacket.claim", session=session)
             share.claimed_by, share.claimed_at = user_id, now
             if session.scalar(select(RedPacketShare.id).where(RedPacketShare.packet_id == packet_id, RedPacketShare.claimed_by.is_(None), RedPacketShare.id != share.id).limit(1)) is None:
                 packet.status = "COMPLETED"
@@ -110,3 +116,4 @@ class RedPacketService:
     @staticmethod
     def _aware(value):
         return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+

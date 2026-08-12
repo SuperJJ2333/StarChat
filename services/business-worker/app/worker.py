@@ -30,6 +30,7 @@ class Worker:
         retry_delay: timedelta = timedelta(seconds=30),
         now_factory=None,
         heartbeat_path: str | Path | None = None,
+        maintenance_tasks: list[Callable[[], Any]] | None = None,
     ) -> None:
         self._consumer = consumer
         self._handlers = dict(handlers)
@@ -37,8 +38,11 @@ class Worker:
         self._retry_delay = retry_delay
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
         self._heartbeat_path = Path(heartbeat_path) if heartbeat_path else None
+        self._maintenance_tasks = list(maintenance_tasks or [])
 
     def run_once(self, limit: int = 50) -> int:
+        for task in self._maintenance_tasks:
+            task()
         messages = self._consumer.claim_batch(worker_id=self._worker_id, limit=limit)
         for message in messages:
             try:
@@ -74,3 +78,4 @@ class Worker:
             return
         self._heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
         self._heartbeat_path.touch()
+

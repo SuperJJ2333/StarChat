@@ -43,11 +43,20 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/ledger/adjustments/{request_id}/finance-review",
         "/api/v1/ledger/adjustments/{request_id}/admin-review",
         "/api/v1/ledger/adjustments/{request_id}/execute",
+        "/api/v1/red-packets",
+        "/api/v1/red-packets/{packet_id}/claims",
+        "/api/v1/red-packets/{packet_id}/cancel",
+        "/api/v1/wallet/balances/me",
+        "/api/v1/wallet/withdrawals",
+        "/api/v1/wallet/withdrawals/{withdrawal_id}/finance-approve",
+        "/api/v1/wallet/withdrawals/{withdrawal_id}/admin-approve",
+        "/api/v1/wallet/withdrawals/{withdrawal_id}/submit",
+        "/api/v1/wallet/webhooks/custody",
     }
     assert not any(
         segment in path
         for path in document["paths"]
-        for segment in ("red-packet", "wallet", "withdraw")
+        for segment in ()
     )
 
 
@@ -62,6 +71,8 @@ def test_contract_contains_stable_error_schema() -> None:
         "trace_id",
         "fields",
     }
+
+
 
 
 
