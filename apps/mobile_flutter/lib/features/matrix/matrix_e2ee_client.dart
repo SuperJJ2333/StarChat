@@ -6,6 +6,8 @@ abstract interface class MatrixE2eeClient {
   Future<void> sync();
   Future<void> verifyDevice(String deviceId);
   Future<void> backupKeysToEncryptedStore();
+  Future<void> initializeCrossSigning({required String recoveryKey});
+  Future<void> restoreEncryptedBackup({required String recoveryKey});
   Future<String> sendEncryptedText(String roomId, String plaintext);
   Future<String> sendEncryptedMedia(String roomId, List<int> ciphertext, String mimeType);
 }
@@ -39,6 +41,22 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient {
     final handle = await encryption.ssss.createKey();
     _lastRecoveryKey = handle.recoveryKey;
     if (_lastRecoveryKey == null) throw StateError('Matrix backup key generation failed');
+    await handle.maybeCacheAll();
+  }
+
+  @override
+  Future<void> initializeCrossSigning({required String recoveryKey}) async {
+    final encryption = client.encryption;
+    if (encryption == null) throw StateError('Matrix encryption is not enabled');
+    await encryption.crossSigning.selfSign(recoveryKey: recoveryKey);
+  }
+
+  @override
+  Future<void> restoreEncryptedBackup({required String recoveryKey}) async {
+    final encryption = client.encryption;
+    if (encryption == null) throw StateError('Matrix encryption is not enabled');
+    final handle = encryption.ssss.open(EventTypes.CrossSigningMasterKey);
+    await handle.unlock(recoveryKey: recoveryKey);
     await handle.maybeCacheAll();
   }
   @override Future<String> sendEncryptedText(String roomId, String plaintext) async {

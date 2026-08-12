@@ -1,0 +1,5 @@
+# Copy to android/key.properties and fill from your secret manager. Never commit the copied file.
+storeFile=C:/secure/liuhetong-release.jks
+storePassword=REPLACE_ME
+keyAlias=liuhetong
+keyPassword=REPLACE_ME
