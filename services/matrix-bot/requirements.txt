@@ -1,0 +1,5 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+pydantic-settings>=2.2,<3.0
+matrix-nio[e2e]>=0.25,<1.0
+

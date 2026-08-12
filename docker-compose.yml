@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-postgres-password}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse} -d ${POSTGRES_DB:-synapse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  synapse:
+    image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - ./data/synapse:/data
+      - ./infra/synapse:/scripts:ro
+    ports:
+      - "${SYNAPSE_HTTP_PORT:-8008}:8008"
+
+  element-web:
+    image: "${ELEMENT_WEB_IMAGE:?ELEMENT_WEB_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      - synapse
+    volumes:
+      - ./data/element/config.json:/app/config.json:ro
+    ports:
+      - "${ELEMENT_HTTP_PORT:-8080}:80"
+
+  matrix-bot:
+    build:
+      context: .
+      dockerfile: services/matrix-bot/Dockerfile
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:?PYTHON_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      - synapse
+    environment:
+      APP_NAME: ${BOT_APP_NAME:-StarChat Matrix Bot}
+      LOG_LEVEL: ${BOT_LOG_LEVEL:-INFO}
+      SERVICE_PORT: 8081
+      MATRIX_HOMESERVER_URL: ${SYNAPSE_INTERNAL_BASEURL:-http://synapse:8008/}
+      MATRIX_BOT_USER_ID: ${MATRIX_BOT_USER_ID:-@matrixbot:matrix.localhost}
+      MATRIX_BOT_PASSWORD: ${SYNAPSE_BOT_PASSWORD:-change-this-bot-password}
+      MATRIX_BOT_ACCESS_TOKEN: ${MATRIX_BOT_ACCESS_TOKEN:-}
+      MATRIX_BOT_DEVICE_ID: ${MATRIX_BOT_DEVICE_ID:-STARCHATBOT}
+      MATRIX_BOT_STORE_PATH: ${MATRIX_BOT_STORE_PATH:-/data/bot/store}
+      MATRIX_INTERNAL_API_KEY: ${MATRIX_WEBHOOK_API_KEY:-change-this-internal-api-key}
+      MATRIX_DEFAULT_ROOM_ID: ${MATRIX_DEFAULT_ROOM_ID:-}
+      MATRIX_ROOM_ROUTING_JSON: ${MATRIX_ROOM_ROUTING_JSON:-{}}
+      MATRIX_ALLOWED_ROOM_TARGETS_JSON: ${MATRIX_ALLOWED_ROOM_TARGETS_JSON:-[]}
+      MATRIX_AUTO_REPLY_RULES_JSON: ${MATRIX_AUTO_REPLY_RULES_JSON:-[]}
+      MATRIX_ADMIN_USERS_JSON: ${MATRIX_ADMIN_USERS_JSON:-[]}
+      MATRIX_COMMAND_PREFIX: ${MATRIX_COMMAND_PREFIX:-!}
+      MATRIX_SYNC_TIMEOUT_MS: ${MATRIX_SYNC_TIMEOUT_MS:-30000}
+      MATRIX_SYNC_FULL_STATE: ${MATRIX_SYNC_FULL_STATE:-true}
+      MATRIX_MESSAGE_DEDUP_TTL_SECONDS: ${MATRIX_MESSAGE_DEDUP_TTL_SECONDS:-3600}
+      MATRIX_IDEMPOTENCY_DB_PATH: ${MATRIX_IDEMPOTENCY_DB_PATH:-/data/bot/idempotency.sqlite3}
+      MATRIX_ALLOW_UNVERIFIED_DEVICES: ${MATRIX_ALLOW_UNVERIFIED_DEVICES:-true}
+    volumes:
+      - ./data/bot:/data/bot
+    ports:
+      - "127.0.0.1:${MATRIX_BOT_HTTP_PORT:-8081}:8081"

@@ -1,0 +1,47 @@
+server_name: "{{MATRIX_SERVER_NAME}}"
+pid_file: /data/homeserver.pid
+public_baseurl: "{{SYNAPSE_PUBLIC_BASEURL}}"
+
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names:
+          - client
+          - media
+        compress: false
+
+database:
+  name: psycopg2
+  args:
+    user: "{{POSTGRES_USER}}"
+    password: "{{POSTGRES_PASSWORD}}"
+    database: "{{POSTGRES_DB}}"
+    host: "{{POSTGRES_HOST}}"
+    port: {{POSTGRES_PORT}}
+    cp_min: 5
+    cp_max: 10
+
+log_config: "/data/log.config"
+media_store_path: /data/media_store
+signing_key_path: "/data/{{MATRIX_SERVER_NAME}}.signing.key"
+
+enable_registration: false
+enable_registration_without_verification: false
+registration_shared_secret: "{{SYNAPSE_REGISTRATION_SHARED_SECRET}}"
+
+macaroon_secret_key: "{{SYNAPSE_MACAROON_SECRET_KEY}}"
+form_secret: "{{SYNAPSE_FORM_SECRET}}"
+
+allow_public_rooms_without_auth: false
+allow_public_rooms_over_federation: false
+url_preview_enabled: false
+enable_media_repo: true
+max_upload_size: 50M
+report_stats: false
+
+trusted_key_servers: []
+suppress_key_server_warning: true
+

@@ -1,0 +1,2 @@
+"""StarChat Matrix bot package."""
+

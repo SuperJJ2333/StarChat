@@ -1,0 +1,25 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "{{SYNAPSE_PUBLIC_BASEURL}}",
+      "server_name": "{{MATRIX_SERVER_NAME}}"
+    }
+  },
+  "default_theme": "light",
+  "disable_custom_urls": false,
+  "disable_guests": true,
+  "show_labs_settings": false,
+  "brand": "StarChat",
+  "integrations_ui_url": "",
+  "integrations_rest_url": "",
+  "integrations_widgets_urls": [],
+  "room_directory": {
+    "servers": [
+      "{{MATRIX_SERVER_NAME}}"
+    ]
+  },
+  "setting_defaults": {
+    "breadcrumbs": true
+  }
+}
+

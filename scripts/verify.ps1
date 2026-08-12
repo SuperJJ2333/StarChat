@@ -1,0 +1,83 @@
+$ErrorActionPreference = 'Stop'
+
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = $utf8
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$previousLocation = Get-Location
+
+function Assert-LastExitCode {
+    param([string]$Step)
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Step failed with exit code $LASTEXITCODE"
+    }
+}
+
+try {
+    Set-Location -LiteralPath $projectRoot
+
+    Write-Output '== Repository policy =='
+    & pwsh -NoProfile -File tests/repository/Test-RepositoryPolicy.ps1
+    Assert-LastExitCode 'Repository policy'
+
+    Write-Output '== Deployment policy =='
+    & pwsh -NoProfile -File tests/repository/Test-DeploymentPolicy.ps1
+    Assert-LastExitCode 'Deployment policy'
+
+    Write-Output '== Template unit tests =='
+    & pwsh -NoProfile -File tests/powershell/Test-TemplateTools.ps1
+    Assert-LastExitCode 'Template unit tests'
+
+    Write-Output '== Render-only configuration smoke test =='
+    & pwsh -NoProfile -File scripts/init_matrix.ps1 -RenderOnly
+    Assert-LastExitCode 'Render-only configuration smoke test'
+
+    $element = Get-Content -LiteralPath 'data/element/config.json' -Raw -Encoding UTF8 | ConvertFrom-Json
+    $baseUrl = [string]$element.default_server_config.'m.homeserver'.base_url
+    $serverName = [string]$element.default_server_config.'m.homeserver'.server_name
+    if ($baseUrl.StartsWith('{') -or $baseUrl.EndsWith('}')) {
+        throw "Element base_url contains wrapper braces: $baseUrl"
+    }
+    if ($serverName.StartsWith('{') -or $serverName.EndsWith('}')) {
+        throw "Element server_name contains wrapper braces: $serverName"
+    }
+
+    $unresolved = Select-String `
+        -LiteralPath 'data/synapse/homeserver.yaml', 'data/element/config.json' `
+        -Pattern '\{\{[A-Z][A-Z0-9_]*\}\}' `
+        -Encoding UTF8
+    if ($unresolved) {
+        throw 'Rendered configuration contains unresolved template tokens.'
+    }
+
+    Write-Output '== Matrix Bot tests =='
+    $env:PYTHONPATH = 'services/matrix-bot'
+    & python -m pytest tests/matrix_bot -q
+    Assert-LastExitCode 'Matrix Bot tests'
+
+    Write-Output '== Python AST parse =='
+    @'
+import ast
+from pathlib import Path
+
+files = sorted(Path("services/matrix-bot/app").glob("*.py"))
+for path in files:
+    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+print(f"AST parse: PASS ({len(files)} files)")
+'@ | & python -
+    Assert-LastExitCode 'Python AST parse'
+
+    Write-Output '== Docker Compose render =='
+    & docker compose --env-file .env.example config --quiet
+    Assert-LastExitCode 'Docker Compose render'
+
+    Write-Output 'Verification: PASS'
+}
+finally {
+    Set-Location -LiteralPath $previousLocation
+}
