@@ -40,6 +40,19 @@ class InvitationService:
             session.add(invitation)
         return invitation
 
+    def validate(self, code: str) -> bool:
+        now = self._now_factory()
+        with self._session_factory() as session:
+            invitation = session.scalar(
+                select(Invitation).where(
+                    Invitation.code_hash == hash_opaque_token(code),
+                    Invitation.revoked_at.is_(None),
+                    Invitation.expires_at >= now,
+                    Invitation.use_count < Invitation.max_uses,
+                )
+            )
+            return invitation is not None
+
     @staticmethod
     def consume_in_session(session, *, code: str, now: datetime) -> Invitation:
         invitation = session.scalar(

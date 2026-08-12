@@ -121,6 +121,8 @@ services:
       BUSINESS_JWT_ISSUER: ${BUSINESS_JWT_ISSUER:-liuhetong}
       BUSINESS_JWT_SECRET: ${BUSINESS_JWT_SECRET:-change-this-business-jwt-secret}
       BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
+      BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
+      BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
     ports:
       - "127.0.0.1:${BUSINESS_API_HTTP_PORT:-8082}:8082"
     healthcheck:
@@ -146,6 +148,8 @@ services:
       BUSINESS_JWT_ISSUER: ${BUSINESS_JWT_ISSUER:-liuhetong}
       BUSINESS_JWT_SECRET: ${BUSINESS_JWT_SECRET:-change-this-business-jwt-secret}
       BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
+      BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
+      BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
       WORKER_ID: ${BUSINESS_WORKER_ID:-business-worker-1}
       WORKER_HEARTBEAT_PATH: /tmp/liuhetong-worker-heartbeat
     healthcheck:

@@ -146,6 +146,21 @@ class TokenService:
                 family.revoked_at = now
                 family.revoke_reason = "DEVICE_REVOKED"
 
+    def revoke_by_refresh_token(self, refresh_token: str, reason: str = "LOGOUT") -> None:
+        now = self._now_factory()
+        with self._session_factory.begin() as session:
+            record = session.scalar(
+                select(RefreshToken).where(
+                    RefreshToken.token_hash == hash_opaque_token(refresh_token)
+                )
+            )
+            if record is None:
+                return
+            family = session.get(RefreshTokenFamily, record.family_id)
+            if family is not None and family.revoked_at is None:
+                family.revoked_at = now
+                family.revoke_reason = reason
+
     def decode_access_token(self, token: str) -> dict:
         try:
             claims = jwt.decode(
