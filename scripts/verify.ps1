@@ -65,6 +65,10 @@ try {
     & py -3.12 -m pytest tests/business_api tests/business_worker -q
     Assert-LastExitCode 'Business API and Worker tests'
 
+    Write-Output '== Flutter boundary tests =='
+    & py -3.12 -m pytest tests/mobile -q
+    Assert-LastExitCode 'Flutter boundary tests'
+
     Write-Output '== Business API import smoke test =='
     & py -3.12 -c "import app.main; print('Business API import: PASS')"
     Assert-LastExitCode 'Business API import smoke test'
