@@ -57,6 +57,16 @@ def upgrade() -> None:
     )
     op.create_index("ix_email_verification_challenges_user_id", "email_verification_challenges", ["user_id"])
     op.create_table(
+        "password_reset_challenges",
+        sa.Column("id", sa.String(36), primary_key=True),
+        sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("consumed_at", sa.DateTime(timezone=True)),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    op.create_index("ix_password_reset_challenges_user_id", "password_reset_challenges", ["user_id"])
+    op.create_table(
         "identity_devices",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("user_id", sa.String(36), sa.ForeignKey("users.id"), nullable=False),
@@ -129,6 +139,7 @@ def downgrade() -> None:
         ("refresh_tokens", ["ix_refresh_tokens_family_id"]),
         ("refresh_token_families", ["ix_refresh_token_families_user_id"]),
         ("identity_devices", ["ix_identity_devices_user_id"]),
+        ("password_reset_challenges", ["ix_password_reset_challenges_user_id"]),
         ("email_verification_challenges", ["ix_email_verification_challenges_user_id"]),
         ("invitations", []),
         ("users", []),
