@@ -7,6 +7,7 @@ from app.core.database import Base
 from app.core import idempotency as _idempotency  # noqa: F401
 from app.core import outbox as _outbox  # noqa: F401
 from app.core.migrations import configure_database_url
+from app.modules.identity import models as _identity_models  # noqa: F401
 
 config = context.config
 configure_database_url(config)
