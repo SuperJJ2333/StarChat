@@ -2,6 +2,8 @@ from fastapi import FastAPI
 
 from app.api.health import create_health_router
 from app.api.identity import create_identity_router
+from app.api.support import create_support_router
+from app.api.ledger import create_ledger_router
 from app.core.config import Settings
 from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
@@ -40,8 +42,12 @@ def create_app(settings: Settings, session_factory=None, rate_limiter=None) -> F
     app.include_router(
         create_identity_router(settings, session_factory, rate_limiter), prefix="/api/v1"
     )
+    app.include_router(create_support_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_ledger_router(settings, session_factory), prefix="/api/v1")
     return app
 
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
+
+

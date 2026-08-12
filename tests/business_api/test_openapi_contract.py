@@ -13,7 +13,7 @@ def test_committed_openapi_matches_generated_document() -> None:
     assert committed == render_document(build_document())
 
 
-def test_phase_two_contract_exposes_only_health_and_identity_routes() -> None:
+def test_contract_exposes_health_identity_and_support_routes() -> None:
     document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert document["info"]["title"] == "六合通 Business API"
@@ -30,11 +30,24 @@ def test_phase_two_contract_exposes_only_health_and_identity_routes() -> None:
         "/api/v1/auth/password/reset",
         "/api/v1/devices",
         "/api/v1/devices/{device_id}",
+        "/api/v1/support/identities/{user_id}",
+        "/api/v1/support/tickets",
+        "/api/v1/support/tickets/{ticket_id}/assign",
+        "/api/v1/support/tickets/{ticket_id}/transfer",
+        "/api/v1/support/tickets/{ticket_id}/close",
+        "/api/v1/support/agents/{agent_id}/presence",
+        "/api/v1/ledger/balances/me",
+        "/api/v1/ledger/transfers",
+        "/api/v1/ledger/adjustment-policies/{actor_id}",
+        "/api/v1/ledger/adjustments",
+        "/api/v1/ledger/adjustments/{request_id}/finance-review",
+        "/api/v1/ledger/adjustments/{request_id}/admin-review",
+        "/api/v1/ledger/adjustments/{request_id}/execute",
     }
     assert not any(
         segment in path
         for path in document["paths"]
-        for segment in ("ledger", "transfer", "red-packet", "wallet", "withdraw")
+        for segment in ("red-packet", "wallet", "withdraw")
     )
 
 
@@ -49,3 +62,6 @@ def test_contract_contains_stable_error_schema() -> None:
         "trace_id",
         "fields",
     }
+
+
+

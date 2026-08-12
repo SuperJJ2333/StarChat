@@ -9,6 +9,9 @@ from app.core import outbox as _outbox  # noqa: F401
 from app.core.migrations import configure_database_url
 from app.modules.identity import models as _identity_models  # noqa: F401
 from app.modules.audit import models as _audit_models  # noqa: F401
+from app.modules.support import service as _support_models  # noqa: F401
+from app.modules.ledger import models as _ledger_models  # noqa: F401
+from app.modules.ledger import adjustment_models as _adjustment_models  # noqa: F401
 
 config = context.config
 configure_database_url(config)
@@ -41,3 +44,4 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
