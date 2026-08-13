@@ -27,6 +27,13 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> walletBalance() => getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() => getJson('/wallet/deposit-address');
   Future<Map<String, dynamic>> withdrawalStatus(String id) => getJson('/wallet/withdrawals/$id');
+  Future<Map<String,dynamic>> friends()=>getJson('/friends');
+  Future<Map<String,dynamic>> friendRequests()=>getJson('/friends/requests');
+  Future<Map<String,dynamic>> momentsFeed({String mode='recommended'})=>getJson('/moments/feed?mode=$mode');
+  Future<Map<String,dynamic>> searchMoments(String query)=>getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
+  Future<Map<String,dynamic>> publishMoment({required String text,required String visibility,List<String> imageUrls=const []})=>postJson('/moments',{'text':text,'visibility':visibility,'image_urls':imageUrls},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> likeMoment(String id)=>postJson('/moments/$id/likes',{},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> commentMoment(String id,String text)=>postJson('/moments/$id/comments',{'text':text},idempotencyKey:newIdempotencyKey());
   Future<Map<String, dynamic>> requestWithdrawal({required String amount, required String address, required String clientOrderId, required String reasonCode}) =>
       postJson('/wallet/withdrawals', {'amount': amount, 'address': address, 'client_order_id': clientOrderId, 'reason_code': reasonCode}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> getJson(String path) async {
