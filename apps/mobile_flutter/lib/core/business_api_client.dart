@@ -10,8 +10,9 @@ final class BusinessApiClient {
   final http.Client _client;
   final Uuid _uuid = const Uuid();
   String newIdempotencyKey() => _uuid.v4();
+  Uri _uri(String path) => baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
   Future<Map<String, dynamic>> login({required String username, required String password, required String deviceKey, required String deviceName}) async {
-    final response = await _client.post(baseUri.resolve('/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'device_key': deviceKey, 'device_name': deviceName}));
+    final response = await _client.post(_uri('/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'device_key': deviceKey, 'device_name': deviceName}));
     final body = _decode(response);
     await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String);
     return body;
@@ -30,12 +31,12 @@ final class BusinessApiClient {
       postJson('/wallet/withdrawals', {'amount': amount, 'address': address, 'client_order_id': clientOrderId, 'reason_code': reasonCode}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> getJson(String path) async {
     final token = await sessionStore.accessToken();
-    final response = await _client.get(baseUri.resolve(path), headers: {if (token != null) 'Authorization': 'Bearer $token'});
+    final response = await _client.get(_uri(path), headers: {if (token != null) 'Authorization': 'Bearer $token'});
     return _decode(response);
   }
   Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body, {required String idempotencyKey}) async {
     final token = await sessionStore.accessToken();
-    final response = await _client.post(baseUri.resolve(path), headers: {'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, if (token != null) 'Authorization': 'Bearer $token'}, body: jsonEncode(body));
+    final response = await _client.post(_uri(path), headers: {'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, if (token != null) 'Authorization': 'Bearer $token'}, body: jsonEncode(body));
     return _decode(response);
   }
   Map<String, dynamic> _decode(http.Response response) {
