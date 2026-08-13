@@ -37,7 +37,7 @@ final class BusinessApiClient {
   Future<Map<String,dynamic>> rejectFriendRequest(String id)=>postJson('/friends/requests/$id/reject',{},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> momentsFeed({String mode='recommended'})=>getJson('/moments/feed?mode=$mode');
   Future<Map<String,dynamic>> searchMoments(String query)=>getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
-  Future<Map<String,dynamic>> publishMoment({required String text,required String visibility,List<String> imageUrls=const []})=>postJson('/moments',{'text':text,'visibility':visibility,'image_urls':imageUrls},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> publishMoment({required String text,required String visibility,List<String> imageUrls=const [],List<String> includeUserIds=const [],List<String> excludeUserIds=const []})=>postJson('/moments',{'text':text,'visibility':visibility,'image_urls':imageUrls,'include_user_ids':includeUserIds,'exclude_user_ids':excludeUserIds},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> likeMoment(String id)=>postJson('/moments/$id/likes',{},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> commentMoment(String id,String text)=>postJson('/moments/$id/comments',{'text':text},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> momentsPreferences()=>getJson('/moments/preferences');

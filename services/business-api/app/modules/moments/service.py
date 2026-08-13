@@ -44,7 +44,7 @@ class MomentsService:
                 id=str(uuid4()), author_id=actor, text=data.get("text", ""), visibility=data["visibility"],
                 image_urls=data.get("image_urls", []), include_user_ids=data.get("include_user_ids", []),
                 exclude_user_ids=data.get("exclude_user_ids", []), location=data.get("location"),
-                link_url=data.get("link_url"), status="PUBLISHED", idempotency_key=key, created_at=now,
+                link_url=data.get("link_url"), status="PENDING_REVIEW" if data.get("image_urls") else "PUBLISHED", idempotency_key=key, created_at=now,
             )
             session.add(row)
             self._audit(session, actor, row.id, "moment.published", "MOMENT_PUBLISH", key)
