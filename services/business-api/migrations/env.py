@@ -16,6 +16,7 @@ from app.modules.redpacket import models as _redpacket_models  # noqa: F401
 from app.modules.redpacket import claims as _redpacket_claims  # noqa: F401
 from app.modules.wallet import models as _wallet_models  # noqa: F401
 from app.modules.friendship import models as _friendship_models  # noqa: F401
+from app.modules.moments import models as _moments_models  # noqa: F401
 
 config = context.config
 configure_database_url(config)

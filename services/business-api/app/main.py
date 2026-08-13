@@ -7,6 +7,7 @@ from app.api.ledger import create_ledger_router
 from app.api.redpacket import create_redpacket_router
 from app.api.wallet import create_wallet_router
 from app.api.friendship import create_friendship_router
+from app.api.moments import create_moments_router
 from app.core.config import Settings
 from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
@@ -50,6 +51,7 @@ def create_app(settings: Settings, session_factory=None, rate_limiter=None) -> F
     app.include_router(create_redpacket_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_wallet_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_friendship_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_moments_router(settings, session_factory), prefix="/api/v1")
     return app
 
 
