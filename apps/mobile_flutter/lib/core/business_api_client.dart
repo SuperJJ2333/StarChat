@@ -23,6 +23,7 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> createRedPacket({required String mode, required String total, required int shareCount, String? roomId, String? recipientId}) =>
       postJson('/red-packets', {'mode': mode, 'total': total, 'share_count': shareCount, if (roomId != null) 'room_id': roomId, if (recipientId != null) 'recipient_id': recipientId}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> claimRedPacket(String id) => postJson('/red-packets/$id/claims', {}, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> redPacketDetail(String id) => getJson('/red-packets/$id');
   Future<Map<String, dynamic>> listRedPackets({String? roomId}) => getJson('/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}');
   Future<Map<String, dynamic>> walletBalance() => getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() => getJson('/wallet/deposit-address');

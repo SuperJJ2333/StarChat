@@ -42,3 +42,22 @@ async def test_public_moment_publish_read_like_comment_search(ctx):
         assert preferences.json()['personalized_recommendations'] is False
         report = await client.post(f'/api/v1/moments/{moment_id}/reports', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'report-1'}, json={'reason_code': 'SPAM'})
         assert report.status_code == 201
+
+@pytest.mark.asyncio
+async def test_detail_reply_unlike_and_author_moderated_delete(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        created = await client.post('/api/v1/moments', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'm2'}, json={'text': '可管理动态', 'visibility': 'PUBLIC'})
+        moment_id = created.json()['id']
+        liked = await client.post(f'/api/v1/moments/{moment_id}/likes', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'like-2'})
+        assert liked.status_code == 201
+        assert (await client.delete(f'/api/v1/moments/{moment_id}/likes', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'unlike-2'})).status_code == 204
+        parent = await client.post(f'/api/v1/moments/{moment_id}/comments', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'comment-2'}, json={'text': '评论'})
+        reply = await client.post(f'/api/v1/moments/{moment_id}/comments', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'reply-2'}, json={'text': '回复', 'parent_id': parent.json()['id']})
+        assert reply.json()['parent_id'] == parent.json()['id']
+        detail = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u2'))
+        assert detail.status_code == 200 and len(detail.json()['comments']) == 2
+        assert (await client.delete(f"/api/v1/moments/{moment_id}/comments/{parent.json()['id']}", headers={**auth(settings, 'u1'), 'Idempotency-Key': 'delete-comment-2'})).status_code == 204
+        assert (await client.delete(f'/api/v1/moments/{moment_id}', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'bad-delete'})).status_code == 403
+        assert (await client.delete(f'/api/v1/moments/{moment_id}', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'delete-moment-2'})).status_code == 204
+        assert (await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u2'))).status_code == 404

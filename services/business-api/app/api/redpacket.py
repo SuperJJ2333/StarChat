@@ -53,6 +53,10 @@ def create_redpacket_router(settings: Settings, session_factory) -> APIRouter:
         share = service.claim(packet_id, user_id=user_id, idempotency_key=idempotency_key)
         return {"share_id": share.id, "amount": str(share.amount), "asset": "CAIBI"}
 
+    @router.get("/{packet_id}")
+    def detail(packet_id: str, user_id: str = Depends(actor)):
+        return service.detail(packet_id, user_id=user_id)
+
     @router.post("/{packet_id}/cancel")
     def cancel(packet_id: str, body: CancelRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
         rbac.require(user_id, Permission.RED_PACKET_CANCEL)

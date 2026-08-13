@@ -9,7 +9,9 @@ abstract interface class MatrixE2eeClient {
   Future<void> initializeCrossSigning({required String recoveryKey});
   Future<void> restoreEncryptedBackup({required String recoveryKey});
   Future<String> sendEncryptedText(String roomId, String plaintext);
-  Future<String> sendEncryptedMedia(String roomId, List<int> ciphertext, String mimeType);
+  /// The SDK encrypts these local plaintext bytes during upload whenever the
+  /// target room is encrypted. Callers must never forward them to business APIs.
+  Future<String> sendEncryptedMedia(String roomId, List<int> plaintext, String mimeType);
 }
 final class MatrixSdkE2eeClient implements MatrixE2eeClient {
   MatrixSdkE2eeClient(this.client, {required this.homeserver});
@@ -69,10 +71,10 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient {
     if (eventId == null) throw StateError('Matrix event was not accepted');
     return eventId;
   }
-  @override Future<String> sendEncryptedMedia(String roomId, List<int> ciphertext, String mimeType) async {
+  @override Future<String> sendEncryptedMedia(String roomId, List<int> plaintext, String mimeType) async {
     final room = client.getRoomById(roomId);
     if (room == null) throw StateError('Matrix room is not joined');
-    final eventId = await room.sendFileEvent(MatrixFile(bytes: Uint8List.fromList(ciphertext), name: 'encrypted-media', mimeType: mimeType));
+    final eventId = await room.sendFileEvent(MatrixFile(bytes: Uint8List.fromList(plaintext), name: '六合通附件', mimeType: mimeType));
     if (eventId == null) throw StateError('Matrix media event was not accepted');
     return eventId;
   }

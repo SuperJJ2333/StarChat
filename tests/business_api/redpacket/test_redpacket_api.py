@@ -40,8 +40,15 @@ async def test_red_packet_create_claim_and_cancel_permissions(context):
         created = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "create-api"}, json={"mode": "EQUAL", "total": "2.00", "share_count": 2, "room_id": "!room:test"})
         assert created.status_code == 201
         packet_id = created.json()["id"]
+        detail = await client.get(f"/api/v1/red-packets/{packet_id}", headers=bearer(settings, "sender"))
+        assert detail.status_code == 200
+        assert detail.json()["status"] == "OPEN"
+        assert detail.json()["claimed_count"] == 0
         claimed = await client.post(f"/api/v1/red-packets/{packet_id}/claims", headers={**bearer(settings, "alice"), "Idempotency-Key": "claim-api"})
         assert claimed.status_code == 201
+        after = await client.get(f"/api/v1/red-packets/{packet_id}", headers=bearer(settings, "alice"))
+        assert after.json()["claimed_count"] == 1
+        assert after.json()["claims"][0]["user_id"] == "alice"
         forbidden = await client.post(f"/api/v1/red-packets/{packet_id}/cancel", headers={**bearer(settings, "alice"), "Idempotency-Key": "cancel-forbidden"}, json={"reason_code": "ABNORMAL_RED_PACKET"})
         assert forbidden.status_code == 403
         cancelled = await client.post(f"/api/v1/red-packets/{packet_id}/cancel", headers={**bearer(settings, "support"), "Idempotency-Key": "cancel-api"}, json={"reason_code": "ABNORMAL_RED_PACKET"})

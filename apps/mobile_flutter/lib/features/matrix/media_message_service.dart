@@ -6,14 +6,12 @@ import 'package:record/record.dart';
 
 import 'matrix_e2ee_client.dart';
 
-typedef EncryptBytes = Future<List<int>> Function(List<int> plaintext);
-
-/// Selects local media, encrypts it before Matrix upload, and never sends
-/// plaintext bytes to the business API.
+/// Selects local media and hands it directly to Matrix SDK. In encrypted rooms
+/// Matrix performs attachment encryption and sends only ciphertext to Synapse.
+/// Plaintext is never sent to the business API.
 final class MediaMessageService {
-  MediaMessageService(this.matrix, {required this.encrypt});
+  MediaMessageService(this.matrix);
   final MatrixE2eeClient matrix;
-  final EncryptBytes encrypt;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
 
@@ -27,8 +25,7 @@ final class MediaMessageService {
     final file = await openFile();
     if (file == null) throw StateError('File selection cancelled');
     final bytes = await file.readAsBytes();
-    return matrix.sendEncryptedMedia(roomId, await encrypt(bytes),
-        file.mimeType ?? 'application/octet-stream');
+    return matrix.sendEncryptedMedia(roomId, bytes, file.mimeType ?? 'application/octet-stream');
   }
 
   Future<void> startVoiceRecording(String path) async {
@@ -44,7 +41,7 @@ final class MediaMessageService {
 
   Future<String> _send(String roomId, String path, String mimeType) async {
     final bytes = await File(path).readAsBytes();
-    return matrix.sendEncryptedMedia(roomId, await encrypt(bytes), mimeType);
+    return matrix.sendEncryptedMedia(roomId, bytes, mimeType);
   }
 
   Future<void> dispose() => _recorder.dispose();

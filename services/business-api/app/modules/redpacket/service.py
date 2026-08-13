@@ -23,6 +23,24 @@ class RedPacketService:
         amounts = [Decimal(base + (1 if i < remainder else 0)) / 100 for i in range(count)]
         return self._create(mode="EQUAL", amounts=amounts, total=total, **{k:v for k,v in kwargs.items() if k not in ("total", "share_count")})
 
+    def detail(self, packet_id: str, *, user_id: str) -> dict:
+        with self.session_factory() as session:
+            packet = session.scalar(select(RedPacket).options(selectinload(RedPacket.shares)).where(RedPacket.id == packet_id))
+            if not packet:
+                raise ValueError("red packet not found")
+            if packet.recipient_id and user_id not in (packet.sender_id, packet.recipient_id):
+                raise ValueError("recipient mismatch")
+            claims = [
+                {"user_id": share.claimed_by, "amount": str(share.amount), "claimed_at": share.claimed_at}
+                for share in packet.shares if share.claimed_by is not None
+            ]
+            return {
+                "id": packet.id, "sender_id": packet.sender_id, "mode": packet.mode,
+                "asset": "CAIBI", "total": str(packet.total), "share_count": packet.share_count,
+                "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
+                "claims": claims,
+            }
+
     def create_random(self, **kwargs) -> RedPacket:
         total, count = self._validate(kwargs["total"], kwargs["share_count"])
         remaining = int(total * 100)
