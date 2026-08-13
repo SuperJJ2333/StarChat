@@ -8,6 +8,7 @@ import 'matrix_room_timeline_adapter.dart';
 import 'media_composer.dart';
 import 'media_message_service.dart';
 import 'room_timeline_controller.dart';
+import 'voice_composer.dart';
 
 class MatrixHomePage extends StatefulWidget {
   const MatrixHomePage({super.key, required this.matrix});
@@ -74,6 +75,11 @@ class _RoomPageState extends State<RoomPage> {
       ))),
     ));
   }
+  void _showVoice() {
+    showCupertinoModalPopup<void>(context: context, builder: (_) => CupertinoPopupSurface(
+      child: SafeArea(child: VoiceComposer(service: MediaMessageService(MatrixSdkE2eeClient(widget.room.client, homeserver: widget.room.client.homeserver!)), roomId: widget.room.id)),
+    ));
+  }
   @override void dispose() { controller?.removeListener(_changed); controller?.dispose(); input.dispose(); super.dispose(); }
 
   @override Widget build(BuildContext context) {
@@ -109,6 +115,7 @@ class _RoomPageState extends State<RoomPage> {
           padding: const EdgeInsets.all(WeChatSpacing.sm),
           child: Row(children: [
             CupertinoButton(padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.sm), onPressed: _showMedia, child: const Icon(CupertinoIcons.add_circled)),
+            CupertinoButton(padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.xs), onPressed: _showVoice, child: const Icon(CupertinoIcons.mic)),
             Expanded(child: CupertinoTextField(controller: input, placeholder: '输入加密消息', onSubmitted: (_) => _send(), padding: const EdgeInsets.all(WeChatSpacing.sm))),
             CupertinoButton(onPressed: _send, child: const Text('发送')),
           ]),

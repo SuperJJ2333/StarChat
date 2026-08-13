@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
 from app.modules.moments.service import MomentsService
+from app.modules.moments.media import MomentMediaService
 
 
 class Strict(BaseModel):
@@ -36,10 +37,16 @@ class Preferences(Strict):
 class Report(Strict):
     reason_code: str = Field(min_length=1, max_length=100)
 
+class BeginUpload(Strict):
+    file_name: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=100)
+    byte_size: int = Field(gt=0)
+
 
 def create_moments_router(settings: Settings, factory):
     router = APIRouter(prefix="/moments", tags=["moments"])
     service = MomentsService(factory)
+    media = MomentMediaService(factory)
     tokens = TokenService(factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer)
 
     def actor(authorization: Annotated[str | None, Header()] = None):
@@ -67,6 +74,16 @@ def create_moments_router(settings: Settings, factory):
     @router.put("/preferences")
     def update_preferences(body: Preferences, user=Depends(actor)):
         return service.preferences(user, body.model_dump())
+
+    @router.post("/media/uploads", status_code=201)
+    def begin_upload(body: BeginUpload, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        row = media.begin(user, body.file_name, body.mime_type, body.byte_size, idempotency_key)
+        return {"id": row.id, "upload_url": f"/api/v1/moments/media/uploads/{row.id}/content", "expires_at": row.expires_at}
+
+    @router.post("/media/uploads/{upload_id}/complete")
+    def complete_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        row = media.complete(user, upload_id)
+        return {"id": row.id, "status": row.status, "media_url": f"media://{row.object_key}"}
 
     @router.get("/{moment_id}")
     def detail(moment_id: str, user=Depends(actor)):

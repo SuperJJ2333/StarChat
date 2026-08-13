@@ -69,6 +69,8 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/moments/feed",
             "/api/v1/moments/search",
             "/api/v1/moments/preferences",
+            "/api/v1/moments/media/uploads",
+            "/api/v1/moments/media/uploads/{upload_id}/complete",
             "/api/v1/moments/{moment_id}",
             "/api/v1/moments/{moment_id}/likes",
             "/api/v1/moments/{moment_id}/comments",

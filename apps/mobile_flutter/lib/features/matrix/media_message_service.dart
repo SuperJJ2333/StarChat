@@ -39,6 +39,19 @@ final class MediaMessageService {
     return _send(roomId, path, 'audio/aac');
   }
 
+  Future<String> stopVoiceRecordingForPreview() async {
+    final path = await _recorder.stop();
+    if (path == null) throw StateError('No active voice recording');
+    return path;
+  }
+
+  Future<String> sendVoicePreview(String roomId, String path) => _send(roomId, path, 'audio/aac');
+
+  Future<void> cancelVoiceRecording() async {
+    final path = await _recorder.stop();
+    if (path != null) await File(path).delete().catchError((_) => File(path));
+  }
+
   Future<String> _send(String roomId, String path, String mimeType) async {
     final bytes = await File(path).readAsBytes();
     return matrix.sendEncryptedMedia(roomId, bytes, mimeType);
