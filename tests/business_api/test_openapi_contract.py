@@ -47,7 +47,7 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/red-packets/{packet_id}/claims",
         "/api/v1/red-packets/{packet_id}/cancel",
         "/api/v1/wallet/balances/me",
-        "/api/v1/wallet/withdrawals",
+        "/api/v1/wallet/withdrawals",`r`n        "/api/v1/wallet/transactions",
         "/api/v1/wallet/withdrawals/{withdrawal_id}",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/finance-approve",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/admin-approve",
@@ -82,6 +82,7 @@ def test_contract_contains_stable_error_schema() -> None:
         "trace_id",
         "fields",
     }
+
 
 
 
