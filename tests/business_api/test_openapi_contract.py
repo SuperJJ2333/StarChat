@@ -48,6 +48,7 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/red-packets/{packet_id}/cancel",
         "/api/v1/wallet/balances/me",
         "/api/v1/wallet/withdrawals",
+        "/api/v1/wallet/withdrawals/{withdrawal_id}",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/finance-approve",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/admin-approve",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/submit",
@@ -57,6 +58,11 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/friends",
         "/api/v1/blocks",
         "/api/v1/users/search",
+        "/api/v1/moments",
+        "/api/v1/moments/feed",
+        "/api/v1/moments/search",
+        "/api/v1/moments/{moment_id}/likes",
+        "/api/v1/moments/{moment_id}/comments",
     }
     assert not any(
         segment in path
