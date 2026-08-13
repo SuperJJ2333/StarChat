@@ -52,6 +52,11 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/wallet/withdrawals/{withdrawal_id}/admin-approve",
         "/api/v1/wallet/withdrawals/{withdrawal_id}/submit",
         "/api/v1/wallet/webhooks/custody",
+        "/api/v1/friends/requests",
+        "/api/v1/friends/requests/{request_id}/accept",
+        "/api/v1/friends",
+        "/api/v1/blocks",
+        "/api/v1/users/search",
     }
     assert not any(
         segment in path
