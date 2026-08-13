@@ -7,6 +7,7 @@ import 'features/auth/login_page.dart';
 import 'package:matrix/matrix.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
 import 'app_home.dart';
+import 'ui/theme/wechat_theme.dart';
 void main() => runApp(const LiuhetongApp());
 class LiuhetongApp extends StatelessWidget {
   const LiuhetongApp({super.key});
@@ -14,7 +15,7 @@ class LiuhetongApp extends StatelessWidget {
     final store = SecureSessionStore();
     final api = BusinessApiClient(baseUri: Uri.parse(AppConfig.businessApiBaseUrl), sessionStore: store);
     final matrix = MatrixSdkE2eeClient(Client('liuhetong_mobile', verificationMethods: {KeyVerificationMethod.emoji, KeyVerificationMethod.numbers}), homeserver: Uri.parse(AppConfig.matrixHomeserver));
-    return CupertinoApp(title: '六合通', theme: const CupertinoThemeData(primaryColor: Color(0xff5856D6), scaffoldBackgroundColor: Color(0xffF6F6FB)), builder: (context, child) => CupertinoTheme(data: CupertinoThemeData(brightness: MediaQuery.platformBrightnessOf(context), primaryColor: const Color(0xff5856D6), scaffoldBackgroundColor: MediaQuery.platformBrightnessOf(context)==Brightness.dark ? const Color(0xff101018) : const Color(0xffF6F6FB)), child: child!), home: LoginPage(api: api, onLogin: (username, password) async { await api.login(username: username, password: password, deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}', deviceName: '六合通移动端'); await matrix.login('@$username:matrix.localhost', password); await matrix.sync(); }, destination: (_) => AppHome(api: api, matrix: matrix)));
+    return CupertinoApp(title: '六合通', theme: WeChatTheme.build(Brightness.light), builder: (context, child) => CupertinoTheme(data: WeChatTheme.build(MediaQuery.platformBrightnessOf(context)), child: child!), home: LoginPage(api: api, onLogin: (username, password) async { await api.login(username: username, password: password, deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}', deviceName: '六合通移动端'); await matrix.login('@$username:matrix.localhost', password); await matrix.sync(); }, destination: (_) => AppHome(api: api, matrix: matrix)));
   }
 }
 final class ClientComposition {
