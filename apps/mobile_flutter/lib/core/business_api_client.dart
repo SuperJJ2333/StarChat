@@ -31,6 +31,11 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> withdrawalStatus(String id) => getJson('/wallet/withdrawals/$id');
   Future<Map<String,dynamic>> friends()=>getJson('/friends');
   Future<Map<String,dynamic>> friendRequests()=>getJson('/friends/requests');
+  Future<Map<String,dynamic>> contactTags()=>getJson('/contact-tags');
+  Future<Map<String,dynamic>> createContactTag(String name)=>postJson('/contact-tags',{'name':name},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> blocks()=>getJson('/blocks');
+  Future<Map<String,dynamic>> updateContact(String id,{String? remark,List<String> tags=const[],String momentsPermission='DEFAULT'})=>patchJson('/friends/$id',{'remark':remark,'tags':tags,'moments_permission':momentsPermission},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> blockUser(String id)=>postJson('/blocks',{'user_id':id},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> searchUsers(String query)=>getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
   Future<Map<String,dynamic>> requestFriend(String userId,{String message=''})=>postJson('/friends/requests',{'target_user_id':userId,'message':message},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> acceptFriendRequest(String id)=>postJson('/friends/requests/$id/accept',{},idempotencyKey:newIdempotencyKey());
@@ -54,6 +59,7 @@ final class BusinessApiClient {
     final response = await _client.post(_uri(path), headers: {'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, if (token != null) 'Authorization': 'Bearer $token'}, body: jsonEncode(body));
     return _decode(response);
   }
+  Future<Map<String,dynamic>> patchJson(String path,Map<String,dynamic> body,{required String idempotencyKey})async{final token=await sessionStore.accessToken();final response=await _client.patch(_uri(path),headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey,if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
   Future<Map<String,dynamic>> putJson(String path,Map<String,dynamic> body)async{final token=await sessionStore.accessToken();final response=await _client.put(_uri(path),headers:{'Content-Type':'application/json',if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
   Map<String, dynamic> _decode(http.Response response) {
     final body = jsonDecode(response.body) as Map<String, dynamic>;

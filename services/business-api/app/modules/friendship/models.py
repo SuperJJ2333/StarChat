@@ -15,3 +15,6 @@ class ContactProfile(Base):
 class UserBlock(Base):
     __tablename__='user_blocks';__table_args__=(UniqueConstraint('blocker_id','blocked_id',name='uq_user_block'),)
     id:Mapped[str]=mapped_column(String(36),primary_key=True);blocker_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);blocked_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);idempotency_key:Mapped[str]=mapped_column(String(128));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+class ContactTag(Base):
+    __tablename__='contact_tags';__table_args__=(UniqueConstraint('owner_id','name',name='uq_contact_tag_owner_name'),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True);owner_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);name:Mapped[str]=mapped_column(String(64));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))

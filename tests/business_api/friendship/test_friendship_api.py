@@ -53,3 +53,16 @@ async def test_reject_update_privacy_and_delete_friend(ctx):
         assert updated.json()['remark'] == '小波'
         deleted = await client.delete('/api/v1/friends/u2', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'delete-1'})
         assert deleted.status_code == 204
+
+@pytest.mark.asyncio
+async def test_block_list_unblock_and_contact_tags(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        blocked = await client.post('/api/v1/blocks', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'block-list'}, json={'user_id': 'u2'})
+        assert blocked.status_code == 201
+        assert (await client.get('/api/v1/blocks', headers=bearer(settings, 'u1'))).json()['items'][0]['user_id'] == 'u2'
+        assert (await client.delete('/api/v1/blocks/u2', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'unblock'})).status_code == 204
+        created = await client.post('/api/v1/contact-tags', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-create'}, json={'name': '同事'})
+        assert created.status_code == 201
+        assert (await client.get('/api/v1/contact-tags', headers=bearer(settings, 'u1'))).json()['items'][0]['name'] == '同事'
+        assert (await client.delete(f"/api/v1/contact-tags/{created.json()['id']}", headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-delete'})).status_code == 204

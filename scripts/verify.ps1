@@ -61,7 +61,7 @@ try {
     Assert-LastExitCode 'Matrix Bot tests'
 
     Write-Output '== Business API and Worker tests =='
-    $env:PYTHONPATH = "services/business-api;$projectRoot"
+    $env:PYTHONPATH = "services/business-api;services/business-worker/app;$projectRoot"
     & py -3.12 -m pytest tests/business_api tests/business_worker -q
     Assert-LastExitCode 'Business API and Worker tests'
 

@@ -5,7 +5,7 @@ from app.core.errors import AppError
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.identity.models import User
-from app.modules.friendship.models import ContactProfile,FriendRequest,Friendship,UserBlock
+from app.modules.friendship.models import ContactProfile,ContactTag,FriendRequest,Friendship,UserBlock
 
 class FriendshipService:
     def __init__(self,factory):self.factory=factory
@@ -43,6 +43,24 @@ class FriendshipService:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
             if row:return row
             row=UserBlock(id=str(uuid4()),blocker_id=actor,blocked_id=target,idempotency_key=key,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.blocked','USER_BLOCK',key);return row
+    def blocks(self,actor):
+        with self.factory() as s:return [{'id':row.id,'user_id':row.blocked_id} for row in s.scalars(select(UserBlock).where(UserBlock.blocker_id==actor).order_by(UserBlock.created_at,UserBlock.id)).all()]
+    def unblock(self,actor,target,key):
+        with self.factory.begin() as s:
+            row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
+            if row:s.delete(row);self._audit(s,actor,row.id,'friend.unblocked','USER_UNBLOCK',key)
+    def create_tag(self,actor,name,key):
+        with self.factory.begin() as s:
+            old=s.scalar(select(ContactTag).where(ContactTag.owner_id==actor,ContactTag.name==name))
+            if old:return old
+            row=ContactTag(id=str(uuid4()),owner_id=actor,name=name,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.tag_created','CONTACT_TAG_CREATE',key);return row
+    def tags(self,actor):
+        with self.factory() as s:return [{'id':row.id,'name':row.name} for row in s.scalars(select(ContactTag).where(ContactTag.owner_id==actor).order_by(ContactTag.name,ContactTag.id)).all()]
+    def delete_tag(self,actor,tag_id,key):
+        with self.factory.begin() as s:
+            row=s.get(ContactTag,tag_id)
+            if not row or row.owner_id!=actor:raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
+            s.delete(row);self._audit(s,actor,tag_id,'friend.tag_deleted','CONTACT_TAG_DELETE',key)
     def update_profile(self,actor,target,remark,tags,permission,key):
         low,high=sorted((actor,target))
         with self.factory.begin() as s:
