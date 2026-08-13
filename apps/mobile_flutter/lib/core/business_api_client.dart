@@ -10,6 +10,12 @@ final class BusinessApiClient {
   final http.Client _client;
   final Uuid _uuid = const Uuid();
   String newIdempotencyKey() => _uuid.v4();
+  Future<Map<String, dynamic>> login({required String username, required String password, required String deviceKey, required String deviceName}) async {
+    final response = await _client.post(baseUri.resolve('/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'device_key': deviceKey, 'device_name': deviceName}));
+    final body = _decode(response);
+    await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String);
+    return body;
+  }
   Future<Map<String, dynamic>> caibiBalance() => getJson('/ledger/balances/me');
   Future<Map<String, dynamic>> transferCaibi(String receiverId, String amount) =>
       postJson('/ledger/transfers', {'receiver_id': receiverId, 'amount': amount}, idempotencyKey: newIdempotencyKey());
