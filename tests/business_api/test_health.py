@@ -12,7 +12,7 @@ def _settings(**overrides) -> Settings:
         "environment": "test",
     }
     values.update(overrides)
-    return Settings(**values)
+    return Settings(_env_file=None, **values)
 
 
 @pytest.mark.asyncio
