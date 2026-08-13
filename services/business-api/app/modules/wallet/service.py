@@ -30,6 +30,11 @@ class WalletService:
     def __init__(self, session_factory, provider, *, withdrawal_admin_threshold=Decimal("1000.000000"), confirmation_threshold=12):
         self.factory=session_factory; self.provider=provider; self.wallet_ledger=WalletLedger(session_factory); self.admin_threshold=usdt(withdrawal_admin_threshold); self.confirmation_threshold=confirmation_threshold
     def usdt_balance(self,user_id): return self.wallet_ledger.balance(user_id)
+    def withdrawal_status(self, withdrawal_id: str, user_id: str):
+        with self.factory() as session:
+            row = session.get(Withdrawal, withdrawal_id)
+            if row is None or row.user_id != user_id: raise ValueError("withdrawal not found")
+            return {"id": row.id, "status": row.status, "amount": str(row.amount), "address": row.address, "client_order_id": row.client_order_id, "txid": row.txid}
     def credit_for_test(self,user_id,amount): return self.wallet_ledger.post(entries={user_id:usdt(amount),"PLATFORM_CUSTODY":-usdt(amount)},actor_id="test",reason_code="TEST_CREDIT",idempotency_key=f"test-credit:{user_id}:{amount}",scope="wallet.deposit")
     def handle_deposit_webhook(self,payload,signature):
         if not hmac.compare_digest(self.provider.sign(payload),signature): raise AppError(code="CUSTODY_SIGNATURE_INVALID",message="托管回调签名无效",status_code=401)

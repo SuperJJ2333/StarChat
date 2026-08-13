@@ -37,6 +37,8 @@ def create_wallet_router(settings: Settings, session_factory) -> APIRouter:
     def balance(user_id:str=Depends(actor)): return {"asset":"USDT-TRC20","balance":str(service.usdt_balance(user_id))}
     @router.post("/withdrawals",status_code=201)
     def request(body:WithdrawalBody,user_id:str=Depends(actor)): return service.request_withdrawal(user_id=user_id,amount=body.amount,address=body.address,client_order_id=body.client_order_id,reason_code=body.reason_code)
+    @router.get("/withdrawals/{withdrawal_id}")
+    def status(withdrawal_id:str,user_id:str=Depends(actor)): return service.withdrawal_status(withdrawal_id,user_id)
     @router.post("/withdrawals/{withdrawal_id}/finance-approve")
     def finance(withdrawal_id:str,code:Annotated[str|None,Header(alias="X-TOTP-Code")]=None,user_id:str=Depends(actor)):
         rbac.require(user_id,Permission.FINANCE_REVIEW); verify_totp(user_id,code); return service.finance_approve(withdrawal_id,user_id)
