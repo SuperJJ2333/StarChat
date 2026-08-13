@@ -38,3 +38,7 @@ async def test_public_moment_publish_read_like_comment_search(ctx):
         assert comment.status_code == 201
         search = await client.get('/api/v1/moments/search?q=香港', headers=auth(settings, 'u2'))
         assert search.json()['items'][0]['id'] == moment_id
+        preferences = await client.put('/api/v1/moments/preferences', headers=auth(settings, 'u2'), json={'history_range': 'THREE_DAYS', 'personalized_recommendations': False})
+        assert preferences.json()['personalized_recommendations'] is False
+        report = await client.post(f'/api/v1/moments/{moment_id}/reports', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'report-1'}, json={'reason_code': 'SPAM'})
+        assert report.status_code == 201
