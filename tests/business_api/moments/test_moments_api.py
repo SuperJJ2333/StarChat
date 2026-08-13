@@ -43,6 +43,10 @@ async def test_public_moment_publish_read_like_comment_search(ctx):
         report = await client.post(f'/api/v1/moments/{moment_id}/reports', headers={**auth(settings, 'u2'), 'Idempotency-Key': 'report-1'}, json={'reason_code': 'SPAM'})
         assert report.status_code == 201
 
+        latest = await client.get('/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2'))
+        recommended = await client.get('/api/v1/moments/feed?mode=recommended', headers=auth(settings, 'u2'))
+        assert latest.json()['mode'] == 'latest' and recommended.json()['mode'] == 'recommended'
+
 @pytest.mark.asyncio
 async def test_detail_reply_unlike_and_author_moderated_delete(ctx):
     app, settings = ctx

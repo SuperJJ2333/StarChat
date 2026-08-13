@@ -14,6 +14,7 @@ from app.modules.moments.models import (
     MomentsPreference,
 )
 from app.modules.moments.visibility import VisibilityPolicy
+from app.modules.moments.recommendation import recommendation_score
 
 
 class MomentsService:
@@ -50,7 +51,7 @@ class MomentsService:
             self._audit(session, actor, row.id, "moment.published", "MOMENT_PUBLISH", key)
             return row
 
-    def feed(self, actor, q=None):
+    def feed(self, actor, q=None, mode="latest"):
         with self.factory() as session:
             preference = session.get(MomentsPreference, actor)
             cutoff = None
@@ -64,12 +65,16 @@ class MomentsService:
                 .order_by(Moment.created_at.desc(), Moment.id.desc()).limit(50)
             ).all()
             policy = VisibilityPolicy(session)
-            return [
+            visible = [
                 self.dto(session, moment) for moment in rows
                 if policy.can_view(actor, moment)
                 and (cutoff is None or moment.created_at >= cutoff)
                 and (not q or q.casefold() in f"{moment.text} {moment.location or ''}".casefold())
             ]
+            if mode == "recommended" and (preference is None or preference.personalized_recommendations):
+                by_id = {moment.id: moment for moment in rows}
+                visible.sort(key=lambda item: recommendation_score(by_id[item["id"]], like_count=item["like_count"], comment_count=item["comment_count"]), reverse=True)
+            return visible
 
     def detail(self, actor, moment_id):
         with self.factory() as session:

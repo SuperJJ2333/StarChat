@@ -61,7 +61,7 @@ def create_moments_router(settings: Settings, factory):
 
     @router.get("/feed")
     def feed(mode: Literal["recommended", "latest"] = "recommended", user=Depends(actor)):
-        return {"items": service.feed(user), "next_cursor": None, "mode": mode}
+        return {"items": service.feed(user, mode=mode), "next_cursor": None, "mode": mode}
 
     @router.get("/search")
     def search(q: Annotated[str, Query(min_length=1, max_length=100)], user=Depends(actor)):
