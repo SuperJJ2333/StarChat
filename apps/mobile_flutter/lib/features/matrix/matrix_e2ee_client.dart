@@ -15,6 +15,7 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient {
   MatrixSdkE2eeClient(this.client, {required this.homeserver});
   final Client client;
   final Uri homeserver;
+  Client get sdkClient => client;
   String? _lastRecoveryKey;
 
   /// Recovery key is exposed only to the caller so it can be written to the

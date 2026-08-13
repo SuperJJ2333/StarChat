@@ -14,7 +14,7 @@ class LiuhetongApp extends StatelessWidget {
     final store = SecureSessionStore();
     final api = BusinessApiClient(baseUri: Uri.parse(AppConfig.businessApiBaseUrl), sessionStore: store);
     final matrix = MatrixSdkE2eeClient(Client('liuhetong_mobile', verificationMethods: {KeyVerificationMethod.emoji, KeyVerificationMethod.numbers}), homeserver: Uri.parse(AppConfig.matrixHomeserver));
-    return CupertinoApp(title: '六合通', theme: const CupertinoThemeData(primaryColor: CupertinoColors.systemIndigo, brightness: Brightness.light), home: LoginPage(api: api, onLogin: (username, password) async { await api.login(username: username, password: password, deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}', deviceName: '六合通移动端'); await matrix.login('@$username:matrix.localhost', password); await matrix.sync(); }, destination: (_) => AppHome(api: api)));
+    return CupertinoApp(title: '六合通', theme: const CupertinoThemeData(primaryColor: CupertinoColors.systemIndigo), builder: (context, child) => CupertinoTheme(data: CupertinoThemeData(brightness: MediaQuery.platformBrightnessOf(context), primaryColor: CupertinoColors.systemIndigo), child: child!), home: LoginPage(api: api, onLogin: (username, password) async { await api.login(username: username, password: password, deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}', deviceName: '六合通移动端'); await matrix.login('@$username:matrix.localhost', password); await matrix.sync(); }, destination: (_) => AppHome(api: api, matrix: matrix)));
   }
 }
 final class ClientComposition {

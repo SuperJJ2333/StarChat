@@ -1,0 +1,12 @@
+import 'package:flutter/cupertino.dart';
+import 'matrix_e2ee_client.dart';
+import 'matrix_security_page.dart';
+
+final class MatrixHomePage extends StatefulWidget { const MatrixHomePage({super.key, required this.matrix}); final MatrixSdkE2eeClient matrix; @override State<MatrixHomePage> createState()=>_MatrixHomePageState(); }
+final class _MatrixHomePageState extends State<MatrixHomePage> { bool syncing=false;
+  Future<void> sync() async { if(syncing)return; setState(()=>syncing=true); try{await widget.matrix.sync();}finally{if(mounted)setState(()=>syncing=false);}}
+  List<Widget> roomTiles(BuildContext context) { final rooms=widget.matrix.sdkClient.rooms; if(rooms.isEmpty)return [const CupertinoListTile(leading:Icon(CupertinoIcons.chat_bubble_2),title:Text('暂无房间'),subtitle:Text('登录后将自动同步 Matrix 房间'))]; return rooms.map<Widget>((room)=>CupertinoListTile(leading:const Icon(CupertinoIcons.person_2),title:Text(room.getLocalizedDisplayname()),subtitle:Text(room.lastEvent?.text??'端到端加密消息'),onTap:()=>Navigator.of(context).push(CupertinoPageRoute(builder:(_)=>RoomPage(roomName:room.getLocalizedDisplayname()))))).toList(); }
+  @override void initState(){super.initState();sync();}
+  @override Widget build(BuildContext context)=>CupertinoPageScaffold(navigationBar:CupertinoNavigationBar(middle:const Text('消息'),trailing:CupertinoButton(padding:EdgeInsets.zero,onPressed:syncing?null:sync,child:syncing?const CupertinoActivityIndicator():const Icon(CupertinoIcons.refresh))),child:SafeArea(child:CustomScrollView(slivers:[CupertinoSliverRefreshControl(onRefresh:sync),SliverPadding(padding:const EdgeInsets.fromLTRB(16,12,16,24),sliver:SliverList(delegate:SliverChildListDelegate([CupertinoListSection.insetGrouped(header:const Text('已加入的房间'),children:roomTiles(context)),CupertinoListSection.insetGrouped(children:[CupertinoListTile(leading:const Icon(CupertinoIcons.lock_shield),title:const Text('设备与备份'),onTap:()=>Navigator.of(context).push(CupertinoPageRoute(builder:(_)=>MatrixSecurityPage(matrix:widget.matrix)))),const CupertinoListTile(leading:Icon(CupertinoIcons.phone),title:Text('加密语音'),subtitle:Text('首版支持语音消息'))])])))])));
+}
+final class RoomPage extends StatelessWidget { const RoomPage({super.key,required this.roomName}); final String roomName; @override Widget build(BuildContext context)=>CupertinoPageScaffold(navigationBar:CupertinoNavigationBar(middle:Text(roomName)),child:const SafeArea(child:Center(child:Text('E2EE 房间消息将在此显示')))); }
