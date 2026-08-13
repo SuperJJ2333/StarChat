@@ -4,10 +4,10 @@
 
 ## 自动验证
 
-- `scripts/verify.ps1`：PASS；Matrix Bot 8 项、Business API/Worker 76 项（1 跳过）、Flutter 边界 2 项、AST、单 Alembic head、OpenAPI 和 Compose 渲染全部通过。
+- `scripts/verify.ps1`：PASS；Matrix Bot 8 项、Business API/Worker 78 项（1 跳过）、Flutter 边界 2 项、AST、单 Alembic head、OpenAPI 和 Compose 渲染全部通过。
 - Flutter `analyze`：无问题；Flutter tests：16 项通过。
 - Docker：Business API、Worker、两个 PostgreSQL、Redis、Synapse 均启动；API/Synapse 宿主端口为 8082/8008。
-- 迁移：生产型 PostgreSQL 已升级至 `0014_moments_prefs`；后续 `0015_contact_tags` 由下一次镜像部署自动执行。
+- 迁移：生产型 PostgreSQL 已升级至 `0016_moment_media`。
 
 ## 构建与设备
 
