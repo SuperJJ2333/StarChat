@@ -68,7 +68,7 @@ class MomentsService:
             visible = [
                 self.dto(session, moment) for moment in rows
                 if policy.can_view(actor, moment)
-                and (cutoff is None or moment.created_at >= cutoff)
+                and (cutoff is None or (moment.created_at if moment.created_at.tzinfo else moment.created_at.replace(tzinfo=timezone.utc)) >= cutoff)
                 and (not q or q.casefold() in f"{moment.text} {moment.location or ''}".casefold())
             ]
             if mode == "recommended" and (preference is None or preference.personalized_recommendations):
