@@ -30,11 +30,17 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> withdrawalStatus(String id) => getJson('/wallet/withdrawals/$id');
   Future<Map<String,dynamic>> friends()=>getJson('/friends');
   Future<Map<String,dynamic>> friendRequests()=>getJson('/friends/requests');
+  Future<Map<String,dynamic>> searchUsers(String query)=>getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
+  Future<Map<String,dynamic>> requestFriend(String userId,{String message=''})=>postJson('/friends/requests',{'target_user_id':userId,'message':message},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> acceptFriendRequest(String id)=>postJson('/friends/requests/$id/accept',{},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> rejectFriendRequest(String id)=>postJson('/friends/requests/$id/reject',{},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> momentsFeed({String mode='recommended'})=>getJson('/moments/feed?mode=$mode');
   Future<Map<String,dynamic>> searchMoments(String query)=>getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
   Future<Map<String,dynamic>> publishMoment({required String text,required String visibility,List<String> imageUrls=const []})=>postJson('/moments',{'text':text,'visibility':visibility,'image_urls':imageUrls},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> likeMoment(String id)=>postJson('/moments/$id/likes',{},idempotencyKey:newIdempotencyKey());
   Future<Map<String,dynamic>> commentMoment(String id,String text)=>postJson('/moments/$id/comments',{'text':text},idempotencyKey:newIdempotencyKey());
+  Future<Map<String,dynamic>> momentsPreferences()=>getJson('/moments/preferences');
+  Future<Map<String,dynamic>> updateMomentsPreferences({required String historyRange,required bool personalized})=>putJson('/moments/preferences',{'history_range':historyRange,'personalized_recommendations':personalized});
   Future<Map<String, dynamic>> requestWithdrawal({required String amount, required String address, required String clientOrderId, required String reasonCode}) =>
       postJson('/wallet/withdrawals', {'amount': amount, 'address': address, 'client_order_id': clientOrderId, 'reason_code': reasonCode}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> getJson(String path) async {
@@ -47,6 +53,7 @@ final class BusinessApiClient {
     final response = await _client.post(_uri(path), headers: {'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, if (token != null) 'Authorization': 'Bearer $token'}, body: jsonEncode(body));
     return _decode(response);
   }
+  Future<Map<String,dynamic>> putJson(String path,Map<String,dynamic> body)async{final token=await sessionStore.accessToken();final response=await _client.put(_uri(path),headers:{'Content-Type':'application/json',if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
   Map<String, dynamic> _decode(http.Response response) {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode >= 400) throw StateError(body['error']?['message']?.toString() ?? '业务请求失败');

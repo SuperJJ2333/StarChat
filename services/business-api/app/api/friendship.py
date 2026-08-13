@@ -17,6 +17,8 @@ def create_friendship_router(settings:Settings,factory):
     @router.post('/friends/requests',status_code=201)
     def request(body:RequestBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.request(user,body.target_user_id,body.message,idempotency_key);return {'id':r.id,'status':r.status}
+    @router.get('/friends/requests')
+    def requests(user=Depends(actor)):return {'items':service.requests(user),'next_cursor':None}
     @router.post('/friends/requests/{request_id}/accept')
     def accept(request_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.accept(user,request_id,idempotency_key);return {'id':r.id,'status':r.status}

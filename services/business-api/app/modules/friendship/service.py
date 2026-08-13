@@ -36,6 +36,8 @@ class FriendshipService:
     def list(self,actor):
         with self.factory() as s:
             rows=s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor))).all();ids=[r.user_high_id if r.user_low_id==actor else r.user_low_id for r in rows];users={u.id:u for u in s.scalars(select(User).where(User.id.in_(ids))).all()} if ids else {};return [{'user_id':i,'username':users[i].username} for i in ids if i in users]
+    def requests(self,actor):
+        with self.factory() as s:return [{'id':r.id,'requester_id':r.requester_id,'message':r.message,'status':r.status} for r in s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor,FriendRequest.status=='PENDING').order_by(FriendRequest.created_at.desc())).all()]
     def block(self,actor,target,key):
         with self.factory.begin() as s:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
