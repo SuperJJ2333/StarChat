@@ -39,3 +39,17 @@ async def test_request_accept_list_block_and_search(ctx):
         assert blocked.status_code == 201
         search = await client.get('/api/v1/users/search?q=bob', headers=bearer(settings, 'u1'))
         assert search.json()['items'] == []
+
+@pytest.mark.asyncio
+async def test_reject_update_privacy_and_delete_friend(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        request = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'r2'}, json={'target_user_id': 'u2'})
+        rejected = await client.post(f"/api/v1/friends/requests/{request.json()['id']}/reject", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'reject-1'})
+        assert rejected.json()['status'] == 'REJECTED'
+        request2 = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'r3'}, json={'target_user_id': 'u2'})
+        await client.post(f"/api/v1/friends/requests/{request2.json()['id']}/accept", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'accept-2'})
+        updated = await client.patch('/api/v1/friends/u2', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'profile-1'}, json={'remark': '小波', 'tags': ['同事'], 'moments_permission': 'HIDE_THEIRS'})
+        assert updated.json()['remark'] == '小波'
+        deleted = await client.delete('/api/v1/friends/u2', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'delete-1'})
+        assert deleted.status_code == 204
