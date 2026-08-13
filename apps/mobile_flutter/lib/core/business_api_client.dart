@@ -26,6 +26,7 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> listRedPackets({String? roomId}) => getJson('/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}');
   Future<Map<String, dynamic>> walletBalance() => getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() => getJson('/wallet/deposit-address');
+  Future<Map<String,dynamic>> walletHistory({String? kind})=>getJson('/wallet/transactions${kind==null?'':'?kind=$kind'}');
   Future<Map<String, dynamic>> withdrawalStatus(String id) => getJson('/wallet/withdrawals/$id');
   Future<Map<String,dynamic>> friends()=>getJson('/friends');
   Future<Map<String,dynamic>> friendRequests()=>getJson('/friends/requests');

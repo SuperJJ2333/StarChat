@@ -34,7 +34,13 @@ class WalletService:
         with self.factory() as session:
             row = session.get(Withdrawal, withdrawal_id)
             if row is None or row.user_id != user_id: raise ValueError("withdrawal not found")
-            return {"id": row.id, "status": row.status, "amount": str(row.amount), "address": row.address, "client_order_id": row.client_order_id, "txid": row.txid}
+            return {"id": row.id, "status": row.status, "amount": str(row.amount), "address": row.address, "client_order_id": row.client_order_id, "txid": row.provider_txid}
+    def history(self, user_id: str, kind: str | None = None):
+        with self.factory() as session:
+            deposits = session.scalars(select(Deposit).where(Deposit.user_id == user_id).order_by(Deposit.created_at.desc())).all() if kind in (None,"deposit") else []
+            withdrawals = session.scalars(select(Withdrawal).where(Withdrawal.user_id == user_id).order_by(Withdrawal.created_at.desc())).all() if kind in (None,"withdrawal") else []
+            items=[{"id":r.id,"kind":"deposit","amount":str(r.amount),"status":r.status,"created_at":r.created_at} for r in deposits]+[{"id":r.id,"kind":"withdrawal","amount":str(r.amount),"status":r.status,"created_at":r.created_at} for r in withdrawals]
+            return sorted(items,key=lambda x:x["created_at"],reverse=True)
     def credit_for_test(self,user_id,amount): return self.wallet_ledger.post(entries={user_id:usdt(amount),"PLATFORM_CUSTODY":-usdt(amount)},actor_id="test",reason_code="TEST_CREDIT",idempotency_key=f"test-credit:{user_id}:{amount}",scope="wallet.deposit")
     def handle_deposit_webhook(self,payload,signature):
         if not hmac.compare_digest(self.provider.sign(payload),signature): raise AppError(code="CUSTODY_SIGNATURE_INVALID",message="托管回调签名无效",status_code=401)

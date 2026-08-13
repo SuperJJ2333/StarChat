@@ -35,6 +35,8 @@ def create_wallet_router(settings: Settings, session_factory) -> APIRouter:
         totp.verify(user_id,code)
     @router.get("/balances/me")
     def balance(user_id:str=Depends(actor)): return {"asset":"USDT-TRC20","balance":str(service.usdt_balance(user_id))}
+    @router.get("/transactions")
+    def history(kind:str|None=None,user_id:str=Depends(actor)): return {"items":service.history(user_id,kind),"next_cursor":None}
     @router.post("/withdrawals",status_code=201)
     def request(body:WithdrawalBody,user_id:str=Depends(actor)): return service.request_withdrawal(user_id=user_id,amount=body.amount,address=body.address,client_order_id=body.client_order_id,reason_code=body.reason_code)
     @router.get("/withdrawals/{withdrawal_id}")
