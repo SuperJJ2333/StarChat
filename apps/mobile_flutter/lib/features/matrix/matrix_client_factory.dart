@@ -11,14 +11,20 @@ typedef MatrixClientOpener = Future<Client> Function({
   required String databasePath,
   required String cipher,
 });
+typedef MatrixClientDisposer = Future<void> Function(Client client);
+typedef MatrixDatabaseDeleter = Future<void> Function(String path);
 
 final class MatrixClientFactory {
   MatrixClientFactory({
     required this.sessionStore,
     Future<String> Function()? supportDirectoryPath,
     MatrixClientOpener? opener,
+    MatrixClientDisposer? disposer,
+    MatrixDatabaseDeleter? databaseDeleter,
   })  : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath,
-        opener = opener ?? _openPersistentClient;
+        opener = opener ?? _openPersistentClient,
+        disposer = disposer ?? _disposeClient,
+        databaseDeleter = databaseDeleter ?? _deleteDatabase;
 
   static const clientName = 'liuhetong_mobile';
   static const databaseFileName = 'liuhetong_matrix.sqlite';
@@ -26,6 +32,8 @@ final class MatrixClientFactory {
   final SecureSessionStore sessionStore;
   final Future<String> Function() supportDirectoryPath;
   final MatrixClientOpener opener;
+  final MatrixClientDisposer disposer;
+  final MatrixDatabaseDeleter databaseDeleter;
 
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
@@ -37,8 +45,26 @@ final class MatrixClientFactory {
     );
   }
 
+  Future<Client> reset(Client client) async {
+    final directory = await supportDirectoryPath();
+    final databasePath = p.join(directory, databaseFileName);
+    await disposer(client);
+    await databaseDeleter(databasePath);
+    await sessionStore.clearMatrixDatabaseKey();
+    return create();
+  }
+
   static Future<String> _defaultSupportPath() async =>
       (await getApplicationSupportDirectory()).path;
+
+  static Future<void> _disposeClient(Client client) => client.dispose();
+
+  static Future<void> _deleteDatabase(String path) async {
+    final databaseFactory = createDatabaseFactoryFfi(
+      ffiInit: SQfLiteEncryptionHelper.ffiInit,
+    );
+    await databaseFactory.deleteDatabase(path);
+  }
 
   static Future<Client> _openPersistentClient({
     required String clientName,

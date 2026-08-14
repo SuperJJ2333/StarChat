@@ -21,10 +21,12 @@ Future<void> main() async {
     baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
     sessionStore: store,
   );
-  final sdkClient = await MatrixClientFactory(sessionStore: store).create();
+  final matrixFactory = MatrixClientFactory(sessionStore: store);
+  final sdkClient = await matrixFactory.create();
   final matrix = MatrixSdkE2eeClient(
     sdkClient,
     homeserver: Uri.parse(AppConfig.matrixHomeserver),
+    resetClient: matrixFactory.reset,
   );
   final session = SessionBootstrapController(business: api, matrix: matrix);
   final gate = SessionGate(
@@ -65,14 +67,14 @@ final class LiuhetongApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoApp(
-    title: '六合通',
-    theme: WeChatTheme.build(Brightness.light),
-    builder: (context, child) => CupertinoTheme(
-      data: WeChatTheme.build(MediaQuery.platformBrightnessOf(context)),
-      child: child!,
-    ),
-    home: home,
-  );
+        title: '六合通',
+        theme: WeChatTheme.build(Brightness.light),
+        builder: (context, child) => CupertinoTheme(
+          data: WeChatTheme.build(MediaQuery.platformBrightnessOf(context)),
+          child: child!,
+        ),
+        home: home,
+      );
 }
 
 final class ClientComposition {

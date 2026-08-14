@@ -1,13 +1,26 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
 
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
-  @override Future<void> delete(String key) async => values.remove(key);
-  @override Future<String?> read(String key) async => values[key];
-  @override Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+}
+
+final class LogoutTrackingClient extends Client {
+  LogoutTrackingClient(super.name);
+
+  var logoutCalls = 0;
+
+  @override
+  Future<void> logout() async => logoutCalls++;
 }
 
 void main() {
@@ -19,7 +32,8 @@ void main() {
     final factory = MatrixClientFactory(
       sessionStore: secureStore,
       supportDirectoryPath: () async => '/support',
-      opener: ({required clientName, required databasePath, required cipher}) async {
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
         openedName = clientName;
         openedPath = databasePath.replaceAll('\\', '/');
         openedCipher = cipher;
@@ -34,5 +48,60 @@ void main() {
     expect(openedPath, '/support/liuhetong_matrix.sqlite');
     expect(openedCipher, isNotEmpty);
     expect(await secureStore.matrixDatabaseKey(), openedCipher);
+  });
+
+  test('explicit logout resets the persistent client before it can be reused',
+      () async {
+    final original = LogoutTrackingClient('original');
+    final replacement = LogoutTrackingClient('replacement');
+    Client? resetArgument;
+    final matrix = MatrixSdkE2eeClient(
+      original,
+      homeserver: Uri.parse('http://matrix.localhost'),
+      resetClient: (client) async {
+        resetArgument = client;
+        return replacement;
+      },
+    );
+
+    await matrix.logout();
+
+    expect(original.logoutCalls, 1);
+    expect(resetArgument, same(original));
+    expect(matrix.sdkClient, same(replacement));
+  });
+
+  test('reset closes and deletes the old database and rotates its cipher key',
+      () async {
+    final values = <String, String>{};
+    final secureStore =
+        SecureSessionStore(MemoryStore()..values.addAll(values));
+    final oldClient = LogoutTrackingClient('old');
+    final newClient = LogoutTrackingClient('new');
+    final events = <String>[];
+    final factory = MatrixClientFactory(
+      sessionStore: secureStore,
+      supportDirectoryPath: () async => '/support',
+      disposer: (client) async => events.add('dispose:${client.clientName}'),
+      databaseDeleter: (path) async =>
+          events.add('delete:${path.replaceAll('\\', '/')}'),
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
+        events.add('open:$clientName');
+        return newClient;
+      },
+    );
+    final oldKey = await secureStore.matrixDatabaseKey();
+
+    final reset = await factory.reset(oldClient);
+    final newKey = await secureStore.matrixDatabaseKey();
+
+    expect(reset, same(newClient));
+    expect(events, [
+      'dispose:old',
+      'delete:/support/liuhetong_matrix.sqlite',
+      'open:liuhetong_mobile',
+    ]);
+    expect(newKey, isNot(oldKey));
   });
 }
