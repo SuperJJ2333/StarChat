@@ -13,6 +13,11 @@ from app.modules.redpacket.service import RedPacketService
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 from app.modules.wallet.service import WalletService
 from app.modules.identity.registration import VerificationTokenCodec
+from app.modules.identity.provisioning import MatrixProvisionTask
+from app.integrations.matrix_admin import (
+    MatrixCredentialCodec,
+    SynapseMatrixAdminGateway,
+)
 from integrations.email_sender import SmtpConfig, SmtpEmailSender
 from tasks.identity import IdentityEmailVerificationTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
@@ -27,6 +32,8 @@ def build_identity_handlers(
     verification_secret: str,
     public_base_url: str,
     email_sender,
+    matrix_gateway=None,
+    matrix_provision_secret: str | None = None,
 ) -> dict:
     task = IdentityEmailVerificationTask(
         session_factory,
@@ -34,7 +41,16 @@ def build_identity_handlers(
         public_base_url=public_base_url,
         email_sender=email_sender,
     )
-    return {"identity.email": task}
+    handlers = {"identity.email": task}
+    if matrix_gateway is not None and matrix_provision_secret is not None:
+        handlers["identity.matrix"] = MatrixProvisionTask(
+            session_factory,
+            gateway=matrix_gateway,
+            credential_codec=MatrixCredentialCodec(
+                matrix_provision_secret.encode("utf-8")
+            ),
+        )
+    return handlers
 
 
 def main() -> None:
@@ -48,6 +64,11 @@ def main() -> None:
     wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service)
     moments_moderation = MomentsModerationTask(session_factory)
     email_sender = SmtpEmailSender(SmtpConfig.from_environment())
+    matrix_gateway = SynapseMatrixAdminGateway(
+        homeserver_url=os.getenv("MATRIX_HOMESERVER_URL", "http://synapse:8008"),
+        server_name=os.getenv("MATRIX_SERVER_NAME", "matrix.localhost"),
+        admin_access_token=os.getenv("SYNAPSE_ADMIN_ACCESS_TOKEN", ""),
+    )
     identity_handlers = build_identity_handlers(
         session_factory=session_factory,
         verification_secret=(
@@ -59,6 +80,11 @@ def main() -> None:
             "http://localhost:8082",
         ),
         email_sender=email_sender,
+        matrix_gateway=matrix_gateway,
+        matrix_provision_secret=os.getenv(
+            "MATRIX_PROVISION_SECRET",
+            "development-matrix-provision-secret",
+        ),
     )
     stop_event = Event()
 

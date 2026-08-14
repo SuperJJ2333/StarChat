@@ -172,6 +172,10 @@ services:
       SMTP_FROM: ${SMTP_FROM:-六合通 <noreply@localhost>}
       SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
       EMAIL_VERIFICATION_PUBLIC_BASE_URL: ${EMAIL_VERIFICATION_PUBLIC_BASE_URL:-http://localhost:8082}
+      MATRIX_HOMESERVER_URL: ${SYNAPSE_INTERNAL_BASEURL:-http://synapse:8008/}
+      MATRIX_SERVER_NAME: ${MATRIX_SERVER_NAME:-matrix.localhost}
+      SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
+      MATRIX_PROVISION_SECRET: ${MATRIX_PROVISION_SECRET:-change-this-matrix-provision-secret}
       WORKER_ID: ${BUSINESS_WORKER_ID:-business-worker-1}
       WORKER_HEARTBEAT_PATH: /tmp/liuhetong-worker-heartbeat
     healthcheck:

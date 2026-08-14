@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import create_engine
 import httpx
 
 from app.core.database import Base, create_session_factory
+from app.core.errors import AppError
 from app.core.outbox import OutboxMessage
 from app.integrations.matrix_admin import MatrixCredentialCodec, SynapseMatrixAdminGateway
 from app.modules.identity.enums import AccountStatus
@@ -51,7 +53,7 @@ def test_matrix_provisioning_activates_verified_user_idempotently() -> None:
     message = OutboxMessage(
         id="event-1",
         topic="identity.matrix",
-        event_type="identity.matrix_provision.requested",
+        event_type="identity.matrix.provision.requested",
         aggregate_type="user",
         aggregate_id="user-1",
         payload={"user_id": "user-1"},
@@ -92,3 +94,95 @@ def test_synapse_gateway_uses_idempotent_admin_put() -> None:
     assert request.method == "PUT"
     assert request.headers["Authorization"] == "Bearer admin-token"
     assert request.url.path.endswith("/_synapse/admin/v2/users/@alice:matrix.localhost")
+
+
+def test_synapse_gateway_treats_existing_mxid_as_success() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"name": "@alice:matrix.localhost"})
+
+    gateway = SynapseMatrixAdminGateway(
+        homeserver_url="http://synapse:8008",
+        server_name="matrix.localhost",
+        admin_access_token="admin-token",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert gateway.ensure_user("alice", "generated-password") == "@alice:matrix.localhost"
+    assert [request.method for request in requests] == ["PUT"]
+
+
+def test_synapse_gateway_queries_same_mxid_after_unknown_put_timeout() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "PUT":
+            raise httpx.ReadTimeout("unknown create result", request=request)
+        return httpx.Response(200, json={"name": "@alice:matrix.localhost"})
+
+    gateway = SynapseMatrixAdminGateway(
+        homeserver_url="http://synapse:8008",
+        server_name="matrix.localhost",
+        admin_access_token="admin-token",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    assert gateway.ensure_user("alice", "generated-password") == "@alice:matrix.localhost"
+    assert [request.method for request in requests] == ["PUT", "GET"]
+    assert requests[0].url == requests[1].url
+
+
+def test_synapse_gateway_reports_unknown_result_only_after_lookup() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "PUT":
+            raise httpx.ReadTimeout("unknown create result", request=request)
+        return httpx.Response(404, json={"errcode": "M_NOT_FOUND"})
+
+    gateway = SynapseMatrixAdminGateway(
+        homeserver_url="http://synapse:8008",
+        server_name="matrix.localhost",
+        admin_access_token="admin-token",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        gateway.ensure_user("alice", "generated-password")
+
+    assert exc_info.value.code == "MATRIX_PROVISION_RESULT_UNKNOWN"
+    assert [request.method for request in requests] == ["PUT", "GET"]
+
+
+def test_matrix_provisioning_rejects_event_identity_mismatch() -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    gateway = FakeMatrixGateway()
+    task = MatrixProvisionTask(
+        factory,
+        gateway=gateway,
+        credential_codec=MatrixCredentialCodec(b"test-matrix-provision-secret"),
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        task(
+            OutboxMessage(
+                id="event-mismatch",
+                topic="identity.matrix",
+                event_type="identity.matrix.provision.requested",
+                aggregate_type="user",
+                aggregate_id="user-1",
+                payload={"user_id": "user-2"},
+                headers={},
+                attempt_count=1,
+            )
+        )
+
+    assert exc_info.value.code == "MATRIX_EVENT_INVALID"
+    assert gateway.calls == []
+    engine.dispose()

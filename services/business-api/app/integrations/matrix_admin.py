@@ -41,16 +41,40 @@ class SynapseMatrixAdminGateway:
     def ensure_user(self, localpart: str, password: str) -> str:
         matrix_user_id = f"@{localpart}:{self._server_name}"
         path_user_id = quote(matrix_user_id, safe="")
-        response = self._client.put(
-            f"{self._homeserver_url}/_synapse/admin/v2/users/{path_user_id}",
-            headers={"Authorization": f"Bearer {self._admin_access_token}"},
-            json={
-                "password": password,
-                "admin": False,
-                "deactivated": False,
-                "displayname": localpart,
-            },
-        )
+        url = f"{self._homeserver_url}/_synapse/admin/v2/users/{path_user_id}"
+        headers = {"Authorization": f"Bearer {self._admin_access_token}"}
+        try:
+            response = self._client.put(
+                url,
+                headers=headers,
+                json={
+                    "password": password,
+                    "admin": False,
+                    "deactivated": False,
+                    "displayname": localpart,
+                },
+            )
+        except httpx.TimeoutException:
+            try:
+                response = self._client.get(url, headers=headers)
+            except httpx.HTTPError:
+                raise AppError(
+                    code="MATRIX_PROVISION_RESULT_UNKNOWN",
+                    message="Matrix 账号创建结果未知",
+                    status_code=503,
+                ) from None
+            if response.status_code != 200:
+                raise AppError(
+                    code="MATRIX_PROVISION_RESULT_UNKNOWN",
+                    message="Matrix 账号创建结果未知",
+                    status_code=503,
+                )
+        except httpx.HTTPError:
+            raise AppError(
+                code="MATRIX_PROVISION_FAILED",
+                message="Matrix 账号创建暂时失败",
+                status_code=502,
+            ) from None
         if response.status_code not in (200, 201):
             raise AppError(
                 code="MATRIX_PROVISION_FAILED",

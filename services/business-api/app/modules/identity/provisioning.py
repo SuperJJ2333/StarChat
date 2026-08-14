@@ -23,13 +23,23 @@ class MatrixProvisionTask:
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
 
     def __call__(self, message) -> None:
-        if message.event_type != "identity.matrix_provision.requested":
+        if message.event_type != "identity.matrix.provision.requested":
             raise AppError(
                 code="MATRIX_EVENT_UNSUPPORTED",
                 message="unsupported Matrix provisioning event",
                 status_code=400,
             )
-        user_id = message.payload["user_id"]
+        user_id = message.payload.get("user_id")
+        if (
+            not user_id
+            or message.aggregate_type != "user"
+            or message.aggregate_id != user_id
+        ):
+            raise AppError(
+                code="MATRIX_EVENT_INVALID",
+                message="Matrix provisioning event does not match its aggregate",
+                status_code=400,
+            )
         with self._session_factory() as session:
             user = session.get(User, user_id)
             if user is None:
