@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -19,6 +29,18 @@ class User(Base):
     status: Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False)
     matrix_user_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    nickname: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=lambda context: context.get_current_parameters()["username"],
+    )
+    signature: Mapped[str | None] = mapped_column(String(140))
+    avatar_object_key: Mapped[str | None] = mapped_column(String(512))
+    profile_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda context: context.get_current_parameters()["created_at"],
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -42,13 +64,34 @@ class Invitation(Base):
 
 class EmailVerificationChallenge(Base):
     __tablename__ = "email_verification_challenges"
+    __table_args__ = (
+        Index(
+            "uq_email_verification_registration_session_hash",
+            "registration_session_hash",
+            unique=True,
+            postgresql_where=text("consumed_at IS NULL AND invalidated_at IS NULL"),
+            sqlite_where=text("consumed_at IS NULL AND invalidated_at IS NULL"),
+        ),
+        Index(
+            "ix_email_verification_active_challenge",
+            "user_id",
+            "expires_at",
+            postgresql_where=text("consumed_at IS NULL AND invalidated_at IS NULL"),
+            sqlite_where=text("consumed_at IS NULL AND invalidated_at IS NULL"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    registration_session_hash: Mapped[str | None] = mapped_column(String(64))
+    code_hash: Mapped[str | None] = mapped_column(String(64))
+    link_token_hash: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resend_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+BUSINESS_API_ROOT = PROJECT_ROOT / "services" / "business-api"
+
+
+def _alembic(*arguments: str) -> str:
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(BUSINESS_API_ROOT)
+    completed = subprocess.run(
+        [sys.executable, "-m", "alembic", *arguments],
+        cwd=BUSINESS_API_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout
+
+
+def _normalized_sql(sql: str) -> str:
+    return " ".join(sql.lower().split())
+
+
+def test_registration_profile_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0017_registration_profile (head)"
+
+
+def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
+    sql = _normalized_sql(_alembic("upgrade", "head", "--sql"))
+
+    add_nickname = sql.index("alter table users add column nickname varchar(64)")
+    add_profile_updated_at = sql.index(
+        "alter table users add column profile_updated_at timestamp with time zone"
+    )
+    backfill = sql.index(
+        "update users set nickname = username, profile_updated_at = created_at"
+    )
+    require_nickname = sql.index("alter table users alter column nickname set not null")
+    require_profile_updated_at = sql.index(
+        "alter table users alter column profile_updated_at set not null"
+    )
+
+    assert add_nickname < backfill < require_nickname
+    assert add_profile_updated_at < backfill < require_profile_updated_at
+    assert "alter table users add column signature varchar(140)" in sql
+    assert "alter table users add column avatar_object_key varchar(512)" in sql
+    assert (
+        "alter table email_verification_challenges add column "
+        "registration_session_hash varchar(64)"
+    ) in sql
+    assert "add column code_hash varchar(64)" in sql
+    assert "add column link_token_hash varchar(64)" in sql
+    assert "add column resend_available_at timestamp with time zone" in sql
+    assert "add column invalidated_at timestamp with time zone" in sql
+    assert "create unique index uq_email_verification_registration_session_hash" in sql
+    assert "create index ix_email_verification_active_challenge" in sql
+
+
+def test_registration_profile_downgrade_removes_only_new_objects() -> None:
+    sql = _normalized_sql(
+        _alembic(
+            "downgrade",
+            "0017_registration_profile:0016_moment_media",
+            "--sql",
+        )
+    )
+
+    assert "drop table users" not in sql
+    assert "drop table email_verification_challenges" not in sql
+    assert "drop column token_hash" not in sql
+    assert "drop column nickname" in sql
+    assert "drop column registration_session_hash" in sql
