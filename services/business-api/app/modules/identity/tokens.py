@@ -104,6 +104,9 @@ class TokenService:
             device = session.get(Device, family.device_id)
             if device is None or device.revoked_at is not None:
                 self._invalid("REFRESH_TOKEN_INVALID", "刷新令牌无效", 401)
+            user = session.get(User, family.user_id)
+            if user is None or user.status.value != "ACTIVE":
+                self._invalid("ACCOUNT_NOT_ACTIVE", "账号不可用", 403)
             replacement_value = self._new_refresh_token()
             replacement = self._refresh_record(family.id, replacement_value, now)
             record.consumed_at = now

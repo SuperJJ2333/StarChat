@@ -98,6 +98,21 @@ def test_device_revocation_revokes_its_token_families(identity_components) -> No
         assert session.get(Device, pair.device_id).revoked_at is not None
 
 
+def test_suspended_user_cannot_rotate_refresh_token(identity_components) -> None:
+    factory, tokens, _, _, _ = identity_components
+    pair = tokens.issue_pair(
+        user_id="user-1", device_key="android-2", display_name="Alice Android"
+    )
+    with factory.begin() as session:
+        session.get(User, "user-1").status = AccountStatus.SUSPENDED
+
+    with pytest.raises(AppError) as exc_info:
+        tokens.rotate(pair.refresh_token)
+
+    assert exc_info.value.code == "ACCOUNT_NOT_ACTIVE"
+    assert exc_info.value.status_code == 403
+
+
 def test_password_reset_revokes_sessions_and_adds_24_hour_withdrawal_hold(
     identity_components,
 ) -> None:
