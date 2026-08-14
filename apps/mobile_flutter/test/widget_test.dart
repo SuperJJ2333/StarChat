@@ -6,7 +6,9 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_page.dart';
 void main() {
   testWidgets('renders product identity', (tester) async {
-    await tester.pumpWidget(const LiuhetongApp());
+    await tester.pumpWidget(const LiuhetongApp(
+      home: CupertinoPageScaffold(child: Center(child: Text('六合通'))),
+    ));
     expect(find.text('六合通'), findsOneWidget);
   });
   testWidgets('renders login form', (tester) async {

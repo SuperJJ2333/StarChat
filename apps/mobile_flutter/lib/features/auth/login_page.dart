@@ -4,9 +4,10 @@ import 'login_controller.dart';
 import '../../ui/components/wechat_button.dart';
 
 final class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.api, this.onLogin, this.destination});
+  const LoginPage({super.key, required this.api, this.onLogin, this.onAuthenticated, this.destination});
   final BusinessApiClient api;
   final Future<void> Function(String username, String password)? onLogin;
+  final Future<void> Function()? onAuthenticated;
   final WidgetBuilder? destination;
   @override State<LoginPage> createState() => _LoginPageState();
 }
@@ -26,7 +27,14 @@ final class _LoginPageState extends State<LoginPage> with SingleTickerProviderSt
     final controller=LoginController(operation:(user,secret) async { if(widget.onLogin!=null){await widget.onLogin!(user,secret);}else{await widget.api.login(username:user,password:secret,deviceKey:'flutter-${DateTime.now().millisecondsSinceEpoch}',deviceName:'六合通移动端');} });
     try {
       final success=await controller.submit(username,password);
-      if (success&&mounted) Navigator.of(context).pushReplacement(CupertinoPageRoute(builder: widget.destination ?? (_) => const _LoginSuccessPage()));
+      if (success&&mounted) {
+        await widget.onAuthenticated?.call();
+        if (widget.destination != null && mounted) {
+          Navigator.of(context).pushReplacement(CupertinoPageRoute(builder: widget.destination!));
+        } else if (widget.onAuthenticated == null && mounted) {
+          Navigator.of(context).pushReplacement(CupertinoPageRoute(builder: (_) => const _LoginSuccessPage()));
+        }
+      }
       if (!success&&mounted) setState(()=>_error=controller.state.message);
     } catch (error) { if (mounted) setState(() => _error = '服务暂时不可用，请稍后重试'); }
     finally { controller.dispose(); if (mounted) setState(() => _loading = false); }
