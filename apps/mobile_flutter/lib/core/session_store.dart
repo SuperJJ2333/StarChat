@@ -31,21 +31,24 @@ final class StoredBusinessSession {
     required this.version,
     required this.accessToken,
     required this.refreshToken,
+    this.matrixUserId,
   });
 
   final int version;
   final String accessToken;
   final String refreshToken;
+  final String? matrixUserId;
 
   @override
   bool operator ==(Object other) =>
       other is StoredBusinessSession &&
       other.version == version &&
       other.accessToken == accessToken &&
-      other.refreshToken == refreshToken;
+      other.refreshToken == refreshToken &&
+      other.matrixUserId == matrixUserId;
 
   @override
-  int get hashCode => Object.hash(version, accessToken, refreshToken);
+  int get hashCode => Object.hash(version, accessToken, refreshToken, matrixUserId);
 }
 
 final class SecureSessionStore {
@@ -63,6 +66,7 @@ final class SecureSessionStore {
   Future<void> saveSession({
     required String accessToken,
     required String refreshToken,
+    String? matrixUserId,
   }) =>
       _storage.write(
         _sessionKey,
@@ -70,6 +74,7 @@ final class SecureSessionStore {
           'version': 1,
           'access_token': accessToken,
           'refresh_token': refreshToken,
+          if (matrixUserId != null) 'matrix_user_id': matrixUserId,
         }),
       );
 
@@ -87,6 +92,7 @@ final class SecureSessionStore {
         version: 1,
         accessToken: value['access_token'] as String,
         refreshToken: value['refresh_token'] as String,
+        matrixUserId: value['matrix_user_id']?.toString(),
       );
     }
     return _migrateLegacySession();
@@ -108,6 +114,7 @@ final class SecureSessionStore {
       version: 1,
       accessToken: access,
       refreshToken: refresh,
+      matrixUserId: null,
     );
   }
 

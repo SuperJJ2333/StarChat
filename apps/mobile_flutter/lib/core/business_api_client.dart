@@ -15,7 +15,13 @@ final class BusinessApiException implements Exception {
 
 enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 
-final class BusinessApiClient {
+abstract interface class BusinessSessionGateway {
+  Future<BusinessSessionRestore> restoreSession();
+  Future<String?> currentMatrixUserId();
+  Future<void> logout();
+}
+
+final class BusinessApiClient implements BusinessSessionGateway {
   BusinessApiClient({required this.baseUri, required this.sessionStore, http.Client? client}) : _client = client ?? http.Client();
   final Uri baseUri;
   final SecureSessionStore sessionStore;
@@ -26,10 +32,10 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> login({required String username, required String password, required String deviceKey, required String deviceName}) async {
     final response = await _client.post(_uri('/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'device_key': deviceKey, 'device_name': deviceName}));
     final body = _decode(response);
-    await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String);
+    await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String, matrixUserId: '@$username:matrix.localhost');
     return body;
   }
-  Future<BusinessSessionRestore> restoreSession() async {
+  @override Future<BusinessSessionRestore> restoreSession() async {
     final stored = await sessionStore.session();
     if (stored == null) return BusinessSessionRestore.absent;
     try {
@@ -65,14 +71,16 @@ final class BusinessApiClient {
       version: 1,
       accessToken: body['access_token'] as String,
       refreshToken: body['refresh_token'] as String,
+      matrixUserId: stored.matrixUserId,
     );
     await sessionStore.saveSession(
       accessToken: replacement.accessToken,
       refreshToken: replacement.refreshToken,
+      matrixUserId: replacement.matrixUserId,
     );
     return replacement;
   }
-  Future<void> logout() async {
+  @override Future<void> logout() async {
     final stored = await sessionStore.session();
     try {
       if (stored != null) {
@@ -94,6 +102,8 @@ final class BusinessApiClient {
     final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
     return payload is Map<String, dynamic> ? payload['sub']?.toString() : null;
   }
+  @override Future<String?> currentMatrixUserId() async =>
+      (await sessionStore.session())?.matrixUserId;
   Future<Map<String, dynamic>> caibiBalance() => getJson('/ledger/balances/me');
   Future<Map<String, dynamic>> transferCaibi(String receiverId, String amount) =>
       postJson('/ledger/transfers', {'receiver_id': receiverId, 'amount': amount}, idempotencyKey: newIdempotencyKey());

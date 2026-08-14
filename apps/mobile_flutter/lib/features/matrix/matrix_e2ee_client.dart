@@ -1,13 +1,16 @@
 import 'package:matrix/matrix.dart';
 import 'dart:typed_data';
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
-abstract interface class MatrixE2eeClient {
+abstract interface class MatrixSessionGateway {
   bool get isLoggedIn;
   String? get userId;
   String? get deviceId;
-  Future<void> login(String userId, String password);
   Future<void> sync();
   Future<void> logout();
+}
+
+abstract interface class MatrixE2eeClient implements MatrixSessionGateway {
+  Future<void> login(String userId, String password);
   Future<void> verifyDevice(String deviceId);
   Future<void> backupKeysToEncryptedStore();
   Future<void> initializeCrossSigning({required String recoveryKey});
