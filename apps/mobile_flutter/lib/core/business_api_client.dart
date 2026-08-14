@@ -3,6 +3,14 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 
+final class BusinessApiException implements Exception {
+  const BusinessApiException({required this.statusCode, required this.code, required this.message});
+  final int statusCode;
+  final String code;
+  final String message;
+  @override String toString() => message;
+}
+
 final class BusinessApiClient {
   BusinessApiClient({required this.baseUri, required this.sessionStore, http.Client? client}) : _client = client ?? http.Client();
   final Uri baseUri;
@@ -63,7 +71,13 @@ final class BusinessApiClient {
   Future<Map<String,dynamic>> putJson(String path,Map<String,dynamic> body)async{final token=await sessionStore.accessToken();final response=await _client.put(_uri(path),headers:{'Content-Type':'application/json',if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
   Map<String, dynamic> _decode(http.Response response) {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode >= 400) throw StateError(body['error']?['message']?.toString() ?? '业务请求失败');
+    if (response.statusCode >= 400) {
+      throw BusinessApiException(
+        statusCode: response.statusCode,
+        code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
+        message: body['error']?['message']?.toString() ?? '业务请求失败',
+      );
+    }
     return body;
   }
 }

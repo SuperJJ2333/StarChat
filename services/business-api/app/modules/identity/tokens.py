@@ -62,6 +62,7 @@ class TokenService:
                 device.display_name = display_name
                 device.last_seen_at = now
                 device.revoked_at = None
+            session.flush()
             family = RefreshTokenFamily(
                 id=str(uuid4()),
                 user_id=user_id,
@@ -69,6 +70,7 @@ class TokenService:
                 created_at=now,
             )
             session.add(family)
+            session.flush()
             refresh_value = self._new_refresh_token()
             session.add(self._refresh_record(family.id, refresh_value, now))
             return self._pair(user_id, device.id, family.id, refresh_value, now)

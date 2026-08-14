@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
@@ -20,6 +20,9 @@ from app.modules.identity.tokens import TokenService
 @pytest.fixture()
 def identity_components():
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     now = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)

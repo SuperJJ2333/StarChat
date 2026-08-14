@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'package:http/http.dart' as http;
+import 'package:liuhetong_mobile/core/business_api_client.dart';
 
 void main() {
   test('network failures are retried up to three attempts', () async {
@@ -15,6 +16,13 @@ void main() {
     var attempts=0;
     final controller=LoginController(operation:(_,__) async { attempts++; throw const LoginAuthenticationException(); },delay:(_)=>Future.value());
     await controller.submit('user','wrong');
+    expect(attempts,1);
+    expect(controller.state.message,'用户名或密码错误');
+  });
+  test('business API 401 is shown as username or password error', () async {
+    var attempts=0;
+    final controller=LoginController(operation:(_,__) async {attempts++;throw const BusinessApiException(statusCode:401,code:'CREDENTIALS_INVALID',message:'用户名或密码错误');},delay:(_)=>Future.value());
+    await controller.submit('missing','wrong');
     expect(attempts,1);
     expect(controller.state.message,'用户名或密码错误');
   });
