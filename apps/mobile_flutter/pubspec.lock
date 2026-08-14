@@ -230,6 +230,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.0.0"
+  flutter_olm:
+    dependency: "direct main"
+    description:
+      name: flutter_olm
+      sha256: "5e6211af8cba1abf7d1f92e543f6d573dfe6017fe4742e0d04ba84beab47f940"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
+  flutter_openssl_crypto:
+    dependency: "direct main"
+    description:
+      name: flutter_openssl_crypto
+      sha256: "293b4fcda13ab0710645a16e82f3d5b7de19bfc0ab2d06bcdb87637222eda5e1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.0"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:

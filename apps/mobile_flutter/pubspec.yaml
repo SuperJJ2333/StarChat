@@ -19,6 +19,8 @@ dependencies:
   path: 1.9.1
   sqflite_common_ffi: 2.3.6
   sqlcipher_flutter_libs: 0.6.8
+  flutter_olm: ^2.0.0
+  flutter_openssl_crypto: ^0.5.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
