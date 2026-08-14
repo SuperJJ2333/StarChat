@@ -28,7 +28,7 @@ STARTTLS 与隐式 SSL 互斥。`SMTP_PASSWORD` 只能由部署环境或 Secret 
 
 ## Matrix 自动开户
 
-Worker 必须配置：
+Worker 与 Business API 必须配置：
 
 - `MATRIX_HOMESERVER_URL`：Compose 内使用 `http://synapse:8008/`。
 - `MATRIX_SERVER_NAME`：必须与 Synapse 的 `server_name` 一致。
@@ -38,6 +38,21 @@ Worker 必须配置：
 Worker 使用规范化 Business username 生成稳定 localpart，并以幂等 `PUT /_synapse/admin/v2/users/{mxid}` 创建账号。若 PUT 超时，必须先对完全相同的 MXID 执行 GET：查到用户即按成功处理；无法确认时返回 `MATRIX_PROVISION_RESULT_UNKNOWN`，保留 Outbox 供重试。成功后通过 Identity 公共任务接口原子写入 `matrix_user_id` 并将账号置为 `ACTIVE`。
 
 开户密码只在 Worker 请求内存中派生，不写入数据库、Outbox、审计或日志。管理员 Token 与派生 secret 也不得输出到日志。
+
+## Matrix 一次性登录令牌
+
+Business API 通过 Compose 将 `SYNAPSE_ADMIN_ACCESS_TOKEN` 注入为 `BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN`，并使用以下配置：
+
+- `BUSINESS_MATRIX_HOMESERVER_URL`：Synapse Admin API 内部地址。
+- `BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL`：返回给客户端的公开 homeserver 地址。
+- `BUSINESS_MATRIX_SERVER_NAME`：与 Synapse `server_name` 一致。
+- `BUSINESS_MATRIX_LOGIN_TOKEN_EXPIRES_IN`：固定 60 秒，必须与 Synapse `login_via_existing_session.token_timeout: 1m` 一致。
+
+受认证的 `POST /api/v1/auth/matrix-login-token` 只读取 Business access token 的 `sub`，再从 Identity 用户记录取得绑定 MXID；请求方不能提交或覆盖目标 MXID。接口返回 `login_token`、`homeserver`、`expires_in`，Token 不写数据库、Outbox、审计 details 或日志。审计仅记录 actor、action、result 与稳定 reason code。
+
+Synapse v1.132 的 Admin `POST /_synapse/admin/v1/users/{mxid}/login` 返回的是短期代理 access token，而不是可供 `m.login.token` 使用的令牌。Business API 随即用该短期代理凭证调用 `POST /_matrix/client/v1/login/get_token`，只把第二步返回的 `login_token` 交给客户端；两个上游 Token 都不得记录或持久化。
+
+客户端必须立即以 Matrix `m.login.token` 使用该 Token；Token 使用一次或到期后失效。Synapse 拒绝签发时 Business API 返回稳定错误码 `MATRIX_LOGIN_TOKEN_FAILED`，不得把 Synapse 响应或 Token 写入错误文本。
 
 ## 排查
 

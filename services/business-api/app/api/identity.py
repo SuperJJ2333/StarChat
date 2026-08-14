@@ -9,6 +9,7 @@ from app.core.errors import AppError
 from app.core.rate_limits import RateLimiter
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.invitations import InvitationService
+from app.modules.identity.matrix_login import MatrixLoginTokenService
 from app.modules.identity.models import User
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
@@ -79,7 +80,19 @@ class TokenResponse(BaseModel):
     expires_in: int = 900
 
 
-def create_identity_router(settings: Settings, session_factory, rate_limiter: RateLimiter) -> APIRouter:
+class MatrixLoginTokenResponse(BaseModel):
+    login_token: str
+    homeserver: str
+    expires_in: int
+
+
+def create_identity_router(
+    settings: Settings,
+    session_factory,
+    rate_limiter: RateLimiter,
+    *,
+    matrix_gateway,
+) -> APIRouter:
     router = APIRouter(tags=["identity"])
     password_hasher = PasswordHasher()
     invitation_service = InvitationService(session_factory)
@@ -109,6 +122,12 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
         token_codec=reset_codec,
     )
     audit = AuditWriter(session_factory)
+    matrix_login = MatrixLoginTokenService(
+        session_factory,
+        gateway=matrix_gateway,
+        public_homeserver_url=settings.matrix_public_homeserver_url,
+        expires_in=settings.matrix_login_token_expires_in,
+    )
 
     def record_audit(
         request: Request,
@@ -117,13 +136,14 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
         subject_id: str,
         action: str,
         reason_code: str,
+        result: str = "SUCCESS",
     ) -> None:
         audit.record(
             actor_id=actor_id,
             subject_type="user",
             subject_id=subject_id,
             action=action,
-            result="SUCCESS",
+            result=result,
             reason_code=reason_code,
             trace_id=getattr(request.state, "trace_id", "unknown"),
             source_ip=request.client.host if request.client else None,
@@ -255,6 +275,43 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
         rate_limiter.hit("auth:refresh", limit=60, window_seconds=60)
         pair = tokens.rotate(body.refresh_token)
         return TokenResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)
+
+    @router.post(
+        "/auth/matrix-login-token",
+        response_model=MatrixLoginTokenResponse,
+    )
+    async def matrix_login_token(
+        request: Request,
+        claims: Annotated[dict, Depends(current_claims)],
+    ) -> MatrixLoginTokenResponse:
+        user_id = claims["sub"]
+        rate_limiter.hit(
+            f"auth:matrix-login-token:{user_id}", limit=20, window_seconds=60
+        )
+        try:
+            result = matrix_login.issue(user_id)
+        except AppError as exc:
+            record_audit(
+                request,
+                actor_id=user_id,
+                subject_id=user_id,
+                action="identity.matrix.login_token.issued",
+                reason_code=exc.code,
+                result="FAILURE",
+            )
+            raise
+        record_audit(
+            request,
+            actor_id=user_id,
+            subject_id=user_id,
+            action="identity.matrix.login_token.issued",
+            reason_code="MATRIX_LOGIN_TOKEN",
+        )
+        return MatrixLoginTokenResponse(
+            login_token=result.login_token,
+            homeserver=result.homeserver,
+            expires_in=result.expires_in,
+        )
 
     @router.post("/auth/logout", status_code=204)
     async def logout(body: RefreshRequest) -> Response:

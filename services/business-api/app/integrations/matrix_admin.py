@@ -1,7 +1,8 @@
 from base64 import urlsafe_b64encode
+from datetime import datetime, timezone
 from hashlib import sha256
 import hmac
-from typing import Protocol
+from typing import NoReturn, Protocol
 from urllib.parse import quote
 
 import httpx
@@ -11,6 +12,8 @@ from app.core.errors import AppError
 
 class MatrixAdminGateway(Protocol):
     def ensure_user(self, localpart: str, password: str) -> str: ...
+
+    def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
 
 
 class MatrixCredentialCodec:
@@ -32,11 +35,13 @@ class SynapseMatrixAdminGateway:
         server_name: str,
         admin_access_token: str,
         client: httpx.Client | None = None,
+        now_factory=None,
     ) -> None:
         self._homeserver_url = homeserver_url.rstrip("/")
         self._server_name = server_name
         self._admin_access_token = admin_access_token
         self._client = client or httpx.Client(timeout=10.0)
+        self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
 
     def ensure_user(self, localpart: str, password: str) -> str:
         matrix_user_id = f"@{localpart}:{self._server_name}"
@@ -90,3 +95,53 @@ class SynapseMatrixAdminGateway:
                 status_code=502,
             )
         return matrix_user_id
+
+    def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str:
+        path_user_id = quote(matrix_user_id, safe="")
+        url = (
+            f"{self._homeserver_url}/_synapse/admin/v1/users/"
+            f"{path_user_id}/login"
+        )
+        valid_until_ms = int(self._now_factory().timestamp() * 1000) + expires_in * 1000
+        try:
+            admin_response = self._client.post(
+                url,
+                headers={"Authorization": f"Bearer {self._admin_access_token}"},
+                json={"valid_until_ms": valid_until_ms},
+            )
+        except httpx.HTTPError:
+            self._login_token_failed()
+        if admin_response.status_code != 200:
+            self._login_token_failed()
+        try:
+            short_lived_access_token = admin_response.json()["access_token"]
+        except (ValueError, KeyError, TypeError):
+            self._login_token_failed()
+        if not isinstance(short_lived_access_token, str) or not short_lived_access_token:
+            self._login_token_failed()
+
+        try:
+            token_response = self._client.post(
+                f"{self._homeserver_url}/_matrix/client/v1/login/get_token",
+                headers={"Authorization": f"Bearer {short_lived_access_token}"},
+                json={},
+            )
+        except httpx.HTTPError:
+            self._login_token_failed()
+        if token_response.status_code != 200:
+            self._login_token_failed()
+        try:
+            login_token = token_response.json()["login_token"]
+        except (ValueError, KeyError, TypeError):
+            self._login_token_failed()
+        if not isinstance(login_token, str) or not login_token:
+            self._login_token_failed()
+        return login_token
+
+    @staticmethod
+    def _login_token_failed() -> NoReturn:
+        raise AppError(
+            code="MATRIX_LOGIN_TOKEN_FAILED",
+            message="Matrix 登录令牌签发失败",
+            status_code=502,
+        )

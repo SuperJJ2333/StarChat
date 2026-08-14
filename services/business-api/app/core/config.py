@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     wallet_webhook_secret: str | None = None
     email_verification_secret: str | None = None
     password_reset_secret: str | None = None
+    matrix_homeserver_url: str = "http://synapse:8008"
+    matrix_public_homeserver_url: str = "http://localhost:8008"
+    matrix_server_name: str = "matrix.localhost"
+    synapse_admin_access_token: str | None = None
+    matrix_login_token_expires_in: Literal[60] = 60
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -36,11 +41,13 @@ class Settings(BaseSettings):
                 self.totp_issuer,
                 self.email_verification_secret,
                 self.password_reset_secret,
+                self.synapse_admin_access_token,
             )
         ):
             raise ValueError(
                 "production requires BUSINESS_JWT_SECRET, BUSINESS_TOTP_ISSUER, "
-                "BUSINESS_EMAIL_VERIFICATION_SECRET and BUSINESS_PASSWORD_RESET_SECRET"
+                "BUSINESS_EMAIL_VERIFICATION_SECRET, BUSINESS_PASSWORD_RESET_SECRET "
+                "and BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN"
             )
         return self
 

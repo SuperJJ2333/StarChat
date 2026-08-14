@@ -489,6 +489,29 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MatrixLoginTokenResponse": {
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "homeserver": {
+            "title": "Homeserver",
+            "type": "string"
+          },
+          "login_token": {
+            "title": "Login Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "login_token",
+          "homeserver",
+          "expires_in"
+        ],
+        "title": "MatrixLoginTokenResponse",
+        "type": "object"
+      },
       "OpenTicketRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1179,6 +1202,75 @@
           }
         },
         "summary": "Logout",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/matrix-login-token": {
+      "post": {
+        "operationId": "matrix_login_token_api_v1_auth_matrix_login_token_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixLoginTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Matrix Login Token",
         "tags": [
           "identity"
         ]

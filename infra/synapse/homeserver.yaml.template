@@ -32,6 +32,11 @@ enable_registration: false
 enable_registration_without_verification: false
 registration_shared_secret: "{{SYNAPSE_REGISTRATION_SHARED_SECRET}}"
 
+login_via_existing_session:
+  enabled: true
+  require_ui_auth: false
+  token_timeout: 1m
+
 macaroon_secret_key: "{{SYNAPSE_MACAROON_SECRET_KEY}}"
 form_secret: "{{SYNAPSE_FORM_SECRET}}"
 

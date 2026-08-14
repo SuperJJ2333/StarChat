@@ -53,6 +53,7 @@ def test_production_accepts_required_secrets() -> None:
         totp_issuer="六合通",
         email_verification_secret="test-email-verification-secret",
         password_reset_secret="test-password-reset-secret",
+        synapse_admin_access_token="test-synapse-admin-access-token",
     )
 
     assert settings.environment == "production"

@@ -26,6 +26,7 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/auth/email-verifications/resend",
         "/api/v1/auth/registrations/{registration_session}",
         "/api/v1/auth/login",
+        "/api/v1/auth/matrix-login-token",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
         "/api/v1/auth/password/forgot",

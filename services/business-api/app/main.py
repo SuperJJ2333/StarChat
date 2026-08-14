@@ -13,9 +13,15 @@ from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
 from app.core.tracing import install_trace_middleware
 from app.core.rate_limits import NoopRateLimiter, RedisRateLimiter
+from app.integrations.matrix_admin import SynapseMatrixAdminGateway
 
 
-def create_app(settings: Settings, session_factory=None, rate_limiter=None) -> FastAPI:
+def create_app(
+    settings: Settings,
+    session_factory=None,
+    rate_limiter=None,
+    matrix_gateway=None,
+) -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -37,6 +43,12 @@ def create_app(settings: Settings, session_factory=None, rate_limiter=None) -> F
             else RedisRateLimiter.from_url(settings.redis_url)
         )
     app.state.rate_limiter = rate_limiter
+    if matrix_gateway is None:
+        matrix_gateway = SynapseMatrixAdminGateway(
+            homeserver_url=settings.matrix_homeserver_url,
+            server_name=settings.matrix_server_name,
+            admin_access_token=settings.synapse_admin_access_token or "",
+        )
     install_trace_middleware(app)
     install_error_handlers(app)
     app.include_router(
@@ -44,7 +56,13 @@ def create_app(settings: Settings, session_factory=None, rate_limiter=None) -> F
         prefix="/api/v1",
     )
     app.include_router(
-        create_identity_router(settings, session_factory, rate_limiter), prefix="/api/v1"
+        create_identity_router(
+            settings,
+            session_factory,
+            rate_limiter,
+            matrix_gateway=matrix_gateway,
+        ),
+        prefix="/api/v1",
     )
     app.include_router(create_support_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_ledger_router(settings, session_factory), prefix="/api/v1")
