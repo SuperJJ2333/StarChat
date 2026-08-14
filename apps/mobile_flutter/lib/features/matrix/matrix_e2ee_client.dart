@@ -2,8 +2,12 @@ import 'package:matrix/matrix.dart';
 import 'dart:typed_data';
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixE2eeClient {
+  bool get isLoggedIn;
+  String? get userId;
+  String? get deviceId;
   Future<void> login(String userId, String password);
   Future<void> sync();
+  Future<void> logout();
   Future<void> verifyDevice(String deviceId);
   Future<void> backupKeysToEncryptedStore();
   Future<void> initializeCrossSigning({required String recoveryKey});
@@ -23,11 +27,15 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient {
   /// Recovery key is exposed only to the caller so it can be written to the
   /// platform secure store; it is never sent to the business API.
   String? get lastRecoveryKey => _lastRecoveryKey;
+  @override bool get isLoggedIn => client.isLogged();
+  @override String? get userId => client.userID;
+  @override String? get deviceId => client.deviceID;
   @override Future<void> login(String userId, String password) async {
     await client.checkHomeserver(homeserver);
     await client.login('m.login.password', identifier: AuthenticationUserIdentifier(user: userId), password: password, initialDeviceDisplayName: '六合通移动端');
   }
   @override Future<void> sync() async { await client.sync(); }
+  @override Future<void> logout() => client.logout();
   @override
   Future<void> verifyDevice(String deviceId) async {
     final userId = client.userID;
