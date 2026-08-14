@@ -60,6 +60,7 @@ async def test_registration_requires_invitation_and_rejects_phone(api_components
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         valid = await client.post(
             "/api/v1/auth/register",
+            headers={"Idempotency-Key": "identity-api-valid"},
             json={
                 "username": "alice",
                 "email": "alice@example.com",
@@ -69,6 +70,7 @@ async def test_registration_requires_invitation_and_rejects_phone(api_components
         )
         invalid = await client.post(
             "/api/v1/auth/register",
+            headers={"Idempotency-Key": "identity-api-invalid"},
             json={
                 "username": "bob",
                 "email": "bob@example.com",
@@ -80,6 +82,8 @@ async def test_registration_requires_invitation_and_rejects_phone(api_components
 
     assert valid.status_code == 202
     assert valid.json()["status"] == "PENDING_EMAIL"
+    assert "registration_session" in valid.json()
+    assert "user_id" not in valid.json()
     assert "verification_token" not in valid.json()
     assert invalid.status_code == 422
 

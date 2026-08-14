@@ -130,9 +130,19 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
         return {"valid": invitation_service.validate(body.invitation_code)}
 
     @router.post("/auth/register", status_code=202)
-    async def register(body: RegisterRequest, request: Request) -> dict:
+    async def register(
+        body: RegisterRequest,
+        request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=128),
+        ],
+    ) -> dict:
         rate_limiter.hit("auth:register", limit=10, window_seconds=3600)
-        result = registration.register(**body.model_dump())
+        result = registration.register(
+            **body.model_dump(),
+            idempotency_key=idempotency_key,
+        )
         record_audit(
             request,
             actor_id=result.user_id,
@@ -140,7 +150,11 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
             action="identity.registration.created",
             reason_code="SELF_REGISTRATION",
         )
-        return {"user_id": result.user_id, "status": AccountStatus.PENDING_EMAIL}
+        return {
+            "registration_session": result.registration_session,
+            "status": result.status,
+            "resend_after_seconds": result.resend_after_seconds,
+        }
 
     @router.post("/auth/verify-email", status_code=202)
     async def verify_email(body: TokenInput, request: Request) -> dict:
