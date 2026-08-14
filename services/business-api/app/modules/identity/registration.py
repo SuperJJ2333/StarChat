@@ -193,7 +193,7 @@ class RegistrationService:
                 OutboxPublisher.enqueue(
                     session,
                     topic="identity.email",
-                    event_type="identity.email_verification.requested",
+                    event_type="identity.email.verification.requested",
                     aggregate_type="email_verification_challenge",
                     aggregate_id=challenge_id,
                     payload={"user_id": user_id, "challenge_id": challenge_id},
@@ -448,7 +448,7 @@ class EmailVerificationService:
                 OutboxPublisher.enqueue(
                     session,
                     topic="identity.email",
-                    event_type="identity.email_verification.requested",
+                    event_type="identity.email.verification.requested",
                     aggregate_type="email_verification_challenge",
                     aggregate_id=challenge_id,
                     payload={"user_id": challenge.user_id, "challenge_id": challenge_id},

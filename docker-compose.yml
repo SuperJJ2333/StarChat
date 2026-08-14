@@ -101,6 +101,18 @@ services:
       timeout: 5s
       retries: 10
 
+  mailpit:
+    image: "${MAILPIT_IMAGE:?MAILPIT_IMAGE is required}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_HTTP_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   business-api:
     build:
       context: .
@@ -141,6 +153,8 @@ services:
     depends_on:
       business-api:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
     environment:
       BUSINESS_ENVIRONMENT: ${BUSINESS_ENVIRONMENT:-development}
       BUSINESS_DATABASE_URL: ${BUSINESS_DATABASE_URL:-postgresql+psycopg://liuhetong:change-this-business-postgres-password@business-postgres:5432/liuhetong}
@@ -150,6 +164,14 @@ services:
       BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
       BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
       BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURITY: ${SMTP_SECURITY:-none}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-六合通 <noreply@localhost>}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      EMAIL_VERIFICATION_PUBLIC_BASE_URL: ${EMAIL_VERIFICATION_PUBLIC_BASE_URL:-http://localhost:8082}
       WORKER_ID: ${BUSINESS_WORKER_ID:-business-worker-1}
       WORKER_HEARTBEAT_PATH: /tmp/liuhetong-worker-heartbeat
     healthcheck:

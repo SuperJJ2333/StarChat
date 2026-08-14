@@ -82,3 +82,16 @@ def test_worker_runs_maintenance_before_outbox_poll():
     assert worker.run_once(limit=10) == 0
     assert calls == ["maintenance"]
     engine.dispose()
+
+
+def test_worker_registers_identity_email_verification_handler() -> None:
+    from main import build_identity_handlers
+
+    handlers = build_identity_handlers(
+        session_factory=object(),
+        verification_secret="test-email-verification-secret",
+        public_base_url="https://example.test",
+        email_sender=object(),
+    )
+
+    assert set(handlers) == {"identity.email"}

@@ -12,10 +12,29 @@ from app.modules.ledger.service import LedgerService
 from app.modules.redpacket.service import RedPacketService
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 from app.modules.wallet.service import WalletService
+from app.modules.identity.registration import VerificationTokenCodec
+from integrations.email_sender import SmtpConfig, SmtpEmailSender
+from tasks.identity import IdentityEmailVerificationTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
 from worker import Worker
+
+
+def build_identity_handlers(
+    *,
+    session_factory,
+    verification_secret: str,
+    public_base_url: str,
+    email_sender,
+) -> dict:
+    task = IdentityEmailVerificationTask(
+        session_factory,
+        token_codec=VerificationTokenCodec(verification_secret.encode("utf-8")),
+        public_base_url=public_base_url,
+        email_sender=email_sender,
+    )
+    return {"identity.email": task}
 
 
 def main() -> None:
@@ -28,6 +47,19 @@ def main() -> None:
     wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(settings.adjustment_admin_threshold))
     wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service)
     moments_moderation = MomentsModerationTask(session_factory)
+    email_sender = SmtpEmailSender(SmtpConfig.from_environment())
+    identity_handlers = build_identity_handlers(
+        session_factory=session_factory,
+        verification_secret=(
+            settings.email_verification_secret
+            or "development-email-verification-secret"
+        ),
+        public_base_url=os.getenv(
+            "EMAIL_VERIFICATION_PUBLIC_BASE_URL",
+            "http://localhost:8082",
+        ),
+        email_sender=email_sender,
+    )
     stop_event = Event()
 
     def request_stop(_signum, _frame) -> None:
@@ -38,7 +70,7 @@ def main() -> None:
 
     worker = Worker(
         consumer=consumer,
-        handlers={},
+        handlers=identity_handlers,
         worker_id=os.getenv("WORKER_ID", "business-worker-1"),
         heartbeat_path=os.getenv("WORKER_HEARTBEAT_PATH", "/tmp/liuhetong-worker-heartbeat"),
         maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), wallet_maintenance.run_once, moments_moderation.run_batch],

@@ -1,1 +1,2 @@
 # Runtime dependencies are supplied by the installed liuhetong-business-api package.
+# SMTP delivery uses Python 3.12's pinned standard-library smtplib/email implementation.

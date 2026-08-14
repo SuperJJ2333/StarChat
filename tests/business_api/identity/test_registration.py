@@ -79,7 +79,7 @@ def test_register_consumes_invitation_and_creates_pending_user(registration_comp
         assert challenge.token_hash != result.verification_token
         email_event = session.scalar(
             select(OutboxEvent).where(
-                OutboxEvent.event_type == "identity.email_verification.requested"
+                    OutboxEvent.event_type == "identity.email.verification.requested"
             )
         )
         assert email_event.payload["user_id"] == result.user_id
