@@ -2,7 +2,6 @@ from collections.abc import Callable
 from urllib.parse import quote
 
 from app.core.errors import AppError
-from app.modules.identity.invitations import hash_opaque_token
 from app.modules.identity.models import EmailVerificationChallenge, User
 from app.modules.identity.registration import VerificationTokenCodec
 
@@ -29,10 +28,15 @@ class EmailVerificationTask:
                 status_code=400,
             )
         challenge_id = message.payload["challenge_id"]
-        token = self._token_codec.issue(challenge_id)
+        token = self._token_codec.link_token(challenge_id)
+        expected_hash = self._token_codec.link_token_hash(token)
         with self._session_factory() as session:
             challenge = session.get(EmailVerificationChallenge, challenge_id)
-            if challenge is None or challenge.token_hash != hash_opaque_token(token):
+            if (
+                challenge is None
+                or challenge.link_token_hash != expected_hash
+                or challenge.token_hash != expected_hash
+            ):
                 raise AppError(
                     code="EMAIL_CHALLENGE_NOT_FOUND",
                     message="email verification challenge not found",

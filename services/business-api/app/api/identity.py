@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 
 from app.core.config import Settings
@@ -36,8 +36,20 @@ class RegisterRequest(StrictModel):
     invitation_code: str = Field(min_length=1, max_length=128)
 
 
-class TokenInput(StrictModel):
-    token: str
+class EmailVerificationRequest(StrictModel):
+    registration_session: str = Field(min_length=32, max_length=256)
+    code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    token: str | None = Field(default=None, min_length=32, max_length=512)
+
+    @model_validator(mode="after")
+    def require_exactly_one_credential(self):
+        if (self.code is None) == (self.token is None):
+            raise ValueError("code and token are mutually exclusive")
+        return self
+
+
+class RegistrationSessionRequest(StrictModel):
+    registration_session: str = Field(min_length=32, max_length=256)
 
 
 class LoginRequest(StrictModel):
@@ -156,10 +168,21 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
             "resend_after_seconds": result.resend_after_seconds,
         }
 
-    @router.post("/auth/verify-email", status_code=202)
-    async def verify_email(body: TokenInput, request: Request) -> dict:
-        rate_limiter.hit("auth:verify-email", limit=20, window_seconds=3600)
-        user_id = email_verification.verify(body.token)
+    @router.post("/auth/email-verifications/verify", status_code=202)
+    async def verify_email(
+        body: EmailVerificationRequest,
+        request: Request,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=128),
+        ],
+    ) -> dict:
+        rate_limiter.hit("auth:email-verification:verify", limit=20, window_seconds=3600)
+        result = email_verification.verify(
+            **body.model_dump(),
+            idempotency_key=idempotency_key,
+        )
+        user_id = email_verification.user_id_for_session(body.registration_session)
         record_audit(
             request,
             actor_id=user_id,
@@ -167,7 +190,34 @@ def create_identity_router(settings: Settings, session_factory, rate_limiter: Ra
             action="identity.email.verified",
             reason_code="EMAIL_VERIFICATION",
         )
-        return {"user_id": user_id, "status": AccountStatus.PENDING_MATRIX}
+        return {"status": result.status}
+
+    @router.post("/auth/email-verifications/resend", status_code=202)
+    async def resend_email_verification(
+        body: RegistrationSessionRequest,
+        idempotency_key: Annotated[
+            str,
+            Header(alias="Idempotency-Key", min_length=1, max_length=128),
+        ],
+    ) -> dict:
+        rate_limiter.hit("auth:email-verification:resend", limit=10, window_seconds=3600)
+        result = email_verification.resend(
+            registration_session=body.registration_session,
+            idempotency_key=idempotency_key,
+        )
+        return {
+            "status": result.status,
+            "resend_after_seconds": result.resend_after_seconds,
+        }
+
+    @router.get("/auth/registrations/{registration_session}")
+    async def registration_status(registration_session: str) -> dict:
+        rate_limiter.hit("auth:registration:status", limit=60, window_seconds=60)
+        result = email_verification.status(registration_session)
+        return {
+            "status": result.status,
+            "resend_after_seconds": result.resend_after_seconds,
+        }
 
     @router.post("/auth/login", response_model=TokenResponse)
     async def login(body: LoginRequest, request: Request) -> TokenResponse:

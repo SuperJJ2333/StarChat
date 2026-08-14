@@ -129,9 +129,22 @@ def test_verify_email_moves_user_to_pending_matrix_once(registration_components)
         idempotency_key="registration-verify",
     )
 
-    verified_user_id = verifier.verify(result.verification_token)
+    with factory() as session:
+        challenge = session.scalar(
+            select(EmailVerificationChallenge).where(
+                EmailVerificationChallenge.user_id == result.user_id
+            )
+        )
+    verification = verifier.verify(
+        registration_session=result.registration_session,
+        code=VerificationTokenCodec(
+            b"test-email-verification-secret"
+        ).verification_code(challenge.id),
+        token=None,
+        idempotency_key="verify-registration-test",
+    )
 
-    assert verified_user_id == result.user_id
+    assert verification.status == AccountStatus.PENDING_MATRIX
     with factory() as session:
         user = session.get(User, result.user_id)
         assert user.status == AccountStatus.PENDING_MATRIX
@@ -139,14 +152,19 @@ def test_verify_email_moves_user_to_pending_matrix_once(registration_components)
         matrix_events = list(
             session.scalars(
                 select(OutboxEvent).where(
-                    OutboxEvent.event_type == "identity.matrix_provision.requested"
+                    OutboxEvent.event_type == "identity.matrix.provision.requested"
                 )
             )
         )
         assert len(matrix_events) == 1
 
     with pytest.raises(AppError) as exc_info:
-        verifier.verify(result.verification_token)
+        verifier.verify(
+            registration_session=result.registration_session,
+            code="000000",
+            token=None,
+            idempotency_key="verify-registration-wrong",
+        )
     assert exc_info.value.code == "EMAIL_VERIFICATION_INVALID"
 
 

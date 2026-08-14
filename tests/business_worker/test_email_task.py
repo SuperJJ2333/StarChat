@@ -7,7 +7,6 @@ from sqlalchemy import create_engine
 from app.core.database import Base, create_session_factory
 from app.core.outbox import OutboxMessage
 from app.modules.identity.enums import AccountStatus
-from app.modules.identity.invitations import hash_opaque_token
 from app.modules.identity.models import EmailVerificationChallenge, User
 from app.modules.identity.registration import VerificationTokenCodec
 
@@ -23,7 +22,8 @@ def test_email_task_reconstructs_verification_link_without_storing_plain_token()
     factory = create_session_factory(engine)
     now = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)
     codec = VerificationTokenCodec(b"test-email-verification-secret")
-    token = codec.issue("challenge-1")
+    token = codec.link_token("challenge-1")
+    code = codec.verification_code("challenge-1")
     with factory.begin() as session:
         session.add(
             User(
@@ -42,8 +42,12 @@ def test_email_task_reconstructs_verification_link_without_storing_plain_token()
             EmailVerificationChallenge(
                 id="challenge-1",
                 user_id="user-1",
-                token_hash=hash_opaque_token(token),
-                expires_at=now + timedelta(hours=24),
+                token_hash=codec.link_token_hash(token),
+                registration_session_hash=codec.registration_session_hash("registration-session"),
+                code_hash=codec.code_hash(code),
+                link_token_hash=codec.link_token_hash(token),
+                expires_at=now + timedelta(minutes=10),
+                resend_available_at=now + timedelta(seconds=60),
                 attempt_count=0,
                 created_at=now,
             )

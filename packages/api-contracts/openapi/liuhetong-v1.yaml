@@ -291,6 +291,47 @@
         "title": "CreateRedPacketRequest",
         "type": "object"
       },
+      "EmailVerificationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "registration_session": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Registration Session",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          }
+        },
+        "required": [
+          "registration_session"
+        ],
+        "title": "EmailVerificationRequest",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -645,6 +686,22 @@
         "title": "RegisterRequest",
         "type": "object"
       },
+      "RegistrationSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "registration_session": {
+            "maxLength": 256,
+            "minLength": 32,
+            "title": "Registration Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "registration_session"
+        ],
+        "title": "RegistrationSessionRequest",
+        "type": "object"
+      },
       "Report": {
         "additionalProperties": false,
         "properties": {
@@ -732,20 +789,6 @@
           "name"
         ],
         "title": "TagBody",
-        "type": "object"
-      },
-      "TokenInput": {
-        "additionalProperties": false,
-        "properties": {
-          "token": {
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "TokenInput",
         "type": "object"
       },
       "TokenResponse": {
@@ -874,6 +917,158 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/email-verifications/resend": {
+      "post": {
+        "operationId": "resend_email_verification_api_v1_auth_email_verifications_resend_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Resend Email Verification Api V1 Auth Email Verifications Resend Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Resend Email Verification",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/email-verifications/verify": {
+      "post": {
+        "operationId": "verify_email_api_v1_auth_email_verifications_verify_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Email Api V1 Auth Email Verifications Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Verify Email",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",
@@ -1243,26 +1438,27 @@
         ]
       }
     },
-    "/api/v1/auth/verify-email": {
-      "post": {
-        "operationId": "verify_email_api_v1_auth_verify_email_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TokenInput"
-              }
+    "/api/v1/auth/registrations/{registration_session}": {
+      "get": {
+        "operationId": "registration_status_api_v1_auth_registrations__registration_session__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "registration_session",
+            "required": true,
+            "schema": {
+              "title": "Registration Session",
+              "type": "string"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Verify Email Api V1 Auth Verify Email Post",
+                  "title": "Response Registration Status Api V1 Auth Registrations  Registration Session  Get",
                   "type": "object"
                 }
               }
@@ -1300,7 +1496,7 @@
             "description": "Internal error"
           }
         },
-        "summary": "Verify Email",
+        "summary": "Registration Status",
         "tags": [
           "identity"
         ]
