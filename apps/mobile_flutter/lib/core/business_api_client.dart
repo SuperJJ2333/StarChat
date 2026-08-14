@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
@@ -10,6 +12,8 @@ final class BusinessApiException implements Exception {
   final String message;
   @override String toString() => message;
 }
+
+enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 
 final class BusinessApiClient {
   BusinessApiClient({required this.baseUri, required this.sessionStore, http.Client? client}) : _client = client ?? http.Client();
@@ -24,6 +28,71 @@ final class BusinessApiClient {
     final body = _decode(response);
     await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String);
     return body;
+  }
+  Future<BusinessSessionRestore> restoreSession() async {
+    final stored = await sessionStore.session();
+    if (stored == null) return BusinessSessionRestore.absent;
+    try {
+      await refreshSession();
+      return BusinessSessionRestore.authenticated;
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await sessionStore.clearBusinessSession();
+        return BusinessSessionRestore.invalid;
+      }
+      if (error.statusCode >= 500) return BusinessSessionRestore.offline;
+      rethrow;
+    } on SocketException {
+      return BusinessSessionRestore.offline;
+    } on TimeoutException {
+      return BusinessSessionRestore.offline;
+    } on http.ClientException {
+      return BusinessSessionRestore.offline;
+    }
+  }
+  Future<StoredBusinessSession> refreshSession() async {
+    final stored = await sessionStore.session();
+    if (stored == null) {
+      throw const BusinessApiException(statusCode: 401, code: 'AUTH_REQUIRED', message: '需要登录');
+    }
+    final response = await _client.post(
+      _uri('/auth/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': stored.refreshToken}),
+    );
+    final body = _decode(response);
+    final replacement = StoredBusinessSession(
+      version: 1,
+      accessToken: body['access_token'] as String,
+      refreshToken: body['refresh_token'] as String,
+    );
+    await sessionStore.saveSession(
+      accessToken: replacement.accessToken,
+      refreshToken: replacement.refreshToken,
+    );
+    return replacement;
+  }
+  Future<void> logout() async {
+    final stored = await sessionStore.session();
+    try {
+      if (stored != null) {
+        await _client.post(
+          _uri('/auth/logout'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'refresh_token': stored.refreshToken}),
+        );
+      }
+    } finally {
+      await sessionStore.clearBusinessSession();
+    }
+  }
+  Future<String?> currentUserId() async {
+    final token = (await sessionStore.session())?.accessToken;
+    if (token == null) return null;
+    final parts = token.split('.');
+    if (parts.length != 3) return null;
+    final payload = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+    return payload is Map<String, dynamic> ? payload['sub']?.toString() : null;
   }
   Future<Map<String, dynamic>> caibiBalance() => getJson('/ledger/balances/me');
   Future<Map<String, dynamic>> transferCaibi(String receiverId, String amount) =>
@@ -58,17 +127,22 @@ final class BusinessApiClient {
   Future<Map<String, dynamic>> requestWithdrawal({required String amount, required String address, required String clientOrderId, required String reasonCode}) =>
       postJson('/wallet/withdrawals', {'amount': amount, 'address': address, 'client_order_id': clientOrderId, 'reason_code': reasonCode}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> getJson(String path) async {
-    final token = await sessionStore.accessToken();
-    final response = await _client.get(_uri(path), headers: {if (token != null) 'Authorization': 'Bearer $token'});
+    final response = await _authorized((headers) => _client.get(_uri(path), headers: headers));
     return _decode(response);
   }
   Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body, {required String idempotencyKey}) async {
-    final token = await sessionStore.accessToken();
-    final response = await _client.post(_uri(path), headers: {'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, if (token != null) 'Authorization': 'Bearer $token'}, body: jsonEncode(body));
+    final response = await _authorized((headers) => _client.post(_uri(path), headers: {...headers, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey}, body: jsonEncode(body)));
     return _decode(response);
   }
-  Future<Map<String,dynamic>> patchJson(String path,Map<String,dynamic> body,{required String idempotencyKey})async{final token=await sessionStore.accessToken();final response=await _client.patch(_uri(path),headers:{'Content-Type':'application/json','Idempotency-Key':idempotencyKey,if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
-  Future<Map<String,dynamic>> putJson(String path,Map<String,dynamic> body)async{final token=await sessionStore.accessToken();final response=await _client.put(_uri(path),headers:{'Content-Type':'application/json',if(token!=null)'Authorization':'Bearer $token'},body:jsonEncode(body));return _decode(response);}
+  Future<Map<String,dynamic>> patchJson(String path,Map<String,dynamic> body,{required String idempotencyKey})async{final response=await _authorized((headers)=>_client.patch(_uri(path),headers:{...headers,'Content-Type':'application/json','Idempotency-Key':idempotencyKey},body:jsonEncode(body)));return _decode(response);}
+  Future<Map<String,dynamic>> putJson(String path,Map<String,dynamic> body)async{final response=await _authorized((headers)=>_client.put(_uri(path),headers:{...headers,'Content-Type':'application/json'},body:jsonEncode(body)));return _decode(response);}
+  Future<http.Response> _authorized(Future<http.Response> Function(Map<String,String>) operation) async {
+    final initial = await sessionStore.session();
+    final response = await operation({if(initial != null)'Authorization':'Bearer ${initial.accessToken}'});
+    if (response.statusCode != 401 || initial == null) return response;
+    final replacement = await refreshSession();
+    return operation({'Authorization':'Bearer ${replacement.accessToken}'});
+  }
   Map<String, dynamic> _decode(http.Response response) {
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode >= 400) {
