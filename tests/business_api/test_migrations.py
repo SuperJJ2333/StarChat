@@ -29,8 +29,8 @@ def _normalized_sql(sql: str) -> str:
     return " ".join(sql.lower().split())
 
 
-def test_avatar_upload_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0018_avatar_uploads (head)"
+def test_matrix_profile_sync_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0019_matrix_profile_sync (head)"
 
 
 def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
@@ -101,3 +101,26 @@ def test_avatar_upload_migration_adds_private_upload_state_and_safe_downgrade() 
     assert "uq_avatar_upload_owner_idempotency" in upgrade_sql
     assert "drop table avatar_uploads" in downgrade_sql
     assert "drop table users" not in downgrade_sql
+
+
+def test_matrix_profile_sync_migration_only_adds_retry_state_to_users() -> None:
+    upgrade_sql = _normalized_sql(
+        _alembic(
+            "upgrade",
+            "0018_avatar_uploads:0019_matrix_profile_sync",
+            "--sql",
+        )
+    )
+    downgrade_sql = _normalized_sql(
+        _alembic(
+            "downgrade",
+            "0019_matrix_profile_sync:0018_avatar_uploads",
+            "--sql",
+        )
+    )
+
+    assert "add column matrix_avatar_source_key varchar(512)" in upgrade_sql
+    assert "add column matrix_avatar_mxc_uri varchar(512)" in upgrade_sql
+    assert "add column matrix_profile_synced_at timestamp with time zone" in upgrade_sql
+    assert "drop table users" not in downgrade_sql
+    assert "drop column matrix_profile_synced_at" in downgrade_sql

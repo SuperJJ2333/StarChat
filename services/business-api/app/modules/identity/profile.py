@@ -15,6 +15,7 @@ from app.core.outbox import OutboxPublisher
 from app.integrations.private_storage import PrivateObjectStorage
 from app.modules.audit.writer import AuditWriter
 from app.modules.identity.models import AvatarUpload, User
+from app.modules.identity.enums import AccountStatus
 
 
 ALLOWED_AVATAR_MIME = {"image/jpeg", "image/png", "image/webp"}
@@ -36,6 +37,16 @@ class ProfileResult:
     profile_updated_at: datetime
 
 
+@dataclass(frozen=True)
+class PublicProfileResult:
+    user_id: str
+    username: str
+    nickname: str
+    signature: str | None
+    avatar_url: str | None
+    matrix_user_id: str | None
+
+
 class ProfileService:
     def __init__(self, session_factory, *, storage: PrivateObjectStorage, now_factory=None):
         self._session_factory = session_factory
@@ -49,6 +60,40 @@ class ProfileService:
             if user is None:
                 self._not_found()
             return self._profile(user)
+
+    def read_public_profiles(
+        self, user_ids: list[str] | set[str]
+    ) -> dict[str, PublicProfileResult]:
+        if not user_ids:
+            return {}
+        with self._session_factory() as session:
+            users = list(session.scalars(select(User).where(User.id.in_(user_ids))))
+            return {user.id: self._public_profile(user) for user in users}
+
+    def search_public_profiles(
+        self,
+        query: str,
+        *,
+        exclude_user_ids: set[str],
+        limit: int = 20,
+    ) -> list[PublicProfileResult]:
+        normalized = query.strip().casefold()
+        with self._session_factory() as session:
+            statement = (
+                select(User)
+                .where(
+                    User.username_normalized.contains(normalized),
+                    User.status == AccountStatus.ACTIVE,
+                )
+                .order_by(User.username_normalized, User.id)
+                .limit(limit)
+            )
+            users = list(session.scalars(statement))
+            return [
+                self._public_profile(user)
+                for user in users
+                if user.id not in exclude_user_ids
+            ]
 
     def update(
         self,
@@ -334,6 +379,22 @@ class ProfileService:
                 user.username_normalized.encode("utf-8")
             ).hexdigest()[:16],
             profile_updated_at=profile_updated_at,
+        )
+
+    def _public_profile(self, user: User) -> PublicProfileResult:
+        avatar_url = None
+        if user.avatar_object_key:
+            avatar_url = self._storage.signed_read_url(
+                user.avatar_object_key,
+                AVATAR_URL_EXPIRES_IN,
+            )
+        return PublicProfileResult(
+            user_id=user.id,
+            username=user.username,
+            nickname=user.nickname,
+            signature=user.signature,
+            avatar_url=avatar_url,
+            matrix_user_id=user.matrix_user_id,
         )
 
     @staticmethod

@@ -15,6 +15,16 @@ class MatrixAdminGateway(Protocol):
 
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
 
+    def upload_profile_media(self, content: bytes, mime_type: str) -> str: ...
+
+    def set_user_profile(
+        self,
+        matrix_user_id: str,
+        *,
+        display_name: str,
+        avatar_url: str | None,
+    ) -> None: ...
+
 
 class MatrixCredentialCodec:
     def __init__(self, secret: bytes) -> None:
@@ -138,10 +148,60 @@ class SynapseMatrixAdminGateway:
             self._login_token_failed()
         return login_token
 
+    def upload_profile_media(self, content: bytes, mime_type: str) -> str:
+        try:
+            response = self._client.post(
+                f"{self._homeserver_url}/_matrix/media/v3/upload",
+                headers={
+                    "Authorization": f"Bearer {self._admin_access_token}",
+                    "Content-Type": mime_type,
+                },
+                params={"filename": "avatar"},
+                content=content,
+            )
+        except httpx.HTTPError:
+            self._profile_sync_failed()
+        if response.status_code != 200:
+            self._profile_sync_failed()
+        try:
+            content_uri = response.json()["content_uri"]
+        except (ValueError, KeyError, TypeError):
+            self._profile_sync_failed()
+        if not isinstance(content_uri, str) or not content_uri.startswith("mxc://"):
+            self._profile_sync_failed()
+        return content_uri
+
+    def set_user_profile(
+        self,
+        matrix_user_id: str,
+        *,
+        display_name: str,
+        avatar_url: str | None,
+    ) -> None:
+        path_user_id = quote(matrix_user_id, safe="")
+        try:
+            response = self._client.put(
+                f"{self._homeserver_url}/_synapse/admin/v2/users/{path_user_id}",
+                headers={"Authorization": f"Bearer {self._admin_access_token}"},
+                json={"displayname": display_name, "avatar_url": avatar_url or ""},
+            )
+        except httpx.HTTPError:
+            self._profile_sync_failed()
+        if response.status_code != 200:
+            self._profile_sync_failed()
+
     @staticmethod
     def _login_token_failed() -> NoReturn:
         raise AppError(
             code="MATRIX_LOGIN_TOKEN_FAILED",
             message="Matrix 登录令牌签发失败",
+            status_code=502,
+        )
+
+    @staticmethod
+    def _profile_sync_failed() -> NoReturn:
+        raise AppError(
+            code="MATRIX_PROFILE_SYNC_FAILED",
+            message="Matrix 资料同步失败",
             status_code=502,
         )

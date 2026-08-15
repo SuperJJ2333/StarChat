@@ -36,6 +36,11 @@ class User(Base):
     )
     signature: Mapped[str | None] = mapped_column(String(140))
     avatar_object_key: Mapped[str | None] = mapped_column(String(512))
+    matrix_avatar_source_key: Mapped[str | None] = mapped_column(String(512))
+    matrix_avatar_mxc_uri: Mapped[str | None] = mapped_column(String(512))
+    matrix_profile_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     profile_updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

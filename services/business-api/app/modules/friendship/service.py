@@ -4,20 +4,19 @@ from sqlalchemy import delete,or_,select
 from app.core.errors import AppError
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
-from app.modules.identity.models import User
 from app.modules.friendship.models import ContactProfile,ContactTag,FriendRequest,Friendship,UserBlock
 
 class FriendshipService:
-    def __init__(self,factory):self.factory=factory
+    def __init__(self,factory,profile_reader):self.factory=factory;self.profile_reader=profile_reader
     def _audit(self,s,actor,subject,action,reason,key):
         now=datetime.now(timezone.utc);s.add(AuditEvent(id=str(uuid4()),actor_id=actor,subject_type='friendship',subject_id=subject,action=action,result='SUCCESS',reason_code=reason,trace_id=key[:128],created_at=now));OutboxPublisher.enqueue(s,topic='friendship.events',event_type=action,aggregate_type='friendship',aggregate_id=subject,payload={'actor_id':actor})
     def request(self,actor,target,message,key):
         if actor==target:raise AppError(code='INVALID_FRIEND_TARGET',message='不能添加自己',status_code=422)
+        if target not in self.profile_reader.read_public_profiles([target]):raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
         now=datetime.now(timezone.utc)
         with self.factory.begin() as s:
             existing=s.scalar(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.idempotency_key==key));
             if existing:return existing
-            if s.get(User,target) is None:raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
             row=FriendRequest(id=str(uuid4()),requester_id=actor,target_id=target,message=message,status='PENDING',idempotency_key=key,created_at=now);s.add(row);self._audit(s,actor,row.id,'friend.requested','FRIEND_REQUEST',key);return row
     def accept(self,actor,request_id,key):
         with self.factory.begin() as s:
@@ -35,9 +34,16 @@ class FriendshipService:
             row.status='REJECTED';row.resolved_at=datetime.now(timezone.utc);self._audit(s,actor,row.id,'friend.rejected','FRIEND_REJECT',key);return row
     def list(self,actor):
         with self.factory() as s:
-            rows=s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor))).all();ids=[r.user_high_id if r.user_low_id==actor else r.user_low_id for r in rows];users={u.id:u for u in s.scalars(select(User).where(User.id.in_(ids))).all()} if ids else {};return [{'user_id':i,'username':users[i].username} for i in ids if i in users]
+            rows=s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor)).order_by(Friendship.created_at,Friendship.id)).all();ids=[r.user_high_id if r.user_low_id==actor else r.user_low_id for r in rows];contact_rows=s.scalars(select(ContactProfile).where(ContactProfile.owner_id==actor,ContactProfile.contact_id.in_(ids))).all() if ids else [];contacts={row.contact_id:row for row in contact_rows}
+        profiles=self.profile_reader.read_public_profiles(ids);items=[]
+        for user_id in ids:
+            profile=profiles.get(user_id)
+            if profile is None:continue
+            contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else []})
+        return items
     def requests(self,actor):
-        with self.factory() as s:return [{'id':r.id,'requester_id':r.requester_id,'message':r.message,'status':r.status} for r in s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor,FriendRequest.status=='PENDING').order_by(FriendRequest.created_at.desc())).all()]
+        with self.factory() as s:rows=list(s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor,FriendRequest.status=='PENDING').order_by(FriendRequest.created_at.desc())))
+        profiles=self.profile_reader.read_public_profiles([row.requester_id for row in rows]);return [{'id':row.id,'username':profiles[row.requester_id].username,'nickname':profiles[row.requester_id].nickname,'avatar_url':profiles[row.requester_id].avatar_url,'message':row.message,'status':row.status} for row in rows if row.requester_id in profiles]
     def block(self,actor,target,key):
         with self.factory.begin() as s:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
@@ -76,5 +82,5 @@ class FriendshipService:
             if not row:raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
             subject=row.id;self._audit(s,actor,subject,'friend.deleted','FRIEND_DELETE',key);s.delete(row);s.execute(delete(ContactProfile).where(or_(ContactProfile.owner_id==actor,ContactProfile.contact_id==actor),or_(ContactProfile.owner_id==target,ContactProfile.contact_id==target)))
     def search(self,actor,q):
-        with self.factory() as s:
-            blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all());rows=s.scalars(select(User).where(User.username_normalized.contains(q.casefold())).limit(20)).all();return [{'id':u.id,'username':u.username} for u in rows if u.id!=actor and u.id not in blocked]
+        with self.factory() as s:blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all())
+        profiles=self.profile_reader.search_public_profiles(q,exclude_user_ids=blocked|{actor});return [{'user_id':p.user_id,'username':p.username,'nickname':p.nickname,'avatar_url':p.avatar_url,'matrix_user_id':p.matrix_user_id} for p in profiles]

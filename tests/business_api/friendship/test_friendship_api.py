@@ -10,6 +10,21 @@ from app.main import create_app
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.models import User
 
+
+class MemoryAvatarStorage:
+    def put(self, object_key, content):
+        pass
+
+    def get(self, object_key):
+        raise KeyError(object_key)
+
+    def delete(self, object_key):
+        pass
+
+    def signed_read_url(self, object_key, expires_in):
+        assert expires_in == 300
+        return f"https://media.example.test/{object_key.rsplit('/', 1)[-1]}?signed=1"
+
 def bearer(settings, user):
     now = datetime.now(timezone.utc)
     token = jwt.encode({'sub': user, 'iss': settings.jwt_issuer, 'iat': int(now.timestamp()), 'exp': int((now + timedelta(minutes=5)).timestamp())}, settings.jwt_secret, algorithm='HS256')
@@ -20,10 +35,10 @@ def ctx():
     engine = create_engine('sqlite+pysqlite:///:memory:', connect_args={'check_same_thread': False}, poolclass=StaticPool)
     Base.metadata.create_all(engine); factory = create_session_factory(engine); now = datetime.now(timezone.utc)
     with factory.begin() as session:
-        for user_id, name in [('u1', 'alice'), ('u2', 'bob')]:
-            session.add(User(id=user_id, username=name, username_normalized=name, email=f'{name}@x.test', email_normalized=f'{name}@x.test', password_hash='x', status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
+        for user_id, name, nickname in [('u1', 'alice', 'Alice'), ('u2', 'bob', 'Bobby')]:
+            session.add(User(id=user_id, username=name, username_normalized=name, email=f'{name}@x.test', email_normalized=f'{name}@x.test', password_hash='x', status=AccountStatus.ACTIVE, matrix_user_id=f'@{name}:matrix.example.test', nickname=nickname, signature=f'{nickname} signature', avatar_object_key=f'avatars/{user_id}/avatar.png', profile_updated_at=now, created_at=now, updated_at=now))
     settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32)
-    yield create_app(settings, session_factory=factory), settings
+    yield create_app(settings, session_factory=factory, avatar_storage=MemoryAvatarStorage()), settings
 
 @pytest.mark.asyncio
 async def test_request_accept_list_block_and_search(ctx):
@@ -34,11 +49,26 @@ async def test_request_accept_list_block_and_search(ctx):
         accepted = await client.post(f"/api/v1/friends/requests/{request.json()['id']}/accept", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'a1'})
         assert accepted.status_code == 200
         friends = await client.get('/api/v1/friends', headers=bearer(settings, 'u1'))
-        assert friends.json()['items'][0]['user_id'] == 'u2'
+        friend = friends.json()['items'][0]
+        assert set(friend) == {'user_id', 'username', 'nickname', 'remark', 'avatar_url', 'matrix_user_id', 'moments_permission', 'tags'}
+        assert friend == {'user_id': 'u2', 'username': 'bob', 'nickname': 'Bobby', 'remark': None, 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@bob:matrix.example.test', 'moments_permission': 'DEFAULT', 'tags': []}
         blocked = await client.post('/api/v1/blocks', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'b1'}, json={'user_id': 'u2'})
         assert blocked.status_code == 201
         search = await client.get('/api/v1/users/search?q=bob', headers=bearer(settings, 'u1'))
         assert search.json()['items'] == []
+
+@pytest.mark.asyncio
+async def test_friend_requests_and_search_return_business_profile_projection(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        created = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'projection-request'}, json={'target_user_id': 'u2', 'message': '你好'})
+        assert created.status_code == 201
+        requests = await client.get('/api/v1/friends/requests', headers=bearer(settings, 'u2'))
+        request_item = requests.json()['items'][0]
+        assert 'requester_id' not in request_item
+        assert request_item == {'id': created.json()['id'], 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'message': '你好', 'status': 'PENDING'}
+        search = await client.get('/api/v1/users/search?q=alice', headers=bearer(settings, 'u2'))
+        assert search.json()['items'] == [{'user_id': 'u1', 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test'}]
 
 @pytest.mark.asyncio
 async def test_reject_update_privacy_and_delete_friend(ctx):

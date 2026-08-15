@@ -5,20 +5,30 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.friendship.service import FriendshipService
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.profile import ProfileService
 class Strict(BaseModel):model_config=ConfigDict(extra='forbid')
 class RequestBody(Strict):target_user_id:str=Field(min_length=1,max_length=36);message:str=Field(default='',max_length=200)
 class BlockBody(Strict):user_id:str=Field(min_length=1,max_length=36)
 class TagBody(Strict):name:str=Field(min_length=1,max_length=64)
 class ContactBody(Strict):remark:str|None=Field(default=None,max_length=128);tags:list[str]=Field(default_factory=list,max_length=30);moments_permission:str='DEFAULT'
-def create_friendship_router(settings:Settings,factory):
-    router=APIRouter(tags=['friends']);service=FriendshipService(factory);tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer)
+class FriendProjection(BaseModel):
+    user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;moments_permission:str;tags:list[str]
+class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
+class FriendRequestProjection(BaseModel):
+    id:str;username:str;nickname:str;avatar_url:str|None;message:str;status:str
+class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];next_cursor:str|None=None
+class UserSearchProjection(BaseModel):
+    user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None
+class UserSearchResponse(BaseModel):items:list[UserSearchProjection];next_cursor:str|None=None
+def create_friendship_router(settings:Settings,factory,*,avatar_storage):
+    router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage));tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer)
     def actor(authorization:Annotated[str|None,Header()]=None):
         if not authorization or not authorization.startswith('Bearer '):raise AppError(code='AUTH_REQUIRED',message='需要登录',status_code=401)
         return str(tokens.decode_access_token(authorization[7:])['sub'])
     @router.post('/friends/requests',status_code=201)
     def request(body:RequestBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.request(user,body.target_user_id,body.message,idempotency_key);return {'id':r.id,'status':r.status}
-    @router.get('/friends/requests')
+    @router.get('/friends/requests',response_model=FriendRequestListResponse)
     def requests(user=Depends(actor)):return {'items':service.requests(user),'next_cursor':None}
     @router.post('/friends/requests/{request_id}/accept')
     def accept(request_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
@@ -26,7 +36,7 @@ def create_friendship_router(settings:Settings,factory):
     @router.post('/friends/requests/{request_id}/reject')
     def reject(request_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.reject(user,request_id,idempotency_key);return {'id':r.id,'status':r.status}
-    @router.get('/friends')
+    @router.get('/friends',response_model=FriendListResponse)
     def friends(user=Depends(actor)):return {'items':service.list(user),'next_cursor':None}
     @router.patch('/friends/{friend_id}')
     def update(friend_id:str,body:ContactBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
@@ -50,6 +60,6 @@ def create_friendship_router(settings:Settings,factory):
     @router.delete('/contact-tags/{tag_id}',status_code=204)
     def delete_tag(tag_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         service.delete_tag(user,tag_id,idempotency_key);return Response(status_code=204)
-    @router.get('/users/search')
+    @router.get('/users/search',response_model=UserSearchResponse)
     def search(q:Annotated[str,Query(min_length=1,max_length=64)],user=Depends(actor)):return {'items':service.search(user,q),'next_cursor':None}
     return router

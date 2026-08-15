@@ -19,7 +19,8 @@ from app.integrations.matrix_admin import (
     SynapseMatrixAdminGateway,
 )
 from integrations.email_sender import SmtpConfig, SmtpEmailSender
-from tasks.identity import IdentityEmailVerificationTask
+from integrations.avatar_reader import LocalPrivateAvatarReader
+from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
@@ -34,6 +35,7 @@ def build_identity_handlers(
     email_sender,
     matrix_gateway=None,
     matrix_provision_secret: str | None = None,
+    avatar_reader=None,
 ) -> dict:
     task = IdentityEmailVerificationTask(
         session_factory,
@@ -49,6 +51,12 @@ def build_identity_handlers(
             credential_codec=MatrixCredentialCodec(
                 matrix_provision_secret.encode("utf-8")
             ),
+        )
+    if matrix_gateway is not None and avatar_reader is not None:
+        handlers["identity.profile"] = MatrixProfileSyncTask(
+            session_factory,
+            gateway=matrix_gateway,
+            avatar_reader=avatar_reader,
         )
     return handlers
 
@@ -85,6 +93,7 @@ def main() -> None:
             "MATRIX_PROVISION_SECRET",
             "development-matrix-provision-secret",
         ),
+        avatar_reader=LocalPrivateAvatarReader(settings.avatar_storage_root),
     )
     stop_event = Event()
 

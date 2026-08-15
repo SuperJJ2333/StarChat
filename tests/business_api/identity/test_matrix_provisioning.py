@@ -114,6 +114,44 @@ def test_synapse_gateway_treats_existing_mxid_as_success() -> None:
     assert [request.method for request in requests] == ["PUT"]
 
 
+def test_synapse_gateway_uploads_private_avatar_then_sets_mxc_profile() -> None:
+    requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/_matrix/media/v3/upload":
+            return httpx.Response(
+                200, json={"content_uri": "mxc://matrix.localhost/avatar-1"}
+            )
+        return httpx.Response(200, json={})
+
+    gateway = SynapseMatrixAdminGateway(
+        homeserver_url="http://synapse:8008",
+        server_name="matrix.localhost",
+        admin_access_token="admin-token",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    mxc_uri = gateway.upload_profile_media(b"private-avatar", "image/png")
+    gateway.set_user_profile(
+        "@alice:matrix.localhost",
+        display_name="Alice Chen",
+        avatar_url=mxc_uri,
+    )
+
+    assert mxc_uri == "mxc://matrix.localhost/avatar-1"
+    assert [request.method for request in requests] == ["POST", "PUT"]
+    assert requests[0].headers["Content-Type"] == "image/png"
+    assert requests[0].content == b"private-avatar"
+    assert requests[1].url.path.endswith(
+        "/_synapse/admin/v2/users/@alice:matrix.localhost"
+    )
+    assert requests[1].read().decode("utf-8") == (
+        '{"displayname":"Alice Chen","avatar_url":'
+        '"mxc://matrix.localhost/avatar-1"}'
+    )
+
+
 def test_synapse_gateway_queries_same_mxid_after_unknown_put_timeout() -> None:
     requests = []
 

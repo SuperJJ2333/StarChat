@@ -174,6 +174,8 @@ services:
       BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
       BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
       BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
+      BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
+      BUSINESS_AVATAR_URL_SIGNING_SECRET: ${BUSINESS_AVATAR_URL_SIGNING_SECRET:-change-this-avatar-url-signing-secret}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_SECURITY: ${SMTP_SECURITY:-none}
@@ -186,8 +188,11 @@ services:
       MATRIX_SERVER_NAME: ${MATRIX_SERVER_NAME:-matrix.localhost}
       SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
       MATRIX_PROVISION_SECRET: ${MATRIX_PROVISION_SECRET:-change-this-matrix-provision-secret}
+      BUSINESS_AVATAR_STORAGE_ROOT: ${BUSINESS_AVATAR_STORAGE_ROOT:-/data/private-media}
       WORKER_ID: ${BUSINESS_WORKER_ID:-business-worker-1}
       WORKER_HEARTBEAT_PATH: /tmp/liuhetong-worker-heartbeat
+    volumes:
+      - ./data/business-media:/data/private-media:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import os,time; p='/tmp/liuhetong-worker-heartbeat'; assert os.path.exists(p) and time.time()-os.path.getmtime(p)<30"]
       interval: 10s

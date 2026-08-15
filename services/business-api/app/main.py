@@ -84,7 +84,14 @@ def create_app(
     app.include_router(create_ledger_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_redpacket_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_wallet_router(settings, session_factory), prefix="/api/v1")
-    app.include_router(create_friendship_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(
+        create_friendship_router(
+            settings,
+            session_factory,
+            avatar_storage=avatar_storage,
+        ),
+        prefix="/api/v1",
+    )
     app.include_router(create_moments_router(settings, session_factory), prefix="/api/v1")
     return app
 

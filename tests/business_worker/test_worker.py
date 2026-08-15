@@ -114,3 +114,27 @@ def test_worker_registers_matrix_provisioning_handler() -> None:
     )
 
     assert set(handlers) == {"identity.email", "identity.matrix"}
+
+
+def test_worker_registers_matrix_profile_sync_handler_with_private_avatar_reader() -> None:
+    class Gateway:
+        def ensure_user(self, localpart, password):
+            raise AssertionError("handler registration must not call Synapse")
+
+    from main import build_identity_handlers
+
+    handlers = build_identity_handlers(
+        session_factory=object(),
+        verification_secret="test-email-verification-secret",
+        public_base_url="https://example.test",
+        email_sender=object(),
+        matrix_gateway=Gateway(),
+        matrix_provision_secret="test-matrix-provision-secret",
+        avatar_reader=object(),
+    )
+
+    assert set(handlers) == {
+        "identity.email",
+        "identity.matrix",
+        "identity.profile",
+    }
