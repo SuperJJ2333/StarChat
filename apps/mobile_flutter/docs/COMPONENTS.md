@@ -4,7 +4,7 @@
 
 ## 基础组件
 
-- `WeChatPrimaryButton`：主操作、禁用和加载态。
+- `ModernActionButton`：现代白底图文主操作、危险操作、禁用和加载态。
 - `WeChatPageScaffold`：统一导航栏、安全区和页面结构。
 - `WeChatListTile`：56dp 最小高度的列表单元。
 

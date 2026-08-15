@@ -379,12 +379,13 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
                         placeholder: '新标签名称',
                         padding: const EdgeInsets.all(12),
                       ),
-                      CupertinoButton(
+                      ModernActionButton(
+                        icon: CupertinoIcons.add_circled,
+                        label: '创建标签',
                         onPressed: () async {
                           await widget.api.createContactTag(name.text.trim());
                           if (mounted) setState(() {});
                         },
-                        child: const Text('创建标签'),
                       ),
                     ],
                   ),
@@ -433,10 +434,11 @@ final class _AddFriendState extends State<AddFriendPage> {
               for (final user in items)
                 WeChatListTile(
                   title: Text(user['username'].toString()),
-                  trailing: CupertinoButton(
+                  trailing: ModernActionButton(
+                    icon: CupertinoIcons.person_add,
+                    label: '添加',
                     onPressed: () =>
                         widget.api.requestFriend(user['user_id'].toString()),
-                    child: const Text('添加'),
                   ),
                 ),
             ],
@@ -466,17 +468,21 @@ final class FriendRequestsPage extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CupertinoButton(
+                          ModernActionButton(
+                            icon: CupertinoIcons.clear,
+                            label: '拒绝',
+                            kind: ModernActionKind.danger,
                             onPressed: () => api.rejectFriendRequest(
                               request['id'].toString(),
                             ),
-                            child: const Text('拒绝'),
                           ),
-                          CupertinoButton(
+                          const SizedBox(width: 6),
+                          ModernActionButton(
+                            icon: CupertinoIcons.check_mark,
+                            label: '接受',
                             onPressed: () => api.acceptFriendRequest(
                               request['id'].toString(),
                             ),
-                            child: const Text('接受'),
                           ),
                         ],
                       ),

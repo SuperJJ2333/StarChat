@@ -12,3 +12,13 @@ def test_flutter_client_packages_native_e2ee_libraries():
     pubspec = (ROOT / "apps/mobile_flutter/pubspec.yaml").read_text(encoding="utf-8")
     assert "flutter_olm:" in pubspec
     assert "flutter_openssl_crypto:" in pubspec
+
+
+def test_business_pages_use_the_modern_action_system():
+    feature_root = ROOT / "apps/mobile_flutter/lib/features"
+    offenders = []
+    for path in feature_root.rglob("*.dart"):
+        source = path.read_text(encoding="utf-8")
+        if "WeChatPrimaryButton" in source or "CupertinoButton.filled" in source:
+            offenders.append(path.relative_to(ROOT).as_posix())
+    assert offenders == []

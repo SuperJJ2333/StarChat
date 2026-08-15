@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liuhetong_mobile/ui/components/wechat_button.dart';
+import 'package:liuhetong_mobile/ui/components/modern_action_button.dart';
 import 'package:liuhetong_mobile/ui/theme/wechat_theme.dart';
 
 void main() {
@@ -16,7 +16,12 @@ void main() {
   });
   testWidgets('loading primary button cannot be pressed', (tester) async {
     var presses = 0;
-    await tester.pumpWidget(CupertinoApp(home: WeChatPrimaryButton(label: '登录', loading: true, onPressed: () => presses++)));
+    await tester.pumpWidget(CupertinoApp(
+        home: ModernActionButton(
+            icon: CupertinoIcons.person,
+            label: '登录',
+            loading: true,
+            onPressed: () => presses++)));
     await tester.tap(find.text('登录'));
     expect(presses, 0);
     expect(find.byType(CupertinoActivityIndicator), findsOneWidget);

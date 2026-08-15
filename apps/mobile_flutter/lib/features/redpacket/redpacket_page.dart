@@ -1,5 +1,98 @@
 import 'package:flutter/cupertino.dart';
+import '../../ui/components/modern_action_button.dart';
 import '../../core/business_api_client.dart';
 import 'red_packet_detail_sheet.dart';
-final class RedPacketPage extends StatefulWidget { const RedPacketPage({super.key, this.api}); final BusinessApiClient? api; @override State<RedPacketPage> createState()=>_RedPacketPageState(); }
-final class _RedPacketPageState extends State<RedPacketPage> { String mode='EQUAL'; final total=TextEditingController(); final shares=TextEditingController(text:'1'); final recipient=TextEditingController(); final packetId=TextEditingController(); String? result; @override void dispose(){total.dispose(); shares.dispose(); recipient.dispose(); packetId.dispose(); super.dispose();} Future<void> create() async { try { final r=await widget.api?.createRedPacket(mode: mode,total: total.text.trim(),shareCount:int.tryParse(shares.text)??1,recipientId:recipient.text.trim()); setState(()=>result='红包已创建：${r?['id']??'处理中'}'); } catch(e){setState(()=>result=e.toString());} } void detail(){final api=widget.api,id=packetId.text.trim();if(api==null||id.isEmpty)return;showCupertinoModalPopup<void>(context:context,builder:(_)=>RedPacketDetailSheet(api:api,packetId:id));} @override Widget build(BuildContext context)=>ListView(padding: const EdgeInsets.all(20),children:[const Text('彩币红包',style:TextStyle(fontSize:32,fontWeight:FontWeight.w700)),const SizedBox(height:18),CupertinoSlidingSegmentedControl<String>(groupValue:mode,children:const {'EQUAL':Text('等额'),'RANDOM':Text('拼手气')},onValueChanged:(v)=>setState(()=>mode=v!)),CupertinoListSection.insetGrouped(header:const Text('创建红包'),children:[CupertinoTextField(controller:total,placeholder:'总金额',keyboardType:TextInputType.number,padding:const EdgeInsets.all(14)),CupertinoTextField(controller:shares,placeholder:'份数',keyboardType:TextInputType.number,padding:const EdgeInsets.all(14)),CupertinoTextField(controller:recipient,placeholder:'接收用户 ID（私聊红包）',padding:const EdgeInsets.all(14)),CupertinoButton.filled(onPressed:widget.api==null?null:create,child:const Text('发红包'))]),CupertinoListSection.insetGrouped(header:const Text('领取红包'),children:[CupertinoTextField(controller:packetId,placeholder:'红包 ID',padding:const EdgeInsets.all(14)),CupertinoButton(onPressed:widget.api==null?null:detail,child:const Text('查看并拆红包'))]),if(result!=null)Text(result!),const Text('红包有效期 24 小时，未领取金额自动退回')]); }
+
+final class RedPacketPage extends StatefulWidget {
+  const RedPacketPage({super.key, this.api});
+  final BusinessApiClient? api;
+  @override
+  State<RedPacketPage> createState() => _RedPacketPageState();
+}
+
+final class _RedPacketPageState extends State<RedPacketPage> {
+  String mode = 'EQUAL';
+  final total = TextEditingController();
+  final shares = TextEditingController(text: '1');
+  final recipient = TextEditingController();
+  final packetId = TextEditingController();
+  String? result;
+  @override
+  void dispose() {
+    total.dispose();
+    shares.dispose();
+    recipient.dispose();
+    packetId.dispose();
+    super.dispose();
+  }
+
+  Future<void> create() async {
+    try {
+      final r = await widget.api?.createRedPacket(
+          mode: mode,
+          total: total.text.trim(),
+          shareCount: int.tryParse(shares.text) ?? 1,
+          recipientId: recipient.text.trim());
+      setState(() => result = '红包已创建：${r?['id'] ?? '处理中'}');
+    } catch (e) {
+      setState(() => result = e.toString());
+    }
+  }
+
+  void detail() {
+    final api = widget.api, id = packetId.text.trim();
+    if (api == null || id.isEmpty) return;
+    showCupertinoModalPopup<void>(
+        context: context,
+        builder: (_) => RedPacketDetailSheet(api: api, packetId: id));
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      ListView(padding: const EdgeInsets.all(20), children: [
+        const Text('彩币红包',
+            style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 18),
+        CupertinoSlidingSegmentedControl<String>(
+            groupValue: mode,
+            children: const {'EQUAL': Text('等额'), 'RANDOM': Text('拼手气')},
+            onValueChanged: (v) => setState(() => mode = v!)),
+        CupertinoListSection.insetGrouped(
+            header: const Text('创建红包'),
+            children: [
+              CupertinoTextField(
+                  controller: total,
+                  placeholder: '总金额',
+                  keyboardType: TextInputType.number,
+                  padding: const EdgeInsets.all(14)),
+              CupertinoTextField(
+                  controller: shares,
+                  placeholder: '份数',
+                  keyboardType: TextInputType.number,
+                  padding: const EdgeInsets.all(14)),
+              CupertinoTextField(
+                  controller: recipient,
+                  placeholder: '接收用户 ID（私聊红包）',
+                  padding: const EdgeInsets.all(14)),
+              ModernActionButton(
+                  icon: CupertinoIcons.gift,
+                  label: '发红包',
+                  onPressed: widget.api == null ? null : create)
+            ]),
+        CupertinoListSection.insetGrouped(
+            header: const Text('领取红包'),
+            children: [
+              CupertinoTextField(
+                  controller: packetId,
+                  placeholder: '红包 ID',
+                  padding: const EdgeInsets.all(14)),
+              ModernActionButton(
+                icon: CupertinoIcons.doc_text_search,
+                label: '查看并拆红包',
+                onPressed: widget.api == null ? null : detail,
+              )
+            ]),
+        if (result != null) Text(result!),
+        const Text('红包有效期 24 小时，未领取金额自动退回')
+      ]);
+}
