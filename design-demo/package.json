@@ -1,0 +1,9 @@
+{
+  "name": "changliao-design-demo",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-reporter=spec"
+  }
+}
