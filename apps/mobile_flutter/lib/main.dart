@@ -7,8 +7,8 @@ import 'core/app_config.dart';
 import 'core/business_api_client.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
-import 'features/auth/login_page.dart';
 import 'features/auth/login_controller.dart';
+import 'features/auth/authentication_flow.dart';
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'session_gate.dart';
@@ -31,7 +31,7 @@ Future<void> main() async {
   final session = SessionBootstrapController(business: api, matrix: matrix);
   final gate = SessionGate(
     controller: session,
-    unauthenticatedBuilder: (_) => LoginPage(
+    unauthenticatedBuilder: (_) => AuthenticationFlow(
       api: api,
       onLogin: (username, password) async {
         final login = DualDomainLoginService(

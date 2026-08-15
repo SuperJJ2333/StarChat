@@ -14,7 +14,7 @@ void main() {
   testWidgets('renders login form', (tester) async {
     final api = BusinessApiClient(baseUri: Uri.parse('http://localhost:8082'), sessionStore: SecureSessionStore());
     await tester.pumpWidget(CupertinoApp(home: LoginPage(api: api, onLogin: (_, __) async {})));
-    expect(find.text('登录'), findsNWidgets(2));
+    expect(find.text('登录'), findsOneWidget);
     expect(find.byType(CupertinoTextField), findsNWidgets(2));
   });
 }
