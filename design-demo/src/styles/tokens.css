@@ -76,6 +76,12 @@
   --size-moment-image: 104px;
   --size-gallery-gap: 40px;
   --size-message-max: 72%;
+  --size-auth-logo: 64px;
+  --size-call-avatar: 96px;
+  --size-call-controls: 72px;
+  --size-content-max: 345px;
+  --size-form-row: 48px;
+  --size-call-hero: 560px;
   --scale-pressed: 0.98;
   --opacity-pressed: 0.72;
   --opacity-muted: 0.56;

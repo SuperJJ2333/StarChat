@@ -1,4 +1,5 @@
 import { element } from "../components/base.js";
+import { createStatusBarNode } from "../components/chrome.js";
 
 export function createDeviceScreen(definition, content) {
   const screen = element("article", "ui-screen");
@@ -10,7 +11,7 @@ export function createDeviceScreen(definition, content) {
   screen.setAttribute("aria-label", definition.title);
 
   const device = element("div", "ui-device");
-  const statusBar = document.createElement("app-status-bar");
+  const statusBar = createStatusBarNode();
   const viewport = element("main", "ui-device__viewport");
   viewport.append(content);
   const home = element("footer", "c-home-indicator");
@@ -34,4 +35,16 @@ export function component(tagName, attributes = {}) {
     }
   }
   return value;
+}
+
+export function navigation(title, options = {}) {
+  return component("app-navigation-bar", {
+    title,
+    leading: options.leading,
+    action: options.action
+  });
+}
+
+export function tabBar(active) {
+  return component("app-tab-bar", { active });
 }

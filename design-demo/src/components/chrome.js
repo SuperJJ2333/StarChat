@@ -1,16 +1,20 @@
 import { StrictElement, button, element } from "./base.js";
 import { icon } from "../icons/icons.js";
 
+export function createStatusBarNode(time = "9:41") {
+  const root = element("header", "c-status-bar");
+  root.append(
+    element("span", "c-status-bar__time", time),
+    element("span", "c-status-bar__island", ""),
+    element("span", "c-status-bar__indicators", "5G  ▰")
+  );
+  root.setAttribute("aria-label", "设备状态栏");
+  return root;
+}
+
 export class AppStatusBar extends StrictElement {
   render() {
-    const root = element("header", "c-status-bar");
-    root.append(
-      element("span", "c-status-bar__time", this.attr("time", "9:41")),
-      element("span", "c-status-bar__island", ""),
-      element("span", "c-status-bar__indicators", "5G  ▰")
-    );
-    root.setAttribute("aria-label", "设备状态栏");
-    return root;
+    return createStatusBarNode(this.attr("time", "9:41"));
   }
 }
 
