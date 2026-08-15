@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
 
 import 'app_home.dart';
 import 'core/app_config.dart';
@@ -9,6 +8,7 @@ import 'core/business_api_client.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/login_controller.dart';
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'session_gate.dart';
@@ -34,19 +34,12 @@ Future<void> main() async {
     unauthenticatedBuilder: (_) => LoginPage(
       api: api,
       onLogin: (username, password) async {
-        await api.login(
-          username: username,
-          password: password,
-          deviceKey: 'flutter-${DateTime.now().millisecondsSinceEpoch}',
-          deviceName: '六合通移动端',
+        final login = DualDomainLoginService(
+          business: api,
+          matrix: matrix,
+          deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
         );
-        try {
-          await matrix.login('@$username:matrix.localhost', password);
-          await matrix.sync();
-        } on MatrixException {
-          await api.logout();
-          rethrow;
-        }
+        await login.login(username, password);
       },
       onAuthenticated: session.bootstrap,
     ),

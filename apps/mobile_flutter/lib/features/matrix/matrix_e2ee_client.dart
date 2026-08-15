@@ -1,5 +1,6 @@
 import 'package:matrix/matrix.dart';
 import 'dart:typed_data';
+import '../auth/login_controller.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -24,7 +25,7 @@ abstract interface class MatrixE2eeClient implements MatrixSessionGateway {
       String roomId, List<int> plaintext, String mimeType);
 }
 
-final class MatrixSdkE2eeClient implements MatrixE2eeClient {
+final class MatrixSdkE2eeClient implements MatrixE2eeClient, MatrixTokenLoginGateway {
   MatrixSdkE2eeClient(
     Client client, {
     required this.homeserver,
@@ -54,6 +55,12 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient {
         identifier: AuthenticationUserIdentifier(user: userId),
         password: password,
         initialDeviceDisplayName: '六合通移动端');
+  }
+
+  @override
+  Future<void> loginWithToken({required String loginToken, required Uri homeserver}) async {
+    await client.checkHomeserver(homeserver);
+    await client.login('m.login.token', token: loginToken, initialDeviceDisplayName: '六合通移动端');
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
@@ -112,5 +113,32 @@ void main() {
 
     expect((await api.caibiBalance())['balance'], '0.00');
     expect(balanceCalls, 2);
+  });
+
+  test('typed dual-domain API stores Business tokens then binds Matrix identity', () async {
+    final storage = MemoryStore();
+    final store = SecureSessionStore(storage);
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: store,
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/auth/login') {
+          expect(jsonDecode(request.body)['password'], 'business-password');
+          return http.Response(jsonEncode({'access_token': 'business-a', 'refresh_token': 'business-r'}), 200);
+        }
+        expect(request.url.path, '/api/v1/auth/matrix-login-token');
+        expect(request.headers['Authorization'], 'Bearer business-a');
+        expect(request.body, isEmpty);
+        return http.Response(jsonEncode({'login_token': 'matrix-once', 'homeserver': 'https://matrix.example', 'expires_in': 60}), 200);
+      }),
+    );
+
+    await api.loginBusiness(username: 'alice', password: 'business-password', deviceKey: 'device-1', deviceName: '六合通移动端');
+    final grant = await api.issueMatrixLoginToken();
+    await api.bindMatrixUserId('@alice:matrix.example');
+
+    expect(grant, isA<MatrixLoginGrant>());
+    expect(grant.loginToken, 'matrix-once');
+    expect((await store.session())?.matrixUserId, '@alice:matrix.example');
   });
 }

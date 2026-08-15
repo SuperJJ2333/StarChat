@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
+import '../features/auth/login_controller.dart';
+import '../features/auth/registration_controller.dart';
 
 final class BusinessApiException implements Exception {
   const BusinessApiException({required this.statusCode, required this.code, required this.message});
@@ -21,7 +23,7 @@ abstract interface class BusinessSessionGateway {
   Future<void> logout();
 }
 
-final class BusinessApiClient implements BusinessSessionGateway {
+final class BusinessApiClient implements BusinessSessionGateway, RegistrationGateway, DualDomainBusinessGateway {
   BusinessApiClient({required this.baseUri, required this.sessionStore, http.Client? client}) : _client = client ?? http.Client();
   final Uri baseUri;
   final SecureSessionStore sessionStore;
@@ -32,9 +34,22 @@ final class BusinessApiClient implements BusinessSessionGateway {
   Future<Map<String, dynamic>> login({required String username, required String password, required String deviceKey, required String deviceName}) async {
     final response = await _client.post(_uri('/auth/login'), headers: {'Content-Type': 'application/json'}, body: jsonEncode({'username': username, 'password': password, 'device_key': deviceKey, 'device_name': deviceName}));
     final body = _decode(response);
-    await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String, matrixUserId: '@$username:matrix.localhost');
+    await sessionStore.saveSession(accessToken: body['access_token'] as String, refreshToken: body['refresh_token'] as String);
     return body;
   }
+  @override Future<void> loginBusiness({required String username,required String password,required String deviceKey,required String deviceName}) async {await login(username:username,password:password,deviceKey:deviceKey,deviceName:deviceName);}
+  @override Future<MatrixLoginGrant> issueMatrixLoginToken() async {
+    final response=await _authorized((headers)=>_client.post(_uri('/auth/matrix-login-token'),headers:headers));
+    final body=_decode(response);
+    return MatrixLoginGrant(loginToken:body['login_token'] as String,homeserver:body['homeserver'] as String,expiresIn:body['expires_in'] as int);
+  }
+  @override Future<void> bindMatrixUserId(String matrixUserId) async {final stored=await sessionStore.session();if(stored==null)throw const BusinessApiException(statusCode:401,code:'AUTH_REQUIRED',message:'需要登录');await sessionStore.saveSession(accessToken:stored.accessToken,refreshToken:stored.refreshToken,matrixUserId:matrixUserId);}
+  @override Future<void> logoutBusiness()=>logout();
+  @override Future<bool> validateInvitation(String invitationCode) async {final response=await _client.post(_uri('/invitations/validate'),headers:{'Content-Type':'application/json'},body:jsonEncode({'invitation_code':invitationCode}));return _decode(response)['valid'] as bool;}
+  @override Future<RegistrationReceipt> register({required String username,required String email,required String password,required String invitationCode}) async {final response=await _client.post(_uri('/auth/register'),headers:{'Content-Type':'application/json','Idempotency-Key':newIdempotencyKey()},body:jsonEncode({'username':username,'email':email,'password':password,'invitation_code':invitationCode}));final body=_decode(response);return RegistrationReceipt(registrationSession:body['registration_session'] as String,status:body['status'] as String,resendAfterSeconds:body['resend_after_seconds'] as int);}
+  @override Future<void> verifyEmail({required String registrationSession,String? code,String? token}) async {final response=await _client.post(_uri('/auth/email-verifications/verify'),headers:{'Content-Type':'application/json','Idempotency-Key':newIdempotencyKey()},body:jsonEncode({'registration_session':registrationSession,if(code!=null)'code':code,if(token!=null)'token':token}));_decode(response);}
+  @override Future<int> resendVerification(String registrationSession) async {final response=await _client.post(_uri('/auth/email-verifications/resend'),headers:{'Content-Type':'application/json','Idempotency-Key':newIdempotencyKey()},body:jsonEncode({'registration_session':registrationSession}));return _decode(response)['resend_after_seconds'] as int;}
+  @override Future<RegistrationStatusReceipt> registrationStatus(String registrationSession) async {final response=await _client.get(_uri('/auth/registrations/${Uri.encodeComponent(registrationSession)}'));final body=_decode(response);return RegistrationStatusReceipt(status:body['status'] as String,resendAfterSeconds:body['resend_after_seconds'] as int);}
   @override Future<BusinessSessionRestore> restoreSession() async {
     final stored = await sessionStore.session();
     if (stored == null) return BusinessSessionRestore.absent;
