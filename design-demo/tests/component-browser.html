@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <title>Component contract pending</title>
+  </head>
+  <body data-test-result="pending">
+    <main id="test-root"></main>
+    <script type="module">
+      try {
+        const [{ registerComponents }, { componentContracts }] = await Promise.all([
+          import("/src/components/register.js"),
+          import("/src/catalog/contracts.js")
+        ]);
+        registerComponents();
+        const root = document.querySelector("#test-root");
+        for (const contract of componentContracts) {
+          const element = document.createElement(contract.tagName);
+          root.append(element);
+          await customElements.whenDefined(contract.tagName);
+          if (!element.firstElementChild?.classList.contains(contract.rootClass)) {
+            throw new Error(`${contract.tagName} did not render ${contract.rootClass}`);
+          }
+        }
+
+        const incoming = document.createElement("app-message-bubble");
+        incoming.setAttribute("direction", "incoming");
+        const outgoing = document.createElement("app-message-bubble");
+        outgoing.setAttribute("direction", "outgoing");
+        root.append(incoming, outgoing);
+        const signature = (element) => [...element.querySelectorAll("*")]
+          .map((node) => node.className)
+          .filter(Boolean)
+          .join("|")
+          .replaceAll("c-message--incoming", "c-message--direction")
+          .replaceAll("c-message--outgoing", "c-message--direction");
+        if (signature(incoming) !== signature(outgoing)) {
+          throw new Error("incoming and outgoing message DOM signatures differ");
+        }
+
+        const packet = document.createElement("app-red-packet-card");
+        root.append(packet);
+        if (packet.querySelector(".c-red-packet__footer")?.textContent.trim() !== "畅聊彩币红包") {
+          throw new Error("red packet footer brand is incorrect");
+        }
+
+        document.body.dataset.testResult = "passed";
+        document.title = "Component contract passed";
+      } catch (error) {
+        document.body.dataset.testResult = "failed";
+        document.body.dataset.testMessage = error.message;
+        document.title = "Component contract failed";
+      }
+    </script>
+  </body>
+</html>

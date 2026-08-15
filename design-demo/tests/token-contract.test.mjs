@@ -27,6 +27,7 @@ test("light and dark themes expose the same semantic color keys", async () => {
     "--color-bubble-outgoing",
     "--color-danger",
     "--color-divider",
+    "--color-on-accent",
     "--color-page-background",
     "--color-scrim",
     "--color-social-link",
