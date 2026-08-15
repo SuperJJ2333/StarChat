@@ -8,11 +8,17 @@ final class ProfileExperiencePage extends StatefulWidget {
   const ProfileExperiencePage({
     super.key,
     required this.controller,
+    required this.onCaibi,
+    required this.onRedPacket,
+    required this.onWallet,
     required this.onSettings,
     required this.onLogout,
   });
 
   final ProfileController controller;
+  final VoidCallback onCaibi;
+  final VoidCallback onRedPacket;
+  final VoidCallback onWallet;
   final VoidCallback onSettings;
   final Future<void> Function() onLogout;
 
@@ -165,6 +171,27 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                   const SizedBox(height: 12),
                   Text('邮箱：${profile.maskedEmail}'),
                   const SizedBox(height: 20),
+                  ModernActionButton(
+                    icon: CupertinoIcons.money_dollar_circle,
+                    label: '彩币',
+                    kind: ModernActionKind.secondary,
+                    onPressed: widget.onCaibi,
+                  ),
+                  const SizedBox(height: 10),
+                  ModernActionButton(
+                    icon: CupertinoIcons.gift,
+                    label: '红包',
+                    kind: ModernActionKind.secondary,
+                    onPressed: widget.onRedPacket,
+                  ),
+                  const SizedBox(height: 10),
+                  ModernActionButton(
+                    icon: CupertinoIcons.creditcard,
+                    label: '钱包',
+                    kind: ModernActionKind.secondary,
+                    onPressed: widget.onWallet,
+                  ),
+                  const SizedBox(height: 10),
                   ModernActionButton(
                     icon: CupertinoIcons.settings,
                     label: '设置',

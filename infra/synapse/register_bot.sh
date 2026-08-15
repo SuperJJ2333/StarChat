@@ -10,5 +10,5 @@ register_new_matrix_user \
   -c /data/homeserver.yaml \
   http://localhost:8008 \
   -u "${SYNAPSE_BOT_USERNAME}" \
-  -p "${SYNAPSE_BOT_PASSWORD}"
-
+  -p "${SYNAPSE_BOT_PASSWORD}" \
+  --no-admin

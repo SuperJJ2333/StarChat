@@ -94,6 +94,22 @@ void main() {
     expect(matrix.logoutCalls, 0);
   });
 
+  test('missing migrated Business MXID cannot authenticate a Matrix session', () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated);
+    final matrix = FakeMatrix(
+      isLoggedIn: true,
+      userId: '@mallory:matrix.localhost',
+    );
+    final controller =
+        SessionBootstrapController(business: business, matrix: matrix);
+
+    await controller.bootstrap();
+
+    expect(controller.state.status, SessionBootstrapStatus.fatalError);
+    expect(business.logoutCalls, 0);
+    expect(matrix.logoutCalls, 0);
+  });
+
   test('local storage failure becomes fatal error', () async {
     final controller = SessionBootstrapController(
       business: FakeBusiness(BusinessSessionRestore.absent, error: const FormatException('corrupt')),

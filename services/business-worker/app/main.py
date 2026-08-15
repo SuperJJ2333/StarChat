@@ -13,6 +13,7 @@ from app.modules.redpacket.service import RedPacketService
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 from app.modules.wallet.service import WalletService
 from app.modules.identity.registration import VerificationTokenCodec
+from app.modules.identity.recovery import PasswordResetTokenCodec
 from app.modules.identity.provisioning import MatrixProvisionTask
 from app.integrations.matrix_admin import (
     MatrixCredentialCodec,
@@ -31,6 +32,7 @@ def build_identity_handlers(
     *,
     session_factory,
     verification_secret: str,
+    password_reset_secret: str | None = None,
     public_base_url: str,
     email_sender,
     matrix_gateway=None,
@@ -40,6 +42,7 @@ def build_identity_handlers(
     task = IdentityEmailVerificationTask(
         session_factory,
         token_codec=VerificationTokenCodec(verification_secret.encode("utf-8")),
+        password_reset_codec=PasswordResetTokenCodec(password_reset_secret.encode("utf-8")) if password_reset_secret else None,
         public_base_url=public_base_url,
         email_sender=email_sender,
     )
@@ -77,21 +80,22 @@ def main() -> None:
         server_name=os.getenv("MATRIX_SERVER_NAME", "matrix.localhost"),
         admin_access_token=os.getenv("SYNAPSE_ADMIN_ACCESS_TOKEN", ""),
     )
+    public_base_url = os.getenv("EMAIL_VERIFICATION_PUBLIC_BASE_URL", "http://localhost:8082")
+    if settings.environment == "production" and not public_base_url.casefold().startswith("https://"):
+        raise ValueError("production email public base URL must use HTTPS")
     identity_handlers = build_identity_handlers(
         session_factory=session_factory,
         verification_secret=(
             settings.email_verification_secret
             or "development-email-verification-secret"
         ),
-        public_base_url=os.getenv(
-            "EMAIL_VERIFICATION_PUBLIC_BASE_URL",
-            "http://localhost:8082",
-        ),
+        password_reset_secret=settings.password_reset_secret,
+        public_base_url=public_base_url,
         email_sender=email_sender,
         matrix_gateway=matrix_gateway,
-        matrix_provision_secret=os.getenv(
-            "MATRIX_PROVISION_SECRET",
-            "development-matrix-provision-secret",
+        matrix_provision_secret=(
+            settings.matrix_provision_secret
+            or "development-matrix-provision-secret"
         ),
         avatar_reader=LocalPrivateAvatarReader(settings.avatar_storage_root),
     )

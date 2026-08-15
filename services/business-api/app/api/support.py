@@ -28,7 +28,7 @@ def create_support_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/support", tags=["support"])
     queue = SupportQueueService(session_factory)
     rbac = RbacService(session_factory)
-    tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer)
+    tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):

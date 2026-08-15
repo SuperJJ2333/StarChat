@@ -54,10 +54,72 @@ def test_production_accepts_required_secrets() -> None:
         email_verification_secret="test-email-verification-secret",
         password_reset_secret="test-password-reset-secret",
         synapse_admin_access_token="test-synapse-admin-access-token",
+        matrix_provision_secret="test-matrix-provision-secret",
         avatar_url_signing_secret="test-avatar-url-signing-secret",
+        matrix_public_homeserver_url="https://matrix.example.test",
+        avatar_public_base_url="https://api.example.test",
     )
 
     assert settings.environment == "production"
+
+
+def test_production_rejects_public_matrix_provision_secret() -> None:
+    with pytest.raises(ValueError, match="MATRIX_PROVISION_SECRET"):
+        _settings(
+            environment="production",
+            jwt_secret="test-jwt-secret",
+            totp_issuer="六合通",
+            email_verification_secret="test-email-verification-secret",
+            password_reset_secret="test-password-reset-secret",
+            synapse_admin_access_token="test-synapse-admin-access-token",
+            matrix_provision_secret="development-matrix-provision-secret",
+            avatar_url_signing_secret="test-avatar-url-signing-secret",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("jwt_secret", "change-this-business-jwt-secret"),
+        ("email_verification_secret", "change-this-email-verification-secret"),
+        ("password_reset_secret", "change-this-password-reset-secret"),
+        ("synapse_admin_access_token", "change-this-synapse-admin-token"),
+        ("matrix_provision_secret", "change-this-matrix-provision-secret"),
+        ("avatar_url_signing_secret", "change-this-avatar-url-signing-secret"),
+    ],
+)
+def test_production_rejects_public_placeholder_secrets(field, value) -> None:
+    secure = "s" * 48
+    values = {
+        "environment": "production",
+        "jwt_secret": secure,
+        "totp_issuer": "六合通",
+        "email_verification_secret": secure,
+        "password_reset_secret": secure,
+        "synapse_admin_access_token": secure,
+        "matrix_provision_secret": secure,
+        "avatar_url_signing_secret": secure,
+        "matrix_public_homeserver_url": "https://matrix.example.test",
+        "avatar_public_base_url": "https://api.example.test",
+        field: value,
+    }
+
+    with pytest.raises(ValueError, match="production secrets"):
+        _settings(**values)
+
+
+def test_production_rejects_cleartext_public_urls() -> None:
+    with pytest.raises(ValueError, match="HTTPS"):
+        _settings(
+            environment="production",
+            jwt_secret="test-jwt-secret",
+            totp_issuer="六合通",
+            email_verification_secret="test-email-verification-secret",
+            password_reset_secret="test-password-reset-secret",
+            synapse_admin_access_token="test-synapse-admin-access-token",
+            matrix_provision_secret="test-matrix-provision-secret",
+            avatar_url_signing_secret="test-avatar-url-signing-secret",
+        )
 
 
 def test_unscoped_database_url_environment_variable_is_ignored(monkeypatch) -> None:

@@ -56,6 +56,7 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
       roomId: room.id,
       encrypted: room.encrypted,
       joinedMemberCount: members.length,
+      participantIds: members.map((member) => member.id).toSet(),
     );
   }
 }

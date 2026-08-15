@@ -94,6 +94,9 @@ def test_device_revocation_revokes_its_token_families(identity_components) -> No
     with pytest.raises(AppError) as exc_info:
         tokens.rotate(pair.refresh_token)
     assert exc_info.value.code == "REFRESH_TOKEN_INVALID"
+    with pytest.raises(AppError) as access_error:
+        tokens.decode_access_token(pair.access_token)
+    assert access_error.value.code == "ACCESS_TOKEN_INVALID"
     with factory() as session:
         assert session.get(Device, pair.device_id).revoked_at is not None
 

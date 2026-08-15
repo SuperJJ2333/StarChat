@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import 'call_controller.dart';
+import 'matrix_call_adapter.dart';
 
 final class CallPage extends StatefulWidget {
   const CallPage({
@@ -12,6 +14,7 @@ final class CallPage extends StatefulWidget {
     required this.fallbackSeed,
     this.avatarUrl,
     this.incoming = false,
+    this.mediaBackend,
   });
 
   final CallController controller;
@@ -19,25 +22,44 @@ final class CallPage extends StatefulWidget {
   final String fallbackSeed;
   final String? avatarUrl;
   final bool incoming;
+  final MatrixCallBackend? mediaBackend;
 
   @override
   State<CallPage> createState() => _CallPageState();
 }
 
 final class _CallPageState extends State<CallPage> {
+  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+
   @override
   void initState() {
     super.initState();
+    _initializeRenderers();
     widget.controller.addListener(_changed);
   }
 
+  Future<void> _initializeRenderers() async {
+    await Future.wait(
+        [_localRenderer.initialize(), _remoteRenderer.initialize()]);
+    _updateStreams();
+  }
+
+  void _updateStreams() {
+    _localRenderer.srcObject = widget.mediaBackend?.localMediaStream;
+    _remoteRenderer.srcObject = widget.mediaBackend?.remoteMediaStream;
+  }
+
   void _changed() {
+    _updateStreams();
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_changed);
+    _localRenderer.dispose();
+    _remoteRenderer.dispose();
     super.dispose();
   }
 
@@ -67,12 +89,42 @@ final class _CallPageState extends State<CallPage> {
           child: Column(
             children: [
               const Spacer(),
-              UserAvatar(
-                nickname: widget.displayName,
-                fallbackSeed: widget.fallbackSeed,
-                avatarUrl: widget.avatarUrl,
-                size: 112,
-              ),
+              if (state.type == CallMediaType.video &&
+                  widget.mediaBackend != null)
+                Expanded(
+                  flex: 3,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 360),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: RTCVideoView(_remoteRenderer),
+                          ),
+                          Positioned(
+                            right: 12,
+                            bottom: 12,
+                            width: 100,
+                            height: 140,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: RTCVideoView(_localRenderer, mirror: true),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else
+                UserAvatar(
+                  nickname: widget.displayName,
+                  fallbackSeed: widget.fallbackSeed,
+                  avatarUrl: widget.avatarUrl,
+                  size: 112,
+                ),
               const SizedBox(height: 20),
               Text(
                 widget.displayName,

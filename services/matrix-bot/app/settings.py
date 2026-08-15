@@ -4,7 +4,7 @@ import json
 from functools import cached_property
 from typing import Any
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     matrix_message_dedup_ttl_seconds: int = Field(default=3600, alias="MATRIX_MESSAGE_DEDUP_TTL_SECONDS")
     matrix_idempotency_db_path: str = Field(default="/data/bot/idempotency.sqlite3", alias="MATRIX_IDEMPOTENCY_DB_PATH")
     matrix_allow_unverified_devices: bool = Field(default=True, alias="MATRIX_ALLOW_UNVERIFIED_DEVICES")
+
+    @field_validator("matrix_homeserver_url")
+    @classmethod
+    def normalize_matrix_homeserver_url(cls, value: str) -> str:
+        return value.rstrip("/")
 
     @model_validator(mode="after")
     def validate_credentials(self) -> "Settings":

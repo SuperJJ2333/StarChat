@@ -23,7 +23,9 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
         "/api/v1/invitations/validate",
         "/api/v1/auth/register",
         "/api/v1/auth/email-verifications/verify",
+        "/api/v1/auth/email-verifications/link",
         "/api/v1/auth/email-verifications/resend",
+        "/api/v1/verify-email",
         "/api/v1/auth/registrations/{registration_session}",
         "/api/v1/auth/login",
         "/api/v1/auth/matrix-login-token",
@@ -104,6 +106,22 @@ def test_contract_contains_stable_error_schema() -> None:
         "trace_id",
         "fields",
     }
+
+
+def test_contract_describes_bearer_auth_and_binary_avatar_upload() -> None:
+    document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+
+    assert document["components"]["securitySchemes"]["bearerAuth"] == {
+        "scheme": "bearer",
+        "type": "http",
+    }
+    assert document["paths"]["/api/v1/profile/me"]["get"]["security"] == [
+        {"bearerAuth": []}
+    ]
+    upload = document["paths"][
+        "/api/v1/profile/avatar/uploads/{upload_id}/content"
+    ]["put"]
+    assert "application/octet-stream" in upload["requestBody"]["content"]
 
 
 

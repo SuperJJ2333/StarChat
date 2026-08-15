@@ -9,6 +9,7 @@ from app.core.errors import AppError
 from app.core.outbox import OutboxMessage, OutboxEvent
 from app.modules.identity.invitations import InvitationService
 from app.modules.identity.models import EmailVerificationChallenge, User
+from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.registration import RegistrationService, VerificationTokenCodec
@@ -25,6 +26,29 @@ class RecordingSender:
 
     def send_email_verification(self, *, recipient, code, link):
         self.messages.append((recipient, code, link))
+
+    def send_password_reset(self, *, recipient, link):
+        self.messages.append((recipient, link))
+
+
+def test_identity_task_delivers_derived_password_reset_link() -> None:
+    module = _identity_module()
+    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    now = datetime(2026, 8, 14, 8, 0, tzinfo=timezone.utc)
+    codec = PasswordResetTokenCodec(b"test-password-reset-secret")
+    with factory.begin() as session:
+        session.add(User(id="reset-user", username="reset", username_normalized="reset", email="reset@example.test", email_normalized="reset@example.test", password_hash="hash", status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
+    token = PasswordRecoveryService(factory, password_hasher=PasswordHasher(), token_codec=codec, now_factory=lambda: now).request("reset@example.test")
+    with factory() as session:
+        event = session.scalar(select(OutboxEvent).where(OutboxEvent.event_type == "identity.password_reset.requested"))
+    assert token not in str(event.payload)
+    sender = RecordingSender()
+    task = module.IdentityEmailVerificationTask(factory, token_codec=VerificationTokenCodec(b"test-email-verification-secret"), password_reset_codec=codec, public_base_url="https://example.test", email_sender=sender, now_factory=lambda: now)
+    task(OutboxMessage(id=event.id, topic=event.topic, event_type=event.event_type, aggregate_type=event.aggregate_type, aggregate_id=event.aggregate_id, payload=event.payload, headers={}, attempt_count=1))
+    assert sender.messages == [("reset@example.test", f"https://example.test/api/v1/reset-password#token={token}")]
+    engine.dispose()
 
 
 def test_identity_task_derives_both_credentials_without_outbox_plaintext() -> None:
@@ -93,7 +117,7 @@ def test_identity_task_derives_both_credentials_without_outbox_plaintext() -> No
         (
             "alice@example.test",
             codec.verification_code(challenge.id),
-            f"https://example.test/verify-email?token={codec.link_token(challenge.id)}",
+            f"https://example.test/api/v1/verify-email#token={codec.link_token(challenge.id)}",
         )
     ]
     engine.dispose()

@@ -47,7 +47,7 @@ def create_moments_router(settings: Settings, factory):
     router = APIRouter(prefix="/moments", tags=["moments"])
     service = MomentsService(factory)
     media = MomentMediaService(factory)
-    tokens = TokenService(factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer)
+    tokens = TokenService(factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
 
     def actor(authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith("Bearer "):

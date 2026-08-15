@@ -6,7 +6,9 @@ from urllib.parse import quote
 from sqlalchemy import select
 
 from app.core.errors import AppError
-from app.modules.identity.models import EmailVerificationChallenge, User
+from app.modules.identity.models import EmailVerificationChallenge, PasswordResetChallenge, User
+from app.modules.identity.recovery import PasswordResetTokenCodec
+from app.modules.identity.invitations import hash_opaque_token
 from app.modules.identity.registration import VerificationTokenCodec
 from app.modules.identity.enums import AccountStatus
 from integrations.email_sender import EmailSender
@@ -18,17 +20,22 @@ class IdentityEmailVerificationTask:
         session_factory,
         *,
         token_codec: VerificationTokenCodec,
+        password_reset_codec: PasswordResetTokenCodec | None = None,
         public_base_url: str,
         email_sender: EmailSender,
         now_factory=None,
     ) -> None:
         self._session_factory = session_factory
         self._token_codec = token_codec
+        self._password_reset_codec = password_reset_codec
         self._public_base_url = public_base_url.rstrip("/")
         self._email_sender = email_sender
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
 
     def __call__(self, message) -> None:
+        if message.event_type == "identity.password_reset.requested":
+            self._send_password_reset(message)
+            return
         if message.event_type != "identity.email.verification.requested":
             raise AppError(
                 code="EMAIL_EVENT_UNSUPPORTED",
@@ -76,12 +83,37 @@ class IdentityEmailVerificationTask:
                     message="email verification user not found",
                     status_code=404,
                 )
-            link = f"{self._public_base_url}/verify-email?token={quote(token, safe='')}"
+            link = f"{self._public_base_url}/api/v1/verify-email#token={quote(token, safe='')}"
             self._email_sender.send_email_verification(
                 recipient=user.email,
                 code=code,
                 link=link,
             )
+
+    def _send_password_reset(self, message) -> None:
+        challenge_id = message.payload.get("challenge_id")
+        if (
+            self._password_reset_codec is None
+            or message.aggregate_type != "password_reset_challenge"
+            or not challenge_id
+            or challenge_id != message.aggregate_id
+        ):
+            raise AppError(code="EMAIL_EVENT_INVALID", message="password reset event is invalid", status_code=400)
+        token = self._password_reset_codec.issue(challenge_id)
+        with self._session_factory() as session:
+            challenge = session.get(PasswordResetChallenge, challenge_id)
+            if challenge is None:
+                raise AppError(code="PASSWORD_RESET_NOT_FOUND", message="password reset challenge not found", status_code=404)
+            now = self._as_utc(self._now_factory())
+            if challenge.consumed_at is not None or self._as_utc(challenge.expires_at) < now:
+                return
+            if challenge.token_hash != hash_opaque_token(token):
+                raise AppError(code="PASSWORD_RESET_HASH_MISMATCH", message="password reset challenge hash mismatch", status_code=409)
+            user = session.get(User, challenge.user_id)
+            if user is None:
+                raise AppError(code="EMAIL_USER_NOT_FOUND", message="password reset user not found", status_code=404)
+            link = f"{self._public_base_url}/api/v1/reset-password#token={quote(token, safe='')}"
+            self._email_sender.send_password_reset(recipient=user.email, link=link)
 
     @staticmethod
     def _as_utc(value: datetime) -> datetime:

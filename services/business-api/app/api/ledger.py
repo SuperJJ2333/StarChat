@@ -40,7 +40,7 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
     transfers = PointTransferService(ledger)
     workflow = AdjustmentWorkflow(session_factory, ledger, admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
     rbac = RbacService(session_factory)
-    tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer)
+    tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     key = base64.urlsafe_b64encode(hashlib.sha256((settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").encode()).digest())
     totp = TotpService(session_factory, protector=FernetSecretProtector(key))
 

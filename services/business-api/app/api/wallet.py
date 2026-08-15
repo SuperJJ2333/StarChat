@@ -24,7 +24,7 @@ def create_wallet_router(settings: Settings, session_factory) -> APIRouter:
     provider=SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret")
     service=WalletService(session_factory, provider, withdrawal_admin_threshold=Decimal(str(settings.adjustment_admin_threshold)))
     rbac=RbacService(session_factory)
-    tokens=TokenService(session_factory,jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",jwt_issuer=settings.jwt_issuer)
+    tokens=TokenService(session_factory,jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     key=base64.urlsafe_b64encode(hashlib.sha256((settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").encode()).digest())
     totp=TotpService(session_factory,protector=FernetSecretProtector(key))
     def actor(authorization: Annotated[str|None, Header()] = None):

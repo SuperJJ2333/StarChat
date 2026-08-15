@@ -37,6 +37,13 @@ login_via_existing_session:
   require_ui_auth: false
   token_timeout: 1m
 
+turn_uris:
+  - "{{TURN_URI_UDP}}"
+  - "{{TURN_URI_TCP}}"
+turn_shared_secret: "{{TURN_SHARED_SECRET}}"
+turn_user_lifetime: 1h
+turn_allow_guests: false
+
 macaroon_secret_key: "{{SYNAPSE_MACAROON_SECRET_KEY}}"
 form_secret: "{{SYNAPSE_FORM_SECRET}}"
 

@@ -1,10 +1,34 @@
 name: iOS TestFlight
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/mobile_flutter/**"
+      - ".github/workflows/ios-testflight.yml"
   push:
     tags: ["v*.*.*"]
 jobs:
+  simulator-build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.9"
+          channel: stable
+          cache: true
+      - name: Flutter checks
+        working-directory: apps/mobile_flutter
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - name: Build iOS simulator app
+        working-directory: apps/mobile_flutter
+        run: flutter build ios --simulator --no-codesign
+
   build-upload:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -36,12 +60,31 @@ jobs:
           security import "$RUNNER_TEMP/certificate.p12" -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
           cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/liuhetong.mobileprovision"
-      - name: Build IPA
+      - name: Generate export options and build IPA
         working-directory: apps/mobile_flutter
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
-        run: flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+          IOS_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
+        run: |
+          test -n "$APPLE_TEAM_ID" && test -n "$IOS_BUNDLE_ID" && test -n "$IOS_PROVISIONING_PROFILE_NAME"
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = [^;]*/PRODUCT_BUNDLE_IDENTIFIER = $IOS_BUNDLE_ID/g" ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' "s/DEVELOPMENT_TEAM = [^;]*/DEVELOPMENT_TEAM = $APPLE_TEAM_ID/g" ios/Runner.xcodeproj/project.pbxproj
+          export DEVELOPMENT_TEAM=$APPLE_TEAM_ID
+          export PRODUCT_BUNDLE_IDENTIFIER=$IOS_BUNDLE_ID
+          cat > ios/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key><dict>
+              <key>$IOS_BUNDLE_ID</key><string>$IOS_PROVISIONING_PROFILE_NAME</string>
+            </dict>
+          </dict></plist>
+          EOF
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
       - name: Upload TestFlight
         uses: apple-actions/upload-testflight-build@v1
         with:

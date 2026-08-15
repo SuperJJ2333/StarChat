@@ -1,11 +1,35 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:matrix/matrix.dart' hide CallBackend;
 import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
 
 import 'call_controller.dart';
+
+bool isVerifiedDirectParticipantSet(
+  Set<String> participantIds, {
+  required String localUserId,
+  required String remoteUserId,
+}) =>
+    participantIds.length == 2 &&
+    participantIds.contains(localUserId) &&
+    participantIds.contains(remoteUserId);
+
+String? resolveIncomingRemoteParticipant(
+  Set<String> participantIds, {
+  required String localUserId,
+  String? advertisedRemoteUserId,
+}) {
+  final remote = participantIds.where((id) => id != localUserId).toList();
+  if (participantIds.length != 2 || remote.length != 1) return null;
+  if (advertisedRemoteUserId != null &&
+      advertisedRemoteUserId != remote.single) {
+    return null;
+  }
+  return remote.single;
+}
 
 final class WebRtcPermissionGateway implements CallPermissionGateway {
   const WebRtcPermissionGateway();
@@ -46,8 +70,18 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
   Future<rtc_interface.RTCPeerConnection> createPeerConnection(
     Map<String, dynamic> configuration, [
     Map<String, dynamic> constraints = const {},
-  ]) =>
-      webrtc.createPeerConnection(configuration, constraints);
+  ]) {
+    assert(() {
+      final servers = configuration['iceServers'] as List<dynamic>? ?? const [];
+      final urls = servers
+          .whereType<Map<dynamic, dynamic>>()
+          .map((server) => server['urls'])
+          .toList(growable: false);
+      debugPrint('[Call] ICE server URLs configured: $urls');
+      return true;
+    }());
+    return webrtc.createPeerConnection(configuration, constraints);
+  }
 
   @override
   rtc_interface.MediaDevices get mediaDevices => webrtc.navigator.mediaDevices;
@@ -92,21 +126,30 @@ final class MatrixCallBackend implements CallBackend {
   StreamSubscription<CallState>? _callStates;
   CallSession? _call;
 
+  webrtc.MediaStream? get localMediaStream =>
+      _call?.localUserMediaStream?.stream;
+  webrtc.MediaStream? get remoteMediaStream =>
+      _call?.remoteUserMediaStream?.stream;
+
   @override
   Stream<CallBackendEvent> get callEvents => _events.stream;
 
   @override
   Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async {
     final room = client.getRoomById(roomId);
+    final localUserId = client.userID;
     if (room == null ||
+        localUserId == null ||
         room.membership != Membership.join ||
-        !room.encrypted ||
-        !room.isDirectChat ||
-        room.directChatMatrixID != matrixUserId) {
+        !room.encrypted) {
       return false;
     }
     final members = await room.requestParticipants();
-    return members.length == 2;
+    return isVerifiedDirectParticipantSet(
+      members.map((member) => member.id).toSet(),
+      localUserId: localUserId,
+      remoteUserId: matrixUserId,
+    );
   }
 
   @override
@@ -137,20 +180,50 @@ final class MatrixCallBackend implements CallBackend {
       }
     });
     if (!call.isOutgoing) {
-      final remoteUserId = call.remoteUserId ?? call.room.directChatMatrixID;
-      if (remoteUserId == null ||
-          !await isEncryptedDirectRoom(call.room.id, remoteUserId)) {
-        await call.reject(reason: CallErrorCode.userHangup);
-        return;
-      }
-      _events.add(CallBackendEvent.incoming(
-        roomId: call.room.id,
-        matrixUserId: remoteUserId,
-        type: call.type == CallType.kVideo
-            ? CallMediaType.video
-            : CallMediaType.audio,
-      ));
+      // The delegate is awaited by the SDK's sync event handler. Complete that
+      // handler before a server-backed membership request, otherwise the
+      // incoming-call UI can deadlock behind the sync that delivered it.
+      unawaited(_validateIncoming(call));
     }
+  }
+
+  Future<void> _validateIncoming(CallSession call) async {
+    await Future<void>.delayed(Duration.zero);
+    final localUserId = client.userID;
+    final memberEvents = await client.getMembersByRoom(
+          call.room.id,
+          membership: Membership.join,
+        ) ??
+        const <MatrixEvent>[];
+    if (!identical(_call, call)) return;
+    final participantIds =
+        memberEvents.map((event) => event.stateKey).whereType<String>().toSet();
+    final remoteUserId = localUserId == null
+        ? null
+        : resolveIncomingRemoteParticipant(
+            participantIds,
+            localUserId: localUserId,
+            advertisedRemoteUserId: call.remoteUserId,
+          );
+    if (localUserId == null ||
+        call.room.membership != Membership.join ||
+        !call.room.encrypted ||
+        remoteUserId == null ||
+        !isVerifiedDirectParticipantSet(
+          participantIds,
+          localUserId: localUserId,
+          remoteUserId: remoteUserId,
+        )) {
+      await call.reject(reason: CallErrorCode.userHangup);
+      return;
+    }
+    _events.add(CallBackendEvent.incoming(
+      roomId: call.room.id,
+      matrixUserId: remoteUserId,
+      type: call.type == CallType.kVideo
+          ? CallMediaType.video
+          : CallMediaType.audio,
+    ));
   }
 
   Future<void> _ended(CallSession call) async {

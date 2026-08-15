@@ -174,6 +174,7 @@ class RegistrationService:
                         updated_at=now,
                     )
                 )
+                session.flush()
                 session.add(
                     EmailVerificationChallenge(
                         id=challenge_id,
@@ -288,7 +289,7 @@ class EmailVerificationService:
     def verify(
         self,
         *,
-        registration_session: str,
+        registration_session: str | None,
         code: str | None,
         token: str | None,
         idempotency_key: str,
@@ -324,7 +325,11 @@ class EmailVerificationService:
             )
             if record.status == "COMPLETED":
                 return self._verification_replay(record)
-            challenge = self._find_challenge(session, registration_session, for_update=True)
+            challenge = (
+                self._find_challenge(session, registration_session, for_update=True)
+                if registration_session is not None
+                else self._find_challenge_by_link_token(session, token or "", for_update=True)
+            )
             if challenge is None:
                 deferred_error = self._error("EMAIL_VERIFICATION_INVALID", "邮箱验证信息无效")
             else:
@@ -391,6 +396,18 @@ class EmailVerificationService:
         if result is None:
             raise RuntimeError("email verification completed without a result")
         return result
+
+    def verify_link(self, token: str) -> EmailVerificationResult:
+        token_digest = self._token_codec.digest(
+            purpose="email-verification-link-idempotency",
+            value=token,
+        )
+        return self.verify(
+            registration_session=None,
+            code=None,
+            token=token,
+            idempotency_key=f"link-{token_digest}",
+        )
 
     def resend(
         self,
@@ -504,10 +521,27 @@ class EmailVerificationService:
                 raise self._error("EMAIL_VERIFICATION_INVALID", "注册会话无效")
             return challenge.user_id
 
+    def user_id_for_token(self, token: str) -> str:
+        with self._session_factory() as session:
+            challenge = self._find_challenge_by_link_token(session, token)
+            if challenge is None:
+                raise self._error("EMAIL_VERIFICATION_INVALID", "验证链接无效")
+            return challenge.user_id
+
     def _find_challenge(self, session, registration_session: str, *, for_update=False):
         statement = select(EmailVerificationChallenge).where(
             EmailVerificationChallenge.registration_session_hash
             == self._token_codec.registration_session_hash(registration_session)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return session.scalar(statement)
+
+    def _find_challenge_by_link_token(self, session, token: str, *, for_update=False):
+        statement = select(EmailVerificationChallenge).where(
+            EmailVerificationChallenge.link_token_hash
+            == self._token_codec.link_token_hash(token),
+            EmailVerificationChallenge.invalidated_at.is_(None),
         )
         if for_update:
             statement = statement.with_for_update()

@@ -59,6 +59,7 @@ def create_profile_router(
         session_factory,
         jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",
         jwt_issuer=settings.jwt_issuer,
+        require_session_claims=settings.environment != "test",
     )
     profiles = ProfileService(session_factory, storage=storage)
 
@@ -130,13 +131,16 @@ def create_profile_router(
         content_type: Annotated[str | None, Header(alias="Content-Type")] = None,
         claims: dict = Depends(current_claims),
     ) -> Response:
-        content = await request.body()
-        if len(content) > MAX_AVATAR_BYTES:
-            raise AppError(
-                code="AVATAR_SIZE_EXCEEDED",
-                message="头像不得超过 5 MiB",
-                status_code=422,
-            )
+        content_buffer = bytearray()
+        async for chunk in request.stream():
+            if len(content_buffer) + len(chunk) > MAX_AVATAR_BYTES:
+                raise AppError(
+                    code="AVATAR_SIZE_EXCEEDED",
+                    message="头像不得超过 5 MiB",
+                    status_code=422,
+                )
+            content_buffer.extend(chunk)
+        content = bytes(content_buffer)
         profiles.put_avatar_content(
             claims["sub"],
             upload_id,
@@ -205,6 +209,14 @@ def create_profile_router(
                 status_code=404,
             )
         content, mime_type = storage.read_signed(token, expires_in)
-        return Response(content=content, media_type=mime_type)
+        return Response(
+            content=content,
+            media_type=mime_type,
+            headers={
+                "Cache-Control": "private, no-store",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     return router

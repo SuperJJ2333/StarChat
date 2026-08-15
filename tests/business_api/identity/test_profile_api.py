@@ -7,6 +7,7 @@ import zlib
 import httpx
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
@@ -46,7 +47,9 @@ class MemoryPrivateStorage:
 
 def _components():
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
@@ -432,3 +435,29 @@ def test_local_avatar_storage_uses_tamper_resistant_five_minute_urls(tmp_path) -
         storage.read_signed(tampered, 300)
     with pytest.raises(AppError, match="头像链接无效或已过期"):
         storage.read_signed(token, 301)
+
+
+@pytest.mark.asyncio
+async def test_avatar_content_response_prevents_cache_and_referrer_leaks(tmp_path) -> None:
+    engine, factory, _, _ = _components()
+    storage = LocalPrivateObjectStorage(
+        root=str(tmp_path / "private"),
+        signing_secret="test-avatar-signing-secret",
+        public_base_url="http://test",
+    )
+    storage.put("avatars/user-1/avatar.png", (FIXTURES / "avatar.png").read_bytes())
+    url = storage.signed_read_url("avatars/user-1/avatar.png", 300)
+    app = create_app(
+        Settings(_env_file=None, environment="test", jwt_secret=JWT_SECRET),
+        session_factory=factory,
+        avatar_storage=storage,
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(url)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    engine.dispose()

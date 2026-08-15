@@ -70,6 +70,19 @@ async def test_friend_requests_and_search_return_business_profile_projection(ctx
         search = await client.get('/api/v1/users/search?q=alice', headers=bearer(settings, 'u2'))
         assert search.json()['items'] == [{'user_id': 'u1', 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test'}]
 
+
+@pytest.mark.asyncio
+async def test_friend_request_rejects_idempotency_key_reuse_for_changed_payload(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        headers = {**bearer(settings, 'u1'), 'Idempotency-Key': 'same-request-key'}
+        first = await client.post('/api/v1/friends/requests', headers=headers, json={'target_user_id': 'u2', 'message': 'one'})
+        changed = await client.post('/api/v1/friends/requests', headers=headers, json={'target_user_id': 'u2', 'message': 'two'})
+
+    assert first.status_code == 201
+    assert changed.status_code == 409
+    assert changed.json()['error']['code'] == 'IDEMPOTENCY_KEY_REUSED'
+
 @pytest.mark.asyncio
 async def test_reject_update_privacy_and_delete_friend(ctx):
     app, settings = ctx

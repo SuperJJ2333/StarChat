@@ -7,6 +7,7 @@ final class FakeDirectChatBackend implements DirectChatBackend {
   DirectChatRoom? existing;
   var creates = 0;
   var failCreate = false;
+  String lastMatrixUserId = '@alice:example.test';
   final createStarted = Completer<void>();
   final allowCreate = Completer<void>();
 
@@ -16,6 +17,7 @@ final class FakeDirectChatBackend implements DirectChatBackend {
 
   @override
   Future<String> createEncryptedDirectRoom(String matrixUserId) async {
+    lastMatrixUserId = matrixUserId;
     creates++;
     if (!createStarted.isCompleted) createStarted.complete();
     if (failCreate) throw StateError('offline');
@@ -25,7 +27,12 @@ final class FakeDirectChatBackend implements DirectChatBackend {
 
   @override
   Future<DirectChatRoom> waitForRoom(String roomId) async =>
-      DirectChatRoom(roomId: roomId, encrypted: true, joinedMemberCount: 2);
+      DirectChatRoom(
+        roomId: roomId,
+        encrypted: true,
+        joinedMemberCount: 2,
+        participantIds: {'@me:example.test', lastMatrixUserId},
+      );
 }
 
 void main() {
@@ -35,6 +42,7 @@ void main() {
         roomId: '!existing:example.test',
         encrypted: true,
         joinedMemberCount: 2,
+        participantIds: {'@me:example.test', '@alice:example.test'},
       );
     final room = await DirectChatService(backend)
         .openOrCreateDirectChat('@alice:example.test');
@@ -72,6 +80,19 @@ void main() {
     expect(backend.creates, 2);
   });
 
+  test('different contacts never share an in-flight room future', () async {
+    final gateway = PerContactGateway();
+    final controller = DirectChatController(gateway);
+    final alice = controller.open('@alice:example.test');
+    final bob = controller.open('@bob:example.test');
+
+    gateway.complete('@bob:example.test');
+    gateway.complete('@alice:example.test');
+    expect((await alice).roomId, '!alice:example.test');
+    expect((await bob).roomId, '!bob:example.test');
+    expect(gateway.opens, ['@alice:example.test', '@bob:example.test']);
+  });
+
   test('rejects an unencrypted or multi-member room before navigation',
       () async {
     final backend = FakeDirectChatBackend()
@@ -79,10 +100,50 @@ void main() {
         roomId: '!unsafe:example.test',
         encrypted: false,
         joinedMemberCount: 3,
+        participantIds: {
+          '@me:example.test',
+          '@alice:example.test',
+          '@mallory:example.test'
+        },
       );
     await expectLater(
       DirectChatService(backend).openOrCreateDirectChat('@alice:example.test'),
       throwsStateError,
     );
   });
+
+  test('rejects a two-person room that does not contain the target MXID', () async {
+    final backend = FakeDirectChatBackend()
+      ..existing = const DirectChatRoom(
+        roomId: '!wrong:example.test',
+        encrypted: true,
+        joinedMemberCount: 2,
+        participantIds: {'@me:example.test', '@mallory:example.test'},
+      );
+    await expectLater(
+      DirectChatService(backend).openOrCreateDirectChat('@alice:example.test'),
+      throwsStateError,
+    );
+  });
+}
+
+final class PerContactGateway implements DirectChatGateway {
+  final opens = <String>[];
+  final pending = <String, Completer<DirectChatRoom>>{};
+
+  @override
+  Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) {
+    opens.add(matrixUserId);
+    return (pending[matrixUserId] = Completer<DirectChatRoom>()).future;
+  }
+
+  void complete(String matrixUserId) {
+    final localpart = matrixUserId.substring(1, matrixUserId.indexOf(':'));
+    pending[matrixUserId]!.complete(DirectChatRoom(
+      roomId: '!$localpart:example.test',
+      encrypted: true,
+      joinedMemberCount: 2,
+      participantIds: {'@me:example.test', matrixUserId},
+    ));
+  }
 }

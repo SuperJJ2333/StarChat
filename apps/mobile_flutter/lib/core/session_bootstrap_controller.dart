@@ -37,16 +37,18 @@ final class SessionBootstrapController extends ChangeNotifier {
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
         if (matrix.isLoggedIn) await _bestEffortMatrixLogout();
-        _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));
+        _set(const SessionBootstrapState(
+            SessionBootstrapStatus.unauthenticated));
         return;
       }
       if (!matrix.isLoggedIn) {
         await _bestEffortBusinessLogout();
-        _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));
+        _set(const SessionBootstrapState(
+            SessionBootstrapStatus.unauthenticated));
         return;
       }
       final expectedMatrixUser = await business.currentMatrixUserId();
-      if (expectedMatrixUser != null && expectedMatrixUser != matrix.userId) {
+      if (expectedMatrixUser == null || expectedMatrixUser != matrix.userId) {
         _set(const SessionBootstrapState(
           SessionBootstrapStatus.fatalError,
           message: '本地登录身份不一致，请联系技术支持',
@@ -56,7 +58,8 @@ final class SessionBootstrapController extends ChangeNotifier {
       try {
         await matrix.sync();
       } on MatrixException catch (error) {
-        if (error.errcode == 'M_UNKNOWN_TOKEN' || error.errcode == 'M_FORBIDDEN') {
+        if (error.errcode == 'M_UNKNOWN_TOKEN' ||
+            error.errcode == 'M_FORBIDDEN') {
           await _bestEffortBusinessLogout();
           await _bestEffortMatrixLogout();
           _set(const SessionBootstrapState(
@@ -67,13 +70,16 @@ final class SessionBootstrapController extends ChangeNotifier {
         }
         rethrow;
       } on SocketException {
-        _set(const SessionBootstrapState(SessionBootstrapStatus.offlineAuthenticated));
+        _set(const SessionBootstrapState(
+            SessionBootstrapStatus.offlineAuthenticated));
         return;
       } on TimeoutException {
-        _set(const SessionBootstrapState(SessionBootstrapStatus.offlineAuthenticated));
+        _set(const SessionBootstrapState(
+            SessionBootstrapStatus.offlineAuthenticated));
         return;
       } on http.ClientException {
-        _set(const SessionBootstrapState(SessionBootstrapStatus.offlineAuthenticated));
+        _set(const SessionBootstrapState(
+            SessionBootstrapStatus.offlineAuthenticated));
         return;
       }
       _set(SessionBootstrapState(

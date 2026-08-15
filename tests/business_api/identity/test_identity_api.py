@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from httpx import ASGITransport, AsyncClient
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
@@ -15,7 +16,7 @@ from app.modules.identity.passwords import PasswordHasher
 
 @pytest.fixture()
 def api_components():
-    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     now = datetime.now(timezone.utc)

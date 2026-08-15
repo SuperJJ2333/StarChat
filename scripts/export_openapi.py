@@ -21,7 +21,37 @@ def build_document() -> dict:
         database_url="sqlite+pysqlite:///:memory:",
         redis_url="redis://localhost:6379/15",
     )
-    return create_app(settings).openapi()
+    document = create_app(settings).openapi()
+    components = document.setdefault("components", {})
+    components.setdefault("securitySchemes", {})["bearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+    }
+    for path_item in document["paths"].values():
+        for operation in path_item.values():
+            if not isinstance(operation, dict) or "responses" not in operation:
+                continue
+            parameters = operation.get("parameters", [])
+            authorization = [
+                item
+                for item in parameters
+                if item.get("in") == "header" and item.get("name", "").casefold() == "authorization"
+            ]
+            if authorization:
+                operation["parameters"] = [item for item in parameters if item not in authorization]
+                operation["security"] = [{"bearerAuth": []}]
+    avatar_upload = document["paths"][
+        "/api/v1/profile/avatar/uploads/{upload_id}/content"
+    ]["put"]
+    avatar_upload["requestBody"] = {
+        "required": True,
+        "content": {
+            "application/octet-stream": {
+                "schema": {"type": "string", "format": "binary"}
+            }
+        },
+    }
+    return document
 
 
 def render_document(document: dict) -> str:

@@ -88,3 +88,30 @@ def test_failed_event_is_released_for_scheduled_retry(outbox) -> None:
         assert event.status == "FAILED"
         assert event.last_error == "temporary provider failure"
         assert event.locked_by is None
+
+
+def test_stale_processing_lease_is_reclaimed_after_worker_crash(outbox) -> None:
+    factory, consumer, now = outbox
+    with factory.begin() as session:
+        event_id = OutboxPublisher.enqueue(
+            session,
+            topic="identity.matrix",
+            event_type="identity.matrix.provision.requested",
+            aggregate_type="user",
+            aggregate_id="user-1",
+            payload={"user_id": "user-1"},
+            now=now,
+        )
+
+    assert [m.id for m in consumer.claim_batch(worker_id="worker-a", limit=1)] == [event_id]
+    recovered = OutboxConsumer(
+        factory,
+        now_factory=lambda: now + timedelta(minutes=6),
+        lease_timeout=timedelta(minutes=5),
+    )
+
+    messages = recovered.claim_batch(worker_id="worker-b", limit=1)
+
+    assert [m.id for m in messages] == [event_id]
+    assert messages[0].attempt_count == 2
+    recovered.mark_succeeded(event_id, worker_id="worker-b")

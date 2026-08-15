@@ -47,6 +47,16 @@ def test_smtp_security_modes_are_mutually_exclusive() -> None:
         )
 
 
+def test_production_smtp_rejects_mailpit_and_plaintext(monkeypatch) -> None:
+    module = _email_sender_module()
+    monkeypatch.setenv("BUSINESS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMTP_HOST", "mailpit")
+    monkeypatch.setenv("SMTP_SECURITY", "none")
+
+    with pytest.raises(ValueError, match="production SMTP"):
+        module.SmtpConfig.from_environment()
+
+
 def test_sender_applies_timeout_auth_and_includes_code_and_link() -> None:
     module = _email_sender_module()
     transports = []

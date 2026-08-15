@@ -21,7 +21,7 @@ class UserSearchProjection(BaseModel):
     user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None
 class UserSearchResponse(BaseModel):items:list[UserSearchProjection];next_cursor:str|None=None
 def create_friendship_router(settings:Settings,factory,*,avatar_storage):
-    router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage));tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer)
+    router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage));tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     def actor(authorization:Annotated[str|None,Header()]=None):
         if not authorization or not authorization.startswith('Bearer '):raise AppError(code='AUTH_REQUIRED',message='需要登录',status_code=401)
         return str(tokens.decode_access_token(authorization[7:])['sub'])

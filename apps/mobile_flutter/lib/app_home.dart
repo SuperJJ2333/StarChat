@@ -44,6 +44,7 @@ final class _AppHomeState extends State<AppHome> {
     permissions: const WebRtcPermissionGateway(),
   );
   bool callPageVisible = false;
+  bool incomingCallActive = false;
 
   @override
   void initState() {
@@ -52,25 +53,17 @@ final class _AppHomeState extends State<AppHome> {
   }
 
   void _callChanged() {
-    if (calls.state.phase != CallPhase.ringing || callPageVisible || !mounted) {
-      return;
+    if (!mounted) return;
+    if (calls.state.phase == CallPhase.ringing && !callPageVisible) {
+      incomingCallActive = true;
+      setState(() {});
+    } else if (incomingCallActive &&
+        (calls.state.phase == CallPhase.ended ||
+            calls.state.phase == CallPhase.failed ||
+            calls.state.phase == CallPhase.permissionDenied)) {
+      incomingCallActive = false;
+      setState(() {});
     }
-    callPageVisible = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await Navigator.push(
-        context,
-        CupertinoPageRoute(
-          builder: (_) => CallPage(
-            controller: calls,
-            displayName: calls.state.matrixUserId ?? '加密来电',
-            fallbackSeed: calls.state.matrixUserId ?? 'incoming-call',
-            incoming: true,
-          ),
-        ),
-      );
-      callPageVisible = false;
-    });
   }
 
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
@@ -86,6 +79,7 @@ final class _AppHomeState extends State<AppHome> {
             displayName: contact.displayName,
             fallbackSeed: contact.username,
             avatarUrl: contact.avatarUrl,
+            mediaBackend: callBackend,
           ),
         ),
       );
@@ -111,6 +105,16 @@ final class _AppHomeState extends State<AppHome> {
         ),
       );
     } finally {
+      if (calls.state.phase == CallPhase.requestingPermission ||
+          calls.state.phase == CallPhase.ringing ||
+          calls.state.phase == CallPhase.connected) {
+        try {
+          await calls.hangup();
+        } catch (_) {
+          // The route is already closing; the backend also observes Matrix end
+          // events, so cleanup remains best-effort here.
+        }
+      }
       callPageVisible = false;
     }
   }
@@ -125,42 +129,58 @@ final class _AppHomeState extends State<AppHome> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoTabScaffold(
-        tabBar: CupertinoTabBar(
-          activeColor: const Color(0xff07c160),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.chat_bubble_2_fill),
-              label: '消息',
+  Widget build(BuildContext context) => Stack(
+        children: [
+          CupertinoTabScaffold(
+            tabBar: CupertinoTabBar(
+              activeColor: const Color(0xff07c160),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.chat_bubble_2_fill),
+                  label: '消息',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.person_2_fill),
+                  label: '通讯录',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.compass_fill),
+                  label: '发现',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.person_crop_circle_fill),
+                  label: '我',
+                ),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.person_2_fill),
-              label: '通讯录',
+            tabBuilder: (_, index) => CupertinoTabView(
+              builder: (_) => switch (index) {
+                0 => MatrixHomePage(matrix: widget.matrix),
+                1 => ContactsTabPage(
+                    api: widget.api,
+                    matrix: widget.matrix,
+                    directChats: directChats,
+                    onVoice: (contact) =>
+                        _openCall(contact, CallMediaType.audio),
+                    onVideo: (contact) =>
+                        _openCall(contact, CallMediaType.video),
+                  ),
+                2 => DiscoveryPage(api: widget.api),
+                _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
+              },
             ),
-            BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.compass_fill),
-              label: '发现',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.person_crop_circle_fill),
-              label: '我',
-            ),
-          ],
-        ),
-        tabBuilder: (_, index) => CupertinoTabView(
-          builder: (_) => switch (index) {
-            0 => MatrixHomePage(matrix: widget.matrix),
-            1 => ContactsTabPage(
-                api: widget.api,
-                matrix: widget.matrix,
-                directChats: directChats,
-                onVoice: (contact) => _openCall(contact, CallMediaType.audio),
-                onVideo: (contact) => _openCall(contact, CallMediaType.video),
+          ),
+          if (incomingCallActive)
+            Positioned.fill(
+              child: CallPage(
+                controller: calls,
+                displayName: calls.state.matrixUserId ?? '加密来电',
+                fallbackSeed: calls.state.matrixUserId ?? 'incoming-call',
+                incoming: true,
+                mediaBackend: callBackend,
               ),
-            2 => DiscoveryPage(api: widget.api),
-            _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
-          },
-        ),
+            ),
+        ],
       );
 }
 
@@ -243,10 +263,28 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onSettings: () => Navigator.push(
+      onCaibi: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) => SettingsPage(onLogout: widget.onLogout))),
+              builder: (_) => CupertinoPageScaffold(
+                  navigationBar:
+                      const CupertinoNavigationBar(middle: Text('彩币')),
+                  child: CaibiPage(api: widget.api)))),
+      onRedPacket: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => CupertinoPageScaffold(
+                  navigationBar:
+                      const CupertinoNavigationBar(middle: Text('红包')),
+                  child: RedPacketPage(api: widget.api)))),
+      onWallet: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => CupertinoPageScaffold(
+                  navigationBar:
+                      const CupertinoNavigationBar(middle: Text('钱包')),
+                  child: WalletPage(api: widget.api)))),
+      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(onLogout: widget.onLogout))),
       onLogout: widget.onLogout);
 }
 

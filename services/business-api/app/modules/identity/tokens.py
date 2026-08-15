@@ -29,6 +29,7 @@ class TokenService:
         now_factory=None,
         access_lifetime: timedelta = timedelta(minutes=15),
         refresh_lifetime: timedelta = timedelta(days=30),
+        require_session_claims: bool = True,
     ) -> None:
         if len(jwt_secret) < 32:
             raise ValueError("JWT secret must be at least 32 characters")
@@ -38,6 +39,7 @@ class TokenService:
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
         self._access_lifetime = access_lifetime
         self._refresh_lifetime = refresh_lifetime
+        self._require_session_claims = require_session_claims
 
     def issue_pair(self, *, user_id: str, device_key: str, display_name: str) -> TokenPair:
         now = self._now_factory()
@@ -182,6 +184,26 @@ class TokenService:
             now_timestamp = self._now_factory().timestamp()
             if int(claims["iat"]) > now_timestamp or int(claims["exp"]) <= now_timestamp:
                 raise jwt.InvalidTokenError("access token is outside its validity window")
+            if not claims.get("device_id") or not claims.get("family_id"):
+                if not self._require_session_claims:
+                    return claims
+                raise jwt.InvalidTokenError("access token is missing session claims")
+            with self._session_factory() as session:
+                user = session.get(User, claims["sub"])
+                device = session.get(Device, claims["device_id"])
+                family = session.get(RefreshTokenFamily, claims["family_id"])
+                if (
+                    user is None
+                    or user.status.value != "ACTIVE"
+                    or device is None
+                    or device.user_id != user.id
+                    or device.revoked_at is not None
+                    or family is None
+                    or family.user_id != user.id
+                    or family.device_id != device.id
+                    or family.revoked_at is not None
+                ):
+                    raise jwt.InvalidTokenError("access token session has been revoked")
             return claims
         except jwt.PyJWTError as exc:
             raise AppError(code="ACCESS_TOKEN_INVALID", message="访问令牌无效", status_code=401) from exc

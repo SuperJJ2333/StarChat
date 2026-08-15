@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,30 +30,48 @@ class Settings(BaseSettings):
     matrix_public_homeserver_url: str = "http://localhost:8008"
     matrix_server_name: str = "matrix.localhost"
     synapse_admin_access_token: str | None = None
+    matrix_provision_secret: str | None = None
     matrix_login_token_expires_in: Literal[60] = 60
     avatar_storage_root: str = "/data/private-media"
     avatar_url_signing_secret: str | None = None
     avatar_public_base_url: str = "http://localhost:8082"
 
+    @field_validator("matrix_login_token_expires_in", mode="before")
+    @classmethod
+    def parse_matrix_login_token_expiry(cls, value):
+        return int(value) if isinstance(value, str) else value
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        if self.environment == "production" and any(
-            not value
-            for value in (
-                self.jwt_secret,
-                self.totp_issuer,
-                self.email_verification_secret,
-                self.password_reset_secret,
-                self.synapse_admin_access_token,
-                self.avatar_url_signing_secret,
+        if self.environment != "production":
+            return self
+        secret_values = (
+            self.jwt_secret,
+            self.email_verification_secret,
+            self.password_reset_secret,
+            self.synapse_admin_access_token,
+            self.matrix_provision_secret,
+            self.avatar_url_signing_secret,
+        )
+        unsafe_prefixes = ("change-this", "development-")
+        if (
+            not self.totp_issuer
+            or any(not value for value in secret_values)
+            or any(
+                value.strip().casefold().startswith(unsafe_prefixes)
+                for value in secret_values
+                if value
             )
         ):
             raise ValueError(
-                "production requires BUSINESS_JWT_SECRET, BUSINESS_TOTP_ISSUER, "
+                "production requires non-placeholder production secrets: "
+                "BUSINESS_JWT_SECRET, BUSINESS_TOTP_ISSUER, "
                 "BUSINESS_EMAIL_VERIFICATION_SECRET, BUSINESS_PASSWORD_RESET_SECRET "
-                "BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN and "
+                "BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN, BUSINESS_MATRIX_PROVISION_SECRET and "
                 "BUSINESS_AVATAR_URL_SIGNING_SECRET"
             )
+        if not self.matrix_public_homeserver_url.startswith("https://") or not self.avatar_public_base_url.startswith("https://"):
+            raise ValueError("production public Matrix and avatar URLs must use HTTPS")
         return self
 
 

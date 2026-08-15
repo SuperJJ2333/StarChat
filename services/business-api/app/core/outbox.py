@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, select
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, and_, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import Base
@@ -79,20 +79,35 @@ class OutboxPublisher:
 
 
 class OutboxConsumer:
-    def __init__(self, session_factory, now_factory=None) -> None:
+    def __init__(
+        self,
+        session_factory,
+        now_factory=None,
+        lease_timeout: timedelta = timedelta(minutes=5),
+    ) -> None:
         self._session_factory = session_factory
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
+        self._lease_timeout = lease_timeout
 
     def claim_batch(self, *, worker_id: str, limit: int) -> list[OutboxMessage]:
         if limit < 1:
             return []
         now = self._now_factory()
+        stale_before = now - self._lease_timeout
         with self._session_factory.begin() as session:
             statement = (
                 select(OutboxEvent)
                 .where(
-                    OutboxEvent.status.in_(("PENDING", "FAILED")),
-                    OutboxEvent.available_at <= now,
+                    or_(
+                        and_(
+                            OutboxEvent.status.in_(("PENDING", "FAILED")),
+                            OutboxEvent.available_at <= now,
+                        ),
+                        and_(
+                            OutboxEvent.status == "PROCESSING",
+                            OutboxEvent.locked_at <= stale_before,
+                        ),
+                    ),
                 )
                 .order_by(OutboxEvent.created_at, OutboxEvent.id)
                 .limit(limit)

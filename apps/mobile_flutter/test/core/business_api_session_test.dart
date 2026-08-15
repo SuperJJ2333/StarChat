@@ -141,4 +141,45 @@ void main() {
     expect(grant.loginToken, 'matrix-once');
     expect((await store.session())?.matrixUserId, '@alice:matrix.example');
   });
+
+  test('registration retry reuses the original idempotency key after a lost response', () async {
+    final keys = <String>[];
+    var calls = 0;
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: SecureSessionStore(MemoryStore()),
+      client: MockClient((request) async {
+        keys.add(request.headers['Idempotency-Key']!);
+        calls++;
+        if (calls == 1) throw http.ClientException('response lost');
+        return http.Response(
+          jsonEncode({
+            'registration_session': 'session-1',
+            'status': 'PENDING_EMAIL',
+            'resend_after_seconds': 60,
+          }),
+          202,
+        );
+      }),
+    );
+
+    await expectLater(
+      api.register(
+        username: 'alice',
+        email: 'alice@example.test',
+        password: 'business-password',
+        invitationCode: 'INVITE',
+      ),
+      throwsA(isA<http.ClientException>()),
+    );
+    await api.register(
+      username: 'alice',
+      email: 'alice@example.test',
+      password: 'business-password',
+      invitationCode: 'INVITE',
+    );
+
+    expect(keys, hasLength(2));
+    expect(keys[1], keys[0]);
+  });
 }

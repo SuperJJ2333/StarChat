@@ -41,7 +41,10 @@ final class BusinessApiClient
   final SecureSessionStore sessionStore;
   final http.Client _client;
   final Uuid _uuid = const Uuid();
+  final Map<String, String> _pendingIdempotencyKeys = {};
   String newIdempotencyKey() => _uuid.v4();
+  String _pendingIdempotencyKey(String operation) =>
+      _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
   Uri _uri(String path) =>
       baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
   Future<Map<String, dynamic>> login(
@@ -117,10 +120,12 @@ final class BusinessApiClient
       required String email,
       required String password,
       required String invitationCode}) async {
+    final operation =
+        'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode';
     final response = await _client.post(_uri('/auth/register'),
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': newIdempotencyKey()
+          'Idempotency-Key': _pendingIdempotencyKey(operation)
         },
         body: jsonEncode({
           'username': username,
@@ -129,6 +134,7 @@ final class BusinessApiClient
           'invitation_code': invitationCode
         }));
     final body = _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
     return RegistrationReceipt(
         registrationSession: body['registration_session'] as String,
         status: body['status'] as String,
@@ -140,30 +146,36 @@ final class BusinessApiClient
       {required String registrationSession,
       String? code,
       String? token}) async {
-    final response = await _client.post(
-        _uri('/auth/email-verifications/verify'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': newIdempotencyKey()
-        },
-        body: jsonEncode({
-          'registration_session': registrationSession,
-          if (code != null) 'code': code,
-          if (token != null) 'token': token
-        }));
+    final operation =
+        'verify:$registrationSession:${code != null ? 'code' : 'token'}';
+    final response =
+        await _client.post(_uri('/auth/email-verifications/verify'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': _pendingIdempotencyKey(operation)
+            },
+            body: jsonEncode({
+              'registration_session': registrationSession,
+              if (code != null) 'code': code,
+              if (token != null) 'token': token
+            }));
     _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
   }
 
   @override
   Future<int> resendVerification(String registrationSession) async {
-    final response = await _client.post(
-        _uri('/auth/email-verifications/resend'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Idempotency-Key': newIdempotencyKey()
-        },
-        body: jsonEncode({'registration_session': registrationSession}));
-    return _decode(response)['resend_after_seconds'] as int;
+    final operation = 'resend:$registrationSession';
+    final response =
+        await _client.post(_uri('/auth/email-verifications/resend'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Idempotency-Key': _pendingIdempotencyKey(operation)
+            },
+            body: jsonEncode({'registration_session': registrationSession}));
+    final body = _decode(response);
+    _pendingIdempotencyKeys.remove(operation);
+    return body['resend_after_seconds'] as int;
   }
 
   @override

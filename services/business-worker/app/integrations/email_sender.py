@@ -21,6 +21,8 @@ class EmailSender(Protocol):
         link: str,
     ) -> None: ...
 
+    def send_password_reset(self, *, recipient: str, link: str) -> None: ...
+
 
 @dataclass(frozen=True)
 class SmtpConfig:
@@ -50,8 +52,14 @@ class SmtpConfig:
         security = os.getenv("SMTP_SECURITY", "none").strip().casefold()
         if security not in {"none", "starttls", "ssl"}:
             raise ValueError("SMTP_SECURITY must be none, starttls, or ssl")
+        host = os.getenv("SMTP_HOST", "mailpit")
+        if os.getenv("BUSINESS_ENVIRONMENT", "development") == "production" and (
+            host.strip().casefold() in {"mailpit", "localhost", "127.0.0.1"}
+            or security == "none"
+        ):
+            raise ValueError("production SMTP requires a remote host and TLS")
         return cls(
-            host=os.getenv("SMTP_HOST", "mailpit"),
+            host=host,
             port=int(os.getenv("SMTP_PORT", "1025")),
             from_address=os.getenv("SMTP_FROM", "六合通 <noreply@localhost>"),
             timeout_seconds=float(os.getenv("SMTP_TIMEOUT_SECONDS", "10")),
@@ -91,6 +99,21 @@ class SmtpEmailSender:
             "验证码将在 10 分钟后失效。\n\n"
             f"也可以点击验证链接：{link}\n"
         )
+        self._send(message)
+
+    def send_password_reset(self, *, recipient: str, link: str) -> None:
+        message = EmailMessage()
+        message["Subject"] = "六合通密码重置"
+        message["From"] = self._config.from_address
+        message["To"] = recipient
+        message.set_content(
+            "我们收到了六合通密码重置请求。\n\n"
+            "链接将在 1 小时后失效。\n\n"
+            f"点击重置密码：{link}\n"
+        )
+        self._send(message)
+
+    def _send(self, message: EmailMessage) -> None:
         factory = self._smtp_ssl_factory if self._config.use_ssl else self._smtp_factory
         try:
             with factory(

@@ -2,6 +2,7 @@ import pytest
 
 from app.core.errors import AppError
 from app.core.rate_limits import RedisRateLimiter
+from app.api.identity import public_rate_limit_key
 
 
 class FakePipeline:
@@ -54,3 +55,14 @@ def test_redis_rate_limiter_sets_window_and_rejects_excess() -> None:
 
     assert redis.expirations == [("liuhetong:rate:auth:login:alice", 60)]
     assert exc_info.value.code == "RATE_LIMITED"
+
+
+def test_public_auth_rate_limit_keys_are_scoped_without_exposing_identifiers() -> None:
+    alice = public_rate_limit_key("auth:login", "203.0.113.1", "Alice")
+    other_ip = public_rate_limit_key("auth:login", "203.0.113.2", "Alice")
+    bob = public_rate_limit_key("auth:login", "203.0.113.1", "Bob")
+
+    assert alice != other_ip
+    assert alice != bob
+    assert "alice" not in alice.casefold()
+    assert "203.0.113.1" not in alice

@@ -1,7 +1,10 @@
 from datetime import datetime,timezone
+from hashlib import sha256
+import json
 from uuid import uuid4
 from sqlalchemy import delete,or_,select
 from app.core.errors import AppError
+from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.friendship.models import ContactProfile,ContactTag,FriendRequest,Friendship,UserBlock
@@ -10,13 +13,23 @@ class FriendshipService:
     def __init__(self,factory,profile_reader):self.factory=factory;self.profile_reader=profile_reader
     def _audit(self,s,actor,subject,action,reason,key):
         now=datetime.now(timezone.utc);s.add(AuditEvent(id=str(uuid4()),actor_id=actor,subject_type='friendship',subject_id=subject,action=action,result='SUCCESS',reason_code=reason,trace_id=key[:128],created_at=now));OutboxPublisher.enqueue(s,topic='friendship.events',event_type=action,aggregate_type='friendship',aggregate_id=subject,payload={'actor_id':actor})
+    def _idempotency(self,s,scope,key,payload):
+        digest=sha256(json.dumps(payload,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        record=s.scalar(select(IdempotencyRecord).where(IdempotencyRecord.scope==scope,IdempotencyRecord.idempotency_key==key))
+        if record:
+            if record.request_hash!=digest:raise AppError(code='IDEMPOTENCY_KEY_REUSED',message='幂等键已用于不同请求',status_code=409)
+            return True
+        now=datetime.now(timezone.utc);s.add(IdempotencyRecord(id=str(uuid4()),scope=scope,idempotency_key=key,request_hash=digest,status='COMPLETED',response_status=204,response_body={},created_at=now,completed_at=now));return False
     def request(self,actor,target,message,key):
         if actor==target:raise AppError(code='INVALID_FRIEND_TARGET',message='不能添加自己',status_code=422)
         if target not in self.profile_reader.read_public_profiles([target]):raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
         now=datetime.now(timezone.utc)
         with self.factory.begin() as s:
             existing=s.scalar(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.idempotency_key==key));
-            if existing:return existing
+            if existing:
+                if existing.target_id != target or existing.message != message:
+                    raise AppError(code='IDEMPOTENCY_KEY_REUSED',message='幂等键已用于不同请求',status_code=409)
+                return existing
             row=FriendRequest(id=str(uuid4()),requester_id=actor,target_id=target,message=message,status='PENDING',idempotency_key=key,created_at=now);s.add(row);self._audit(s,actor,row.id,'friend.requested','FRIEND_REQUEST',key);return row
     def accept(self,actor,request_id,key):
         with self.factory.begin() as s:
@@ -72,12 +85,14 @@ class FriendshipService:
         with self.factory.begin() as s:
             if not s.scalar(select(Friendship.id).where(Friendship.user_low_id==low,Friendship.user_high_id==high)):raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
             row=s.scalar(select(ContactProfile).where(ContactProfile.owner_id==actor,ContactProfile.contact_id==target))
+            if self._idempotency(s,f'friend.profile:{actor}',key,{'target':target,'remark':remark,'tags':tags,'permission':permission}):return row
             if row is None:row=ContactProfile(id=str(uuid4()),owner_id=actor,contact_id=target,remark=remark,tags=','.join(tags),moments_permission=permission);s.add(row)
             else:row.remark=remark;row.tags=','.join(tags);row.moments_permission=permission
             self._audit(s,actor,row.id,'friend.profile_updated','CONTACT_PROFILE_UPDATE',key);return row
     def delete_friend(self,actor,target,key):
         low,high=sorted((actor,target))
         with self.factory.begin() as s:
+            if self._idempotency(s,f'friend.delete:{actor}',key,{'target':target}):return
             row=s.scalar(select(Friendship).where(Friendship.user_low_id==low,Friendship.user_high_id==high))
             if not row:raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
             subject=row.id;self._audit(s,actor,subject,'friend.deleted','FRIEND_DELETE',key);s.delete(row);s.execute(delete(ContactProfile).where(or_(ContactProfile.owner_id==actor,ContactProfile.contact_id==actor),or_(ContactProfile.owner_id==target,ContactProfile.contact_id==target)))

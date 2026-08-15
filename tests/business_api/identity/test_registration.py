@@ -4,7 +4,7 @@ from threading import Barrier
 
 from httpx import ASGITransport, AsyncClient
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
 
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
@@ -26,6 +26,11 @@ from app.modules.identity.registration import (
 @pytest.fixture()
 def registration_components():
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     now = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)
@@ -166,6 +171,86 @@ def test_verify_email_moves_user_to_pending_matrix_once(registration_components)
             idempotency_key="verify-registration-wrong",
         )
     assert exc_info.value.code == "EMAIL_VERIFICATION_INVALID"
+
+
+def test_verification_link_does_not_require_plain_registration_session(
+    registration_components,
+) -> None:
+    factory, invitations, service, verifier, now = registration_components
+    invitations.issue(
+        code="VERIFY-LINK",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    registration = service.register(
+        username="link-user",
+        email="link-user@example.com",
+        password="correct horse battery staple",
+        invitation_code="VERIFY-LINK",
+        idempotency_key="registration-link",
+    )
+
+    result = verifier.verify_link(registration.verification_token)
+
+    assert result.status == AccountStatus.PENDING_MATRIX
+    with factory() as session:
+        assert session.get(User, registration.user_id).email_verified_at is not None
+
+
+def test_resend_invalidates_the_previous_verification_link(
+    registration_components,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitations.issue(
+        code="RESEND-LINK",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    registration = service.register(
+        username="resend-link",
+        email="resend-link@example.com",
+        password="correct horse battery staple",
+        invitation_code="RESEND-LINK",
+        idempotency_key="registration-resend-link",
+    )
+    verifier = EmailVerificationService(
+        factory,
+        token_codec=VerificationTokenCodec(b"test-email-verification-secret"),
+        now_factory=lambda: now + timedelta(seconds=61),
+    )
+    verifier.resend(
+        registration_session=registration.registration_session,
+        idempotency_key="resend-link-once",
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        verifier.verify_link(registration.verification_token)
+
+    assert exc_info.value.code == "EMAIL_VERIFICATION_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_verification_link_page_keeps_token_in_fragment_and_posts_it(
+    registration_components,
+) -> None:
+    factory, _, _, _, _ = registration_components
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        jwt_secret="test-jwt-secret-at-least-thirty-two-bytes",
+        email_verification_secret="test-email-verification-secret",
+        password_reset_secret="test-password-reset-secret",
+    )
+    app = create_app(settings, session_factory=factory)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = await client.get("/api/v1/verify-email")
+
+    assert page.status_code == 200
+    assert "location.hash" in page.text
+    assert "/api/v1/auth/email-verifications/link" in page.text
 
 
 def test_password_hash_can_be_verified_and_rejects_wrong_password() -> None:

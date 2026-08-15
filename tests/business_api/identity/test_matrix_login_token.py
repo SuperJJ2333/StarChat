@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
@@ -45,7 +46,9 @@ class RejectingMatrixGateway:
 
 def _components(gateway=None):
     engine = create_engine(
-        "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
@@ -166,15 +169,16 @@ async def test_matrix_login_token_requires_valid_business_access_token(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("status", "mxid", "expected_code"),
+    ("status", "mxid", "expected_status", "expected_code"),
     [
-        (AccountStatus.PENDING_MATRIX, None, "MATRIX_ACCOUNT_NOT_ACTIVE"),
-        (AccountStatus.ACTIVE, None, "MATRIX_IDENTITY_UNAVAILABLE"),
+        (AccountStatus.PENDING_MATRIX, None, 401, "ACCESS_TOKEN_INVALID"),
+        (AccountStatus.ACTIVE, None, 409, "MATRIX_IDENTITY_UNAVAILABLE"),
     ],
 )
 async def test_matrix_login_token_rejects_unready_business_identity(
     status,
     mxid,
+    expected_status,
     expected_code,
 ) -> None:
     engine, factory, app, gateway = _components()
@@ -197,7 +201,7 @@ async def test_matrix_login_token_rejects_unready_business_identity(
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-    assert response.status_code == 409
+    assert response.status_code == expected_status
     assert response.json()["error"]["code"] == expected_code
     assert gateway.calls == []
     engine.dispose()
@@ -329,3 +333,11 @@ def test_synapse_enables_short_lived_existing_session_login_tokens() -> None:
 def test_business_and_synapse_login_token_expiry_cannot_drift() -> None:
     with pytest.raises(ValueError):
         Settings(_env_file=None, matrix_login_token_expires_in=120)
+
+
+def test_matrix_login_token_ttl_accepts_compose_environment_string(monkeypatch) -> None:
+    monkeypatch.setenv("BUSINESS_MATRIX_LOGIN_TOKEN_EXPIRES_IN", "60")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.matrix_login_token_expires_in == 60

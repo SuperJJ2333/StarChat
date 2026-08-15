@@ -108,15 +108,33 @@ void main() {
   });
   testWidgets('me page exposes identity settings and logout actions',
       (tester) async {
+    var caibiOpened = false;
+    var redPacketOpened = false;
+    var walletOpened = false;
     final controller = ProfileController(
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
     await tester.pumpWidget(CupertinoApp(
         home: ProfileExperiencePage(
-            controller: controller, onSettings: () {}, onLogout: () async {})));
+            controller: controller,
+            onCaibi: () => caibiOpened = true,
+            onRedPacket: () => redPacketOpened = true,
+            onWallet: () => walletOpened = true,
+            onSettings: () {},
+            onLogout: () async {})));
     await tester.pumpAndSettle();
     expect(find.text('Alice'), findsWidgets);
     expect(find.textContaining('六合通号：alice'), findsOneWidget);
     expect(find.text('hello'), findsWidgets);
+    await tester.drag(find.byType(ListView), const Offset(0, -650));
+    await tester.pumpAndSettle();
+    expect(find.text('红包'), findsWidgets);
+    expect(find.text('钱包'), findsWidgets);
+    await tester.tap(find.text('彩币').at(0));
+    await tester.tap(find.text('红包').at(0));
+    await tester.tap(find.text('钱包').at(0));
+    expect(caibiOpened, isTrue);
+    expect(redPacketOpened, isTrue);
+    expect(walletOpened, isTrue);
     expect(find.text('设置'), findsOneWidget);
     expect(find.text('退出登录'), findsOneWidget);
   });

@@ -153,6 +153,18 @@ $variables = @{
     SYNAPSE_REGISTRATION_SHARED_SECRET = $env:SYNAPSE_REGISTRATION_SHARED_SECRET
     SYNAPSE_MACAROON_SECRET_KEY = $env:SYNAPSE_MACAROON_SECRET_KEY
     SYNAPSE_FORM_SECRET = $env:SYNAPSE_FORM_SECRET
+    TURN_URI_UDP = Get-EnvOrDefault -Name "TURN_URI_UDP" -DefaultValue "turn:10.0.2.2:3478?transport=udp"
+    TURN_URI_TCP = Get-EnvOrDefault -Name "TURN_URI_TCP" -DefaultValue "turn:10.0.2.2:3478?transport=tcp"
+    TURN_SHARED_SECRET = Get-EnvOrDefault -Name "TURN_SHARED_SECRET" -DefaultValue "development-turn-shared-secret"
+}
+
+if ($env:BUSINESS_ENVIRONMENT -eq 'production') {
+    $turnSecret = [System.Environment]::GetEnvironmentVariable('TURN_SHARED_SECRET')
+    if ([string]::IsNullOrWhiteSpace($turnSecret) -or
+        $turnSecret.StartsWith('change-this', [System.StringComparison]::OrdinalIgnoreCase) -or
+        $turnSecret.StartsWith('development-', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Production requires a non-placeholder TURN_SHARED_SECRET.'
+    }
 }
 
 Write-RenderedTemplate `
