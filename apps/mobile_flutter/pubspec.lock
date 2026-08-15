@@ -137,6 +137,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.9"
+  dart_webrtc:
+    dependency: transitive
+    description:
+      name: dart_webrtc
+      sha256: f6d615bddea5e458ce180a914f3055c234ffb52fb7397a51b3491e76d6d7edb2
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.8.1"
   enhanced_enum:
     dependency: transitive
     description:
@@ -344,6 +352,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_webrtc:
+    dependency: "direct main"
+    description:
+      name: flutter_webrtc
+      sha256: "6ea3a86d95b61cfe42d5715426d355b3cece6c88d0119de428d56f6c653811ce"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.11"
   hive:
     dependency: transitive
     description:
@@ -1006,7 +1022,7 @@ packages:
     source: hosted
     version: "1.1.1"
   webrtc_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: webrtc_interface
       sha256: c6f100eac5057d9a817a60473126f9828c796d42884d498af4f339c97b21014f

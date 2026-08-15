@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于选择并裁剪个人头像。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>用于发起和接听加密视频通话。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>用于发起和接听加密语音及视频通话。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

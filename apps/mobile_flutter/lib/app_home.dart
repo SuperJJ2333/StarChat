@@ -8,6 +8,9 @@ import 'features/discovery/discovery_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
+import 'features/matrix/call_controller.dart';
+import 'features/matrix/call_page.dart';
+import 'features/matrix/matrix_call_adapter.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
@@ -15,7 +18,7 @@ import 'features/profile/profile_controller.dart';
 import 'features/profile/profile_page.dart';
 import 'features/profile/avatar_source.dart';
 
-final class AppHome extends StatelessWidget {
+final class AppHome extends StatefulWidget {
   const AppHome({
     super.key,
     required this.api,
@@ -26,6 +29,100 @@ final class AppHome extends StatelessWidget {
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final Future<void> Function() onLogout;
+
+  @override
+  State<AppHome> createState() => _AppHomeState();
+}
+
+final class _AppHomeState extends State<AppHome> {
+  late final DirectChatController directChats =
+      DirectChatController(widget.matrix);
+  late final MatrixCallBackend callBackend =
+      MatrixCallBackend(widget.matrix.sdkClient);
+  late final CallController calls = CallController(
+    backend: callBackend,
+    permissions: const WebRtcPermissionGateway(),
+  );
+  bool callPageVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    calls.addListener(_callChanged);
+  }
+
+  void _callChanged() {
+    if (calls.state.phase != CallPhase.ringing || callPageVisible || !mounted) {
+      return;
+    }
+    callPageVisible = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => CallPage(
+            controller: calls,
+            displayName: calls.state.matrixUserId ?? '加密来电',
+            fallbackSeed: calls.state.matrixUserId ?? 'incoming-call',
+            incoming: true,
+          ),
+        ),
+      );
+      callPageVisible = false;
+    });
+  }
+
+  Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
+    try {
+      final reference = await directChats.open(contact.matrixUserId);
+      if (!mounted) return;
+      callPageVisible = true;
+      final navigation = Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => CallPage(
+            controller: calls,
+            displayName: contact.displayName,
+            fallbackSeed: contact.username,
+            avatarUrl: contact.avatarUrl,
+          ),
+        ),
+      );
+      await calls.start(
+        roomId: reference.roomId,
+        matrixUserId: contact.matrixUserId,
+        type: type,
+      );
+      await navigation;
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('无法发起加密通话'),
+          content: const Text('请检查权限和网络后重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      callPageVisible = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    calls.removeListener(_callChanged);
+    calls.dispose();
+    callBackend.dispose();
+    directChats.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => CupertinoTabScaffold(
@@ -52,37 +149,44 @@ final class AppHome extends StatelessWidget {
         ),
         tabBuilder: (_, index) => CupertinoTabView(
           builder: (_) => switch (index) {
-            0 => MatrixHomePage(matrix: matrix),
-            1 => ContactsTabPage(api: api, matrix: matrix),
-            2 => DiscoveryPage(api: api),
-            _ => ProfileTabPage(api: api, onLogout: onLogout),
+            0 => MatrixHomePage(matrix: widget.matrix),
+            1 => ContactsTabPage(
+                api: widget.api,
+                matrix: widget.matrix,
+                directChats: directChats,
+                onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+                onVideo: (contact) => _openCall(contact, CallMediaType.video),
+              ),
+            2 => DiscoveryPage(api: widget.api),
+            _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
           },
         ),
       );
 }
 
 final class ContactsTabPage extends StatefulWidget {
-  const ContactsTabPage({super.key, required this.api, required this.matrix});
+  const ContactsTabPage({
+    super.key,
+    required this.api,
+    required this.matrix,
+    required this.directChats,
+    required this.onVoice,
+    required this.onVideo,
+  });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
+  final DirectChatController directChats;
+  final ContactAction onVoice;
+  final ContactAction onVideo;
 
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
 }
 
 final class _ContactsTabPageState extends State<ContactsTabPage> {
-  late final DirectChatController directChats =
-      DirectChatController(widget.matrix);
-
-  @override
-  void dispose() {
-    directChats.dispose();
-    super.dispose();
-  }
-
   Future<void> _openMessage(ContactDetails contact) async {
     try {
-      final reference = await directChats.open(contact.matrixUserId);
+      final reference = await widget.directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
       if (!mounted) return;
@@ -114,6 +218,8 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
   Widget build(BuildContext context) => ContactsPage(
         api: widget.api,
         onMessage: _openMessage,
+        onVoice: widget.onVoice,
+        onVideo: widget.onVideo,
       );
 }
 
