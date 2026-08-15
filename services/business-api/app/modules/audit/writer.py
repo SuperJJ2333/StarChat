@@ -49,23 +49,54 @@ class AuditWriter:
         before: dict[str, Any] | None = None,
         after: dict[str, Any] | None = None,
     ) -> str:
-        event_id = str(uuid4())
         with self._session_factory.begin() as session:
-            session.add(
-                AuditEvent(
-                    id=event_id,
-                    actor_id=actor_id,
-                    subject_type=subject_type,
-                    subject_id=subject_id,
-                    action=action,
-                    result=result,
-                    reason_code=reason_code,
-                    trace_id=trace_id,
-                    source_ip=source_ip,
-                    source_device_id=source_device_id,
-                    before_data=redact_metadata(before) if before is not None else None,
-                    after_data=redact_metadata(after) if after is not None else None,
-                    created_at=self._now_factory(),
-                )
+            return self.record_in_session(
+                session,
+                actor_id=actor_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                action=action,
+                result=result,
+                reason_code=reason_code,
+                trace_id=trace_id,
+                source_ip=source_ip,
+                source_device_id=source_device_id,
+                before=before,
+                after=after,
             )
+
+    def record_in_session(
+        self,
+        session,
+        *,
+        actor_id: str | None,
+        subject_type: str,
+        subject_id: str,
+        action: str,
+        result: str,
+        reason_code: str,
+        trace_id: str,
+        source_ip: str | None = None,
+        source_device_id: str | None = None,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+    ) -> str:
+        event_id = str(uuid4())
+        session.add(
+            AuditEvent(
+                id=event_id,
+                actor_id=actor_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                action=action,
+                result=result,
+                reason_code=reason_code,
+                trace_id=trace_id,
+                source_ip=source_ip,
+                source_device_id=source_device_id,
+                before_data=redact_metadata(before) if before is not None else None,
+                after_data=redact_metadata(after) if after is not None else None,
+                created_at=self._now_factory(),
+            )
+        )
         return event_id

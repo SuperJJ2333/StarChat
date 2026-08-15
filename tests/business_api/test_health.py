@@ -54,6 +54,7 @@ def test_production_accepts_required_secrets() -> None:
         email_verification_secret="test-email-verification-secret",
         password_reset_secret="test-password-reset-secret",
         synapse_admin_access_token="test-synapse-admin-access-token",
+        avatar_url_signing_secret="test-avatar-url-signing-secret",
     )
 
     assert settings.environment == "production"

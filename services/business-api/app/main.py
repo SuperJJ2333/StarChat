@@ -8,12 +8,14 @@ from app.api.redpacket import create_redpacket_router
 from app.api.wallet import create_wallet_router
 from app.api.friendship import create_friendship_router
 from app.api.moments import create_moments_router
+from app.api.profile import create_profile_router
 from app.core.config import Settings
 from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
 from app.core.tracing import install_trace_middleware
 from app.core.rate_limits import NoopRateLimiter, RedisRateLimiter
 from app.integrations.matrix_admin import SynapseMatrixAdminGateway
+from app.integrations.private_storage import LocalPrivateObjectStorage
 
 
 def create_app(
@@ -21,6 +23,7 @@ def create_app(
     session_factory=None,
     rate_limiter=None,
     matrix_gateway=None,
+    avatar_storage=None,
 ) -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
@@ -49,10 +52,23 @@ def create_app(
             server_name=settings.matrix_server_name,
             admin_access_token=settings.synapse_admin_access_token or "",
         )
+    if avatar_storage is None:
+        avatar_storage = LocalPrivateObjectStorage(
+            root=settings.avatar_storage_root,
+            signing_secret=(
+                settings.avatar_url_signing_secret
+                or "development-avatar-signing-secret"
+            ),
+            public_base_url=settings.avatar_public_base_url,
+        )
     install_trace_middleware(app)
     install_error_handlers(app)
     app.include_router(
         create_health_router(settings, session_factory=session_factory),
+        prefix="/api/v1",
+    )
+    app.include_router(
+        create_profile_router(settings, session_factory, storage=avatar_storage),
         prefix="/api/v1",
     )
     app.include_router(

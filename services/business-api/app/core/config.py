@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     matrix_server_name: str = "matrix.localhost"
     synapse_admin_access_token: str | None = None
     matrix_login_token_expires_in: Literal[60] = 60
+    avatar_storage_root: str = "/data/private-media"
+    avatar_url_signing_secret: str | None = None
+    avatar_public_base_url: str = "http://localhost:8082"
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
@@ -42,12 +45,14 @@ class Settings(BaseSettings):
                 self.email_verification_secret,
                 self.password_reset_secret,
                 self.synapse_admin_access_token,
+                self.avatar_url_signing_secret,
             )
         ):
             raise ValueError(
                 "production requires BUSINESS_JWT_SECRET, BUSINESS_TOTP_ISSUER, "
                 "BUSINESS_EMAIL_VERIFICATION_SECRET, BUSINESS_PASSWORD_RESET_SECRET "
-                "and BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN"
+                "BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN and "
+                "BUSINESS_AVATAR_URL_SIGNING_SECRET"
             )
         return self
 

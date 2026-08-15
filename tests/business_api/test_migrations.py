@@ -29,8 +29,8 @@ def _normalized_sql(sql: str) -> str:
     return " ".join(sql.lower().split())
 
 
-def test_registration_profile_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0017_registration_profile (head)"
+def test_avatar_upload_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0018_avatar_uploads (head)"
 
 
 def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
@@ -78,3 +78,26 @@ def test_registration_profile_downgrade_removes_only_new_objects() -> None:
     assert "drop column token_hash" not in sql
     assert "drop column nickname" in sql
     assert "drop column registration_session_hash" in sql
+
+
+def test_avatar_upload_migration_adds_private_upload_state_and_safe_downgrade() -> None:
+    upgrade_sql = _normalized_sql(
+        _alembic(
+            "upgrade",
+            "0017_registration_profile:0018_avatar_uploads",
+            "--sql",
+        )
+    )
+    downgrade_sql = _normalized_sql(
+        _alembic(
+            "downgrade",
+            "0018_avatar_uploads:0017_registration_profile",
+            "--sql",
+        )
+    )
+
+    assert "create table avatar_uploads" in upgrade_sql
+    assert "foreign key(owner_id) references users (id)" in upgrade_sql
+    assert "uq_avatar_upload_owner_idempotency" in upgrade_sql
+    assert "drop table avatar_uploads" in downgrade_sql
+    assert "drop table users" not in downgrade_sql
