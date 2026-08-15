@@ -86,7 +86,11 @@
   --size-moments-cover: 280px;
   --size-moment-composer: 120px;
   --size-profile-preview: 88px;
+  --size-avatar-preview: 180px;
+  --size-token-swatch: 40px;
   --scale-pressed: 0.98;
+  --scale-type-small: 85%;
+  --scale-type-large: 140%;
   --opacity-pressed: 0.72;
   --opacity-muted: 0.56;
   --opacity-disabled: 0.42;

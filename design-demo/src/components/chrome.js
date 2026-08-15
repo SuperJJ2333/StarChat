@@ -28,7 +28,7 @@ export class AppNavigationBar extends StrictElement {
       back.append(icon("back", "c-navigation-bar__icon"));
       leading.append(back);
     }
-    const title = element("h1", "c-navigation-bar__title", this.attr("title", "畅聊"));
+    const title = element(this.attr("heading") === "2" ? "h2" : "h1", "c-navigation-bar__title", this.attr("title", "畅聊"));
     const actions = element("div", "c-navigation-bar__actions");
     if (this.attr("action")) {
       const action = button("c-navigation-bar__button", this.attr("action"), "navigation-action");

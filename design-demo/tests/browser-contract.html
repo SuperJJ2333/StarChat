@@ -18,7 +18,7 @@
           import("/src/catalog/screens.js")
         ]);
         registerComponents();
-        const targetModules = new Set(["auth", "messages", "chat", "calls", "contacts", "friend", "discovery", "moments"]);
+        const targetModules = new Set(["foundation", "auth", "messages", "chat", "calls", "contacts", "friend", "discovery", "moments", "profile", "caibi", "redpacket", "wallet", "feedback"]);
         const targets = screens.filter((screen) => targetModules.has(screen.module));
         const root = document.querySelector("#test-root");
         for (const definition of targets) {
@@ -66,6 +66,34 @@
         const rangeSheet = root.querySelector('[data-screen-id="moments-settings-range-sheet"]');
         if (!rangeSheet?.querySelector('[role="dialog"][aria-modal="true"]')) {
           throw new Error("moments range settings lack an accessible action sheet");
+        }
+        const avatarFailure = root.querySelector('[data-screen-id="profile-avatar-upload-failed"]');
+        if (!avatarFailure?.textContent.includes("重试")) {
+          throw new Error("avatar upload failure lacks retry action");
+        }
+        const profileHome = root.querySelector('[data-screen-id="profile-home-default"]');
+        if (!profileHome?.querySelector(".c-identity-header__username")?.textContent.includes("畅聊号")) {
+          throw new Error("profile identity header did not render through its strict contract");
+        }
+        const caibiHome = root.querySelector('[data-screen-id="caibi-home-default"]');
+        if (!caibiHome?.textContent.includes("1288.50") || caibiHome.textContent.includes("兑换")) {
+          throw new Error("CAIBI precision or isolation is incorrect");
+        }
+        const walletHome = root.querySelector('[data-screen-id="wallet-home-default"]');
+        if (!walletHome?.textContent.includes("320.125000")) {
+          throw new Error("USDT six-decimal precision is missing");
+        }
+        const unknownWithdrawal = root.querySelector('[data-screen-id="wallet-withdrawal-unknown-result"]');
+        if (!unknownWithdrawal?.textContent.includes("查询原订单")) {
+          throw new Error("unknown withdrawal result lacks original-order lookup");
+        }
+        const packet = root.querySelector('[data-screen-id="redpacket-detail-available"]');
+        if (!packet?.textContent.includes("畅聊彩币红包")) {
+          throw new Error("red packet card lacks the approved brand footer");
+        }
+        const darkWallet = root.querySelector('[data-screen-id="wallet-home-default-dark"]');
+        if (darkWallet?.dataset.theme !== "dark") {
+          throw new Error("dark key screen does not use the dark theme contract");
         }
         const button = root.querySelector(".c-action-button");
         const bounds = button?.getBoundingClientRect();
