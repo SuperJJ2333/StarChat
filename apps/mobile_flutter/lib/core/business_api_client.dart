@@ -6,6 +6,7 @@ import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import '../features/auth/login_controller.dart';
 import '../features/auth/registration_controller.dart';
+import '../features/profile/profile_controller.dart';
 
 final class BusinessApiException implements Exception {
   const BusinessApiException({required this.statusCode, required this.code, required this.message});
@@ -23,7 +24,7 @@ abstract interface class BusinessSessionGateway {
   Future<void> logout();
 }
 
-final class BusinessApiClient implements BusinessSessionGateway, RegistrationGateway, DualDomainBusinessGateway {
+final class BusinessApiClient implements BusinessSessionGateway, RegistrationGateway, DualDomainBusinessGateway, ProfileGateway {
   BusinessApiClient({required this.baseUri, required this.sessionStore, http.Client? client}) : _client = client ?? http.Client();
   final Uri baseUri;
   final SecureSessionStore sessionStore;
@@ -50,6 +51,14 @@ final class BusinessApiClient implements BusinessSessionGateway, RegistrationGat
   @override Future<void> verifyEmail({required String registrationSession,String? code,String? token}) async {final response=await _client.post(_uri('/auth/email-verifications/verify'),headers:{'Content-Type':'application/json','Idempotency-Key':newIdempotencyKey()},body:jsonEncode({'registration_session':registrationSession,if(code!=null)'code':code,if(token!=null)'token':token}));_decode(response);}
   @override Future<int> resendVerification(String registrationSession) async {final response=await _client.post(_uri('/auth/email-verifications/resend'),headers:{'Content-Type':'application/json','Idempotency-Key':newIdempotencyKey()},body:jsonEncode({'registration_session':registrationSession}));return _decode(response)['resend_after_seconds'] as int;}
   @override Future<RegistrationStatusReceipt> registrationStatus(String registrationSession) async {final response=await _client.get(_uri('/auth/registrations/${Uri.encodeComponent(registrationSession)}'));final body=_decode(response);return RegistrationStatusReceipt(status:body['status'] as String,resendAfterSeconds:body['resend_after_seconds'] as int);}
+  ProfileData _profile(Map<String,dynamic> body)=>ProfileData(username:body['username'] as String,nickname:body['nickname'] as String,maskedEmail:body['masked_email'] as String,fallbackSeed:body['avatar_fallback_seed'] as String,signature:body['signature']?.toString(),avatarUrl:body['avatar_url']?.toString());
+  @override Future<ProfileData> loadProfile()async=>_profile(await getJson('/profile/me'));
+  @override Future<ProfileData> updateProfile({required String nickname,String? signature})async=>_profile(await patchJson('/profile/me',{'nickname':nickname,'signature':signature},idempotencyKey:newIdempotencyKey()));
+  @override Future<AvatarUploadSession> createAvatarUpload({required String mimeType,required int byteSize})async{final body=await postJson('/profile/avatar/uploads',{'mime_type':mimeType,'byte_size':byteSize},idempotencyKey:newIdempotencyKey());return AvatarUploadSession(uploadId:body['upload_id'] as String,uploadUrl:body['upload_url'] as String);}
+  @override Future<void> putAvatar(AvatarUploadSession session,AvatarCandidate candidate)async{final response=await _authorized((headers)=>_client.put(baseUri.resolve(session.uploadUrl),headers:{...headers,'Content-Type':candidate.mimeType},body:candidate.bytes));if(response.statusCode>=400)_decode(response);}
+  @override Future<ProfileData> completeAvatar(String uploadId)async=>_profile(await postJson('/profile/avatar/uploads/$uploadId/complete',{},idempotencyKey:newIdempotencyKey()));
+  @override Future<void> cancelAvatar(String uploadId)async{final response=await _authorized((headers)=>_client.delete(_uri('/profile/avatar/uploads/$uploadId'),headers:headers));if(response.statusCode>=400)_decode(response);}
+  @override Future<void> deleteAvatar()async{final response=await _authorized((headers)=>_client.delete(_uri('/profile/avatar'),headers:{...headers,'Idempotency-Key':newIdempotencyKey()}));if(response.statusCode>=400)_decode(response);}
   @override Future<BusinessSessionRestore> restoreSession() async {
     final stored = await sessionStore.session();
     if (stored == null) return BusinessSessionRestore.absent;
