@@ -61,6 +61,11 @@ try {
   assert.match(single, /data-screen-id="wallet-withdrawal-unknown-result"/u);
   assert.match(single, /查询原订单/u);
 
+  const capture = await dump("/?screen=wallet-withdrawal-unknown-result&capture=1");
+  assert.match(capture, /<body class="ui-capture-page"/u);
+  assert.doesNotMatch(capture, /ui-single__back/u);
+  assert.match(capture, /data-visible-count="1"/u);
+
   const dark = await dump("/?screen=wallet-home-default-dark");
   assert.match(dark, /<html[^>]+data-theme="dark"/u);
   assert.match(dark, /data-screen-id="wallet-home-default-dark"/u);

@@ -109,7 +109,7 @@ export function renderScreen(definition) {
   const root = pageRoot(definition);
   root.classList.add("p-auth");
   const background = element("img", "p-auth__background");
-  background.src = "/assets/landing.png";
+  background.src = "/assets/landing-changliao.png";
   background.alt = "";
   const panel = element("section", "p-auth__panel");
   const mark = element("div", "c-brand-mark", "畅");

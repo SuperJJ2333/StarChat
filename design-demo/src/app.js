@@ -116,12 +116,19 @@ async function renderGallery() {
 
 async function renderSingle(id) {
   const definition = getScreen(id);
+  const captureMode = params.get("capture") === "1";
   document.documentElement.dataset.theme = definition.theme;
-  document.body.className = "ui-single-page";
+  document.body.className = captureMode ? "ui-capture-page" : "ui-single-page";
+  const screen = await definition.component();
+  if (captureMode) {
+    app.replaceChildren(screen);
+    document.body.dataset.visibleCount = "1";
+    return;
+  }
   const wrapper = element("main", "ui-single");
   const back = button("ui-single__back", "返回设计审查画廊", "gallery-back");
   back.textContent = "← 返回全部画板";
-  wrapper.append(back, await definition.component());
+  wrapper.append(back, screen);
   app.replaceChildren(wrapper);
   document.body.dataset.visibleCount = "1";
 }

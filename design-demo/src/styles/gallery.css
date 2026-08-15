@@ -154,6 +154,17 @@ body {
   justify-self: start;
 }
 
+.ui-capture-page {
+  width: var(--size-screen-width);
+  min-width: var(--size-screen-width);
+  overflow: hidden;
+  background: var(--color-surface-primary);
+}
+
+.ui-capture-page #app {
+  min-height: 0;
+}
+
 .ui-render-error {
   padding: var(--space-xl);
   border: var(--size-hairline) solid var(--color-danger);
