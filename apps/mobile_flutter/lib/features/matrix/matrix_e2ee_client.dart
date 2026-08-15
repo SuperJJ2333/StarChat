@@ -1,6 +1,8 @@
 import 'package:matrix/matrix.dart';
 import 'dart:typed_data';
 import '../auth/login_controller.dart';
+import 'direct_chat_controller.dart';
+import 'matrix_direct_chat_adapter.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -11,7 +13,8 @@ abstract interface class MatrixSessionGateway {
   Future<void> logout();
 }
 
-abstract interface class MatrixE2eeClient implements MatrixSessionGateway {
+abstract interface class MatrixE2eeClient
+    implements MatrixSessionGateway, DirectChatGateway {
   Future<void> login(String userId, String password);
   Future<void> verifyDevice(String deviceId);
   Future<void> backupKeysToEncryptedStore();
@@ -25,7 +28,8 @@ abstract interface class MatrixE2eeClient implements MatrixSessionGateway {
       String roomId, List<int> plaintext, String mimeType);
 }
 
-final class MatrixSdkE2eeClient implements MatrixE2eeClient, MatrixTokenLoginGateway {
+final class MatrixSdkE2eeClient
+    implements MatrixE2eeClient, MatrixTokenLoginGateway {
   MatrixSdkE2eeClient(
     Client client, {
     required this.homeserver,
@@ -58,9 +62,11 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient, MatrixTokenLoginGat
   }
 
   @override
-  Future<void> loginWithToken({required String loginToken, required Uri homeserver}) async {
+  Future<void> loginWithToken(
+      {required String loginToken, required Uri homeserver}) async {
     await client.checkHomeserver(homeserver);
-    await client.login('m.login.token', token: loginToken, initialDeviceDisplayName: '六合通移动端');
+    await client.login('m.login.token',
+        token: loginToken, initialDeviceDisplayName: '六合通移动端');
   }
 
   @override
@@ -151,4 +157,9 @@ final class MatrixSdkE2eeClient implements MatrixE2eeClient, MatrixTokenLoginGat
     }
     return eventId;
   }
+
+  @override
+  Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) =>
+      DirectChatService(MatrixDirectChatBackend(client))
+          .openOrCreateDirectChat(matrixUserId);
 }

@@ -3,8 +3,10 @@ import 'package:flutter/cupertino.dart';
 import 'core/business_api_client.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
+import 'features/contacts/contact_models.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
@@ -51,11 +53,67 @@ final class AppHome extends StatelessWidget {
         tabBuilder: (_, index) => CupertinoTabView(
           builder: (_) => switch (index) {
             0 => MatrixHomePage(matrix: matrix),
-            1 => ContactsPage(api: api),
+            1 => ContactsTabPage(api: api, matrix: matrix),
             2 => DiscoveryPage(api: api),
             _ => ProfileTabPage(api: api, onLogout: onLogout),
           },
         ),
+      );
+}
+
+final class ContactsTabPage extends StatefulWidget {
+  const ContactsTabPage({super.key, required this.api, required this.matrix});
+  final BusinessApiClient api;
+  final MatrixSdkE2eeClient matrix;
+
+  @override
+  State<ContactsTabPage> createState() => _ContactsTabPageState();
+}
+
+final class _ContactsTabPageState extends State<ContactsTabPage> {
+  late final DirectChatController directChats =
+      DirectChatController(widget.matrix);
+
+  @override
+  void dispose() {
+    directChats.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openMessage(ContactDetails contact) async {
+    try {
+      final reference = await directChats.open(contact.matrixUserId);
+      final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
+      if (room == null) throw StateError('Matrix room is unavailable');
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => RoomPage(room: room, roomName: contact.displayName),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('无法打开加密会话'),
+          content: const Text('请检查网络后重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ContactsPage(
+        api: widget.api,
+        onMessage: _openMessage,
       );
 }
 
