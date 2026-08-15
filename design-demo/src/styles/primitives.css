@@ -315,6 +315,268 @@ app-red-packet-card {
   border-radius: var(--radius-pill);
 }
 
+.p-contacts-index,
+.p-contacts-friends,
+.p-contacts-request,
+.p-contacts-groups,
+.p-contacts-tags,
+.p-contacts-official,
+.p-contacts-search,
+.p-contacts-state,
+.p-friend-profile,
+.p-friend-message,
+.p-friend-more,
+.p-friend-remark,
+.p-friend-tags,
+.p-friend-privacy,
+.p-friend-blacklist,
+.p-friend-delete,
+.p-discovery-home,
+.p-moments-timeline,
+.p-moments-media,
+.p-moments-actions,
+.p-moments-visibility,
+.p-moments-governance,
+.p-moments-recommendation,
+.p-moments-composer,
+.p-moments-composer-sheet,
+.p-moments-detail,
+.p-moments-search,
+.p-moments-notifications,
+.p-moments-settings {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(var(--size-screen-height) - var(--size-safe-top));
+}
+
+.p-contacts-index__layout {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--size-contact-index);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-surface-elevated);
+}
+
+.p-contacts-index__content,
+.p-contacts-collection__content,
+.p-friend-settings__content,
+.p-discovery-home__content,
+.p-moments-settings__content {
+  overflow-y: auto;
+  background: var(--color-page-background);
+}
+
+.c-contact-section-title {
+  padding: var(--space-xs) var(--space-lg);
+  background: var(--color-page-background);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.c-contact-row {
+  display: grid;
+  grid-template-columns: var(--size-avatar-message) minmax(0, 1fr) auto;
+  gap: var(--space-md);
+  align-items: center;
+  min-height: var(--size-row);
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: var(--size-hairline) solid var(--color-divider);
+  background: var(--color-surface-elevated);
+}
+
+.c-contact-row__name {
+  font-size: var(--type-callout-size);
+  font-weight: var(--type-body-weight);
+  line-height: var(--type-callout-line);
+}
+
+.c-contact-row__subtitle,
+.c-contact-row__trailing {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.c-contact-index-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: var(--size-index-overlay);
+  height: var(--size-index-overlay);
+  border-radius: var(--radius-dialog);
+  background: var(--color-scrim);
+  color: var(--color-on-accent);
+  font-size: var(--type-display-size);
+  transform: translate(-50%, -50%);
+}
+
+.c-search-field {
+  display: block;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.c-search-field__input {
+  width: 100%;
+  min-height: var(--size-touch);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--size-hairline) solid var(--color-divider);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-elevated);
+}
+
+.p-friend-profile__content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.c-profile-preview {
+  display: grid;
+  grid-template-columns: var(--size-voice-min) 1fr;
+  gap: var(--space-md);
+  align-items: center;
+  margin-top: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-surface-elevated);
+}
+
+.c-profile-preview__title {
+  font-size: var(--type-callout-size);
+  font-weight: var(--type-body-weight);
+}
+
+.c-profile-preview__images {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xs);
+}
+
+.c-profile-preview__image {
+  display: grid;
+  place-items: center;
+  height: var(--size-profile-preview);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  font-size: var(--type-badge-size);
+}
+
+.c-profile-actions {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.p-moments-timeline__content {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-surface-elevated);
+}
+
+.c-moments-cover {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr var(--size-avatar-detail);
+  grid-template-rows: 1fr auto;
+  gap: var(--space-sm);
+  align-items: end;
+  height: var(--size-moments-cover);
+  padding: var(--space-lg);
+  overflow: hidden;
+  background: var(--color-social-link);
+  color: var(--color-on-accent);
+}
+
+.c-moments-cover__art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-on-accent);
+  font-size: var(--type-title-1-size);
+}
+
+.c-moments-cover app-avatar,
+.c-moments-cover__name {
+  position: relative;
+  z-index: var(--z-content);
+  grid-row: 2;
+}
+
+.c-moments-cover app-avatar {
+  grid-column: 2;
+}
+
+.c-moments-cover__name {
+  grid-column: 1;
+  justify-self: end;
+  font-size: var(--type-title-2-size);
+}
+
+.c-moment-card {
+  display: grid;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-lg);
+  border-bottom: var(--size-hairline) solid var(--color-divider);
+  background: var(--color-surface-elevated);
+}
+
+.c-moment-card > app-moment-grid,
+.c-moment-card > app-moment-reactions,
+.c-moment-card > app-visibility-icon {
+  display: block;
+  margin: 0 var(--space-md) 0 calc(var(--size-avatar-moment) + var(--space-xl));
+}
+
+.p-moments-media__content,
+.p-moments-generic__content,
+.p-moments-composer__content {
+  display: grid;
+  gap: var(--space-md);
+  flex: 1;
+  align-content: start;
+  overflow-y: auto;
+  padding: var(--space-md);
+}
+
+.c-moment-composer-field__input {
+  width: 100%;
+  min-height: var(--size-moment-composer);
+  padding: var(--space-md);
+  border: 0;
+  background: var(--color-surface-elevated);
+  resize: none;
+}
+
+.c-moment-action-menu {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: var(--size-red-packet-width);
+  min-height: var(--size-action-secondary);
+  margin-left: auto;
+  border-radius: var(--radius-tag);
+  background: var(--color-text-primary);
+  color: var(--color-page-background);
+}
+
+.c-moment-action-menu__button {
+  min-height: var(--size-action-secondary);
+  background: transparent;
+  color: inherit;
+}
+
+.c-segmented-control {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-primary);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
 .u-visually-hidden {
   position: absolute;
   width: 1px;

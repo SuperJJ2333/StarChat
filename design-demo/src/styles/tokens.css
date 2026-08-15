@@ -82,6 +82,10 @@
   --size-content-max: 345px;
   --size-form-row: 48px;
   --size-call-hero: 560px;
+  --size-index-overlay: 64px;
+  --size-moments-cover: 280px;
+  --size-moment-composer: 120px;
+  --size-profile-preview: 88px;
   --scale-pressed: 0.98;
   --opacity-pressed: 0.72;
   --opacity-muted: 0.56;

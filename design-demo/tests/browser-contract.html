@@ -18,7 +18,7 @@
           import("/src/catalog/screens.js")
         ]);
         registerComponents();
-        const targetModules = new Set(["auth", "messages", "chat", "calls"]);
+        const targetModules = new Set(["auth", "messages", "chat", "calls", "contacts", "friend", "discovery", "moments"]);
         const targets = screens.filter((screen) => targetModules.has(screen.module));
         const root = document.querySelector("#test-root");
         for (const definition of targets) {
@@ -46,6 +46,26 @@
         const deniedCall = root.querySelector('[data-screen-id="calls-video-permission-denied"]');
         if (!deniedCall?.querySelector('[role="dialog"][aria-modal="true"]')) {
           throw new Error("call permission state lacks an accessible dialog");
+        }
+        const contactOverlay = root.querySelector('[data-screen-id="contacts-index-overlay"]');
+        if (!contactOverlay?.querySelector(".c-contact-index-overlay")) {
+          throw new Error("contact index overlay is missing");
+        }
+        const friendMore = root.querySelector('[data-screen-id="friend-more-default"]');
+        for (const label of ["备注", "标签", "朋友圈权限", "黑名单", "删除好友"]) {
+          if (!friendMore?.textContent.includes(label)) throw new Error(`friend settings lack ${label}`);
+        }
+        const nineImages = root.querySelector('[data-screen-id="moments-media-nine"]');
+        if (nineImages?.querySelectorAll(".c-moment-grid__item").length !== 9) {
+          throw new Error("nine-image moment does not render nine cells");
+        }
+        const failedUpload = root.querySelector('[data-screen-id="moments-composer-upload-failed"]');
+        if (!failedUpload?.textContent.includes("重试")) {
+          throw new Error("failed moment upload lacks retry action");
+        }
+        const rangeSheet = root.querySelector('[data-screen-id="moments-settings-range-sheet"]');
+        if (!rangeSheet?.querySelector('[role="dialog"][aria-modal="true"]')) {
+          throw new Error("moments range settings lack an accessible action sheet");
         }
         const button = root.querySelector(".c-action-button");
         const bounds = button?.getBoundingClientRect();
