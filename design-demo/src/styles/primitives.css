@@ -1,0 +1,47 @@
+html {
+  font-family: var(--font-sans);
+  background: var(--color-page-background);
+  color: var(--color-text-primary);
+}
+
+body {
+  min-width: var(--size-screen-width);
+  min-height: 100vh;
+}
+
+.ui-screen {
+  width: var(--size-screen-width);
+  min-height: var(--size-screen-height);
+}
+
+.ui-device {
+  position: relative;
+  width: var(--size-screen-width);
+  min-height: var(--size-screen-height);
+  overflow: hidden;
+  background: var(--color-page-background);
+  color: var(--color-text-primary);
+}
+
+.ui-device__viewport {
+  min-height: calc(var(--size-screen-height) - var(--size-safe-top) - var(--size-home-height));
+}
+
+.u-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    transition-duration: var(--motion-reduced);
+    animation-duration: var(--motion-reduced);
+  }
+}

@@ -1,0 +1,8 @@
+body {
+  background: var(--color-page-background);
+  color: var(--color-text-primary);
+}
+
+#app {
+  min-height: 100vh;
+}

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "serve": "node scripts/serve.mjs",
     "test": "node --test --test-reporter=spec"
   }
 }
