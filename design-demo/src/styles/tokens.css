@@ -42,6 +42,11 @@
   --radius-pill: 999px;
   --size-screen-width: 393px;
   --size-screen-height: 852px;
+  --size-screen-long-980: 980px;
+  --size-screen-long-1040: 1040px;
+  --size-screen-long-1180: 1180px;
+  --size-screen-long-1280: 1280px;
+  --size-screen-long-2400: 2400px;
   --size-safe-top: 59px;
   --size-navigation: 44px;
   --size-tab-bar: 49px;
@@ -88,6 +93,9 @@
   --size-profile-preview: 88px;
   --size-avatar-preview: 180px;
   --size-token-swatch: 40px;
+  --size-gallery-card: 425px;
+  --size-gallery-max: 1920px;
+  --size-gallery-control: 160px;
   --scale-pressed: 0.98;
   --scale-type-small: 85%;
   --scale-type-large: 140%;

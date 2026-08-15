@@ -14,6 +14,31 @@ body {
   min-height: var(--size-screen-height);
 }
 
+.ui-screen--h-980,
+.ui-screen--h-980 .ui-device {
+  min-height: var(--size-screen-long-980);
+}
+
+.ui-screen--h-1040,
+.ui-screen--h-1040 .ui-device {
+  min-height: var(--size-screen-long-1040);
+}
+
+.ui-screen--h-1180,
+.ui-screen--h-1180 .ui-device {
+  min-height: var(--size-screen-long-1180);
+}
+
+.ui-screen--h-1280,
+.ui-screen--h-1280 .ui-device {
+  min-height: var(--size-screen-long-1280);
+}
+
+.ui-screen--h-2400,
+.ui-screen--h-2400 .ui-device {
+  min-height: var(--size-screen-long-2400);
+}
+
 .ui-device {
   position: relative;
   width: var(--size-screen-width);

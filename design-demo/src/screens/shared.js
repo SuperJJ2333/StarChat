@@ -3,6 +3,7 @@ import { createStatusBarNode } from "../components/chrome.js";
 
 export function createDeviceScreen(definition, content) {
   const screen = element("article", "ui-screen");
+  screen.classList.add(`ui-screen--h-${definition.height}`);
   screen.dataset.screenId = definition.id;
   screen.dataset.module = definition.module;
   screen.dataset.page = definition.page;
