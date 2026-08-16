@@ -620,6 +620,7 @@ app-red-packet-card {
 .p-wallet-state,
 .p-foundation-tokens,
 .p-foundation-components,
+.p-foundation-icons,
 .p-feedback-dialog,
 .p-feedback-toast,
 .p-feedback-empty,
@@ -824,6 +825,56 @@ app-red-packet-card {
   padding: var(--space-md);
   border-radius: var(--radius-card);
   background: var(--color-surface-elevated);
+}
+
+.c-icon-library__intro {
+  margin-bottom: var(--space-lg);
+  color: var(--color-text-secondary);
+  font-size: var(--type-subhead-size);
+  line-height: var(--type-subhead-line);
+}
+
+.c-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-sm);
+}
+
+.c-icon-sample {
+  display: grid;
+  place-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  min-height: 76px;
+  padding: var(--space-sm) var(--space-xs);
+  border: var(--size-hairline) solid var(--color-divider);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-elevated);
+  text-align: center;
+}
+
+.c-icon-sample__glyph {
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
+  color: var(--color-text-primary);
+}
+
+.c-icon-sample__label {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: var(--type-badge-size);
+  line-height: var(--type-badge-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c-icon-sample__name {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .c-type-scale-demo {

@@ -95,6 +95,22 @@
         if (darkWallet?.dataset.theme !== "dark") {
           throw new Error("dark key screen does not use the dark theme contract");
         }
+        const login = root.querySelector('[data-screen-id="auth-login-default"]');
+        const registration = root.querySelector('[data-screen-id="auth-registration-default"]');
+        if (!login?.querySelector('form') || !login.textContent.includes("注册账号")) {
+          throw new Error("default login design is missing its complete form and registration entry");
+        }
+        if (!registration?.querySelector('form') || !registration.textContent.includes("邀请码")) {
+          throw new Error("default registration design is missing its complete invitation form");
+        }
+        const primaryTabs = root.querySelector('[data-screen-id="messages-inbox-default"] .c-tab-bar');
+        if (primaryTabs?.querySelectorAll('svg.c-icon').length !== 4) {
+          throw new Error("primary navigation must use four real SVG icons");
+        }
+        const audioCall = root.querySelector('[data-screen-id="calls-audio-calling"]');
+        if (!audioCall?.querySelector('svg.c-icon[data-icon="call"]')) {
+          throw new Error("audio call design must expose a real voice-call icon");
+        }
         const button = root.querySelector(".c-action-button");
         const bounds = button?.getBoundingClientRect();
         if (!bounds || bounds.height < 44) {

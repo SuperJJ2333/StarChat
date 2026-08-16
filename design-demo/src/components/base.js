@@ -15,38 +15,6 @@ export function button(className, label, action) {
   return value;
 }
 
-export function iconText(name) {
-  const labels = {
-    add: "+",
-    back: "‹",
-    call: "●",
-    camera: "▣",
-    chat: "●",
-    check: "✓",
-    chevron: "›",
-    close: "×",
-    contact: "●",
-    discovery: "◇",
-    document: "▤",
-    error: "!",
-    gift: "▣",
-    info: "i",
-    me: "●",
-    microphone: "●",
-    more: "•••",
-    network: "⌁",
-    pause: "Ⅱ",
-    play: "▶",
-    retry: "↻",
-    search: "⌕",
-    send: "↑",
-    wallet: "▰",
-    warning: "!"
-  };
-  if (!(name in labels)) throw new Error(`Unknown icon: ${name}`);
-  return labels[name];
-}
-
 export class StrictElement extends HTMLElement {
   connectedCallback() {
     this.renderContract();

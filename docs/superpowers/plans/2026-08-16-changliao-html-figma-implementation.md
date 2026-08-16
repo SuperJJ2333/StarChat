@@ -641,3 +641,25 @@ git status --short
 - [ ] **Step 5: 交付**
 
 向用户提供 HTML Demo 启动命令、Figma 文件链接、Screen/Frame 数量、验证摘要和任何已明确记录的环境差异。
+
+### Task 13: 修复认证页可发现性并建立完整图标系统
+
+**Files:** `design-demo/src/icons/icons.js`、认证/组件样式、画板注册表、测试、Figma 状态台账和验证证据。
+
+- [x] **Step 1: 复现缺口并确认根因**
+
+确认 Auth 的 24 个状态虽然存在，但默认登录与注册在 Figma 状态网格中不够醒目；确认图标实现使用 Unicode 占位字形，导致导航与通话控件显示为圆点或字符。
+
+- [x] **Step 2: 先写失败测试**
+
+增加真实 SVG 图标数量、关键业务图标、可编辑几何、登录/注册完整表单、主导航四图标、语音通话图标及 `foundation-icons-catalog` 画板契约。
+
+- [x] **Step 3: 实现 HTML SVG 图标注册表与图标画板**
+
+使用 58 个本地 SVG 描边定义替换全部 Unicode 占位字形；保持 Light DOM、`currentColor`、稳定 `data-icon` 和原有组件 DOM 层级，并增加 393×1440 图标库画板。
+
+- [x] **Step 4: 创建 Figma 图标库与认证快速审查页**
+
+创建 `05 Icons 图标库`、58 个真实 Component、主导航/语音通话实例预览，以及 `09 登录与注册` 的 4 个可编辑 393×852 代表画板。
+
+- [x] **Step 5: 完整验证、记录证据并提交**

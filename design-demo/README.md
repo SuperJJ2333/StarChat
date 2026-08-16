@@ -58,4 +58,5 @@ npm run verify
 - `src/catalog/`：组件契约、虚拟数据、完整画板注册表。
 - `tests/`：品牌、Token、源码、组件、注册表与浏览器契约测试。
 - `scripts/`：静态服务器、浏览器烟测、确定性截图和验证汇总。
-- `artifacts/screenshots/`：HTML → Figma 的 325 张独立画板视觉基准。
+- `src/icons/icons.js`：58 个本地 SVG 图标的唯一注册表，统一 `24×24` 网格与 `currentColor`。
+- `artifacts/screenshots/`：HTML → Figma 的 326 张独立画板视觉基准。

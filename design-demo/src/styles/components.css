@@ -62,7 +62,8 @@
 }
 
 .c-navigation-bar__icon {
-  font-size: var(--size-icon-lg);
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
 }
 
 .c-tab-bar {
@@ -90,8 +91,17 @@
 }
 
 .c-tab-bar__icon {
-  font-size: var(--size-icon-lg);
-  line-height: var(--size-icon-lg);
+  width: var(--size-icon-lg);
+  height: var(--size-icon-lg);
+}
+
+.c-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
+  overflow: visible;
+  vector-effect: non-scaling-stroke;
 }
 
 .c-tab-bar__label {
@@ -146,7 +156,8 @@
 
 .c-action-button__icon {
   color: var(--color-brand-primary);
-  font-size: var(--size-icon-md);
+  width: var(--size-icon-md);
+  height: var(--size-icon-md);
 }
 
 .c-action-button--danger .c-action-button__icon {

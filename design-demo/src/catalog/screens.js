@@ -57,6 +57,9 @@ register("foundation", "tokens", [
 register("foundation", "components", [
   ["catalog", "Components / 完整组件库 / 浅色", 2400]
 ]);
+register("foundation", "icons", [
+  ["catalog", "Icons / 完整图标库 / 浅色", 1440]
+]);
 
 register("auth", "login", [
   ["default", "登录 / 默认"], ["filled", "登录 / 已填写"], ["submitting", "登录 / 提交中"],

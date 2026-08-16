@@ -9,6 +9,7 @@ const requiredModules = [
 ];
 
 const requiredScreens = [
+  "foundation-icons-catalog",
   "auth-login-error-credentials",
   "auth-verification-resend-failed",
   "messages-inbox-sync-failed",
