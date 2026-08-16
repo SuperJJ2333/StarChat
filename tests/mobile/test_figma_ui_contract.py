@@ -87,3 +87,67 @@ def test_auth_tokens_match_the_393px_figma_contract():
     assert "minimumTouchTarget = 44.0" in tokens
     assert "authCard = 12.0" in tokens
     assert "authControl = 14.0" in tokens
+
+
+def test_messaging_and_call_surfaces_follow_the_figma_component_contract():
+    conversation = read(
+        "apps/mobile_flutter/lib/ui/components/conversation_list_tile.dart"
+    )
+    composer = read(
+        "apps/mobile_flutter/lib/ui/chat/chat_composer_bar.dart"
+    )
+    call_control = read(
+        "apps/mobile_flutter/lib/ui/components/call_control_button.dart"
+    )
+    matrix_home = read(
+        "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart"
+    )
+    call_page = read(
+        "apps/mobile_flutter/lib/features/matrix/call_page.dart"
+    )
+
+    assert "final class ConversationListTile" in conversation
+    assert "key: ValueKey<String>('conversation-" in matrix_home
+    assert "final class ChatComposerBar" in composer
+    for key in (
+        "chat-composer-attachment",
+        "chat-composer-voice",
+        "chat-composer-input",
+        "chat-composer-send",
+    ):
+        assert f"Key('{key}')" in composer
+    assert "final class CallControlButton" in call_control
+    assert "ConversationListTile(" in matrix_home
+    assert "ChatComposerBar(" in matrix_home
+    assert "RoomTimelineController" in matrix_home
+    assert "CallControlButton(" in call_page
+    assert "widget.controller.toggleMute" in call_page
+    assert "widget.controller.toggleSpeaker" in call_page
+    assert "widget.controller.hangup" in call_page
+
+
+def test_messaging_tokens_and_semantic_icons_cover_figma_nodes():
+    tokens = read(
+        "apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart"
+    )
+    icons = read(
+        "apps/mobile_flutter/lib/ui/foundation/changliao_icons.dart"
+    )
+
+    for token in (
+        "conversationTileHeight = 72.0",
+        "conversationAvatar = 48.0",
+        "composerMinHeight = 56.0",
+        "callControl = 72.0",
+    ):
+        assert token in tokens
+    for name in (
+        "more",
+        "attachment",
+        "muted",
+        "speaker",
+        "hangup",
+        "switchCamera",
+        "close",
+    ):
+        assert f"static const IconData {name}" in icons

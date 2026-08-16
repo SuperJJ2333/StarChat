@@ -46,6 +46,10 @@ abstract final class WeChatDimensions {
   static const minimumTouchTarget = 44.0;
   static const authCardMaxWidth = 345.0;
   static const authBrandMark = 64.0;
+  static const conversationTileHeight = 72.0;
+  static const conversationAvatar = 48.0;
+  static const composerMinHeight = 56.0;
+  static const callControl = 72.0;
 }
 
 abstract final class WeChatTypography {

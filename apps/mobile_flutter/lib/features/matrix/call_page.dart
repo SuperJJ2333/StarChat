@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
-import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/call_control_button.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/foundation/changliao_icons.dart';
+import '../../ui/foundation/wechat_tokens.dart';
 import 'call_controller.dart';
 import 'matrix_call_adapter.dart';
 
@@ -35,7 +37,7 @@ final class _CallPageState extends State<CallPage> {
   @override
   void initState() {
     super.initState();
-    _initializeRenderers();
+    if (widget.mediaBackend != null) _initializeRenderers();
     widget.controller.addListener(_changed);
   }
 
@@ -46,6 +48,7 @@ final class _CallPageState extends State<CallPage> {
   }
 
   void _updateStreams() {
+    if (widget.mediaBackend == null) return;
     _localRenderer.srcObject = widget.mediaBackend?.localMediaStream;
     _remoteRenderer.srcObject = widget.mediaBackend?.remoteMediaStream;
   }
@@ -64,28 +67,33 @@ final class _CallPageState extends State<CallPage> {
   }
 
   String get status => switch (widget.controller.state.phase) {
-        CallPhase.idle => '准备通话',
-        CallPhase.requestingPermission => '正在请求权限',
-        CallPhase.ringing => widget.incoming ? '邀请你通话' : '正在呼叫',
-        CallPhase.connected => '通话中',
-        CallPhase.permissionDenied => '权限被拒绝',
+        CallPhase.idle => '准备端到端加密通话',
+        CallPhase.requestingPermission => '正在请求通话权限',
+        CallPhase.ringing => widget.incoming ? '畅聊加密来电' : '正在等待对方接听…',
+        CallPhase.connected =>
+          widget.controller.state.muted ? '麦克风已关闭' : '端到端加密',
+        CallPhase.permissionDenied =>
+          widget.controller.state.message ?? '权限被拒绝',
         CallPhase.ended => widget.controller.state.message ?? '通话已结束',
         CallPhase.failed => widget.controller.state.message ?? '通话失败',
       };
 
+  String get title {
+    final type =
+        widget.controller.state.type == CallMediaType.video ? '视频通话' : '语音通话';
+    return '${widget.displayName} · $type';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
-    final active =
-        state.phase == CallPhase.connected || state.phase == CallPhase.ringing;
+    final active = state.phase == CallPhase.connected ||
+        (state.phase == CallPhase.ringing && !widget.incoming);
     return CupertinoPageScaffold(
-      backgroundColor: const Color(0xfff5f5f5),
-      navigationBar: CupertinoNavigationBar(
-        middle: Text(state.type == CallMediaType.video ? '视频通话' : '语音通话'),
-      ),
+      backgroundColor: WeChatColors.darkSurface,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(WeChatSpacing.xl),
           child: Column(
             children: [
               const Spacer(),
@@ -100,7 +108,8 @@ final class _CallPageState extends State<CallPage> {
                         fit: StackFit.expand,
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius:
+                                BorderRadius.circular(WeChatRadius.authControl),
                             child: RTCVideoView(_remoteRenderer),
                           ),
                           Positioned(
@@ -109,7 +118,9 @@ final class _CallPageState extends State<CallPage> {
                             width: 100,
                             height: 140,
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(
+                                WeChatRadius.dialog,
+                              ),
                               child: RTCVideoView(_localRenderer, mirror: true),
                             ),
                           ),
@@ -123,67 +134,95 @@ final class _CallPageState extends State<CallPage> {
                   nickname: widget.displayName,
                   fallbackSeed: widget.fallbackSeed,
                   avatarUrl: widget.avatarUrl,
-                  size: 112,
+                  size: WeChatDimensions.callControl,
                 ),
-              const SizedBox(height: 20),
+              const SizedBox(height: WeChatSpacing.md),
               Text(
-                widget.displayName,
-                style:
-                    const TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: WeChatColors.darkTextPrimary,
+                  fontSize: WeChatTypography.title1,
+                  fontWeight: FontWeight.w700,
+                  height: 30 / 22,
+                ),
               ),
-              const SizedBox(height: 10),
-              Text(status),
+              const SizedBox(height: WeChatSpacing.md),
+              Text(
+                status,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: WeChatColors.textSecondary,
+                  fontSize: WeChatTypography.subhead,
+                ),
+              ),
               const Spacer(),
               if (widget.incoming && state.phase == CallPhase.ringing) ...[
-                ModernActionButton(
-                  icon: CupertinoIcons.phone_fill,
-                  label: '接听',
-                  onPressed: widget.controller.accept,
-                ),
-                const SizedBox(height: 10),
-                ModernActionButton(
-                  icon: CupertinoIcons.phone_down_fill,
-                  label: '拒接',
-                  kind: ModernActionKind.danger,
-                  onPressed: widget.controller.reject,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    CallControlButton(
+                      key: const Key('call-control-reject'),
+                      icon: ChangliaoIcons.hangup,
+                      label: '拒绝',
+                      kind: CallControlKind.danger,
+                      onPressed: widget.controller.reject,
+                    ),
+                    CallControlButton(
+                      key: const Key('call-control-answer'),
+                      icon: ChangliaoIcons.voiceCallFilled,
+                      label: '接听',
+                      kind: CallControlKind.accept,
+                      onPressed: widget.controller.accept,
+                    ),
+                  ],
                 ),
               ] else if (active) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    CupertinoButton(
+                    CallControlButton(
+                      key: const Key('call-control-microphone'),
+                      label: state.muted ? '取消静音' : '麦克风',
+                      selected: state.muted,
                       onPressed: widget.controller.toggleMute,
-                      child: Icon(state.muted
-                          ? CupertinoIcons.mic_off
-                          : CupertinoIcons.mic),
+                      icon: state.muted
+                          ? ChangliaoIcons.microphoneOff
+                          : ChangliaoIcons.microphone,
                     ),
-                    CupertinoButton(
+                    CallControlButton(
+                      key: const Key('call-control-hangup'),
+                      icon: ChangliaoIcons.hangup,
+                      label: '挂断',
+                      kind: CallControlKind.danger,
+                      onPressed: widget.controller.hangup,
+                    ),
+                    CallControlButton(
+                      key: const Key('call-control-speaker'),
+                      label: '扬声器',
+                      selected: state.speaker,
                       onPressed: widget.controller.toggleSpeaker,
-                      child: Icon(state.speaker
-                          ? CupertinoIcons.speaker_3_fill
-                          : CupertinoIcons.speaker_2),
+                      icon: state.speaker
+                          ? ChangliaoIcons.speakerFilled
+                          : ChangliaoIcons.speaker,
                     ),
                     if (state.type == CallMediaType.video)
-                      CupertinoButton(
+                      CallControlButton(
+                        key: const Key('call-control-camera'),
+                        icon: ChangliaoIcons.switchCamera,
+                        label: '切换镜头',
                         onPressed: widget.controller.switchCamera,
-                        child: const Icon(CupertinoIcons.camera_rotate),
                       ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                ModernActionButton(
-                  icon: CupertinoIcons.phone_down_fill,
-                  label: '挂断',
-                  kind: ModernActionKind.danger,
-                  onPressed: widget.controller.hangup,
-                ),
               ] else
-                ModernActionButton(
-                  icon: CupertinoIcons.clear,
+                CallControlButton(
+                  key: const Key('call-control-close'),
+                  icon: ChangliaoIcons.close,
                   label: '关闭',
-                  kind: ModernActionKind.secondary,
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.maybePop(context),
                 ),
+              const SizedBox(height: WeChatSpacing.xxl),
             ],
           ),
         ),

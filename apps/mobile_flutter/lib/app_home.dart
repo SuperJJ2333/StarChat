@@ -218,7 +218,12 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
       await Navigator.push(
         context,
         CupertinoPageRoute(
-          builder: (_) => RoomPage(room: room, roomName: contact.displayName),
+          builder: (_) => RoomPage(
+            room: room,
+            roomName: contact.displayName,
+            onVoiceCall: () => widget.onVoice(contact),
+            onVideoCall: () => widget.onVideo(contact),
+          ),
         ),
       );
     } catch (_) {

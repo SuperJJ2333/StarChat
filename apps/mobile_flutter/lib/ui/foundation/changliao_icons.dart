@@ -18,6 +18,7 @@ abstract final class ChangliaoIcons {
   static const IconData voiceCallFilled = CupertinoIcons.phone_fill;
   static const IconData videoCall = CupertinoIcons.video_camera;
   static const IconData microphone = CupertinoIcons.mic;
+  static const IconData microphoneOff = CupertinoIcons.mic_slash;
   static const IconData camera = CupertinoIcons.camera;
   static const IconData search = CupertinoIcons.search;
   static const IconData settings = CupertinoIcons.settings;
@@ -27,4 +28,12 @@ abstract final class ChangliaoIcons {
   static const IconData confirm = CupertinoIcons.check_mark;
   static const IconData retry = CupertinoIcons.refresh;
   static const IconData back = CupertinoIcons.back;
+  static const IconData more = CupertinoIcons.ellipsis;
+  static const IconData attachment = CupertinoIcons.paperclip;
+  static const IconData muted = CupertinoIcons.bell_slash;
+  static const IconData speaker = CupertinoIcons.speaker_2;
+  static const IconData speakerFilled = CupertinoIcons.speaker_3_fill;
+  static const IconData hangup = CupertinoIcons.phone_down_fill;
+  static const IconData switchCamera = CupertinoIcons.camera_rotate;
+  static const IconData close = CupertinoIcons.clear;
 }
