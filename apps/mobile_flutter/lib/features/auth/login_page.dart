@@ -16,6 +16,8 @@ final class LoginPage extends StatefulWidget {
     this.onAuthenticated,
     this.destination,
     this.onRegister,
+    this.onUserAgreement,
+    this.onPrivacyPolicy,
   });
 
   final BusinessApiClient api;
@@ -23,6 +25,8 @@ final class LoginPage extends StatefulWidget {
   final Future<void> Function()? onAuthenticated;
   final WidgetBuilder? destination;
   final VoidCallback? onRegister;
+  final VoidCallback? onUserAgreement;
+  final VoidCallback? onPrivacyPolicy;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -38,6 +42,7 @@ final class _LoginPageState extends State<LoginPage>
   )..forward();
 
   bool _loading = false;
+  bool _agreementAccepted = false;
   String? _error;
 
   @override
@@ -106,6 +111,7 @@ final class _LoginPageState extends State<LoginPage>
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     final form = Form(
       key: const Key('auth-login-form'),
       child: AuthSurfaceCard(
@@ -115,9 +121,12 @@ final class _LoginPageState extends State<LoginPage>
             children: [
               const AuthBrandMark(),
               const SizedBox(height: WeChatSpacing.sm),
-              const Text(
+              Text(
                 '畅聊',
                 style: TextStyle(
+                  color: dark
+                      ? WeChatColors.darkTextPrimary
+                      : WeChatColors.lightTextPrimary,
                   fontSize: WeChatTypography.brand,
                   fontWeight: FontWeight.w700,
                   height: 42 / 34,
@@ -165,6 +174,16 @@ final class _LoginPageState extends State<LoginPage>
                   height: 17 / 12,
                 ),
               ),
+              const SizedBox(height: WeChatSpacing.xs),
+              AuthAgreementRow(
+                value: _agreementAccepted,
+                enabled: !_loading,
+                onChanged: (value) => setState(
+                  () => _agreementAccepted = value,
+                ),
+                onUserAgreement: widget.onUserAgreement,
+                onPrivacyPolicy: widget.onPrivacyPolicy,
+              ),
               if (_error != null) ...[
                 const SizedBox(height: WeChatSpacing.md),
                 Semantics(
@@ -188,19 +207,14 @@ final class _LoginPageState extends State<LoginPage>
                       : ChangliaoIcons.retry,
                   label: _error == null ? '登录' : '重试',
                   loading: _loading,
-                  onPressed: _loading ? null : _submit,
+                  onPressed: _loading || !_agreementAccepted ? null : _submit,
                 ),
               ),
               if (widget.onRegister != null) ...[
-                const SizedBox(height: WeChatSpacing.sm),
-                SizedBox(
-                  width: double.infinity,
-                  child: ModernActionButton(
-                    icon: ChangliaoIcons.add,
-                    label: '注册账号',
-                    kind: ModernActionKind.secondary,
-                    onPressed: _loading ? null : widget.onRegister,
-                  ),
+                const SizedBox(height: WeChatSpacing.xs),
+                AuthInlineRegisterLink(
+                  enabled: !_loading,
+                  onRegister: widget.onRegister!,
                 ),
               ],
             ],
@@ -213,7 +227,7 @@ final class _LoginPageState extends State<LoginPage>
       key: const Key('auth-login-scroll'),
       padding: EdgeInsets.fromLTRB(
         WeChatSpacing.xl,
-        260,
+        120,
         WeChatSpacing.xl,
         WeChatSpacing.xl + bottomInset,
       ),

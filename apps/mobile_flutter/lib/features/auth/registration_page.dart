@@ -72,7 +72,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         key: const Key('auth-registration-scroll'),
         padding: EdgeInsets.fromLTRB(
           WeChatSpacing.xl,
-          180,
+          96,
           WeChatSpacing.xl,
           WeChatSpacing.xl + bottomInset,
         ),

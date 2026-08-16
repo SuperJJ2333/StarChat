@@ -12,6 +12,7 @@ abstract final class WeChatColors {
   static const lightTextPrimary = Color(0xFF191919);
   static const darkTextPrimary = Color(0xFFF5F5F5);
   static const textSecondary = Color(0xFF888888);
+  static const textTertiary = Color(0xFFB2B2B2);
   static const divider = Color(0xFFD9D9D9);
   static const darkDivider = Color(0xFF2C2C2C);
   static const danger = Color(0xFFFA5151);

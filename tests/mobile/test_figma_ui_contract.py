@@ -64,17 +64,35 @@ def test_auth_pages_share_the_figma_surface_components_and_stable_keys():
     registration = read(
         "apps/mobile_flutter/lib/features/auth/registration_page.dart"
     )
+    verification = read(
+        "apps/mobile_flutter/lib/features/auth/verification_page.dart"
+    )
 
     assert "final class AuthSurfaceCard" in components
     assert "final class AuthBrandMark" in components
     assert "final class AuthTextField" in components
+    assert "final class AuthAgreementRow" in components
+    assert "final class AuthInlineRegisterLink" in components
+    assert "SvgPicture.asset(" in components
+    assert "assets/branding/liuhetong_logo.svg" in components
+    assert "assets/branding/launch_logo.svg" not in components
     assert "Key('auth-surface-card')" in components
+    assert "Key('auth-brand-logo')" in components
+    assert "Key('auth-agreement-checkbox')" in components
+    assert "Key('auth-user-agreement-link')" in components
+    assert "Key('auth-privacy-policy-link')" in components
+    assert "Key('auth-register-link')" in components
     assert "Key('auth-login-form')" in login
     assert "Key('auth-registration-form')" in registration
     assert "AuthSurfaceCard(" in login
     assert "AuthSurfaceCard(" in registration
+    assert "AuthBrandMark(" in verification
+    assert "AuthAgreementRow(" in login
+    assert "AuthInlineRegisterLink(" in login
     assert "使用用户名或邮箱登录" in login
     assert "创建畅聊账号" in registration
+    assert "还没有账号？" in components
+    assert "立刻注册" in components
 
 
 def test_auth_tokens_match_the_393px_figma_contract():

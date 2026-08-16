@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../foundation/wechat_tokens.dart';
+
 enum ModernActionKind { primary, secondary, danger }
 
 final class ModernActionButton extends StatefulWidget {
@@ -26,13 +28,22 @@ final class _ModernActionButtonState extends State<ModernActionButton> {
     final reduced = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     final enabled = widget.onPressed != null && !widget.loading;
     final danger = widget.kind == ModernActionKind.danger;
-    final foreground =
-        danger ? CupertinoColors.systemRed : const Color(0xff07c160);
+    final foreground = !enabled
+        ? WeChatColors.textTertiary
+        : danger
+            ? CupertinoColors.systemRed
+            : WeChatColors.brandPrimary;
+    final labelColor = !enabled
+        ? WeChatColors.textTertiary
+        : danger
+            ? foreground
+            : const Color(0xff191919);
     final background = widget.kind == ModernActionKind.secondary
         ? CupertinoColors.transparent
         : CupertinoColors.white;
     return Semantics(
       button: true,
+      enabled: enabled,
       label: widget.label,
       child: GestureDetector(
         onTapDown: !enabled ? null : (_) => setState(() => pressed = true),
@@ -73,9 +84,7 @@ final class _ModernActionButtonState extends State<ModernActionButton> {
                     Icon(widget.icon, color: foreground, size: 20),
                   const SizedBox(width: 8),
                   Text(widget.label,
-                      style: TextStyle(
-                          color: danger ? foreground : const Color(0xff191919),
-                          fontSize: 16)),
+                      style: TextStyle(color: labelColor, fontSize: 16)),
                 ]),
           ),
         ),
