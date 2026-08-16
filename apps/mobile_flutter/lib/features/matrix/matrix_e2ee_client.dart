@@ -58,7 +58,7 @@ final class MatrixSdkE2eeClient
     await client.login('m.login.password',
         identifier: AuthenticationUserIdentifier(user: userId),
         password: password,
-        initialDeviceDisplayName: '六合通移动端');
+        initialDeviceDisplayName: '畅聊移动端');
   }
 
   @override
@@ -66,7 +66,7 @@ final class MatrixSdkE2eeClient
       {required String loginToken, required Uri homeserver}) async {
     await client.checkHomeserver(homeserver);
     await client.login('m.login.token',
-        token: loginToken, initialDeviceDisplayName: '六合通移动端');
+        token: loginToken, initialDeviceDisplayName: '畅聊移动端');
   }
 
   @override
@@ -150,7 +150,7 @@ final class MatrixSdkE2eeClient
     if (room == null) throw StateError('Matrix room is not joined');
     final eventId = await room.sendFileEvent(MatrixFile(
         bytes: Uint8List.fromList(plaintext),
-        name: '六合通附件',
+        name: '畅聊附件',
         mimeType: mimeType));
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');

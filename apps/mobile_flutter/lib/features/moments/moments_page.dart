@@ -6,7 +6,7 @@ final class _MomentsPageState extends State<MomentsPage>{String mode='recommende
  @override Widget build(BuildContext context)=>CupertinoPageScaffold(
   navigationBar:CupertinoNavigationBar(middle:const Text('朋友圈'),trailing:Row(mainAxisSize:MainAxisSize.min,children:[CupertinoButton(padding:EdgeInsets.zero,onPressed:()=>Navigator.push(context,CupertinoPageRoute(builder:(_)=>MomentsSettingsPage(api:widget.api))),child:const Icon(CupertinoIcons.settings)),CupertinoButton(padding:EdgeInsets.zero,onPressed:()=>Navigator.push(context,CupertinoPageRoute(builder:(_)=>MomentComposerPage(api:widget.api))),child:const Icon(CupertinoIcons.camera))])),
   child:SafeArea(child:FutureBuilder<Map<String,dynamic>>(future:widget.api.momentsFeed(mode:mode),builder:(_,snapshot){final items=(snapshot.data?['items'] as List?)??const[];return ListView(children:[
-   SizedBox(height:200,child:Container(color:const Color(0xff4c4c4c),alignment:Alignment.bottomRight,padding:const EdgeInsets.all(16),child:const Text('六合通朋友圈',style:TextStyle(color:CupertinoColors.white,fontSize:22)))),
+    SizedBox(height:200,child:Container(color:const Color(0xff4c4c4c),alignment:Alignment.bottomRight,padding:const EdgeInsets.all(16),child:const Text('畅聊朋友圈',style:TextStyle(color:CupertinoColors.white,fontSize:22)))),
    CupertinoSlidingSegmentedControl<String>(groupValue:mode,children:const{'recommended':Text('推荐'),'latest':Text('最新')},onValueChanged:(v)=>setState(()=>mode=v!)),
    for(final m in items) WeChatMomentTile(author:m['author_id'].toString(),text:m['text'].toString(),images:List<String>.from(m['image_urls']??const[]),onLike:()=>widget.api.likeMoment(m['id'].toString())),
   ]);})),

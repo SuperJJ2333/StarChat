@@ -123,7 +123,7 @@ void main() {
             onLogout: () async {})));
     await tester.pumpAndSettle();
     expect(find.text('Alice'), findsWidgets);
-    expect(find.textContaining('六合通号：alice'), findsOneWidget);
+    expect(find.textContaining('畅聊号：alice'), findsOneWidget);
     expect(find.text('hello'), findsWidgets);
     await tester.drag(find.byType(ListView), const Offset(0, -650));
     await tester.pumpAndSettle();

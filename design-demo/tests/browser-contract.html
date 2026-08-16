@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Screen contract pending</title>
+    <link rel="stylesheet" href="/src/styles/reset.css">
+    <link rel="stylesheet" href="/src/styles/tokens.css">
+    <link rel="stylesheet" href="/src/styles/primitives.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+  </head>
+  <body data-test-result="pending">
+    <main id="test-root"></main>
+    <script type="module">
+      try {
+        const [{ registerComponents }, { screens }] = await Promise.all([
+          import("/src/components/register.js"),
+          import("/src/catalog/screens.js")
+        ]);
+        registerComponents();
+        const targetModules = new Set(["foundation", "auth", "messages", "chat", "calls", "contacts", "friend", "discovery", "moments", "profile", "caibi", "redpacket", "wallet", "feedback"]);
+        const targets = screens.filter((screen) => targetModules.has(screen.module));
+        const root = document.querySelector("#test-root");
+        for (const definition of targets) {
+          const screen = await definition.component();
+          root.append(screen);
+          if (!screen.matches(`article.ui-screen[data-screen-id="${definition.id}"]`)) {
+            throw new Error(`${definition.id} has an invalid screen root`);
+          }
+          if (!screen.querySelector(":scope > .ui-device > .c-status-bar")) {
+            throw new Error(`${definition.id} does not strictly nest the status bar`);
+          }
+          if (screen.querySelectorAll("h1").length !== 1) {
+            throw new Error(`${definition.id} must render exactly one h1`);
+          }
+        }
+
+        const failedMessage = root.querySelector('[data-screen-id="chat-room-message-failed"]');
+        if (!failedMessage?.textContent.includes("重新发送")) {
+          throw new Error("failed message does not expose retry copy");
+        }
+        const deniedAttachment = root.querySelector('[data-screen-id="chat-attachment-permission-denied"]');
+        if (!deniedAttachment?.textContent.includes("系统设置")) {
+          throw new Error("attachment permission state lacks settings action");
+        }
+        const deniedCall = root.querySelector('[data-screen-id="calls-video-permission-denied"]');
+        if (!deniedCall?.querySelector('[role="dialog"][aria-modal="true"]')) {
+          throw new Error("call permission state lacks an accessible dialog");
+        }
+        const contactOverlay = root.querySelector('[data-screen-id="contacts-index-overlay"]');
+        if (!contactOverlay?.querySelector(".c-contact-index-overlay")) {
+          throw new Error("contact index overlay is missing");
+        }
+        const friendMore = root.querySelector('[data-screen-id="friend-more-default"]');
+        for (const label of ["备注", "标签", "朋友圈权限", "黑名单", "删除好友"]) {
+          if (!friendMore?.textContent.includes(label)) throw new Error(`friend settings lack ${label}`);
+        }
+        const nineImages = root.querySelector('[data-screen-id="moments-media-nine"]');
+        if (nineImages?.querySelectorAll(".c-moment-grid__item").length !== 9) {
+          throw new Error("nine-image moment does not render nine cells");
+        }
+        const failedUpload = root.querySelector('[data-screen-id="moments-composer-upload-failed"]');
+        if (!failedUpload?.textContent.includes("重试")) {
+          throw new Error("failed moment upload lacks retry action");
+        }
+        const rangeSheet = root.querySelector('[data-screen-id="moments-settings-range-sheet"]');
+        if (!rangeSheet?.querySelector('[role="dialog"][aria-modal="true"]')) {
+          throw new Error("moments range settings lack an accessible action sheet");
+        }
+        const avatarFailure = root.querySelector('[data-screen-id="profile-avatar-upload-failed"]');
+        if (!avatarFailure?.textContent.includes("重试")) {
+          throw new Error("avatar upload failure lacks retry action");
+        }
+        const profileHome = root.querySelector('[data-screen-id="profile-home-default"]');
+        if (!profileHome?.querySelector(".c-identity-header__username")?.textContent.includes("畅聊号")) {
+          throw new Error("profile identity header did not render through its strict contract");
+        }
+        const caibiHome = root.querySelector('[data-screen-id="caibi-home-default"]');
+        if (!caibiHome?.textContent.includes("1288.50") || caibiHome.textContent.includes("兑换")) {
+          throw new Error("CAIBI precision or isolation is incorrect");
+        }
+        const walletHome = root.querySelector('[data-screen-id="wallet-home-default"]');
+        if (!walletHome?.textContent.includes("320.125000")) {
+          throw new Error("USDT six-decimal precision is missing");
+        }
+        const unknownWithdrawal = root.querySelector('[data-screen-id="wallet-withdrawal-unknown-result"]');
+        if (!unknownWithdrawal?.textContent.includes("查询原订单")) {
+          throw new Error("unknown withdrawal result lacks original-order lookup");
+        }
+        const packet = root.querySelector('[data-screen-id="redpacket-detail-available"]');
+        if (!packet?.textContent.includes("畅聊彩币红包")) {
+          throw new Error("red packet card lacks the approved brand footer");
+        }
+        const darkWallet = root.querySelector('[data-screen-id="wallet-home-default-dark"]');
+        if (darkWallet?.dataset.theme !== "dark") {
+          throw new Error("dark key screen does not use the dark theme contract");
+        }
+        const login = root.querySelector('[data-screen-id="auth-login-default"]');
+        const registration = root.querySelector('[data-screen-id="auth-registration-default"]');
+        if (!login?.querySelector('form') || !login.textContent.includes("注册账号")) {
+          throw new Error("default login design is missing its complete form and registration entry");
+        }
+        if (!registration?.querySelector('form') || !registration.textContent.includes("邀请码")) {
+          throw new Error("default registration design is missing its complete invitation form");
+        }
+        const primaryTabs = root.querySelector('[data-screen-id="messages-inbox-default"] .c-tab-bar');
+        if (primaryTabs?.querySelectorAll('svg.c-icon').length !== 4) {
+          throw new Error("primary navigation must use four real SVG icons");
+        }
+        const audioCall = root.querySelector('[data-screen-id="calls-audio-calling"]');
+        if (!audioCall?.querySelector('svg.c-icon[data-icon="call"]')) {
+          throw new Error("audio call design must expose a real voice-call icon");
+        }
+        const button = root.querySelector(".c-action-button");
+        const bounds = button?.getBoundingClientRect();
+        if (!bounds || bounds.height < 44) {
+          throw new Error("action button touch target is below 44px");
+        }
+
+        document.body.dataset.testResult = "passed";
+        document.body.dataset.screenCount = String(targets.length);
+        document.title = "Screen contract passed";
+      } catch (error) {
+        document.body.dataset.testResult = "failed";
+        document.body.dataset.testMessage = error.message;
+        document.title = "Screen contract failed";
+      }
+    </script>
+  </body>
+</html>

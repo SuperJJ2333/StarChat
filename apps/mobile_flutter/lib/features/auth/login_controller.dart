@@ -48,7 +48,7 @@ final class DualDomainLoginService {
       username: username,
       password: password,
       deviceKey: deviceKey(),
-      deviceName: '六合通移动端',
+      deviceName: '畅聊移动端',
     );
     try {
       // An explicit Business login starts a new dual-domain session. Never

@@ -60,7 +60,7 @@ final class LiuhetongApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoApp(
-        title: '六合通',
+        title: '畅聊',
         theme: WeChatTheme.build(Brightness.light),
         builder: (context, child) => CupertinoTheme(
           data: WeChatTheme.build(MediaQuery.platformBrightnessOf(context)),

@@ -14,6 +14,7 @@ import 'features/matrix/matrix_call_adapter.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
+import 'ui/foundation/changliao_icons.dart';
 import 'features/profile/profile_controller.dart';
 import 'features/profile/profile_page.dart';
 import 'features/profile/avatar_source.dart';
@@ -136,19 +137,23 @@ final class _AppHomeState extends State<AppHome> {
               activeColor: const Color(0xff07c160),
               items: const [
                 BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.chat_bubble_2_fill),
+                  icon: Icon(ChangliaoIcons.messages),
+                  activeIcon: Icon(ChangliaoIcons.messagesFilled),
                   label: '消息',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.person_2_fill),
+                  icon: Icon(ChangliaoIcons.contacts),
+                  activeIcon: Icon(ChangliaoIcons.contactsFilled),
                   label: '通讯录',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.compass_fill),
+                  icon: Icon(ChangliaoIcons.discover),
+                  activeIcon: Icon(ChangliaoIcons.discoverFilled),
                   label: '发现',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.person_crop_circle_fill),
+                  icon: Icon(ChangliaoIcons.me),
+                  activeIcon: Icon(ChangliaoIcons.meFilled),
                   label: '我',
                 ),
               ],
