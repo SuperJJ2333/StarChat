@@ -34,10 +34,12 @@ function selectControl(label, name, values, selected) {
 
 function matchesFilters(screen) {
   const module = params.get("module");
+  const modules = new Set((params.get("modules") ?? "").split(",").filter(Boolean));
   const state = params.get("state");
   const theme = params.get("theme");
   const query = params.get("q")?.trim().toLowerCase();
   if (module && screen.module !== module) return false;
+  if (modules.size > 0 && !modules.has(screen.module)) return false;
   if (state && screen.state !== state && !screen.tags.includes(state)) return false;
   if (theme && screen.theme !== theme) return false;
   if (query && !`${screen.id} ${screen.title}`.toLowerCase().includes(query)) return false;

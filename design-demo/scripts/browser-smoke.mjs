@@ -57,6 +57,9 @@ try {
   assert.doesNotMatch(gallery, /六合通/u);
   assert.doesNotMatch(gallery, /data-render-error/u);
 
+  const grouped = await dump("/?modules=messages,chat");
+  assert.match(grouped, /data-visible-count="59"/u);
+
   const single = await dump("/?screen=wallet-withdrawal-unknown-result");
   assert.match(single, /data-screen-id="wallet-withdrawal-unknown-result"/u);
   assert.match(single, /查询原订单/u);
