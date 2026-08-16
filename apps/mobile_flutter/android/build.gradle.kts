@@ -1,5 +1,9 @@
 allprojects {
     repositories {
+        // Google Maven is not directly reachable in every supported build
+        // environment. Keep the canonical repository as fallback, while the
+        // mirror serves the same immutable coordinates.
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
         google()
         mavenCentral()
     }

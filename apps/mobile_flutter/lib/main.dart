@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_home.dart';
 import 'core/app_config.dart';
@@ -13,9 +14,16 @@ import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'session_gate.dart';
 import 'ui/theme/wechat_theme.dart';
+import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final themeController = ThemeController(
+    store: SharedPreferencesThemePreferenceStore(
+      await SharedPreferences.getInstance(),
+    ),
+  );
+  await themeController.load();
   final store = SecureSessionStore();
   final api = BusinessApiClient(
     baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
@@ -47,26 +55,39 @@ Future<void> main() async {
       api: api,
       matrix: matrix,
       onLogout: session.logout,
+      themeController: themeController,
     ),
   );
-  runApp(LiuhetongApp(home: gate));
+  runApp(LiuhetongApp(home: gate, themeController: themeController));
   unawaited(session.bootstrap());
 }
 
 final class LiuhetongApp extends StatelessWidget {
-  const LiuhetongApp({super.key, required this.home});
+  const LiuhetongApp({
+    super.key,
+    required this.home,
+    required this.themeController,
+  });
 
   final Widget home;
+  final ThemeController themeController;
 
   @override
-  Widget build(BuildContext context) => CupertinoApp(
-        title: '畅聊',
-        theme: WeChatTheme.build(Brightness.light),
-        builder: (context, child) => CupertinoTheme(
-          data: WeChatTheme.build(MediaQuery.platformBrightnessOf(context)),
-          child: child!,
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: themeController,
+        builder: (context, _) => CupertinoApp(
+          title: '畅聊',
+          theme: WeChatTheme.build(themeController.resolve(
+            WidgetsBinding.instance.platformDispatcher.platformBrightness,
+          )),
+          builder: (context, child) => CupertinoTheme(
+            data: WeChatTheme.build(
+              themeController.resolve(MediaQuery.platformBrightnessOf(context)),
+            ),
+            child: child!,
+          ),
+          home: home,
         ),
-        home: home,
       );
 }
 

@@ -7,6 +7,8 @@ import '../../ui/components/conversation_list_tile.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../../ui/theme/theme_controller.dart';
+import '../../ui/theme/theme_picker_sheet.dart';
 import 'matrix_e2ee_client.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'media_composer.dart';
@@ -15,8 +17,13 @@ import 'room_timeline_controller.dart';
 import 'voice_composer.dart';
 
 class MatrixHomePage extends StatefulWidget {
-  const MatrixHomePage({super.key, required this.matrix});
+  const MatrixHomePage({
+    super.key,
+    required this.matrix,
+    required this.themeController,
+  });
   final MatrixSdkE2eeClient matrix;
+  final ThemeController themeController;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -53,6 +60,53 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     return '${timestamp.month}/${timestamp.day}';
   }
 
+  Future<void> _showMore() async {
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: const Text('新建会话'),
+        actions: [
+          _action(sheetContext, CupertinoIcons.group_solid, '发起群聊'),
+          _action(sheetContext, CupertinoIcons.person_add_solid, '添加朋友'),
+          _action(sheetContext, CupertinoIcons.qrcode_viewfinder, '扫一扫'),
+          CupertinoActionSheetAction(
+            key: const Key('messages-appearance'),
+            onPressed: () {
+              Navigator.pop(sheetContext);
+              showThemePickerSheet(context, widget.themeController);
+            },
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(CupertinoIcons.circle_lefthalf_fill, size: 20),
+                SizedBox(width: 10),
+                Text('外观'),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+  }
+
+  Widget _action(BuildContext context, IconData icon, String label) {
+    return CupertinoActionSheetAction(
+      onPressed: () => Navigator.pop(context),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 10),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final rooms = widget.matrix.sdkClient.rooms;
@@ -62,10 +116,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         trailing: CupertinoButton(
           key: const Key('messages-more'),
           padding: EdgeInsets.zero,
-          onPressed: sync,
-          child: syncing
-              ? const CupertinoActivityIndicator(radius: 8)
-              : const Icon(ChangliaoIcons.more, size: 22),
+          onPressed: _showMore,
+          child: const Icon(ChangliaoIcons.more, size: 22),
         ),
       ),
       child: SafeArea(
@@ -252,7 +304,7 @@ class _RoomPageState extends State<RoomPage> {
   @override
   Widget build(BuildContext context) {
     final messages = controller?.messages ?? const <RoomMessageViewModel>[];
-    final dark = MediaQuery.platformBrightnessOf(context) == Brightness.dark;
+    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return CupertinoPageScaffold(
       backgroundColor: dark
           ? WeChatColors.darkPageBackground

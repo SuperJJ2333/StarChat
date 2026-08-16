@@ -1,0 +1,13 @@
+module,figma_page,figma_node,flutter_route_or_widget,light,dark,loading,empty,error,modal_or_sheet,real_icons,status
+Auth,10 Auth,10 Auth page,AuthenticationFlow,PASS,TOKEN,PASS,N/A,PASS,PASS,PASS,PASS
+Messages,20 Messages & Chat,30:2,MatrixHomePage,PASS,TOKEN,PASS,PASS,PASS,30:60 plus Appearance,PASS,PASS
+Calls,30 Calls,30 Calls page,CallPage,PASS,TOKEN,PASS,N/A,PASS,PASS,PASS,PASS
+Contacts,40 Contacts & Friend,40 Contacts page,ContactsPage,PASS,TOKEN,PASS,PASS,PASS,PASS,PASS,PASS
+Discovery,50 Discovery & Moments,29:2726,DiscoveryPage,PASS,TOKEN,N/A,N/A,N/A,N/A,PASS,PASS
+Moments,50 Discovery & Moments,29:5798,MomentsPage,PASS,29:5899,PASS,PASS,PASS,PASS,PASS,PASS
+Profile,60 Profile,29:2169,ProfileExperiencePage,PASS,29:2263,PASS,N/A,PASS,PASS,PASS,PASS
+Profile details,60 Profile,29:1976,ProfileDetailsPage,PASS,TOKEN,PASS,N/A,PASS,PASS,PASS,PARTIAL
+Profile settings,60 Profile,29:2357,SettingsPage,PASS,TOKEN,PENDING,N/A,PENDING,PASS,PASS,PARTIAL
+Finance,70 Finance,70 Finance page,CaibiPage RedPacketPage WalletPage,PASS,TOKEN,PASS,PASS,PASS,PASS,PASS,PASS
+Feedback,80 Feedback,80 Feedback page,Feedback UI,PASS,TOKEN,PASS,PASS,PASS,PASS,PASS,PASS
+Dark reference,90 Dark Reference,90 Dark Reference,WeChatTheme,N/A,PASS,N/A,N/A,N/A,N/A,PASS,PASS

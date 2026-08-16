@@ -5,6 +5,7 @@ import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/contact_models.dart';
 import 'features/discovery/discovery_page.dart';
+import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
@@ -15,6 +16,8 @@ import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
 import 'ui/foundation/changliao_icons.dart';
+import 'ui/foundation/wechat_tokens.dart';
+import 'ui/theme/theme_controller.dart';
 import 'features/profile/profile_controller.dart';
 import 'features/profile/profile_page.dart';
 import 'features/profile/avatar_source.dart';
@@ -25,11 +28,13 @@ final class AppHome extends StatefulWidget {
     required this.api,
     required this.matrix,
     required this.onLogout,
+    required this.themeController,
   });
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final Future<void> Function() onLogout;
+  final ThemeController themeController;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -160,7 +165,10 @@ final class _AppHomeState extends State<AppHome> {
             ),
             tabBuilder: (_, index) => CupertinoTabView(
               builder: (_) => switch (index) {
-                0 => MatrixHomePage(matrix: widget.matrix),
+                0 => MatrixHomePage(
+                    matrix: widget.matrix,
+                    themeController: widget.themeController,
+                  ),
                 1 => ContactsTabPage(
                     api: widget.api,
                     matrix: widget.matrix,
@@ -273,6 +281,8 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
+      onMoments: () => Navigator.push(context,
+          CupertinoPageRoute(builder: (_) => MomentsPage(api: widget.api))),
       onCaibi: () => Navigator.push(
           context,
           CupertinoPageRoute(
@@ -290,12 +300,8 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(
-                  navigationBar:
-                      const CupertinoNavigationBar(middle: Text('钱包')),
-                  child: WalletPage(api: widget.api)))),
-      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(onLogout: widget.onLogout))),
-      onLogout: widget.onLogout);
+              builder: (_) => CupertinoPageScaffold(navigationBar: const CupertinoNavigationBar(middle: Text('钱包')), child: WalletPage(api: widget.api)))),
+      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(onLogout: widget.onLogout))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -405,22 +411,123 @@ final class SettingsPage extends StatelessWidget {
         navigationBar: const CupertinoNavigationBar(middle: Text('设置')),
         child: SafeArea(
           child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             children: [
-              CupertinoListSection.insetGrouped(
-                children: [
-                  CupertinoListTile(
-                    title: const Center(
-                      child: Text(
-                        '退出登录',
-                        style: TextStyle(color: CupertinoColors.systemRed),
+              _SettingsTile(
+                icon: CupertinoIcons.info_circle,
+                label: '账号与隐私',
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const CupertinoPageScaffold(
+                      navigationBar: CupertinoNavigationBar(
+                        middle: Text('账号与隐私'),
+                      ),
+                      child: SafeArea(
+                        child: Center(child: Text('隐私保护设置')),
                       ),
                     ),
-                    onTap: () => _confirmLogout(context),
                   ),
-                ],
+                ),
+              ),
+              _SettingsTile(
+                icon: CupertinoIcons.bell,
+                label: '消息通知',
+                detail: '已开启',
+                onTap: () {},
+              ),
+              _SettingsTile(
+                icon: CupertinoIcons.wind,
+                label: '减少动态效果',
+                detail: '跟随系统',
+                onTap: () {},
+              ),
+              _SettingsTile(
+                icon: CupertinoIcons.info,
+                label: '关于畅聊',
+                detail: '1.1',
+                onTap: () {},
+              ),
+              const SizedBox(height: 2),
+              SizedBox(
+                height: 48,
+                child: CupertinoButton(
+                  color:
+                      CupertinoTheme.of(context).brightness == Brightness.dark
+                          ? WeChatColors.darkElevated
+                          : WeChatColors.lightElevated,
+                  borderRadius: BorderRadius.circular(14),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _confirmLogout(context),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(CupertinoIcons.xmark, size: 20),
+                      SizedBox(width: 8),
+                      Text('退出登录', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
         ),
       );
+}
+
+final class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.detail,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+      child: Container(
+        height: 57,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
+          border: Border(
+            bottom: BorderSide(
+              width: .5,
+              color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
+            ),
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(width: 40, child: Icon(icon, size: 20)),
+            const SizedBox(width: 12),
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+            if (detail != null)
+              Text(
+                detail!,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: WeChatColors.textSecondary,
+                ),
+              ),
+            const SizedBox(width: 4),
+            const Icon(
+              CupertinoIcons.chevron_right,
+              size: 12,
+              color: WeChatColors.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

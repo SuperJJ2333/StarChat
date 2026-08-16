@@ -4,12 +4,21 @@ import 'package:liuhetong_mobile/main.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_page.dart';
+import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
+
+final class _MemoryThemeStore implements ThemePreferenceStore {
+  @override
+  Future<String?> read() async => null;
+  @override
+  Future<void> write(String value) async {}
+}
 
 void main() {
   testWidgets('renders product identity', (tester) async {
     await tester.pumpWidget(
-      const LiuhetongApp(
-        home: CupertinoPageScaffold(child: Center(child: Text('畅聊'))),
+      LiuhetongApp(
+        themeController: ThemeController(store: _MemoryThemeStore()),
+        home: const CupertinoPageScaffold(child: Center(child: Text('畅聊'))),
       ),
     );
     expect(find.text('畅聊'), findsOneWidget);

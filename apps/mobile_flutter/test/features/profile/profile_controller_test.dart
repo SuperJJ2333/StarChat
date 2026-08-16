@@ -106,8 +106,9 @@ void main() {
     expect(gateway.puts, 0);
     expect(c.state.status, ProfileStatus.ready);
   });
-  testWidgets('me page exposes identity settings and logout actions',
+  testWidgets('me page strictly exposes Figma identity and five menu rows',
       (tester) async {
+    var momentsOpened = false;
     var caibiOpened = false;
     var redPacketOpened = false;
     var walletOpened = false;
@@ -116,26 +117,28 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: ProfileExperiencePage(
             controller: controller,
+            onMoments: () => momentsOpened = true,
             onCaibi: () => caibiOpened = true,
             onRedPacket: () => redPacketOpened = true,
             onWallet: () => walletOpened = true,
-            onSettings: () {},
-            onLogout: () async {})));
+            onSettings: () {})));
     await tester.pumpAndSettle();
     expect(find.text('Alice'), findsWidgets);
     expect(find.textContaining('畅聊号：alice'), findsOneWidget);
     expect(find.text('hello'), findsWidgets);
-    await tester.drag(find.byType(ListView), const Offset(0, -650));
-    await tester.pumpAndSettle();
+    expect(find.text('朋友圈'), findsOneWidget);
     expect(find.text('红包'), findsWidgets);
     expect(find.text('钱包'), findsWidgets);
-    await tester.tap(find.text('彩币').at(0));
-    await tester.tap(find.text('红包').at(0));
-    await tester.tap(find.text('钱包').at(0));
+    await tester.tap(find.text('朋友圈'));
+    await tester.tap(find.text('彩币'));
+    await tester.tap(find.text('红包'));
+    await tester.tap(find.text('钱包'));
+    expect(momentsOpened, isTrue);
     expect(caibiOpened, isTrue);
     expect(redPacketOpened, isTrue);
     expect(walletOpened, isTrue);
     expect(find.text('设置'), findsOneWidget);
-    expect(find.text('退出登录'), findsOneWidget);
+    expect(find.text('退出登录'), findsNothing);
+    expect(find.byType(CupertinoTextField), findsNothing);
   });
 }

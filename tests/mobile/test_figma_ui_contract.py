@@ -169,3 +169,58 @@ def test_messaging_tokens_and_semantic_icons_cover_figma_nodes():
         "close",
     ):
         assert f"static const IconData {name}" in icons
+
+
+def test_discovery_and_profile_use_the_single_real_icon_bottom_navigation():
+    app_home = read("apps/mobile_flutter/lib/app_home.dart")
+    discovery = read(
+        "apps/mobile_flutter/lib/features/discovery/discovery_page.dart"
+    )
+    profile = read(
+        "apps/mobile_flutter/lib/features/profile/profile_page.dart"
+    )
+
+    assert app_home.count("CupertinoTabBar(") == 1
+    assert "CupertinoTabScaffold(" in app_home
+    assert "CupertinoTabBar(" not in discovery
+    assert "CupertinoTabBar(" not in profile
+    for placeholder in ("'●'", "'◇'", "'▣'"):
+        assert placeholder not in app_home + discovery + profile
+    for name in ("messages", "contacts", "discover", "me"):
+        assert f"Icon(ChangliaoIcons.{name})" in app_home
+
+
+def test_profile_home_matches_figma_60_profile_information_architecture():
+    profile = read(
+        "apps/mobile_flutter/lib/features/profile/profile_page.dart"
+    )
+
+    assert "height: 126" in profile
+    assert "width: 72" in profile
+    assert "height: 72" in profile
+    for label in ("朋友圈", "彩币", "红包", "钱包", "设置"):
+        assert f"label: '{label}'" in profile
+    assert "key: const Key('profile-identity-card')" in profile
+    assert "onMoments" in profile
+
+
+def test_theme_is_persistent_and_only_resolved_at_the_app_root():
+    main = read("apps/mobile_flutter/lib/main.dart")
+    controller = read(
+        "apps/mobile_flutter/lib/ui/theme/theme_controller.dart"
+    )
+    messages = read(
+        "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart"
+    )
+
+    assert "SharedPreferencesThemePreferenceStore" in main
+    assert "await themeController.load()" in main
+    assert "ThemePreference.system" in controller
+    assert "ThemePreference.light" in controller
+    assert "ThemePreference.dark" in controller
+    assert "key: const Key('messages-appearance')" in messages
+    feature_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (FLUTTER_LIB / "features").rglob("*.dart")
+    )
+    assert "MediaQuery.platformBrightnessOf" not in feature_sources
