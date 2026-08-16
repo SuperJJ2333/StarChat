@@ -26,12 +26,18 @@
 - `flutter test`：PASS，102 tests。
 - `python -m pytest tests/mobile/test_figma_ui_contract.py -q`：PASS，10 tests。
 - `git diff --check`：PASS。
+- `pwsh -NoProfile -File scripts/verify.ps1`：PASS；repository/deployment policy、配置渲染、Matrix Bot 9、Business 161（1 skipped）、Flutter boundary 19、迁移、OpenAPI 和 Compose 全部通过。
 
 ## Android 构建记录
 
 - 首次 x86_64 debug APK 构建在解析 `shared_preferences_android` 的 AndroidX DataStore 1.1.7 时，访问 `dl.google.com:443` 超时。
 - 已加入同坐标 Google Maven 镜像，DataStore 1.1.7 后续已进入 Gradle 本地缓存。
-- 工作树全新 Android 产物的冷启动构建多次超过 10 分钟 CLI 时限；待合并至主工作区后使用已有 Android 增量构建目录重试并补充 APK/ADB 证据。
+- 根因定位：Gradle 线程堆栈阻塞在 `dl.google.com:443` 的 HTTP HEAD，本机连接长时间处于 `SynSent`；Gradle 缓存的 repository stickiness 仍会使已加入 mirror 的 fallback 配置回访 Google Maven。
+- 修复：Android 依赖仓库以同坐标 Google Maven 镜像为权威源，不再回访不可达的源。
+- `flutter build apk --debug --target-platform android-x64 --no-pub`：PASS，首次成功构建 106.5s，增量重建 12.2s，产物 `build/app/outputs/flutter-apk/app-debug.apk`。
+- ADB：`emulator-5554 device`；`adb install -r -d -t .../app-debug.apk` 返回 `Success`；进程 PID 正常，无 `FATAL EXCEPTION`。
+- 手工证据：更多/外观面板可触发；切到深色后 force-stop/relaunch 仍保持深色；Discovery/Profile 主导航在屏幕最底部且是真实图标。
+- 截图：`docs/verification/screenshots/2026-08-17-messages-more-appearance.png`、`2026-08-17-theme-picker-system.png`、`2026-08-17-theme-dark-restart.png`、`2026-08-17-profile-dark-bottom-nav-final.png`。
 
 ## 边界复核
 

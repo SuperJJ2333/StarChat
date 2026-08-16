@@ -462,9 +462,19 @@ final class SettingsPage extends StatelessWidget {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(CupertinoIcons.xmark, size: 20),
+                      Icon(
+                        CupertinoIcons.xmark,
+                        size: 20,
+                        color: WeChatColors.danger,
+                      ),
                       SizedBox(width: 8),
-                      Text('退出登录', style: TextStyle(fontSize: 16)),
+                      Text(
+                        '退出登录',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: WeChatColors.danger,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -491,6 +501,8 @@ final class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final foreground =
+        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: onTap,
@@ -508,9 +520,17 @@ final class _SettingsTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            SizedBox(width: 40, child: Icon(icon, size: 20)),
+            SizedBox(
+              width: 40,
+              child: Icon(icon, size: 20, color: foreground),
+            ),
             const SizedBox(width: 12),
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 16))),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 16, color: foreground),
+              ),
+            ),
             if (detail != null)
               Text(
                 detail!,

@@ -120,6 +120,8 @@ final class _IdentityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final foreground =
+        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
     return CupertinoButton(
       key: const Key('profile-identity-card'),
       padding: EdgeInsets.zero,
@@ -162,10 +164,11 @@ final class _IdentityCard extends StatelessWidget {
                     profile.nickname,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 22,
                       height: 30 / 22,
                       fontWeight: FontWeight.w700,
+                      color: foreground,
                     ),
                   ),
                   Text(
@@ -214,6 +217,8 @@ final class _ProfileMenuTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final foreground =
+        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: onTap,
@@ -231,10 +236,16 @@ final class _ProfileMenuTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            SizedBox(width: 40, child: Icon(icon, size: 21)),
+            SizedBox(
+              width: 40,
+              child: Icon(icon, size: 21, color: foreground),
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(label, style: const TextStyle(fontSize: 16)),
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 16, color: foreground),
+              ),
             ),
             const SizedBox(width: 4),
             const Icon(

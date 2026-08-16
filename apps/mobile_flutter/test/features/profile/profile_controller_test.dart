@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 const profile = ProfileData(
     username: 'alice',
@@ -124,6 +125,8 @@ void main() {
             onSettings: () {})));
     await tester.pumpAndSettle();
     expect(find.text('Alice'), findsWidgets);
+    final identityName = tester.widgetList<Text>(find.text('Alice')).first;
+    expect(identityName.style?.color, isNot(WeChatColors.brandPrimary));
     expect(find.textContaining('畅聊号：alice'), findsOneWidget);
     expect(find.text('hello'), findsWidgets);
     expect(find.text('朋友圈'), findsOneWidget);
@@ -138,6 +141,8 @@ void main() {
     expect(redPacketOpened, isTrue);
     expect(walletOpened, isTrue);
     expect(find.text('设置'), findsOneWidget);
+    final settingsLabel = tester.widget<Text>(find.text('设置'));
+    expect(settingsLabel.style?.color, isNot(WeChatColors.brandPrimary));
     expect(find.text('退出登录'), findsNothing);
     expect(find.byType(CupertinoTextField), findsNothing);
   });
