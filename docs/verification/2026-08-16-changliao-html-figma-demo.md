@@ -20,7 +20,7 @@
 | 组件契约 | 组件映射与 DOM 签名不存在 | 27 个组件使用唯一名称与严格 Light DOM 签名 |
 | 画板注册表 | 页面/状态清单不存在 | 325 个唯一 Screen ID、393px 固定宽度、完整模块与状态覆盖 |
 | 图标契约补充 | 仅有 25 个 Unicode 占位字形，导航与通话显示为圆点 | 58 个本地可编辑 SVG 图标、关键业务图标与 Figma Component 全部存在 |
-| 认证可发现性补充 | 登录/注册状态存在但混排在 Auth 网格中 | Figma 提供独立 `09 登录与注册` 页及 4 个可编辑代表画板 |
+| 认证页面归一化 | 曾增加重复的认证快速审查页 | 删除重复页，24 个认证状态统一保留在原有 `10 Auth` 页面 |
 | 浏览器渲染 | 捕获路由仍带审查页返回按钮 | `capture=1` 只输出单一画板且无外层控件 |
 | 验证汇总 | `screenshots.mjs` 尚不存在 | 每个 Screen ID 均生成尺寸匹配的 PNG |
 
@@ -108,8 +108,8 @@
 - 26 条同页可点击 Prototype 链接，覆盖登录、消息→聊天、通讯录→好友、发现→朋友圈、个人资料、彩币及钱包流程。
 - 代表页 Figma 导出已人工检查：登录、消息、通讯录异常、彩币转账、Dark 登录。
 - QA 图片保存在 `design-demo/artifacts/figma-qa/`。
-- 新增 QA：`auth-supplement.png`、`icons-library.png`、`navigation-icons.png`、`call-icons.png`。
-- `09 登录与注册` 提供登录默认、登录已填写、注册默认、注册错误 4 个可编辑 393×852 代表画板。
+- 新增 QA：`icons-library.png`、`navigation-icons.png`、`call-icons.png`。
+- 认证设计统一使用原有 `10 Auth`，其中保留登录、注册和邮箱验证共 24 个完整状态。
 
 ## 规格符合性审查
 
@@ -129,6 +129,6 @@
 
 ## 完成结论
 
-- HTML Demo、326 张全量截图、Figma Foundations、85 个组件、326 个唯一画板、独立登录/注册审查页、Dark 关键页与可点击原型均已交付。
+- HTML Demo、326 张全量截图、Figma Foundations、85 个组件、326 个唯一画板、`10 Auth` 完整认证状态、Dark 关键页与可点击原型均已交付。
 - 临时 Figma Capture 脚本已从 `design-demo/index.html` 清理。
 - Figma 状态台账：`design-demo/artifacts/figma-state.json`。
