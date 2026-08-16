@@ -1,4 +1,4 @@
-# 六合通 Flutter 组件
+# 畅聊 Flutter 组件
 
 所有业务页面必须使用 `lib/ui/` 中的公开组件，并从 `WeChatColors`、`WeChatSpacing`、`WeChatRadius` 和 `WeChatTypography` 获取视觉值。
 

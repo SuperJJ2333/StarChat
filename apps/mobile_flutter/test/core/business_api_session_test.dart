@@ -133,7 +133,7 @@ void main() {
       }),
     );
 
-    await api.loginBusiness(username: 'alice', password: 'business-password', deviceKey: 'device-1', deviceName: '六合通移动端');
+    await api.loginBusiness(username: 'alice', password: 'business-password', deviceKey: 'device-1', deviceName: '畅聊移动端');
     final grant = await api.issueMatrixLoginToken();
     await api.bindMatrixUserId('@alice:matrix.example');
 

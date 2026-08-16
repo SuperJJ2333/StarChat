@@ -13,12 +13,55 @@ abstract final class WeChatColors {
   static const darkTextPrimary = Color(0xFFF5F5F5);
   static const textSecondary = Color(0xFF888888);
   static const divider = Color(0xFFD9D9D9);
+  static const darkDivider = Color(0xFF2C2C2C);
   static const danger = Color(0xFFFA5151);
   static const warning = Color(0xFFFA9D3B);
   static const bubbleOutgoing = Color(0xFF95EC69);
   static const socialLink = Color(0xFF576B95);
 }
 
-abstract final class WeChatSpacing { static const xs=4.0, sm=8.0, md=12.0, lg=16.0, xl=24.0, xxl=32.0; }
-abstract final class WeChatRadius { static const tag=4.0, control=6.0, bubble=8.0, redPacket=10.0, dialog=12.0; }
-abstract final class WeChatTypography { static const display=28.0, title1=22.0, title2=18.0, body=17.0, callout=16.0, subhead=14.0, caption=12.0, badge=11.0; }
+abstract final class WeChatSpacing {
+  static const xs = 4.0;
+  static const sm = 8.0;
+  static const md = 12.0;
+  static const lg = 16.0;
+  static const xl = 24.0;
+  static const xxl = 32.0;
+}
+
+abstract final class WeChatRadius {
+  static const tag = 4.0;
+  static const control = 6.0;
+  static const bubble = 8.0;
+  static const redPacket = 10.0;
+  static const dialog = 12.0;
+  static const authCard = 12.0;
+  static const authControl = 14.0;
+}
+
+abstract final class WeChatDimensions {
+  static const screenWidth = 393.0;
+  static const screenHeight = 852.0;
+  static const controlHeight = 48.0;
+  static const minimumTouchTarget = 44.0;
+  static const authCardMaxWidth = 345.0;
+  static const authBrandMark = 64.0;
+}
+
+abstract final class WeChatTypography {
+  static const brand = 34.0;
+  static const display = 28.0;
+  static const title1 = 22.0;
+  static const title2 = 18.0;
+  static const body = 17.0;
+  static const callout = 16.0;
+  static const subhead = 14.0;
+  static const caption = 12.0;
+  static const badge = 11.0;
+}
+
+abstract final class WeChatEffects {
+  static const authCardShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 4)),
+  ];
+}
