@@ -13,6 +13,7 @@
 - 将 Discovery 内容容器改为占据剩余高度，写入后 `29:2765` 主导航为 `y=710` / `height=83`。
 - Profile 浅色 `29:2169` 与深色 `29:2263` 的导航均复核为 `y=710` / `height=83`。
 - Discovery/Profile 导航中的 `●` / `◇` 字符占位已删除，替换为消息气泡、通讯录、指南针和个人语义的 24×24 真实矢量图标；选中态 `#07C160`，未选中 `#888888`。
+- `20 Messages & Chat` 新增三个独立 393×852 外观状态 Frame：`messages-theme-system-sheet` (`99:2`)、`messages-theme-light-sheet` (`99:30`)、`messages-theme-dark-sheet` (`99:58`)；每个 Frame 都展开当前选中标记、Modal scrim、安全区和真实矢量 checkmark。
 
 ## Red / Green
 
