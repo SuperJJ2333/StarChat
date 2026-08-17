@@ -27,12 +27,12 @@ dependencies:
   flutter_webrtc: 0.12.11
   webrtc_interface: 1.5.1
   emoji_picker_flutter: 4.5.3
+  crypto: 3.0.7
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: 0.14.4
-  crypto: 3.0.7
 flutter:
   uses-material-design: true
   assets:
