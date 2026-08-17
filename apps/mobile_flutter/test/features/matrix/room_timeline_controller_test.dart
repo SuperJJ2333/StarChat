@@ -68,4 +68,21 @@ void main() {
       isTrue,
     );
   });
+
+  test('message copy keeps attachment mime type for GIF action policy', () {
+    final message = RoomMessageViewModel(
+      id: r'$gif',
+      senderId: '@alice:example.test',
+      text: 'wave.gif',
+      isOwn: true,
+      deliveryState: RoomDeliveryState.sending,
+      timestamp: DateTime.utc(2026, 8, 17),
+      kind: RoomMessageKind.image,
+      mimeType: 'image/gif',
+    );
+
+    final sent = message.copyWith(deliveryState: RoomDeliveryState.sent);
+
+    expect(sent.mimeType, 'image/gif');
+  });
 }

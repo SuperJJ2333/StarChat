@@ -10,14 +10,30 @@ final class RedPacketController extends ChangeNotifier {
   String? error;
 
   Future<void> load(String id) async {
-    loading = true; error = null; notifyListeners();
-    try { detail = await api.redPacketDetail(id); } catch (e) { error = e.toString(); }
-    loading = false; notifyListeners();
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      detail = await api.redPacketDetail(id);
+    } catch (e) {
+      error = e.toString();
+    }
+    loading = false;
+    notifyListeners();
   }
 
   Future<void> claim(String id) async {
     if (loading) return;
-    loading = true; error = null; notifyListeners();
-    try { await api.claimRedPacket(id); await load(id); } catch (e) { error = e.toString(); loading = false; notifyListeners(); }
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      await api.claimRedPacket(id);
+      await load(id);
+    } catch (e) {
+      error = e.toString();
+      loading = false;
+      notifyListeners();
+    }
   }
 }

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 enum RoomDeliveryState { sent, sending, failed }
 
-enum RoomMessageKind { text, image, file, voice, redPacket }
+enum RoomMessageKind { text, image, file, voice, redPacket, system }
 
 final class RoomMessageViewModel {
   const RoomMessageViewModel({
@@ -13,6 +13,7 @@ final class RoomMessageViewModel {
     required this.deliveryState,
     required this.timestamp,
     this.kind = RoomMessageKind.text,
+    this.mimeType,
     this.packetId,
     this.greeting,
     this.voiceDuration = const Duration(seconds: 1),
@@ -25,6 +26,7 @@ final class RoomMessageViewModel {
   final RoomDeliveryState deliveryState;
   final DateTime timestamp;
   final RoomMessageKind kind;
+  final String? mimeType;
   final String? packetId;
   final String? greeting;
   final Duration voiceDuration;
@@ -41,6 +43,7 @@ final class RoomMessageViewModel {
         deliveryState: deliveryState ?? this.deliveryState,
         timestamp: timestamp,
         kind: kind,
+        mimeType: mimeType,
         packetId: packetId,
         greeting: greeting,
         voiceDuration: voiceDuration,

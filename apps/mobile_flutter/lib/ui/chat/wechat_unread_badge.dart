@@ -1,3 +1,19 @@
 import 'package:flutter/cupertino.dart';
 import '../foundation/wechat_tokens.dart';
-final class WeChatUnreadBadge extends StatelessWidget { const WeChatUnreadBadge({super.key,required this.count,this.muted=false}); final int count; final bool muted; @override Widget build(BuildContext context)=>Container(constraints:const BoxConstraints(minWidth:18,minHeight:18),padding:const EdgeInsets.symmetric(horizontal:5),decoration:BoxDecoration(color:muted?WeChatColors.textSecondary:WeChatColors.danger,borderRadius:BorderRadius.circular(9)),alignment:Alignment.center,child:Text(count>99?'99+':'$count',style:const TextStyle(color:CupertinoColors.white,fontSize:WeChatTypography.badge))); }
+
+final class WeChatUnreadBadge extends StatelessWidget {
+  const WeChatUnreadBadge({super.key, required this.count, this.muted = false});
+  final int count;
+  final bool muted;
+  @override
+  Widget build(BuildContext context) => Container(
+      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+          color: muted ? WeChatColors.textSecondary : WeChatColors.danger,
+          borderRadius: BorderRadius.circular(9)),
+      alignment: Alignment.center,
+      child: Text(count > 99 ? '99+' : '$count',
+          style: const TextStyle(
+              color: CupertinoColors.white, fontSize: WeChatTypography.badge)));
+}

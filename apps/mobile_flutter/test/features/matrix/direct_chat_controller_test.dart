@@ -26,8 +26,7 @@ final class FakeDirectChatBackend implements DirectChatBackend {
   }
 
   @override
-  Future<DirectChatRoom> waitForRoom(String roomId) async =>
-      DirectChatRoom(
+  Future<DirectChatRoom> waitForRoom(String roomId) async => DirectChatRoom(
         roomId: roomId,
         encrypted: true,
         joinedMemberCount: 2,
@@ -112,7 +111,8 @@ void main() {
     );
   });
 
-  test('rejects a two-person room that does not contain the target MXID', () async {
+  test('rejects a two-person room that does not contain the target MXID',
+      () async {
     final backend = FakeDirectChatBackend()
       ..existing = const DirectChatRoom(
         roomId: '!wrong:example.test',

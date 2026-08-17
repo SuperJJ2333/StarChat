@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:matrix/matrix.dart';
 
 import 'room_timeline_controller.dart';
+import 'nudge_service.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 
@@ -14,7 +15,11 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
 
   @override
   List<RoomMessageViewModel> snapshot() => timeline.events
-      .where((event) => event.type == EventTypes.Message)
+      .where(
+        (event) =>
+            event.type == EventTypes.Message ||
+            event.type == changliaoNudgeEventType,
+      )
       .toList(growable: false)
       .reversed
       .map(_message)
@@ -30,20 +35,30 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
     final info = event.content['info'];
     final durationMilliseconds =
         info is Map ? int.tryParse(info['duration']?.toString() ?? '') : null;
+    final mimeType = info is Map ? info['mimetype']?.toString() : null;
+    final nudge = event.type == changliaoNudgeEventType;
+    final nudgeText = nudge
+        ? '${event.content['sender_display_name'] ?? '好友'}拍了拍'
+            '${event.content['target_display_name'] ?? '好友'}'
+            '${event.content['suffix'] ?? ''}'
+        : null;
     return RoomMessageViewModel(
       id: event.eventId,
       senderId: event.senderId,
-      text: event.redacted ? '消息已撤回' : event.text,
+      text: event.redacted ? '消息已撤回' : (nudgeText ?? event.text),
       isOwn: event.senderId == room.client.userID,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
-      kind: switch (messageType) {
-        MessageTypes.Image => RoomMessageKind.image,
-        MessageTypes.Audio => RoomMessageKind.voice,
-        MessageTypes.File => RoomMessageKind.file,
-        changliaoRedPacketMessageType => RoomMessageKind.redPacket,
-        _ => RoomMessageKind.text,
-      },
+      kind: nudge
+          ? RoomMessageKind.system
+          : switch (messageType) {
+              MessageTypes.Image => RoomMessageKind.image,
+              MessageTypes.Audio => RoomMessageKind.voice,
+              MessageTypes.File => RoomMessageKind.file,
+              changliaoRedPacketMessageType => RoomMessageKind.redPacket,
+              _ => RoomMessageKind.text,
+            },
+      mimeType: mimeType,
       packetId: event.content['packet_id']?.toString(),
       greeting: event.content['greeting']?.toString(),
       voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),

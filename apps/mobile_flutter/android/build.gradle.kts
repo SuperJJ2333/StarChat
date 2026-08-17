@@ -1,4 +1,14 @@
 allprojects {
+    buildscript {
+        repositories {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            mavenCentral()
+            gradlePluginPortal()
+        }
+        configurations.configureEach {
+            resolutionStrategy.force("com.android.tools.build:gradle:8.5.1")
+        }
+    }
     repositories {
         // Google Maven is not directly reachable in every supported build
         // environment. This mirror serves the same immutable coordinates.

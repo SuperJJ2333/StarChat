@@ -26,7 +26,8 @@ final class MatrixVerificationService {
     return request;
   }
 
-  Future<void> listenForIncoming(void Function(KeyVerification) onRequest) async {
+  Future<void> listenForIncoming(
+      void Function(KeyVerification) onRequest) async {
     await _subscription?.cancel();
     _subscription = client.onKeyVerificationRequest.stream.listen((request) {
       _active = request;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_home.dart';
@@ -77,6 +78,9 @@ final class LiuhetongApp extends StatelessWidget {
         animation: themeController,
         builder: (context, _) => CupertinoApp(
           title: '畅聊',
+          locale: const Locale('zh', 'CN'),
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
           theme: WeChatTheme.build(themeController.resolve(
             WidgetsBinding.instance.platformDispatcher.platformBrightness,
           )),

@@ -2,8 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/local_notification_scheduler.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
@@ -12,6 +14,8 @@ import '../../ui/chat/chat_composer_bar.dart';
 import '../../ui/chat/chat_composer_state.dart';
 import '../../ui/chat/chat_emoji_panel.dart';
 import '../../ui/chat/chat_more_panel.dart';
+import '../../ui/chat/message_action.dart';
+import '../../ui/chat/message_action_sheet.dart';
 import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
 import '../../ui/chat/wechat_voice_bubble.dart';
@@ -27,7 +31,14 @@ import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
 import 'chat_red_packet_controller.dart';
 import 'chat_red_packet_sheet.dart';
+import 'matrix_emoji_vault.dart';
+import 'matrix_control_rooms.dart';
+import 'matrix_message_reminder_backend.dart';
 import 'media_message_service.dart';
+import 'message_reminder_service.dart';
+import 'message_interaction_service.dart';
+import 'nudge_service.dart';
+import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
 import 'voice_composer.dart';
 
@@ -38,6 +49,7 @@ class MatrixHomePage extends StatefulWidget {
     required this.matrix,
     required this.themeController,
     required this.onCreateGroup,
+    this.reminderService,
     this.onVoice,
     this.onVideo,
   });
@@ -45,6 +57,7 @@ class MatrixHomePage extends StatefulWidget {
   final MatrixSdkE2eeClient matrix;
   final ThemeController themeController;
   final VoidCallback onCreateGroup;
+  final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   @override
@@ -154,7 +167,22 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final rooms = widget.matrix.sdkClient.rooms;
+    final vaultRoomId = widget.matrix.sdkClient
+        .accountData[emojiVaultAccountDataType]?.content['room_id']
+        ?.toString();
+    final reminderRoomId = widget.matrix.sdkClient
+        .accountData[messageReminderAccountDataType]?.content['room_id']
+        ?.toString();
+    final rooms = widget.matrix.sdkClient.rooms
+        .where(
+          (room) => !isMatrixControlRoom(
+            roomId: room.id,
+            displayName: room.getLocalizedDisplayname(),
+            vaultRoomId: vaultRoomId,
+            reminderRoomId: reminderRoomId,
+          ),
+        )
+        .toList(growable: false);
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('消息'),
@@ -206,6 +234,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           roomName: roomName,
                           onVoice: widget.onVoice,
                           onVideo: widget.onVideo,
+                          reminderService: widget.reminderService,
                         ),
                       ),
                     ),
@@ -252,6 +281,7 @@ class RoomPage extends StatefulWidget {
     required this.roomName,
     required this.room,
     this.initialContact,
+    this.reminderService,
     this.onVoice,
     this.onVideo,
   });
@@ -260,6 +290,7 @@ class RoomPage extends StatefulWidget {
   final String roomName;
   final Room room;
   final ContactDetails? initialContact;
+  final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
 
@@ -269,7 +300,16 @@ class RoomPage extends StatefulWidget {
 
 class _RoomPageState extends State<RoomPage> {
   final input = TextEditingController();
+  final selection = MessageSelectionController();
   RoomTimelineController? controller;
+  Timeline? roomTimeline;
+  LocalHiddenEvents? hiddenEvents;
+  final mentionDraft = MentionDraft();
+  RoomMessageViewModel? replyingTo;
+  MatrixEmojiVault? emojiVault;
+  List<CustomEmojiItem> customEmojiItems = const [];
+  MessageReminderService? reminderService;
+  String nudgeSuffix = '';
   Map<String, ContactDetails> contactsByMatrixId = const {};
   ProfileData? ownProfile;
   ContactDetails? peer;
@@ -290,6 +330,12 @@ class _RoomPageState extends State<RoomPage> {
 
   Future<void> _load() async {
     try {
+      final accountId = widget.room.client.userID;
+      if (accountId == null) throw StateError('Matrix 账号尚未登录');
+      hiddenEvents = SharedPreferencesLocalHiddenEvents(
+        preferences: await SharedPreferences.getInstance(),
+        accountId: accountId,
+      );
       final timeline =
           await widget.room.getTimeline(onUpdate: () => controller?.refresh());
       if (!mounted) {
@@ -299,8 +345,11 @@ class _RoomPageState extends State<RoomPage> {
       controller = RoomTimelineController(
         MatrixRoomTimelineAdapter(widget.room, timeline),
       )..addListener(_changed);
+      roomTimeline = timeline;
       setState(() => loading = false);
       await controller!.markRead();
+      await _loadEmojiVault();
+      await _loadReminderService();
       await _loadIdentities();
     } catch (_) {
       if (mounted) {
@@ -344,6 +393,238 @@ class _RoomPageState extends State<RoomPage> {
     }
   }
 
+  Future<void> _loadEmojiVault() async {
+    try {
+      final session = await MatrixEmojiVault.open(
+        MatrixSdkEmojiVaultBackend(widget.room.client),
+      );
+      final items = <CustomEmojiItem>[];
+      for (final item in session.vault.items) {
+        items.add(
+          CustomEmojiItem(
+            id: item.id,
+            bytes: await session.loadBytes(item),
+            isAnimated: item.isAnimated,
+            mimeType: item.mimeType,
+          ),
+        );
+      }
+      if (!mounted) return;
+      setState(() {
+        emojiVault = session;
+        customEmojiItems = items;
+      });
+    } catch (_) {
+      if (mounted) setState(() => mediaMessage = '我的表情同步失败，可稍后重试');
+    }
+  }
+
+  Future<void> _loadReminderService() async {
+    try {
+      final provided = widget.reminderService;
+      final MessageReminderService service;
+      if (provided != null) {
+        service = provided;
+      } else {
+        final backend =
+            await MatrixMessageReminderBackend.open(widget.room.client);
+        service = MessageReminderService(
+          backend: backend,
+          scheduler: FlutterLocalNotificationScheduler(),
+        );
+        await service.applyIncoming(await backend.load());
+      }
+      reminderService = service;
+      nudgeSuffix = await NudgePreferenceService(
+        MatrixNudgePreferenceBackend(widget.room.client),
+      ).loadSuffix();
+    } catch (_) {
+      // Chat remains available; choosing reminder will surface a retry state.
+    }
+  }
+
+  Future<void> _addMessageToEmoji(RoomMessageViewModel message) async {
+    final session = emojiVault;
+    final timeline = controller;
+    if (session == null || timeline == null) {
+      setState(() => mediaMessage = '表情仓库尚未就绪');
+      return;
+    }
+    try {
+      final bytes = await timeline.loadAttachment(message.id);
+      final item = await session.vault.add(
+        bytes,
+        mimeType: message.mimeType ?? 'image/png',
+      );
+      final custom = CustomEmojiItem(
+        id: item.id,
+        bytes: bytes,
+        isAnimated: item.isAnimated,
+        mimeType: item.mimeType,
+      );
+      if (!mounted) return;
+      setState(() {
+        customEmojiItems = [
+          custom,
+          ...customEmojiItems.where((existing) => existing.id != item.id),
+        ];
+        mediaMessage = '已添加到我的表情';
+      });
+    } catch (_) {
+      if (mounted) setState(() => mediaMessage = '添加表情失败，请重试');
+    }
+  }
+
+  Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
+    try {
+      await widget.room.sendFileEvent(
+        MatrixFile.fromMimeType(
+          bytes: item.bytes,
+          name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
+          mimeType: item.mimeType,
+        ),
+      );
+      await emojiVault?.vault.markRecent(item.id);
+      if (mounted) setState(() => composerPanel = ComposerPanel.none);
+    } catch (_) {
+      if (mounted) setState(() => mediaMessage = '表情发送失败，请重试');
+    }
+  }
+
+  Future<void> _sendNudge(
+    RoomMessageViewModel message,
+    String targetDisplayName,
+  ) async {
+    final sender = ownProfile;
+    final senderId = widget.room.client.userID;
+    if (sender == null || senderId == null) return;
+    try {
+      await NudgeService(
+        backend: MatrixNudgeBackend(widget.room.client),
+        roomId: widget.room.id,
+        senderId: senderId,
+        senderDisplayName: sender.nickname,
+      ).send(
+        targetUserId: message.senderId,
+        targetDisplayName: targetDisplayName,
+        suffix: nudgeSuffix,
+      );
+    } catch (_) {
+      if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
+    }
+  }
+
+  Future<void> _showReminderPicker(RoomMessageViewModel message) async {
+    final service = reminderService;
+    if (service == null) {
+      setState(() => mediaMessage = '提醒同步尚未就绪，请稍后重试');
+      return;
+    }
+    var selected = DateTime.now().add(const Duration(hours: 1));
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => Container(
+        height: 360,
+        color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 52,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    CupertinoButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('取消'),
+                    ),
+                    const Text(
+                      '选择提醒时间',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    CupertinoButton(
+                      key: const Key('reminder-confirm'),
+                      onPressed: () async {
+                        try {
+                          await service.create(
+                            roomId: widget.room.id,
+                            eventId: message.id,
+                            dueAt: selected,
+                          );
+                          if (!sheetContext.mounted) return;
+                          Navigator.pop(sheetContext);
+                          if (mounted) setState(() => mediaMessage = '提醒已设置');
+                        } catch (_) {
+                          if (mounted) {
+                            setState(() => mediaMessage = '提醒设置失败，请重试');
+                          }
+                        }
+                      },
+                      child: const Text('完成'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.dateAndTime,
+                  initialDateTime: selected,
+                  minimumDate: DateTime.now(),
+                  use24hFormat: true,
+                  onDateTimeChanged: (value) => selected = value,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editNudgeSuffix() async {
+    final field = TextEditingController(text: nudgeSuffix);
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('设置拍一拍'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(
+            key: const Key('nudge-suffix-input'),
+            controller: field,
+            maxLength: 30,
+            placeholder: '例如：的肩膀',
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () async {
+              try {
+                final suffix = field.text.trim();
+                await NudgePreferenceService(
+                  MatrixNudgePreferenceBackend(widget.room.client),
+                ).saveSuffix(suffix);
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                if (mounted) setState(() => nudgeSuffix = suffix);
+              } catch (_) {
+                if (mounted) setState(() => mediaMessage = '拍一拍设置保存失败');
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+  }
+
   void _changed() {
     if (mounted) setState(() {});
   }
@@ -352,7 +633,49 @@ class _RoomPageState extends State<RoomPage> {
     final text = input.text.trim();
     if (text.isEmpty || controller == null) return;
     input.clear();
-    await controller!.sendText(text);
+    final interaction = _interaction;
+    final reply = replyingTo;
+    final mentions = mentionDraft.activeUserIds(text);
+    if (interaction != null && reply != null) {
+      await interaction.reply(
+        reply.id,
+        text,
+        mentionedUserIds: mentions,
+      );
+      setState(() => replyingTo = null);
+    } else if (interaction != null && mentions.isNotEmpty) {
+      await interaction.sendMention(text, mentions);
+    } else {
+      await controller!.sendText(text);
+    }
+    mentionDraft.clear();
+  }
+
+  MessageInteractionService? get _interaction {
+    final timeline = roomTimeline;
+    final userId = widget.room.client.userID;
+    if (timeline == null || userId == null) return null;
+    return MessageInteractionService(
+      backend: MatrixMessageInteractionBackend(
+        client: widget.room.client,
+        timeline: timeline,
+      ),
+      roomId: widget.room.id,
+      currentUserId: userId,
+    );
+  }
+
+  Future<DateTime?> _serverNow() async {
+    final homeserver = widget.room.client.homeserver;
+    if (homeserver == null) return null;
+    try {
+      return await MatrixServerClock(
+        homeserver: homeserver,
+        httpClient: widget.room.client.httpClient,
+      ).now();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _sendMedia({required bool image}) async {
@@ -492,7 +815,32 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _openConversationDetails() async {
     final contact = peer;
     if (contact != null) {
-      await _openContact(contact);
+      await showCupertinoModalPopup<void>(
+        context: context,
+        builder: (sheetContext) => CupertinoActionSheet(
+          actions: [
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _openContact(contact);
+              },
+              child: const Text('好友资料'),
+            ),
+            CupertinoActionSheetAction(
+              key: const Key('chat-nudge-settings'),
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _editNudgeSuffix();
+              },
+              child: const Text('设置拍一拍'),
+            ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(sheetContext),
+            child: const Text('取消'),
+          ),
+        ),
+      );
       return;
     }
     await Navigator.push<void>(
@@ -503,6 +851,11 @@ class _RoomPageState extends State<RoomPage> {
           child: SafeArea(
             child: ListView(
               children: [
+                CupertinoListTile(
+                  title: const Text('设置拍一拍'),
+                  trailing: const CupertinoListTileChevron(),
+                  onTap: _editNudgeSuffix,
+                ),
                 for (final contact in contactsByMatrixId.values)
                   CupertinoListTile(
                     leading: UserAvatar(
@@ -567,6 +920,13 @@ class _RoomPageState extends State<RoomPage> {
                       ),
                     ),
           ),
+        RoomMessageKind.system => Text(
+            message.text,
+            style: const TextStyle(
+              color: WeChatColors.textSecondary,
+              fontSize: 13,
+            ),
+          ),
         RoomMessageKind.text => Text(message.text),
       };
 
@@ -586,7 +946,19 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
     final contact = contactsByMatrixId[message.senderId];
-    return Column(
+    User? member;
+    for (final participant in widget.room.getParticipants()) {
+      if (participant.id == message.senderId) {
+        member = participant;
+        break;
+      }
+    }
+    final displayName = resolveMessageSenderDisplayName(
+      senderId: message.senderId,
+      contactDisplayName: contact?.displayName,
+      matrixDisplayName: member?.calcDisplayname(),
+    );
+    final body = Column(
       children: [
         if (shouldShowMessageTimeSeparator(previousTime, message.timestamp))
           Padding(
@@ -604,6 +976,18 @@ class _RoomPageState extends State<RoomPage> {
           content: _messageContent(message),
           avatar: _avatar(message),
           onAvatarTap: contact == null ? null : () => _openContact(contact),
+          onAvatarDoubleTap: () => _sendNudge(message, displayName),
+          onAvatarLongPress: () {
+            final value = mentionDraft.append(
+              input.text,
+              displayName: displayName,
+              userId: message.senderId,
+            );
+            input
+              ..text = value
+              ..selection = TextSelection.collapsed(offset: value.length);
+          },
+          onLongPress: () => _showMessageActions(message),
           direction: message.isOwn
               ? MessageDirection.outgoing
               : MessageDirection.incoming,
@@ -614,6 +998,171 @@ class _RoomPageState extends State<RoomPage> {
           },
         ),
       ],
+    );
+    if (!selection.active) return body;
+    final selected = selection.selectedIds.contains(message.id);
+    return Row(
+      children: [
+        CupertinoButton(
+          key: ValueKey('message-select-${message.id}'),
+          minimumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+          onPressed: () => setState(() => selection.toggle(message.id)),
+          child: Icon(
+            selected
+                ? CupertinoIcons.checkmark_circle_fill
+                : CupertinoIcons.circle,
+            color: selected
+                ? WeChatColors.brandPrimary
+                : WeChatColors.textSecondary,
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
+  }
+
+  MessageContentKind _contentKind(RoomMessageViewModel message) =>
+      switch (message.kind) {
+        RoomMessageKind.image => message.mimeType == 'image/gif'
+            ? MessageContentKind.gif
+            : MessageContentKind.image,
+        RoomMessageKind.file => MessageContentKind.file,
+        RoomMessageKind.voice => MessageContentKind.voice,
+        RoomMessageKind.redPacket => MessageContentKind.redPacket,
+        RoomMessageKind.system => MessageContentKind.system,
+        RoomMessageKind.text => MessageContentKind.text,
+      };
+
+  Future<void> _showMessageActions(RoomMessageViewModel message) async {
+    final serverNow = await _serverNow();
+    if (!mounted) return;
+    final actions = MessageActionPolicy.actionsFor(
+      MessageCapabilities(
+        kind: _contentKind(message),
+        isOwn: message.isOwn,
+        sentAt: message.timestamp,
+        serverNow: serverNow ?? message.timestamp.add(const Duration(days: 1)),
+      ),
+    );
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => MessageActionSheet(
+        actions: actions,
+        onSelected: (action) {
+          Navigator.pop(sheetContext);
+          _handleMessageAction(message, action);
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleMessageAction(
+    RoomMessageViewModel message,
+    MessageAction action,
+  ) async {
+    switch (action) {
+      case MessageAction.deleteLocal:
+        if (hiddenEvents == null) return;
+        await hiddenEvents!.hide(widget.room.id, message.id);
+        if (mounted) setState(() {});
+      case MessageAction.multiSelect:
+        setState(() => selection.startWith(message.id));
+      case MessageAction.forward:
+        await _forwardMessages([message]);
+      case MessageAction.reply:
+        setState(() => replyingTo = message);
+      case MessageAction.recall:
+        final interaction = _interaction;
+        final serverNow = await _serverNow();
+        if (interaction == null || serverNow == null) return;
+        await interaction.recall(
+          MessageInteractionEvent(
+            id: message.id,
+            senderId: message.senderId,
+            originServerTs: message.timestamp,
+          ),
+          serverNow: serverNow,
+        );
+        await controller?.refresh();
+      case MessageAction.addToEmoji:
+        await _addMessageToEmoji(message);
+      case MessageAction.reminder:
+        await _showReminderPicker(message);
+    }
+  }
+
+  bool _isForwardable(String eventId, List<RoomMessageViewModel> messages) {
+    final message = messages.firstWhere((item) => item.id == eventId);
+    return MessageActionPolicy.isForwardable(_contentKind(message));
+  }
+
+  Future<void> _deleteSelection() async {
+    final store = hiddenEvents;
+    if (store == null) return;
+    for (final eventId in selection.selectedIds) {
+      await store.hide(widget.room.id, eventId);
+    }
+    if (!mounted) return;
+    setState(selection.exit);
+  }
+
+  Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
+    final interaction = _interaction;
+    if (interaction == null) return;
+    final vaultRoomId = widget
+        .room.client.accountData[emojiVaultAccountDataType]?.content['room_id']
+        ?.toString();
+    final reminderRoomId = widget.room.client
+        .accountData[messageReminderAccountDataType]?.content['room_id']
+        ?.toString();
+    final targets = widget.room.client.rooms
+        .where(
+          (room) =>
+              room.id != widget.room.id &&
+              room.encrypted &&
+              !isMatrixControlRoom(
+                roomId: room.id,
+                displayName: room.getLocalizedDisplayname(),
+                vaultRoomId: vaultRoomId,
+                reminderRoomId: reminderRoomId,
+              ),
+        )
+        .toList(growable: false);
+    if (targets.isEmpty) {
+      setState(() => mediaMessage = '没有可用的端到端加密会话');
+      return;
+    }
+    await showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: const Text('选择转发到的会话'),
+        actions: [
+          for (final target in targets)
+            CupertinoActionSheetAction(
+              onPressed: () async {
+                Navigator.pop(sheetContext);
+                try {
+                  for (final message in messages) {
+                    await interaction.forward(message.id, target.id);
+                  }
+                  if (!mounted) return;
+                  setState(() {
+                    mediaMessage = '已转发 ${messages.length} 条消息';
+                    selection.exit();
+                  });
+                } catch (_) {
+                  if (mounted) setState(() => mediaMessage = '转发失败，请重试');
+                }
+              },
+              child: Text(target.getLocalizedDisplayname()),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('取消'),
+        ),
+      ),
     );
   }
 
@@ -627,7 +1176,13 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = controller?.messages ?? const <RoomMessageViewModel>[];
+    final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
+    final messages = hiddenEvents?.visibleItems(
+          widget.room.id,
+          allMessages,
+          eventId: (message) => message.id,
+        ) ??
+        allMessages;
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return CupertinoPageScaffold(
       backgroundColor: dark
@@ -717,26 +1272,67 @@ class _RoomPageState extends State<RoomPage> {
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
-            ChatComposerBar(
-              controller: input,
-              panel: composerPanel,
-              onMore: () => _togglePanel(ComposerPanel.more),
-              onVoice: _showVoice,
-              onEmoji: () => _togglePanel(ComposerPanel.emoji),
-              onSend: _send,
-              onSubmitted: (_) => _send(),
-            ),
-            if (composerPanel == ComposerPanel.more)
-              ChatMorePanel(onSelected: _handleMoreAction),
-            if (composerPanel == ComposerPanel.emoji)
-              SizedBox(
-                height: 280,
-                child: ChatEmojiPanel(
-                  onEmojiSelected: _insertEmoji,
-                  customItems: const [],
-                  onCustomSelected: (_) {},
+            if (replyingTo != null && !selection.active)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                color: CupertinoTheme.of(context).barBackgroundColor,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '引用：${replyingTo!.text}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: WeChatColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size.square(36),
+                      onPressed: () => setState(() => replyingTo = null),
+                      child: const Icon(CupertinoIcons.xmark, size: 18),
+                    ),
+                  ],
                 ),
               ),
+            if (selection.active)
+              MessageSelectionBar(
+                count: selection.selectedIds.length,
+                canForward: selection.canForward(
+                  (eventId) => _isForwardable(eventId, messages),
+                ),
+                onForward: () => _forwardMessages([
+                  for (final message in messages)
+                    if (selection.selectedIds.contains(message.id)) message,
+                ]),
+                onDelete: _deleteSelection,
+                onCancel: () => setState(selection.exit),
+              )
+            else ...[
+              ChatComposerBar(
+                controller: input,
+                panel: composerPanel,
+                onMore: () => _togglePanel(ComposerPanel.more),
+                onVoice: _showVoice,
+                onEmoji: () => _togglePanel(ComposerPanel.emoji),
+                onSend: _send,
+                onSubmitted: (_) => _send(),
+              ),
+              if (composerPanel == ComposerPanel.more)
+                ChatMorePanel(onSelected: _handleMoreAction),
+              if (composerPanel == ComposerPanel.emoji)
+                SizedBox(
+                  height: 280,
+                  child: ChatEmojiPanel(
+                    onEmojiSelected: _insertEmoji,
+                    customItems: customEmojiItems,
+                    onCustomSelected: _sendCustomEmoji,
+                  ),
+                ),
+            ],
           ],
         ),
       ),

@@ -171,6 +171,35 @@ final class EmojiVault {
     return item;
   }
 
+  Future<void> remove(String itemId) async {
+    if (!transport.isEncrypted) {
+      throw StateError('Emoji vault room must be end-to-end encrypted');
+    }
+    final now = DateTime.now().toUtc();
+    final event = EmojiVaultEvent.remove(
+      eventId: 'local-remove-$itemId-${now.microsecondsSinceEpoch}',
+      at: now,
+      itemId: itemId,
+    );
+    await transport.sendEncrypted(event);
+    apply([event]);
+  }
+
+  Future<void> markRecent(String itemId) async {
+    if (!transport.isEncrypted) {
+      throw StateError('Emoji vault room must be end-to-end encrypted');
+    }
+    final now = DateTime.now().toUtc();
+    final ids = [itemId, ..._recent.where((id) => id != itemId)].take(40);
+    final event = EmojiVaultEvent.recent(
+      eventId: 'local-recents-${now.microsecondsSinceEpoch}',
+      at: now,
+      itemIds: ids.toList(growable: false),
+    );
+    await transport.sendEncrypted(event);
+    apply([event]);
+  }
+
   void apply(Iterable<EmojiVaultEvent> incoming) {
     final events = incoming.toList(growable: false)
       ..sort((a, b) {

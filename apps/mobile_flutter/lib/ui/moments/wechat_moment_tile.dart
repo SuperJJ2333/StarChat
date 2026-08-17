@@ -1,4 +1,57 @@
 import 'package:flutter/cupertino.dart';
 import '../foundation/wechat_tokens.dart';
 import 'wechat_moment_image_grid.dart';
-final class WeChatMomentTile extends StatelessWidget{const WeChatMomentTile({super.key,required this.author,required this.text,this.images=const[],this.onLike,this.onComment});final String author,text;final List<String> images;final VoidCallback? onLike,onComment;@override Widget build(BuildContext context)=>Container(color:CupertinoTheme.of(context).barBackgroundColor,padding:const EdgeInsets.all(12),child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[Container(width:42,height:42,color:WeChatColors.divider,child:const Icon(CupertinoIcons.person_fill)),const SizedBox(width:10),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(author,style:const TextStyle(color:WeChatColors.socialLink,fontSize:16,fontWeight:FontWeight.w600)),const SizedBox(height:4),Text(text,style:const TextStyle(fontSize:16,height:23/16)),if(images.isNotEmpty)Padding(padding:const EdgeInsets.only(top:8),child:WeChatMomentImageGrid(imageUrls:images)),Row(children:[const Text('刚刚',style:TextStyle(color:WeChatColors.textSecondary,fontSize:13)),const Spacer(),CupertinoButton(padding:EdgeInsets.zero,onPressed:onLike,child:const Icon(CupertinoIcons.heart,size:20)),CupertinoButton(padding:EdgeInsets.zero,onPressed:onComment,child:const Icon(CupertinoIcons.chat_bubble,size:20))])]))]));}
+
+final class WeChatMomentTile extends StatelessWidget {
+  const WeChatMomentTile(
+      {super.key,
+      required this.author,
+      required this.text,
+      this.images = const [],
+      this.onLike,
+      this.onComment});
+  final String author, text;
+  final List<String> images;
+  final VoidCallback? onLike, onComment;
+  @override
+  Widget build(BuildContext context) => Container(
+      color: CupertinoTheme.of(context).barBackgroundColor,
+      padding: const EdgeInsets.all(12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Container(
+            width: 42,
+            height: 42,
+            color: WeChatColors.divider,
+            child: const Icon(CupertinoIcons.person_fill)),
+        const SizedBox(width: 10),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(author,
+              style: const TextStyle(
+                  color: WeChatColors.socialLink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(text, style: const TextStyle(fontSize: 16, height: 23 / 16)),
+          if (images.isNotEmpty)
+            Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: WeChatMomentImageGrid(imageUrls: images)),
+          Row(children: [
+            const Text('刚刚',
+                style:
+                    TextStyle(color: WeChatColors.textSecondary, fontSize: 13)),
+            const Spacer(),
+            CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: onLike,
+                child: const Icon(CupertinoIcons.heart, size: 20)),
+            CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: onComment,
+                child: const Icon(CupertinoIcons.chat_bubble, size: 20))
+          ])
+        ]))
+      ]));
+}

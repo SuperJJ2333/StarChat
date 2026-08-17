@@ -7,6 +7,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   http: ^1.2.2
   flutter_secure_storage: ^9.2.2
   shared_preferences: 2.5.3
@@ -28,6 +30,8 @@ dependencies:
   webrtc_interface: 1.5.1
   emoji_picker_flutter: 4.5.3
   crypto: 3.0.7
+  flutter_local_notifications: 19.4.2
+  timezone: 0.10.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

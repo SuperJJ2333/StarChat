@@ -9,13 +9,17 @@ import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
-  @override Future<void> delete(String key) async => values.remove(key);
-  @override Future<String?> read(String key) async => values[key];
-  @override Future<void> write(String key, String value) async => values[key] = value;
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
 }
 
 void main() {
-  test('restore rotates and atomically replaces the stored token pair', () async {
+  test('restore rotates and atomically replaces the stored token pair',
+      () async {
     final storage = MemoryStore();
     final store = SecureSessionStore(storage);
     await store.saveSession(accessToken: 'old-a', refreshToken: 'old-r');
@@ -60,9 +64,11 @@ void main() {
       baseUri: Uri.parse('https://business.example'),
       sessionStore: store,
       client: MockClient((_) async => http.Response(
-        jsonEncode({'error': {'code': 'REFRESH_TOKEN_INVALID', 'message': 'invalid'}}),
-        401,
-      )),
+            jsonEncode({
+              'error': {'code': 'REFRESH_TOKEN_INVALID', 'message': 'invalid'}
+            }),
+            401,
+          )),
     );
 
     expect(await api.restoreSession(), BusinessSessionRestore.invalid);
@@ -89,7 +95,8 @@ void main() {
     expect(await store.session(), isNull);
   });
 
-  test('authenticated request refreshes once and replays with new access token', () async {
+  test('authenticated request refreshes once and replays with new access token',
+      () async {
     final storage = MemoryStore();
     final store = SecureSessionStore(storage);
     await store.saveSession(accessToken: 'expired-a', refreshToken: 'valid-r');
@@ -115,7 +122,9 @@ void main() {
     expect(balanceCalls, 2);
   });
 
-  test('typed dual-domain API stores Business tokens then binds Matrix identity', () async {
+  test(
+      'typed dual-domain API stores Business tokens then binds Matrix identity',
+      () async {
     final storage = MemoryStore();
     final store = SecureSessionStore(storage);
     final api = BusinessApiClient(
@@ -124,16 +133,31 @@ void main() {
       client: MockClient((request) async {
         if (request.url.path == '/api/v1/auth/login') {
           expect(jsonDecode(request.body)['password'], 'business-password');
-          return http.Response(jsonEncode({'access_token': 'business-a', 'refresh_token': 'business-r'}), 200);
+          return http.Response(
+              jsonEncode({
+                'access_token': 'business-a',
+                'refresh_token': 'business-r'
+              }),
+              200);
         }
         expect(request.url.path, '/api/v1/auth/matrix-login-token');
         expect(request.headers['Authorization'], 'Bearer business-a');
         expect(request.body, isEmpty);
-        return http.Response(jsonEncode({'login_token': 'matrix-once', 'homeserver': 'https://matrix.example', 'expires_in': 60}), 200);
+        return http.Response(
+            jsonEncode({
+              'login_token': 'matrix-once',
+              'homeserver': 'https://matrix.example',
+              'expires_in': 60
+            }),
+            200);
       }),
     );
 
-    await api.loginBusiness(username: 'alice', password: 'business-password', deviceKey: 'device-1', deviceName: '畅聊移动端');
+    await api.loginBusiness(
+        username: 'alice',
+        password: 'business-password',
+        deviceKey: 'device-1',
+        deviceName: '畅聊移动端');
     final grant = await api.issueMatrixLoginToken();
     await api.bindMatrixUserId('@alice:matrix.example');
 
@@ -142,7 +166,9 @@ void main() {
     expect((await store.session())?.matrixUserId, '@alice:matrix.example');
   });
 
-  test('registration retry reuses the original idempotency key after a lost response', () async {
+  test(
+      'registration retry reuses the original idempotency key after a lost response',
+      () async {
     final keys = <String>[];
     var calls = 0;
     final api = BusinessApiClient(

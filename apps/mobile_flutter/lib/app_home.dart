@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import 'core/business_api_client.dart';
+import 'core/local_notification_scheduler.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -14,6 +17,8 @@ import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
+import 'features/matrix/matrix_message_reminder_backend.dart';
+import 'features/matrix/message_reminder_service.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
@@ -53,11 +58,33 @@ final class _AppHomeState extends State<AppHome> {
   );
   bool callPageVisible = false;
   bool incomingCallActive = false;
+  MessageReminderService? reminderService;
+  late final MessageReminderSyncBootstrapper reminderBootstrap;
 
   @override
   void initState() {
     super.initState();
     calls.addListener(_callChanged);
+    reminderBootstrap = MessageReminderSyncBootstrapper(
+      retries: widget.matrix.sdkClient.onSync.stream.map<void>((_) {}),
+      create: _createReminderSync,
+      onReady: (coordinator) {
+        if (mounted) setState(() => reminderService = coordinator.service);
+      },
+    );
+    unawaited(reminderBootstrap.start());
+  }
+
+  Future<MessageReminderSyncCoordinator> _createReminderSync() async {
+    final backend =
+        await MatrixMessageReminderBackend.open(widget.matrix.sdkClient);
+    return MessageReminderSyncCoordinator(
+      source: backend,
+      service: MessageReminderService(
+        backend: backend,
+        scheduler: FlutterLocalNotificationScheduler(),
+      ),
+    );
   }
 
   void _callChanged() {
@@ -155,6 +182,7 @@ final class _AppHomeState extends State<AppHome> {
           roomName: room.getLocalizedDisplayname(),
           onVoice: (contact) => _openCall(contact, CallMediaType.audio),
           onVideo: (contact) => _openCall(contact, CallMediaType.video),
+          reminderService: reminderService,
         ),
       ),
     );
@@ -166,6 +194,7 @@ final class _AppHomeState extends State<AppHome> {
     calls.dispose();
     callBackend.dispose();
     directChats.dispose();
+    unawaited(reminderBootstrap.dispose());
     super.dispose();
   }
 
@@ -209,6 +238,7 @@ final class _AppHomeState extends State<AppHome> {
                         _openCall(contact, CallMediaType.audio),
                     onVideo: (contact) =>
                         _openCall(contact, CallMediaType.video),
+                    reminderService: reminderService,
                   ),
                 1 => ContactsTabPage(
                     api: widget.api,
@@ -219,6 +249,7 @@ final class _AppHomeState extends State<AppHome> {
                     onVideo: (contact) =>
                         _openCall(contact, CallMediaType.video),
                     onGroupChat: _createGroupChat,
+                    reminderService: reminderService,
                   ),
                 2 => DiscoveryPage(api: widget.api),
                 _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
@@ -248,6 +279,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
+    this.reminderService,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -255,6 +287,7 @@ final class ContactsTabPage extends StatefulWidget {
   final ContactAction onVoice;
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
+  final MessageReminderService? reminderService;
 
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
@@ -277,6 +310,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
             initialContact: contact,
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
+            reminderService: widget.reminderService,
           ),
         ),
       );

@@ -25,12 +25,16 @@ final class MediaMessageService {
     final file = await openFile();
     if (file == null) throw StateError('File selection cancelled');
     final bytes = await file.readAsBytes();
-    return matrix.sendEncryptedMedia(roomId, bytes, file.mimeType ?? 'application/octet-stream');
+    return matrix.sendEncryptedMedia(
+        roomId, bytes, file.mimeType ?? 'application/octet-stream');
   }
 
   Future<void> startVoiceRecording(String path) async {
-    if (!await _recorder.hasPermission()) throw StateError('Microphone permission denied');
-    await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: path);
+    if (!await _recorder.hasPermission()) {
+      throw StateError('Microphone permission denied');
+    }
+    await _recorder.start(const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path);
   }
 
   Future<String> stopVoiceRecording(String roomId) async {
@@ -45,7 +49,8 @@ final class MediaMessageService {
     return path;
   }
 
-  Future<String> sendVoicePreview(String roomId, String path) => _send(roomId, path, 'audio/aac');
+  Future<String> sendVoicePreview(String roomId, String path) =>
+      _send(roomId, path, 'audio/aac');
 
   Future<void> cancelVoiceRecording() async {
     final path = await _recorder.stop();

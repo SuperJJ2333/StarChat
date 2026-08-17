@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_call_adapter.dart';
 
 void main() {
-  test('incoming direct call accepts exact two-party membership without local m.direct metadata', () {
+  test(
+      'incoming direct call accepts exact two-party membership without local m.direct metadata',
+      () {
     expect(
       isVerifiedDirectParticipantSet(
         const {'@alice:example.test', '@bob:example.test'},
@@ -36,7 +38,9 @@ void main() {
     );
   });
 
-  test('incoming caller is derived from exact room membership without m.direct metadata', () {
+  test(
+      'incoming caller is derived from exact room membership without m.direct metadata',
+      () {
     expect(
       resolveIncomingRemoteParticipant(
         const {'@alice:example.test', '@bob:example.test'},

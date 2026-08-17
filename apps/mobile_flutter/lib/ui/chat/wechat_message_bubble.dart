@@ -14,6 +14,9 @@ final class WeChatMessageBubble extends StatelessWidget {
     this.avatar,
     this.state = MessageDeliveryState.sent,
     this.onAvatarTap,
+    this.onAvatarDoubleTap,
+    this.onAvatarLongPress,
+    this.onLongPress,
     this.onRetry,
   });
 
@@ -22,6 +25,9 @@ final class WeChatMessageBubble extends StatelessWidget {
   final Widget? avatar;
   final MessageDeliveryState state;
   final VoidCallback? onAvatarTap;
+  final VoidCallback? onAvatarDoubleTap;
+  final VoidCallback? onAvatarLongPress;
+  final VoidCallback? onLongPress;
   final VoidCallback? onRetry;
 
   @override
@@ -33,9 +39,11 @@ final class WeChatMessageBubble extends StatelessWidget {
         : SizedBox.square(
             key: const Key('message-avatar-slot'),
             dimension: WeChatDimensions.messageAvatar,
-            child: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: onAvatarTap,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onAvatarTap,
+              onDoubleTap: onAvatarDoubleTap,
+              onLongPress: onAvatarLongPress,
               child: avatarContent,
             ),
           );
@@ -78,21 +86,25 @@ final class WeChatMessageBubble extends StatelessWidget {
       ),
     );
 
-    return Align(
-      alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
-      child: FractionallySizedBox(
-        widthFactor: .86,
-        child: Row(
-          mainAxisAlignment:
-              outgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!outgoing && avatarSlot != null) avatarSlot,
-            if (!outgoing && avatarSlot != null) const SizedBox(width: 8),
-            message,
-            if (outgoing && avatarSlot != null) const SizedBox(width: 8),
-            if (outgoing && avatarSlot != null) avatarSlot,
-          ],
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: onLongPress,
+      child: Align(
+        alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: .86,
+          child: Row(
+            mainAxisAlignment:
+                outgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!outgoing && avatarSlot != null) avatarSlot,
+              if (!outgoing && avatarSlot != null) const SizedBox(width: 8),
+              message,
+              if (outgoing && avatarSlot != null) const SizedBox(width: 8),
+              if (outgoing && avatarSlot != null) avatarSlot,
+            ],
+          ),
         ),
       ),
     );

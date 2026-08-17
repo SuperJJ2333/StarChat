@@ -128,10 +128,11 @@ def test_messaging_and_call_surfaces_follow_the_figma_component_contract():
     assert "key: ValueKey<String>('conversation-" in matrix_home
     assert "final class ChatComposerBar" in composer
     for key in (
-        "chat-composer-attachment",
-        "chat-composer-voice",
-        "chat-composer-input",
-        "chat-composer-send",
+        "composer-voice",
+        "composer-input",
+        "composer-emoji",
+        "composer-more",
+        "composer-send",
     ):
         assert f"Key('{key}')" in composer
     assert "final class CallControlButton" in call_control

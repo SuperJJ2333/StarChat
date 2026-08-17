@@ -22,6 +22,8 @@ void main() {
       ),
     );
     expect(find.text('畅聊'), findsOneWidget);
+    expect(tester.widget<CupertinoApp>(find.byType(CupertinoApp)).locale,
+        const Locale('zh', 'CN'));
   });
   testWidgets('renders login form', (tester) async {
     final api = BusinessApiClient(

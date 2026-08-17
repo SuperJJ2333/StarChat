@@ -94,4 +94,26 @@ void main() {
 
     expect(vault.recentItemIds, ['c', 'a', 'b']);
   });
+
+  test('remove and markRecent emit encrypted sync events', () async {
+    final transport = FakeEmojiVaultTransport();
+    final vault = EmojiVault(transport: transport);
+    final item = await vault.add(
+      Uint8List.fromList([1, 2, 3]),
+      mimeType: 'image/png',
+    );
+
+    await vault.markRecent(item.id);
+    await vault.remove(item.id);
+
+    expect(
+      transport.sent.map((event) => event.type),
+      [
+        EmojiVaultEventType.add,
+        EmojiVaultEventType.recent,
+        EmojiVaultEventType.remove,
+      ],
+    );
+    expect(vault.items, isEmpty);
+  });
 }

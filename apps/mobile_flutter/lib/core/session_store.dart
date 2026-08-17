@@ -48,7 +48,8 @@ final class StoredBusinessSession {
       other.matrixUserId == matrixUserId;
 
   @override
-  int get hashCode => Object.hash(version, accessToken, refreshToken, matrixUserId);
+  int get hashCode =>
+      Object.hash(version, accessToken, refreshToken, matrixUserId);
 }
 
 final class SecureSessionStore {

@@ -34,6 +34,13 @@ final class FakeMatrixEmojiVaultBackend implements MatrixEmojiVaultBackend {
   Future<List<EmojiVaultEvent>> loadEvents(String roomId) async => events;
 
   @override
+  Future<Uint8List> downloadAndDecrypt(
+    String roomId,
+    Map<String, Object?> encryptedFile,
+  ) async =>
+      Uint8List.fromList([9, 8, 7]);
+
+  @override
   Future<Map<String, Object?>> uploadEncrypted(
     String roomId,
     Uint8List bytes,
@@ -110,5 +117,16 @@ void main() {
     );
 
     expect(backend.sentTypes, ['com.changliao.emoji.add']);
+  });
+
+  test('session decrypts custom emoji bytes only on the device', () async {
+    final backend = FakeMatrixEmojiVaultBackend();
+    final session = await MatrixEmojiVault.open(backend);
+    final item = await session.vault.add(
+      Uint8List.fromList([1, 2, 3]),
+      mimeType: 'image/gif',
+    );
+
+    expect(await session.loadBytes(item), [9, 8, 7]);
   });
 }

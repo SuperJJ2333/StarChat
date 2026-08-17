@@ -1,4 +1,59 @@
 import 'package:flutter/cupertino.dart';
 import '../foundation/wechat_tokens.dart';
+
 enum RedPacketVisualState { available, claimed, exhausted, expired, withdrawn }
-final class WeChatRedPacketCard extends StatelessWidget { const WeChatRedPacketCard({super.key,required this.greeting,required this.state,this.onTap}); final String greeting;final RedPacketVisualState state;final VoidCallback? onTap;String get label=>switch(state){RedPacketVisualState.available=>'领取红包',RedPacketVisualState.claimed=>'已领取',RedPacketVisualState.exhausted=>'已领完',RedPacketVisualState.expired=>'已过期',RedPacketVisualState.withdrawn=>'已撤回'};@override Widget build(BuildContext context)=>CupertinoButton(padding:EdgeInsets.zero,onPressed:onTap,child:Container(width:236,height:96,decoration:BoxDecoration(color:WeChatColors.warning,borderRadius:BorderRadius.circular(WeChatRadius.redPacket)),child:Column(children:[Expanded(child:Padding(padding:const EdgeInsets.all(12),child:Row(children:[const Icon(CupertinoIcons.gift_fill,color:CupertinoColors.white,size:32),const SizedBox(width:8),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(greeting,style:const TextStyle(color:CupertinoColors.white,fontSize:16)),Text(label,style:const TextStyle(color:CupertinoColors.white))]))]))),Container(height:24,color:CupertinoColors.white.withValues(alpha:.9),alignment:Alignment.centerLeft,padding:const EdgeInsets.symmetric(horizontal:8),child:const Text('畅聊彩币红包',style:TextStyle(color:WeChatColors.textSecondary,fontSize:11))) ])));}
+
+final class WeChatRedPacketCard extends StatelessWidget {
+  const WeChatRedPacketCard(
+      {super.key, required this.greeting, required this.state, this.onTap});
+  final String greeting;
+  final RedPacketVisualState state;
+  final VoidCallback? onTap;
+  String get label => switch (state) {
+        RedPacketVisualState.available => '领取红包',
+        RedPacketVisualState.claimed => '已领取',
+        RedPacketVisualState.exhausted => '已领完',
+        RedPacketVisualState.expired => '已过期',
+        RedPacketVisualState.withdrawn => '已撤回'
+      };
+  @override
+  Widget build(BuildContext context) => CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+      child: Container(
+          width: 236,
+          height: 96,
+          decoration: BoxDecoration(
+              color: WeChatColors.warning,
+              borderRadius: BorderRadius.circular(WeChatRadius.redPacket)),
+          child: Column(children: [
+            Expanded(
+                child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(children: [
+                      const Icon(CupertinoIcons.gift_fill,
+                          color: CupertinoColors.white, size: 32),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                            Text(greeting,
+                                style: const TextStyle(
+                                    color: CupertinoColors.white,
+                                    fontSize: 16)),
+                            Text(label,
+                                style: const TextStyle(
+                                    color: CupertinoColors.white))
+                          ]))
+                    ]))),
+            Container(
+                height: 24,
+                color: CupertinoColors.white.withValues(alpha: .9),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: const Text('畅聊彩币红包',
+                    style: TextStyle(
+                        color: WeChatColors.textSecondary, fontSize: 11)))
+          ])));
+}

@@ -4,7 +4,7 @@ import 'package:matrix/matrix.dart';
 
 import 'emoji_vault.dart';
 
-const _vaultAccountDataType = 'com.changliao.emoji.vault';
+const emojiVaultAccountDataType = 'com.changliao.emoji.vault';
 
 abstract interface class MatrixEmojiVaultBackend {
   String? readStoredRoomId();
@@ -12,6 +12,10 @@ abstract interface class MatrixEmojiVaultBackend {
   Future<void> storeRoomId(String roomId);
   Future<bool> isRoomEncrypted(String roomId);
   Future<List<EmojiVaultEvent>> loadEvents(String roomId);
+  Future<Uint8List> downloadAndDecrypt(
+    String roomId,
+    Map<String, Object?> encryptedFile,
+  );
   Future<Map<String, Object?>> uploadEncrypted(
     String roomId,
     Uint8List bytes,
@@ -25,10 +29,18 @@ abstract interface class MatrixEmojiVaultBackend {
 }
 
 final class MatrixEmojiVault {
-  const MatrixEmojiVault._({required this.roomId, required this.vault});
+  const MatrixEmojiVault._({
+    required this.roomId,
+    required this.vault,
+    required MatrixEmojiVaultBackend backend,
+  }) : _backend = backend;
 
   final String roomId;
   final EmojiVault vault;
+  final MatrixEmojiVaultBackend _backend;
+
+  Future<Uint8List> loadBytes(EmojiVaultItem item) =>
+      _backend.downloadAndDecrypt(roomId, item.encryptedFile);
 
   static Future<MatrixEmojiVault> open(
     MatrixEmojiVaultBackend backend,
@@ -47,7 +59,7 @@ final class MatrixEmojiVault {
     );
     final vault = EmojiVault(transport: transport);
     vault.apply(await backend.loadEvents(roomId));
-    return MatrixEmojiVault._(roomId: roomId, vault: vault);
+    return MatrixEmojiVault._(roomId: roomId, vault: vault, backend: backend);
   }
 }
 
@@ -82,24 +94,28 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
 
   @override
   String? readStoredRoomId() =>
-      client.accountData[_vaultAccountDataType]?.content['room_id'] as String?;
+      client.accountData[emojiVaultAccountDataType]?.content['room_id']
+          as String?;
 
   @override
   Future<String> createEncryptedVaultRoom() async {
-    final roomId = await client.createRoom(
-      name: '畅聊表情仓库',
+    final roomId = await client.createGroupChat(
+      groupName: '畅聊表情仓库',
+      enableEncryption: true,
+      invite: const [],
       preset: CreateRoomPreset.privateChat,
       visibility: Visibility.private,
-      initialState: [
-        StateEvent(
-          type: EventTypes.Encryption,
-          stateKey: '',
-          content: const {'algorithm': 'm.megolm.v1.aes-sha2'},
-        ),
-      ],
+      waitForSync: true,
     );
-    await client.sync();
-    final room = client.getRoomById(roomId);
+    var room = client.getRoomById(roomId);
+    if (room == null) {
+      throw StateError('Matrix did not create the emoji vault room');
+    }
+    if (!room.encrypted) {
+      await room.enableEncryption();
+      await client.oneShotSync();
+      room = client.getRoomById(roomId);
+    }
     if (room == null || !room.encrypted) {
       throw StateError('Matrix did not create an encrypted emoji vault room');
     }
@@ -112,9 +128,10 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
     if (userId == null) throw StateError('Matrix client is not logged in');
     await client.setAccountData(
       userId,
-      _vaultAccountDataType,
+      emojiVaultAccountDataType,
       {'room_id': roomId},
     );
+    await client.oneShotSync();
   }
 
   Future<Room> _room(String roomId) async {
@@ -196,6 +213,39 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
     } finally {
       timeline.cancelSubscriptions();
     }
+  }
+
+  @override
+  Future<Uint8List> downloadAndDecrypt(
+    String roomId,
+    Map<String, Object?> encryptedFile,
+  ) async {
+    final room = await _room(roomId);
+    if (!room.encrypted || !client.encryptionEnabled) {
+      throw StateError('Emoji media download requires Matrix E2EE');
+    }
+    final url = encryptedFile['url']?.toString();
+    final key = encryptedFile['key'];
+    final hashes = encryptedFile['hashes'];
+    if (url == null || key is! Map || hashes is! Map) {
+      throw StateError('Encrypted emoji descriptor is invalid');
+    }
+    final downloadUri = await Uri.parse(url).getDownloadUri(client);
+    final ciphertext = (await client.httpClient.get(
+      downloadUri,
+      headers: {'authorization': 'Bearer ${client.accessToken}'},
+    ))
+        .bodyBytes;
+    final plaintext = await client.nativeImplementations.decryptFile(
+      EncryptedFile(
+        data: ciphertext,
+        k: key['k']!.toString(),
+        iv: encryptedFile['iv']!.toString(),
+        sha256: hashes['sha256']!.toString(),
+      ),
+    );
+    if (plaintext == null) throw StateError('Encrypted emoji integrity failed');
+    return plaintext;
   }
 
   EmojiVaultEvent? _decodeEvent(Event event) {

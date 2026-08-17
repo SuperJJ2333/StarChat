@@ -36,6 +36,35 @@ void main() {
     await tester.tap(find.byKey(const Key('message-avatar-slot')));
     expect(avatarTaps, 1);
   });
+  testWidgets('message bubble exposes long press and avatar gestures',
+      (tester) async {
+    var messageLongPresses = 0;
+    var avatarDoubleTaps = 0;
+    var avatarLongPresses = 0;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: WeChatMessageBubble(
+          direction: MessageDirection.incoming,
+          avatar: const UserAvatar(nickname: 'Bob', fallbackSeed: 'bob'),
+          onLongPress: () => messageLongPresses++,
+          onAvatarDoubleTap: () => avatarDoubleTaps++,
+          onAvatarLongPress: () => avatarLongPresses++,
+          content: const Text('你好'),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('你好'));
+    await tester.tap(find.byKey(const Key('message-avatar-slot')));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('message-avatar-slot')));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.byKey(const Key('message-avatar-slot')));
+
+    expect(messageLongPresses, 1);
+    expect(avatarDoubleTaps, 1);
+    expect(avatarLongPresses, 1);
+  });
   testWidgets('unread badge caps its label at 99+', (tester) async {
     await tester
         .pumpWidget(const CupertinoApp(home: WeChatUnreadBadge(count: 100)));
