@@ -26,6 +26,7 @@ dependencies:
   image_cropper: 9.1.0
   flutter_webrtc: 0.12.11
   webrtc_interface: 1.5.1
+  emoji_picker_flutter: 4.5.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

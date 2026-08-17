@@ -9,6 +9,9 @@ import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
 import '../redpacket/red_packet_detail_sheet.dart';
 import '../../ui/chat/chat_composer_bar.dart';
+import '../../ui/chat/chat_composer_state.dart';
+import '../../ui/chat/chat_emoji_panel.dart';
+import '../../ui/chat/chat_more_panel.dart';
 import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
 import '../../ui/chat/wechat_voice_bubble.dart';
@@ -272,6 +275,7 @@ class _RoomPageState extends State<RoomPage> {
   ContactDetails? peer;
   bool loading = true;
   bool mediaBusy = false;
+  ComposerPanel composerPanel = ComposerPanel.none;
   String? errorMessage;
   String? mediaMessage;
 
@@ -380,61 +384,28 @@ class _RoomPageState extends State<RoomPage> {
     }
   }
 
-  Future<void> _showMedia() async {
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: const Text('发送到当前加密会话'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(sheetContext);
-              _sendMedia(image: true);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.photo),
-                SizedBox(width: 8),
-                Text('照片'),
-              ],
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(sheetContext);
-              _sendMedia(image: false);
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.doc),
-                SizedBox(width: 8),
-                Text('文件'),
-              ],
-            ),
-          ),
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(sheetContext);
-              _showRedPacket();
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.gift),
-                SizedBox(width: 8),
-                Text('红包'),
-              ],
-            ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('取消'),
-        ),
-      ),
-    );
+  void _togglePanel(ComposerPanel panel) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      composerPanel = composerPanel == panel ? ComposerPanel.none : panel;
+    });
+  }
+
+  Future<void> _handleMoreAction(ChatMoreAction action) async {
+    setState(() => composerPanel = ComposerPanel.none);
+    switch (action) {
+      case ChatMoreAction.image:
+      case ChatMoreAction.camera:
+        await _sendMedia(image: true);
+      case ChatMoreAction.file:
+        await _sendMedia(image: false);
+      case ChatMoreAction.redPacket:
+        await _showRedPacket();
+      case ChatMoreAction.voiceCall:
+        if (peer != null) await widget.onVoice?.call(peer!);
+      case ChatMoreAction.videoCall:
+        if (peer != null) await widget.onVideo?.call(peer!);
+    }
   }
 
   Future<void> _showRedPacket() async {
@@ -482,59 +453,7 @@ class _RoomPageState extends State<RoomPage> {
     );
   }
 
-  Future<void> _showEmoji() async {
-    const emojis = [
-      '😀',
-      '😃',
-      '😄',
-      '😁',
-      '😂',
-      '😊',
-      '😍',
-      '😘',
-      '🤔',
-      '😎',
-      '😭',
-      '😡',
-      '👍',
-      '👏',
-      '🙏',
-      '🎉',
-      '❤️',
-      '💪',
-      '🌹',
-      '🔥',
-      '✅',
-      '🎁',
-      '🍻',
-      '✨',
-    ];
-    final selected = await showCupertinoModalPopup<String>(
-      context: context,
-      builder: (sheetContext) => CupertinoPopupSurface(
-        child: SafeArea(
-          child: SizedBox(
-            height: 260,
-            child: GridView.builder(
-              padding: const EdgeInsets.all(16),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-              ),
-              itemCount: emojis.length,
-              itemBuilder: (_, index) => CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => Navigator.pop(sheetContext, emojis[index]),
-                child:
-                    Text(emojis[index], style: const TextStyle(fontSize: 28)),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    if (selected == null) return;
+  void _insertEmoji(String selected) {
     final selection = input.selection;
     final start = selection.isValid ? selection.start : input.text.length;
     final end = selection.isValid ? selection.end : input.text.length;
@@ -800,12 +719,24 @@ class _RoomPageState extends State<RoomPage> {
               ),
             ChatComposerBar(
               controller: input,
-              onMore: _showMedia,
+              panel: composerPanel,
+              onMore: () => _togglePanel(ComposerPanel.more),
               onVoice: _showVoice,
-              onEmoji: _showEmoji,
+              onEmoji: () => _togglePanel(ComposerPanel.emoji),
               onSend: _send,
               onSubmitted: (_) => _send(),
             ),
+            if (composerPanel == ComposerPanel.more)
+              ChatMorePanel(onSelected: _handleMoreAction),
+            if (composerPanel == ComposerPanel.emoji)
+              SizedBox(
+                height: 280,
+                child: ChatEmojiPanel(
+                  onEmojiSelected: _insertEmoji,
+                  customItems: const [],
+                  onCustomSelected: (_) {},
+                ),
+              ),
           ],
         ),
       ),
