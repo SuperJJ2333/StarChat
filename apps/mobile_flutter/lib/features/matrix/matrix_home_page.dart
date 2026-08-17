@@ -800,7 +800,7 @@ class _RoomPageState extends State<RoomPage> {
               ),
             ChatComposerBar(
               controller: input,
-              onAttachment: _showMedia,
+              onMore: _showMedia,
               onVoice: _showVoice,
               onEmoji: _showEmoji,
               onSend: _send,

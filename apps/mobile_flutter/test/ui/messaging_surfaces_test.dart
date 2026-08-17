@@ -85,14 +85,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('chat composer exposes attachment voice emoji input and send',
+  testWidgets('chat composer exposes voice input emoji and focused send',
       (tester) async {
-    var attachments = 0;
+    var moreActions = 0;
     var voices = 0;
     var emojis = 0;
     var sends = 0;
     final controller = TextEditingController(text: '你好');
+    final focusNode = FocusNode();
     addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
 
     await tester.pumpWidget(
       CupertinoApp(
@@ -101,7 +103,8 @@ void main() {
             alignment: Alignment.bottomCenter,
             child: ChatComposerBar(
               controller: controller,
-              onAttachment: () => attachments++,
+              focusNode: focusNode,
+              onMore: () => moreActions++,
               onVoice: () => voices++,
               onEmoji: () => emojis++,
               onSend: () => sends++,
@@ -111,12 +114,14 @@ void main() {
       ),
     );
 
+    focusNode.requestFocus();
+    await tester.pump();
+
     for (final key in const [
-      'chat-composer-attachment',
-      'chat-composer-voice',
-      'chat-composer-emoji',
-      'chat-composer-input',
-      'chat-composer-send',
+      'composer-voice',
+      'composer-emoji',
+      'composer-input',
+      'composer-send',
     ]) {
       expect(find.byKey(Key(key)), findsOneWidget);
     }
@@ -124,11 +129,10 @@ void main() {
       tester.getSize(find.byType(ChatComposerBar)).height,
       greaterThanOrEqualTo(56),
     );
-    await tester.tap(find.byKey(const Key('chat-composer-attachment')));
-    await tester.tap(find.byKey(const Key('chat-composer-voice')));
-    await tester.tap(find.byKey(const Key('chat-composer-emoji')));
-    await tester.tap(find.byKey(const Key('chat-composer-send')));
-    expect(attachments, 1);
+    await tester.tap(find.byKey(const Key('composer-voice')));
+    await tester.tap(find.byKey(const Key('composer-emoji')));
+    await tester.tap(find.byKey(const Key('composer-send')));
+    expect(moreActions, 0);
     expect(voices, 1);
     expect(emojis, 1);
     expect(sends, 1);
