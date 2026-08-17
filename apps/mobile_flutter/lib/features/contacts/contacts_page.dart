@@ -96,8 +96,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                   ),
                   title: Text(contact.displayName),
                   onTap: () async {
-                    await Navigator.push<bool>(
-                      context,
+                    await Navigator.of(context, rootNavigator: true).push<bool>(
                       CupertinoPageRoute(
                         builder: (_) => ContactProfilePage(
                           api: widget.api,
@@ -172,7 +171,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
             children: [
               FriendIdentityCard(contact: contact),
               const FriendMomentsPreview(),
-              FriendActionRow(
+              FriendActionColumn(
                 onMessage: widget.onMessage == null
                     ? null
                     : () => widget.onMessage!(contact),

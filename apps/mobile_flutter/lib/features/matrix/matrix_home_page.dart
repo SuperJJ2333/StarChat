@@ -225,8 +225,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     ),
                     unreadCount: room.notificationCount,
                     muted: room.pushRuleState != PushRuleState.notify,
-                    onTap: () => Navigator.push(
-                      context,
+                    onTap: () =>
+                        Navigator.of(context, rootNavigator: true).push(
                       CupertinoPageRoute(
                         builder: (_) => RoomPage(
                           api: widget.api,

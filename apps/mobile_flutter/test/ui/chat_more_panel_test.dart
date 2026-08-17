@@ -20,12 +20,34 @@ void main() {
     }
     expect(find.byType(Icon), findsNWidgets(6));
     final grid = tester.widget<GridView>(find.byType(GridView));
-    expect(
-      (grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount)
-          .crossAxisCount,
-      4,
-    );
+    final delegate =
+        grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+    expect(delegate.crossAxisCount, 4);
+    expect(delegate.mainAxisExtent, 82);
     await tester.tap(find.text('红包'));
     expect(selected, ChatMoreAction.redPacket);
+  });
+
+  testWidgets('more panel does not overflow at 393px and 1.3x text scale',
+      (tester) async {
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(
+          size: Size(393, 852),
+          textScaler: TextScaler.linear(1.3),
+        ),
+        child: CupertinoApp(
+          home: Align(
+            alignment: Alignment.bottomCenter,
+            child: ChatMorePanel(onSelected: (_) {}),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(
+        tester.getSize(find.byKey(const Key('chat-more-panel'))).height, 232);
   });
 }

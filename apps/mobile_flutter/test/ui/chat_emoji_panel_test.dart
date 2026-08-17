@@ -4,7 +4,6 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_emoji_panel.dart';
-import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 void main() {
   testWidgets('emoji panel exposes recent all and private custom tabs',
@@ -29,12 +28,9 @@ void main() {
     expect(find.text('我的表情'), findsOneWidget);
     expect(find.byType(EmojiPicker), findsOneWidget);
     final picker = tester.widget<EmojiPicker>(find.byType(EmojiPicker));
-    expect(picker.config.bottomActionBarConfig.backgroundColor,
-        WeChatColors.lightSurface);
-    expect(picker.config.bottomActionBarConfig.buttonColor,
-        WeChatColors.lightSurface);
-    expect(picker.config.bottomActionBarConfig.buttonIconColor,
-        WeChatColors.brandPrimary);
+    expect(picker.config.bottomActionBarConfig.enabled, isFalse);
+    expect(picker.config.bottomActionBarConfig.showSearchViewButton, isFalse);
+    expect(picker.config.bottomActionBarConfig.showBackspaceButton, isFalse);
     expect(picker.config.locale, const Locale('zh', 'CN'));
     final noRecents = picker.config.emojiViewConfig.noRecents as Text;
     expect(noRecents.data, '暂无最近使用');

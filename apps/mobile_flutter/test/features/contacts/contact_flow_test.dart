@@ -54,6 +54,10 @@ void main() {
 
   testWidgets('friend profile and settings strictly follow Figma order',
       (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = FakeContactsGateway();
     await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: gateway)));
     await tester.pumpAndSettle();
@@ -73,6 +77,32 @@ void main() {
     expect(find.byIcon(CupertinoIcons.phone), findsOneWidget);
     expect(find.byIcon(CupertinoIcons.video_camera), findsOneWidget);
 
+    expect(
+      tester.getSize(find.byKey(const Key('friend-identity-card'))).height,
+      126,
+    );
+    expect(find.text('刚刚在线'), findsOneWidget);
+    for (var index = 0; index < 3; index++) {
+      expect(
+        tester.getSize(find.byKey(Key('friend-moment-preview-$index'))),
+        const Size(87, 88),
+      );
+    }
+    final actionTops = ['message', 'voice', 'video']
+        .map(
+          (action) =>
+              tester.getTopLeft(find.byKey(Key('friend-action-$action'))).dy,
+        )
+        .toList(growable: false);
+    expect(actionTops[0], lessThan(actionTops[1]));
+    expect(actionTops[1], lessThan(actionTops[2]));
+    for (final action in ['message', 'voice', 'video']) {
+      expect(
+        tester.getSize(find.byKey(Key('friend-action-$action'))),
+        const Size(361, 48),
+      );
+    }
+
     await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
     await tester.pumpAndSettle();
     expect(find.text('好友设置'), findsOneWidget);
@@ -86,5 +116,53 @@ void main() {
         .toList(growable: false);
     expect(ordered, ordered.toList()..sort());
     expect(find.byType(CupertinoSwitch), findsOneWidget);
+  });
+
+  testWidgets(
+      'friend profile covers the root tab bar like the Figma detail page',
+      (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = FakeContactsGateway();
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: CupertinoTabScaffold(
+          tabBar: CupertinoTabBar(
+            items: const [
+              BottomNavigationBarItem(icon: Icon(CupertinoIcons.chat_bubble)),
+              BottomNavigationBarItem(icon: Icon(CupertinoIcons.person_2)),
+            ],
+          ),
+          tabBuilder: (_, __) => CupertinoTabView(
+            builder: (_) => ContactsPage(api: gateway),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('产品小艾'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('好友资料'), findsOneWidget);
+    expect(find.byType(CupertinoTabBar), findsNothing);
+  });
+
+  testWidgets('friend moments shrink without overflow below 393px baseline',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final gateway = FakeContactsGateway();
+    await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: gateway)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('产品小艾'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
   });
 }

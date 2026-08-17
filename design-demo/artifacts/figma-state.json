@@ -312,5 +312,22 @@
     "messages-chat",
     "contacts-friend",
     "finance"
-  ]
+  ],
+  "originalMappingRepair": {
+    "date": "2026-08-17",
+    "chatGallery": "107:3",
+    "chatMore": "110:60",
+    "emojiRecent": "110:143",
+    "emojiAll": "110:198",
+    "emojiCustom": "110:261",
+    "messageTextMenu": "111:2",
+    "messageImageGifMenu": "118:2",
+    "authoritativeFriendProfile": "35:63",
+    "removedInferredFriendSection": "107:9",
+    "palette": {
+      "page": "#EDEDED",
+      "surface": "#F7F7F7",
+      "elevated": "#FFFFFF"
+    }
+  }
 }

@@ -96,6 +96,9 @@ final class _ChatEmojiPanelState extends State<ChatEmojiPanel> {
                     ),
                     categoryViewConfig: const CategoryViewConfig(),
                     bottomActionBarConfig: BottomActionBarConfig(
+                      enabled: false,
+                      showBackspaceButton: false,
+                      showSearchViewButton: false,
                       backgroundColor: panelColor,
                       buttonColor: panelColor,
                       buttonIconColor: WeChatColors.brandPrimary,

@@ -21,6 +21,7 @@ final class ChatMorePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
+        key: const Key('chat-more-panel'),
         height: 232,
         child: GridView.builder(
           padding: const EdgeInsets.symmetric(
@@ -31,6 +32,7 @@ final class ChatMorePanel extends StatelessWidget {
             crossAxisCount: 4,
             mainAxisSpacing: WeChatSpacing.md,
             crossAxisSpacing: WeChatSpacing.md,
+            mainAxisExtent: 82,
           ),
           itemCount: _items.length,
           itemBuilder: (context, index) {
