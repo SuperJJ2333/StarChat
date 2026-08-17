@@ -125,6 +125,9 @@ final class _ChatComposerBarState extends State<ChatComposerBar> {
                 key: const Key('composer-send'),
                 icon: CupertinoIcons.paperplane_fill,
                 label: '发送',
+                surfaceKey: const Key('composer-send-surface'),
+                backgroundColor: WeChatColors.brandPressed,
+                iconColor: CupertinoColors.white,
                 onPressed: widget.onSend,
               )
             else
@@ -145,25 +148,38 @@ final class _ComposerIconButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.surfaceKey,
+    this.backgroundColor,
+    this.iconColor,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
+  final Key? surfaceKey;
+  final Color? backgroundColor;
+  final Color? iconColor;
 
   @override
-  Widget build(BuildContext context) => SizedBox.square(
-        dimension: WeChatDimensions.minimumTouchTarget,
-        child: Semantics(
-          button: true,
-          label: label,
-          child: CupertinoButton(
-            minimumSize: const Size.square(
-              WeChatDimensions.minimumTouchTarget,
+  Widget build(BuildContext context) => DecoratedBox(
+        key: surfaceKey,
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(WeChatRadius.control),
+        ),
+        child: SizedBox.square(
+          dimension: WeChatDimensions.minimumTouchTarget,
+          child: Semantics(
+            button: true,
+            label: label,
+            child: CupertinoButton(
+              minimumSize: const Size.square(
+                WeChatDimensions.minimumTouchTarget,
+              ),
+              padding: EdgeInsets.zero,
+              onPressed: onPressed,
+              child: Icon(icon, size: 24, color: iconColor),
             ),
-            padding: EdgeInsets.zero,
-            onPressed: onPressed,
-            child: Icon(icon, size: 24),
           ),
         ),
       );

@@ -152,6 +152,9 @@ final class _ContactsPageState extends State<ContactsPage> {
               children: [
                 ListView(
                   controller: scrollController,
+                  physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
                   padding: const EdgeInsets.only(right: 20),
                   children: [
                     if (businessApi != null) ...[
@@ -219,7 +222,20 @@ final class _ContactsPageState extends State<ContactsPage> {
                   right: 0,
                   bottom: 0,
                   width: 20,
-                  child: _ContactLetterIndex(onTap: _jumpTo),
+                  child: AnimatedBuilder(
+                    animation: scrollController,
+                    child: _ContactLetterIndex(onTap: _jumpTo),
+                    builder: (_, child) {
+                      final pullDown = scrollController.hasClients
+                          ? (-scrollController.offset)
+                              .clamp(0.0, double.infinity)
+                          : 0.0;
+                      return Transform.translate(
+                        offset: Offset(0, pullDown),
+                        child: child,
+                      );
+                    },
+                  ),
                 ),
               ],
             );

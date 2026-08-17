@@ -30,6 +30,7 @@ dependencies:
   webrtc_interface: 1.5.1
   emoji_picker_flutter: 4.5.3
   crypto: 3.0.7
+  characters: 1.4.1
   flutter_local_notifications: 19.4.2
   timezone: 0.10.1
 dev_dependencies:

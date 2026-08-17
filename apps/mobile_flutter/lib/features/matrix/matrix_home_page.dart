@@ -31,6 +31,8 @@ import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
 import 'chat_red_packet_controller.dart';
 import 'chat_red_packet_sheet.dart';
+import 'group_chat_info_controller.dart';
+import 'group_chat_info_page.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
 import 'matrix_message_reminder_backend.dart';
@@ -813,6 +815,28 @@ class _RoomPageState extends State<RoomPage> {
       );
 
   Future<void> _openConversationDetails() async {
+    if (isGroup) {
+      final infoController = GroupChatInfoController(
+        MatrixGroupChatInfoGateway(widget.room),
+      );
+      await Navigator.push<void>(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => GroupChatInfoPage(
+            controller: infoController,
+            onAddMember: () => _openGroupMemberPicker(infoController),
+            onSearchHistory: _openGroupHistorySearch,
+            onClearLocalHistory: _clearLocalHistory,
+            onLeft: () {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+          ),
+        ),
+      );
+      infoController.dispose();
+      return;
+    }
     final contact = peer;
     if (contact != null) {
       await showCupertinoModalPopup<void>(
@@ -843,36 +867,72 @@ class _RoomPageState extends State<RoomPage> {
       );
       return;
     }
-    await Navigator.push<void>(
+  }
+
+  Future<void> _openGroupMemberPicker(
+    GroupChatInfoController infoController,
+  ) async {
+    try {
+      final contacts = await widget.api.listContacts();
+      if (!mounted) return;
+      final existing = infoController.state.snapshot?.members
+              .map((member) => member.matrixUserId)
+              .toSet() ??
+          <String>{};
+      await Navigator.push<void>(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => GroupMemberPickerPage(
+            contacts: contacts,
+            existingMemberIds: existing,
+            onInvite: infoController.invite,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('无法添加群成员'),
+          content: const Text('通讯录加载失败，请检查网络后重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _openGroupHistorySearch() {
+    final messages = controller?.messages ?? const <RoomMessageViewModel>[];
+    Navigator.push<void>(
       context,
       CupertinoPageRoute(
-        builder: (_) => CupertinoPageScaffold(
-          navigationBar: const CupertinoNavigationBar(middle: Text('群聊信息')),
-          child: SafeArea(
-            child: ListView(
-              children: [
-                CupertinoListTile(
-                  title: const Text('设置拍一拍'),
-                  trailing: const CupertinoListTileChevron(),
-                  onTap: _editNudgeSuffix,
-                ),
-                for (final contact in contactsByMatrixId.values)
-                  CupertinoListTile(
-                    leading: UserAvatar(
-                      nickname: contact.displayName,
-                      fallbackSeed: contact.username,
-                      avatarUrl: contact.avatarUrl,
-                      size: 40,
-                    ),
-                    title: Text(contact.displayName),
-                    onTap: () => _openContact(contact),
-                  ),
-              ],
-            ),
-          ),
+        builder: (_) => GroupChatHistorySearchPage(
+          entries: [
+            for (final message in messages)
+              GroupChatHistoryEntry(
+                sender: _displayName(message.senderId, message.isOwn),
+                text: message.text,
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _clearLocalHistory() async {
+    final store = hiddenEvents;
+    if (store == null) return;
+    for (final message
+        in controller?.messages ?? const <RoomMessageViewModel>[]) {
+      await store.hide(widget.room.id, message.id);
+    }
+    if (mounted) setState(() {});
   }
 
   String _displayName(String matrixUserId, bool own) {

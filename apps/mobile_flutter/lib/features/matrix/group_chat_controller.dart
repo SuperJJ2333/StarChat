@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:characters/characters.dart';
 
 import '../contacts/contact_models.dart';
 
@@ -29,11 +30,11 @@ final class GroupChatService implements GroupChatGateway {
     required List<String> matrixUserIds,
   }) async {
     final uniqueInvitees = matrixUserIds.toSet().toList(growable: false);
-    if (uniqueInvitees.isEmpty) {
+    if (uniqueInvitees.length < 2) {
       throw ArgumentError.value(
         matrixUserIds,
         'matrixUserIds',
-        '群聊至少需要选择一位好友',
+        '群聊至少需要选择两位好友',
       );
     }
     final roomId = await backend.createPrivateEncryptedRoom(
@@ -62,15 +63,20 @@ final class GroupChatState {
 }
 
 final class GroupChatController extends ChangeNotifier {
-  GroupChatController({required this.contacts, required this.groups});
+  GroupChatController({
+    required this.contacts,
+    required this.groups,
+    required this.currentUserDisplayName,
+  });
 
   final ContactsGateway contacts;
   final GroupChatGateway groups;
+  final String currentUserDisplayName;
   GroupChatState state = const GroupChatState();
 
   bool get canCreate =>
       state.status != GroupChatStatus.creating &&
-      state.selectedMatrixUserIds.isNotEmpty;
+      state.selectedMatrixUserIds.length >= 2;
 
   Future<void> load() async {
     _set(GroupChatState(
@@ -108,12 +114,16 @@ final class GroupChatController extends ChangeNotifier {
   Future<String?> create(String requestedName) async {
     if (!canCreate) return null;
     final invitees = state.selectedMatrixUserIds.toList(growable: false);
-    final fallbackName = state.contacts
+    final selectedNames = state.contacts
         .where((contact) => invitees.contains(contact.matrixUserId))
-        .map((contact) => contact.displayName)
-        .join('、');
-    final name =
+        .map((contact) => contact.displayName);
+    final fallbackName = [
+      currentUserDisplayName.trim().isEmpty ? '我' : currentUserDisplayName,
+      ...selectedNames,
+    ].take(3).join('、');
+    final rawName =
         requestedName.trim().isEmpty ? fallbackName : requestedName.trim();
+    final name = rawName.characters.take(20).toString();
     _set(GroupChatState(
       status: GroupChatStatus.creating,
       contacts: state.contacts,

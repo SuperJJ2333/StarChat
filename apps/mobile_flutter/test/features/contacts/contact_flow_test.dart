@@ -120,6 +120,31 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('contacts index follows the list surface during pull down',
+      (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      CupertinoApp(home: ContactsPage(api: IndexedContactsGateway())),
+    );
+    await tester.pumpAndSettle();
+
+    final index = find.byKey(const Key('contact-index'));
+    final firstSection = find.byKey(const Key('contact-section-星标好友'));
+    final indexTop = tester.getTopLeft(index).dy;
+    final indexHeight = tester.getSize(index).height;
+    final sectionTop = tester.getTopLeft(firstSection).dy;
+
+    await tester.drag(find.byType(ListView).first, const Offset(0, 72));
+    await tester.pump();
+
+    expect(tester.getTopLeft(firstSection).dy, greaterThan(sectionTop + 20));
+    expect(tester.getTopLeft(index).dy, greaterThan(indexTop + 20));
+    expect(tester.getSize(index).height, indexHeight);
+  });
   test('contact display name is remark then nickname then username', () {
     const base = ContactSummary(
       userId: 'uuid',

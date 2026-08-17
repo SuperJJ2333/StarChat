@@ -155,9 +155,19 @@ final class _AppHomeState extends State<AppHome> {
   }
 
   Future<void> _createGroupChat() async {
+    String currentUserDisplayName = '我';
+    try {
+      final profile = await widget.api.loadProfile();
+      currentUserDisplayName =
+          profile.nickname.isEmpty ? profile.username : profile.nickname;
+    } catch (_) {
+      // Group creation remains available when the cached profile is offline.
+    }
+    if (!mounted) return;
     final controller = GroupChatController(
       contacts: widget.api,
       groups: widget.matrix,
+      currentUserDisplayName: currentUserDisplayName,
     );
     final roomId = await Navigator.push<String>(
       context,

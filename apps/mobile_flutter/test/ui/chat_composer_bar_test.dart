@@ -4,14 +4,14 @@ import 'package:liuhetong_mobile/ui/chat/chat_composer_bar.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_composer_state.dart';
 
 void main() {
-  test('send is visible only when the focused composer has text', () {
+  test('send is visible whenever the composer has text including emoji', () {
     expect(
       const ChatComposerState(
         focused: false,
         hasText: true,
         panel: ComposerPanel.none,
       ).showsSend,
-      isFalse,
+      isTrue,
     );
     expect(
       const ChatComposerState(
@@ -99,5 +99,37 @@ void main() {
       tester.getSize(find.byKey(const Key('composer-send'))),
       const Size.square(44),
     );
+    final surface = tester.widget<DecoratedBox>(
+      find.byKey(const Key('composer-send-surface')),
+    );
+    expect(
+      (surface.decoration as BoxDecoration).color,
+      const Color(0xFF06AD56),
+    );
+  });
+
+  testWidgets('emoji without focus replaces more with pressed send',
+      (tester) async {
+    final controller = TextEditingController(text: '😀');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: SizedBox(
+          width: 393,
+          child: ChatComposerBar(
+            controller: controller,
+            onMore: () {},
+            onVoice: () {},
+            onEmoji: () {},
+            onSend: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('composer-more')), findsNothing);
+    expect(find.byKey(const Key('composer-send')), findsOneWidget);
+    expect(find.byKey(const Key('composer-send-surface')), findsOneWidget);
   });
 }

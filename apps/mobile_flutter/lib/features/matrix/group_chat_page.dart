@@ -70,6 +70,7 @@ final class _GroupChatPageState extends State<GroupChatPage> {
                           key: const Key('group-chat-name'),
                           controller: name,
                           placeholder: '群聊名称（可选）',
+                          maxLength: 20,
                           padding: const EdgeInsets.all(14),
                         ),
                       ),
@@ -107,7 +108,8 @@ final class _GroupChatPageState extends State<GroupChatPage> {
                         child: ModernActionButton(
                           key: const Key('group-chat-create'),
                           icon: CupertinoIcons.person_3_fill,
-                          label: '创建群聊（${state.selectedMatrixUserIds.length}）',
+                          label:
+                              '创建群聊（${state.selectedMatrixUserIds.length + 1}）',
                           loading: state.status == GroupChatStatus.creating,
                           onPressed:
                               widget.controller.canCreate ? _create : null,

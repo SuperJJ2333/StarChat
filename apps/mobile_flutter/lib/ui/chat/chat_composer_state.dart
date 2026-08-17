@@ -11,5 +11,5 @@ final class ChatComposerState {
   final bool hasText;
   final ComposerPanel panel;
 
-  bool get showsSend => focused && hasText;
+  bool get showsSend => hasText;
 }

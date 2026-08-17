@@ -87,41 +87,59 @@ void main() {
     expect(backend.invitees, ['@bob:example.test', '@carol:example.test']);
   });
 
-  test('group service accepts one invited friend as a non-direct room',
-      () async {
+  test('group service rejects fewer than two invited friends', () async {
     final backend = FakeGroupChatBackend();
     final service = GroupChatService(backend);
 
-    final roomId = await service.createEncryptedGroupChat(
-      name: '双人群',
-      matrixUserIds: const ['@bob:example.test'],
+    expect(
+      () => service.createEncryptedGroupChat(
+        name: '人数不足',
+        matrixUserIds: const ['@bob:example.test'],
+      ),
+      throwsArgumentError,
     );
-
-    expect(roomId, '!encrypted-group:example.test');
-    expect(backend.invitees, ['@bob:example.test']);
   });
 
-  test('group creation allows one friend plus the current member', () async {
+  test('group creation requires two friends plus the current member', () async {
     final groups = FakeGroupChatGateway();
     final controller = GroupChatController(
       contacts: FakeContactsGateway(),
       groups: groups,
+      currentUserDisplayName: 'Alice',
     );
 
     await controller.load();
     expect(controller.state.contacts, hasLength(2));
     controller.toggle('@bob:example.test');
+    expect(controller.canCreate, isFalse);
+    controller.toggle('@carol:example.test');
     expect(controller.canCreate, isTrue);
 
-    final roomId = await controller.create('周末活动群');
+    final roomId = await controller.create('');
 
     expect(roomId, '!group:example.test');
-    expect(groups.name, '周末活动群');
+    expect(groups.name, 'Alice、bob、carol');
     expect(
       groups.invitees,
-      ['@bob:example.test'],
+      ['@bob:example.test', '@carol:example.test'],
     );
     expect(controller.state.status, GroupChatStatus.created);
+  });
+
+  test('group name is limited to twenty unicode characters', () async {
+    final groups = FakeGroupChatGateway();
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: groups,
+      currentUserDisplayName: 'Alice',
+    );
+    await controller.load();
+    controller.toggle('@bob:example.test');
+    controller.toggle('@carol:example.test');
+
+    await controller.create('一二三四五六七八九十一二三四五六七八九十超出');
+
+    expect(groups.name, '一二三四五六七八九十一二三四五六七八九十');
   });
 
   testWidgets('group creation page selects contacts and returns the room id',
@@ -130,6 +148,7 @@ void main() {
     final controller = GroupChatController(
       contacts: FakeContactsGateway(),
       groups: groups,
+      currentUserDisplayName: 'Alice',
     );
     String? createdRoomId;
 
