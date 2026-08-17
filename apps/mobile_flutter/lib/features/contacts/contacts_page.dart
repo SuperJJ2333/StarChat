@@ -5,6 +5,7 @@ import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import 'contact_models.dart';
+import 'contact_profile_sections.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
 
@@ -159,7 +160,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
-          middle: Text(contact.displayName),
+          middle: const Text('好友资料'),
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
             onPressed: _openMore,
@@ -168,43 +169,19 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
         ),
         child: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.all(20),
             children: [
-              Center(
-                child: UserAvatar(
-                  nickname: contact.displayName,
-                  fallbackSeed: contact.username,
-                  avatarUrl: contact.avatarUrl,
-                  size: 88,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: Text(
-                  contact.displayName,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              ModernActionButton(
-                icon: CupertinoIcons.chat_bubble_2,
-                label: '消息',
-                onPressed: () => widget.onMessage?.call(contact),
-              ),
-              const SizedBox(height: 10),
-              ModernActionButton(
-                icon: CupertinoIcons.phone,
-                label: '语音通话',
-                onPressed: () => widget.onVoice?.call(contact),
-              ),
-              const SizedBox(height: 10),
-              ModernActionButton(
-                icon: CupertinoIcons.video_camera,
-                label: '视频通话',
-                onPressed: () => widget.onVideo?.call(contact),
+              FriendIdentityCard(contact: contact),
+              const FriendMomentsPreview(),
+              FriendActionRow(
+                onMessage: widget.onMessage == null
+                    ? null
+                    : () => widget.onMessage!(contact),
+                onVoice: widget.onVoice == null
+                    ? null
+                    : () => widget.onVoice!(contact),
+                onVideo: widget.onVideo == null
+                    ? null
+                    : () => widget.onVideo!(contact),
               ),
             ],
           ),
@@ -237,6 +214,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   late final remark = TextEditingController(text: widget.contact.remark);
   late final tags = TextEditingController(text: widget.contact.tags.join(','));
   late String permission = widget.contact.momentsPermission;
+  late ContactDetails current = widget.contact;
+  bool blocked = false;
 
   @override
   void dispose() {
@@ -266,9 +245,9 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       ) ??
       false;
 
-  Future<void> _save() async {
+  Future<void> _persist() async {
     final updated = await widget.api.updateContactDetails(
-      widget.contact,
+      current,
       remark: remark.text.trim().isEmpty ? null : remark.text.trim(),
       tags: tags.text
           .split(',')
@@ -277,15 +256,70 @@ final class _ContactMorePageState extends State<ContactMorePage> {
           .toList(growable: false),
       momentsPermission: permission,
     );
-    if (mounted) Navigator.pop(context, ContactMoreResult.updated(updated));
+    if (mounted) setState(() => current = updated);
   }
 
-  Future<void> _block() async {
+  Future<void> _editText(
+    String title,
+    TextEditingController controller,
+  ) async {
+    final accepted = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: Text(title),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: CupertinoTextField(controller: controller),
+            ),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (accepted) await _persist();
+  }
+
+  Future<void> _choosePermission() async {
+    final selected = await showCupertinoModalPopup<String>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: const Text('朋友圈权限'),
+        actions: [
+          for (final item in const {
+            'DEFAULT': '全部可见',
+            'HIDE_MINE': '不让他看我',
+            'HIDE_THEIRS': '不看他',
+            'MUTUAL_HIDE': '互相不可见',
+          }.entries)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(sheetContext, item.key),
+              child: Text(item.value),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+    if (selected == null || selected == permission) return;
+    setState(() => permission = selected);
+    await _persist();
+  }
+
+  Future<void> _setBlocked(bool value) async {
+    if (!value || blocked) return;
     if (!await _confirm('加入黑名单', '加入后将不再接收对方的好友互动。')) return;
     await widget.api.blockContact(widget.contact.userId);
-    if (mounted) {
-      Navigator.pop(context, ContactMoreResult.updated(widget.contact));
-    }
+    if (mounted) setState(() => blocked = true);
   }
 
   Future<void> _delete() async {
@@ -296,53 +330,61 @@ final class _ContactMorePageState extends State<ContactMorePage> {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('更多')),
+        navigationBar: CupertinoNavigationBar(
+          middle: const Text('好友设置'),
+          leading: CupertinoNavigationBarBackButton(
+            onPressed: () => Navigator.pop(
+              context,
+              ContactMoreResult.updated(current),
+            ),
+          ),
+        ),
         child: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.all(16),
             children: [
-              CupertinoTextField(controller: remark, placeholder: '备注名'),
-              const SizedBox(height: 12),
-              CupertinoTextField(
-                controller: tags,
-                placeholder: '标签（逗号分隔）',
-              ),
-              CupertinoListSection.insetGrouped(
-                header: const Text('朋友圈权限'),
+              CupertinoListSection(
+                margin: const EdgeInsets.only(top: 12),
                 children: [
-                  for (final item in const {
-                    'DEFAULT': '默认',
-                    'HIDE_MINE': '不让他看我',
-                    'HIDE_THEIRS': '不看他',
-                    'MUTUAL_HIDE': '互相不可见',
-                  }.entries)
-                    CupertinoListTile(
-                      title: Text(item.value),
-                      trailing: permission == item.key
-                          ? const Icon(CupertinoIcons.check_mark)
-                          : null,
-                      onTap: () => setState(() => permission = item.key),
+                  CupertinoListTile(
+                    title: const Text('备注'),
+                    additionalInfo: Text(remark.text),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: () => _editText('设置备注', remark),
+                  ),
+                  CupertinoListTile(
+                    title: const Text('标签'),
+                    additionalInfo: Text(tags.text),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: () => _editText('设置标签', tags),
+                  ),
+                  CupertinoListTile(
+                    title: const Text('朋友圈权限'),
+                    additionalInfo: Text(
+                      permission == 'DEFAULT' ? '全部可见' : '已限制',
                     ),
+                    trailing: const CupertinoListTileChevron(),
+                    onTap: _choosePermission,
+                  ),
+                  CupertinoListTile(
+                    title: const Text('黑名单'),
+                    trailing: CupertinoSwitch(
+                      value: blocked,
+                      onChanged: _setBlocked,
+                    ),
+                  ),
                 ],
               ),
-              ModernActionButton(
-                icon: CupertinoIcons.check_mark,
-                label: '保存',
-                onPressed: _save,
-              ),
-              const SizedBox(height: 10),
-              ModernActionButton(
-                icon: CupertinoIcons.nosign,
-                label: '加入黑名单',
-                kind: ModernActionKind.danger,
-                onPressed: _block,
-              ),
-              const SizedBox(height: 10),
-              ModernActionButton(
-                icon: CupertinoIcons.delete,
-                label: '删除好友',
-                kind: ModernActionKind.danger,
-                onPressed: _delete,
+              CupertinoListSection(
+                margin: const EdgeInsets.only(top: 12),
+                children: [
+                  CupertinoListTile(
+                    title: const Text(
+                      '删除好友',
+                      style: TextStyle(color: CupertinoColors.systemRed),
+                    ),
+                    onTap: _delete,
+                  ),
+                ],
               ),
             ],
           ),

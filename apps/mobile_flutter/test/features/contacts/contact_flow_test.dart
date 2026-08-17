@@ -52,7 +52,7 @@ void main() {
     expect(base.copyWith(remark: '', nickname: '').displayName, 'alice');
   });
 
-  testWidgets('contacts hide UUID and move settings behind More',
+  testWidgets('friend profile and settings strictly follow Figma order',
       (tester) async {
     final gateway = FakeContactsGateway();
     await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: gateway)));
@@ -63,18 +63,28 @@ void main() {
     await tester.tap(find.text('产品小艾'));
     await tester.pumpAndSettle();
 
-    expect(find.text('消息'), findsOneWidget);
+    expect(find.text('好友资料'), findsOneWidget);
+    expect(find.text('畅聊号：alice'), findsOneWidget);
+    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.text('发消息'), findsOneWidget);
     expect(find.text('语音通话'), findsOneWidget);
     expect(find.text('视频通话'), findsOneWidget);
-    expect(find.text('备注名'), findsNothing);
-    expect(find.text('加入黑名单'), findsNothing);
+    expect(find.byIcon(CupertinoIcons.chat_bubble_2), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.phone), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.video_camera), findsOneWidget);
 
     await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
     await tester.pumpAndSettle();
-    expect(find.text('备注名'), findsOneWidget);
-    expect(find.text('标签（逗号分隔）'), findsOneWidget);
+    expect(find.text('好友设置'), findsOneWidget);
+    expect(find.text('备注'), findsOneWidget);
+    expect(find.text('标签'), findsOneWidget);
     expect(find.text('朋友圈权限'), findsOneWidget);
-    expect(find.text('加入黑名单'), findsOneWidget);
+    expect(find.text('黑名单'), findsOneWidget);
     expect(find.text('删除好友'), findsOneWidget);
+    final ordered = ['备注', '标签', '朋友圈权限', '黑名单', '删除好友']
+        .map((label) => tester.getTopLeft(find.text(label)).dy)
+        .toList(growable: false);
+    expect(ordered, ordered.toList()..sort());
+    expect(find.byType(CupertinoSwitch), findsOneWidget);
   });
 }
