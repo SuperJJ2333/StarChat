@@ -15,12 +15,14 @@ final class ContactsPage extends StatefulWidget {
     this.onMessage,
     this.onVoice,
     this.onVideo,
+    this.onGroupChat,
   });
 
   final ContactsGateway api;
   final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
+  final VoidCallback? onGroupChat;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
@@ -68,9 +70,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                     ),
                   ),
                 ),
-                const WeChatListTile(
-                  leading: Icon(CupertinoIcons.person_3_fill),
-                  title: Text('群聊'),
+                WeChatListTile(
+                  leading: const Icon(CupertinoIcons.person_3_fill),
+                  title: const Text('群聊'),
+                  onTap: widget.onGroupChat,
                 ),
                 WeChatListTile(
                   leading: const Icon(CupertinoIcons.tag_fill),

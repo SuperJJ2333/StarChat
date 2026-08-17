@@ -5,6 +5,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
+import 'profile_avatar_page.dart';
 
 final class ProfileExperiencePage extends StatefulWidget {
   const ProfileExperiencePage({
@@ -328,7 +329,14 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                     avatarUrl: profile.avatarUrl,
                     size: 48,
                   ),
-                  onTap: widget.controller.chooseAvatar,
+                  onTap: () => Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) => ProfileAvatarPage(
+                        controller: widget.controller,
+                      ),
+                    ),
+                  ),
                 ),
                 CupertinoListTile(
                   title: const Text('畅聊号'),
@@ -351,34 +359,6 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
               controller: signature,
               placeholder: '个性签名',
               padding: const EdgeInsets.all(16),
-            ),
-            const SizedBox(height: 16),
-            ModernActionButton(
-              icon: CupertinoIcons.photo,
-              label: '选择并裁剪头像',
-              onPressed: widget.controller.chooseAvatar,
-            ),
-            if (state.candidate != null) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.memory(state.candidate!.bytes, height: 160),
-              ),
-              const SizedBox(height: 8),
-              ModernActionButton(
-                icon: CupertinoIcons.cloud_upload,
-                label: state.status == ProfileStatus.failed ? '重试上传' : '确认上传',
-                loading: state.status == ProfileStatus.uploading,
-                onPressed: state.status == ProfileStatus.failed
-                    ? widget.controller.retryAvatar
-                    : widget.controller.uploadAvatar,
-              ),
-            ],
-            ModernActionButton(
-              icon: CupertinoIcons.person_crop_circle_badge_minus,
-              label: '恢复默认头像',
-              kind: ModernActionKind.secondary,
-              onPressed: widget.controller.restoreDefaultAvatar,
             ),
             if (state.message != null)
               Text(

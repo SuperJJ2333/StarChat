@@ -9,6 +9,8 @@ import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
+import 'features/matrix/group_chat_controller.dart';
+import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
@@ -125,6 +127,39 @@ final class _AppHomeState extends State<AppHome> {
     }
   }
 
+  Future<void> _createGroupChat() async {
+    final controller = GroupChatController(
+      contacts: widget.api,
+      groups: widget.matrix,
+    );
+    final roomId = await Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (pageContext) => GroupChatPage(
+          controller: controller,
+          onCreated: (createdRoomId) =>
+              Navigator.pop(pageContext, createdRoomId),
+        ),
+      ),
+    );
+    controller.dispose();
+    if (!mounted || roomId == null) return;
+    final room = widget.matrix.sdkClient.getRoomById(roomId);
+    if (room == null) return;
+    await Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => RoomPage(
+          api: widget.api,
+          room: room,
+          roomName: room.getLocalizedDisplayname(),
+          onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+          onVideo: (contact) => _openCall(contact, CallMediaType.video),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     calls.removeListener(_callChanged);
@@ -166,8 +201,14 @@ final class _AppHomeState extends State<AppHome> {
             tabBuilder: (_, index) => CupertinoTabView(
               builder: (_) => switch (index) {
                 0 => MatrixHomePage(
+                    api: widget.api,
                     matrix: widget.matrix,
                     themeController: widget.themeController,
+                    onCreateGroup: _createGroupChat,
+                    onVoice: (contact) =>
+                        _openCall(contact, CallMediaType.audio),
+                    onVideo: (contact) =>
+                        _openCall(contact, CallMediaType.video),
                   ),
                 1 => ContactsTabPage(
                     api: widget.api,
@@ -177,6 +218,7 @@ final class _AppHomeState extends State<AppHome> {
                         _openCall(contact, CallMediaType.audio),
                     onVideo: (contact) =>
                         _openCall(contact, CallMediaType.video),
+                    onGroupChat: _createGroupChat,
                   ),
                 2 => DiscoveryPage(api: widget.api),
                 _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
@@ -205,12 +247,14 @@ final class ContactsTabPage extends StatefulWidget {
     required this.directChats,
     required this.onVoice,
     required this.onVideo,
+    required this.onGroupChat,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final DirectChatController directChats;
   final ContactAction onVoice;
   final ContactAction onVideo;
+  final VoidCallback onGroupChat;
 
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
@@ -227,10 +271,12 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
         context,
         CupertinoPageRoute(
           builder: (_) => RoomPage(
+            api: widget.api,
             room: room,
             roomName: contact.displayName,
-            onVoiceCall: () => widget.onVoice(contact),
-            onVideoCall: () => widget.onVideo(contact),
+            initialContact: contact,
+            onVoice: widget.onVoice,
+            onVideo: widget.onVideo,
           ),
         ),
       );
@@ -258,6 +304,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
         onMessage: _openMessage,
         onVoice: widget.onVoice,
         onVideo: widget.onVideo,
+        onGroupChat: widget.onGroupChat,
       );
 }
 

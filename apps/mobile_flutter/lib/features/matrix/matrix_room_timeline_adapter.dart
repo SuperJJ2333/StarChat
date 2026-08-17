@@ -1,35 +1,87 @@
+import 'dart:typed_data';
+
 import 'package:matrix/matrix.dart';
 
 import 'room_timeline_controller.dart';
 
+const changliaoRedPacketMessageType = 'com.changliao.red_packet';
+
 final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   MatrixRoomTimelineAdapter(this.room, this.timeline);
+
   final Room room;
   final Timeline timeline;
 
   @override
-  List<RoomMessageViewModel> snapshot() => timeline.events.reversed.map((event) {
+  List<RoomMessageViewModel> snapshot() => timeline.events
+      .where((event) => event.type == EventTypes.Message)
+      .toList(growable: false)
+      .reversed
+      .map(_message)
+      .toList(growable: false);
+
+  RoomMessageViewModel _message(Event event) {
     final status = event.status.isError
         ? RoomDeliveryState.failed
         : event.status.isSending
             ? RoomDeliveryState.sending
             : RoomDeliveryState.sent;
+    final messageType = event.messageType;
+    final info = event.content['info'];
+    final durationMilliseconds =
+        info is Map ? int.tryParse(info['duration']?.toString() ?? '') : null;
     return RoomMessageViewModel(
       id: event.eventId,
       senderId: event.senderId,
       text: event.redacted ? '消息已撤回' : event.text,
       isOwn: event.senderId == room.client.userID,
       deliveryState: status,
+      timestamp: event.originServerTs.toLocal(),
+      kind: switch (messageType) {
+        MessageTypes.Image => RoomMessageKind.image,
+        MessageTypes.Audio => RoomMessageKind.voice,
+        MessageTypes.File => RoomMessageKind.file,
+        changliaoRedPacketMessageType => RoomMessageKind.redPacket,
+        _ => RoomMessageKind.text,
+      },
+      packetId: event.content['packet_id']?.toString(),
+      greeting: event.content['greeting']?.toString(),
+      voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),
     );
-  }).toList(growable: false);
+  }
 
   @override
   Future<String> sendText(String text) async =>
-      await room.sendTextEvent(text, parseCommands: false) ?? (throw StateError('消息发送失败'));
+      await room.sendTextEvent(text, parseCommands: false) ??
+      (throw StateError('消息发送失败'));
+
+  @override
+  Future<String> sendRedPacketReference(
+    String packetId,
+    String greeting,
+  ) async =>
+      await room.sendEvent({
+        'msgtype': changliaoRedPacketMessageType,
+        'body': '[畅聊彩币红包]',
+        'packet_id': packetId,
+        'greeting': greeting,
+      }) ??
+      (throw StateError('红包消息发送失败'));
+
+  @override
+  Future<Uint8List> loadAttachment(String eventId) async {
+    final event = timeline.events.firstWhere(
+      (candidate) => candidate.eventId == eventId,
+    );
+    return (await event.downloadAndDecryptAttachment()).bytes;
+  }
 
   @override
   Future<void> retry(String transactionId) async {
-    throw UnsupportedError('请重新发送失败消息');
+    final event = timeline.events.firstWhere(
+      (candidate) => candidate.eventId == transactionId,
+    );
+    await event.sendAgain();
   }
 
   @override

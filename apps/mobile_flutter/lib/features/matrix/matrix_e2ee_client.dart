@@ -2,7 +2,9 @@ import 'package:matrix/matrix.dart';
 import 'dart:typed_data';
 import '../auth/login_controller.dart';
 import 'direct_chat_controller.dart';
+import 'group_chat_controller.dart';
 import 'matrix_direct_chat_adapter.dart';
+import 'matrix_group_chat_adapter.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -14,7 +16,7 @@ abstract interface class MatrixSessionGateway {
 }
 
 abstract interface class MatrixE2eeClient
-    implements MatrixSessionGateway, DirectChatGateway {
+    implements MatrixSessionGateway, DirectChatGateway, GroupChatGateway {
   Future<void> login(String userId, String password);
   Future<void> verifyDevice(String deviceId);
   Future<void> backupKeysToEncryptedStore();
@@ -162,4 +164,14 @@ final class MatrixSdkE2eeClient
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) =>
       DirectChatService(MatrixDirectChatBackend(client))
           .openOrCreateDirectChat(matrixUserId);
+
+  @override
+  Future<String> createEncryptedGroupChat({
+    required String name,
+    required List<String> matrixUserIds,
+  }) =>
+      GroupChatService(MatrixGroupChatBackend(client)).createEncryptedGroupChat(
+        name: name,
+        matrixUserIds: matrixUserIds,
+      );
 }

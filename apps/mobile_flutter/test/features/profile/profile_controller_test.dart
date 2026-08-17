@@ -1,7 +1,8 @@
-import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
+import 'package:liuhetong_mobile/features/profile/profile_avatar_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
@@ -53,7 +54,10 @@ final class FakeAvatarSource implements AvatarSource {
     calls++;
     if (error != null) throw error!;
     return AvatarCandidate(
-        bytes: Uint8List.fromList([1, 2, 3]), mimeType: 'image/jpeg');
+        bytes: base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        ),
+        mimeType: 'image/png');
   }
 }
 
@@ -145,5 +149,29 @@ void main() {
     expect(settingsLabel.style?.color, isNot(WeChatColors.brandPrimary));
     expect(find.text('退出登录'), findsNothing);
     expect(find.byType(CupertinoTextField), findsNothing);
+  });
+
+  testWidgets('profile avatar opens a dedicated preview and upload flow',
+      (tester) async {
+    final controller = ProfileController(
+      gateway: FakeProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+    );
+    await controller.load();
+
+    await tester.pumpWidget(
+      CupertinoApp(home: ProfileDetailsPage(controller: controller)),
+    );
+    await tester.tap(find.text('头像'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProfileAvatarPage), findsOneWidget);
+    await tester.tap(find.byKey(const Key('profile-avatar-choose')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('profile-avatar-preview')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('profile-avatar-upload')));
+    await tester.pumpAndSettle();
+
+    expect(controller.state.profile!.avatarUrl, 'https://signed/avatar');
   });
 }

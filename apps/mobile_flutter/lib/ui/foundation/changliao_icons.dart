@@ -30,6 +30,7 @@ abstract final class ChangliaoIcons {
   static const IconData back = CupertinoIcons.back;
   static const IconData more = CupertinoIcons.ellipsis;
   static const IconData attachment = CupertinoIcons.paperclip;
+  static const IconData emoji = CupertinoIcons.smiley;
   static const IconData muted = CupertinoIcons.bell_slash;
   static const IconData speaker = CupertinoIcons.speaker_2;
   static const IconData speakerFilled = CupertinoIcons.speaker_3_fill;

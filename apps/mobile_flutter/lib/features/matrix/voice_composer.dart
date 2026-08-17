@@ -21,7 +21,16 @@ final class _VoiceComposerState extends State<VoiceComposer> {
   String? message;
   String get path =>
       '${Directory.systemTemp.path}${Platform.pathSeparator}liuhetong-${DateTime.now().microsecondsSinceEpoch}.m4a';
-  Future<void> start() => widget.service.startVoiceRecording(path);
+  Future<void> start() async {
+    try {
+      await widget.service.startVoiceRecording(path);
+    } catch (_) {
+      message = '无法使用麦克风，请检查录音权限';
+      if (mounted) setState(() {});
+      rethrow;
+    }
+  }
+
   Future<void> stop(Duration _) async {
     previewPath = await widget.service.stopVoiceRecordingForPreview();
     if (mounted) setState(() {});

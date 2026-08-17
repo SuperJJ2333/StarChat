@@ -1,0 +1,158 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+import 'package:liuhetong_mobile/features/matrix/group_chat_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/group_chat_page.dart';
+
+final class FakeContactsGateway implements ContactsGateway {
+  @override
+  Future<List<ContactSummary>> listContacts() async => const [
+        ContactSummary(
+          userId: 'user-bob',
+          username: 'bob',
+          matrixUserId: '@bob:example.test',
+        ),
+        ContactSummary(
+          userId: 'user-carol',
+          username: 'carol',
+          matrixUserId: '@carol:example.test',
+        ),
+      ];
+
+  @override
+  Future<void> blockContact(String userId) async {}
+
+  @override
+  Future<void> deleteContact(String userId) async {}
+
+  @override
+  Future<ContactDetails> updateContactDetails(
+    ContactDetails contact, {
+    required String? remark,
+    required List<String> tags,
+    required String momentsPermission,
+  }) async =>
+      contact;
+}
+
+final class FakeGroupChatGateway implements GroupChatGateway {
+  String? name;
+  List<String>? invitees;
+
+  @override
+  Future<String> createEncryptedGroupChat({
+    required String name,
+    required List<String> matrixUserIds,
+  }) async {
+    this.name = name;
+    invitees = matrixUserIds;
+    return '!group:example.test';
+  }
+}
+
+final class FakeGroupChatBackend implements GroupChatBackend {
+  String? name;
+  List<String>? invitees;
+
+  @override
+  Future<String> createPrivateEncryptedRoom({
+    required String name,
+    required List<String> matrixUserIds,
+  }) async {
+    this.name = name;
+    invitees = matrixUserIds;
+    return '!encrypted-group:example.test';
+  }
+
+  @override
+  Future<void> waitUntilJoined(String roomId) async {}
+}
+
+void main() {
+  test('group service rejects duplicates and waits for the encrypted room',
+      () async {
+    final backend = FakeGroupChatBackend();
+    final service = GroupChatService(backend);
+
+    final roomId = await service.createEncryptedGroupChat(
+      name: '项目群',
+      matrixUserIds: const [
+        '@bob:example.test',
+        '@carol:example.test',
+        '@bob:example.test',
+      ],
+    );
+
+    expect(roomId, '!encrypted-group:example.test');
+    expect(backend.invitees, ['@bob:example.test', '@carol:example.test']);
+  });
+
+  test('group service accepts one invited friend as a non-direct room',
+      () async {
+    final backend = FakeGroupChatBackend();
+    final service = GroupChatService(backend);
+
+    final roomId = await service.createEncryptedGroupChat(
+      name: '双人群',
+      matrixUserIds: const ['@bob:example.test'],
+    );
+
+    expect(roomId, '!encrypted-group:example.test');
+    expect(backend.invitees, ['@bob:example.test']);
+  });
+
+  test('group creation allows one friend plus the current member', () async {
+    final groups = FakeGroupChatGateway();
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: groups,
+    );
+
+    await controller.load();
+    expect(controller.state.contacts, hasLength(2));
+    controller.toggle('@bob:example.test');
+    expect(controller.canCreate, isTrue);
+
+    final roomId = await controller.create('周末活动群');
+
+    expect(roomId, '!group:example.test');
+    expect(groups.name, '周末活动群');
+    expect(
+      groups.invitees,
+      ['@bob:example.test'],
+    );
+    expect(controller.state.status, GroupChatStatus.created);
+  });
+
+  testWidgets('group creation page selects contacts and returns the room id',
+      (tester) async {
+    final groups = FakeGroupChatGateway();
+    final controller = GroupChatController(
+      contacts: FakeContactsGateway(),
+      groups: groups,
+    );
+    String? createdRoomId;
+
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: GroupChatPage(
+          controller: controller,
+          onCreated: (roomId) => createdRoomId = roomId,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('发起群聊'), findsOneWidget);
+    await tester.tap(find.text('bob'));
+    await tester.tap(find.text('carol'));
+    await tester.enterText(
+      find.byKey(const Key('group-chat-name')),
+      '周末活动群',
+    );
+    await tester.tap(find.byKey(const Key('group-chat-create')));
+    await tester.pumpAndSettle();
+
+    expect(createdRoomId, '!group:example.test');
+  });
+}

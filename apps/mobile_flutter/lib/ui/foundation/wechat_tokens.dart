@@ -49,6 +49,7 @@ abstract final class WeChatDimensions {
   static const authBrandMark = 64.0;
   static const conversationTileHeight = 72.0;
   static const conversationAvatar = 48.0;
+  static const messageAvatar = 40.0;
   static const composerMinHeight = 56.0;
   static const callControl = 72.0;
 }

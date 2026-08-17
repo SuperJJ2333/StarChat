@@ -9,6 +9,7 @@ final class ChatComposerBar extends StatelessWidget {
     required this.controller,
     required this.onAttachment,
     required this.onVoice,
+    required this.onEmoji,
     required this.onSend,
     this.onSubmitted,
   });
@@ -16,6 +17,7 @@ final class ChatComposerBar extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onAttachment;
   final VoidCallback onVoice;
+  final VoidCallback onEmoji;
   final VoidCallback onSend;
   final ValueChanged<String>? onSubmitted;
 
@@ -42,6 +44,12 @@ final class ChatComposerBar extends StatelessWidget {
               icon: ChangliaoIcons.microphone,
               label: '语音消息',
               onPressed: onVoice,
+            ),
+            _ComposerIconButton(
+              key: const Key('chat-composer-emoji'),
+              icon: ChangliaoIcons.emoji,
+              label: '表情',
+              onPressed: onEmoji,
             ),
             Expanded(
               child: CupertinoTextField(
