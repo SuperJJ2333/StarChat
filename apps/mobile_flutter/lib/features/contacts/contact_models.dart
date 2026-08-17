@@ -8,6 +8,7 @@ final class ContactSummary {
     this.avatarUrl,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
+    this.starred = false,
   });
 
   factory ContactSummary.fromJson(Map<String, dynamic> json) => ContactSummary(
@@ -21,6 +22,7 @@ final class ContactSummary {
         tags: (json['tags'] as List? ?? const [])
             .map((value) => value.toString())
             .toList(growable: false),
+        starred: json['starred'] == true,
       );
 
   final String userId;
@@ -31,6 +33,10 @@ final class ContactSummary {
   final String? avatarUrl;
   final String momentsPermission;
   final List<String> tags;
+  final bool starred;
+
+  bool get isStarred =>
+      starred || tags.any((tag) => tag == 'starred' || tag == '星标好友');
 
   String get displayName {
     for (final value in [remark, nickname, username]) {
@@ -48,6 +54,7 @@ final class ContactSummary {
         avatarUrl: avatarUrl,
         momentsPermission: momentsPermission,
         tags: tags,
+        starred: starred,
       );
 
   ContactDetails toDetails() => ContactDetails(
@@ -59,6 +66,7 @@ final class ContactSummary {
         avatarUrl: avatarUrl,
         momentsPermission: momentsPermission,
         tags: tags,
+        starred: starred,
       );
 }
 
@@ -72,6 +80,7 @@ final class ContactDetails {
     this.avatarUrl,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
+    this.starred = false,
   });
 
   final String userId;
@@ -82,6 +91,7 @@ final class ContactDetails {
   final String? avatarUrl;
   final String momentsPermission;
   final List<String> tags;
+  final bool starred;
 
   String get displayName => ContactSummary(
         userId: userId,
@@ -105,6 +115,7 @@ final class ContactDetails {
         avatarUrl: avatarUrl,
         momentsPermission: momentsPermission ?? this.momentsPermission,
         tags: tags ?? this.tags,
+        starred: starred,
       );
 }
 

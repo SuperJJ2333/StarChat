@@ -38,7 +38,88 @@ final class FakeContactsGateway implements ContactsGateway {
   Future<void> deleteContact(String userId) async => deleted = true;
 }
 
+final class IndexedContactsGateway extends FakeContactsGateway {
+  @override
+  Future<List<ContactSummary>> listContacts() async => [
+        ContactSummary(
+          userId: 'z',
+          username: 'zane',
+          nickname: 'Zane',
+          matrixUserId: '@zane:example.test',
+        ),
+        ContactSummary(
+          userId: 'star',
+          username: 'alice',
+          nickname: 'Alice',
+          matrixUserId: '@alice:example.test',
+          starred: true,
+        ),
+        ContactSummary(
+          userId: 'a',
+          username: 'amy',
+          nickname: 'Amy',
+          matrixUserId: '@amy:example.test',
+        ),
+        ContactSummary(
+          userId: 'hash',
+          username: '9lives',
+          nickname: '九命',
+          matrixUserId: '@9lives:example.test',
+        ),
+        ContactSummary(
+          userId: 'b',
+          username: 'bob',
+          nickname: 'Bob',
+          matrixUserId: '@bob:example.test',
+        ),
+        for (var index = 0; index < 12; index++)
+          ContactSummary(
+            userId: 'b-$index',
+            username: 'b$index',
+            nickname: 'B$index',
+            matrixUserId: '@b$index:example.test',
+          ),
+      ];
+}
+
 void main() {
+  testWidgets('contacts follow Figma star A-Z hash index and grouping',
+      (tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      CupertinoApp(home: ContactsPage(api: IndexedContactsGateway())),
+    );
+    await tester.pumpAndSettle();
+
+    const labels = ['★', ...ContactIndex.alphabet, '#'];
+    final index = find.byKey(const Key('contact-index'));
+    expect(index, findsOneWidget);
+    for (final label in labels) {
+      expect(
+        find.descendant(of: index, matching: find.text(label)),
+        findsOneWidget,
+      );
+    }
+    final positions = ['星标好友', 'A', 'B']
+        .map(
+          (label) =>
+              tester.getTopLeft(find.byKey(Key('contact-section-$label'))).dy,
+        )
+        .toList(growable: false);
+    expect(positions, orderedEquals(positions.toList()..sort()));
+    await tester.tap(
+      find.descendant(of: index, matching: find.text('Z')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('contact-section-Z')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
   test('contact display name is remark then nickname then username', () {
     const base = ContactSummary(
       userId: 'uuid',

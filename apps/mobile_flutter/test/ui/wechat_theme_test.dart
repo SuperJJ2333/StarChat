@@ -10,6 +10,11 @@ void main() {
     final theme = WeChatTheme.build(Brightness.light);
     expect(theme.primaryColor, const Color(0xFF07C160));
     expect(theme.scaffoldBackgroundColor, const Color(0xFFEDEDED));
+    expect(theme.barBackgroundColor, const Color(0xFFF7F7F7));
+    expect(
+      theme.barBackgroundColor,
+      isNot(equals(theme.scaffoldBackgroundColor)),
+    );
   });
   test('dark theme uses a dark surface with light primary text', () {
     final theme = WeChatTheme.build(Brightness.dark);

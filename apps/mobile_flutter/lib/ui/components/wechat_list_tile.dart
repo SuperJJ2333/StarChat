@@ -13,15 +13,17 @@ final class WeChatListTile extends StatelessWidget {
   final Widget? subtitle, leading, trailing;
   final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => Container(
-      constraints: const BoxConstraints(minHeight: 56),
-      color: CupertinoTheme.of(context).barBackgroundColor,
-      padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.lg),
-      child: CupertinoListTile(
-          padding: EdgeInsets.zero,
-          title: title,
-          subtitle: subtitle,
-          leading: leading,
-          trailing: trailing,
-          onTap: onTap));
+  Widget build(BuildContext context) => ColoredBox(
+      key: const Key('wechat-list-elevated-surface'),
+      color: WeChatColors.elevatedSurface(context),
+      child: Container(
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.lg),
+          child: CupertinoListTile(
+              padding: EdgeInsets.zero,
+              title: title,
+              subtitle: subtitle,
+              leading: leading,
+              trailing: trailing,
+              onTap: onTap)));
 }

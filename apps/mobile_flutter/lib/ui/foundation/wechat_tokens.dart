@@ -19,6 +19,11 @@ abstract final class WeChatColors {
   static const warning = Color(0xFFFA9D3B);
   static const bubbleOutgoing = Color(0xFF95EC69);
   static const socialLink = Color(0xFF576B95);
+
+  static Color elevatedSurface(BuildContext context) =>
+      CupertinoTheme.brightnessOf(context) == Brightness.dark
+          ? darkElevated
+          : lightElevated;
 }
 
 abstract final class WeChatSpacing {

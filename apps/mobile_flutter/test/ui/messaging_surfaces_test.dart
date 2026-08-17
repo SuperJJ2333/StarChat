@@ -5,10 +5,65 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_composer_bar.dart';
 import 'package:liuhetong_mobile/ui/components/call_control_button.dart';
 import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
+import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/foundation/changliao_icons.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 
 void main() {
+  testWidgets('Figma root list surfaces use exact semantic light colors',
+      (tester) async {
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: Column(
+          children: [
+            ConversationListTile(
+              title: '会话',
+              subtitle: '消息',
+              timeLabel: '09:41',
+              avatar: const UserAvatar(
+                nickname: '会',
+                fallbackSeed: 'conversation',
+              ),
+            ),
+            const WeChatListTile(title: Text('通讯录或发现入口')),
+          ],
+        ),
+      ),
+    );
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const Key('conversation-elevated-surface')),
+          )
+          .color,
+      WeChatColors.lightElevated,
+    );
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const Key('wechat-list-elevated-surface')),
+          )
+          .color,
+      WeChatColors.lightElevated,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(UserAvatar),
+        matching: find.byType(ClipRRect),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(UserAvatar),
+        matching: find.byType(ClipOval),
+      ),
+      findsNothing,
+    );
+  });
   testWidgets('conversation tile keeps the Figma leading body trailing slots',
       (tester) async {
     await tester.pumpWidget(

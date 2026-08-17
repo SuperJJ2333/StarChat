@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../foundation/wechat_tokens.dart';
+
 final class UserAvatar extends StatelessWidget {
   const UserAvatar(
       {super.key,
@@ -22,7 +24,8 @@ final class UserAvatar extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => ClipOval(
+  Widget build(BuildContext context) => ClipRRect(
+      borderRadius: BorderRadius.circular(WeChatRadius.control),
       child: SizedBox(
           width: size,
           height: size,

@@ -4,10 +4,43 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
+import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_profile_sections.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
+
+abstract final class ContactIndex {
+  static const alphabet = <String>[
+    'A',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'O',
+    'P',
+    'Q',
+    'R',
+    'S',
+    'T',
+    'U',
+    'V',
+    'W',
+    'X',
+    'Y',
+    'Z',
+  ];
+  static const labels = <String>['★', ...alphabet, '#'];
+}
 
 final class ContactsPage extends StatefulWidget {
   const ContactsPage({
@@ -31,8 +64,53 @@ final class ContactsPage extends StatefulWidget {
 
 final class _ContactsPageState extends State<ContactsPage> {
   late Future<List<ContactSummary>> contacts = widget.api.listContacts();
+  final scrollController = ScrollController();
+  final sectionOffsets = <String, double>{};
 
   void reload() => setState(() => contacts = widget.api.listContacts());
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  String _indexOf(ContactSummary contact) {
+    if (contact.isStarred) return '★';
+    for (final candidate in [contact.displayName, contact.username]) {
+      if (candidate.isEmpty) continue;
+      final initial = candidate.characters.first.toUpperCase();
+      if (ContactIndex.alphabet.contains(initial)) return initial;
+    }
+    return '#';
+  }
+
+  Map<String, List<ContactSummary>> _groupContacts(
+    List<ContactSummary> values,
+  ) {
+    final result = <String, List<ContactSummary>>{};
+    for (final contact in values) {
+      (result[_indexOf(contact)] ??= []).add(contact);
+    }
+    for (final contacts in result.values) {
+      contacts.sort(
+        (a, b) => a.displayName.toLowerCase().compareTo(
+              b.displayName.toLowerCase(),
+            ),
+      );
+    }
+    return result;
+  }
+
+  Future<void> _jumpTo(String label) async {
+    final offset = sectionOffsets[label];
+    if (offset == null || !scrollController.hasClients) return;
+    await scrollController.animateTo(
+      offset.clamp(0, scrollController.position.maxScrollExtent).toDouble(),
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,64 +136,152 @@ final class _ContactsPageState extends State<ContactsPage> {
       child: SafeArea(
         child: FutureBuilder<List<ContactSummary>>(
           future: contacts,
-          builder: (_, snapshot) => ListView(
-            children: [
-              if (businessApi != null) ...[
-                WeChatListTile(
-                  leading: const Icon(CupertinoIcons.person_add_solid),
-                  title: const Text('新的朋友'),
-                  onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (_) => FriendRequestsPage(api: businessApi),
-                    ),
-                  ),
-                ),
-                WeChatListTile(
-                  leading: const Icon(CupertinoIcons.person_3_fill),
-                  title: const Text('群聊'),
-                  onTap: widget.onGroupChat,
-                ),
-                WeChatListTile(
-                  leading: const Icon(CupertinoIcons.tag_fill),
-                  title: const Text('标签'),
-                  onTap: () => Navigator.push(
-                    context,
-                    CupertinoPageRoute(
-                      builder: (_) => ContactTagsPage(api: businessApi),
-                    ),
-                  ),
-                ),
-              ],
-              for (final contact in snapshot.data ?? const <ContactSummary>[])
-                WeChatListTile(
-                  leading: UserAvatar(
-                    nickname: contact.displayName,
-                    fallbackSeed: contact.username,
-                    avatarUrl: contact.avatarUrl,
-                  ),
-                  title: Text(contact.displayName),
-                  onTap: () async {
-                    await Navigator.of(context, rootNavigator: true).push<bool>(
-                      CupertinoPageRoute(
-                        builder: (_) => ContactProfilePage(
-                          api: widget.api,
-                          initialContact: contact.toDetails(),
-                          onMessage: widget.onMessage,
-                          onVoice: widget.onVoice,
-                          onVideo: widget.onVideo,
+          builder: (_, snapshot) {
+            final grouped = _groupContacts(
+              snapshot.data ?? const <ContactSummary>[],
+            );
+            var sectionOffset = businessApi == null ? 0.0 : 56.0 * 3;
+            sectionOffsets.clear();
+            for (final label in ContactIndex.labels) {
+              final contacts = grouped[label];
+              if (contacts == null || contacts.isEmpty) continue;
+              sectionOffsets[label] = sectionOffset;
+              sectionOffset += 25 + contacts.length * 56;
+            }
+            return Stack(
+              children: [
+                ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.only(right: 20),
+                  children: [
+                    if (businessApi != null) ...[
+                      WeChatListTile(
+                        leading: const Icon(CupertinoIcons.person_add_solid),
+                        title: const Text('新的朋友'),
+                        onTap: () => Navigator.push(
+                          context,
+                          CupertinoPageRoute(
+                            builder: (_) =>
+                                FriendRequestsPage(api: businessApi),
+                          ),
                         ),
                       ),
-                    );
-                    reload();
-                  },
+                      WeChatListTile(
+                        leading: const Icon(CupertinoIcons.person_3_fill),
+                        title: const Text('群聊'),
+                        onTap: widget.onGroupChat,
+                      ),
+                      WeChatListTile(
+                        leading: const Icon(CupertinoIcons.tag_fill),
+                        title: const Text('标签'),
+                        onTap: () => Navigator.push(
+                          context,
+                          CupertinoPageRoute(
+                            builder: (_) => ContactTagsPage(api: businessApi),
+                          ),
+                        ),
+                      ),
+                    ],
+                    for (final label in ContactIndex.labels)
+                      if (grouped[label]?.isNotEmpty ?? false) ...[
+                        _ContactSectionHeader(
+                          label: label == '★' ? '星标好友' : label,
+                        ),
+                        for (final contact in grouped[label]!)
+                          WeChatListTile(
+                            leading: UserAvatar(
+                              nickname: contact.displayName,
+                              fallbackSeed: contact.username,
+                              avatarUrl: contact.avatarUrl,
+                            ),
+                            title: Text(contact.displayName),
+                            onTap: () async {
+                              await Navigator.of(context, rootNavigator: true)
+                                  .push<bool>(
+                                CupertinoPageRoute(
+                                  builder: (_) => ContactProfilePage(
+                                    api: widget.api,
+                                    initialContact: contact.toDetails(),
+                                    onMessage: widget.onMessage,
+                                    onVoice: widget.onVoice,
+                                    onVideo: widget.onVideo,
+                                  ),
+                                ),
+                              );
+                              reload();
+                            },
+                          ),
+                      ],
+                  ],
                 ),
-            ],
-          ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: 20,
+                  child: _ContactLetterIndex(onTap: _jumpTo),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
+}
+
+final class _ContactSectionHeader extends StatelessWidget {
+  const _ContactSectionHeader({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+        color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+        child: SizedBox(
+          key: Key('contact-section-$label'),
+          height: 25,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: WeChatColors.textSecondary,
+                fontSize: WeChatTypography.caption,
+              ),
+            ),
+          ),
+        ),
+      );
+}
+
+final class _ContactLetterIndex extends StatelessWidget {
+  const _ContactLetterIndex({required this.onTap});
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+        key: const Key('contact-index'),
+        color: WeChatColors.elevatedSurface(context),
+        child: Column(
+          children: [
+            for (final label in ContactIndex.labels)
+              Expanded(
+                child: CupertinoButton(
+                  minimumSize: Size.zero,
+                  padding: EdgeInsets.zero,
+                  onPressed: () => onTap(label),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: WeChatColors.textSecondary,
+                      fontSize: WeChatTypography.badge,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
 }
 
 final class ContactProfilePage extends StatefulWidget {
