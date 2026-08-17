@@ -22,6 +22,16 @@ final class EmojiVaultItem {
   final DateTime createdAt;
   final bool isAnimated;
 
+  factory EmojiVaultItem.fromJson(Map<String, Object?> json) => EmojiVaultItem(
+        id: json['id']! as String,
+        sha256: json['sha256']! as String,
+        mimeType: json['mime_type']! as String,
+        encryptedFile:
+            Map<String, Object?>.from(json['encrypted_file']! as Map),
+        createdAt: DateTime.parse(json['created_at']! as String).toUtc(),
+        isAnimated: json['is_animated']! as bool,
+      );
+
   Map<String, Object?> toJson() => {
         'id': id,
         'sha256': sha256,
