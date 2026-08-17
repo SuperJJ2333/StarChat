@@ -38,11 +38,16 @@ void main() {
     expect(maxY, image.height - 1);
   });
 
-  test('Android adaptive launcher uses zero foreground inset', () {
+  test('Android adaptive launcher centers artwork at two thirds scale', () {
     final adaptiveIcon = File(
       'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
     ).readAsStringSync();
+    final config = File('pubspec.yaml').readAsStringSync();
 
-    expect(adaptiveIcon, contains('android:inset="0%"'));
+    // The source artwork occupies essentially 100% of its 1024px canvas.
+    // A 17% inset on both sides leaves 66% visible width/height, matching the
+    // requested one-third reduction while staying close to Android's safe zone.
+    expect(adaptiveIcon, contains('android:inset="17%"'));
+    expect(config, contains('adaptive_icon_foreground_inset: 17'));
   });
 }
