@@ -67,6 +67,14 @@ Assert-Match $productionCompose '127\.0\.0\.1:\$\{ELEMENT_HTTP_PORT' 'Element mu
 Assert-Match $productionCompose '80:80' 'Gateway must publish HTTP for certificate renewal and redirect'
 Assert-Match $productionCompose '443:443' 'Gateway must publish HTTPS'
 
+$baseCompose = Get-Content -LiteralPath (Join-Path $root 'docker-compose.yml') -Raw -Encoding UTF8
+if ([regex]::Matches($baseCompose, 'BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL:\s+\$\{BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL').Count -lt 2) {
+    throw 'Business API and Worker must both receive the production Matrix public URL'
+}
+if ([regex]::Matches($baseCompose, 'BUSINESS_AVATAR_PUBLIC_BASE_URL:\s+\$\{BUSINESS_AVATAR_PUBLIC_BASE_URL').Count -lt 2) {
+    throw 'Business API and Worker must both receive the production avatar public URL'
+}
+
 docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.production.yml config --quiet
 if ($LASTEXITCODE -ne 0) {
     throw 'production docker compose config failed'
