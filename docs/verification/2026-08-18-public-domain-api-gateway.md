@@ -28,3 +28,17 @@
 - 未猜测密码、未修改远端 SSH 设置、未开放临时端口。
 
 当前远端上线状态：`BLOCKED`。解除条件是提供已授权的 SSH/部署代理会话，并在服务器安装覆盖三个域名的受信任证书。
+
+## Flutter 域名版制品
+
+- 构建入口：`scripts/build_mobile_public_domain.ps1`。
+- URL 策略测试拒绝 HTTP、localhost、IPv4 literal、局域网 IP 和带 `/api/v1` 的根地址；批准的 `https://liuhetong888.com` 通过。
+- Release APK：`apps/mobile_flutter/build/app/outputs/flutter-apk/app-release.apk`。
+- Release 大小：136,098,612 bytes。
+- Release SHA-256：`7BCF034AD077C9D1E2BF22B6CCB56A5444948B65E906A44DE79094C3058608D7`。
+- Release APK 已注入 Business API 与 Matrix 的 `https://liuhetong888.com` 编译参数。
+- Release 覆盖安装被 Android 以 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 拒绝，因为模拟器现有验收包使用 Debug 签名；未卸载应用，避免删除本地 E2EE 数据。
+- Debug 域名验收 APK：241,977,499 bytes，SHA-256 `7FAA3E5129154AC05F6A240AD6BE92BC6CE87B789C4CB20D2E950D0055F0DEBB`。
+- Debug 域名验收 APK 使用相同 Debug 签名覆盖安装到 `emulator-5554`：`Success`。
+
+由于公网 TLS 和网关尚未上线，当前仅验证制品构建、签名边界与安装，不把真实登录标记为通过。
