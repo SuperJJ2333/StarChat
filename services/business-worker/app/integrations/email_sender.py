@@ -12,6 +12,16 @@ class EmailDeliveryError(RuntimeError):
     """Sanitized SMTP delivery failure safe for retry logs."""
 
 
+class DisabledEmailSender:
+    """Fail closed while non-email worker maintenance remains available."""
+
+    def send_email_verification(self, **_kwargs) -> None:
+        raise EmailDeliveryError("email delivery is disabled")
+
+    def send_password_reset(self, **_kwargs) -> None:
+        raise EmailDeliveryError("email delivery is disabled")
+
+
 class EmailSender(Protocol):
     def send_email_verification(
         self,
@@ -61,13 +71,22 @@ class SmtpConfig:
         return cls(
             host=host,
             port=int(os.getenv("SMTP_PORT", "1025")),
-            from_address=os.getenv("SMTP_FROM", "六合通 <noreply@localhost>"),
+            from_address=os.getenv("SMTP_FROM", "畅聊 <noreply@localhost>"),
             timeout_seconds=float(os.getenv("SMTP_TIMEOUT_SECONDS", "10")),
             use_starttls=security == "starttls",
             use_ssl=security == "ssl",
             username=os.getenv("SMTP_USERNAME") or None,
             password=os.getenv("SMTP_PASSWORD") or None,
         )
+
+
+def email_sender_from_environment():
+    raw_enabled = os.getenv("SMTP_DELIVERY_ENABLED", "true").strip().casefold()
+    if raw_enabled not in {"true", "false"}:
+        raise ValueError("SMTP_DELIVERY_ENABLED must be true or false")
+    if raw_enabled == "false":
+        return DisabledEmailSender()
+    return SmtpEmailSender(SmtpConfig.from_environment())
 
 
 class SmtpEmailSender:
@@ -90,11 +109,11 @@ class SmtpEmailSender:
         link: str,
     ) -> None:
         message = EmailMessage()
-        message["Subject"] = "六合通邮箱验证"
+        message["Subject"] = "畅聊邮箱验证"
         message["From"] = self._config.from_address
         message["To"] = recipient
         message.set_content(
-            "欢迎注册六合通。\n\n"
+            "欢迎注册畅聊。\n\n"
             f"验证码：{code}\n"
             "验证码将在 10 分钟后失效。\n\n"
             f"也可以点击验证链接：{link}\n"
@@ -103,11 +122,11 @@ class SmtpEmailSender:
 
     def send_password_reset(self, *, recipient: str, link: str) -> None:
         message = EmailMessage()
-        message["Subject"] = "六合通密码重置"
+        message["Subject"] = "畅聊密码重置"
         message["From"] = self._config.from_address
         message["To"] = recipient
         message.set_content(
-            "我们收到了六合通密码重置请求。\n\n"
+            "我们收到了畅聊密码重置请求。\n\n"
             "链接将在 1 小时后失效。\n\n"
             f"点击重置密码：{link}\n"
         )

@@ -19,7 +19,7 @@ from app.integrations.matrix_admin import (
     MatrixCredentialCodec,
     SynapseMatrixAdminGateway,
 )
-from integrations.email_sender import SmtpConfig, SmtpEmailSender
+from integrations.email_sender import email_sender_from_environment
 from integrations.avatar_reader import LocalPrivateAvatarReader
 from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
@@ -74,7 +74,7 @@ def main() -> None:
     wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(settings.adjustment_admin_threshold))
     wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service)
     moments_moderation = MomentsModerationTask(session_factory)
-    email_sender = SmtpEmailSender(SmtpConfig.from_environment())
+    email_sender = email_sender_from_environment()
     matrix_gateway = SynapseMatrixAdminGateway(
         homeserver_url=os.getenv("MATRIX_HOMESERVER_URL", "http://synapse:8008"),
         server_name=os.getenv("MATRIX_SERVER_NAME", "matrix.localhost"),

@@ -57,6 +57,31 @@ def test_production_smtp_rejects_mailpit_and_plaintext(monkeypatch) -> None:
         module.SmtpConfig.from_environment()
 
 
+def test_disabled_email_delivery_is_explicit_and_fail_closed(monkeypatch) -> None:
+    module = _email_sender_module()
+    monkeypatch.setenv("BUSINESS_ENVIRONMENT", "production")
+    monkeypatch.setenv("SMTP_DELIVERY_ENABLED", "false")
+    monkeypatch.setenv("SMTP_HOST", "mailpit")
+    monkeypatch.setenv("SMTP_SECURITY", "none")
+
+    sender = module.email_sender_from_environment()
+
+    with pytest.raises(module.EmailDeliveryError, match="disabled"):
+        sender.send_email_verification(
+            recipient="alice@example.test",
+            code="123456",
+            link="https://example.test/verify-email?token=opaque",
+        )
+
+
+def test_email_delivery_enable_flag_rejects_ambiguous_values(monkeypatch) -> None:
+    module = _email_sender_module()
+    monkeypatch.setenv("SMTP_DELIVERY_ENABLED", "sometimes")
+
+    with pytest.raises(ValueError, match="SMTP_DELIVERY_ENABLED"):
+        module.email_sender_from_environment()
+
+
 def test_sender_applies_timeout_auth_and_includes_code_and_link() -> None:
     module = _email_sender_module()
     transports = []
