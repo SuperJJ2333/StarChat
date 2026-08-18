@@ -60,6 +60,7 @@ if (-not (Test-Path -LiteralPath $productionComposePath)) {
 }
 $productionCompose = Get-Content -LiteralPath $productionComposePath -Raw -Encoding UTF8
 Assert-Match $productionCompose '(?m)^\s*gateway:' 'Production gateway service is required'
+Assert-Match $productionCompose '/etc/nginx/conf\.d/default\.conf:ro' 'Gateway config must be mounted inside the Nginx http context'
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{SYNAPSE_HTTP_PORT' 'Synapse must bind only to loopback in production'
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{BUSINESS_API_HTTP_PORT' 'Business API must bind only to loopback in production'
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{ELEMENT_HTTP_PORT' 'Element must bind only to loopback in production'
