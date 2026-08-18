@@ -32,6 +32,10 @@ Assert-Match $nginx 'location\s+/api/v1/' 'Main-domain Business API route is req
 Assert-Match $nginx 'server_name\s+\{\{WWW_PUBLIC_HOSTNAME\}\}' 'www canonical host is required'
 Assert-Match $nginx 'server_name\s+\{\{ADMIN_PUBLIC_HOSTNAME\}\}' 'admin host is required'
 Assert-Match $nginx 'location\s+\^~\s+/_synapse/admin/' 'Public Synapse admin denial is required'
+if ($nginx -match 'listen\s+443\s+ssl\s+http2') {
+    throw 'Deprecated listen http2 syntax is forbidden'
+}
+Assert-Match $nginx 'http2\s+on;' 'Modern HTTP/2 directive is required'
 
 $environmentExample = Get-Content -LiteralPath (Join-Path $root '.env.example') -Raw -Encoding UTF8
 Assert-Match $environmentExample '(?m)^WWW_PUBLIC_HOSTNAME=www\.example\.com$' 'www production hostname example is required'
