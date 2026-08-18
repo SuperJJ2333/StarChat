@@ -106,7 +106,8 @@ docker compose stop business-api business-worker matrix-bot synapse element-web 
 - [x] **Step 3: 比较 signing/media/Bot SHA-256 manifest**
 - [x] **Step 4: 运行 `scripts/verify_public_domains.ps1` 并要求 PASS**
 - [ ] **Step 5: 使用已有测试账号完成 Business + Matrix 登录、历史房间/消息/头像验证**
-- [ ] **Step 6: 安装域名 Debug 验收 APK，验证 E2EE 消息、重启会话恢复**
+  - Business/Matrix 登录和房间列表已通过；部分历史 E2EE 消息因新设备没有旧 session key 仍不可解密。
+- [x] **Step 6: 安装域名 Debug 验收 APK，验证 E2EE 消息、重启会话恢复**
 - [x] **Step 7: 确认公网拒绝 Synapse Admin、PostgreSQL、Redis 和 Bot webhook**
 
 ### Task 8: 切换完成或回滚

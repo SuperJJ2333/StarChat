@@ -6,7 +6,7 @@
 - 生产目标 `liuhetong-prod`（`207.56.8.8:23421`）已承载 Business、Matrix、媒体、Bot store、HTTPS 网关与 TURN；三个公网域名均指向该目标。
 - 本机写入服务继续保持停止，禁止形成双写或回滚源被污染。
 - Business/Matrix 公网健康、Business 登录、Business → Matrix 60 秒单次登录令牌链路、历史核心计数、Matrix signing key 与媒体哈希均已验证。
-- 两项非数据完整性遗留门禁尚未关闭：目标网络阻断出站 UDP/123，及两个测试账号的运行时密码按既有安全约定未保存，故未执行这两个账号的客户端 E2EE 重启回归。详见“未关闭门禁”。
+- 两个测试账号的 Business、Matrix、双模拟器会话恢复和新 E2EE 消息回归已经通过。当前遗留门禁为目标网络阻断出站 UDP/123、QQ SMTP 尚缺少对应邮箱账号，以及新设备没有历史房间密钥而无法解密部分旧 E2EE 消息。详见“未关闭门禁”。
 
 ## 时间线
 
@@ -108,6 +108,10 @@
 - 生产容器：两个 PostgreSQL、Redis、Synapse、Business API、Business Worker、Matrix Bot、Element、TURN、Mailpit、Gateway 均运行；有 healthcheck 的服务全部 healthy。
 - 真实 Business 管理账号登录通过；随后 Business → Matrix 60 秒登录令牌 → `m.login.token` 登录通过。
 - 域名 Debug APK 已以 `adb install -r` 安装并启动到 `emulator-5554`、`emulator-5556`；SHA-256 为 `7FAA3E5129154AC05F6A240AD6BE92BC6CE87B789C4CB20D2E950D0055F0DEBB`。
+- 用户授权后，两个测试账号通过公开 password-forgot/password-reset 应用流程更新运行时密码；产生 2 条成功审计记录和 2 个预期的 24 小时 `PASSWORD_RESET` 提现安全 hold，未直接修改用户表。
+- `liuhetong_test01`、`liuhetong_test02` 的 Business 登录、60 秒 Matrix 登录令牌和 `m.login.token` 登录全部通过。
+- 两台模拟器分别登录两个测试账号，force-stop 后重新启动仍直接进入消息首页。
+- 从 `emulator-5554` 发送新的 E2EE 验收消息，`emulator-5556` 的会话列表和聊天页均显示已解密明文，未出现 session key 缺失错误。
 
 ## 自动化验证
 
@@ -123,8 +127,8 @@
 ## 未关闭门禁
 
 1. **NTP 状态**：目标网络对 Ubuntu、Cloudflare、Google、Windows NTP 的 UDP/123 均超时，`NTP=yes` 但 `NTPSynchronized=no`。使用三个独立受信 HTTPS Date 响应形成共识后，一次性把约 `+13.478s` 偏差校正为 `0.000s`；失败的定时 HTTPS workaround 已完全删除。仍需云厂商开放出站 UDP/123，之后确认 `NTPSynchronized=yes`。
-2. **两个测试账号客户端回归**：`liuhetong_test01`、`liuhetong_test02` 的密码按既有约定只存在于运行时，未进入 Git/文档/迁移包；当前两个模拟器均停留登录页。因此未重置密码，也未伪造通过结果。用户、设备、房间、事件和媒体已迁移，但仍需用原密码完成两端 E2EE 历史消息与重启恢复验收。
-3. **邮件交付**：未提供真实远程 TLS SMTP。Worker 已以显式 fail-closed 邮件模式健康运行；现有账号和非邮件维护任务可用，新注册、验证邮件和密码找回邮件不可交付。
+2. **邮件交付**：已收到 QQ SMTP 授权码，但 QQ SMTP 还必须提供与授权码绑定的完整邮箱账号，才能设置 `SMTP_USERNAME`、发件人并执行真实投递。Worker 目前仍以显式 fail-closed 邮件模式健康运行；现有账号和非邮件维护任务可用，新注册、验证邮件和密码找回邮件暂不可交付。
+3. **历史 E2EE 密钥**：两个新登录设备可收发并解密新 E2EE 消息，但部分旧会话显示缺少 session key。服务端按 E2EE 边界没有房间密钥，迁移包也不包含客户端恢复密钥；必须从仍持有旧密钥的设备执行 Matrix cross-signing/secret-storage 恢复，或提供用户自己的恢复密钥后才能关闭历史消息解密门禁。
 
 ## 当前权威性与回滚
 
