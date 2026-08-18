@@ -285,3 +285,15 @@ Run the following checks after startup:
 ## Production Reverse Proxy
 
 `infra/nginx/nginx.conf` is a starting point for production. Adjust TLS certificate paths, upstreams, and public hostnames before use.
+
+The production gateway uses one canonical application origin. For the
+`liuhetong888.com` deployment it routes Business API requests under
+`https://liuhetong888.com/api/v1/`, Matrix client traffic under
+`https://liuhetong888.com/_matrix/`, and Matrix discovery under
+`https://liuhetong888.com/.well-known/matrix/client`. The `www` host redirects
+to the canonical origin, while `admin.liuhetong888.com/api/v1/` reaches the
+same RBAC/TOTP-protected Business API. Keep Synapse Admin, databases, Redis,
+workers, and bot webhooks private.
+
+Changing the public homeserver URL does not change `MATRIX_SERVER_NAME` or any
+existing Matrix user, room, or MXC identifier.

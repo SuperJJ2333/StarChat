@@ -9,3 +9,19 @@ Every pull request also runs the unsigned `simulator-build` job on `macos-14`: `
 The TestFlight job validates Team/Bundle/profile secrets, updates the generated Xcode project, and generates `ExportOptions.plist` inside the ephemeral runner before building the IPA.
 
 Android release disables cleartext traffic. Only `src/debug/AndroidManifest.xml` enables HTTP for local `adb reverse` and emulator acceptance; production Business API and Matrix build parameters must use HTTPS.
+
+## Public-domain Android build
+
+The `liuhetong888.com` release must be built only after the public gateway,
+certificate, Business API health endpoint, Matrix versions endpoint, and
+Matrix well-known response pass external verification:
+
+```powershell
+flutter build apk --release `
+  --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com `
+  --dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com
+```
+
+Do not append `/api/v1` to `LIUHETONG_BUSINESS_API_URL`; the typed client owns
+that path. Do not publish an APK containing `localhost`, a LAN address, or an
+HTTP production endpoint.

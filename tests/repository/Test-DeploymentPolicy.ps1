@@ -33,6 +33,17 @@ Assert-Match $nginx 'server_name\s+\{\{WWW_PUBLIC_HOSTNAME\}\}' 'www canonical h
 Assert-Match $nginx 'server_name\s+\{\{ADMIN_PUBLIC_HOSTNAME\}\}' 'admin host is required'
 Assert-Match $nginx 'location\s+\^~\s+/_synapse/admin/' 'Public Synapse admin denial is required'
 
+$environmentExample = Get-Content -LiteralPath (Join-Path $root '.env.example') -Raw -Encoding UTF8
+Assert-Match $environmentExample '(?m)^WWW_PUBLIC_HOSTNAME=www\.example\.com$' 'www production hostname example is required'
+Assert-Match $environmentExample '(?m)^ADMIN_PUBLIC_HOSTNAME=admin\.example\.com$' 'admin production hostname example is required'
+Assert-Match $environmentExample '(?m)^BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL=https://example\.com/$' 'Matrix public HTTPS example is required'
+Assert-Match $environmentExample '(?m)^BUSINESS_AVATAR_PUBLIC_BASE_URL=https://example\.com$' 'Avatar public HTTPS example is required'
+Assert-Match $environmentExample '(?m)^EMAIL_VERIFICATION_PUBLIC_BASE_URL=https://example\.com$' 'Email public HTTPS example is required'
+
+$mobileRelease = Get-Content -LiteralPath (Join-Path $root 'docs\runbooks\mobile-release.md') -Raw -Encoding UTF8
+Assert-Match $mobileRelease 'LIUHETONG_BUSINESS_API_URL=https://liuhetong888\.com' 'Mobile release Business API domain is required'
+Assert-Match $mobileRelease 'LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888\.com' 'Mobile release Matrix domain is required'
+
 docker compose --env-file .env.example config --quiet
 if ($LASTEXITCODE -ne 0) {
     throw 'docker compose config failed'
