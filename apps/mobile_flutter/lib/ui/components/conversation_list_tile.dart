@@ -13,6 +13,7 @@ final class ConversationListTile extends StatelessWidget {
     required this.avatar,
     this.unreadCount = 0,
     this.muted = false,
+    this.pinnedGroup = false,
     this.onTap,
   });
 
@@ -22,6 +23,7 @@ final class ConversationListTile extends StatelessWidget {
   final Widget avatar;
   final int unreadCount;
   final bool muted;
+  final bool pinnedGroup;
   final VoidCallback? onTap;
 
   @override
@@ -32,7 +34,9 @@ final class ConversationListTile extends StatelessWidget {
       onPressed: onTap,
       child: ColoredBox(
         key: const Key('conversation-elevated-surface'),
-        color: WeChatColors.elevatedSurface(context),
+        color: pinnedGroup
+            ? WeChatColors.navigationSurface(context)
+            : WeChatColors.elevatedSurface(context),
         child: Container(
           constraints: const BoxConstraints(
             minHeight: WeChatDimensions.conversationTileHeight,

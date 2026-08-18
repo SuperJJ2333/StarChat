@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
+import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   GroupChatInfoSnapshot snapshot = GroupChatInfoSnapshot(
@@ -45,7 +46,20 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
       GroupChatPreference.muted => snapshot.copyWith(muted: value),
       GroupChatPreference.pinned => snapshot.copyWith(pinned: value),
       GroupChatPreference.saved => snapshot.copyWith(saved: value),
+      GroupChatPreference.folded => snapshot.copyWith(folded: value),
+      GroupChatPreference.notifyMentionMe =>
+        snapshot.copyWith(notifyMentionMe: value),
+      GroupChatPreference.notifyMentionAll =>
+        snapshot.copyWith(notifyMentionAll: value),
+      GroupChatPreference.notifyAnnouncement =>
+        snapshot.copyWith(notifyAnnouncement: value),
     };
+  }
+
+  @override
+  Future<void> setFollowedMemberIds(List<String> matrixUserIds) async {
+    snapshot =
+        snapshot.copyWith(followedMemberIds: matrixUserIds.take(4).toList());
   }
 
   @override
@@ -173,5 +187,35 @@ void main() {
     await tester.pump();
     expect(find.text('明天开会'), findsOneWidget);
     expect(find.text('今天休息'), findsNothing);
+  });
+
+  testWidgets('mute exposes only the approved nested settings when enabled',
+      (tester) async {
+    final gateway = FakeGroupChatInfoGateway();
+    final controller = GroupChatInfoController(gateway);
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('折叠该聊天'), findsNothing);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    final muteTile = find.ancestor(
+      of: find.text('消息免打扰').first,
+      matching: find.byType(WeChatListTile),
+    );
+    await tester.tap(find.descendant(
+      of: muteTile,
+      matching: find.byType(CupertinoSwitch),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('折叠该聊天'), findsOneWidget);
+    expect(find.text('以下消息仍通知'), findsOneWidget);
   });
 }

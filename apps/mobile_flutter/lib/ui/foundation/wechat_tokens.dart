@@ -24,6 +24,11 @@ abstract final class WeChatColors {
       CupertinoTheme.brightnessOf(context) == Brightness.dark
           ? darkElevated
           : lightElevated;
+
+  static Color navigationSurface(BuildContext context) =>
+      CupertinoTheme.brightnessOf(context) == Brightness.dark
+          ? darkSurface
+          : lightPageBackground;
 }
 
 abstract final class WeChatSpacing {

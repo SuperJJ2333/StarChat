@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
@@ -14,6 +15,7 @@ import '../../ui/chat/chat_composer_bar.dart';
 import '../../ui/chat/chat_composer_state.dart';
 import '../../ui/chat/chat_emoji_panel.dart';
 import '../../ui/chat/chat_more_panel.dart';
+import '../../ui/chat/group_avatar_mosaic.dart';
 import '../../ui/chat/message_action.dart';
 import '../../ui/chat/message_action_sheet.dart';
 import '../../ui/chat/wechat_attachment_tile.dart';
@@ -33,6 +35,11 @@ import 'chat_red_packet_controller.dart';
 import 'chat_red_packet_sheet.dart';
 import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
+import 'conversation_preferences.dart';
+import 'direct_chat_info_page.dart';
+import 'matrix_group_chat_adapter.dart';
+import 'group_chat_controller.dart';
+import 'chat_history_search.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
 import 'matrix_message_reminder_backend.dart';
@@ -43,6 +50,19 @@ import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
 import 'voice_composer.dart';
+
+List<User> orderedJoinedMembers(Room room) {
+  final joined = room.getParticipants([Membership.join]);
+  final byId = {for (final member in joined) member.id: member};
+  final order = reconcileMemberOrder(
+    preferenceForRoom(room).memberOrderIds,
+    joined.map((member) => member.id),
+  );
+  return [
+    for (final id in order)
+      if (byId[id] != null) byId[id]!
+  ];
+}
 
 class MatrixHomePage extends StatefulWidget {
   const MatrixHomePage({
@@ -68,21 +88,64 @@ class MatrixHomePage extends StatefulWidget {
 
 class _MatrixHomePageState extends State<MatrixHomePage> {
   bool syncing = false;
+  StreamSubscription<Object?>? syncSubscription;
 
   Future<void> sync() async {
     if (syncing) return;
     setState(() => syncing = true);
     try {
       await widget.matrix.sync();
+      await _reconcileConversationMetadata();
     } finally {
       if (mounted) setState(() => syncing = false);
+    }
+  }
+
+  Future<void> _reconcileConversationMetadata() async {
+    final base = DateTime.now().toUtc();
+    var offset = 0;
+    for (final room in widget.matrix.sdkClient.rooms) {
+      final preference = preferenceForRoom(room);
+      final memberOrder = room.isDirectChat
+          ? preference.memberOrderIds
+          : reconcileMemberOrder(
+              preference.memberOrderIds,
+              room.getParticipants([Membership.join]).map(
+                  (member) => member.id),
+            );
+      final needsPinTime = preference.pinned && preference.pinnedAt == null;
+      final orderChanged = memberOrder.join('\u0000') !=
+          preference.memberOrderIds.join('\u0000');
+      if (!needsPinTime && !orderChanged) continue;
+      try {
+        await writeConversationPreference(
+          room,
+          preference.copyWith(
+            pinnedAt: needsPinTime
+                ? base.add(Duration(microseconds: offset++))
+                : preference.pinnedAt,
+            memberOrderIds: memberOrder,
+          ),
+        );
+      } catch (_) {
+        // Matrix sync will retry reconciliation without losing local state.
+      }
     }
   }
 
   @override
   void initState() {
     super.initState();
+    syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
+      if (mounted) setState(() {});
+    });
     sync();
+  }
+
+  @override
+  void dispose() {
+    syncSubscription?.cancel();
+    super.dispose();
   }
 
   String _roomTime(Room room) {
@@ -167,6 +230,22 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
+  void _openRoom(Room room) {
+    final roomName = room.getLocalizedDisplayname();
+    Navigator.of(context, rootNavigator: true).push(
+      CupertinoPageRoute(
+        builder: (_) => RoomPage(
+          api: widget.api,
+          room: room,
+          roomName: roomName,
+          onVoice: widget.onVoice,
+          onVideo: widget.onVideo,
+          reminderService: widget.reminderService,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vaultRoomId = widget.matrix.sdkClient
@@ -175,7 +254,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final reminderRoomId = widget.matrix.sdkClient
         .accountData[messageReminderAccountDataType]?.content['room_id']
         ?.toString();
-    final rooms = widget.matrix.sdkClient.rooms
+    final visibleRooms = widget.matrix.sdkClient.rooms
         .where(
           (room) => !isMatrixControlRoom(
             roomId: room.id,
@@ -185,6 +264,27 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           ),
         )
         .toList(growable: false);
+    final roomById = {for (final room in visibleRooms) room.id: room};
+    final ordered = orderConversations([
+      for (final room in visibleRooms)
+        ConversationProjection(
+          roomId: room.id,
+          isGroup: !room.isDirectChat,
+          lastActivity: room.lastEvent?.originServerTs ??
+              DateTime.fromMillisecondsSinceEpoch(0),
+          preference: preferenceForRoom(room),
+        ),
+    ]);
+    final orderedRooms = [for (final item in ordered) roomById[item.roomId]!];
+    final foldedRooms = orderedRooms.where((room) {
+      final value = preferenceForRoom(room);
+      return !room.isDirectChat && value.muted && value.folded;
+    }).toList(growable: false);
+    final rooms = orderedRooms
+        .where((room) => !foldedRooms.contains(room))
+        .toList(growable: false);
+    final pinnedCount =
+        rooms.where((room) => preferenceForRoom(room).pinned).length;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text('消息'),
@@ -196,11 +296,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         ),
       ),
       child: SafeArea(
-        child: rooms.isEmpty
+        child: rooms.isEmpty && foldedRooms.isEmpty
             ? const _MessagesEmptyState()
             : ListView.separated(
                 padding: EdgeInsets.zero,
-                itemCount: rooms.length,
+                itemCount: rooms.length + (foldedRooms.isEmpty ? 0 : 1),
                 separatorBuilder: (_, __) => const Padding(
                   padding: EdgeInsets.only(
                     left: WeChatSpacing.lg +
@@ -213,33 +313,70 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                   ),
                 ),
                 itemBuilder: (context, index) {
-                  final room = rooms[index];
+                  if (foldedRooms.isNotEmpty && index == pinnedCount) {
+                    return ConversationListTile(
+                      key: const Key('folded-group-chats'),
+                      title: '折叠的群聊',
+                      subtitle: '${foldedRooms.length} 个聊天',
+                      timeLabel: '',
+                      avatar: const ColoredBox(
+                        color: WeChatColors.lightSurface,
+                        child: Icon(CupertinoIcons.tray_full, size: 25),
+                      ),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => _FoldedGroupChatsPage(
+                            rooms: foldedRooms,
+                            onOpen: (room) {
+                              Navigator.pop(context);
+                              _openRoom(room);
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final roomIndex =
+                      foldedRooms.isNotEmpty && index > pinnedCount
+                          ? index - 1
+                          : index;
+                  final room = rooms[roomIndex];
                   final roomName = room.getLocalizedDisplayname();
+                  final preference = preferenceForRoom(room);
                   return ConversationListTile(
                     key: ValueKey<String>('conversation-${room.id}'),
                     title: roomName,
                     subtitle: room.lastEvent?.text ?? '端到端加密消息',
                     timeLabel: _roomTime(room),
-                    avatar: UserAvatar(
-                      nickname: roomName,
-                      fallbackSeed: room.id,
-                      size: WeChatDimensions.conversationAvatar,
-                    ),
+                    avatar: room.isDirectChat
+                        ? UserAvatar(
+                            nickname: roomName,
+                            fallbackSeed: room.id,
+                            size: WeChatDimensions.conversationAvatar,
+                          )
+                        : GroupAvatarMosaic(
+                            avatars: [
+                              for (final member
+                                  in orderedJoinedMembers(room).take(9))
+                                UserAvatar(
+                                  nickname: member.calcDisplayname(),
+                                  fallbackSeed: member.id,
+                                  avatarUrl: switch (member.avatarUrl) {
+                                    final uri?
+                                        when uri.scheme == 'http' ||
+                                            uri.scheme == 'https' =>
+                                      uri.toString(),
+                                    _ => null,
+                                  },
+                                ),
+                            ],
+                          ),
                     unreadCount: room.notificationCount,
-                    muted: room.pushRuleState != PushRuleState.notify,
-                    onTap: () =>
-                        Navigator.of(context, rootNavigator: true).push(
-                      CupertinoPageRoute(
-                        builder: (_) => RoomPage(
-                          api: widget.api,
-                          room: room,
-                          roomName: roomName,
-                          onVoice: widget.onVoice,
-                          onVideo: widget.onVideo,
-                          reminderService: widget.reminderService,
-                        ),
-                      ),
-                    ),
+                    muted: preference.muted ||
+                        room.pushRuleState != PushRuleState.notify,
+                    pinnedGroup: !room.isDirectChat && preference.pinned,
+                    onTap: () => _openRoom(room),
                   );
                 },
               ),
@@ -272,6 +409,50 @@ final class _MessagesEmptyState extends StatelessWidget {
               style: TextStyle(color: WeChatColors.textSecondary),
             ),
           ],
+        ),
+      );
+}
+
+final class _FoldedGroupChatsPage extends StatelessWidget {
+  const _FoldedGroupChatsPage({required this.rooms, required this.onOpen});
+  final List<Room> rooms;
+  final ValueChanged<Room> onOpen;
+
+  @override
+  Widget build(BuildContext context) => CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(middle: Text('折叠的群聊')),
+        child: SafeArea(
+          child: ListView.separated(
+            itemCount: rooms.length,
+            separatorBuilder: (_, __) => const SizedBox(height: .5),
+            itemBuilder: (context, index) {
+              final room = rooms[index];
+              final members = orderedJoinedMembers(room).take(9);
+              return ConversationListTile(
+                title: room.getLocalizedDisplayname(),
+                subtitle: room.lastEvent?.text ?? '端到端加密消息',
+                timeLabel: '',
+                muted: true,
+                avatar: GroupAvatarMosaic(
+                  avatars: [
+                    for (final member in members)
+                      UserAvatar(
+                        nickname: member.calcDisplayname(),
+                        fallbackSeed: member.id,
+                        avatarUrl: switch (member.avatarUrl) {
+                          final uri?
+                              when uri.scheme == 'http' ||
+                                  uri.scheme == 'https' =>
+                            uri.toString(),
+                          _ => null,
+                        },
+                      ),
+                  ],
+                ),
+                onTap: () => onOpen(room),
+              );
+            },
+          ),
         ),
       );
 }
@@ -825,7 +1006,7 @@ class _RoomPageState extends State<RoomPage> {
           builder: (_) => GroupChatInfoPage(
             controller: infoController,
             onAddMember: () => _openGroupMemberPicker(infoController),
-            onSearchHistory: _openGroupHistorySearch,
+            onSearchHistory: _openHistorySearch,
             onClearLocalHistory: _clearLocalHistory,
             onLeft: () {
               Navigator.pop(context);
@@ -837,36 +1018,72 @@ class _RoomPageState extends State<RoomPage> {
       infoController.dispose();
       return;
     }
-    final contact = peer;
-    if (contact != null) {
-      await showCupertinoModalPopup<void>(
-        context: context,
-        builder: (sheetContext) => CupertinoActionSheet(
-          actions: [
-            CupertinoActionSheetAction(
-              onPressed: () {
-                Navigator.pop(sheetContext);
-                _openContact(contact);
-              },
-              child: const Text('好友资料'),
-            ),
-            CupertinoActionSheetAction(
-              key: const Key('chat-nudge-settings'),
-              onPressed: () {
-                Navigator.pop(sheetContext);
-                _editNudgeSuffix();
-              },
-              child: const Text('设置拍一拍'),
-            ),
-          ],
-          cancelButton: CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(sheetContext),
-            child: const Text('取消'),
-          ),
-        ),
-      );
-      return;
+    User? member;
+    for (final participant in widget.room.getParticipants()) {
+      if (participant.id != widget.room.client.userID) {
+        member = participant;
+        break;
+      }
     }
+    final contact = peer;
+    final peerId = contact?.matrixUserId ?? member?.id;
+    if (peerId == null) return;
+    final peerName =
+        contact?.displayName ?? member?.calcDisplayname() ?? peerId;
+    final avatarUrl = contact?.avatarUrl ??
+        switch (member?.avatarUrl) {
+          final uri? when uri.scheme == 'http' || uri.scheme == 'https' =>
+            uri.toString(),
+          _ => null,
+        };
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => DirectChatInfoPage(
+          peerName: peerName,
+          peerId: peerId,
+          peerAvatarUrl: avatarUrl,
+          preference: preferenceForRoom(widget.room),
+          onAddMember: () => _openDirectGroupPicker(peerId, peerName),
+          onSearchHistory: _openHistorySearch,
+          onClearLocalHistory: _clearLocalHistory,
+          onPreferenceChanged: (preference) =>
+              writeConversationPreference(widget.room, preference),
+          onEditNudge: _editNudgeSuffix,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openDirectGroupPicker(String peerId, String peerName) async {
+    final contacts = await widget.api.listContacts();
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => DirectGroupMemberPickerPage(
+          contacts: contacts,
+          peerId: peerId,
+          onCreate: (inviteeIds) async {
+            final names = {
+              for (final contact in contacts)
+                contact.matrixUserId: contact.displayName,
+            };
+            final name = [
+              ownProfile?.nickname ?? '我',
+              peerName,
+              ...inviteeIds.skip(1).map((id) => names[id] ?? id),
+            ].take(3).join('、').characters.take(20).toString();
+            await GroupChatService(
+              MatrixGroupChatBackend(widget.room.client),
+            ).createEncryptedGroupChat(
+              name: name,
+              matrixUserIds: inviteeIds,
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _openGroupMemberPicker(
@@ -907,17 +1124,29 @@ class _RoomPageState extends State<RoomPage> {
     }
   }
 
-  void _openGroupHistorySearch() {
+  void _openHistorySearch() {
     final messages = controller?.messages ?? const <RoomMessageViewModel>[];
     Navigator.push<void>(
       context,
       CupertinoPageRoute(
         builder: (_) => GroupChatHistorySearchPage(
+          isGroup: isGroup,
           entries: [
             for (final message in messages)
               GroupChatHistoryEntry(
                 sender: _displayName(message.senderId, message.isOwn),
                 text: message.text,
+                senderId: message.senderId,
+                eventId: message.id,
+                timestamp: message.timestamp,
+                kind: switch (message.kind) {
+                  RoomMessageKind.image
+                      when message.mimeType?.startsWith('video/') == true =>
+                    LocalChatSearchKind.video,
+                  RoomMessageKind.image => LocalChatSearchKind.image,
+                  RoomMessageKind.file => LocalChatSearchKind.file,
+                  _ => LocalChatSearchKind.text,
+                },
               ),
           ],
         ),
@@ -1257,20 +1486,6 @@ class _RoomPageState extends State<RoomPage> {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (peer != null && widget.onVoice != null)
-              CupertinoButton(
-                key: const Key('chat-voice-call'),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                onPressed: () => widget.onVoice!(peer!),
-                child: const Icon(ChangliaoIcons.voiceCall, size: 21),
-              ),
-            if (peer != null && widget.onVideo != null)
-              CupertinoButton(
-                key: const Key('chat-video-call'),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                onPressed: () => widget.onVideo!(peer!),
-                child: const Icon(ChangliaoIcons.videoCall, size: 22),
-              ),
             CupertinoButton(
               key: const Key('chat-details'),
               padding: const EdgeInsets.symmetric(horizontal: 4),

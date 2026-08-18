@@ -5,6 +5,7 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
+import 'chat_history_search.dart';
 
 final class GroupChatInfoPage extends StatefulWidget {
   const GroupChatInfoPage({
@@ -188,6 +189,29 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                       value,
                     ),
                   ),
+                  if (snapshot.muted) ...[
+                    _switchTile(
+                      '折叠该聊天',
+                      snapshot.folded,
+                      (value) => widget.controller.setPreference(
+                        GroupChatPreference.folded,
+                        value,
+                      ),
+                    ),
+                    WeChatListTile(
+                      title: const Text('以下消息仍通知'),
+                      subtitle: const Text('@我、@所有人和群公告'),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => MuteExceptionSettingsPage(
+                            controller: widget.controller,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   _switchTile(
                     '置顶聊天',
                     snapshot.pinned,
@@ -268,6 +292,146 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
         title: Text(label),
         trailing: CupertinoSwitch(value: value, onChanged: onChanged),
       );
+}
+
+final class MuteExceptionSettingsPage extends StatelessWidget {
+  const MuteExceptionSettingsPage({super.key, required this.controller});
+  final GroupChatInfoController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = controller.state.snapshot!;
+    return CupertinoPageScaffold(
+      navigationBar: const CupertinoNavigationBar(middle: Text('以下消息仍通知')),
+      child: SafeArea(
+        child: ListView(children: [
+          _preferenceTile(
+            '＠我',
+            snapshot.notifyMentionMe,
+            (value) => controller.setPreference(
+              GroupChatPreference.notifyMentionMe,
+              value,
+            ),
+          ),
+          _preferenceTile(
+            '＠所有人',
+            snapshot.notifyMentionAll,
+            (value) => controller.setPreference(
+              GroupChatPreference.notifyMentionAll,
+              value,
+            ),
+          ),
+          _preferenceTile(
+            '群公告',
+            snapshot.notifyAnnouncement,
+            (value) => controller.setPreference(
+              GroupChatPreference.notifyAnnouncement,
+              value,
+            ),
+          ),
+          const SizedBox(height: 12),
+          WeChatListTile(
+            title: const Text('关注群成员的消息'),
+            subtitle: const Text('最多可关注 4 位'),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                '${snapshot.followedMemberIds.length}/4',
+                style: const TextStyle(color: WeChatColors.textSecondary),
+              ),
+              const SizedBox(width: 6),
+              const CupertinoListTileChevron(),
+            ]),
+            onTap: () => Navigator.push(
+              context,
+              CupertinoPageRoute(
+                builder: (_) => FollowedGroupMemberPickerPage(
+                  controller: controller,
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _preferenceTile(
+    String label,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) =>
+      WeChatListTile(
+        title: Text(label),
+        trailing: CupertinoSwitch(value: value, onChanged: onChanged),
+      );
+}
+
+final class FollowedGroupMemberPickerPage extends StatefulWidget {
+  const FollowedGroupMemberPickerPage({super.key, required this.controller});
+  final GroupChatInfoController controller;
+
+  @override
+  State<FollowedGroupMemberPickerPage> createState() =>
+      _FollowedGroupMemberPickerPageState();
+}
+
+final class _FollowedGroupMemberPickerPageState
+    extends State<FollowedGroupMemberPickerPage> {
+  late final Set<String> selected =
+      widget.controller.state.snapshot!.followedMemberIds.toSet();
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = widget.controller.state.snapshot!;
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('关注群成员'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: () async {
+            await widget.controller.setFollowedMemberIds(selected.toList());
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: const Text('完成'),
+        ),
+      ),
+      child: SafeArea(
+        child: ListView(children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              '最多可关注 4 位群成员',
+              style: TextStyle(color: WeChatColors.textSecondary),
+            ),
+          ),
+          for (final member in snapshot.members)
+            WeChatListTile(
+              leading: UserAvatar(
+                nickname: member.displayName,
+                fallbackSeed: member.matrixUserId,
+                avatarUrl: member.avatarUrl,
+                size: 40,
+              ),
+              title: Text(member.displayName),
+              trailing: Icon(
+                selected.contains(member.matrixUserId)
+                    ? CupertinoIcons.check_mark_circled_solid
+                    : CupertinoIcons.circle,
+                color: selected.contains(member.matrixUserId)
+                    ? WeChatColors.brandPrimary
+                    : WeChatColors.textTertiary,
+              ),
+              onTap: () => setState(() {
+                if (!selected.remove(member.matrixUserId) &&
+                    selected.length < 4) {
+                  selected.add(member.matrixUserId);
+                }
+              }),
+            ),
+        ]),
+      ),
+    );
+  }
 }
 
 final class _MemberGrid extends StatelessWidget {
@@ -483,14 +647,30 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
 }
 
 final class GroupChatHistoryEntry {
-  const GroupChatHistoryEntry({required this.sender, required this.text});
+  const GroupChatHistoryEntry({
+    required this.sender,
+    required this.text,
+    this.senderId = '',
+    this.eventId = '',
+    this.timestamp,
+    this.kind = LocalChatSearchKind.text,
+  });
   final String sender;
   final String text;
+  final String senderId;
+  final String eventId;
+  final DateTime? timestamp;
+  final LocalChatSearchKind kind;
 }
 
 final class GroupChatHistorySearchPage extends StatefulWidget {
-  const GroupChatHistorySearchPage({super.key, required this.entries});
+  const GroupChatHistorySearchPage({
+    super.key,
+    required this.entries,
+    this.isGroup = true,
+  });
   final List<GroupChatHistoryEntry> entries;
+  final bool isGroup;
 
   @override
   State<GroupChatHistorySearchPage> createState() =>
@@ -500,6 +680,9 @@ final class GroupChatHistorySearchPage extends StatefulWidget {
 final class _GroupChatHistorySearchPageState
     extends State<GroupChatHistorySearchPage> {
   String query = '';
+  ChatSearchCategory? category;
+  DateTime? selectedDate;
+  String? selectedSender;
 
   @override
   Widget build(BuildContext context) {
@@ -507,9 +690,24 @@ final class _GroupChatHistorySearchPageState
     final results = widget.entries
         .where(
           (entry) =>
-              normalized.isEmpty ||
-              entry.text.toLowerCase().contains(normalized) ||
-              entry.sender.toLowerCase().contains(normalized),
+              (normalized.isEmpty ||
+                  entry.text.toLowerCase().contains(normalized) ||
+                  entry.sender.toLowerCase().contains(normalized)) &&
+              (selectedSender == null || entry.sender == selectedSender) &&
+              (selectedDate == null ||
+                  (entry.timestamp?.year == selectedDate!.year &&
+                      entry.timestamp?.month == selectedDate!.month &&
+                      entry.timestamp?.day == selectedDate!.day)) &&
+              switch (category) {
+                ChatSearchCategory.media =>
+                  entry.kind == LocalChatSearchKind.image ||
+                      entry.kind == LocalChatSearchKind.video,
+                ChatSearchCategory.files =>
+                  entry.kind == LocalChatSearchKind.file,
+                ChatSearchCategory.links =>
+                  RegExp(r'https?://[^\s]+').hasMatch(entry.text),
+                _ => true,
+              },
         )
         .toList(growable: false);
     return CupertinoPageScaffold(
@@ -522,6 +720,35 @@ final class _GroupChatHistorySearchPageState
               child: CupertinoSearchTextField(
                 placeholder: '搜索群成员或消息',
                 onChanged: (value) => setState(() => query = value),
+              ),
+            ),
+            ColoredBox(
+              color: WeChatColors.elevatedSurface(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 18),
+                child: Wrap(
+                  alignment: WrapAlignment.spaceEvenly,
+                  spacing: 16,
+                  runSpacing: 18,
+                  children: [
+                    for (final item in chatSearchCategories(
+                      isGroup: widget.isGroup,
+                    ))
+                      CupertinoButton(
+                        key: Key('history-category-${item.name}'),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        onPressed: () => _selectCategory(item),
+                        child: SizedBox(
+                          width: 82,
+                          child: Column(children: [
+                            Icon(_categoryIcon(item), size: 26),
+                            const SizedBox(height: 7),
+                            Text(_categoryLabel(item)),
+                          ]),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             Expanded(
@@ -540,4 +767,91 @@ final class _GroupChatHistorySearchPageState
       ),
     );
   }
+
+  Future<void> _selectCategory(ChatSearchCategory value) async {
+    if (value == ChatSearchCategory.date) {
+      var selected = selectedDate ?? DateTime.now();
+      await showCupertinoModalPopup<void>(
+        context: context,
+        builder: (context) => Container(
+          height: 320,
+          color: WeChatColors.elevatedSurface(context),
+          child: Column(children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: CupertinoButton(
+                onPressed: () {
+                  setState(() {
+                    category = value;
+                    selectedDate = selected;
+                    selectedSender = null;
+                  });
+                  Navigator.pop(context);
+                },
+                child: const Text('完成'),
+              ),
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: selected,
+                maximumDate: DateTime.now(),
+                onDateTimeChanged: (date) => selected = date,
+              ),
+            ),
+          ]),
+        ),
+      );
+      return;
+    }
+    if (value == ChatSearchCategory.members) {
+      final senders = widget.entries.map((entry) => entry.sender).toSet();
+      await showCupertinoModalPopup<void>(
+        context: context,
+        builder: (context) => CupertinoActionSheet(
+          title: const Text('选择群成员'),
+          actions: [
+            for (final sender in senders)
+              CupertinoActionSheetAction(
+                onPressed: () {
+                  setState(() {
+                    category = value;
+                    selectedSender = sender;
+                    selectedDate = null;
+                  });
+                  Navigator.pop(context);
+                },
+                child: Text(sender),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      category = value;
+      selectedDate = null;
+      selectedSender = null;
+    });
+  }
+
+  String _categoryLabel(ChatSearchCategory value) => switch (value) {
+        ChatSearchCategory.date => '日期',
+        ChatSearchCategory.media => '图片与视频',
+        ChatSearchCategory.files => '文件',
+        ChatSearchCategory.links => '链接',
+        ChatSearchCategory.members => '群成员',
+      };
+
+  IconData _categoryIcon(ChatSearchCategory value) => switch (value) {
+        ChatSearchCategory.date => CupertinoIcons.calendar,
+        ChatSearchCategory.media => CupertinoIcons.photo_on_rectangle,
+        ChatSearchCategory.files => CupertinoIcons.doc,
+        ChatSearchCategory.links => CupertinoIcons.link,
+        ChatSearchCategory.members => CupertinoIcons.person_2,
+      };
 }

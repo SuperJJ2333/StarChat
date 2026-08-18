@@ -1,9 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 
+import 'conversation_preferences.dart';
+
 const groupChatAccountDataType = 'com.liuhetong.group_chat.settings.v1';
 
-enum GroupChatPreference { muted, pinned, saved }
+enum GroupChatPreference {
+  muted,
+  pinned,
+  saved,
+  folded,
+  notifyMentionMe,
+  notifyMentionAll,
+  notifyAnnouncement,
+}
 
 final class GroupChatMember {
   const GroupChatMember({
@@ -26,6 +36,11 @@ final class GroupChatInfoSnapshot {
     this.muted = false,
     this.pinned = false,
     this.saved = false,
+    this.folded = false,
+    this.notifyMentionMe = true,
+    this.notifyMentionAll = true,
+    this.notifyAnnouncement = true,
+    this.followedMemberIds = const [],
   });
 
   final String name;
@@ -35,6 +50,11 @@ final class GroupChatInfoSnapshot {
   final bool muted;
   final bool pinned;
   final bool saved;
+  final bool folded;
+  final bool notifyMentionMe;
+  final bool notifyMentionAll;
+  final bool notifyAnnouncement;
+  final List<String> followedMemberIds;
 
   GroupChatInfoSnapshot copyWith({
     String? name,
@@ -44,6 +64,11 @@ final class GroupChatInfoSnapshot {
     bool? muted,
     bool? pinned,
     bool? saved,
+    bool? folded,
+    bool? notifyMentionMe,
+    bool? notifyMentionAll,
+    bool? notifyAnnouncement,
+    List<String>? followedMemberIds,
   }) =>
       GroupChatInfoSnapshot(
         name: name ?? this.name,
@@ -53,6 +78,11 @@ final class GroupChatInfoSnapshot {
         muted: muted ?? this.muted,
         pinned: pinned ?? this.pinned,
         saved: saved ?? this.saved,
+        folded: folded ?? this.folded,
+        notifyMentionMe: notifyMentionMe ?? this.notifyMentionMe,
+        notifyMentionAll: notifyMentionAll ?? this.notifyMentionAll,
+        notifyAnnouncement: notifyAnnouncement ?? this.notifyAnnouncement,
+        followedMemberIds: followedMemberIds ?? this.followedMemberIds,
       );
 }
 
@@ -62,6 +92,7 @@ abstract interface class GroupChatInfoGateway {
   Future<void> setAnnouncement(String announcement);
   Future<void> setRemark(String remark);
   Future<void> setPreference(GroupChatPreference preference, bool value);
+  Future<void> setFollowedMemberIds(List<String> matrixUserIds);
   Future<void> invite(String matrixUserId);
   Future<void> leave();
 }
@@ -79,11 +110,22 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
 
   @override
   Future<GroupChatInfoSnapshot> load() async {
-    final users = await room.requestParticipants([
-      Membership.join,
-      Membership.invite,
-    ]);
-    final settings = _settings;
+    final users = await room.requestParticipants([Membership.join]);
+    final modern = room.roomAccountData[conversationPreferenceType]?.content;
+    final settings =
+        modern == null ? _settings : Map<String, Object?>.from(modern);
+    _cachedSettings = settings;
+    final followed = settings['followed_member_ids'];
+    final storedOrder = settings['member_order_ids'];
+    final order = reconcileMemberOrder(
+      storedOrder is List
+          ? storedOrder.map((value) => value.toString())
+          : const <String>[],
+      users.map((user) => user.id),
+    );
+    final userById = {for (final user in users) user.id: user};
+    final orderedUsers = [for (final id in order) userById[id]!];
+    final activeIds = orderedUsers.map((user) => user.id).toSet();
     return GroupChatInfoSnapshot(
       name: room.getLocalizedDisplayname(),
       announcement: room.topic,
@@ -91,8 +133,19 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
       muted: settings['muted'] == true,
       pinned: settings['pinned'] == true,
       saved: settings['saved'] == true,
+      folded: settings['folded'] == true,
+      notifyMentionMe: settings['notify_mention_me'] != false,
+      notifyMentionAll: settings['notify_mention_all'] != false,
+      notifyAnnouncement: settings['notify_announcement'] != false,
+      followedMemberIds: followed is List
+          ? followed
+              .map((value) => value.toString())
+              .where(activeIds.contains)
+              .take(4)
+              .toList()
+          : const [],
       members: [
-        for (final user in users)
+        for (final user in orderedUsers)
           GroupChatMember(
             matrixUserId: user.id,
             displayName: user.calcDisplayname(),
@@ -126,8 +179,30 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> setPreference(
     GroupChatPreference preference,
     bool value,
-  ) =>
-      _writeSetting(preference.name, value);
+  ) async {
+    await _writeSetting(
+      switch (preference) {
+        GroupChatPreference.muted => 'muted',
+        GroupChatPreference.pinned => 'pinned',
+        GroupChatPreference.saved => 'saved',
+        GroupChatPreference.folded => 'folded',
+        GroupChatPreference.notifyMentionMe => 'notify_mention_me',
+        GroupChatPreference.notifyMentionAll => 'notify_mention_all',
+        GroupChatPreference.notifyAnnouncement => 'notify_announcement',
+      },
+      value,
+    );
+    if (preference == GroupChatPreference.pinned) {
+      await _writeSetting(
+        'pinned_at',
+        value ? DateTime.now().toUtc().toIso8601String() : '',
+      );
+    }
+  }
+
+  @override
+  Future<void> setFollowedMemberIds(List<String> matrixUserIds) =>
+      _writeSetting('followed_member_ids', matrixUserIds.take(4).toList());
 
   @override
   Future<void> setRemark(String remark) => _writeSetting('remark', remark);
@@ -139,7 +214,7 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
     await room.client.setAccountDataPerRoom(
       userId,
       room.id,
-      groupChatAccountDataType,
+      conversationPreferenceType,
       next,
     );
     _cachedSettings = next;
@@ -209,7 +284,25 @@ final class GroupChatInfoController extends ChangeNotifier {
           GroupChatPreference.muted => snapshot.copyWith(muted: value),
           GroupChatPreference.pinned => snapshot.copyWith(pinned: value),
           GroupChatPreference.saved => snapshot.copyWith(saved: value),
+          GroupChatPreference.folded => snapshot.copyWith(folded: value),
+          GroupChatPreference.notifyMentionMe =>
+            snapshot.copyWith(notifyMentionMe: value),
+          GroupChatPreference.notifyMentionAll =>
+            snapshot.copyWith(notifyMentionAll: value),
+          GroupChatPreference.notifyAnnouncement =>
+            snapshot.copyWith(notifyAnnouncement: value),
         },
+      );
+
+  Future<void> setFollowedMemberIds(List<String> matrixUserIds) => _save(
+        () => gateway.setFollowedMemberIds(matrixUserIds),
+        (snapshot) => snapshot.copyWith(
+          followedMemberIds: matrixUserIds
+              .where((id) =>
+                  snapshot.members.any((member) => member.matrixUserId == id))
+              .take(4)
+              .toList(),
+        ),
       );
 
   Future<void> invite(String matrixUserId) async {
