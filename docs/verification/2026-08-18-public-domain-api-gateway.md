@@ -42,3 +42,22 @@
 - Debug 域名验收 APK 使用相同 Debug 签名覆盖安装到 `emulator-5554`：`Success`。
 
 由于公网 TLS 和网关尚未上线，当前仅验证制品构建、签名边界与安装，不把真实登录标记为通过。
+
+## 网关与仓库验证
+
+- 渲染后的 Nginx 配置使用运行中的 Nginx `1.27.5` 执行 `nginx -t`：syntax is ok，test is successful。
+- 发现并通过 RED/GREEN 测试移除了已废弃的 `listen 443 ssl http2` 写法，统一使用 `listen 443 ssl; http2 on;`。
+- `Test-DeploymentPolicy.ps1`：PASS。
+- `Test-PublicDomainVerification.ps1`：PASS。
+- `Test-MobilePublicDomainBuild.ps1`：PASS。
+- `scripts/verify.ps1`：`Verification: PASS`。
+- Matrix Bot：9 passed。
+- Business API / Worker：161 passed，1 skipped。
+- Flutter boundary：19 passed。
+- Repository policy、deployment policy、模板、迁移、OpenAPI 和 Docker Compose 渲染均通过。
+
+## 最终状态
+
+- 仓库网关配置、部署手册、自动验收脚本和 Flutter 域名制品：完成。
+- 公网 Nginx/TLS 实际上线：`BLOCKED`，原因是当前没有可用的授权部署会话。
+- 公网验收：`FAIL (13 checks)`，不得发布 Release APK 给真实用户，直至公网脚本返回 PASS。

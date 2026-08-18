@@ -29,7 +29,7 @@
 - Consumes: `PUBLIC_HOSTNAME`、`WWW_PUBLIC_HOSTNAME`、`ADMIN_PUBLIC_HOSTNAME`、`SYNAPSE_PUBLIC_BASEURL` 模板变量。
 - Produces: 主域 API/Matrix/Web 分流、www 301、admin API 分流及 Synapse Admin 拒绝规则。
 
-- [ ] **Step 1: 编写失败的仓库策略断言**
+- [x] **Step 1: 编写失败的仓库策略断言**
 
 在 `Test-DeploymentPolicy.ps1` 中断言：
 
@@ -41,12 +41,12 @@ Assert-Match $nginx 'server_name \{\{ADMIN_PUBLIC_HOSTNAME\}\}' 'admin host is r
 Assert-Match $nginx 'location \^~ /_synapse/admin/' 'Public Synapse admin denial is required'
 ```
 
-- [ ] **Step 2: 运行 RED 验证**
+- [x] **Step 2: 运行 RED 验证**
 
 Run: `pwsh -NoProfile -File tests/repository/Test-DeploymentPolicy.ps1`  
 Expected: FAIL，指出缺少 Business API、www/admin 或 Synapse Admin 规则。
 
-- [ ] **Step 3: 实现最小 Nginx 拓扑**
+- [x] **Step 3: 实现最小 Nginx 拓扑**
 
 更新 `infra/nginx/nginx.conf`：
 
@@ -60,12 +60,12 @@ location /_matrix/ { proxy_pass http://synapse_upstream; }
 
 分别建立主域、www 和 admin 的 HTTP/HTTPS server block；www 保留 `$request_uri` 301 到主域，admin 根路径返回 404。
 
-- [ ] **Step 4: 运行 GREEN 验证**
+- [x] **Step 4: 运行 GREEN 验证**
 
 Run: `pwsh -NoProfile -File tests/repository/Test-DeploymentPolicy.ps1`  
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add tests/repository/Test-DeploymentPolicy.ps1 infra/nginx/nginx.conf
@@ -84,7 +84,7 @@ git commit -m "feat(infra): add public domain API gateway routes"
 - Consumes: Task 1 的 Nginx 模板变量。
 - Produces: 可复制到服务器 Secret Manager 的生产配置契约，不包含真实秘密。
 
-- [ ] **Step 1: 编写失败的配置契约断言**
+- [x] **Step 1: 编写失败的配置契约断言**
 
 断言 `.env.example` 声明：
 
@@ -98,12 +98,12 @@ EMAIL_VERIFICATION_PUBLIC_BASE_URL=https://example.com
 
 并断言移动发布 runbook 包含两个 HTTPS `dart-define`。
 
-- [ ] **Step 2: 运行 RED 验证**
+- [x] **Step 2: 运行 RED 验证**
 
 Run: `pwsh -NoProfile -File tests/repository/Test-DeploymentPolicy.ps1`  
 Expected: FAIL，指出生产域名配置契约缺失。
 
-- [ ] **Step 3: 实现配置与运行手册**
+- [x] **Step 3: 实现配置与运行手册**
 
 为 `.env.example` 添加不含真实秘密的域名变量；README 说明统一网关路径；移动发布 runbook 固定记录：
 
@@ -113,12 +113,12 @@ flutter build apk --release `
   --dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com
 ```
 
-- [ ] **Step 4: 运行 GREEN 验证**
+- [x] **Step 4: 运行 GREEN 验证**
 
 Run: `pwsh -NoProfile -File tests/repository/Test-DeploymentPolicy.ps1`  
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```powershell
 git add .env.example README.md docs/runbooks/mobile-release.md tests/repository/Test-DeploymentPolicy.ps1
@@ -134,7 +134,7 @@ git commit -m "docs(deploy): define production domain contract"
 **Interfaces:**
 - Produces: `scripts/verify_public_domains.ps1 -RootDomain <string> -WwwDomain <string> -AdminDomain <string>`，成功返回 0，任何 DNS/TLS/路由失败返回非零。
 
-- [ ] **Step 1: 编写失败的脚本结构测试**
+- [x] **Step 1: 编写失败的脚本结构测试**
 
 测试脚本必须拒绝 HTTP 主域、禁止跳过 TLS，并检查以下 URL：
 
@@ -146,21 +146,21 @@ https://<root>/.well-known/matrix/client
 https://<admin>/api/v1/health/live
 ```
 
-- [ ] **Step 2: 运行 RED 验证**
+- [x] **Step 2: 运行 RED 验证**
 
 Run: `pwsh -NoProfile -File tests/powershell/Test-PublicDomainVerification.ps1`  
 Expected: FAIL，因为验收脚本不存在。
 
-- [ ] **Step 3: 实现验收脚本**
+- [x] **Step 3: 实现验收脚本**
 
 使用 `Resolve-DnsName` 和 `Invoke-WebRequest`，校验证书、状态码、www 跳转 Location、well-known JSON 及 admin 未认证保护；输出不包含响应 Token 或正文秘密。
 
-- [ ] **Step 4: 运行 GREEN 结构测试**
+- [x] **Step 4: 运行 GREEN 结构测试**
 
 Run: `pwsh -NoProfile -File tests/powershell/Test-PublicDomainVerification.ps1`  
 Expected: PASS。
 
-- [ ] **Step 5: 执行当前公网基线**
+- [x] **Step 5: 执行当前公网基线**
 
 Run:
 
@@ -173,7 +173,7 @@ pwsh -NoProfile -File scripts/verify_public_domains.ps1 `
 
 Expected before server deployment: FAIL with exact DNS/TLS/route boundary；不得把该失败标为通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add scripts/verify_public_domains.ps1 tests/powershell/Test-PublicDomainVerification.ps1
@@ -191,15 +191,15 @@ git commit -m "test(deploy): add public domain acceptance checks"
 - Consumes: Task 1 网关模板、Task 2 配置契约、服务器上的证书与 Secret。
 - Produces: 可审计的服务器部署步骤及公网验证证据。
 
-- [ ] **Step 1: 创建无秘密的部署参数样例**
+- [x] **Step 1: 创建无秘密的部署参数样例**
 
 记录三个域名、主域 HTTPS URL、证书挂载路径和内部 upstream；真实证书、服务器地址、SSH key 与 Secret 不进入文件。
 
-- [ ] **Step 2: 编写部署运行手册**
+- [x] **Step 2: 编写部署运行手册**
 
 包括备份、渲染、`nginx -t`、滚动启动、健康检查和回滚命令；明确不能迁移 Matrix `server_name`。
 
-- [ ] **Step 3: 检查远端部署通道**
+- [x] **Step 3: 检查远端部署通道**
 
 检查受控 SSH/部署工具配置。若无服务器身份或 22/443 不可达，记录阻塞，不猜测凭据、不开放临时后门。
 
@@ -222,29 +222,29 @@ Expected after deployment: PASS；否则证据文件必须保留实际失败项�
 **Interfaces:**
 - Produces: 使用两个 `https://liuhetong888.com` dart-define 构建的 APK，以及不含 `localhost`/局域网 API 配置的审计结果。
 
-- [ ] **Step 1: 编写失败的构建脚本测试**
+- [x] **Step 1: 编写失败的构建脚本测试**
 
 断言脚本：只接受 HTTPS 根 URL；拒绝 localhost、IP literal 和带 `/api/v1` 的 Business 根地址；同时注入 Business 与 Matrix define。
 
-- [ ] **Step 2: 运行 RED 验证**
+- [x] **Step 2: 运行 RED 验证**
 
 Run: `pwsh -NoProfile -File tests/powershell/Test-MobilePublicDomainBuild.ps1`  
 Expected: FAIL，因为构建脚本不存在。
 
-- [ ] **Step 3: 实现构建脚本**
+- [x] **Step 3: 实现构建脚本**
 
 脚本调用 Flutter Release 构建；若本机没有生产签名配置，则明确生成域名配置的 debug 验收 APK，不伪称生产签名制品。
 
-- [ ] **Step 4: 运行 GREEN 结构测试**
+- [x] **Step 4: 运行 GREEN 结构测试**
 
 Run: `pwsh -NoProfile -File tests/powershell/Test-MobilePublicDomainBuild.ps1`  
 Expected: PASS。
 
-- [ ] **Step 5: 构建并审计 APK**
+- [x] **Step 5: 构建并审计 APK**
 
 构建域名版 APK，检查 Android cleartext 策略、包名、版本、制品大小和字符串边界；安装到 `emulator-5554` 仅用于启动验证，真实登录必须等公网验收通过。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```powershell
 git add scripts/build_mobile_public_domain.ps1 tests/powershell/Test-MobilePublicDomainBuild.ps1 docs/verification/2026-08-18-public-domain-api-gateway.md
@@ -256,7 +256,7 @@ git commit -m "build(mobile): add public domain APK workflow"
 **Files:**
 - Modify: `docs/verification/2026-08-18-public-domain-api-gateway.md`
 
-- [ ] **Step 1: 运行格式与专项测试**
+- [x] **Step 1: 运行格式与专项测试**
 
 Run:
 
@@ -266,20 +266,19 @@ pwsh -NoProfile -File tests/powershell/Test-PublicDomainVerification.ps1
 pwsh -NoProfile -File tests/powershell/Test-MobilePublicDomainBuild.ps1
 ```
 
-- [ ] **Step 2: 运行仓库验证**
+- [x] **Step 2: 运行仓库验证**
 
 Run: `pwsh -NoProfile -File scripts/verify.ps1`  
 Expected: `Verification: PASS`。
 
-- [ ] **Step 3: 复测公网与 APK**
+- [x] **Step 3: 复测公网与 APK**
 
 记录 DNS、TLS、HTTP 状态、well-known、Business/Matrix health、APK 路径及模拟器安装状态；公网未通过时状态必须写为 `BLOCKED`，不能写“完成”。
 
-- [ ] **Step 4: 检查差异并提交**
+- [x] **Step 4: 检查差异并提交**
 
 ```powershell
 git diff --check
 git add docs/verification/2026-08-18-public-domain-api-gateway.md docs/superpowers/plans/2026-08-18-public-domain-api-gateway.md
 git commit -m "docs: record public domain gateway verification"
 ```
-
