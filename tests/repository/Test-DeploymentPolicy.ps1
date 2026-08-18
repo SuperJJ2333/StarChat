@@ -27,6 +27,10 @@ foreach ($file in $files) {
 }
 
 $nginx = Get-Content -LiteralPath (Join-Path $root 'infra\nginx\nginx.conf') -Raw -Encoding UTF8
+Assert-Match $nginx 'resolver\s+127\.0\.0\.11' 'Docker DNS resolver is required for recreated upstream containers'
+if ([regex]::Matches($nginx, 'server\s+[a-z-]+:\d+\s+resolve;').Count -lt 3) {
+    throw 'All gateway upstreams must dynamically resolve recreated containers'
+}
 Assert-Match $nginx 'upstream\s+business_api_upstream' 'Business API upstream is required'
 Assert-Match $nginx 'location\s+/api/v1/' 'Main-domain Business API route is required'
 Assert-Match $nginx 'server_name\s+\{\{WWW_PUBLIC_HOSTNAME\}\}' 'www canonical host is required'
