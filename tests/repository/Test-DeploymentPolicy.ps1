@@ -38,6 +38,7 @@ if ($nginx -match 'listen\s+443\s+ssl\s+http2') {
 Assert-Match $nginx 'http2\s+on;' 'Modern HTTP/2 directive is required'
 
 $environmentExample = Get-Content -LiteralPath (Join-Path $root '.env.example') -Raw -Encoding UTF8
+Assert-Match $environmentExample '(?m)^NGINX_IMAGE=nginx:1\.27\.5-alpine$' 'Pinned production Nginx image is required'
 Assert-Match $environmentExample '(?m)^WWW_PUBLIC_HOSTNAME=www\.example\.com$' 'www production hostname example is required'
 Assert-Match $environmentExample '(?m)^ADMIN_PUBLIC_HOSTNAME=admin\.example\.com$' 'admin production hostname example is required'
 Assert-Match $environmentExample '(?m)^BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL=https://example\.com/$' 'Matrix public HTTPS example is required'
@@ -51,6 +52,23 @@ Assert-Match $mobileRelease 'LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888\.c
 docker compose --env-file .env.example config --quiet
 if ($LASTEXITCODE -ne 0) {
     throw 'docker compose config failed'
+}
+
+$productionComposePath = Join-Path $root 'docker-compose.production.yml'
+if (-not (Test-Path -LiteralPath $productionComposePath)) {
+    throw 'Production Compose override is required'
+}
+$productionCompose = Get-Content -LiteralPath $productionComposePath -Raw -Encoding UTF8
+Assert-Match $productionCompose '(?m)^\s*gateway:' 'Production gateway service is required'
+Assert-Match $productionCompose '127\.0\.0\.1:\$\{SYNAPSE_HTTP_PORT' 'Synapse must bind only to loopback in production'
+Assert-Match $productionCompose '127\.0\.0\.1:\$\{BUSINESS_API_HTTP_PORT' 'Business API must bind only to loopback in production'
+Assert-Match $productionCompose '127\.0\.0\.1:\$\{ELEMENT_HTTP_PORT' 'Element must bind only to loopback in production'
+Assert-Match $productionCompose '80:80' 'Gateway must publish HTTP for certificate renewal and redirect'
+Assert-Match $productionCompose '443:443' 'Gateway must publish HTTPS'
+
+docker compose --env-file .env.example -f docker-compose.yml -f docker-compose.production.yml config --quiet
+if ($LASTEXITCODE -ne 0) {
+    throw 'production docker compose config failed'
 }
 
 Write-Output 'Deployment policy: PASS'
