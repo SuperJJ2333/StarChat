@@ -35,13 +35,31 @@ function Test-Dns([string]$Domain) {
 }
 
 function Get-Response([string]$Uri) {
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(15)
     try {
-        return Invoke-WebRequest -Uri $Uri -MaximumRedirection 0 `
-            -SkipHttpErrorCheck -TimeoutSec 15
+        $response = $client.GetAsync($Uri).GetAwaiter().GetResult()
+        $location = if ($null -ne $response.Headers.Location) {
+            $response.Headers.Location.ToString()
+        }
+        else {
+            $null
+        }
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Headers = [pscustomobject]@{ Location = $location }
+            Content = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        }
     }
     catch {
         Add-Failure "$Uri - $($_.Exception.Message)"
         return $null
+    }
+    finally {
+        $client.Dispose()
+        $handler.Dispose()
     }
 }
 

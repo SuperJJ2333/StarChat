@@ -20,6 +20,7 @@ Assert-Match '/_matrix/client/versions' 'Matrix versions check is required'
 Assert-Match '/\.well-known/matrix/client' 'Matrix discovery check is required'
 Assert-Match 'WwwDomain' 'www redirect check is required'
 Assert-Match 'AdminDomain' 'admin API check is required'
+Assert-Match 'AllowAutoRedirect\s*=\s*\$false' 'Redirect checks must use an HTTP client that does not follow redirects'
 
 if ($content -match 'SkipCertificateCheck|--insecure|-k(?:\s|$)') {
     throw 'TLS verification must never be bypassed'
