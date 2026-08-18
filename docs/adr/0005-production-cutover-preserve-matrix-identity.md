@@ -1,6 +1,6 @@
 # ADR 0005: Production cutover preserves Matrix identity and uses logical database restore
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-18
 - Decision owners: Product owner and implementation agent
 
