@@ -1,0 +1,438 @@
+{
+  "schemaVersion": 1,
+  "figma": {
+    "fileKey": "zpzwTbnj1hqx80tyRygX78",
+    "stateArtifact": "design-demo/artifacts/figma-state.json",
+    "mode": "export-ledger",
+    "expectedScreenCount": 326
+  },
+  "tokenMappings": {
+    "colors": [
+      "brandPrimary",
+      "chatNavigationBackground",
+      "chatPageBackground",
+      "tabRootPageBackground",
+      "controlBorder",
+      "errorSurface",
+      "errorBorder"
+    ],
+    "typography": [
+      "display",
+      "title2",
+      "callout",
+      "subhead",
+      "caption"
+    ],
+    "spacing": [
+      "xs",
+      "sm",
+      "md",
+      "lg",
+      "xl"
+    ],
+    "radius": [
+      "control",
+      "dialog",
+      "actionButton",
+      "networkCapsule"
+    ]
+  },
+  "components": [
+    {
+      "id": "action-button",
+      "flutter": {
+        "name": "ModernActionButton",
+        "file": "apps/mobile_flutter/lib/ui/components/modern_action_button.dart",
+        "props": [
+          "icon",
+          "label",
+          "onPressed",
+          "kind",
+          "loading"
+        ],
+        "variants": {
+          "kind": [
+            "primary",
+            "secondary",
+            "danger"
+          ]
+        },
+        "states": [
+          "default",
+          "pressed",
+          "disabled",
+          "loading"
+        ]
+      },
+      "html": {
+        "tag": "app-action-button"
+      },
+      "figma": {
+        "name": "app-action-button",
+        "key": "25:17"
+      },
+      "tokens": [
+        "brandPrimary",
+        "controlBorder",
+        "actionButton"
+      ]
+    },
+    {
+      "id": "page-scaffold",
+      "flutter": {
+        "name": "WeChatPageScaffold",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_scaffold.dart",
+        "props": [
+          "title",
+          "child",
+          "trailing",
+          "backgroundColor"
+        ],
+        "variants": {
+          "backgroundColor": [
+            "chatPageBackground",
+            "tabRootPageBackground"
+          ]
+        },
+        "states": [
+          "default"
+        ]
+      },
+      "html": {
+        "tag": "app-navigation-bar"
+      },
+      "figma": {
+        "name": "app-navigation-bar",
+        "key": "25:7"
+      },
+      "tokens": [
+        "chatNavigationBackground",
+        "chatPageBackground",
+        "tabRootPageBackground"
+      ]
+    },
+    {
+      "id": "avatar",
+      "flutter": {
+        "name": "UserAvatar",
+        "file": "apps/mobile_flutter/lib/ui/components/user_avatar.dart",
+        "props": [
+          "nickname",
+          "fallbackSeed",
+          "avatarUrl",
+          "size"
+        ],
+        "variants": {},
+        "states": [
+          "fallback",
+          "loading",
+          "loaded",
+          "error"
+        ]
+      },
+      "html": {
+        "tag": "app-avatar"
+      },
+      "figma": {
+        "name": "app-avatar",
+        "key": "25:32"
+      },
+      "tokens": [
+        "control"
+      ]
+    },
+    {
+      "id": "composer",
+      "flutter": {
+        "name": "WeChatComposer",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_composer.dart",
+        "props": [
+          "controller",
+          "onMore",
+          "onVoice",
+          "onEmoji",
+          "onSend",
+          "panel"
+        ],
+        "variants": {
+          "panel": [
+            "none",
+            "emoji",
+            "more"
+          ]
+        },
+        "states": [
+          "text",
+          "voice",
+          "attachment"
+        ]
+      },
+      "html": {
+        "tag": "app-composer"
+      },
+      "figma": {
+        "name": "app-composer",
+        "key": "25:22"
+      },
+      "tokens": [
+        "composerMinHeight",
+        "control"
+      ]
+    },
+    {
+      "id": "contact-tile",
+      "flutter": {
+        "name": "WeChatContactTile",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_contact_tile.dart",
+        "props": [
+          "nickname",
+          "fallbackSeed",
+          "avatarUrl",
+          "onTap",
+          "trailing"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "disabled"
+        ]
+      },
+      "html": {
+        "tag": "app-list-tile"
+      },
+      "figma": {
+        "name": "app-list-tile",
+        "key": "25:27"
+      },
+      "tokens": [
+        "contactTileHeight",
+        "contactAvatar",
+        "contactDividerIndent"
+      ]
+    },
+    {
+      "id": "contact-index",
+      "flutter": {
+        "name": "WeChatContactIndex",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_contact_index.dart",
+        "props": [
+          "labels",
+          "onSelected"
+        ],
+        "variants": {},
+        "states": [
+          "idle",
+          "selected"
+        ]
+      },
+      "html": {
+        "tag": "app-contact-index"
+      },
+      "figma": {
+        "name": "app-contact-index",
+        "key": "25:42"
+      },
+      "tokens": [
+        "contactIndexFeedback"
+      ]
+    },
+    {
+      "id": "dialog",
+      "flutter": {
+        "name": "WeChatDialog",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_dialog.dart",
+        "props": [
+          "title",
+          "content",
+          "actions",
+          "semanticType"
+        ],
+        "variants": {
+          "semanticType": [
+            "confirmation",
+            "error",
+            "detail"
+          ]
+        },
+        "states": [
+          "confirm",
+          "error",
+          "detail"
+        ]
+      },
+      "html": {
+        "tag": "app-dialog"
+      },
+      "figma": {
+        "name": "app-dialog",
+        "key": "25:77"
+      },
+      "tokens": [
+        "dialog"
+      ]
+    },
+    {
+      "id": "toast",
+      "flutter": {
+        "name": "WeChatToast",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_toast.dart",
+        "props": [
+          "message",
+          "semanticType"
+        ],
+        "variants": {
+          "semanticType": [
+            "success",
+            "error",
+            "info"
+          ]
+        },
+        "states": [
+          "success",
+          "error",
+          "info"
+        ]
+      },
+      "html": {
+        "tag": "app-toast"
+      },
+      "figma": {
+        "name": "app-toast",
+        "key": "25:87"
+      },
+      "tokens": [
+        "dialog"
+      ]
+    },
+    {
+      "id": "empty-state",
+      "flutter": {
+        "name": "WeChatEmptyState",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_empty_state.dart",
+        "props": [
+          "title",
+          "description",
+          "actionLabel",
+          "onAction",
+          "icon"
+        ],
+        "variants": {},
+        "states": [
+          "empty",
+          "network",
+          "error"
+        ]
+      },
+      "html": {
+        "tag": "app-empty-state"
+      },
+      "figma": {
+        "name": "app-empty-state",
+        "key": "25:92"
+      },
+      "tokens": [
+        "callControl"
+      ]
+    },
+    {
+      "id": "network-capsule",
+      "flutter": {
+        "name": "NetworkStatusCapsule",
+        "file": "apps/mobile_flutter/lib/ui/components/network_status_capsule.dart",
+        "props": [
+          "onRetry",
+          "reconnecting"
+        ],
+        "variants": {},
+        "states": [
+          "offline",
+          "reconnecting"
+        ]
+      },
+      "html": {
+        "tag": "app-network-capsule"
+      },
+      "figma": {
+        "name": "app-network-capsule",
+        "key": "25:97"
+      },
+      "tokens": [
+        "networkCapsule"
+      ]
+    }
+  ],
+  "tokenParity": [
+    {
+      "category": "colors",
+      "figma": "color/brand/primary",
+      "html": "--color-brand-primary: #07c160",
+      "flutter": "static const brandPrimary = Color(0xFF07C160);"
+    },
+    {
+      "category": "colors",
+      "figma": "color/page/background",
+      "html": "--color-page-background: #ededed",
+      "flutter": "static const chatPageBackground = Color(0xFFEDEDED);"
+    },
+    {
+      "category": "colors",
+      "figma": "color/surface/primary",
+      "html": "--color-surface-primary: #f7f7f7",
+      "flutter": "static const chatNavigationBackground = Color(0xFFF7F7F7);"
+    },
+    {
+      "category": "colors",
+      "figma": "color/text/primary",
+      "html": "--color-text-primary: #191919",
+      "flutter": "static const lightTextPrimary = Color(0xFF191919);"
+    },
+    {
+      "category": "colors",
+      "figma": "color/divider",
+      "html": "--color-divider: #d9d9d9",
+      "flutter": "static const divider = Color(0xFFD9D9D9);"
+    },
+    {
+      "category": "typography",
+      "figma": "type/callout/size",
+      "html": "--type-callout-size: 16px",
+      "flutter": "static const callout = 16.0;"
+    },
+    {
+      "category": "typography",
+      "figma": "type/subhead/size",
+      "html": "--type-subhead-size: 14px",
+      "flutter": "static const subhead = 14.0;"
+    },
+    {
+      "category": "spacing",
+      "figma": "space/md",
+      "html": "--space-md: 12px",
+      "flutter": "static const md = 12.0;"
+    },
+    {
+      "category": "spacing",
+      "figma": "space/lg",
+      "html": "--space-lg: 16px",
+      "flutter": "static const lg = 16.0;"
+    },
+    {
+      "category": "radius",
+      "figma": "radius/tag",
+      "html": "--radius-tag: 4px",
+      "flutter": "static const tag = 4.0;"
+    },
+    {
+      "category": "radius",
+      "figma": "radius/dialog",
+      "html": "--radius-dialog: 12px",
+      "flutter": "static const dialog = 12.0;"
+    },
+    {
+      "category": "radius",
+      "figma": "radius/red/packet",
+      "html": "--radius-red-packet: 10px",
+      "flutter": "static const redPacket = 10.0;"
+    }
+  ]
+}

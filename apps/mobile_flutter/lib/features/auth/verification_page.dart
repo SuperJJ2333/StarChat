@@ -100,14 +100,14 @@ final class _VerificationPageState extends State<VerificationPage> {
                         vertical: WeChatSpacing.sm,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xfffff1f0),
+                        color: WeChatColors.errorSurface,
                         borderRadius: BorderRadius.circular(WeChatRadius.tag),
-                        border: Border.all(color: const Color(0xffffccc7)),
+                        border: Border.all(color: WeChatColors.errorBorder),
                       ),
                       child: Text(
                         error,
                         style: const TextStyle(
-                          color: CupertinoColors.systemRed,
+                          color: WeChatColors.danger,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),

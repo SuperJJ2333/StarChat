@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+
+import '../../ui/components/wechat_scaffold.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../ui/components/call_control_button.dart';
@@ -89,7 +91,7 @@ final class _CallPageState extends State<CallPage> {
     final state = widget.controller.state;
     final active = state.phase == CallPhase.connected ||
         (state.phase == CallPhase.ringing && !widget.incoming);
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.bare(
       backgroundColor: WeChatColors.darkSurface,
       child: SafeArea(
         child: Padding(

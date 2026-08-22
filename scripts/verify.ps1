@@ -69,6 +69,10 @@ try {
     & py -3.12 -m pytest tests/mobile -q
     Assert-LastExitCode 'Flutter boundary tests'
 
+    Write-Output '== Flutter-HTML-Figma UI contract drift check =='
+    & py -3.12 scripts/verify_ui_contract.py
+    Assert-LastExitCode 'Flutter-HTML-Figma UI contract drift check'
+
     Write-Output '== Business API import smoke test =='
     & py -3.12 -c "import app.main; print('Business API import: PASS')"
     Assert-LastExitCode 'Business API import smoke test'

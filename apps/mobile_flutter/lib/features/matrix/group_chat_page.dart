@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_scaffold.dart';
+
 import '../../ui/foundation/wechat_tokens.dart';
 
 import '../../ui/components/modern_action_button.dart';
@@ -50,7 +52,7 @@ final class _GroupChatPageState extends State<GroupChatPage> {
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

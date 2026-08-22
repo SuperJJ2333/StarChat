@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_scaffold.dart';
+
 import '../../ui/foundation/wechat_tokens.dart';
 
 import '../../ui/components/modern_action_button.dart';
@@ -61,7 +63,7 @@ final class _ProfileAvatarPageState extends State<ProfileAvatarPage> {
     final candidate = state.candidate;
     final busy = state.status == ProfileStatus.selectingAvatar ||
         state.status == ProfileStatus.uploading;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

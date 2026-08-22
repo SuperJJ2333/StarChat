@@ -27,10 +27,10 @@ final class _UserAvatarState extends State<UserAvatar> {
   Color get fallbackColor {
     final value = widget.fallbackSeed.codeUnits.fold<int>(0, (a, b) => a + b);
     return [
-      const Color(0xffd8e8ff),
-      const Color(0xffdff2e4),
-      const Color(0xffffe5d5),
-      const Color(0xffeee1ff)
+      WeChatColors.avatarFallbackBlue,
+      WeChatColors.avatarFallbackGreen,
+      WeChatColors.avatarFallbackOrange,
+      WeChatColors.avatarFallbackPurple
     ][value % 4];
   }
 
@@ -51,7 +51,7 @@ final class _UserAvatarState extends State<UserAvatar> {
               : widget.nickname.trim().characters.first,
           style: TextStyle(
             fontSize: widget.size * .4,
-            color: const Color(0xff191919),
+            color: WeChatColors.lightTextPrimary,
           ),
         ),
       ),

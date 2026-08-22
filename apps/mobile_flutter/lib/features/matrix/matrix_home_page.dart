@@ -22,6 +22,7 @@ import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
 import '../../ui/chat/wechat_voice_bubble.dart';
 import '../../ui/components/conversation_list_tile.dart';
+import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/chat/conversation_action_sheet.dart';
 import '../../ui/finance/wechat_red_packet_card.dart';
 import '../../ui/foundation/changliao_icons.dart';
@@ -427,7 +428,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         .toList(growable: false);
     final pinnedCount =
         rooms.where((room) => preferenceForRoom(room).pinned).length;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.tabRootPageBackground,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
@@ -567,7 +568,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
   final ValueChanged<Room> onOpen;
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
@@ -1795,7 +1796,7 @@ class _RoomPageState extends State<RoomPage> {
         allMessages;
     final showAnnouncement =
         readAnnouncementVersion != null && _showAnnouncement;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.chatPageBackground,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
@@ -1986,7 +1987,7 @@ final class GroupAnnouncementPage extends StatelessWidget {
   final String title;
   final String announcement;
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

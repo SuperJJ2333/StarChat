@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_scaffold.dart';
+
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/components/modern_action_button.dart';
 import 'matrix_e2ee_client.dart';
@@ -26,7 +28,7 @@ final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

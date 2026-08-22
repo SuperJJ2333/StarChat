@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+
+import '../../ui/components/wechat_scaffold.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../ui/components/user_avatar.dart';
@@ -61,7 +63,7 @@ final class _DirectGroupMemberPickerPageState
   bool saving = false;
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -143,7 +145,7 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,

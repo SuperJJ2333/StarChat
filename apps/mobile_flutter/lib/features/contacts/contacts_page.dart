@@ -4,6 +4,9 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
+import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_contact_index.dart';
+import '../../ui/components/wechat_contact_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_profile_sections.dart';
@@ -122,7 +125,7 @@ final class _ContactsPageState extends State<ContactsPage> {
     final businessApi = widget.api is BusinessApiClient
         ? widget.api as BusinessApiClient
         : null;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.tabRootPageBackground,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
@@ -200,13 +203,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                           label: label == '★' ? '星标好友' : label,
                         ),
                         for (final contact in grouped[label]!)
-                          WeChatListTile(
-                            leading: UserAvatar(
-                              nickname: contact.displayName,
-                              fallbackSeed: contact.username,
-                              avatarUrl: contact.avatarUrl,
-                            ),
-                            title: Text(contact.displayName),
+                          WeChatContactTile(
+                            nickname: contact.displayName,
+                            fallbackSeed: contact.username,
+                            avatarUrl: contact.avatarUrl,
                             onTap: () async {
                               await Navigator.of(context, rootNavigator: true)
                                   .push<bool>(
@@ -233,7 +233,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                   width: 20,
                   child: AnimatedBuilder(
                     animation: scrollController,
-                    child: _ContactLetterIndex(onTap: _jumpTo),
+                    child: WeChatContactIndex(
+                        labels: ContactIndex.labels, onSelected: _jumpTo),
                     builder: (_, child) {
                       final pullDown = scrollController.hasClients
                           ? (-scrollController.offset)
@@ -279,36 +280,6 @@ final class _ContactSectionHeader extends StatelessWidget {
       );
 }
 
-final class _ContactLetterIndex extends StatelessWidget {
-  const _ContactLetterIndex({required this.onTap});
-  final ValueChanged<String> onTap;
-
-  @override
-  Widget build(BuildContext context) => ColoredBox(
-        key: const Key('contact-index'),
-        color: WeChatColors.elevatedSurface(context),
-        child: Column(
-          children: [
-            for (final label in ContactIndex.labels)
-              Expanded(
-                child: CupertinoButton(
-                  minimumSize: Size.zero,
-                  padding: EdgeInsets.zero,
-                  onPressed: () => onTap(label),
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: WeChatTypography.badge,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-}
-
 final class ContactProfilePage extends StatefulWidget {
   const ContactProfilePage({
     super.key,
@@ -348,7 +319,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -523,7 +494,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -605,7 +576,7 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
@@ -709,7 +680,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       );
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
@@ -777,7 +748,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         backgroundColor: WeChatColors.tabRootPageBackground,
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,

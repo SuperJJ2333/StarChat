@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_scaffold.dart';
+
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
@@ -14,7 +16,7 @@ final class MomentsPage extends StatefulWidget {
 final class _MomentsPageState extends State<MomentsPage> {
   String mode = 'recommended';
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
@@ -92,7 +94,7 @@ final class _ComposerState extends State<MomentComposerPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -181,7 +183,7 @@ final class _MomentsSettingsState extends State<MomentsSettingsPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

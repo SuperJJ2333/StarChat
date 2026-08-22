@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_scaffold.dart';
+
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -120,7 +122,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     final snapshot = state.snapshot;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
@@ -356,7 +358,7 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = controller.state.snapshot!;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -442,7 +444,7 @@ final class _FollowedGroupMemberPickerPageState
   @override
   Widget build(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
@@ -574,7 +576,7 @@ final class GroupQrCodePage extends StatelessWidget {
   final GroupChatInfoSnapshot snapshot;
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
@@ -604,7 +606,7 @@ final class GroupManagementPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final snapshot = controller.state.snapshot!;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -678,7 +680,7 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
   Widget build(BuildContext context) {
     final members = widget.snapshot.members.where((member) =>
         member.displayName.toLowerCase().contains(query.trim().toLowerCase()));
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -734,7 +736,7 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
     final removable = snapshot.members.where((member) =>
         member.matrixUserId != snapshot.ownerId &&
         !(snapshot.isAdmin && snapshot.adminIds.contains(member.matrixUserId)));
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
@@ -877,7 +879,7 @@ final class _GroupTextEditPageState extends State<_GroupTextEditPage> {
   }
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
@@ -940,7 +942,7 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
           (contact) => !widget.existingMemberIds.contains(contact.matrixUserId),
         )
         .toList(growable: false);
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
@@ -1049,7 +1051,7 @@ final class _GroupChatHistorySearchPageState
               },
         )
         .toList(growable: false);
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,

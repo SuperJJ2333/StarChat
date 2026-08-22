@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_list_tile.dart';
+import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../moments/moments_page.dart';
@@ -12,7 +13,7 @@ final class DiscoveryPage extends StatelessWidget {
   final BusinessApiClient api;
 
   @override
-  Widget build(BuildContext context) => CupertinoPageScaffold(
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         backgroundColor: WeChatColors.tabRootPageBackground,
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
@@ -74,7 +75,7 @@ final class _RecommendedContentPage extends StatelessWidget {
   const _RecommendedContentPage();
 
   @override
-  Widget build(BuildContext context) => const CupertinoPageScaffold(
+  Widget build(BuildContext context) => const WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,

@@ -19,10 +19,19 @@ abstract final class WeChatColors {
   static const textTertiary = Color(0xFFB2B2B2);
   static const divider = Color(0xFFD9D9D9);
   static const darkDivider = Color(0xFF2C2C2C);
-  static const danger = Color(0xFFFA5151);
+  static const controlBorder = divider;
+  static const danger = CupertinoColors.systemRed;
+  static const errorSurface = Color(0xFFFFF1F0);
+  static const errorBorder = Color(0xFFFFCCC7);
   static const warning = Color(0xFFFA9D3B);
   static const bubbleOutgoing = Color(0xFF95EC69);
   static const socialLink = Color(0xFF576B95);
+  static const networkCapsuleSurface = Color(0xD9FFFFFF);
+  static const networkCapsuleBorder = Color(0x22000000);
+  static const avatarFallbackBlue = Color(0xFFD8E8FF);
+  static const avatarFallbackGreen = Color(0xFFDFF2E4);
+  static const avatarFallbackOrange = Color(0xFFFFE5D5);
+  static const avatarFallbackPurple = Color(0xFFEEE1FF);
 
   static Color elevatedSurface(BuildContext context) =>
       CupertinoTheme.brightnessOf(context) == Brightness.dark
@@ -42,6 +51,12 @@ abstract final class WeChatSpacing {
   static const lg = 16.0;
   static const xl = 24.0;
   static const xxl = 32.0;
+  static const actionButtonHorizontal = lg;
+  static const actionButtonVertical = md;
+  static const actionButtonIconGap = sm;
+  static const networkCapsuleHorizontal = 14.0;
+  static const networkCapsuleVertical = sm;
+  static const networkCapsuleIconGap = 6.0;
 }
 
 abstract final class WeChatRadius {
@@ -52,6 +67,8 @@ abstract final class WeChatRadius {
   static const dialog = 12.0;
   static const authCard = 12.0;
   static const authControl = 14.0;
+  static const actionButton = authControl;
+  static const networkCapsule = 22.0;
 }
 
 abstract final class WeChatDimensions {
@@ -62,6 +79,10 @@ abstract final class WeChatDimensions {
   static const authCardMaxWidth = 345.0;
   static const authBrandMark = 64.0;
   static const conversationTileHeight = 72.0;
+  static const contactTileHeight = 56.0;
+  static const contactAvatar = 40.0;
+  static const contactDividerIndent = 68.0;
+  static const contactIndexFeedback = 64.0;
   static const conversationAvatar = 48.0;
   static const messageAvatar = 40.0;
   static const composerMinHeight = 56.0;
@@ -84,4 +105,11 @@ abstract final class WeChatEffects {
   static const authCardShadow = <BoxShadow>[
     BoxShadow(color: Color(0x1F000000), blurRadius: 16, offset: Offset(0, 4)),
   ];
+  static const actionButtonShadow = <BoxShadow>[
+    BoxShadow(color: Color(0x1F000000), blurRadius: 8, offset: Offset(0, 2)),
+  ];
+}
+
+abstract final class WeChatMotion {
+  static const actionPressDuration = Duration(milliseconds: 150);
 }

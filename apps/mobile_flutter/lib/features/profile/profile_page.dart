@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
@@ -51,7 +52,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     final profile = state.profile;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.tabRootPageBackground,
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
@@ -294,7 +295,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     final profile = state.profile!;
-    return CupertinoPageScaffold(
+    return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,

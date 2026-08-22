@@ -308,11 +308,6 @@
       "design-demo/artifacts/figma-qa/call-icons.png"
     ]
   },
-  "redundantGroupedCapturesStillProcessing": [
-    "messages-chat",
-    "contacts-friend",
-    "finance"
-  ],
   "originalMappingRepair": {
     "date": "2026-08-17",
     "chatGallery": "107:3",
