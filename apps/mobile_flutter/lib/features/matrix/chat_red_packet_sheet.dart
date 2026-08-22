@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/foundation/wechat_tokens.dart';
+
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import 'chat_red_packet_controller.dart';
@@ -70,7 +72,11 @@ final class _ChatRedPacketSheetState extends State<ChatRedPacketSheet> {
     final busy = state.status == ChatRedPacketStatus.creating ||
         state.status == ChatRedPacketStatus.sharing;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('发红包')),
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('发红包')),
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),

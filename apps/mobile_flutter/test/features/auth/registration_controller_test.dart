@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
 
 final class FakeRegistrationGateway implements RegistrationGateway {
@@ -8,6 +9,7 @@ final class FakeRegistrationGateway implements RegistrationGateway {
   int registerCalls = 0;
   int statusCalls = 0;
   Object? registerError;
+  Object? verifyError;
   final List<String> verifiedCodes = [];
   final List<String> verifiedTokens = [];
 
@@ -18,6 +20,7 @@ final class FakeRegistrationGateway implements RegistrationGateway {
   @override
   Future<RegistrationReceipt> register(
       {required String username,
+      String? nickname,
       required String email,
       required String password,
       required String invitationCode}) async {
@@ -43,6 +46,7 @@ final class FakeRegistrationGateway implements RegistrationGateway {
       {required String registrationSession,
       String? code,
       String? token}) async {
+    if (verifyError != null) throw verifyError!;
     if (code != null) verifiedCodes.add(code);
     if (token != null) verifiedTokens.add(token);
   }
@@ -89,6 +93,74 @@ void main() {
     expect(controller.state.fieldErrors['invitation_code'], '邀请码无效或已失效');
   });
 
+  test('registration validates username email and password before network',
+      () async {
+    final gateway = FakeRegistrationGateway();
+    final controller = RegistrationController(gateway: gateway);
+
+    expect(
+      await controller.register(
+        username: 'ab',
+        email: 'not-an-email',
+        password: 'short',
+        passwordConfirmation: 'different',
+        invitationCode: '',
+      ),
+      isFalse,
+    );
+    expect(gateway.registerCalls, 0);
+    expect(controller.state.fieldErrors['username'], isNotNull);
+    expect(controller.state.fieldErrors['email'], '请输入有效的邮箱地址');
+    expect(controller.state.fieldErrors['password'], '密码至少需要 12 位');
+    expect(controller.state.fieldErrors['password_confirmation'], '两次密码输入不一致');
+    expect(controller.state.fieldErrors['invitation_code'], '请输入邀请码');
+  });
+
+  test('registration keeps server validation fields attached to their inputs',
+      () async {
+    final gateway = FakeRegistrationGateway()
+      ..registerError = const BusinessApiException(
+          statusCode: 422,
+          code: 'VALIDATION_ERROR',
+          message: '请求参数校验失败',
+          fieldErrors: {'email': '邮箱格式无效'});
+    final controller = RegistrationController(gateway: gateway);
+
+    expect(
+      await controller.register(
+        nickname: '昵称',
+        username: 'chat-id',
+        email: 'valid@example.com',
+        password: 'correct horse battery staple',
+        passwordConfirmation: 'correct horse battery staple',
+        invitationCode: 'INVITE',
+      ),
+      isFalse,
+    );
+    expect(controller.state.fieldErrors, {'email': '邮箱格式无效'});
+  });
+
+  test('registration conflict assigns the single error to email only',
+      () async {
+    final gateway = FakeRegistrationGateway()
+      ..registerError = const BusinessApiException(
+          statusCode: 409,
+          code: 'REGISTRATION_CONFLICT',
+          message: '用户名或邮箱已被使用');
+    final controller = RegistrationController(gateway: gateway);
+
+    await controller.register(
+      nickname: '昵称',
+      username: 'chat-id',
+      email: 'taken@example.com',
+      password: 'correct horse battery staple',
+      passwordConfirmation: 'correct horse battery staple',
+      invitationCode: 'INVITE',
+    );
+
+    expect(controller.state.fieldErrors, {'email': '邮箱已被使用'});
+  });
+
   test(
       'verification accepts either six digit code or link token then polls ACTIVE',
       () async {
@@ -107,6 +179,46 @@ void main() {
     expect(gateway.verifiedTokens, ['signed-link-token']);
     expect(await controller.pollUntilActive(maxAttempts: 2), isTrue);
     expect(controller.state.status, RegistrationFlowStatus.completed);
+  });
+
+  test('verification code error is stored and can be cleared', () async {
+    final gateway = FakeRegistrationGateway()
+      ..verifyError = const BusinessApiException(
+        statusCode: 422,
+        code: 'EMAIL_VERIFICATION_CODE_INVALID',
+        message: '验证码无效',
+      );
+    final controller = RegistrationController(gateway: gateway);
+    await controller.register(
+      username: 'alice',
+      email: 'alice@example.test',
+      password: 'correct horse battery staple',
+      invitationCode: 'INVITE',
+    );
+
+    await controller.verifyCode('000000');
+
+    expect(controller.state.fieldErrors['code'], '验证码错误，请重新输入');
+    expect(controller.state.registrationSession, 'session-1');
+    controller.clearVerificationCodeError();
+    expect(controller.state.fieldErrors.containsKey('code'), isFalse);
+    expect(controller.state.registrationSession, 'session-1');
+  });
+
+  test('short verification code is rejected with a user-facing message',
+      () async {
+    final controller =
+        RegistrationController(gateway: FakeRegistrationGateway());
+    await controller.register(
+      username: 'alice',
+      email: 'alice@example.test',
+      password: 'correct horse battery staple',
+      invitationCode: 'INVITE',
+    );
+
+    await controller.verifyCode('123');
+
+    expect(controller.state.fieldErrors, {'code': '请输入 6 位数字验证码'});
   });
 
   test(

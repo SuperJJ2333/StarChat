@@ -22,13 +22,15 @@ import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
 import '../../ui/chat/wechat_voice_bubble.dart';
 import '../../ui/components/conversation_list_tile.dart';
-import '../../ui/components/user_avatar.dart';
+import '../../ui/chat/conversation_action_sheet.dart';
 import '../../ui/finance/wechat_red_packet_card.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/theme/theme_controller.dart';
 import '../../ui/theme/theme_picker_sheet.dart';
 import 'matrix_e2ee_client.dart';
+import 'matrix_user_avatar.dart';
+import 'chat_identity_cache.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
 import 'chat_red_packet_controller.dart';
@@ -64,6 +66,28 @@ List<User> orderedJoinedMembers(Room room) {
   ];
 }
 
+String groupRoomNavigationTitle(String customName, int memberCount) {
+  final normalizedName = customName.trim();
+  if (normalizedName.isEmpty) return '群聊($memberCount)';
+
+  final characters = normalizedName.characters;
+  final suffix = '($memberCount)';
+  // The navigation bar has room for at most 20 grapheme clusters including
+  // the count. Keep the mandated 8…3 form whenever the full label overflows.
+  final needsMiddleEllipsis = characters.length > 20 ||
+      characters.length + suffix.characters.length > 20;
+  final label = needsMiddleEllipsis
+      ? '${characters.take(8).toString()}...'
+          '${characters.skip(characters.length - 3).toString()}'
+      : normalizedName;
+  return '$label$suffix';
+}
+
+Future<List<User>> loadOrderedJoinedMembers(Room room) async {
+  await room.requestParticipants([Membership.join]);
+  return orderedJoinedMembers(room);
+}
+
 class MatrixHomePage extends StatefulWidget {
   const MatrixHomePage({
     super.key,
@@ -74,6 +98,7 @@ class MatrixHomePage extends StatefulWidget {
     this.reminderService,
     this.onVoice,
     this.onVideo,
+    this.identityCache,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -82,6 +107,7 @@ class MatrixHomePage extends StatefulWidget {
   final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
+  final ChatIdentityCache? identityCache;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -89,15 +115,37 @@ class MatrixHomePage extends StatefulWidget {
 class _MatrixHomePageState extends State<MatrixHomePage> {
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
+  final Map<String, List<User>> _groupMembersByRoom = {};
+  final Set<String> _groupMemberLoadsInFlight = {};
+  late final ChatIdentityCache _identityCache =
+      widget.identityCache ?? ChatIdentityCache(widget.api);
 
   Future<void> sync() async {
     if (syncing) return;
     setState(() => syncing = true);
     try {
       await widget.matrix.sync();
+      _ensureGroupMembersLoaded(widget.matrix.sdkClient.rooms);
       await _reconcileConversationMetadata();
     } finally {
       if (mounted) setState(() => syncing = false);
+    }
+  }
+
+  void _ensureGroupMembersLoaded(Iterable<Room> rooms) {
+    for (final room in rooms.where((room) => !room.isDirectChat)) {
+      if (_groupMemberLoadsInFlight.contains(room.id)) continue;
+      _groupMemberLoadsInFlight.add(room.id);
+      unawaited(() async {
+        try {
+          final members = await loadOrderedJoinedMembers(room);
+          if (mounted) setState(() => _groupMembersByRoom[room.id] = members);
+        } catch (_) {
+          // Preserve currently known members; the next sync retries loading.
+        } finally {
+          _groupMemberLoadsInFlight.remove(room.id);
+        }
+      }());
     }
   }
 
@@ -137,9 +185,29 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   void initState() {
     super.initState();
     syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
+      unawaited(_restoreHiddenConversations());
       if (mounted) setState(() {});
     });
+    unawaited(_identityCache.preload());
     sync();
+  }
+
+  Future<void> _restoreHiddenConversations() async {
+    final currentUserId = widget.matrix.sdkClient.userID;
+    for (final room in widget.matrix.sdkClient.rooms) {
+      final preference = preferenceForRoom(room);
+      final event = room.lastEvent;
+      if (!preference.hidden || event == null) continue;
+      final restored = restoreForIncomingEvent(
+        preference,
+        eventAt: event.originServerTs,
+        isIncoming: event.senderId != currentUserId,
+      );
+      if (!restored.hidden) {
+        await writeConversationPreference(room, restored);
+      }
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -230,8 +298,28 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
-  void _openRoom(Room room) {
-    final roomName = room.getLocalizedDisplayname();
+  Future<void> _openRoom(Room room) async {
+    final preference = preferenceForRoom(room);
+    if (preference.manualUnread) {
+      try {
+        await writeConversationPreference(
+          room,
+          clearUnreadOnOpen(preference),
+        );
+      } catch (_) {
+        // A failed account-data write is retried by the next sync.
+      }
+    }
+    await _identityCache.preload();
+    if (!mounted) return;
+    await _identityCache.precacheAvatarImages(context);
+    if (!mounted) return;
+    final roomName = room.isDirectChat
+        ? room.getLocalizedDisplayname()
+        : groupRoomNavigationTitle(
+            room.name,
+            orderedJoinedMembers(room).length,
+          );
     Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         builder: (_) => RoomPage(
@@ -241,9 +329,60 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           onVoice: widget.onVoice,
           onVideo: widget.onVideo,
           reminderService: widget.reminderService,
+          initialIdentityCache: _identityCache,
         ),
       ),
     );
+  }
+
+  Future<void> _conversationActions(Room room) async {
+    final preference = preferenceForRoom(room);
+    final action = await showConversationActionSheet(
+      context,
+      pinned: preference.pinned,
+      onAction: (_) {},
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case ConversationAction.markUnread:
+        await writeConversationPreference(room, markUnread(preference));
+      case ConversationAction.togglePin:
+        final next = preference.pinned
+            ? preference.copyWith(pinned: false, clearPinnedAt: true)
+            : preference.copyWith(
+                pinned: true,
+                pinnedAt: DateTime.now().toUtc(),
+              );
+        await writeConversationPreference(room, next);
+      case ConversationAction.hide:
+        await writeConversationPreference(
+          room,
+          hideConversation(preference, DateTime.now().toUtc()),
+        );
+      case ConversationAction.delete:
+        final confirmed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('确定删除该聊天？'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('删除'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) {
+          await room.leave();
+          await room.forget();
+        }
+    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -276,17 +415,24 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         ),
     ]);
     final orderedRooms = [for (final item in ordered) roomById[item.roomId]!];
-    final foldedRooms = orderedRooms.where((room) {
+    final activeRooms = orderedRooms
+        .where((room) => !preferenceForRoom(room).hidden)
+        .toList(growable: false);
+    final foldedRooms = activeRooms.where((room) {
       final value = preferenceForRoom(room);
       return !room.isDirectChat && value.muted && value.folded;
     }).toList(growable: false);
-    final rooms = orderedRooms
+    final rooms = activeRooms
         .where((room) => !foldedRooms.contains(room))
         .toList(growable: false);
     final pinnedCount =
         rooms.where((room) => preferenceForRoom(room).pinned).length;
     return CupertinoPageScaffold(
+      backgroundColor: WeChatColors.tabRootPageBackground,
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: const Text('消息'),
         trailing: CupertinoButton(
           key: const Key('messages-more'),
@@ -342,6 +488,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           ? index - 1
                           : index;
                   final room = rooms[roomIndex];
+                  _ensureGroupMembersLoaded([room]);
                   final roomName = room.getLocalizedDisplayname();
                   final preference = preferenceForRoom(room);
                   return ConversationListTile(
@@ -349,34 +496,35 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     title: roomName,
                     subtitle: room.lastEvent?.text ?? '端到端加密消息',
                     timeLabel: _roomTime(room),
-                    avatar: room.isDirectChat
-                        ? UserAvatar(
+                    avatar: room.isDirectChat || room.avatar != null
+                        ? MatrixUserAvatar(
+                            client: widget.matrix.sdkClient,
                             nickname: roomName,
                             fallbackSeed: room.id,
+                            matrixAvatarUri: room.avatar,
                             size: WeChatDimensions.conversationAvatar,
                           )
                         : GroupAvatarMosaic(
                             avatars: [
                               for (final member
-                                  in orderedJoinedMembers(room).take(9))
-                                UserAvatar(
+                                  in (_groupMembersByRoom[room.id] ??
+                                          orderedJoinedMembers(room))
+                                      .take(9))
+                                MatrixUserAvatar(
+                                  client: widget.matrix.sdkClient,
                                   nickname: member.calcDisplayname(),
                                   fallbackSeed: member.id,
-                                  avatarUrl: switch (member.avatarUrl) {
-                                    final uri?
-                                        when uri.scheme == 'http' ||
-                                            uri.scheme == 'https' =>
-                                      uri.toString(),
-                                    _ => null,
-                                  },
+                                  matrixAvatarUri: member.avatarUrl,
                                 ),
                             ],
                           ),
-                    unreadCount: room.notificationCount,
+                    unreadCount:
+                        preference.manualUnread ? 1 : room.notificationCount,
                     muted: preference.muted ||
                         room.pushRuleState != PushRuleState.notify,
                     pinnedGroup: !room.isDirectChat && preference.pinned,
                     onTap: () => _openRoom(room),
+                    onLongPress: () => _conversationActions(room),
                   );
                 },
               ),
@@ -420,7 +568,11 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('折叠的群聊')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('折叠的群聊')),
         child: SafeArea(
           child: ListView.separated(
             itemCount: rooms.length,
@@ -433,22 +585,24 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
                 subtitle: room.lastEvent?.text ?? '端到端加密消息',
                 timeLabel: '',
                 muted: true,
-                avatar: GroupAvatarMosaic(
-                  avatars: [
-                    for (final member in members)
-                      UserAvatar(
-                        nickname: member.calcDisplayname(),
-                        fallbackSeed: member.id,
-                        avatarUrl: switch (member.avatarUrl) {
-                          final uri?
-                              when uri.scheme == 'http' ||
-                                  uri.scheme == 'https' =>
-                            uri.toString(),
-                          _ => null,
-                        },
+                avatar: room.avatar != null
+                    ? MatrixUserAvatar(
+                        client: room.client,
+                        nickname: room.getLocalizedDisplayname(),
+                        fallbackSeed: room.id,
+                        matrixAvatarUri: room.avatar,
+                      )
+                    : GroupAvatarMosaic(
+                        avatars: [
+                          for (final member in members)
+                            MatrixUserAvatar(
+                              client: room.client,
+                              nickname: member.calcDisplayname(),
+                              fallbackSeed: member.id,
+                              matrixAvatarUri: member.avatarUrl,
+                            ),
+                        ],
                       ),
-                  ],
-                ),
                 onTap: () => onOpen(room),
               );
             },
@@ -467,6 +621,7 @@ class RoomPage extends StatefulWidget {
     this.reminderService,
     this.onVoice,
     this.onVideo,
+    this.initialIdentityCache,
   });
 
   final BusinessApiClient api;
@@ -476,6 +631,7 @@ class RoomPage extends StatefulWidget {
   final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
+  final ChatIdentityCache? initialIdentityCache;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -483,6 +639,9 @@ class RoomPage extends StatefulWidget {
 
 class _RoomPageState extends State<RoomPage> {
   final input = TextEditingController();
+  final messageScrollController = ScrollController();
+  final messageKeys = <String, GlobalKey>{};
+  final recalledDrafts = <String, String>{};
   final selection = MessageSelectionController();
   RoomTimelineController? controller;
   Timeline? roomTimeline;
@@ -495,12 +654,19 @@ class _RoomPageState extends State<RoomPage> {
   String nudgeSuffix = '';
   Map<String, ContactDetails> contactsByMatrixId = const {};
   ProfileData? ownProfile;
+  late final ChatIdentityCache _identityCache =
+      widget.initialIdentityCache ?? ChatIdentityCache(widget.api);
   ContactDetails? peer;
   bool loading = true;
   bool mediaBusy = false;
   ComposerPanel composerPanel = ComposerPanel.none;
   String? errorMessage;
   String? mediaMessage;
+  Timer? mediaMessageTimer;
+  bool mediaMessageVisible = false;
+  late int joinedMemberCount;
+  int? readAnnouncementVersion;
+  String? highlightedMessageId;
 
   bool get isGroup => !widget.room.isDirectChat;
 
@@ -508,7 +674,63 @@ class _RoomPageState extends State<RoomPage> {
   void initState() {
     super.initState();
     peer = widget.initialContact;
+    joinedMemberCount = orderedJoinedMembers(widget.room).length;
+    ownProfile = _identityCache.profile;
+    contactsByMatrixId = _identityCache.contactsByMatrixId;
+    unawaited(_identityCache.preload());
+    unawaited(_refreshJoinedMemberCount());
+    unawaited(_loadAnnouncementReadState());
     _load();
+  }
+
+  Future<void> _refreshJoinedMemberCount() async {
+    if (!isGroup) return;
+    try {
+      await widget.room.requestParticipants([Membership.join]);
+      final count = orderedJoinedMembers(widget.room).length;
+      if (mounted) setState(() => joinedMemberCount = count);
+    } catch (_) {
+      // Preserve the synchronized local count if a transient member request
+      // fails; the next room sync refreshes the title.
+    }
+  }
+
+  String get _navigationTitle => isGroup
+      ? groupRoomNavigationTitle(widget.room.name, joinedMemberCount)
+      : widget.roomName;
+
+  int get _announcementVersion =>
+      widget.room.roomAccountData[groupChatAccountDataType]
+          ?.content['announcement_version'] as int? ??
+      0;
+
+  String get _announcement => isGroup ? widget.room.topic.trim() : '';
+
+  bool get _showAnnouncement =>
+      _announcement.isNotEmpty &&
+      _announcementVersion > readAnnouncementVersion!;
+
+  Future<void> _loadAnnouncementReadState() async {
+    final preferences = await SharedPreferences.getInstance();
+    final version =
+        preferences.getInt('announcement-read:${widget.room.id}') ?? 0;
+    if (mounted) setState(() => readAnnouncementVersion = version);
+  }
+
+  Future<void> _openAnnouncement() async {
+    final version = _announcementVersion;
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => GroupAnnouncementPage(
+          title: _navigationTitle,
+          announcement: _announcement,
+        ),
+      ),
+    );
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setInt('announcement-read:${widget.room.id}', version);
+    if (mounted) setState(() => readAnnouncementVersion = version);
   }
 
   Future<void> _load() async {
@@ -546,12 +768,10 @@ class _RoomPageState extends State<RoomPage> {
 
   Future<void> _loadIdentities() async {
     try {
-      final contacts = await widget.api.listContacts();
-      final profile = await widget.api.loadProfile();
-      final mapped = {
-        for (final contact in contacts)
-          contact.matrixUserId: contact.toDetails(),
-      };
+      await _identityCache.preload();
+      final contacts = _identityCache.contacts;
+      final profile = _identityCache.profile;
+      final mapped = _identityCache.contactsByMatrixId;
       final participantIds = widget.room
           .getParticipants()
           .map((participant) => participant.id)
@@ -567,7 +787,7 @@ class _RoomPageState extends State<RoomPage> {
       if (!mounted) return;
       setState(() {
         contactsByMatrixId = mapped;
-        ownProfile = profile;
+        ownProfile = profile ?? ownProfile;
         peer ??= resolvedPeer;
       });
     } catch (_) {
@@ -879,7 +1099,7 @@ class _RoomPageState extends State<RoomPage> {
       } else {
         await service.sendFile(widget.room.id);
       }
-      if (mounted) setState(() => mediaMessage = image ? '图片已发送' : '文件已发送');
+      if (mounted) _showMediaMessage(image ? '图片已发送' : '文件已发送');
     } catch (_) {
       if (mounted) {
         setState(() => mediaMessage = image ? '图片发送失败，请重试' : '文件发送失败，请重试');
@@ -887,6 +1107,27 @@ class _RoomPageState extends State<RoomPage> {
     } finally {
       await service.dispose();
       if (mounted) setState(() => mediaBusy = false);
+    }
+  }
+
+  void _showMediaMessage(String message) {
+    mediaMessageTimer?.cancel();
+    setState(() {
+      mediaMessage = message;
+      mediaMessageVisible = true;
+    });
+    mediaMessageTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => mediaMessageVisible = false);
+      mediaMessageTimer = Timer(const Duration(milliseconds: 500), () {
+        if (mounted) setState(() => mediaMessage = null);
+      });
+    });
+  }
+
+  void _dismissComposerExtensions() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (composerPanel != ComposerPanel.none) {
+      setState(() => composerPanel = ComposerPanel.none);
     }
   }
 
@@ -1000,6 +1241,12 @@ class _RoomPageState extends State<RoomPage> {
       final infoController = GroupChatInfoController(
         MatrixGroupChatInfoGateway(widget.room),
       );
+      final contacts = await widget.api.listContacts();
+      if (!mounted) return;
+      final contactsById = {
+        for (final contact in contacts)
+          contact.matrixUserId: contact.toDetails(),
+      };
       await Navigator.push<void>(
         context,
         CupertinoPageRoute(
@@ -1008,6 +1255,10 @@ class _RoomPageState extends State<RoomPage> {
             onAddMember: () => _openGroupMemberPicker(infoController),
             onSearchHistory: _openHistorySearch,
             onClearLocalHistory: _clearLocalHistory,
+            onMemberTap: (member) async {
+              final contact = contactsById[member.matrixUserId];
+              if (contact != null) await _openContact(contact);
+            },
             onLeft: () {
               Navigator.pop(context);
               Navigator.pop(context);
@@ -1030,18 +1281,14 @@ class _RoomPageState extends State<RoomPage> {
     if (peerId == null) return;
     final peerName =
         contact?.displayName ?? member?.calcDisplayname() ?? peerId;
-    final avatarUrl = contact?.avatarUrl ??
-        switch (member?.avatarUrl) {
-          final uri? when uri.scheme == 'http' || uri.scheme == 'https' =>
-            uri.toString(),
-          _ => null,
-        };
+    final avatarUrl = contact?.avatarUrl ?? member?.avatarUrl?.toString();
     await Navigator.push<void>(
       context,
       CupertinoPageRoute(
         builder: (_) => DirectChatInfoPage(
           peerName: peerName,
           peerId: peerId,
+          matrixClient: widget.room.client,
           peerAvatarUrl: avatarUrl,
           preference: preferenceForRoom(widget.room),
           onAddMember: () => _openDirectGroupPicker(peerId, peerName),
@@ -1065,19 +1312,10 @@ class _RoomPageState extends State<RoomPage> {
           contacts: contacts,
           peerId: peerId,
           onCreate: (inviteeIds) async {
-            final names = {
-              for (final contact in contacts)
-                contact.matrixUserId: contact.displayName,
-            };
-            final name = [
-              ownProfile?.nickname ?? '我',
-              peerName,
-              ...inviteeIds.skip(1).map((id) => names[id] ?? id),
-            ].take(3).join('、').characters.take(20).toString();
             await GroupChatService(
               MatrixGroupChatBackend(widget.room.client),
             ).createEncryptedGroupChat(
-              name: name,
+              name: '',
               matrixUserIds: inviteeIds,
             );
           },
@@ -1164,6 +1402,36 @@ class _RoomPageState extends State<RoomPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _scrollToMessage(String eventId) async {
+    var target = messageKeys[eventId]?.currentContext;
+    // A reply may point beyond the currently loaded timeline window. Fetch
+    // older batches until the event becomes available, with a strict bound to
+    // avoid an endless request loop when the event has expired or was purged.
+    for (var attempts = 0;
+        target == null && attempts < 20 && mounted;
+        attempts++) {
+      final before = controller?.messages.length ?? 0;
+      await controller?.loadHistory();
+      if (!mounted || (controller?.messages.length ?? 0) <= before) break;
+      await WidgetsBinding.instance.endOfFrame;
+      target = messageKeys[eventId]?.currentContext;
+    }
+    if (target == null || !mounted || !target.mounted) return;
+    final scrollTarget = target;
+    await Scrollable.ensureVisible(
+      scrollTarget,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      alignment: .5,
+    );
+    if (!mounted) return;
+    setState(() => highlightedMessageId = eventId);
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (mounted && highlightedMessageId == eventId) {
+      setState(() => highlightedMessageId = null);
+    }
+  }
+
   String _displayName(String matrixUserId, bool own) {
     if (own) return ownProfile?.nickname ?? '我';
     return contactsByMatrixId[matrixUserId]?.displayName ??
@@ -1172,10 +1440,16 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _avatar(RoomMessageViewModel message) {
     final contact = contactsByMatrixId[message.senderId];
-    return UserAvatar(
+    final member =
+        widget.room.unsafeGetUserFromMemoryOrFallback(message.senderId);
+    return MatrixUserAvatar(
+      client: widget.room.client,
+      diagnosticSource: 'room-message',
       nickname: _displayName(message.senderId, message.isOwn),
       fallbackSeed: message.senderId.isEmpty ? 'me' : message.senderId,
-      avatarUrl: message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
+      matrixAvatarUri: message.isOwn ? null : member.avatarUrl,
+      fallbackAvatarUrl:
+          message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
       size: WeChatDimensions.messageAvatar,
     );
   }
@@ -1247,6 +1521,37 @@ class _RoomPageState extends State<RoomPage> {
       contactDisplayName: contact?.displayName,
       matrixDisplayName: member?.calcDisplayname(),
     );
+    if (message.isRecalled) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: message.isOwn
+              ? Wrap(children: [
+                  const Text('你撤回了一条消息 ',
+                      style: TextStyle(
+                          color: WeChatColors.textSecondary, fontSize: 13)),
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minimumSize: Size.zero,
+                    onPressed: () => setState(() {
+                      input.text = recalledDrafts[message.id] ?? '';
+                      input.selection =
+                          TextSelection.collapsed(offset: input.text.length);
+                    }),
+                    child: const Text('重新编辑',
+                        style: TextStyle(
+                            color: WeChatColors.socialLink, fontSize: 13)),
+                  ),
+                ])
+              : Text('$displayName 撤回了一条消息',
+                  style: const TextStyle(
+                      color: WeChatColors.textSecondary, fontSize: 13)),
+        ),
+      );
+    }
+    final candidates = (controller?.messages ?? const <RoomMessageViewModel>[])
+        .where((item) => item.id == message.replyToEventId);
+    final replied = candidates.isEmpty ? null : candidates.first;
     final body = Column(
       children: [
         if (shouldShowMessageTimeSeparator(previousTime, message.timestamp))
@@ -1286,6 +1591,19 @@ class _RoomPageState extends State<RoomPage> {
             RoomDeliveryState.sent => MessageDeliveryState.sent,
           },
         ),
+        if (message.replyToEventId != null)
+          Align(
+            alignment:
+                message.isOwn ? Alignment.centerRight : Alignment.centerLeft,
+            child: _QuotePreview(
+              message: replied,
+              targetEventId: message.replyToEventId!,
+              displayName: replied == null
+                  ? '引用消息'
+                  : _displayName(replied.senderId, replied.isOwn),
+              onTap: () => _scrollToMessage(message.replyToEventId!),
+            ),
+          ),
       ],
     );
     if (!selection.active) return body;
@@ -1365,6 +1683,7 @@ class _RoomPageState extends State<RoomPage> {
         final interaction = _interaction;
         final serverNow = await _serverNow();
         if (interaction == null || serverNow == null) return;
+        recalledDrafts[message.id] = message.text;
         await interaction.recall(
           MessageInteractionEvent(
             id: message.id,
@@ -1459,7 +1778,9 @@ class _RoomPageState extends State<RoomPage> {
   void dispose() {
     controller?.removeListener(_changed);
     controller?.dispose();
+    mediaMessageTimer?.cancel();
     input.dispose();
+    messageScrollController.dispose();
     super.dispose();
   }
 
@@ -1472,16 +1793,18 @@ class _RoomPageState extends State<RoomPage> {
           eventId: (message) => message.id,
         ) ??
         allMessages;
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    final showAnnouncement =
+        readAnnouncementVersion != null && _showAnnouncement;
     return CupertinoPageScaffold(
-      backgroundColor: dark
-          ? WeChatColors.darkPageBackground
-          : WeChatColors.lightPageBackground,
+      backgroundColor: WeChatColors.chatPageBackground,
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: peer == null ? null : () => _openContact(peer!),
-          child: Text(widget.roomName),
+          child: Text(_navigationTitle),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1498,53 +1821,92 @@ class _RoomPageState extends State<RoomPage> {
       child: SafeArea(
         child: Column(
           children: [
+            if (showAnnouncement)
+              CupertinoButton(
+                key: const Key('group-announcement-bar'),
+                padding: EdgeInsets.zero,
+                onPressed: _openAnnouncement,
+                child: Container(
+                  height: 40,
+                  color: WeChatColors.chatNavigationBackground,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(children: [
+                    const Icon(CupertinoIcons.volume_up, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _announcement,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            const TextStyle(color: WeChatColors.textSecondary),
+                      ),
+                    ),
+                    const CupertinoListTileChevron(),
+                  ]),
+                ),
+              ),
             Expanded(
-              child: loading
-                  ? const Center(child: CupertinoActivityIndicator())
-                  : errorMessage != null
-                      ? Center(child: Text(errorMessage!))
-                      : messages.isEmpty
-                          ? const Center(
-                              child: Text(
-                                '暂无消息',
-                                style: TextStyle(
-                                  color: WeChatColors.textSecondary,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _dismissComposerExtensions,
+                child: loading
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : errorMessage != null
+                        ? Center(child: Text(errorMessage!))
+                        : messages.isEmpty
+                            ? const SizedBox.expand()
+                            : ListView.builder(
+                                controller: messageScrollController,
+                                reverse: true,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: WeChatSpacing.md,
+                                  vertical: WeChatSpacing.sm,
                                 ),
+                                itemCount: messages.length,
+                                itemBuilder: (_, reverseIndex) {
+                                  final index =
+                                      messages.length - reverseIndex - 1;
+                                  final message = messages[index];
+                                  final previous = index == 0
+                                      ? null
+                                      : messages[index - 1].timestamp;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(
+                                      bottom: WeChatSpacing.sm,
+                                    ),
+                                    child: KeyedSubtree(
+                                      key: messageKeys.putIfAbsent(
+                                        message.id,
+                                        GlobalKey.new,
+                                      ),
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 180),
+                                        color:
+                                            highlightedMessageId == message.id
+                                                ? WeChatColors.divider
+                                                : const Color(0x00000000),
+                                        child: _messageRow(message, previous),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            )
-                          : ListView.builder(
-                              reverse: true,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: WeChatSpacing.md,
-                                vertical: WeChatSpacing.sm,
-                              ),
-                              itemCount: messages.length,
-                              itemBuilder: (_, reverseIndex) {
-                                final index =
-                                    messages.length - reverseIndex - 1;
-                                final message = messages[index];
-                                final previous = index == 0
-                                    ? null
-                                    : messages[index - 1].timestamp;
-                                return Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: WeChatSpacing.sm,
-                                  ),
-                                  child: _messageRow(message, previous),
-                                );
-                              },
-                            ),
+              ),
             ),
             if (mediaMessage != null)
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                color: CupertinoTheme.of(context).barBackgroundColor,
-                child: Text(
-                  mediaMessage!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12),
+              AnimatedOpacity(
+                opacity: mediaMessageVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 500),
+                child: Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  color: WeChatColors.chatNavigationBackground,
+                  child: Text(mediaMessage!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12)),
                 ),
               ),
             if (replyingTo != null && !selection.active)
@@ -1615,6 +1977,38 @@ class _RoomPageState extends State<RoomPage> {
   }
 }
 
+final class GroupAnnouncementPage extends StatelessWidget {
+  const GroupAnnouncementPage({
+    super.key,
+    required this.title,
+    required this.announcement,
+  });
+  final String title;
+  final String announcement;
+  @override
+  Widget build(BuildContext context) => CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: const Text('群公告'),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 16),
+              Text(announcement),
+            ]),
+          ),
+        ),
+      );
+}
+
 final class EncryptedImageMessage extends StatefulWidget {
   const EncryptedImageMessage({super.key, required this.load});
 
@@ -1661,4 +2055,72 @@ final class _EncryptedImageMessageState extends State<EncryptedImageMessage> {
           );
         },
       );
+}
+
+final class _QuotePreview extends StatelessWidget {
+  const _QuotePreview({
+    required this.message,
+    required this.targetEventId,
+    required this.displayName,
+    required this.onTap,
+  });
+
+  final RoomMessageViewModel? message;
+  final String targetEventId;
+  final String displayName;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = this.message;
+    final summary = switch (message?.kind) {
+      RoomMessageKind.image => '图片',
+      RoomMessageKind.voice => '语音 ${message!.voiceDuration.inSeconds}″',
+      RoomMessageKind.file => '文件：${message!.text}',
+      _ => _truncateQuoteText(message?.text ?? '原消息加载中'),
+    };
+    return CupertinoButton(
+      key: Key('reply-preview-$targetEventId'),
+      padding: const EdgeInsets.only(top: 4),
+      minimumSize: Size.zero,
+      onPressed: onTap,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 236),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: WeChatColors.divider,
+          borderRadius: BorderRadius.circular(WeChatRadius.control),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (message?.kind == RoomMessageKind.image)
+            const Icon(CupertinoIcons.photo,
+                size: 15, color: WeChatColors.textSecondary)
+          else if (message?.kind == RoomMessageKind.voice)
+            const Icon(CupertinoIcons.speaker_2,
+                size: 15, color: WeChatColors.textSecondary),
+          if (message?.kind == RoomMessageKind.image ||
+              message?.kind == RoomMessageKind.voice)
+            const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              '$displayName：$summary',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: WeChatColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+String _truncateQuoteText(String value) {
+  final characters = value.characters;
+  return characters.length > 10
+      ? '${characters.take(10).toString()}...'
+      : value;
 }

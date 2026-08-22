@@ -15,10 +15,10 @@ class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
 class FriendRequestProjection(BaseModel):
-    id:str;username:str;nickname:str;avatar_url:str|None;message:str;status:str
+    id:str;username:str;nickname:str;avatar_url:str|None;message:str;status:str;requested_at:str
 class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];next_cursor:str|None=None
 class UserSearchProjection(BaseModel):
-    user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None
+    user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;relationship_state:str
 class UserSearchResponse(BaseModel):items:list[UserSearchProjection];next_cursor:str|None=None
 def create_friendship_router(settings:Settings,factory,*,avatar_storage):
     router=APIRouter(tags=['friends']);service=FriendshipService(factory,ProfileService(factory,storage=avatar_storage));tokens=TokenService(factory,jwt_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes',jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")

@@ -1,0 +1,41 @@
+.....FF                                                                  [100%]
+================================== FAILURES ===================================
+_____ test_friend_request_prevents_pending_and_existing_friend_duplicates _____
+
+ctx = (<fastapi.applications.FastAPI object at 0x0000020848F48830>, Settings(app_name='六合通 Business API', environment='test'...ar_storage_root='/data/private-media', avatar_url_signing_secret=None, avatar_public_base_url='http://localhost:8082'))
+
+    @pytest.mark.asyncio
+    async def test_friend_request_prevents_pending_and_existing_friend_duplicates(ctx):
+        app, settings = ctx
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            first = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'pending-1'}, json={'target_user_id': 'u2', 'message': 'first'})
+            duplicate = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'pending-2'}, json={'target_user_id': 'u2', 'message': 'second'})
+>           assert duplicate.status_code == 409
+E           assert 201 == 409
+E            +  where 201 = <Response [201 Created]>.status_code
+
+tests\business_api\friendship\test_friendship_api.py:119: AssertionError
+__________ test_rejected_request_is_reused_with_latest_request_time ___________
+
+ctx = (<fastapi.applications.FastAPI object at 0x00000208491408F0>, Settings(app_name='六合通 Business API', environment='test'...ar_storage_root='/data/private-media', avatar_url_signing_secret=None, avatar_public_base_url='http://localhost:8082'))
+
+    @pytest.mark.asyncio
+    async def test_rejected_request_is_reused_with_latest_request_time(ctx):
+        app, settings = ctx
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            initial = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'reuse-first'}, json={'target_user_id': 'u2', 'message': 'old'})
+            rejected = await client.post(f"/api/v1/friends/requests/{initial.json()['id']}/reject", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'reuse-reject'})
+            assert rejected.status_code == 200
+            retried = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'reuse-second'}, json={'target_user_id': 'u2', 'message': 'new'})
+            assert retried.status_code == 201
+>           assert retried.json()['id'] == initial.json()['id']
+E           AssertionError: assert 'cb38398f-8d7...-c38167a7e814' == 'f6d165ff-a49...-848981cf5a46'
+E             
+E             - f6d165ff-a49a-4863-bbd4-848981cf5a46
+E             + cb38398f-8d7b-4339-a9b2-c38167a7e814
+
+tests\business_api\friendship\test_friendship_api.py:138: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/business_api/friendship/test_friendship_api.py::test_friend_request_prevents_pending_and_existing_friend_duplicates
+FAILED tests/business_api/friendship/test_friendship_api.py::test_rejected_request_is_reused_with_latest_request_time
+2 failed, 5 passed in 18.13s

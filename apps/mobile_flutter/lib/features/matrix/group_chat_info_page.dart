@@ -6,6 +6,7 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
 import 'chat_history_search.dart';
+import 'matrix_user_avatar.dart';
 
 final class GroupChatInfoPage extends StatefulWidget {
   const GroupChatInfoPage({
@@ -15,6 +16,7 @@ final class GroupChatInfoPage extends StatefulWidget {
     required this.onSearchHistory,
     required this.onClearLocalHistory,
     required this.onLeft,
+    this.onMemberTap,
   });
 
   final GroupChatInfoController controller;
@@ -22,6 +24,7 @@ final class GroupChatInfoPage extends StatefulWidget {
   final VoidCallback onSearchHistory;
   final Future<void> Function() onClearLocalHistory;
   final VoidCallback onLeft;
+  final ValueChanged<GroupChatMember>? onMemberTap;
 
   @override
   State<GroupChatInfoPage> createState() => _GroupChatInfoPageState();
@@ -118,7 +121,25 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
     final state = widget.controller.state;
     final snapshot = state.snapshot;
     return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(middle: Text(state.title)),
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
+        middle: Text(state.title),
+        trailing: snapshot == null
+            ? null
+            : CupertinoButton(
+                key: const Key('group-member-search'),
+                padding: EdgeInsets.zero,
+                onPressed: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => GroupMemberSearchPage(snapshot: snapshot),
+                  ),
+                ),
+                child: const Icon(CupertinoIcons.search),
+              ),
+      ),
       child: SafeArea(
         child: snapshot == null
             ? Center(
@@ -136,6 +157,17 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         ? snapshot.members
                         : snapshot.members.take(collapsedMemberCount).toList(),
                     onAdd: widget.onAddMember,
+                    onMemberTap: widget.onMemberTap,
+                    onRemove: snapshot.canManage
+                        ? () => Navigator.push(
+                              context,
+                              CupertinoPageRoute(
+                                builder: (_) => GroupMemberRemovalPage(
+                                  controller: widget.controller,
+                                ),
+                              ),
+                            )
+                        : null,
                   ),
                   if (snapshot.members.length > collapsedMemberCount)
                     WeChatListTile(
@@ -176,6 +208,29 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  _detailTile(
+                    '群二维码',
+                    snapshot.qrJoinEnabled ? '扫一扫加入群聊' : '已关闭',
+                    () => Navigator.push(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => GroupQrCodePage(snapshot: snapshot),
+                      ),
+                    ),
+                  ),
+                  if (snapshot.canManage)
+                    WeChatListTile(
+                      title: const Text('群管理'),
+                      trailing: const CupertinoListTileChevron(),
+                      onTap: () => Navigator.push(
+                        context,
+                        CupertinoPageRoute(
+                          builder: (_) => GroupManagementPage(
+                            controller: widget.controller,
+                          ),
+                        ),
+                      ),
+                    ),
                   WeChatListTile(
                     title: const Text('查找聊天记录'),
                     trailing: const CupertinoListTileChevron(),
@@ -302,7 +357,11 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final snapshot = controller.state.snapshot!;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('以下消息仍通知')),
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('以下消息仍通知')),
       child: SafeArea(
         child: ListView(children: [
           _preferenceTile(
@@ -385,6 +444,9 @@ final class _FollowedGroupMemberPickerPageState
     final snapshot = widget.controller.state.snapshot!;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: const Text('关注群成员'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
@@ -410,6 +472,7 @@ final class _FollowedGroupMemberPickerPageState
                 nickname: member.displayName,
                 fallbackSeed: member.matrixUserId,
                 avatarUrl: member.avatarUrl,
+                avatarHeaders: member.avatarHeaders,
                 size: 40,
               ),
               title: Text(member.displayName),
@@ -435,10 +498,16 @@ final class _FollowedGroupMemberPickerPageState
 }
 
 final class _MemberGrid extends StatelessWidget {
-  const _MemberGrid({required this.members, required this.onAdd});
+  const _MemberGrid(
+      {required this.members,
+      required this.onAdd,
+      this.onMemberTap,
+      this.onRemove});
 
   final List<GroupChatMember> members;
   final VoidCallback onAdd;
+  final ValueChanged<GroupChatMember>? onMemberTap;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -455,32 +524,296 @@ final class _MemberGrid extends StatelessWidget {
             children: [
               for (var index = 0; index < members.length; index++)
                 _MemberCell(
-                  key: Key('group-member-$index'),
+                  key: Key('group-member-${members[index].matrixUserId}'),
                   member: members[index],
+                  onTap: onMemberTap == null
+                      ? null
+                      : () => onMemberTap!(members[index]),
                 ),
               _AddMemberCell(
                 key: const Key('group-member-add'),
                 onTap: onAdd,
               ),
+              if (onRemove != null)
+                _RemoveMemberCell(
+                  key: const Key('group-member-remove'),
+                  onTap: onRemove!,
+                ),
             ],
           ),
         ),
       );
 }
 
-final class _MemberCell extends StatelessWidget {
-  const _MemberCell({super.key, required this.member});
-  final GroupChatMember member;
+final class _RemoveMemberCell extends StatelessWidget {
+  const _RemoveMemberCell({super.key, required this.onTap});
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          UserAvatar(
-            nickname: member.displayName,
-            fallbackSeed: member.matrixUserId,
-            avatarUrl: member.avatarUrl,
-            size: 48,
+  Widget build(BuildContext context) => CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: onTap,
+        child: Column(children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              border: Border.all(color: WeChatColors.divider),
+              borderRadius: BorderRadius.circular(WeChatRadius.control),
+            ),
+            child: const Icon(CupertinoIcons.minus, size: 24),
           ),
+          const SizedBox(height: 5),
+          const Text('移除', style: TextStyle(fontSize: 12)),
+        ]),
+      );
+}
+
+final class GroupQrCodePage extends StatelessWidget {
+  const GroupQrCodePage({super.key, required this.snapshot});
+  final GroupChatInfoSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) => CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('群二维码')),
+        child: SafeArea(
+          child: Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(CupertinoIcons.qrcode, size: 176),
+              const SizedBox(height: 16),
+              Text(snapshot.name.isEmpty ? '群聊' : snapshot.name),
+              const SizedBox(height: 8),
+              Text(
+                snapshot.qrJoinEnabled ? '扫描二维码加入群聊' : '群二维码已关闭',
+                style: const TextStyle(color: WeChatColors.textSecondary),
+              ),
+            ]),
+          ),
+        ),
+      );
+}
+
+final class GroupManagementPage extends StatelessWidget {
+  const GroupManagementPage({super.key, required this.controller});
+  final GroupChatInfoController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = controller.state.snapshot!;
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('群管理')),
+      child: SafeArea(
+        child: ListView(children: [
+          _setting('二维码进群', snapshot.qrJoinEnabled, 'qr_join_enabled'),
+          _setting('进群需要群主/群管理员确认', snapshot.joinApprovalRequired,
+              'join_approval_required'),
+          _setting('仅群主/群管理员可修改群聊名称', snapshot.onlyManagersCanRename,
+              'only_managers_can_rename'),
+          if (snapshot.isOwner)
+            WeChatListTile(
+              title: const Text('群主管理权转让'),
+              trailing: const CupertinoListTileChevron(),
+            ),
+          if (snapshot.isOwner)
+            WeChatListTile(
+              title: const Text('群管理员'),
+              subtitle: Text('最多3位（${snapshot.adminIds.length}/3）'),
+              trailing: const CupertinoListTileChevron(),
+            ),
+          if (snapshot.isOwner)
+            WeChatListTile(
+              title: const Text('解散该群聊',
+                  style: TextStyle(color: WeChatColors.danger)),
+              onTap: () => showCupertinoDialog<void>(
+                context: context,
+                builder: (context) => CupertinoAlertDialog(
+                  title: const Text('解散该群聊'),
+                  content: const Text('解散后无法恢复，请谨慎操作。'),
+                  actions: [
+                    CupertinoDialogAction(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('取消'),
+                    ),
+                    CupertinoDialogAction(
+                      isDestructiveAction: true,
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('解散'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _setting(String label, bool value, String key) => WeChatListTile(
+        title: Text(label),
+        trailing: CupertinoSwitch(
+          value: value,
+          onChanged: (next) => controller.setGroupSetting(key, next),
+        ),
+      );
+}
+
+final class GroupMemberSearchPage extends StatefulWidget {
+  const GroupMemberSearchPage({super.key, required this.snapshot});
+  final GroupChatInfoSnapshot snapshot;
+  @override
+  State<GroupMemberSearchPage> createState() => _GroupMemberSearchPageState();
+}
+
+final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
+  String query = '';
+  @override
+  Widget build(BuildContext context) {
+    final members = widget.snapshot.members.where((member) =>
+        member.displayName.toLowerCase().contains(query.trim().toLowerCase()));
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('群成员')),
+      child: SafeArea(
+        child: Column(children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: CupertinoSearchTextField(
+              placeholder: '搜索群成员',
+              onChanged: (value) => setState(() => query = value),
+            ),
+          ),
+          Expanded(
+            child: ListView(children: [
+              for (final member in members)
+                WeChatListTile(
+                  leading: UserAvatar(
+                    nickname: member.displayName,
+                    fallbackSeed: member.matrixUserId,
+                    avatarUrl: member.avatarUrl,
+                    avatarHeaders: member.avatarHeaders,
+                    size: 40,
+                  ),
+                  title: Text(member.displayName),
+                  subtitle: Text(member.matrixUserId == widget.snapshot.ownerId
+                      ? '群主'
+                      : widget.snapshot.adminIds.contains(member.matrixUserId)
+                          ? '群管理员'
+                          : ''),
+                ),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+final class GroupMemberRemovalPage extends StatefulWidget {
+  const GroupMemberRemovalPage({super.key, required this.controller});
+  final GroupChatInfoController controller;
+  @override
+  State<GroupMemberRemovalPage> createState() => _GroupMemberRemovalPageState();
+}
+
+final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
+  final selected = <String>{};
+  @override
+  Widget build(BuildContext context) {
+    final snapshot = widget.controller.state.snapshot!;
+    final removable = snapshot.members.where((member) =>
+        member.matrixUserId != snapshot.ownerId &&
+        !(snapshot.isAdmin && snapshot.adminIds.contains(member.matrixUserId)));
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
+        middle: const Text('移除群成员'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: selected.isEmpty ? null : _confirm,
+          child: const Text('移除'),
+        ),
+      ),
+      child: SafeArea(
+        child: ListView(children: [
+          for (final member in removable)
+            WeChatListTile(
+              title: Text(member.displayName),
+              trailing: Icon(selected.contains(member.matrixUserId)
+                  ? CupertinoIcons.check_mark_circled_solid
+                  : CupertinoIcons.circle),
+              onTap: () => setState(() => selected.contains(member.matrixUserId)
+                  ? selected.remove(member.matrixUserId)
+                  : selected.add(member.matrixUserId)),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Future<void> _confirm() async {
+    final confirmed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('移除群成员'),
+            content: Text('确定移除 ${selected.length} 位群成员吗？'),
+            actions: [
+              CupertinoDialogAction(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消')),
+              CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('移除')),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    await widget.controller.removeMembers(selected.toList());
+    if (mounted) Navigator.pop(context);
+  }
+}
+
+final class _MemberCell extends StatelessWidget {
+  const _MemberCell({super.key, required this.member, this.onTap});
+  final GroupChatMember member;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+      child: Column(
+        children: [
+          member.client != null && member.matrixAvatarUri != null
+              ? MatrixUserAvatar(
+                  client: member.client!,
+                  matrixAvatarUri: member.matrixAvatarUri,
+                  nickname: member.displayName,
+                  fallbackSeed: member.matrixUserId,
+                  fallbackAvatarUrl: member.avatarUrl,
+                  size: 48,
+                )
+              : UserAvatar(
+                  nickname: member.displayName,
+                  fallbackSeed: member.matrixUserId,
+                  avatarUrl: member.avatarUrl,
+                  avatarHeaders: member.avatarHeaders,
+                  size: 48,
+                ),
           const SizedBox(height: 5),
           Text(
             member.displayName,
@@ -489,7 +822,7 @@ final class _MemberCell extends StatelessWidget {
             style: const TextStyle(fontSize: 12),
           ),
         ],
-      );
+      ));
 }
 
 final class _AddMemberCell extends StatelessWidget {
@@ -546,6 +879,9 @@ final class _GroupTextEditPageState extends State<_GroupTextEditPage> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
           middle: Text(widget.title),
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
@@ -606,6 +942,9 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
         .toList(growable: false);
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: const Text('添加群成员'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
@@ -711,7 +1050,11 @@ final class _GroupChatHistorySearchPageState
         )
         .toList(growable: false);
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('查找聊天记录')),
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('查找聊天记录')),
       child: SafeArea(
         child: Column(
           children: [

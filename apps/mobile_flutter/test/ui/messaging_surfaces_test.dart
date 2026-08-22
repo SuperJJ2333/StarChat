@@ -64,6 +64,21 @@ void main() {
       findsNothing,
     );
   });
+  testWidgets('list tile exposes its semantic elevated surface as a ColoredBox',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: WeChatListTile(title: Text('统一列表项')),
+    ));
+
+    expect(
+      tester
+          .widget<ColoredBox>(
+            find.byKey(const Key('wechat-list-elevated-surface')),
+          )
+          .color,
+      WeChatColors.lightElevated,
+    );
+  });
   testWidgets('conversation tile keeps the Figma leading body trailing slots',
       (tester) async {
     await tester.pumpWidget(

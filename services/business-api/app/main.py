@@ -9,6 +9,7 @@ from app.api.wallet import create_wallet_router
 from app.api.friendship import create_friendship_router
 from app.api.moments import create_moments_router
 from app.api.profile import create_profile_router
+from app.api.groups import create_group_router
 from app.core.config import Settings
 from app.core.database import create_engine, create_session_factory
 from app.core.errors import ErrorEnvelope, install_error_handlers
@@ -93,12 +94,9 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(create_moments_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_group_router(settings, session_factory, matrix_gateway=matrix_gateway), prefix="/api/v1")
     return app
 
 
 def create_default_app() -> FastAPI:
     return create_app(Settings())
-
-
-
-

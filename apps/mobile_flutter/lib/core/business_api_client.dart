@@ -11,10 +11,14 @@ import '../features/contacts/contact_models.dart';
 
 final class BusinessApiException implements Exception {
   const BusinessApiException(
-      {required this.statusCode, required this.code, required this.message});
+      {required this.statusCode,
+      required this.code,
+      required this.message,
+      this.fieldErrors = const {}});
   final int statusCode;
   final String code;
   final String message;
+  final Map<String, String> fieldErrors;
   @override
   String toString() => message;
 }
@@ -117,6 +121,7 @@ final class BusinessApiClient
   @override
   Future<RegistrationReceipt> register(
       {required String username,
+      String? nickname,
       required String email,
       required String password,
       required String invitationCode}) async {
@@ -125,10 +130,12 @@ final class BusinessApiClient
     final response = await _client.post(_uri('/auth/register'),
         headers: {
           'Content-Type': 'application/json',
+          'X-Device-Key': await sessionStore.registrationDeviceKey(),
           'Idempotency-Key': _pendingIdempotencyKey(operation)
         },
         body: jsonEncode({
           'username': username,
+          if (nickname != null) 'nickname': nickname,
           'email': email,
           'password': password,
           'invitation_code': invitationCode
@@ -147,7 +154,7 @@ final class BusinessApiClient
       String? code,
       String? token}) async {
     final operation =
-        'verify:$registrationSession:${code != null ? 'code' : 'token'}';
+        'verify:$registrationSession:${code != null ? 'code:$code' : 'token:$token'}';
     final response =
         await _client.post(_uri('/auth/email-verifications/verify'),
             headers: {
@@ -170,6 +177,7 @@ final class BusinessApiClient
         await _client.post(_uri('/auth/email-verifications/resend'),
             headers: {
               'Content-Type': 'application/json',
+              'X-Device-Key': await sessionStore.registrationDeviceKey(),
               'Idempotency-Key': _pendingIdempotencyKey(operation)
             },
             body: jsonEncode({'registration_session': registrationSession}));
@@ -360,6 +368,30 @@ final class BusinessApiClient
       getJson('/wallet/transactions${kind == null ? '' : '?kind=$kind'}');
   Future<Map<String, dynamic>> withdrawalStatus(String id) =>
       getJson('/wallet/withdrawals/$id');
+  Future<bool> autoAllowGroupJoin() async =>
+      (await getJson('/profile/privacy'))['auto_allow_group_join'] == true;
+  Future<bool> setAutoAllowGroupJoin(bool enabled) async =>
+      _setAutoAllowGroupJoin(enabled);
+  Future<bool> _setAutoAllowGroupJoin(bool enabled) async {
+    final response = await _authorized((headers) => _client.put(
+          _uri('/profile/privacy/auto-allow-group-join'),
+          headers: {...headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({'enabled': enabled}),
+        ));
+    return _decode(response)['auto_allow_group_join'] == true;
+  }
+
+  Future<Map<String, dynamic>> requestServerGroupAutoJoin({
+    required String roomId,
+    required List<String> inviteeUserIds,
+  }) =>
+      postJson(
+          '/groups/auto-join',
+          {
+            'room_id': roomId,
+            'invitee_user_ids': inviteeUserIds,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> friends() => getJson('/friends');
   @override
   Future<List<ContactSummary>> listContacts() async {
@@ -528,8 +560,27 @@ final class BusinessApiClient
         statusCode: response.statusCode,
         code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
         message: body['error']?['message']?.toString() ?? '业务请求失败',
+        fieldErrors: _parseFieldErrors(body['error']?['fields']),
       );
     }
     return body;
+  }
+
+  static Map<String, String> _parseFieldErrors(Object? raw) {
+    if (raw is! List) return const {};
+    final result = <String, String>{};
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final loc = item['loc'];
+      final message = item['msg']?.toString();
+      if (loc is List &&
+          loc.isNotEmpty &&
+          message != null &&
+          message.isNotEmpty) {
+        final field = loc.last?.toString();
+        if (field != null && field != 'body') result[field] = message;
+      }
+    }
+    return result;
   }
 }

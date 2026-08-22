@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/foundation/wechat_tokens.dart';
+
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
@@ -49,7 +51,11 @@ final class _GroupChatPageState extends State<GroupChatPage> {
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('发起群聊')),
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('发起群聊')),
       child: SafeArea(
         child: state.status == GroupChatStatus.loading ||
                 state.status == GroupChatStatus.idle

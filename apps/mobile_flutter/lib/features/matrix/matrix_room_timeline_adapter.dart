@@ -45,7 +45,7 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
     return RoomMessageViewModel(
       id: event.eventId,
       senderId: event.senderId,
-      text: event.redacted ? '消息已撤回' : (nudgeText ?? event.text),
+      text: event.redacted ? '' : (nudgeText ?? event.text),
       isOwn: event.senderId == room.client.userID,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
@@ -62,6 +62,10 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
       packetId: event.content['packet_id']?.toString(),
       greeting: event.content['greeting']?.toString(),
       voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),
+      isRecalled: event.redacted,
+      replyToEventId: ((event.content['m.relates_to'] as Map?)?['m.in_reply_to']
+              as Map?)?['event_id']
+          ?.toString(),
     );
   }
 

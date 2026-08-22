@@ -12,8 +12,7 @@ abstract final class WeChatTheme {
       scaffoldBackgroundColor: dark
           ? WeChatColors.darkPageBackground
           : WeChatColors.lightPageBackground,
-      barBackgroundColor:
-          dark ? WeChatColors.darkSurface : WeChatColors.lightSurface,
+      barBackgroundColor: WeChatColors.chatNavigationBackground,
       textTheme: CupertinoTextThemeData(
           textStyle: TextStyle(
               fontSize: WeChatTypography.body,

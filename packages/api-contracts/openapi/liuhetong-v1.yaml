@@ -37,6 +37,20 @@
         "title": "AdjustmentRequestBody",
         "type": "object"
       },
+      "AutoJoinPreference": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AutoJoinPreference",
+        "type": "object"
+      },
       "AvatarUploadRequest": {
         "additionalProperties": false,
         "properties": {
@@ -359,7 +373,6 @@
           "code": {
             "anyOf": [
               {
-                "pattern": "^\\d{6}$",
                 "type": "string"
               },
               {
@@ -635,6 +648,10 @@
             "title": "Nickname",
             "type": "string"
           },
+          "requested_at": {
+            "title": "Requested At",
+            "type": "string"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -650,9 +667,36 @@
           "nickname",
           "avatar_url",
           "message",
-          "status"
+          "status",
+          "requested_at"
         ],
         "title": "FriendRequestProjection",
+        "type": "object"
+      },
+      "GroupAutoJoinRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "invitee_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 499,
+            "minItems": 1,
+            "title": "Invitee User Ids",
+            "type": "array"
+          },
+          "room_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Room Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id",
+          "invitee_user_ids"
+        ],
+        "title": "GroupAutoJoinRequest",
         "type": "object"
       },
       "InvitationRequest": {
@@ -1009,6 +1053,18 @@
             "title": "Invitation Code",
             "type": "string"
           },
+          "nickname": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
           "password": {
             "maxLength": 256,
             "minLength": 12,
@@ -1192,6 +1248,10 @@
             "title": "Nickname",
             "type": "string"
           },
+          "relationship_state": {
+            "title": "Relationship State",
+            "type": "string"
+          },
           "user_id": {
             "title": "User Id",
             "type": "string"
@@ -1206,7 +1266,8 @@
           "username",
           "nickname",
           "avatar_url",
-          "matrix_user_id"
+          "matrix_user_id",
+          "relationship_state"
         ],
         "title": "UserSearchProjection",
         "type": "object"
@@ -1418,6 +1479,22 @@
               "minLength": 1,
               "title": "Idempotency-Key",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Device-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Device-Key"
             }
           }
         ],
@@ -1920,6 +1997,22 @@
               "minLength": 1,
               "title": "Idempotency-Key",
               "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Device-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Device-Key"
             }
           }
         ],
@@ -3046,6 +3139,83 @@
         "summary": "Update",
         "tags": [
           "friends"
+        ]
+      }
+    },
+    "/api/v1/groups/auto-join": {
+      "post": {
+        "operationId": "auto_join_api_v1_groups_auto_join_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupAutoJoinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Auto Join",
+        "tags": [
+          "groups"
         ]
       }
     },
@@ -5272,6 +5442,126 @@
         "summary": "Update Profile",
         "tags": [
           "profile"
+        ]
+      }
+    },
+    "/api/v1/profile/privacy": {
+      "get": {
+        "operationId": "get_privacy_api_v1_profile_privacy_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Privacy",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
+    "/api/v1/profile/privacy/auto-allow-group-join": {
+      "put": {
+        "operationId": "set_privacy_api_v1_profile_privacy_auto_allow_group_join_put",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoJoinPreference"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set Privacy",
+        "tags": [
+          "groups"
         ]
       }
     },

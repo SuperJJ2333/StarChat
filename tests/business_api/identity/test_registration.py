@@ -10,7 +10,7 @@ from app.core.config import Settings
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
-from app.core.outbox import OutboxEvent
+from app.core.outbox import OutboxEvent, OutboxPublisher
 from app.main import create_app
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.invitations import InvitationService
@@ -87,7 +87,113 @@ def test_register_consumes_invitation_and_creates_pending_user(registration_comp
                     OutboxEvent.event_type == "identity.email.verification.requested"
             )
         )
-        assert email_event.payload["user_id"] == result.user_id
+    assert email_event.payload["user_id"] == result.user_id
+
+
+def test_registration_consumes_invitation_only_after_registration_records_flush(
+    registration_components, monkeypatch
+) -> None:
+    _, invitations, service, _, now = registration_components
+    invitations.issue(
+        code="CONSUME-AFTER-FLUSH",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    original_consume = InvitationService.consume_in_session
+
+    def verify_records_are_prepared(session, *, code, now):
+        assert session.scalar(select(func.count()).select_from(User)) == 1
+        assert (
+            session.scalar(select(func.count()).select_from(EmailVerificationChallenge))
+            == 1
+        )
+        assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 1
+        return original_consume(session, code=code, now=now)
+
+    monkeypatch.setattr(
+        InvitationService,
+        "consume_in_session",
+        staticmethod(verify_records_are_prepared),
+    )
+
+    service.register(
+        username="consume-after-flush",
+        email="consume-after-flush@example.com",
+        password="correct horse battery staple",
+        invitation_code="CONSUME-AFTER-FLUSH",
+        idempotency_key="registration-consume-after-flush",
+    )
+
+def test_registration_failure_after_prepared_records_does_not_consume_invitation(
+    registration_components, monkeypatch
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitation = invitations.issue(
+        code="ROLLBACK-ONLY-ON-SUCCESS",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+
+    def fail_enqueue(*_args, **_kwargs) -> None:
+        raise RuntimeError("simulated outbox staging failure")
+
+    monkeypatch.setattr(OutboxPublisher, "enqueue", fail_enqueue)
+
+    with pytest.raises(RuntimeError, match="simulated outbox staging failure"):
+        service.register(
+            username="rollback-user",
+            email="rollback@example.com",
+            password="correct horse battery staple",
+            invitation_code="ROLLBACK-ONLY-ON-SUCCESS",
+            idempotency_key="registration-rollback-only-on-success",
+        )
+
+    with factory() as session:
+        assert session.get(Invitation, invitation.id).use_count == 0
+        assert session.scalar(select(func.count()).select_from(User)) == 0
+
+def test_register_persists_repeatable_chinese_nickname_and_validates_chat_id(
+    registration_components,
+) -> None:
+    factory, invitations, service, _, now = registration_components
+    invitations.issue(
+        code="NICKNAME-001",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    result = service.register(
+        username="chat_id_001",
+        nickname="星星用户",
+        email="nickname@example.com",
+        password="correct horse battery staple",
+        invitation_code="NICKNAME-001",
+        idempotency_key="registration-nickname-1",
+    )
+    with factory() as session:
+        user = session.get(User, result.user_id)
+        assert user is not None
+        assert user.nickname == "星星用户"
+        assert user.username == "chat_id_001"
+
+    invitations.issue(
+        code="NICKNAME-002",
+        max_uses=1,
+        expires_at=now + timedelta(days=1),
+        created_by="admin-1",
+    )
+    with pytest.raises(AppError) as error:
+        service.register(
+            username="畅聊号",
+            nickname="另一个用户",
+            email="nickname-2@example.com",
+            password="correct horse battery staple",
+            invitation_code="NICKNAME-002",
+            idempotency_key="registration-nickname-2",
+        )
+    assert error.value.code == "REGISTRATION_INVALID"
 
 
 def test_expired_or_consumed_invitation_is_rejected(registration_components) -> None:

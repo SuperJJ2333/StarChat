@@ -89,8 +89,8 @@ final class MessageReminderService {
     required DateTime dueAt,
   }) async {
     final updatedAt = now().toUtc();
-    if (!dueAt.isAfter(updatedAt)) {
-      throw ArgumentError.value(dueAt, 'dueAt', '提醒时间必须在未来');
+    if (dueAt.difference(updatedAt) < const Duration(minutes: 5)) {
+      throw ArgumentError.value(dueAt, 'dueAt', '提醒时间至少需要在五分钟后');
     }
     final id = sha256
         .convert(utf8.encode(

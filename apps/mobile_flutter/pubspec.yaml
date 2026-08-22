@@ -31,6 +31,8 @@ dependencies:
   emoji_picker_flutter: 4.5.3
   crypto: 3.0.7
   characters: 1.4.1
+  cached_network_image: 3.4.1
+  flutter_cache_manager: 3.4.1
   flutter_local_notifications: 19.4.2
   timezone: 0.10.1
 dev_dependencies:
@@ -52,4 +54,3 @@ flutter_launcher_icons:
   adaptive_icon_foreground: assets/branding/app_icon.png
   adaptive_icon_foreground_inset: 17
   remove_alpha_ios: true
-

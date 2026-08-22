@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../ui/foundation/avatar_cache.dart';
+
 final class ProfileData {
   const ProfileData(
       {required this.username,
@@ -74,9 +76,15 @@ final class ProfileState {
 }
 
 final class ProfileController extends ChangeNotifier {
-  ProfileController({required this.gateway, required this.avatarSource});
+  ProfileController({
+    required this.gateway,
+    required this.avatarSource,
+    Future<void> Function(String userId)? invalidateAvatarCache,
+  }) : _invalidateAvatarCache =
+            invalidateAvatarCache ?? AvatarCache.invalidateUser;
   final ProfileGateway gateway;
   final AvatarSource avatarSource;
+  final Future<void> Function(String userId) _invalidateAvatarCache;
   ProfileState state = const ProfileState(ProfileStatus.idle);
   AvatarCandidate? _retryCandidate;
   Future<void> load() async {
@@ -140,6 +148,7 @@ final class ProfileController extends ChangeNotifier {
       _set(ProfileState(ProfileStatus.uploading,
           profile: state.profile, candidate: candidate, progress: .85));
       final profile = await gateway.completeAvatar(session.uploadId);
+      await _invalidateAvatarCache(profile.fallbackSeed);
       _retryCandidate = null;
       _set(ProfileState(ProfileStatus.ready, profile: profile, progress: 1));
     } catch (_) {
@@ -154,6 +163,7 @@ final class ProfileController extends ChangeNotifier {
   Future<void> restoreDefaultAvatar() async {
     await gateway.deleteAvatar();
     final current = state.profile;
+    if (current != null) await _invalidateAvatarCache(current.fallbackSeed);
     if (current != null) {
       _set(ProfileState(ProfileStatus.ready,
           profile: current.copyWith(clearAvatar: true)));

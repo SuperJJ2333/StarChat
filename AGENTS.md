@@ -1,5 +1,11 @@
 # StarChat Agent Rules
 
+## Deployment access
+
+- SSH target: `root@207.56.8.8`
+- SSH port: `23421`
+- Authentication: passwordless SSH configured locally; private keys and tokens are not stored in this repository.
+
 These rules apply to the entire repository. A deeper `AGENTS.md` may add stricter rules but may not weaken this file.
 
 ## Required context
@@ -7,6 +13,7 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 - Read `docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md` before changing product behavior.
 - Execute work from an approved plan under `docs/superpowers/plans/`.
 - Record non-Git verification evidence under `docs/verification/` while this workspace has no `.git` directory.
+- Temporary verification artifacts must be created only under `docs/verification/artifacts/<YYYY-MM-DD>/` (or another named subfolder below `docs/verification/`); the repository root must never contain verification artifacts such as `MODIFIED_FILE`, `DIFF_FILE`, `VERIFICATION.txt`, or `ROLLBACK.sh`.
 
 ## Shell and encoding
 

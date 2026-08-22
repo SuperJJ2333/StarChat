@@ -30,7 +30,18 @@ class FriendshipService:
                 if existing.target_id != target or existing.message != message:
                     raise AppError(code='IDEMPOTENCY_KEY_REUSED',message='幂等键已用于不同请求',status_code=409)
                 return existing
-            row=FriendRequest(id=str(uuid4()),requester_id=actor,target_id=target,message=message,status='PENDING',idempotency_key=key,created_at=now);s.add(row);self._audit(s,actor,row.id,'friend.requested','FRIEND_REQUEST',key);return row
+            low,high=sorted((actor,target))
+            if s.scalar(select(Friendship.id).where(Friendship.user_low_id==low,Friendship.user_high_id==high)):
+                raise AppError(code='FRIEND_REQUEST_DUPLICATE',message='不能重复发送好友请求',status_code=409)
+            prior=list(s.scalars(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.target_id==target).order_by(FriendRequest.requested_at.desc(),FriendRequest.id.desc())).all())
+            pending=next((item for item in prior if item.status=='PENDING'),None)
+            if pending:
+                raise AppError(code='FRIEND_REQUEST_DUPLICATE',message='不能重复发送好友请求',status_code=409)
+            reusable=next((item for item in prior if item.status in {'REJECTED','EXPIRED'}),None)
+            if reusable:
+                reusable.message=message; reusable.status='PENDING'; reusable.idempotency_key=key; reusable.requested_at=now; reusable.resolved_at=None
+                self._audit(s,actor,reusable.id,'friend.request.reused','FRIEND_REQUEST',key); return reusable
+            row=FriendRequest(id=str(uuid4()),requester_id=actor,target_id=target,message=message,status='PENDING',idempotency_key=key,created_at=now,requested_at=now);s.add(row);self._audit(s,actor,row.id,'friend.requested','FRIEND_REQUEST',key);return row
     def accept(self,actor,request_id,key):
         with self.factory.begin() as s:
             row=s.get(FriendRequest,request_id)
@@ -55,8 +66,8 @@ class FriendshipService:
             contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else []})
         return items
     def requests(self,actor):
-        with self.factory() as s:rows=list(s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor,FriendRequest.status=='PENDING').order_by(FriendRequest.created_at.desc())))
-        profiles=self.profile_reader.read_public_profiles([row.requester_id for row in rows]);return [{'id':row.id,'username':profiles[row.requester_id].username,'nickname':profiles[row.requester_id].nickname,'avatar_url':profiles[row.requester_id].avatar_url,'message':row.message,'status':row.status} for row in rows if row.requester_id in profiles]
+        with self.factory() as s:rows=list(s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor).order_by(FriendRequest.requested_at.desc(),FriendRequest.id.desc())))
+        profiles=self.profile_reader.read_public_profiles([row.requester_id for row in rows]);return [{'id':row.id,'username':profiles[row.requester_id].username,'nickname':profiles[row.requester_id].nickname,'avatar_url':profiles[row.requester_id].avatar_url,'message':row.message,'status':row.status,'requested_at':row.requested_at.isoformat()} for row in rows if row.requester_id in profiles]
     def block(self,actor,target,key):
         with self.factory.begin() as s:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
@@ -97,5 +108,11 @@ class FriendshipService:
             if not row:raise AppError(code='FRIEND_NOT_FOUND',message='好友不存在',status_code=404)
             subject=row.id;self._audit(s,actor,subject,'friend.deleted','FRIEND_DELETE',key);s.delete(row);s.execute(delete(ContactProfile).where(or_(ContactProfile.owner_id==actor,ContactProfile.contact_id==actor),or_(ContactProfile.owner_id==target,ContactProfile.contact_id==target)))
     def search(self,actor,q):
-        with self.factory() as s:blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all())
-        profiles=self.profile_reader.search_public_profiles(q,exclude_user_ids=blocked|{actor});return [{'user_id':p.user_id,'username':p.username,'nickname':p.nickname,'avatar_url':p.avatar_url,'matrix_user_id':p.matrix_user_id} for p in profiles]
+        with self.factory() as s:
+            blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all())
+            pending={row.target_id for row in s.scalars(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.status=='PENDING')).all()}
+            reusable={row.target_id for row in s.scalars(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.status.in_(['REJECTED','EXPIRED']))).all()}
+            friendships=list(s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor))).all())
+            friends={row.user_high_id if row.user_low_id==actor else row.user_low_id for row in friendships}
+        profiles=self.profile_reader.search_public_profiles(q,exclude_user_ids=blocked|{actor})
+        return [{'user_id':p.user_id,'username':p.username,'nickname':p.nickname,'avatar_url':p.avatar_url,'matrix_user_id':p.matrix_user_id,'relationship_state':'FRIEND' if p.user_id in friends else 'OUTGOING_PENDING' if p.user_id in pending else 'REUSABLE' if p.user_id in reusable else 'NONE'} for p in profiles]

@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:matrix/matrix.dart';
 
 import '../../ui/components/user_avatar.dart';
+import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'conversation_preferences.dart';
@@ -11,6 +13,7 @@ final class DirectChatInfoPage extends StatefulWidget {
     super.key,
     required this.peerName,
     required this.peerId,
+    required this.matrixClient,
     required this.preference,
     required this.onAddMember,
     required this.onSearchHistory,
@@ -22,6 +25,7 @@ final class DirectChatInfoPage extends StatefulWidget {
 
   final String peerName;
   final String peerId;
+  final Client matrixClient;
   final String? peerAvatarUrl;
   final ConversationPreference preference;
   final VoidCallback onAddMember;
@@ -59,6 +63,9 @@ final class _DirectGroupMemberPickerPageState
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
           middle: const Text('发起群聊'),
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
@@ -137,7 +144,11 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('聊天信息')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('聊天信息')),
         child: SafeArea(
           child: ListView(children: [
             ColoredBox(
@@ -206,10 +217,12 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
 
   Widget _person(String name, String id, String? avatarUrl) =>
       Column(mainAxisSize: MainAxisSize.min, children: [
-        UserAvatar(
+        MatrixUserAvatar(
+          client: widget.matrixClient,
           nickname: name,
           fallbackSeed: id,
-          avatarUrl: avatarUrl,
+          matrixAvatarUri: Uri.tryParse(avatarUrl ?? ''),
+          fallbackAvatarUrl: avatarUrl,
           size: 48,
         ),
         const SizedBox(height: 5),

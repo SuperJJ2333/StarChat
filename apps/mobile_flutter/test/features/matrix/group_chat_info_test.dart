@@ -1,8 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
@@ -66,9 +68,42 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> setRemark(String remark) async {
     snapshot = snapshot.copyWith(remark: remark);
   }
+
+  @override
+  Future<void> removeMembers(List<String> matrixUserIds) async {
+    snapshot = snapshot.copyWith(
+      members: snapshot.members
+          .where((member) => !matrixUserIds.contains(member.matrixUserId))
+          .toList(),
+    );
+  }
+
+  @override
+  Future<void> setAdminIds(List<String> matrixUserIds) async {
+    snapshot = snapshot.copyWith(adminIds: matrixUserIds);
+  }
+
+  @override
+  Future<void> setGroupSetting(String key, Object value) async {}
 }
 
 void main() {
+  test('loads joined members before building a group avatar mosaic', () async {
+    final client = Client('test')
+      ..homeserver = Uri.parse('https://matrix.example.test');
+    final room = Room(id: '!group:example.test', client: client);
+    room.setState(
+      User(
+        '@alice:example.test',
+        room: room,
+        displayName: 'Alice',
+        membership: 'join',
+      ),
+    );
+
+    expect(orderedJoinedMembers(room), hasLength(1));
+  });
+
   test('group chat info controller loads members and persists changes',
       () async {
     final gateway = FakeGroupChatInfoGateway();
@@ -126,7 +161,7 @@ void main() {
       '清空聊天记录',
       '退出群聊',
     ];
-    for (final label in orderedLabels) {
+    for (final label in orderedLabels.take(7)) {
       expect(find.text(label), findsOneWidget);
     }
     final visibleTops = orderedLabels
@@ -134,9 +169,34 @@ void main() {
         .map((label) => tester.getTopLeft(find.text(label)).dy)
         .toList(growable: false);
     expect(visibleTops, orderedEquals(visibleTops.toList()..sort()));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    for (final label in orderedLabels.skip(7)) {
+      expect(find.text(label), findsOneWidget);
+    }
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('tapping a group member opens that member profile',
+      (tester) async {
+    GroupChatMember? tapped;
+    final controller = GroupChatInfoController(FakeGroupChatInfoGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+        onMemberTap: (member) => tapped = member,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const Key('group-member-@member0:example.test')));
+    expect(tapped?.matrixUserId, '@member0:example.test');
+  });
   testWidgets('member picker excludes existing members and invites selection',
       (tester) async {
     final invited = <String>[];
@@ -217,5 +277,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('折叠该聊天'), findsOneWidget);
     expect(find.text('以下消息仍通知'), findsOneWidget);
+  });
+  test('orders owner then administrators then other members by name', () {
+    final members = const [
+      GroupChatMember(matrixUserId: '@zoe:test', displayName: 'Zoe'),
+      GroupChatMember(matrixUserId: '@owner:test', displayName: 'Owner'),
+      GroupChatMember(matrixUserId: '@adam:test', displayName: 'Adam'),
+      GroupChatMember(matrixUserId: '@admin:test', displayName: 'Admin'),
+    ];
+    expect(
+      orderGroupMembers(
+        members: members,
+        ownerId: '@owner:test',
+        adminIds: const {'@admin:test'},
+      ).map((member) => member.matrixUserId),
+      ['@owner:test', '@admin:test', '@adam:test', '@zoe:test'],
+    );
+  });
+
+  test('group management limits administrators to three', () {
+    expect(
+      normalizeGroupAdminIds(
+        const ['@one:test', '@two:test', '@three:test', '@four:test'],
+        ownerId: '@owner:test',
+      ),
+      ['@one:test', '@two:test', '@three:test'],
+    );
   });
 }

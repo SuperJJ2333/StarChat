@@ -4,13 +4,14 @@ from hashlib import sha256
 import hmac
 import json
 import math
+import re
 import secrets
 from uuid import uuid4
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 
-from app.core.errors import AppError
+from app.core.errors import AppError, FieldError
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.identity.enums import AccountStatus
@@ -102,18 +103,29 @@ class RegistrationService:
         self,
         *,
         username: str,
+        nickname: str | None = None,
         email: str,
         password: str,
         invitation_code: str,
         idempotency_key: str,
     ) -> RegistrationResult:
         username_clean = username.strip()
+        nickname_clean = (nickname or username_clean).strip()
         email_clean = email.strip()
         username_normalized = username_clean.casefold()
         email_normalized = email_clean.casefold()
         idempotency_key_clean = idempotency_key.strip()
-        if not username_clean or "@" not in email_clean:
-            raise AppError(code="REGISTRATION_INVALID", message="注册信息无效", status_code=422)
+        fields: list[FieldError] = []
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{2,63}", username_clean):
+            fields.append(FieldError(loc=["body", "username"], msg="畅聊号格式无效", type="value_error"))
+        if not nickname_clean or len(nickname_clean) > 64:
+            fields.append(FieldError(loc=["body", "nickname"], msg="用户名长度需为 1-64 个字符", type="value_error"))
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
+            fields.append(FieldError(loc=["body", "email"], msg="邮箱格式无效", type="value_error"))
+        if len(password) < 12:
+            fields.append(FieldError(loc=["body", "password"], msg="密码至少需要 12 位", type="value_error"))
+        if fields:
+            raise AppError(code="REGISTRATION_INVALID", message="注册信息无效", status_code=422, fields=fields)
         if not idempotency_key_clean:
             raise AppError(
                 code="IDEMPOTENCY_REQUIRED",
@@ -126,6 +138,7 @@ class RegistrationService:
             {
                 "email": email_normalized,
                 "invitation_code": invitation_code.strip(),
+                "nickname": nickname_clean,
                 "password": password,
                 "username": username_normalized,
             },
@@ -158,14 +171,13 @@ class RegistrationService:
                 )
                 if idempotency_record.status == "COMPLETED":
                     return self._replayed_result(session, idempotency_record)
-                self._invitation_service.consume_in_session(
-                    session, code=invitation_code, now=now
-                )
+
                 session.add(
                     User(
                         id=user_id,
                         username=username_clean,
                         username_normalized=username_normalized,
+                        nickname=nickname_clean,
                         email=email_clean,
                         email_normalized=email_normalized,
                         password_hash=self._password_hasher.hash(password),
@@ -200,6 +212,10 @@ class RegistrationService:
                     payload={"user_id": user_id, "challenge_id": challenge_id},
                     now=now,
                 )
+                session.flush()
+                self._invitation_service.consume_in_session(
+                    session, code=invitation_code, now=now
+                )
                 idempotency_record.status = "COMPLETED"
                 idempotency_record.response_status = 202
                 idempotency_record.response_body = public_response
@@ -217,6 +233,68 @@ class RegistrationService:
             resend_after_seconds=60,
             verification_token=token,
         )
+
+    def validate_email_eligible(
+        self,
+        *,
+        username: str,
+        nickname: str | None,
+        email: str,
+        password: str,
+        invitation_code: str,
+        idempotency_key: str,
+    ) -> None:
+        email_clean = email.strip()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email_clean):
+            raise AppError(
+                code="REGISTRATION_INVALID",
+                message="注册信息无效",
+                status_code=422,
+                fields=[
+                    FieldError(
+                        loc=["body", "email"],
+                        msg="邮箱格式无效",
+                        type="value_error",
+                    )
+                ],
+            )
+        request_payload = json.dumps(
+            {
+                "email": email_clean.casefold(),
+                "invitation_code": invitation_code.strip(),
+                "nickname": (nickname or username.strip()).strip(),
+                "password": password,
+                "username": username.strip().casefold(),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        request_hash = self._token_codec.digest(
+            purpose="registration-idempotency", value=request_payload
+        )
+        username_normalized = username.strip().casefold()
+        with self._session_factory() as session:
+            existing_email = session.scalar(
+                select(User.id).where(User.email_normalized == email_clean.casefold())
+            )
+            existing_username = session.scalar(
+                select(User.id).where(User.username_normalized == username_normalized)
+            )
+            replay = session.scalar(
+                select(IdempotencyRecord.id).where(
+                    IdempotencyRecord.scope == "identity.registration",
+                    IdempotencyRecord.idempotency_key == idempotency_key.strip(),
+                    IdempotencyRecord.request_hash == request_hash,
+                    IdempotencyRecord.status == "COMPLETED",
+                )
+            )
+        if replay is not None:
+            return
+        if existing_username is not None:
+            raise AppError(code="USERNAME_TAKEN", message="畅聊号已被使用", status_code=409)
+        if existing_email is not None:
+            raise AppError(code="EMAIL_TAKEN", message="邮箱已被使用", status_code=409)
 
     @staticmethod
     def _claim_idempotency_key(

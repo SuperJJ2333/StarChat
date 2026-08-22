@@ -28,15 +28,20 @@ final class _VerificationPageState extends State<VerificationPage> {
   @override
   void initState() {
     super.initState();
+    code.text = widget.controller.verificationCodeHint ?? '';
+    code.addListener(_clearCodeError);
     widget.controller.addListener(_change);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_change);
+    code.removeListener(_clearCodeError);
     code.dispose();
     super.dispose();
   }
+
+  void _clearCodeError() => widget.controller.clearVerificationCodeError();
 
   void _change() {
     if (mounted) setState(() {});
@@ -44,6 +49,9 @@ final class _VerificationPageState extends State<VerificationPage> {
 
   Future<void> verify() async {
     await widget.controller.verifyCode(code.text);
+    if (widget.controller.state.status != RegistrationFlowStatus.provisioning) {
+      return;
+    }
     if (await widget.controller.pollUntilActive() && mounted) {
       widget.onCompleted();
     }
@@ -77,12 +85,35 @@ final class _VerificationPageState extends State<VerificationPage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: WeChatSpacing.sm),
                   const Text(
                     '请输入邮件中的 6 位验证码，或返回应用查看验证链接结果。',
                     style: TextStyle(color: WeChatColors.textSecondary),
                   ),
                   const SizedBox(height: WeChatSpacing.lg),
+                  if (state.fieldErrors['code'] case final error?) ...[
+                    Container(
+                      key: const Key('auth-verification-code-error'),
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: WeChatSpacing.sm),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: WeChatSpacing.md,
+                        vertical: WeChatSpacing.sm,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xfffff1f0),
+                        borderRadius: BorderRadius.circular(WeChatRadius.tag),
+                        border: Border.all(color: const Color(0xffffccc7)),
+                      ),
+                      child: Text(
+                        error,
+                        style: const TextStyle(
+                          color: CupertinoColors.systemRed,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                   CupertinoTextField(
                     controller: code,
                     placeholder: '6 位验证码',
@@ -93,15 +124,17 @@ final class _VerificationPageState extends State<VerificationPage> {
                   SizedBox(
                     width: double.infinity,
                     child: ModernActionButton(
+                      key: const Key('auth-verification-verify'),
                       icon: CupertinoIcons.check_mark_circled,
                       label: '验证并继续',
                       onPressed: verify,
                     ),
                   ),
-                  const SizedBox(height: WeChatSpacing.sm),
+                  const SizedBox(height: WeChatSpacing.md),
                   SizedBox(
                     width: double.infinity,
                     child: ModernActionButton(
+                      key: const Key('auth-verification-resend'),
                       icon: CupertinoIcons.mail,
                       label: state.resendAfterSeconds > 0
                           ? '${state.resendAfterSeconds} 秒后重发'
@@ -112,24 +145,27 @@ final class _VerificationPageState extends State<VerificationPage> {
                           : widget.controller.resend,
                     ),
                   ),
+                  const SizedBox(height: WeChatSpacing.md),
                   SizedBox(
                     width: double.infinity,
                     child: ModernActionButton(
+                      key: const Key('auth-verification-change-email'),
                       icon: CupertinoIcons.pencil,
                       label: '修改邮箱',
                       kind: ModernActionKind.secondary,
                       onPressed: widget.onChangeEmail,
                     ),
                   ),
-                  const SizedBox(height: WeChatSpacing.md),
-                  Text(
-                    state.status == RegistrationFlowStatus.provisioning
-                        ? '正在创建加密通信账号…'
-                        : state.status == RegistrationFlowStatus.completed
-                            ? '账号已就绪'
-                            : '等待邮箱验证',
-                    key: const Key('registration-status'),
-                  ),
+                  if (state.status == RegistrationFlowStatus.provisioning ||
+                      state.status == RegistrationFlowStatus.completed) ...[
+                    const SizedBox(height: WeChatSpacing.md),
+                    Text(
+                      state.status == RegistrationFlowStatus.provisioning
+                          ? '正在创建加密通信账号…'
+                          : '账号已就绪',
+                      key: const Key('registration-status'),
+                    ),
+                  ],
                 ],
               ),
             ),

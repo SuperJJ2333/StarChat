@@ -208,4 +208,37 @@ void main() {
     expect(keys, hasLength(2));
     expect(keys[1], keys[0]);
   });
+
+  test('verification retries reuse a key only for an identical credential',
+      () async {
+    final keys = <String>[];
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: SecureSessionStore(MemoryStore()),
+      client: MockClient((request) async {
+        keys.add(request.headers['Idempotency-Key']!);
+        return http.Response(
+          jsonEncode({
+            'error': {
+              'code': 'EMAIL_VERIFICATION_CODE_INVALID',
+              'message': 'invalid verification code',
+            },
+          }),
+          422,
+        );
+      }),
+    );
+
+    await expectLater(
+      api.verifyEmail(registrationSession: 'session-1', code: '000000'),
+      throwsA(isA<BusinessApiException>()),
+    );
+    await expectLater(
+      api.verifyEmail(registrationSession: 'session-1', code: '111111'),
+      throwsA(isA<BusinessApiException>()),
+    );
+
+    expect(keys, hasLength(2));
+    expect(keys[1], isNot(keys[0]));
+  });
 }

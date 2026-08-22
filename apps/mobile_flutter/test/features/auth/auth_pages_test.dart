@@ -14,20 +14,25 @@ import 'package:liuhetong_mobile/ui/components/modern_action_button.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 final class PageGateway implements RegistrationGateway {
+  Object? registerError;
+  Object? verifyError;
   @override
   Future<bool> validateInvitation(String invitationCode) async => true;
   @override
   Future<RegistrationReceipt> register({
     required String username,
+    String? nickname,
     required String email,
     required String password,
     required String invitationCode,
   }) async =>
-      const RegistrationReceipt(
-        registrationSession: 'session',
-        status: 'PENDING_EMAIL',
-        resendAfterSeconds: 60,
-      );
+      registerError != null
+          ? throw registerError!
+          : const RegistrationReceipt(
+              registrationSession: 'session',
+              status: 'PENDING_EMAIL',
+              resendAfterSeconds: 60,
+            );
   @override
   Future<int> resendVerification(String registrationSession) async => 60;
   @override
@@ -40,7 +45,9 @@ final class PageGateway implements RegistrationGateway {
     required String registrationSession,
     String? code,
     String? token,
-  }) async {}
+  }) async {
+    if (verifyError != null) throw verifyError!;
+  }
 }
 
 void useIPhone15Viewport(WidgetTester tester) {
@@ -113,6 +120,30 @@ void main() {
     expect(find.text('还没有账号？'), findsOneWidget);
     expect(find.text('立刻注册'), findsOneWidget);
     expect(find.text('注册账号'), findsNothing);
+  });
+  testWidgets('login password visibility toggles the secure field',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(
+        CupertinoApp(home: LoginPage(api: api, onLogin: (_, __) async {})));
+    final password = tester.widget<CupertinoTextField>(find.descendant(
+      of: find.byKey(const Key('auth-login-password')),
+      matching: find.byType(CupertinoTextField),
+    ));
+    expect(password.obscureText, isTrue);
+    await tester.tap(find.byKey(const Key('auth-login-password-visibility')));
+    await tester.pump();
+    expect(
+        tester
+            .widget<CupertinoTextField>(find.descendant(
+              of: find.byKey(const Key('auth-login-password')),
+              matching: find.byType(CupertinoTextField),
+            ))
+            .obscureText,
+        isFalse);
   });
   testWidgets('new landing keeps the login card in the first viewport', (
     tester,
@@ -344,11 +375,105 @@ void main() {
     expect(find.text('邮箱'), findsOneWidget);
     expect(find.text('密码'), findsOneWidget);
     expect(find.text('邀请码'), findsOneWidget);
-    expect(find.text('创建账号'), findsOneWidget);
+    expect(find.text('发送验证邮件'), findsOneWidget);
+    expect(find.byKey(const Key('auth-registration-send-email-action')),
+        findsNothing);
     expect(find.byKey(const Key('auth-agreement-checkbox')), findsNothing);
   });
   testWidgets(
-    'registration contains all required fields and invitation gates submit',
+      'registration keeps email sending as the single highlighted action',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+
+    final send = find.byKey(const Key('auth-registration-send-code'));
+    expect(send, findsOneWidget);
+    expect(find.byKey(const Key('auth-registration-send-email-action')),
+        findsNothing);
+    final background = tester.widget<Container>(
+      find.descendant(of: send, matching: find.byType(Container)).first,
+    );
+    expect((background.decoration as BoxDecoration).color,
+        WeChatColors.brandPrimary);
+  });
+  testWidgets('registration preserves entered draft after returning to login',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    late StateSetter setPage;
+    var registerVisible = true;
+    await tester.pumpWidget(CupertinoApp(
+      home: StatefulBuilder(builder: (context, setState) {
+        setPage = setState;
+        return registerVisible
+            ? RegistrationPage(
+                controller: controller,
+                onVerification: (_) {},
+                onBack: () => setPage(() => registerVisible = false),
+              )
+            : CupertinoButton(
+                child: const Text('再次注册'),
+                onPressed: () => setPage(() => registerVisible = true),
+              );
+      }),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), '昵称');
+    await tester.enterText(fields.at(1), 'chat-id');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'correct horse battery staple');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'draft@example.test');
+    final back = find.widgetWithText(ModernActionButton, '返回登录');
+    tester.widget<ModernActionButton>(back).onPressed!();
+    await tester.pump();
+    await tester.tap(find.text('再次注册'));
+    await tester.pump();
+
+    final restored = find.byType(CupertinoTextField);
+    expect(tester.widget<CupertinoTextField>(restored.at(0)).controller?.text,
+        '昵称');
+    expect(tester.widget<CupertinoTextField>(restored.at(5)).controller?.text,
+        'draft@example.test');
+  });
+  testWidgets('taken email appears once below the email field', (tester) async {
+    final gateway = PageGateway()
+      ..registerError = const BusinessApiException(
+          statusCode: 409, code: 'EMAIL_TAKEN', message: '邮箱已被使用');
+    final controller = RegistrationController(gateway: gateway);
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), '昵称');
+    await tester.enterText(fields.at(1), 'chat-id');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'correct horse battery staple');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'taken@example.test');
+    tester
+        .widget<CupertinoButton>(
+          find.byKey(const Key('auth-registration-send-code')),
+        )
+        .onPressed!();
+    await tester.pump();
+
+    expect(find.text('邮箱已被使用'), findsOneWidget);
+    expect(
+        find.byKey(const Key('auth-registration-error-email')), findsOneWidget);
+    expect(find.byKey(const Key('auth-registration-error')), findsNothing);
+  });
+  testWidgets(
+    'registration contains all required fields and validates before sending',
     (tester) async {
       final controller = RegistrationController(gateway: PageGateway());
       await tester.pumpWidget(
@@ -360,28 +485,127 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(CupertinoTextField), findsNWidgets(4));
+      expect(find.byType(CupertinoTextField), findsNWidgets(6));
+      expect(find.text('畅聊号'), findsOneWidget);
+      expect(find.text('再次输入密码'), findsNWidgets(2));
+      expect(find.byKey(const Key('auth-registration-password-visibility')),
+          findsOneWidget);
+      expect(
+          find.byKey(
+              const Key('auth-registration-password-confirm-visibility')),
+          findsOneWidget);
+      expect(
+          find.byKey(const Key('auth-registration-send-code')), findsOneWidget);
       expect(find.text('邀请码（必填）'), findsOneWidget);
       expect(
         tester
-            .widget<ModernActionButton>(
-              find.widgetWithText(ModernActionButton, '创建账号'),
+            .widget<CupertinoButton>(
+              find.byKey(const Key('auth-registration-send-code')),
             )
             .onPressed,
-        isNull,
+        isNotNull,
       );
-      await tester.enterText(find.byType(CupertinoTextField).last, 'INVITE');
+      final fields = find.byType(CupertinoTextField);
+      await tester.enterText(fields.at(0), 'Alice');
+      await tester.enterText(fields.at(1), 'alice');
+      await tester.enterText(fields.at(2), 'correct horse battery staple');
+      await tester.enterText(fields.at(3), 'correct horse battery staple');
+      await tester.enterText(fields.at(4), 'INVITE');
+      await tester.enterText(fields.at(5), 'alice@example.test');
       await tester.pump();
       expect(
         tester
-            .widget<ModernActionButton>(
-              find.widgetWithText(ModernActionButton, '创建账号'),
+            .widget<CupertinoButton>(
+              find.byKey(const Key('auth-registration-send-code')),
             )
             .onPressed,
         isNotNull,
       );
     },
   );
+  testWidgets(
+      'registration puts each invalid field error below that field without sending',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+
+    final send = find.byKey(const Key('auth-registration-send-code'));
+    tester.widget<CupertinoButton>(send).onPressed!();
+    await tester.pump();
+
+    for (final field in const [
+      'nickname',
+      'username',
+      'password',
+      'invitation_code',
+      'email',
+    ]) {
+      expect(find.byKey(Key('auth-registration-error-$field')), findsOneWidget);
+    }
+    expect(controller.state.registrationSession, isNull);
+  });
+  testWidgets('registration shows mismatch feedback and gates submit',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), 'Alice');
+    await tester.enterText(fields.at(1), 'alice');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'different password');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'alice@example.test');
+    await tester.pump();
+    expect(find.text('两次密码输入不一致'), findsOneWidget);
+    expect(
+      tester
+          .widget<CupertinoButton>(
+            find.byKey(const Key('auth-registration-send-code')),
+          )
+          .onPressed,
+      isNotNull,
+    );
+  });
+  testWidgets(
+      'registration starts a sixty second resend cooldown after sending',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), 'Alice');
+    await tester.enterText(fields.at(1), 'alice');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'correct horse battery staple');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'alice@example.test');
+    await tester.pump();
+
+    final action = find.byKey(const Key('auth-registration-send-code'));
+    tester.widget<CupertinoButton>(action).onPressed!();
+    await tester.pump();
+    expect(controller.state.resendAfterSeconds, 60);
+    expect(find.text('60s'), findsOneWidget);
+    expect(tester.widget<CupertinoButton>(action).onPressed, isNull);
+    controller.dispose();
+  });
   testWidgets(
     'verification exposes code link result resend change email and status',
     (tester) async {
@@ -404,9 +628,168 @@ void main() {
       expect(find.textContaining('验证链接结果'), findsOneWidget);
       expect(find.textContaining('秒后重发'), findsOneWidget);
       expect(find.text('修改邮箱'), findsOneWidget);
-      expect(find.byKey(const Key('registration-status')), findsOneWidget);
+      expect(find.text('等待邮箱验证'), findsNothing);
+      expect(find.byKey(const Key('auth-verification-verify')), findsOneWidget);
+      expect(find.byKey(const Key('auth-verification-resend')), findsOneWidget);
+      expect(find.byKey(const Key('auth-verification-change-email')),
+          findsOneWidget);
+      controller.dispose();
     },
   );
+  testWidgets('verification shows code error above field and clears on edit',
+      (tester) async {
+    final controller = RegistrationController(
+      gateway: PageGateway()
+        ..verifyError = const BusinessApiException(
+          statusCode: 422,
+          code: 'EMAIL_VERIFICATION_CODE_INVALID',
+          message: '验证码无效',
+        ),
+    );
+    await controller.register(
+      username: 'alice',
+      email: 'alice@example.test',
+      password: 'correct horse battery staple',
+      invitationCode: 'INVITE',
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: VerificationPage(
+        controller: controller,
+        onChangeEmail: () {},
+        onCompleted: () {},
+      ),
+    ));
+
+    await tester.enterText(find.byType(CupertinoTextField), '000000');
+    await tester.tap(find.byKey(const Key('auth-verification-verify')));
+    await tester.pump();
+
+    final error = find.byKey(const Key('auth-verification-code-error'));
+    expect(error, findsOneWidget);
+    expect(find.text('验证码错误，请重新输入'), findsOneWidget);
+    final errorBox = tester.widget<Container>(error);
+    final errorText = tester.widget<Text>(
+      find.descendant(of: error, matching: find.text('验证码错误，请重新输入')),
+    );
+    expect(errorBox.decoration, isA<BoxDecoration>());
+    expect(errorText.style?.fontSize, greaterThanOrEqualTo(14));
+
+    await tester.enterText(find.byType(CupertinoTextField), '123456');
+    await tester.pump();
+    expect(error, findsNothing);
+    expect(find.byKey(const Key('auth-verification-verify')), findsOneWidget);
+    controller.dispose();
+  });
+  testWidgets('verification button provides a nonblocking press scale',
+      (tester) async {
+    var presses = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: SizedBox(
+        width: 240,
+        child: ModernActionButton(
+          key: const Key('auth-verification-verify'),
+          icon: CupertinoIcons.check_mark_circled,
+          label: '验证并继续',
+          onPressed: () => presses++,
+        ),
+      ),
+    ));
+    final button = find.byKey(const Key('auth-verification-verify'));
+    final animation = find.descendant(of: button, matching: find.byType(AnimatedScale));
+    expect(tester.widget<AnimatedScale>(animation).duration,
+        const Duration(milliseconds: 150));
+
+    final gesture = await tester.startGesture(tester.getCenter(button));
+    await tester.pump(const Duration(milliseconds: 75));
+    final activeScale = tester.widget<AnimatedScale>(animation);
+    expect(activeScale.scale, .98);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.widget<AnimatedScale>(animation).scale, 1);
+    expect(presses, 1);
+  });
+  testWidgets('registration saves the complete draft before verification',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), '昵称');
+    await tester.enterText(fields.at(1), 'chat-id');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'correct horse battery staple');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'draft@example.test');
+    tester
+        .widget<CupertinoButton>(
+          find.byKey(const Key('auth-registration-send-code')),
+        )
+        .onPressed!();
+    await tester.pump();
+
+    expect(controller.draft.email, 'draft@example.test');
+    expect(controller.draft.password, 'correct horse battery staple');
+    controller.dispose();
+  });
+  testWidgets('verification countdown continues after changing email',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    await tester.pumpWidget(CupertinoApp(
+      home: RegistrationPage(
+        controller: controller,
+        onVerification: (_) {},
+        onBack: () {},
+      ),
+    ));
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.at(0), '昵称');
+    await tester.enterText(fields.at(1), 'chat-id');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
+    await tester.enterText(fields.at(3), 'correct horse battery staple');
+    await tester.enterText(fields.at(4), 'INVITE');
+    await tester.enterText(fields.at(5), 'countdown@example.test');
+    tester
+        .widget<CupertinoButton>(
+          find.byKey(const Key('auth-registration-send-code')),
+        )
+        .onPressed!();
+    await tester.pump();
+    await tester.pumpWidget(CupertinoApp(
+      home: VerificationPage(
+        controller: controller,
+        onChangeEmail: () {},
+        onCompleted: () {},
+      ),
+    ));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(controller.state.resendAfterSeconds, 59);
+    controller.dispose();
+  });
+  testWidgets('registration verification code carries into verification step',
+      (tester) async {
+    final controller = RegistrationController(gateway: PageGateway());
+    controller.setVerificationCodeHint('123456');
+    await tester.pumpWidget(CupertinoApp(
+      home: VerificationPage(
+        controller: controller,
+        onChangeEmail: () {},
+        onCompleted: () {},
+      ),
+    ));
+    expect(
+      tester
+          .widget<CupertinoTextField>(find.byType(CupertinoTextField))
+          .controller
+          ?.text,
+      '123456',
+    );
+  });
   testWidgets('keyboard inset moves form but not landing background', (
     tester,
   ) async {

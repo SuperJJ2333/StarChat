@@ -118,7 +118,7 @@ void main() {
     final roomId = await controller.create('');
 
     expect(roomId, '!group:example.test');
-    expect(groups.name, 'Alice、bob、carol');
+    expect(groups.name, '');
     expect(
       groups.invitees,
       ['@bob:example.test', '@carol:example.test'],

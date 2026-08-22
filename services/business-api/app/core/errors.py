@@ -84,10 +84,19 @@ def install_error_handlers(app) -> None:
     async def validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        fields = [
-            FieldError(loc=list(error.get("loc", [])), msg=error["msg"], type=error["type"])
-            for error in exc.errors()
-        ]
+        fields = []
+        for error in exc.errors():
+            location = list(error.get("loc", []))
+            message = error["msg"]
+            error_type = error["type"]
+            if (
+                location == ["body"]
+                and message == "Value error, 请输入 6 位数字验证码"
+            ):
+                location = ["body", "code"]
+                message = "请输入 6 位数字验证码"
+                error_type = "email_verification_code_invalid"
+            fields.append(FieldError(loc=location, msg=message, type=error_type))
         return JSONResponse(
             status_code=422,
             content=_payload(

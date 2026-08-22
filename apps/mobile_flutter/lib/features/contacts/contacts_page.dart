@@ -67,7 +67,12 @@ final class _ContactsPageState extends State<ContactsPage> {
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
 
-  void reload() => setState(() => contacts = widget.api.listContacts());
+  void reload() {
+    final next = widget.api.listContacts();
+    setState(() {
+      contacts = next;
+    });
+  }
 
   @override
   void dispose() {
@@ -118,7 +123,11 @@ final class _ContactsPageState extends State<ContactsPage> {
         ? widget.api as BusinessApiClient
         : null;
     return CupertinoPageScaffold(
+      backgroundColor: WeChatColors.tabRootPageBackground,
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: const Text('通讯录'),
         trailing: businessApi == null
             ? null
@@ -211,7 +220,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                                   ),
                                 ),
                               );
-                              reload();
+                              if (mounted) setState(() {});
                             },
                           ),
                       ],
@@ -341,6 +350,9 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
           middle: const Text('好友资料'),
           trailing: CupertinoButton(
             padding: EdgeInsets.zero,
@@ -352,7 +364,8 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
           child: ListView(
             children: [
               FriendIdentityCard(contact: contact),
-              const FriendMomentsPreview(),
+              if (contact.momentsPermission == 'HAS_VISIBLE_MOMENTS')
+                const FriendMomentsPreview(),
               FriendActionColumn(
                 onMessage: widget.onMessage == null
                     ? null
@@ -512,6 +525,9 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
           middle: const Text('好友设置'),
           leading: CupertinoNavigationBarBackButton(
             onPressed: () => Navigator.pop(
@@ -590,7 +606,11 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('标签')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('标签')),
         child: SafeArea(
           child: FutureBuilder<Map<String, dynamic>>(
             future: widget.api.contactTags(),
@@ -638,15 +658,63 @@ final class AddFriendPage extends StatefulWidget {
 final class _AddFriendState extends State<AddFriendPage> {
   final q = TextEditingController();
   List items = [];
+  String? submittingUserId;
   @override
   void dispose() {
     q.dispose();
     super.dispose();
   }
 
+  Future<void> _request(Map user) async {
+    final userId = user['user_id'].toString();
+    final state = user['relationship_state']?.toString() ?? 'NONE';
+    if (state == 'OUTGOING_PENDING' || state == 'FRIEND') {
+      _message('不能重复发送好友请求');
+      return;
+    }
+    setState(() => submittingUserId = userId);
+    try {
+      await widget.api.requestFriend(userId);
+      if (!mounted) return;
+      setState(() {
+        user['relationship_state'] = 'OUTGOING_PENDING';
+        submittingUserId = null;
+      });
+    } on BusinessApiException catch (error) {
+      if (mounted) {
+        _message(
+          error.code == 'FRIEND_REQUEST_DUPLICATE'
+              ? '不能重复发送好友请求'
+              : error.message,
+        );
+      }
+    } finally {
+      if (mounted && submittingUserId == userId) {
+        setState(() => submittingUserId = null);
+      }
+    }
+  }
+
+  void _message(String text) => showCupertinoDialog<void>(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          content: Text(text),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('添加朋友')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('添加朋友')),
         child: SafeArea(
           child: ListView(
             children: [
@@ -660,11 +728,14 @@ final class _AddFriendState extends State<AddFriendPage> {
               for (final user in items)
                 WeChatListTile(
                   title: Text(user['username'].toString()),
+                  subtitle: Text('畅聊号：${user['username']}'),
                   trailing: ModernActionButton(
-                    icon: CupertinoIcons.person_add,
-                    label: '添加',
-                    onPressed: () =>
-                        widget.api.requestFriend(user['user_id'].toString()),
+                    icon: _friendIcon(user['relationship_state']?.toString()),
+                    label: _friendLabel(user['relationship_state']?.toString()),
+                    loading: submittingUserId == user['user_id'].toString(),
+                    onPressed: submittingUserId == null
+                        ? () => _request(user as Map)
+                        : null,
                   ),
                 ),
             ],
@@ -673,45 +744,63 @@ final class _AddFriendState extends State<AddFriendPage> {
       );
 }
 
-final class FriendRequestsPage extends StatelessWidget {
+String _friendLabel(String? state) => switch (state) {
+      'OUTGOING_PENDING' => '申请已发送',
+      'FRIEND' => '已添加',
+      'REUSABLE' => '重新申请',
+      _ => '添加',
+    };
+
+IconData _friendIcon(String? state) =>
+    state == 'FRIEND' ? CupertinoIcons.check_mark : CupertinoIcons.person_add;
+
+final class FriendRequestsPage extends StatefulWidget {
   const FriendRequestsPage({super.key, required this.api});
   final BusinessApiClient api;
 
   @override
+  State<FriendRequestsPage> createState() => _FriendRequestsPageState();
+}
+
+final class _FriendRequestsPageState extends State<FriendRequestsPage> {
+  late Future<Map<String, dynamic>> requests = widget.api.friendRequests();
+
+  void _reload() => setState(() => requests = widget.api.friendRequests());
+
+  Future<void> _resolve(String id, bool accept) async {
+    if (accept) {
+      await widget.api.acceptFriendRequest(id);
+    } else {
+      await widget.api.rejectFriendRequest(id);
+    }
+    if (mounted) _reload();
+  }
+
+  @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('新的朋友')),
+        backgroundColor: WeChatColors.tabRootPageBackground,
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('新的朋友')),
         child: SafeArea(
           child: FutureBuilder<Map<String, dynamic>>(
-            future: api.friendRequests(),
+            future: requests,
             builder: (_, snapshot) {
               final items = (snapshot.data?['items'] as List?) ?? const [];
               return ListView(
                 children: [
                   for (final request in items)
-                    WeChatListTile(
-                      title: Text(request['username']?.toString() ?? ''),
-                      subtitle: Text(request['message']?.toString() ?? ''),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ModernActionButton(
-                            icon: CupertinoIcons.clear,
-                            label: '拒绝',
-                            kind: ModernActionKind.danger,
-                            onPressed: () => api.rejectFriendRequest(
-                              request['id'].toString(),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          ModernActionButton(
-                            icon: CupertinoIcons.check_mark,
-                            label: '接受',
-                            onPressed: () => api.acceptFriendRequest(
-                              request['id'].toString(),
-                            ),
-                          ),
-                        ],
-                      ),
+                    _FriendRequestTile(
+                      request: request as Map,
+                      onAccept: () => _resolve(request['id'].toString(), true),
+                      onReject: () => _resolve(request['id'].toString(), false),
+                    ),
+                  if (items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.only(top: WeChatSpacing.xxl),
+                      child: Center(child: Text('暂无新的朋友')),
                     ),
                 ],
               );
@@ -719,4 +808,50 @@ final class FriendRequestsPage extends StatelessWidget {
           ),
         ),
       );
+}
+
+final class _FriendRequestTile extends StatelessWidget {
+  const _FriendRequestTile(
+      {required this.request, required this.onAccept, required this.onReject});
+  final Map request;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = request['status']?.toString() ?? 'PENDING';
+    final label = switch (status) {
+      'PENDING' => '接受',
+      'ACCEPTED' => '已添加',
+      'EXPIRED' => '已过期',
+      _ => '已拒绝'
+    };
+    return GestureDetector(
+      onLongPress: status == 'PENDING' ? onReject : null,
+      child: SizedBox(
+        height: 68,
+        child: WeChatListTile(
+          leading: UserAvatar(
+              nickname: request['nickname']?.toString() ??
+                  request['username']?.toString() ??
+                  '',
+              fallbackSeed: request['username']?.toString() ?? '',
+              avatarUrl: request['avatar_url']?.toString()),
+          title: Text(request['nickname']?.toString() ??
+              request['username']?.toString() ??
+              ''),
+          subtitle: Text(request['message']?.toString().isNotEmpty == true
+              ? request['message'].toString()
+              : '请求添加你为好友'),
+          trailing: SizedBox(
+              width: 64,
+              height: 32,
+              child: CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: status == 'PENDING' ? onAccept : null,
+                  child: Text(label))),
+        ),
+      ),
+    );
+  }
 }

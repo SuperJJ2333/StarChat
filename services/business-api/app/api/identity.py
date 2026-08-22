@@ -40,6 +40,7 @@ class InvitationRequest(StrictModel):
 
 class RegisterRequest(StrictModel):
     username: str = Field(min_length=3, max_length=64)
+    nickname: str | None = Field(default=None, max_length=64)
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=12, max_length=256)
     invitation_code: str = Field(min_length=1, max_length=128)
@@ -47,13 +48,15 @@ class RegisterRequest(StrictModel):
 
 class EmailVerificationRequest(StrictModel):
     registration_session: str = Field(min_length=32, max_length=256)
-    code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    code: str | None = Field(default=None)
     token: str | None = Field(default=None, min_length=32, max_length=512)
 
     @model_validator(mode="after")
     def require_exactly_one_credential(self):
         if (self.code is None) == (self.token is None):
             raise ValueError("code and token are mutually exclusive")
+        if self.code is not None and (len(self.code) != 6 or not self.code.isdigit()):
+            raise ValueError("请输入 6 位数字验证码")
         return self
 
 
@@ -182,8 +185,13 @@ def create_identity_router(
             str,
             Header(alias="Idempotency-Key", min_length=1, max_length=128),
         ],
+        device_key: Annotated[str | None, Header(alias="X-Device-Key")] = None,
     ) -> dict:
-        rate_limiter.hit(public_rate_limit_key("auth:register", request.client.host if request.client else "unknown", body.username), limit=10, window_seconds=3600)
+        registration.validate_email_eligible(
+            **body.model_dump(),
+            idempotency_key=idempotency_key,
+        )
+        rate_limiter.hit(public_rate_limit_key("auth:register:v2", request.client.host if request.client else "unknown", device_key or body.username), limit=3, window_seconds=3600)
         result = registration.register(
             **body.model_dump(),
             idempotency_key=idempotency_key,
@@ -275,8 +283,9 @@ def create_identity_router(
             str,
             Header(alias="Idempotency-Key", min_length=1, max_length=128),
         ],
+        device_key: Annotated[str | None, Header(alias="X-Device-Key")] = None,
     ) -> dict:
-        rate_limiter.hit(public_rate_limit_key("auth:email-verification:resend", request.client.host if request.client else "unknown", body.registration_session), limit=10, window_seconds=3600)
+        rate_limiter.hit(public_rate_limit_key("auth:email-verification:resend", request.client.host if request.client else "unknown", device_key or body.registration_session), limit=3, window_seconds=3600)
         result = email_verification.resend(
             registration_session=body.registration_session,
             idempotency_key=idempotency_key,

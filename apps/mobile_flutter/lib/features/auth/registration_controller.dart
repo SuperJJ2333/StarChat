@@ -27,6 +27,7 @@ abstract interface class RegistrationGateway {
   Future<bool> validateInvitation(String invitationCode);
   Future<RegistrationReceipt> register(
       {required String username,
+      String? nickname,
       required String email,
       required String password,
       required String invitationCode});
@@ -59,20 +60,133 @@ final class RegistrationState {
   final Map<String, String> fieldErrors;
 }
 
+final class RegistrationDraft {
+  const RegistrationDraft({
+    this.nickname = '',
+    this.username = '',
+    this.password = '',
+    this.passwordConfirmation = '',
+    this.invitationCode = '',
+    this.email = '',
+  });
+  final String nickname;
+  final String username;
+  final String password;
+  final String passwordConfirmation;
+  final String invitationCode;
+  final String email;
+}
+
 final class RegistrationController extends ChangeNotifier {
   RegistrationController(
       {required this.gateway, Future<void> Function(Duration)? delay})
       : delay = delay ?? Future.delayed;
   final RegistrationGateway gateway;
   final Future<void> Function(Duration) delay;
+  Timer? _cooldownTimer;
   RegistrationState state =
       const RegistrationState(RegistrationFlowStatus.idle);
+  RegistrationDraft draft = const RegistrationDraft();
+  String? verificationCodeHint;
+
+  void saveDraft({
+    required String nickname,
+    required String username,
+    required String password,
+    required String passwordConfirmation,
+    required String invitationCode,
+    required String email,
+  }) {
+    draft = RegistrationDraft(
+      nickname: nickname,
+      username: username,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
+      invitationCode: invitationCode,
+      email: email,
+    );
+  }
+
+  @override
+  void dispose() {
+    _cooldownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCooldown() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      tickSecond();
+      if (state.resendAfterSeconds <= 0) _cooldownTimer?.cancel();
+    });
+  }
+
+  void setVerificationCodeHint(String value) {
+    verificationCodeHint = value.trim().isEmpty ? null : value.trim();
+  }
+
+  static Map<String, String> validateFields({
+    required String username,
+    String nickname = '',
+    required String email,
+    required String password,
+    required String passwordConfirmation,
+    required String invitationCode,
+  }) {
+    final errors = <String, String>{};
+    final usernameClean = username.trim();
+    final nicknameClean = nickname.trim();
+    final emailClean = email.trim();
+    final invitationClean = invitationCode.trim();
+    if (nicknameClean.isEmpty || nicknameClean.length > 64) {
+      errors['nickname'] = '用户名需填写 1-64 个字符';
+    }
+    if (!RegExp(r'^[A-Za-z][A-Za-z0-9_-]{2,63}$').hasMatch(usernameClean)) {
+      errors['username'] = '畅聊号需为 3-64 位字母、数字、下划线或连字符，且以字母开头';
+    }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(emailClean)) {
+      errors['email'] = '请输入有效的邮箱地址';
+    }
+    if (password.length < 12) {
+      errors['password'] = '密码至少需要 12 位';
+    }
+    if (passwordConfirmation.isNotEmpty && password != passwordConfirmation) {
+      errors['password_confirmation'] = '两次密码输入不一致';
+    }
+    if (invitationClean.isEmpty) {
+      errors['invitation_code'] = '请输入邀请码';
+    }
+    return errors;
+  }
 
   Future<bool> register(
       {required String username,
+      String? nickname,
       required String email,
       required String password,
+      String passwordConfirmation = '',
       required String invitationCode}) async {
+    final validation = validateFields(
+      username: username,
+      nickname: nickname ?? username,
+      email: email,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
+      invitationCode: invitationCode,
+    );
+    if (validation.isNotEmpty) {
+      _set(RegistrationState(RegistrationFlowStatus.failed,
+          fieldErrors: validation));
+      return false;
+    }
+    saveDraft(
+      nickname: nickname ?? username,
+      username: username,
+      password: password,
+      passwordConfirmation: passwordConfirmation,
+      invitationCode: invitationCode,
+      email: email,
+    );
     _set(const RegistrationState(RegistrationFlowStatus.submitting));
     try {
       if (!await _retryNetwork(
@@ -83,16 +197,21 @@ final class RegistrationController extends ChangeNotifier {
       }
       final receipt = await _retryNetwork(() => gateway.register(
           username: username,
+          nickname: nickname,
           email: email,
           password: password,
           invitationCode: invitationCode));
       _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
           registrationSession: receipt.registrationSession,
           resendAfterSeconds: receipt.resendAfterSeconds));
+      _startCooldown();
       return true;
     } on BusinessApiException catch (error) {
       _set(RegistrationState(RegistrationFlowStatus.failed,
-          message: error.message, fieldErrors: _fieldErrors(error.code)));
+          message: error.message,
+          fieldErrors: error.fieldErrors.isNotEmpty
+              ? error.fieldErrors
+              : _fieldErrors(error.code)));
       return false;
     } on SocketException catch (_) {
       _networkFailure();
@@ -109,13 +228,42 @@ final class RegistrationController extends ChangeNotifier {
   Future<void> verifyCode(String code) => _verify(code: code);
   Future<void> verifyLinkToken(String token) => _verify(token: token);
 
+  void clearVerificationCodeError() {
+    if (!state.fieldErrors.containsKey('code')) return;
+    final fieldErrors = Map<String, String>.from(state.fieldErrors)
+      ..remove('code');
+    _set(RegistrationState(state.status,
+        registrationSession: state.registrationSession,
+        resendAfterSeconds: state.resendAfterSeconds,
+        message: state.message,
+        fieldErrors: fieldErrors));
+  }
+
   Future<void> _verify({String? code, String? token}) async {
     final session = state.registrationSession;
     if (session == null) throw StateError('registration session is missing');
-    await _retryNetwork(() => gateway.verifyEmail(
-        registrationSession: session, code: code, token: token));
-    _set(RegistrationState(RegistrationFlowStatus.provisioning,
-        registrationSession: session));
+    if (code != null && !RegExp(r'^\d{6}$').hasMatch(code)) {
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          resendAfterSeconds: state.resendAfterSeconds,
+          fieldErrors: const {'code': '请输入 6 位数字验证码'}));
+      return;
+    }
+    try {
+      await _retryNetwork(() => gateway.verifyEmail(
+          registrationSession: session, code: code, token: token));
+      _set(RegistrationState(RegistrationFlowStatus.provisioning,
+          registrationSession: session));
+    } on BusinessApiException catch (error) {
+      final fieldErrors = error.fieldErrors.isNotEmpty
+          ? error.fieldErrors
+          : _fieldErrors(error.code);
+      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+          registrationSession: session,
+          resendAfterSeconds: state.resendAfterSeconds,
+          message: error.message,
+          fieldErrors: fieldErrors));
+    }
   }
 
   Future<bool> pollUntilActive({int maxAttempts = 30}) async {
@@ -144,6 +292,7 @@ final class RegistrationController extends ChangeNotifier {
         await _retryNetwork(() => gateway.resendVerification(session));
     _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
         registrationSession: session, resendAfterSeconds: seconds));
+    _startCooldown();
   }
 
   void tickSecond() {
@@ -178,15 +327,12 @@ final class RegistrationController extends ChangeNotifier {
         'USERNAME_TAKEN' => const {'username': '用户名已被使用'},
         'EMAIL_TAKEN' => const {'email': '邮箱已被使用'},
         'REGISTRATION_INVALID' => const {'form': '请检查注册信息'},
-        'REGISTRATION_CONFLICT' => const {
-            'username': '用户名或邮箱已被使用',
-            'email': '用户名或邮箱已被使用'
-          },
+        'REGISTRATION_CONFLICT' => const {'email': '邮箱已被使用'},
         'EMAIL_VERIFICATION_CREDENTIAL_REQUIRED' => const {
             'code': '请输入验证码或打开验证链接'
           },
-        'EMAIL_VERIFICATION_INVALID' => const {'code': '验证码或验证链接错误或已失效'},
-        'EMAIL_VERIFICATION_CODE_INVALID' => const {'code': '验证码错误或已失效'},
+        'EMAIL_VERIFICATION_INVALID' => const {'code': '验证码错误，请重新输入'},
+        'EMAIL_VERIFICATION_CODE_INVALID' => const {'code': '验证码错误，请重新输入'},
         _ => const {},
       };
 

@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+
+import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/components/modern_action_button.dart';
 import 'matrix_e2ee_client.dart';
 import 'matrix_verification_service.dart';
@@ -25,7 +27,11 @@ final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('SAS 设备验证')),
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('SAS 设备验证')),
       child: SafeArea(
           child: ListView(padding: const EdgeInsets.all(20), children: [
         const Icon(CupertinoIcons.lock_rotation,

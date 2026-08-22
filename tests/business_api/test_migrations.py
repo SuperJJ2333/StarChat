@@ -29,9 +29,15 @@ def _normalized_sql(sql: str) -> str:
     return " ".join(sql.lower().split())
 
 
-def test_matrix_profile_sync_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0019_matrix_profile_sync (head)"
+def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
+    revision = (BUSINESS_API_ROOT / "migrations" / "versions" / "0021_group_auto_join.py").read_text(
+        encoding="utf-8"
+    )
+    assert "down_revision = '0020_friend_request_reuse'" in revision
 
+
+def test_group_auto_join_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0021_group_auto_join (head)"
 
 def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
     sql = _normalized_sql(_alembic("upgrade", "head", "--sql"))

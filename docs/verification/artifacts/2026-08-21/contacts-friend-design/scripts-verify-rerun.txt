@@ -1,0 +1,54 @@
+== Repository policy ==
+Repository policy: PASS
+== Deployment policy ==
+Deployment policy: PASS
+== Template unit tests ==
+TemplateTools: PASS
+== Render-only configuration smoke test ==
+Configuration rendering complete.
+== Matrix Bot tests ==
+.........                                                                [100%]
+9 passed in 1.29s
+== Business API and Worker tests ==
+........................................................................ [ 41%]
+.....................................s.................................. [ 83%]
+.............................                                            [100%]
+172 passed, 1 skipped in 101.49s (0:01:41)
+== Flutter boundary tests ==
+...................                                                      [100%]
+19 passed in 0.06s
+== Business API import smoke test ==
+Business API import: PASS
+== Python AST parse ==
+AST parse: PASS (90 files)
+== Business database migrations ==
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_foundation, Establish the initial migration boundary for 六合通 business data.
+INFO  [alembic.runtime.migration] Running upgrade 0001_foundation -> 0002_idempotency_records, Add durable request idempotency records.
+INFO  [alembic.runtime.migration] Running upgrade 0002_idempotency_records -> 0003_outbox_events, Add the transactional outbox.
+INFO  [alembic.runtime.migration] Running upgrade 0003_outbox_events -> 0004_identity_foundation, Add identity, invitation, device, session, RBAC, and security-hold tables.
+INFO  [alembic.runtime.migration] Running upgrade 0004_identity_foundation -> 0005_audit_events, Add append-only audit events with database enforcement.
+INFO  [alembic.runtime.migration] Running upgrade 0005_audit_events -> 0006_support_queue, Add metadata-only support queue tables.
+INFO  [alembic.runtime.migration] Running upgrade 0006_support_queue -> 0007_caibi_ledger, Add immutable CAIBI ledger and adjustment workflow.
+INFO  [alembic.runtime.migration] Running upgrade 0007_caibi_ledger -> 0008_caibi_red_packets, Add CAIBI red packets and preallocated shares.
+INFO  [alembic.runtime.migration] Running upgrade 0008_caibi_red_packets -> 0009_red_packet_claims, Reserve red packet claims to make concurrent user claims unique.
+INFO  [alembic.runtime.migration] Running upgrade 0009_red_packet_claims -> 0010_usdt_wallet, Add USDT-TRC20 wallet state and isolated wallet ledger.
+INFO  [alembic.runtime.migration] Running upgrade 0010_usdt_wallet -> 0011_wallet_webhook_events, Add custody webhook deduplication records.
+INFO  [alembic.runtime.migration] Running upgrade 0011_wallet_webhook_events -> 0012_friendship, Authoritative friendship domain.
+INFO  [alembic.runtime.migration] Running upgrade 0012_friendship -> 0013_moments, Moments social domain.
+INFO  [alembic.runtime.migration] Running upgrade 0013_moments -> 0014_moments_prefs, Moments preferences and reports.
+INFO  [alembic.runtime.migration] Running upgrade 0014_moments_prefs -> 0015_contact_tags, Contact tags.
+INFO  [alembic.runtime.migration] Running upgrade 0015_contact_tags -> 0016_moment_media, Moment media upload sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0016_moment_media -> 0017_registration_profile, Expand registration verification and user profile persistence.
+INFO  [alembic.runtime.migration] Running upgrade 0017_registration_profile -> 0018_avatar_uploads, Add durable private avatar upload sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0018_avatar_uploads -> 0019_matrix_profile_sync, Persist idempotent Matrix profile synchronization state.
+INFO  [alembic.runtime.migration] Running upgrade 0019_matrix_profile_sync -> 0020_friend_request_reuse, Track latest friend request time for safe rejected-request reuse.
+Alembic migrations: PASS
+== OpenAPI drift check ==
+OpenAPI contract: PASS
+== Docker Compose render ==
+Verification: PASS
+
+[exit_code]=0

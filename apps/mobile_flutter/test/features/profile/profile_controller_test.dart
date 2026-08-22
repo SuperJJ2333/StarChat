@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_avatar_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 const profile = ProfileData(
@@ -14,11 +15,12 @@ const profile = ProfileData(
     signature: 'hello');
 
 final class FakeProfileGateway implements ProfileGateway {
+  ProfileData loadedProfile = profile;
   int puts = 0;
   bool failPut = false;
   bool deleted = false;
   @override
-  Future<ProfileData> loadProfile() async => profile;
+  Future<ProfileData> loadProfile() async => loadedProfile;
   @override
   Future<ProfileData> updateProfile(
           {required String nickname, String? signature}) async =>
@@ -100,6 +102,22 @@ void main() {
     expect(gateway.deleted, isTrue);
     expect(c.state.profile!.avatarUrl, isNull);
   });
+  test('successful avatar changes precisely invalidate that user cache',
+      () async {
+    final invalidated = <String>[];
+    final c = ProfileController(
+      gateway: FakeProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+      invalidateAvatarCache: (userId) async => invalidated.add(userId),
+    );
+    await c.load();
+    await c.chooseAvatar();
+    await c.uploadAvatar();
+    await c.restoreDefaultAvatar();
+
+    expect(invalidated, ['seed', 'seed']);
+  });
+
   test('cancelled preview never creates a remote upload', () async {
     final gateway = FakeProfileGateway();
     final c =
@@ -173,5 +191,36 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.state.profile!.avatarUrl, 'https://signed/avatar');
+  });
+
+  testWidgets(
+      'me page identity card uses the shared avatar renderer for an uploaded avatar',
+      (tester) async {
+    const uploadedAvatarUrl = 'https://media.example.test/avatar.png?v=2';
+    final gateway = FakeProfileGateway()
+      ..loadedProfile = profile.copyWith(avatarUrl: uploadedAvatarUrl);
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+    );
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileExperiencePage(
+        controller: controller,
+        onMoments: () {},
+        onCaibi: () {},
+        onRedPacket: () {},
+        onWallet: () {},
+        onSettings: () {},
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final avatar = tester.widget<UserAvatar>(
+      find.byKey(const Key('profile-identity-avatar')),
+    );
+    expect(avatar.avatarUrl, uploadedAvatarUrl);
+    expect(avatar.size, 72);
   });
 }

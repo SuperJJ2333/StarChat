@@ -43,6 +43,7 @@ final class _LoginPageState extends State<LoginPage>
 
   bool _loading = false;
   bool _agreementAccepted = false;
+  bool _passwordVisible = false;
   String? _error;
 
   @override
@@ -161,9 +162,25 @@ final class _LoginPageState extends State<LoginPage>
                 placeholder: '输入密码',
                 controller: _password,
                 enabled: !_loading,
-                obscureText: true,
+                obscureText: !_passwordVisible,
                 textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.password],
+                trailing: CupertinoButton(
+                  key: const Key('auth-login-password-visibility'),
+                  padding: EdgeInsets.zero,
+                  onPressed: _loading
+                      ? null
+                      : () => setState(
+                            () => _passwordVisible = !_passwordVisible,
+                          ),
+                  child: Icon(
+                    _passwordVisible
+                        ? CupertinoIcons.eye_slash
+                        : CupertinoIcons.eye,
+                    size: 19,
+                    color: WeChatColors.textSecondary,
+                  ),
+                ),
               ),
               const SizedBox(height: WeChatSpacing.md),
               const Text(

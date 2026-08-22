@@ -16,7 +16,11 @@ void main() {
       isNot(equals(theme.scaffoldBackgroundColor)),
     );
   });
-  test('dark theme uses a dark surface with light primary text', () {
+  test('chat and main tab fixed areas expose their documented colors', () {
+    expect(WeChatColors.chatNavigationBackground, const Color(0xFFF7F7F7));
+    expect(WeChatColors.chatPageBackground, const Color(0xFFEDEDED));
+    expect(WeChatColors.tabRootPageBackground, const Color(0xFFEDEDED));
+  });  test('dark theme uses a dark surface with light primary text', () {
     final theme = WeChatTheme.build(Brightness.dark);
     expect(theme.scaffoldBackgroundColor, const Color(0xFF111111));
     expect(theme.textTheme.textStyle.color, const Color(0xFFF5F5F5));

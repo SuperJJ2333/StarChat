@@ -2,8 +2,37 @@ import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 
 import 'conversation_preferences.dart';
+import 'avatar_url_resolver.dart';
 
 const groupChatAccountDataType = 'com.liuhetong.group_chat.settings.v1';
+
+List<String> normalizeGroupAdminIds(
+  Iterable<String> ids, {
+  required String ownerId,
+}) =>
+    ids.where((id) => id != ownerId).toSet().take(3).toList(growable: false);
+
+List<GroupChatMember> orderGroupMembers({
+  required Iterable<GroupChatMember> members,
+  required String ownerId,
+  required Set<String> adminIds,
+}) {
+  final ordered = members.toList()
+    ..sort((left, right) {
+      int rank(GroupChatMember member) => member.matrixUserId == ownerId
+          ? 0
+          : adminIds.contains(member.matrixUserId)
+              ? 1
+              : 2;
+      final rankDifference = rank(left).compareTo(rank(right));
+      return rankDifference != 0
+          ? rankDifference
+          : left.displayName
+              .toLowerCase()
+              .compareTo(right.displayName.toLowerCase());
+    });
+  return ordered;
+}
 
 enum GroupChatPreference {
   muted,
@@ -20,11 +49,20 @@ final class GroupChatMember {
     required this.matrixUserId,
     required this.displayName,
     this.avatarUrl,
+    this.avatarHeaders = const {},
+    this.matrixAvatarUri,
+    this.client,
+    this.membership = Membership.join,
   });
 
   final String matrixUserId;
   final String displayName;
   final String? avatarUrl;
+  final Map<String, String> avatarHeaders;
+  final Uri? matrixAvatarUri;
+  final Client? client;
+  final Membership membership;
+  bool get isJoined => membership == Membership.join;
 }
 
 final class GroupChatInfoSnapshot {
@@ -41,6 +79,12 @@ final class GroupChatInfoSnapshot {
     this.notifyMentionAll = true,
     this.notifyAnnouncement = true,
     this.followedMemberIds = const [],
+    this.ownerId = '',
+    this.adminIds = const [],
+    this.qrJoinEnabled = true,
+    this.joinApprovalRequired = false,
+    this.onlyManagersCanRename = false,
+    this.currentUserId,
   });
 
   final String name;
@@ -55,6 +99,15 @@ final class GroupChatInfoSnapshot {
   final bool notifyMentionAll;
   final bool notifyAnnouncement;
   final List<String> followedMemberIds;
+  final String ownerId;
+  final List<String> adminIds;
+  final bool qrJoinEnabled;
+  final bool joinApprovalRequired;
+  final bool onlyManagersCanRename;
+  final String? currentUserId;
+  bool get isOwner => ownerId.isNotEmpty && ownerId == currentUserId;
+  bool get isAdmin => adminIds.contains(currentUserId);
+  bool get canManage => isOwner || isAdmin;
 
   GroupChatInfoSnapshot copyWith({
     String? name,
@@ -69,6 +122,12 @@ final class GroupChatInfoSnapshot {
     bool? notifyMentionAll,
     bool? notifyAnnouncement,
     List<String>? followedMemberIds,
+    String? ownerId,
+    List<String>? adminIds,
+    bool? qrJoinEnabled,
+    bool? joinApprovalRequired,
+    bool? onlyManagersCanRename,
+    String? currentUserId,
   }) =>
       GroupChatInfoSnapshot(
         name: name ?? this.name,
@@ -83,6 +142,13 @@ final class GroupChatInfoSnapshot {
         notifyMentionAll: notifyMentionAll ?? this.notifyMentionAll,
         notifyAnnouncement: notifyAnnouncement ?? this.notifyAnnouncement,
         followedMemberIds: followedMemberIds ?? this.followedMemberIds,
+        ownerId: ownerId ?? this.ownerId,
+        adminIds: adminIds ?? this.adminIds,
+        qrJoinEnabled: qrJoinEnabled ?? this.qrJoinEnabled,
+        joinApprovalRequired: joinApprovalRequired ?? this.joinApprovalRequired,
+        onlyManagersCanRename:
+            onlyManagersCanRename ?? this.onlyManagersCanRename,
+        currentUserId: currentUserId ?? this.currentUserId,
       );
 }
 
@@ -95,6 +161,9 @@ abstract interface class GroupChatInfoGateway {
   Future<void> setFollowedMemberIds(List<String> matrixUserIds);
   Future<void> invite(String matrixUserId);
   Future<void> leave();
+  Future<void> setGroupSetting(String key, Object value);
+  Future<void> setAdminIds(List<String> matrixUserIds);
+  Future<void> removeMembers(List<String> matrixUserIds);
 }
 
 final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
@@ -110,20 +179,38 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
 
   @override
   Future<GroupChatInfoSnapshot> load() async {
+    final localJoined = room.getParticipants([Membership.join]).length;
     final users = await room.requestParticipants([Membership.join]);
+    final invited = await room.requestParticipants([Membership.invite]);
+    debugPrint(
+      '[GroupMembers] local_joined=$localJoined '
+      'server_joined=${users.length} server_invited=${invited.length}',
+    );
     final modern = room.roomAccountData[conversationPreferenceType]?.content;
     final settings =
         modern == null ? _settings : Map<String, Object?>.from(modern);
     _cachedSettings = settings;
     final followed = settings['followed_member_ids'];
     final storedOrder = settings['member_order_ids'];
+    final allMembers = [...users, ...invited];
     final order = reconcileMemberOrder(
       storedOrder is List
           ? storedOrder.map((value) => value.toString())
           : const <String>[],
-      users.map((user) => user.id),
+      allMembers.map((user) => user.id),
     );
-    final userById = {for (final user in users) user.id: user};
+    // State events can arrive before the membership endpoint's pagination.
+    // Keep every joined/invited participant once, preserving the stored order.
+    final userById = {for (final user in allMembers) user.id: user};
+    final ownerId = settings['owner_id']?.toString().isNotEmpty == true
+        ? settings['owner_id'].toString()
+        : room.getState(EventTypes.RoomCreate)?.senderId ?? '';
+    final adminIds = normalizeGroupAdminIds(
+      settings['admin_ids'] is List
+          ? (settings['admin_ids'] as List).map((value) => value.toString())
+          : const <String>[],
+      ownerId: ownerId,
+    );
     final orderedUsers = [for (final id in order) userById[id]!];
     final activeIds = orderedUsers.map((user) => user.id).toSet();
     return GroupChatInfoSnapshot(
@@ -144,18 +231,33 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
               .take(4)
               .toList()
           : const [],
-      members: [
-        for (final user in orderedUsers)
-          GroupChatMember(
-            matrixUserId: user.id,
-            displayName: user.calcDisplayname(),
-            avatarUrl: switch (user.avatarUrl) {
-              final uri? when uri.scheme == 'http' || uri.scheme == 'https' =>
-                uri.toString(),
-              _ => null,
-            },
-          ),
-      ],
+      ownerId: ownerId,
+      adminIds: adminIds,
+      qrJoinEnabled: settings['qr_join_enabled'] != false,
+      joinApprovalRequired: settings['join_approval_required'] == true,
+      onlyManagersCanRename: settings['only_managers_can_rename'] == true,
+      currentUserId: room.client.userID,
+      members: orderGroupMembers(members: [
+        for (final user in orderedUsers) await _member(user),
+      ], ownerId: ownerId, adminIds: adminIds.toSet()),
+    );
+  }
+
+  Future<GroupChatMember> _member(User user) async {
+    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
+      avatarUri: user.avatarUrl,
+      homeserver: room.client.homeserver,
+      accessToken: room.client.accessToken,
+      size: 48,
+    );
+    return GroupChatMember(
+      matrixUserId: user.id,
+      displayName: user.calcDisplayname(),
+      avatarUrl: avatar?.url,
+      avatarHeaders: avatar?.headers ?? const {},
+      matrixAvatarUri: user.avatarUrl,
+      client: room.client,
+      membership: user.membership,
     );
   }
 
@@ -166,6 +268,23 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> leave() => room.leave();
 
   @override
+  Future<void> removeMembers(List<String> matrixUserIds) async {
+    for (final userId in matrixUserIds) {
+      await room.kick(userId);
+    }
+  }
+
+  @override
+  Future<void> setAdminIds(List<String> matrixUserIds) => _writeSetting(
+      'admin_ids',
+      normalizeGroupAdminIds(matrixUserIds,
+          ownerId: room.getState(EventTypes.RoomCreate)?.senderId ?? ''));
+
+  @override
+  Future<void> setGroupSetting(String key, Object value) =>
+      _writeSetting(key, value);
+
+  @override
   Future<void> rename(String name) async {
     await room.setName(name);
   }
@@ -173,6 +292,9 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
   @override
   Future<void> setAnnouncement(String announcement) async {
     await room.setDescription(announcement);
+    final version =
+        ((_settings['announcement_version'] as num?)?.toInt() ?? 0) + 1;
+    await _writeSetting('announcement_version', version);
   }
 
   @override
@@ -304,6 +426,23 @@ final class GroupChatInfoController extends ChangeNotifier {
               .toList(),
         ),
       );
+
+  Future<void> setGroupSetting(String key, bool value) => _save(
+        () => gateway.setGroupSetting(key, value),
+        (snapshot) => switch (key) {
+          'qr_join_enabled' => snapshot.copyWith(qrJoinEnabled: value),
+          'join_approval_required' =>
+            snapshot.copyWith(joinApprovalRequired: value),
+          'only_managers_can_rename' =>
+            snapshot.copyWith(onlyManagersCanRename: value),
+          _ => snapshot,
+        },
+      );
+
+  Future<void> removeMembers(List<String> ids) async {
+    await gateway.removeMembers(ids);
+    await load();
+  }
 
   Future<void> invite(String matrixUserId) async {
     try {

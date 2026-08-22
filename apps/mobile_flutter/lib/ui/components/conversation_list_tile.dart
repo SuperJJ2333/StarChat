@@ -15,6 +15,7 @@ final class ConversationListTile extends StatelessWidget {
     this.muted = false,
     this.pinnedGroup = false,
     this.onTap,
+    this.onLongPress,
   });
 
   final String title;
@@ -25,6 +26,7 @@ final class ConversationListTile extends StatelessWidget {
   final bool muted;
   final bool pinnedGroup;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ final class ConversationListTile extends StatelessWidget {
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: onTap,
+      onLongPress: onLongPress,
       child: ColoredBox(
         key: const Key('conversation-elevated-surface'),
         color: pinnedGroup

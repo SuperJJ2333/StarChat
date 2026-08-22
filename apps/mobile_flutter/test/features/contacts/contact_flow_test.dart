@@ -175,7 +175,7 @@ void main() {
 
     expect(find.text('好友资料'), findsOneWidget);
     expect(find.text('畅聊号：alice'), findsOneWidget);
-    expect(find.text('朋友圈'), findsOneWidget);
+    expect(find.text('朋友圈'), findsNothing);
     expect(find.text('发消息'), findsOneWidget);
     expect(find.text('语音通话'), findsOneWidget);
     expect(find.text('视频通话'), findsOneWidget);
@@ -188,12 +188,6 @@ void main() {
       126,
     );
     expect(find.text('刚刚在线'), findsOneWidget);
-    for (var index = 0; index < 3; index++) {
-      expect(
-        tester.getSize(find.byKey(Key('friend-moment-preview-$index'))),
-        const Size(87, 88),
-      );
-    }
     final actionTops = ['message', 'voice', 'video']
         .map(
           (action) =>
@@ -270,5 +264,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('profile message action navigates once while back pops profile',
+      (tester) async {
+    var messageRequests = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactsPage(
+        api: FakeContactsGateway(),
+        onMessage: (_) async => messageRequests++,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('产品小艾'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('friend-action-message')));
+    await tester.pump();
+    expect(messageRequests, 1);
+    expect(find.text('好友资料'), findsOneWidget);
+
+    await tester.tap(find.byType(CupertinoNavigationBarBackButton));
+    await tester.pumpAndSettle();
+    expect(find.text('好友资料'), findsNothing);
+    expect(messageRequests, 1);
   });
 }

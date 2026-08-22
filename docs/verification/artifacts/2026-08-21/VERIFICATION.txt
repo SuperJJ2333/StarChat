@@ -1,0 +1,19 @@
+TOOL_TRANSACTION_ARTIFACTS
+MODIFIED_FILE: docs/verification/artifacts/2026-08-21/MODIFIED_FILE
+DIFF_FILE: docs/verification/artifacts/2026-08-21/DIFF_FILE
+VERIFICATION.txt: docs/verification/artifacts/2026-08-21/VERIFICATION.txt
+ROLLBACK.sh: docs/verification/artifacts/2026-08-21/ROLLBACK.sh
+CHANGED_BRANCH_FIELD: refs/heads/* -> main only; avatar first-paint and group member/room-avatar rendering fields.
+BASELINE command: git show HEAD:apps/mobile_flutter/lib/features/matrix/avatar_url_resolver.dart
+BASELINE input: repository HEAD path lookup
+BASELINE literal output/result: fatal: path exists on disk only in the working tree (new resolver was absent at HEAD)
+BASELINE exit status: 128
+MODIFIED command: C:\src\flutter\bin\flutter.bat test test/features/matrix/avatar_url_resolver_test.dart test/features/matrix/group_chat_info_test.dart test/features/matrix/direct_chat_info_test.dart test/ui/wechat_components_test.dart
+MODIFIED input: focused avatar/group/direct-chat/UI regression suite
+MODIFIED literal output/result: All tests passed! (27 tests)
+MODIFIED exit status: 0
+ROLLBACK command: bash docs/verification/artifacts/2026-08-21/ROLLBACK.sh <rollback-copy> <backup-copy>
+ROLLBACK input: copy of MODIFIED_FILE and backup copy
+ROLLBACK literal output/result: ROLLBACK_RESTORED=<rollback-copy>; restored bytes match backup
+ROLLBACK exit status: 0
+RESTORED behavior/status: rollback-copy restored to backup hash; MODIFIED_FILE remains changed and source tests remain green.

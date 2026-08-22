@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_info_page.dart';
 
@@ -10,6 +11,7 @@ void main() {
       home: DirectChatInfoPage(
         peerName: '安然',
         peerId: '@anran:test',
+        matrixClient: Client('test')..homeserver = Uri.parse('https://matrix.example.test'),
         preference: const ConversationPreference(),
         onAddMember: () {},
         onSearchHistory: () {},

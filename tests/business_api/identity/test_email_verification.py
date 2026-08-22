@@ -285,6 +285,11 @@ async def test_verification_api_is_strict_and_status_never_exposes_user_uuid(
                 "token": codec.link_token(challenge.id),
             },
         )
+        short_code = await client.post(
+            "/api/v1/auth/email-verifications/verify",
+            headers={"Idempotency-Key": "api-short-code"},
+            json={"registration_session": registration_session, "code": "123"},
+        )
         verified = await client.post(
             "/api/v1/auth/email-verifications/verify",
             headers={"Idempotency-Key": "api-code-verification"},
@@ -295,6 +300,10 @@ async def test_verification_api_is_strict_and_status_never_exposes_user_uuid(
         )
 
     assert missing_credential.status_code == both_credentials.status_code == 422
+    assert short_code.status_code == 422
+    assert short_code.json()["error"]["fields"] == [
+        {"loc": ["body", "code"], "msg": "请输入 6 位数字验证码", "type": "email_verification_code_invalid"}
+    ]
     assert verified.status_code == 202
     assert verified.json() == {"status": "PENDING_MATRIX"}
     assert status.status_code == 200

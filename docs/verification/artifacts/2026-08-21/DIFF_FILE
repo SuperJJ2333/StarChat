@@ -1,0 +1,292 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/avatar_url_resolver.dart b/apps/mobile_flutter/lib/features/matrix/avatar_url_resolver.dart
+index d99c190..e369c6a 100644
+--- a/apps/mobile_flutter/lib/features/matrix/avatar_url_resolver.dart
++++ b/apps/mobile_flutter/lib/features/matrix/avatar_url_resolver.dart
+@@ -10,6 +10,30 @@ final class ResolvedAvatarUrl {
+ abstract final class MatrixAvatarUrlResolver {
+   static final Map<String, Future<ResolvedAvatarUrl?>> _resolved = {};
+ 
++  /// Builds the deterministic first request without waiting for a server
++  /// capability round-trip.  A logged-in Matrix client can use the v1.11
++  /// authenticated media endpoint immediately; anonymous clients use the
++  /// legacy public endpoint.
++  static ResolvedAvatarUrl? resolveImmediately({
++    required Uri? avatarUri,
++    required Uri? homeserver,
++    required String? accessToken,
++    required double size,
++  }) {
++    if (avatarUri == null) return null;
++    if (avatarUri.scheme == 'http' || avatarUri.scheme == 'https') {
++      return ResolvedAvatarUrl(avatarUri.toString());
++    }
++    if (avatarUri.scheme != 'mxc' || homeserver == null) return null;
++    return _thumbnail(
++      avatarUri: avatarUri,
++      homeserver: homeserver,
++      accessToken: accessToken,
++      authenticated: accessToken?.isNotEmpty == true,
++      size: size,
++    );
++  }
++
+   static Future<ResolvedAvatarUrl?> resolveCached({
+     required Uri? avatarUri,
+     required Uri? homeserver,
+@@ -63,6 +87,22 @@ abstract final class MatrixAvatarUrlResolver {
+     // advertises authenticated media support.
+     final authenticated =
+         accessToken?.isNotEmpty == true && await authenticatedMediaSupported();
++    return _thumbnail(
++      avatarUri: avatarUri,
++      homeserver: homeserver,
++      accessToken: accessToken,
++      authenticated: authenticated,
++      size: size,
++    );
++  }
++
++  static ResolvedAvatarUrl _thumbnail({
++    required Uri avatarUri,
++    required Uri homeserver,
++    required String? accessToken,
++    required bool authenticated,
++    required double size,
++  }) {
+     final mediaPath = authenticated
+         ? '/_matrix/client/v1/media/thumbnail'
+         : '/_matrix/media/v3/thumbnail';
+diff --git a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+index 6f75cd7..df8e58b 100644
+--- a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
++++ b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+@@ -158,9 +158,10 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
+   }
+ 
+   Future<GroupChatMember> _member(User user) async {
+-    final avatar = await MatrixAvatarUrlResolver.resolveForClient(
++    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
+       avatarUri: user.avatarUrl,
+-      client: room.client,
++      homeserver: room.client.homeserver,
++      accessToken: room.client.accessToken,
+       size: 48,
+     );
+     return GroupChatMember(
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart b/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+index e4d0350..ce8dbc1 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+@@ -64,6 +64,11 @@ List<User> orderedJoinedMembers(Room room) {
+   ];
+ }
+ 
++Future<List<User>> loadOrderedJoinedMembers(Room room) async {
++  await room.requestParticipants([Membership.join]);
++  return orderedJoinedMembers(room);
++}
++
+ class MatrixHomePage extends StatefulWidget {
+   const MatrixHomePage({
+     super.key,
+@@ -89,18 +94,38 @@ class MatrixHomePage extends StatefulWidget {
+ class _MatrixHomePageState extends State<MatrixHomePage> {
+   bool syncing = false;
+   StreamSubscription<Object?>? syncSubscription;
++  final Map<String, List<User>> _groupMembersByRoom = {};
++  final Set<String> _groupMemberLoadsInFlight = {};
+ 
+   Future<void> sync() async {
+     if (syncing) return;
+     setState(() => syncing = true);
+     try {
+       await widget.matrix.sync();
++      _ensureGroupMembersLoaded(widget.matrix.sdkClient.rooms);
+       await _reconcileConversationMetadata();
+     } finally {
+       if (mounted) setState(() => syncing = false);
+     }
+   }
+ 
++  void _ensureGroupMembersLoaded(Iterable<Room> rooms) {
++    for (final room in rooms.where((room) => !room.isDirectChat)) {
++      if (_groupMemberLoadsInFlight.contains(room.id)) continue;
++      _groupMemberLoadsInFlight.add(room.id);
++      unawaited(() async {
++        try {
++          final members = await loadOrderedJoinedMembers(room);
++          if (mounted) setState(() => _groupMembersByRoom[room.id] = members);
++        } catch (_) {
++          // Preserve currently known members; the next sync retries loading.
++        } finally {
++          _groupMemberLoadsInFlight.remove(room.id);
++        }
++      }());
++    }
++  }
++
+   Future<void> _reconcileConversationMetadata() async {
+     final base = DateTime.now().toUtc();
+     var offset = 0;
+@@ -343,6 +368,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                           ? index - 1
+                           : index;
+                   final room = rooms[roomIndex];
++                  _ensureGroupMembersLoaded([room]);
+                   final roomName = room.getLocalizedDisplayname();
+                   final preference = preferenceForRoom(room);
+                   return ConversationListTile(
+@@ -350,7 +376,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                     title: roomName,
+                     subtitle: room.lastEvent?.text ?? '端到端加密消息',
+                     timeLabel: _roomTime(room),
+-                    avatar: room.isDirectChat
++                    avatar: room.isDirectChat || room.avatar != null
+                         ? MatrixUserAvatar(
+                             client: widget.matrix.sdkClient,
+                             nickname: roomName,
+@@ -360,8 +386,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                           )
+                         : GroupAvatarMosaic(
+                             avatars: [
+-                              for (final member
+-                                  in orderedJoinedMembers(room).take(9))
++                              for (final member in (_groupMembersByRoom[
++                                          room.id] ??
++                                      orderedJoinedMembers(room))
++                                  .take(9))
+                                 MatrixUserAvatar(
+                                   client: widget.matrix.sdkClient,
+                                   nickname: member.calcDisplayname(),
+@@ -431,17 +459,24 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
+                 subtitle: room.lastEvent?.text ?? '端到端加密消息',
+                 timeLabel: '',
+                 muted: true,
+-                avatar: GroupAvatarMosaic(
+-                  avatars: [
+-                    for (final member in members)
+-                      MatrixUserAvatar(
++                avatar: room.avatar != null
++                    ? MatrixUserAvatar(
+                         client: room.client,
+-                        nickname: member.calcDisplayname(),
+-                        fallbackSeed: member.id,
+-                        matrixAvatarUri: member.avatarUrl,
++                        nickname: room.getLocalizedDisplayname(),
++                        fallbackSeed: room.id,
++                        matrixAvatarUri: room.avatar,
++                      )
++                    : GroupAvatarMosaic(
++                        avatars: [
++                          for (final member in members)
++                            MatrixUserAvatar(
++                              client: room.client,
++                              nickname: member.calcDisplayname(),
++                              fallbackSeed: member.id,
++                              matrixAvatarUri: member.avatarUrl,
++                            ),
++                        ],
+                       ),
+-                  ],
+-                ),
+                 onTap: () => onOpen(room),
+               );
+             },
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart b/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
+index e8694a9..d56174c 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
+@@ -34,6 +34,12 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
+   @override
+   void initState() {
+     super.initState();
++    resolved = MatrixAvatarUrlResolver.resolveImmediately(
++      avatarUri: widget.matrixAvatarUri,
++      homeserver: widget.client.homeserver,
++      accessToken: widget.client.accessToken,
++      size: widget.size,
++    );
+     _resolve();
+   }
+ 
+diff --git a/apps/mobile_flutter/lib/ui/components/user_avatar.dart b/apps/mobile_flutter/lib/ui/components/user_avatar.dart
+index e62fa16..2ee2701 100644
+--- a/apps/mobile_flutter/lib/ui/components/user_avatar.dart
++++ b/apps/mobile_flutter/lib/ui/components/user_avatar.dart
+@@ -58,7 +58,10 @@ final class UserAvatar extends StatelessWidget {
+                       (context, child, frame, wasSynchronouslyLoaded) =>
+                           wasSynchronouslyLoaded || frame != null
+                               ? child
+-                              : _fallback(),
++                              // Keep the image request as the first-paint
++                              // surface.  Showing a generated initial here
++                              // creates the visible default->remote flash.
++                              : child,
+                   errorBuilder: (_, __, ___) => _fallback(),
+                 )));
+ }
+diff --git a/apps/mobile_flutter/test/features/matrix/avatar_url_resolver_test.dart b/apps/mobile_flutter/test/features/matrix/avatar_url_resolver_test.dart
+index a4cb4fc..b0f8c38 100644
+--- a/apps/mobile_flutter/test/features/matrix/avatar_url_resolver_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/avatar_url_resolver_test.dart
+@@ -32,6 +32,23 @@ void main() {
+     expect(resolved?.headers, {'authorization': 'Bearer matrix-token'});
+   });
+ 
++  test('builds an authenticated Matrix thumbnail synchronously for first paint',
++      () {
++    final resolved = MatrixAvatarUrlResolver.resolveImmediately(
++      avatarUri: Uri.parse('mxc://media.example.test/a1b2c3'),
++      homeserver: Uri.parse('https://matrix.example.test'),
++      accessToken: 'matrix-token',
++      size: 48,
++    );
++
++    expect(
++      resolved?.url,
++      'https://matrix.example.test/_matrix/client/v1/media/thumbnail/'
++      'media.example.test/a1b2c3?width=48&height=48&method=crop&animated=false',
++    );
++    expect(resolved?.headers, {'authorization': 'Bearer matrix-token'});
++  });
++
+   test('resolves an mxc avatar to the unauthenticated v3 thumbnail endpoint',
+       () async {
+     final resolved = await MatrixAvatarUrlResolver.resolve(
+diff --git a/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart b/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
+index 116ed33..a979023 100644
+--- a/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
+@@ -1,8 +1,10 @@
+ import 'package:flutter/cupertino.dart';
+ import 'package:flutter_test/flutter_test.dart';
++import 'package:matrix/matrix.dart';
+ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+ import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
+ import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
++import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+ import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
+ 
+ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
+@@ -69,6 +71,21 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
+ }
+ 
+ void main() {
++  test('loads joined members before building a group avatar mosaic', () async {
++    final client = Client('test')..homeserver = Uri.parse('https://matrix.example.test');
++    final room = Room(id: '!group:example.test', client: client);
++    room.setState(
++      User(
++        '@alice:example.test',
++        room: room,
++        displayName: 'Alice',
++        membership: 'join',
++      ),
++    );
++
++    expect(orderedJoinedMembers(room), hasLength(1));
++  });
++
+   test('group chat info controller loads members and persists changes',
+       () async {
+     final gateway = FakeGroupChatInfoGateway();

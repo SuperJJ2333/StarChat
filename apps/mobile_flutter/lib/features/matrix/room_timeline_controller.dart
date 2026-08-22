@@ -17,6 +17,8 @@ final class RoomMessageViewModel {
     this.packetId,
     this.greeting,
     this.voiceDuration = const Duration(seconds: 1),
+    this.isRecalled = false,
+    this.replyToEventId,
   });
 
   final String id;
@@ -30,6 +32,8 @@ final class RoomMessageViewModel {
   final String? packetId;
   final String? greeting;
   final Duration voiceDuration;
+  final bool isRecalled;
+  final String? replyToEventId;
 
   RoomMessageViewModel copyWith({
     String? id,
@@ -47,6 +51,8 @@ final class RoomMessageViewModel {
         packetId: packetId,
         greeting: greeting,
         voiceDuration: voiceDuration,
+        isRecalled: isRecalled,
+        replyToEventId: replyToEventId,
       );
 }
 

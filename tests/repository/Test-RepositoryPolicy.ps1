@@ -21,6 +21,19 @@ Assert-True (Test-Path (Join-Path $root 'services\matrix-bot\AGENTS.md')) 'matri
 Assert-True (Test-Path (Join-Path $root 'scripts\verify.ps1')) 'scripts/verify.ps1 is required'
 Assert-True (Test-Path (Join-Path $root 'services\matrix-bot\requirements-dev.txt')) 'matrix-bot development requirements are required'
 
+$forbiddenRootArtifacts = @(
+    'MODIFIED_FILE',
+    'MODIFIED_FILE.rollback-copy',
+    'DIFF_FILE',
+    'VERIFICATION.txt',
+    'ROLLBACK.sh'
+)
+foreach ($artifact in $forbiddenRootArtifacts) {
+    Assert-True (-not (Test-Path (Join-Path $root $artifact))) "Temporary verification artifact must not exist at repository root: $artifact"
+}
+$verificationRoot = Join-Path $root 'docs\verification'
+Assert-True (Test-Path $verificationRoot) 'docs/verification is required for verification evidence'
+
 $readme = Get-Content (Join-Path $root 'README.md') -Raw -Encoding UTF8
 Assert-True ($readme.Contains('pwsh -NoProfile -File scripts/verify.ps1')) 'README must document the verification command'
 Assert-True ($readme.Contains('2026-08-12-starchat-product-modernization-design.md')) 'README must link the approved design'

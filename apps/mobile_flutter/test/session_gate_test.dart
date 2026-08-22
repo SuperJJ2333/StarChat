@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_bootstrap_controller.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/session_gate.dart';
 import 'package:liuhetong_mobile/app_home.dart';
@@ -32,6 +33,18 @@ final class GateMatrix implements MatrixSessionGateway {
   Future<void> sync() async {}
 }
 
+final class _MemoryStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
+}
 Widget appFor(SessionBootstrapController controller) => CupertinoApp(
       home: SessionGate(
         controller: controller,
@@ -96,7 +109,13 @@ void main() {
   testWidgets('explicit logout requires confirmation', (tester) async {
     var logoutCalls = 0;
     await tester.pumpWidget(CupertinoApp(
-      home: SettingsPage(onLogout: () async => logoutCalls++),
+      home: SettingsPage(
+        api: BusinessApiClient(
+          baseUri: Uri.parse('https://api.example.test'),
+          sessionStore: SecureSessionStore(_MemoryStore()),
+        ),
+        onLogout: () async => logoutCalls++,
+      ),
     ));
 
     await tester.tap(find.text('退出登录'));

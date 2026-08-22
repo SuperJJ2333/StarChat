@@ -56,7 +56,7 @@ final class _ModernActionButtonState extends State<ModernActionButton> {
               },
         child: AnimatedScale(
           scale: reduced || !pressed ? 1 : .98,
-          duration: reduced ? Duration.zero : const Duration(milliseconds: 100),
+          duration: reduced ? Duration.zero : const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           child: Container(
             constraints: const BoxConstraints(minHeight: 44, minWidth: 44),

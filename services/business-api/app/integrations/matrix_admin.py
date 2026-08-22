@@ -13,7 +13,24 @@ from app.core.errors import AppError
 class MatrixAdminGateway(Protocol):
     def ensure_user(self, localpart: str, password: str) -> str: ...
 
+    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None:
+        path_user_id = quote(matrix_user_id, safe="")
+        token_response = self._client.post(
+            f"{self._homeserver_url}/_synapse/admin/v1/users/{path_user_id}/login",
+            headers={"Authorization": f"Bearer {self._admin_access_token}"},
+            json={"valid_until_ms": int(self._now_factory().timestamp() * 1000) + 60_000},
+        )
+        if token_response.status_code != 200:
+            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
+        token = token_response.json().get("access_token")
+        response = self._client.post(
+            f"{self._homeserver_url}/_matrix/client/v3/join/{quote(room_id, safe='')}",
+            headers={"Authorization": f"Bearer {token}"}, json={},
+        )
+        if response.status_code not in (200, 201):
+            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
+    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None: ...
 
     def upload_profile_media(self, content: bytes, mime_type: str) -> str: ...
 
@@ -106,6 +123,22 @@ class SynapseMatrixAdminGateway:
             )
         return matrix_user_id
 
+    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None:
+        path_user_id = quote(matrix_user_id, safe="")
+        token_response = self._client.post(
+            f"{self._homeserver_url}/_synapse/admin/v1/users/{path_user_id}/login",
+            headers={"Authorization": f"Bearer {self._admin_access_token}"},
+            json={"valid_until_ms": int(self._now_factory().timestamp() * 1000) + 60_000},
+        )
+        if token_response.status_code != 200:
+            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
+        token = token_response.json().get("access_token")
+        response = self._client.post(
+            f"{self._homeserver_url}/_matrix/client/v3/join/{quote(room_id, safe='')}",
+            headers={"Authorization": f"Bearer {token}"}, json={},
+        )
+        if response.status_code not in (200, 201):
+            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str:
         path_user_id = quote(matrix_user_id, safe="")
         url = (

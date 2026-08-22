@@ -7,11 +7,112 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
 from app.core.database import Base, create_session_factory
+from app.core.errors import AppError
 from app.main import create_app
 from app.modules.identity.enums import AccountStatus
 from app.modules.identity.invitations import InvitationService
 from app.modules.identity.models import User
 from app.modules.identity.passwords import PasswordHasher
+
+
+class RecordingRateLimiter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, int]] = []
+
+    def hit(self, key: str, *, limit: int, window_seconds: int) -> None:
+        self.calls.append((key, limit, window_seconds))
+
+
+@pytest.mark.asyncio
+async def test_invalid_or_taken_registration_email_does_not_consume_rate_limit(api_components) -> None:
+    limiter = RecordingRateLimiter()
+    _, factory = api_components
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/15",
+        jwt_secret="test-jwt-secret-at-least-thirty-two-bytes",
+        email_verification_secret="test-email-verification-secret",
+        password_reset_secret="test-password-reset-secret",
+    )
+    app = create_app(settings, session_factory=factory, rate_limiter=limiter)
+    with factory.begin() as session:
+        session.add(
+            User(
+                id="taken-email-user",
+                username="takenemail",
+                username_normalized="takenemail",
+                email="taken@example.com",
+                email_normalized="taken@example.com",
+                password_hash=PasswordHasher().hash("correct horse battery staple"),
+                status=AccountStatus.ACTIVE,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        invalid = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "invalid-email-rate-limit", "X-Device-Key": "device-1"},
+            json={
+                "username": "validchat",
+                "nickname": "昵称",
+                "email": "invalid",
+                "password": "correct horse battery staple",
+                "invitation_code": "API-INVITE",
+            },
+        )
+        taken = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "taken-email-rate-limit", "X-Device-Key": "device-1"},
+            json={
+                "username": "anotherchat",
+                "nickname": "昵称",
+                "email": "taken@example.com",
+                "password": "correct horse battery staple",
+                "invitation_code": "API-INVITE",
+            },
+        )
+
+    assert invalid.status_code == 422
+    assert taken.status_code == 409
+    assert limiter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_taken_chat_id_is_reported_as_username_without_consuming_rate_limit(
+    api_components,
+) -> None:
+    limiter = RecordingRateLimiter()
+    _, factory = api_components
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/15",
+        jwt_secret="test-jwt-secret-at-least-thirty-two-bytes",
+        email_verification_secret="test-email-verification-secret",
+        password_reset_secret="test-password-reset-secret",
+    )
+    app = create_app(settings, session_factory=factory, rate_limiter=limiter)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/auth/register",
+            headers={"Idempotency-Key": "taken-chat-id", "X-Device-Key": "device-1"},
+            json={
+                "username": "active",
+                "nickname": "昵称",
+                "email": "new-address@example.com",
+                "password": "correct horse battery staple",
+                "invitation_code": "API-INVITE",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "USERNAME_TAKEN"
+    assert limiter.calls == []
 
 
 @pytest.fixture()

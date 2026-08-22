@@ -13,7 +13,12 @@ final class DiscoveryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('发现')),
+        backgroundColor: WeChatColors.tabRootPageBackground,
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('发现')),
         child: SafeArea(
           child: ListView(
             key: const Key('discovery-home-list'),
@@ -70,7 +75,11 @@ final class _RecommendedContentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(middle: Text('推荐内容')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('推荐内容')),
         child: SafeArea(
           child: Center(
             child: Column(

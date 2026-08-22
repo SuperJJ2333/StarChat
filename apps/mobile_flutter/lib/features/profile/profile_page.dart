@@ -52,7 +52,12 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
     final state = widget.controller.state;
     final profile = state.profile;
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('我')),
+      backgroundColor: WeChatColors.tabRootPageBackground,
+      navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('我')),
       child: SafeArea(
         child: profile == null
             ? Center(
@@ -133,26 +138,15 @@ final class _IdentityCard extends StatelessWidget {
         color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 72,
-                height: 72,
-                child: profile.avatarUrl == null
-                    ? ColoredBox(
-                        color: WeChatColors.brandPrimary,
-                        child: Center(
-                          child: Text(
-                            profile.nickname.characters.first,
-                            style: const TextStyle(
-                              color: CupertinoColors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      )
-                    : Image.network(profile.avatarUrl!, fit: BoxFit.cover),
+            SizedBox(
+              width: 72,
+              height: 72,
+              child: UserAvatar(
+                key: const Key('profile-identity-avatar'),
+                nickname: profile.nickname,
+                fallbackSeed: profile.fallbackSeed,
+                avatarUrl: profile.avatarUrl,
+                size: 72,
               ),
             ),
             const SizedBox(width: 16),
@@ -302,6 +296,9 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     final profile = state.profile!;
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
         middle: const Text('个人信息'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,

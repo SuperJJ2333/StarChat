@@ -2,10 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_unread_badge.dart';
+import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 import 'package:liuhetong_mobile/ui/finance/wechat_red_packet_card.dart';
 import 'package:liuhetong_mobile/ui/components/modern_action_button.dart';
 import 'package:liuhetong_mobile/ui/components/immersive_auth_scaffold.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
+import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:liuhetong_mobile/ui/components/network_status_capsule.dart';
 
 void main() {
@@ -126,6 +128,75 @@ void main() {
     await tester.pumpWidget(const CupertinoApp(
         home: UserAvatar(nickname: 'Alice', fallbackSeed: 'seed', size: 48)));
     expect(find.text('A'), findsOneWidget);
+  });
+  test('avatar cache key is user/version/size-specific with fixed retention',
+      () {
+    expect(
+      AvatarCache.cacheKey(
+        userId: '@alice:example.com',
+        avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+        size: 48,
+      ),
+      'avatar-@alice:example.com-v=9-48',
+    );
+    expect(AvatarCache.diskTtl, const Duration(days: 30));
+    expect(AvatarCache.maximumMemoryEntries, 200);
+  });
+  test(
+      'avatar provider does not request disk resizing from a standard cache manager',
+      () {
+    final provider = AvatarCache.buildProvider(
+      avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+      cacheKey: 'avatar-@alice:example.com-v=9-48',
+    );
+
+    expect(provider.maxWidth, isNull);
+    expect(provider.maxHeight, isNull);
+  });
+  test('avatar cache retains the last successful provider per account', () {
+    final provider = AvatarCache.buildProvider(
+      avatarUrl: 'https://cdn.example.com/avatar.png?v=10',
+      cacheKey: 'avatar-@alice:example.com-v=10-48',
+    );
+
+    AvatarCache.rememberSuccessful('@alice:example.com', provider);
+
+    expect(AvatarCache.lastSuccessful('@alice:example.com'), same(provider));
+  });
+  testWidgets('remote user avatar uses the unified cached image provider',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: UserAvatar(
+        nickname: 'Alice',
+        fallbackSeed: '@alice:example.com',
+        avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+        size: 48,
+      ),
+    ));
+
+    final image = tester.widget<Image>(find.byType(Image).first);
+    expect(image.image, isA<AvatarCacheImageProvider>());
+    expect(image.frameBuilder, isNotNull);
+  });
+  testWidgets(
+      'group mosaic keeps a default avatar tile for members without a remote image',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: GroupAvatarMosaic(
+        avatars: [
+          UserAvatar(
+            nickname: '已设置',
+            fallbackSeed: 'uploaded',
+            avatarUrl: 'https://cdn.example.test/avatar.png',
+          ),
+          UserAvatar(nickname: '默认', fallbackSeed: 'default'),
+        ],
+      ),
+    ));
+
+    expect(find.byKey(const Key('group-avatar-member-0')), findsOneWidget);
+    expect(find.byKey(const Key('group-avatar-member-1')), findsOneWidget);
+    expect(find.text('默'), findsOneWidget);
   });
   testWidgets('network capsule is compact and invokes retry', (tester) async {
     var retries = 0;

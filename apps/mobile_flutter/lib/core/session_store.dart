@@ -63,6 +63,7 @@ final class SecureSessionStore {
   static const _legacyRefreshKey = 'liuhetong.refresh_token';
   static const _recoveryKey = 'liuhetong.encrypted_recovery_key';
   static const _matrixDatabaseKey = 'liuhetong.matrix_database_key.v1';
+  static const _registrationDeviceKey = 'liuhetong.registration_device_key.v1';
 
   Future<void> saveSession({
     required String accessToken,
@@ -132,6 +133,16 @@ final class SecureSessionStore {
       List<int>.generate(32, (_) => random.nextInt(256)),
     );
     await _storage.write(_matrixDatabaseKey, value);
+    return value;
+  }
+
+  Future<String> registrationDeviceKey() async {
+    final existing = await _storage.read(_registrationDeviceKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final value = base64UrlEncode(
+      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+    );
+    await _storage.write(_registrationDeviceKey, value);
     return value;
   }
 

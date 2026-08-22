@@ -12,8 +12,10 @@ import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
+import 'features/matrix/chat_identity_cache.dart';
 import 'features/matrix/group_chat_controller.dart';
 import 'features/matrix/group_chat_page.dart';
+import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
@@ -60,6 +62,8 @@ final class _AppHomeState extends State<AppHome> {
   bool incomingCallActive = false;
   MessageReminderService? reminderService;
   late final MessageReminderSyncBootstrapper reminderBootstrap;
+  ChatIdentityCache? _chatIdentityCache;
+  Future<ChatIdentityCache>? _chatIdentityCacheLoad;
 
   @override
   void initState() {
@@ -73,6 +77,7 @@ final class _AppHomeState extends State<AppHome> {
       },
     );
     unawaited(reminderBootstrap.start());
+    unawaited(_identityCache());
   }
 
   Future<MessageReminderSyncCoordinator> _createReminderSync() async {
@@ -85,6 +90,24 @@ final class _AppHomeState extends State<AppHome> {
         scheduler: FlutterLocalNotificationScheduler(),
       ),
     );
+  }
+
+  Future<ChatIdentityCache> _identityCache() =>
+      _chatIdentityCacheLoad ??= _createIdentityCache();
+
+  Future<ChatIdentityCache> _createIdentityCache() async {
+    final accountKey = widget.matrix.sdkClient.userID;
+    final cache = accountKey == null
+        ? ChatIdentityCache(widget.api)
+        : await ChatIdentityCache.create(
+            api: widget.api,
+            accountKey: 'matrix:$accountKey',
+          );
+    await cache.hydrate();
+    _chatIdentityCache = cache;
+    if (mounted) setState(() {});
+    unawaited(cache.preload());
+    return cache;
   }
 
   void _callChanged() {
@@ -157,7 +180,9 @@ final class _AppHomeState extends State<AppHome> {
   Future<void> _createGroupChat() async {
     String currentUserDisplayName = '我';
     try {
-      final profile = await widget.api.loadProfile();
+      final cache = await _identityCache();
+      await cache.preload();
+      final profile = cache.profile!;
       currentUserDisplayName =
           profile.nickname.isEmpty ? profile.username : profile.nickname;
     } catch (_) {
@@ -166,7 +191,8 @@ final class _AppHomeState extends State<AppHome> {
     if (!mounted) return;
     final controller = GroupChatController(
       contacts: widget.api,
-      groups: widget.matrix,
+      groups:
+          ServerAutoJoinGroupGateway(api: widget.api, matrix: widget.matrix),
       currentUserDisplayName: currentUserDisplayName,
     );
     final roomId = await Navigator.push<String>(
@@ -183,6 +209,11 @@ final class _AppHomeState extends State<AppHome> {
     if (!mounted || roomId == null) return;
     final room = widget.matrix.sdkClient.getRoomById(roomId);
     if (room == null) return;
+    final identityCache = await _identityCache();
+    await identityCache.preload();
+    if (!mounted) return;
+    await identityCache.precacheAvatarImages(context);
+    if (!mounted) return;
     await Navigator.push(
       context,
       CupertinoPageRoute(
@@ -193,6 +224,7 @@ final class _AppHomeState extends State<AppHome> {
           onVoice: (contact) => _openCall(contact, CallMediaType.audio),
           onVideo: (contact) => _openCall(contact, CallMediaType.video),
           reminderService: reminderService,
+          initialIdentityCache: identityCache,
         ),
       ),
     );
@@ -239,28 +271,34 @@ final class _AppHomeState extends State<AppHome> {
             ),
             tabBuilder: (_, index) => CupertinoTabView(
               builder: (_) => switch (index) {
-                0 => MatrixHomePage(
-                    api: widget.api,
-                    matrix: widget.matrix,
-                    themeController: widget.themeController,
-                    onCreateGroup: _createGroupChat,
-                    onVoice: (contact) =>
-                        _openCall(contact, CallMediaType.audio),
-                    onVideo: (contact) =>
-                        _openCall(contact, CallMediaType.video),
-                    reminderService: reminderService,
-                  ),
-                1 => ContactsTabPage(
-                    api: widget.api,
-                    matrix: widget.matrix,
-                    directChats: directChats,
-                    onVoice: (contact) =>
-                        _openCall(contact, CallMediaType.audio),
-                    onVideo: (contact) =>
-                        _openCall(contact, CallMediaType.video),
-                    onGroupChat: _createGroupChat,
-                    reminderService: reminderService,
-                  ),
+                0 => _chatIdentityCache == null
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : MatrixHomePage(
+                        api: widget.api,
+                        matrix: widget.matrix,
+                        themeController: widget.themeController,
+                        onCreateGroup: _createGroupChat,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                        reminderService: reminderService,
+                        identityCache: _chatIdentityCache,
+                      ),
+                1 => _chatIdentityCache == null
+                    ? const Center(child: CupertinoActivityIndicator())
+                    : ContactsTabPage(
+                        api: widget.api,
+                        matrix: widget.matrix,
+                        directChats: directChats,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                        onGroupChat: _createGroupChat,
+                        reminderService: reminderService,
+                        identityCache: _chatIdentityCache,
+                      ),
                 2 => DiscoveryPage(api: widget.api),
                 _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
               },
@@ -290,6 +328,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVideo,
     required this.onGroupChat,
     this.reminderService,
+    this.identityCache,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -298,6 +337,7 @@ final class ContactsTabPage extends StatefulWidget {
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
   final MessageReminderService? reminderService;
+  final ChatIdentityCache? identityCache;
 
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
@@ -309,9 +349,13 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
       final reference = await widget.directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
+      final identityCache =
+          widget.identityCache ?? ChatIdentityCache(widget.api);
+      await identityCache.preload();
       if (!mounted) return;
-      await Navigator.push(
-        context,
+      await identityCache.precacheAvatarImages(context);
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
           builder: (_) => RoomPage(
             api: widget.api,
@@ -321,6 +365,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
             reminderService: widget.reminderService,
+            initialIdentityCache: identityCache,
           ),
         ),
       );
@@ -378,21 +423,27 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
           context,
           CupertinoPageRoute(
               builder: (_) => CupertinoPageScaffold(
-                  navigationBar:
-                      const CupertinoNavigationBar(middle: Text('彩币')),
+                  navigationBar: CupertinoNavigationBar(
+                      backgroundColor: WeChatColors.chatNavigationBackground,
+                      automaticBackgroundVisibility: false,
+                      enableBackgroundFilterBlur: false,
+                      middle: Text('彩币')),
                   child: CaibiPage(api: widget.api)))),
       onRedPacket: () => Navigator.push(
           context,
           CupertinoPageRoute(
               builder: (_) => CupertinoPageScaffold(
-                  navigationBar:
-                      const CupertinoNavigationBar(middle: Text('红包')),
+                  navigationBar: CupertinoNavigationBar(
+                      backgroundColor: WeChatColors.chatNavigationBackground,
+                      automaticBackgroundVisibility: false,
+                      enableBackgroundFilterBlur: false,
+                      middle: Text('红包')),
                   child: RedPacketPage(api: widget.api)))),
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(navigationBar: const CupertinoNavigationBar(middle: Text('钱包')), child: WalletPage(api: widget.api)))),
-      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(onLogout: widget.onLogout))));
+              builder: (_) => CupertinoPageScaffold(navigationBar: CupertinoNavigationBar(backgroundColor: WeChatColors.chatNavigationBackground, automaticBackgroundVisibility: false, enableBackgroundFilterBlur: false, middle: Text('钱包')), child: WalletPage(api: widget.api)))),
+      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -407,7 +458,11 @@ final class ProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('我')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('我')),
         child: SafeArea(
           child: ListView(
             children: [
@@ -419,8 +474,12 @@ final class ProfilePage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                     builder: (_) => CupertinoPageScaffold(
-                      navigationBar:
-                          const CupertinoNavigationBar(middle: Text('彩币')),
+                      navigationBar: CupertinoNavigationBar(
+                          backgroundColor:
+                              WeChatColors.chatNavigationBackground,
+                          automaticBackgroundVisibility: false,
+                          enableBackgroundFilterBlur: false,
+                          middle: Text('彩币')),
                       child: CaibiPage(api: api),
                     ),
                   ),
@@ -433,8 +492,12 @@ final class ProfilePage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                     builder: (_) => CupertinoPageScaffold(
-                      navigationBar:
-                          const CupertinoNavigationBar(middle: Text('红包')),
+                      navigationBar: CupertinoNavigationBar(
+                          backgroundColor:
+                              WeChatColors.chatNavigationBackground,
+                          automaticBackgroundVisibility: false,
+                          enableBackgroundFilterBlur: false,
+                          middle: Text('红包')),
                       child: RedPacketPage(api: api),
                     ),
                   ),
@@ -447,8 +510,12 @@ final class ProfilePage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                     builder: (_) => CupertinoPageScaffold(
-                      navigationBar:
-                          const CupertinoNavigationBar(middle: Text('钱包')),
+                      navigationBar: CupertinoNavigationBar(
+                          backgroundColor:
+                              WeChatColors.chatNavigationBackground,
+                          automaticBackgroundVisibility: false,
+                          enableBackgroundFilterBlur: false,
+                          middle: Text('钱包')),
                       child: WalletPage(api: api),
                     ),
                   ),
@@ -460,7 +527,7 @@ final class ProfilePage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => SettingsPage(onLogout: onLogout),
+                    builder: (_) => SettingsPage(api: api, onLogout: onLogout),
                   ),
                 ),
               ),
@@ -471,8 +538,9 @@ final class ProfilePage extends StatelessWidget {
 }
 
 final class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.onLogout});
+  const SettingsPage({super.key, required this.api, required this.onLogout});
 
+  final BusinessApiClient api;
   final Future<void> Function() onLogout;
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -499,7 +567,11 @@ final class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(middle: Text('设置')),
+        navigationBar: CupertinoNavigationBar(
+            backgroundColor: WeChatColors.chatNavigationBackground,
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text('设置')),
         child: SafeArea(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -510,14 +582,7 @@ final class SettingsPage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => const CupertinoPageScaffold(
-                      navigationBar: CupertinoNavigationBar(
-                        middle: Text('账号与隐私'),
-                      ),
-                      child: SafeArea(
-                        child: Center(child: Text('隐私保护设置')),
-                      ),
-                    ),
+                    builder: (_) => AccountPrivacyPage(api: api),
                   ),
                 ),
               ),
@@ -641,4 +706,62 @@ final class _SettingsTile extends StatelessWidget {
       ),
     );
   }
+}
+
+final class AccountPrivacyPage extends StatefulWidget {
+  const AccountPrivacyPage({super.key, required this.api});
+  final BusinessApiClient api;
+  @override
+  State<AccountPrivacyPage> createState() => _AccountPrivacyPageState();
+}
+
+final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
+  bool enabled = true;
+  bool loading = true;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      enabled = await widget.api.autoAllowGroupJoin();
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _update(bool value) async {
+    setState(() => enabled = value);
+    try {
+      await widget.api.setAutoAllowGroupJoin(value);
+    } catch (_) {
+      if (mounted) setState(() => enabled = !value);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => CupertinoPageScaffold(
+        navigationBar: const CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: Text('账号与隐私'),
+        ),
+        child: SafeArea(
+            child: loading
+                ? const Center(child: CupertinoActivityIndicator())
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                    children: [
+                      WeChatListTile(
+                        title: const Text('是否自动允许加入群聊'),
+                        subtitle: const Text('开启后，好友创建群聊时将自动加入'),
+                        trailing:
+                            CupertinoSwitch(value: enabled, onChanged: _update),
+                      )
+                    ],
+                  )),
+      );
 }

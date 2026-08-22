@@ -239,6 +239,7 @@ final class AuthTextField extends StatelessWidget {
     this.textInputAction,
     this.autofillHints,
     this.onChanged,
+    this.trailing,
   });
 
   final String label;
@@ -250,6 +251,7 @@ final class AuthTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final Iterable<String>? autofillHints;
   final ValueChanged<String>? onChanged;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -283,6 +285,7 @@ final class AuthTextField extends StatelessWidget {
               textInputAction: textInputAction,
               autofillHints: autofillHints,
               onChanged: onChanged,
+              suffix: trailing,
               placeholder: placeholder,
               placeholderStyle: TextStyle(color: secondary, fontSize: 16),
               padding: const EdgeInsets.symmetric(horizontal: 12),

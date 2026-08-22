@@ -1,10 +1,11 @@
 import 'package:matrix/matrix.dart';
-import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import '../auth/login_controller.dart';
 import 'direct_chat_controller.dart';
 import 'group_chat_controller.dart';
 import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
+import 'group_invitation_auto_join.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -74,6 +75,25 @@ final class MatrixSdkE2eeClient
   @override
   Future<void> sync() async {
     await client.sync();
+    await _autoJoinInvitedGroups();
+  }
+
+  Future<void> _autoJoinInvitedGroups() async {
+    final invitedRoomIds = client.rooms
+        .where((room) =>
+            room.membership == Membership.invite && !room.isDirectChat)
+        .map((room) => room.id)
+        .toList(growable: false);
+    if (invitedRoomIds.isEmpty) return;
+    final result = await autoJoinInvitedRoomIds(
+      invitedRoomIds: invitedRoomIds,
+      joinRoom: client.joinRoom,
+    );
+    debugPrint(
+      '[GroupSync] invitations=${invitedRoomIds.length} '
+      'joined=${result.joinedRoomIds.length} failures=${result.failures.length}',
+    );
+    if (result.joinedRoomIds.isNotEmpty) await client.oneShotSync();
   }
 
   @override

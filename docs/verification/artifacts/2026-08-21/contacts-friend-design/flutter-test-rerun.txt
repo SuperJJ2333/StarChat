@@ -1,0 +1,388 @@
+Resolving dependencies...
+Downloading packages...
+  archive 4.0.9 (4.1.0 available)
+  cli_util 0.4.2 (0.5.2 available)
+  code_assets 1.2.1 (2.0.0 available)
+  dbus 0.7.14 (0.7.15 available)
+  flutter_cache_manager 3.4.1 (3.4.2 available)
+  flutter_lints 5.0.0 (6.0.0 available)
+  flutter_local_notifications 19.4.2 (22.3.0 available)
+  flutter_local_notifications_linux 6.0.0 (8.0.1 available)
+  flutter_local_notifications_platform_interface 9.1.0 (12.2.0 available)
+  flutter_local_notifications_windows 1.0.3 (3.1.1 available)
+  flutter_secure_storage 9.2.4 (11.0.0 available)
+  flutter_secure_storage_linux 1.2.3 (3.0.2 available)
+  flutter_secure_storage_macos 3.1.3 (4.0.0 available)
+  flutter_secure_storage_platform_interface 1.1.2 (2.0.3 available)
+  flutter_secure_storage_web 1.2.1 (2.1.1 available)
+  flutter_secure_storage_windows 3.1.2 (4.2.2 available)
+  flutter_svg 2.2.0 (2.3.0 available)
+  flutter_webrtc 0.12.11 (1.6.0 available)
+  hooks 2.0.2 (2.2.0 available)
+  image 4.8.0 (4.9.2 available)
+  image_cropper 9.1.0 (12.2.1 available)
+  image_cropper_for_web 6.1.0 (7.0.0 available)
+  image_cropper_platform_interface 7.2.0 (8.0.0 available)
+  image_picker 1.1.2 (1.2.3 available)
+  intl 0.20.2 (0.20.3 available)
+  js 0.6.7 (0.7.2 available)
+  lints 5.1.1 (6.1.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  matrix 0.34.0 (10.2.1 available)
+  meta 1.18.0 (1.19.0 available)
+  objective_c 9.5.0 (9.6.0 available)
+  olm 2.0.4 (3.1.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  record_use 0.6.0 (1.1.1 available)
+  shared_preferences 2.5.3 (2.5.5 available)
+  sqflite_common_ffi 2.3.6 (2.4.2+1 available)
+  sqlcipher_flutter_libs 0.6.8 (0.7.0+eol available)
+  sqlite3 2.9.4 (3.5.2 available)
+  synchronized 3.4.1+1 (3.4.1+2 available)
+  test_api 0.7.11 (0.7.13 available)
+  timezone 0.10.1 (0.11.1 available)
+  vector_math 2.2.0 (2.4.2 available)
+  vm_service 15.2.0 (15.3.0 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies!
+46 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart
+00:00 +0: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: restore rotates and atomically replaces the stored token pair
+00:00 +1: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: network failure preserves tokens and reports offline
+00:00 +2: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: authoritative refresh rejection clears the business session
+00:00 +3: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: logout revokes the refresh token before local cleanup
+00:00 +4: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: authenticated request refreshes once and replays with new access token
+00:00 +5: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: typed dual-domain API stores Business tokens then binds Matrix identity
+00:00 +6: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: registration retry reuses the original idempotency key after a lost response
+00:00 +7: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/business_api_session_test.dart: verification retries reuse a key only for an identical credential
+00:00 +8: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/local_notification_scheduler_test.dart: notification ids are stable and reminder copy is generic
+00:00 +9: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: no persisted domains becomes unauthenticated
+00:00 +10: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: both restored domains become authenticated
+00:00 +11: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: temporary network failure preserves an offline authenticated session
+00:00 +12: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: invalid refresh token clears the matrix domain and returns to login
+00:00 +13: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: Matrix unknown token clears Business and returns to login
+00:00 +14: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: mismatched domain identities fail closed without deleting data
+00:00 +15: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: missing migrated Business MXID cannot authenticate a Matrix session
+00:00 +16: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart: local storage failure becomes fatal error
+00:00 +17: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_store_test.dart: stores the business token pair as one versioned record
+00:00 +18: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_store_test.dart: migrates a complete legacy token pair exactly once
+00:00 +19: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_store_test.dart: rejects and clears an incomplete legacy token pair
+00:00 +20: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/core/session_store_test.dart: business logout preserves the stable matrix database key
+00:01 +21: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +22: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +23: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +24: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +25: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +26: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +27: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +28: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +29: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +30: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +31: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +32: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +33: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +34: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +36: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +37: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: login registration and verification share the immersive background
+00:01 +38: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:01 +39: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:01 +40: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:01 +41: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +42: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +43: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +44: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +45: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +46: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +47: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +48: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +49: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +50: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +51: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +52: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +53: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +54: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +55: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:02 +56: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:02 +57: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: dark login title uses the dark primary text token
+00:02 +58: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts index follows the list surface during pull down
+00:02 +59: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts index follows the list surface during pull down
+00:02 +60: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts index follows the list surface during pull down
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:02 +61: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration keeps email sending as the single highlighted action
+00:02 +62: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration keeps email sending as the single highlighted action
+00:02 +63: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend profile and settings strictly follow Figma order
+00:02 +64: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend profile and settings strictly follow Figma order
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:02 +65: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:02 +66: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:02 +67: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:03 +67: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend profile covers the root tab bar like the Figma detail page
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +68: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:03 +69: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:03 +70: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +71: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend moments shrink without overflow below 393px baseline
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +72: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration contains all required fields and validates before sending
+00:03 +72: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: connected call shows encrypted controls and toggled state
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +73: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration contains all required fields and validates before sending
+00:03 +74: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: profile message action navigates once while back pops profile
+00:03 +74: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: connected video call exposes camera switch with a real icon
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +75: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: profile message action navigates once while back pops profile
+00:03 +76: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: profile message action navigates once while back pops profile
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:03 +77: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration shows mismatch feedback and gates submit
+00:03 +78: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration starts a sixty second resend cooldown after sending
+00:03 +79: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration starts a sixty second resend cooldown after sending
+00:03 +80: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:03 +81: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:03 +82: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:03 +83: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:03 +84: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:03 +85: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +86: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +87: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +88: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +89: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +90: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +91: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +92: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +93: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +94: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +95: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +96: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +97: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +98: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +99: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart: direct chat red packet sheet creates and shares to the friend
+00:04 +100: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+00:04 +101: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+00:04 +102: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+00:04 +103: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+00:04 +104: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+00:04 +105: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart: direct chat info exposes shared rows and omits group-only rows
+[AvatarFirstPaint] source=unspecified phase=initial metadata=true resolved=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified phase=resolved metadata=true resolved=false
+00:05 +106: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group service rejects duplicates and waits for the encrypted room
+00:05 +107: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group service rejects fewer than two invited friends
+00:05 +108: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation requires two friends plus the current member
+00:05 +109: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group name is limited to twenty unicode characters
+00:05 +110: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +111: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +112: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +113: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +114: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +115: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+00:05 +116: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:05 +117: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart: group creation page selects contacts and returns the room id
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:05 +118: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: group info folds members and keeps add as the final grid item
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +119: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_call_security_test.dart: incoming direct call accepts exact two-party membership without local m.direct metadata
+00:06 +120: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: member picker excludes existing members and invites selection
+00:06 +121: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: member picker excludes existing members and invites selection
+00:06 +122: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: member picker excludes existing members and invites selection
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +123: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: history search filters locally decrypted entries
+00:06 +124: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: history search filters locally decrypted entries
+00:06 +125: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: history search filters locally decrypted entries
+00:06 +126: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: history search filters locally decrypted entries
+00:06 +127: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: mute exposes only the approved nested settings when enabled
+00:06 +128: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart: mute exposes only the approved nested settings when enabled
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +129: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart: open creates one encrypted self-room and persists only its room id
+00:06 +130: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart: open reuses stored room and merges decrypted events
+00:06 +131: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart: open fails closed when the stored room is not encrypted
+00:06 +132: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart: vault sends namespaced events through encrypted backend transport
+00:06 +133: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart: session decrypts custom emoji bytes only on the device
+00:07 +134: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: recall accepts 1:59 and sends exactly one Matrix redaction
+00:07 +135: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: recall rejects 2:01 and another sender
+00:07 +136: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: reply emits a Matrix reply relation
+00:07 +137: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: reply preserves explicit mention ids
+00:07 +138: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: mentions use m.mentions user_ids without changing visible text
+00:07 +139: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: forward delegates a decrypt-and-reencrypt copy to target room
+00:07 +140: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: mention draft drops an id after its visible marker is edited away
+00:07 +141: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: avatar gestures fall back to Matrix member identity for non-friends
+00:07 +142: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart: server clock reads authoritative HTTP Date from the homeserver
+00:07 +143: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: schedule syncs encrypted definition and creates a generic local alert
+00:07 +144: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: incoming reminders are idempotent and overdue sync is surfaced once
+00:07 +145: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: cancel syncs state and removes the local notification
+00:07 +146: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: reminder JSON round-trips without message plaintext
+00:07 +147: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: sync coordinator continuously applies remote reminder changes
+00:07 +148: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart: sync bootstrap retries after an offline initialization failure
+00:07 +149: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mute_exception_policy_test.dart: muted ordinary messages are suppressed
+00:07 +150: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mute_exception_policy_test.dart: enabled exception types and followed senders still notify
+00:07 +151: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/nudge_service_test.dart: one avatar double tap sends one encrypted nudge snapshot
+00:07 +152: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/nudge_service_test.dart: custom nudge suffix round-trips through encrypted preference backend
+00:07 +153: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/room_timeline_controller_test.dart: controller owns delivery state, read marker and adapter disposal
+00:07 +154: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/room_timeline_controller_test.dart: time separators appear at the first message and after five minutes
+00:07 +155: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/room_timeline_controller_test.dart: message copy keeps attachment mime type for GIF action policy
+00:07 +156: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/voice_recording_controller_test.dart: slide above cancellation threshold arms cancellation
+00:07 +157: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/voice_recording_controller_test.dart: valid recording enters preview before sending
+00:07 +158: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/voice_recording_controller_test.dart: recordings shorter than one second stop and delete the recorder
+00:08 +159: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +160: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +161: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +162: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +163: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +164: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +165: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/moments/moments_flow_test.dart: moment image grid supports 1 4 and 9 images
+00:08 +166: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/profile/profile_controller_test.dart: me page strictly exposes Figma identity and five menu rows
+00:08 +167: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/profile/profile_controller_test.dart: me page strictly exposes Figma identity and five menu rows
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:08 +168: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/session_gate_test.dart: loading state never flashes the login form
+00:08 +169: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_composer_bar_test.dart: composer keeps voice input emoji trailing DOM order
+00:09 +170: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_composer_bar_test.dart: composer keeps voice input emoji trailing DOM order
+00:09 +171: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_composer_bar_test.dart: composer keeps voice input emoji trailing DOM order
+00:09 +172: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_composer_bar_test.dart: composer keeps voice input emoji trailing DOM order
+00:09 +172: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/profile/profile_controller_test.dart: profile avatar opens a dedicated preview and upload flow
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:09 +173: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_composer_bar_test.dart: composer keeps voice input emoji trailing DOM order
+00:09 +174: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart: emoji panel exposes recent all and private custom tabs
+00:09 +175: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart: emoji panel exposes recent all and private custom tabs
+00:09 +176: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart: emoji panel exposes recent all and private custom tabs
+00:09 +177: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart: emoji panel exposes recent all and private custom tabs
+00:09 +178: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart: emoji panel exposes recent all and private custom tabs
+00:09 +179: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_more_panel_test.dart: more panel uses a four-column grid with six real icons
+00:09 +180: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/chat_more_panel_test.dart: more panel uses a four-column grid with six real icons
+00:09 +181: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/conversation_action_sheet_test.dart: conversation action sheet exposes all WeChat actions
+00:09 +182: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/conversation_action_sheet_test.dart: conversation action sheet exposes all WeChat actions
+00:10 +183: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/conversation_action_sheet_test.dart: conversation action sheet exposes all WeChat actions
+00:10 +184: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/group_avatar_mosaic_test.dart: mosaic cells fill each row without leaving horizontal gaps
+00:10 +185: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/group_avatar_mosaic_test.dart: mosaic cells fill each row without leaving horizontal gaps
+00:10 +186: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/group_avatar_mosaic_test.dart: mosaic cells fill each row without leaving horizontal gaps
+00:10 +187: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/group_avatar_mosaic_test.dart: two-member mosaic fills its avatar bounds edge to edge
+00:10 +188: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_policy_test.dart: text message never exposes add-to-emoji
+00:10 +189: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_policy_test.dart: only image and GIF messages expose add-to-emoji
+00:10 +190: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_policy_test.dart: recall uses the authoritative two-minute server-time boundary
+00:10 +191: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_policy_test.dart: financial and system events expose only safe local operations
+00:10 +192: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_sheet_test.dart: sheet renders exactly the policy-provided actions
+00:10 +193: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_sheet_test.dart: sheet renders exactly the policy-provided actions
+00:10 +194: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_sheet_test.dart: sheet renders exactly the policy-provided actions
+00:11 +195: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/message_action_sheet_test.dart: multi-select bar exposes count, forward, delete and cancel
+00:11 +196: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/messaging_surfaces_test.dart: Figma root list surfaces use exact semantic light colors
+00:11 +197: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/messaging_surfaces_test.dart: Figma root list surfaces use exact semantic light colors
+00:11 +198: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/messaging_surfaces_test.dart: Figma root list surfaces use exact semantic light colors
+00:11 +199: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/messaging_surfaces_test.dart: Figma root list surfaces use exact semantic light colors
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:11 +200: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +201: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +202: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +203: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +204: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +205: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +206: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +207: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:11 +208: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:12 +209: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/theme_controller_test.dart: appearance sheet exposes and selects all three modes
+00:12 +210: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: outgoing message uses WeChat green bubble
+00:12 +211: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: outgoing message uses WeChat green bubble
+00:12 +212: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +212: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: message row exposes a 40px tappable avatar
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:12 +213: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +213: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: message bubble exposes long press and avatar gestures
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:12 +214: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +215: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +216: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +217: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +218: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_theme_test.dart: loading primary button cannot be pressed
+00:12 +219: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +220: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +220: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: user avatar falls back to a stable initial
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:12 +221: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +222: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +223: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +224: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +225: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +225: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_components_test.dart: group mosaic keeps a default avatar tile for members without a remote image
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:12 +226: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +227: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders product identity
+00:12 +228: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/widget_test.dart: renders login form
+00:12 +229: All tests passed!

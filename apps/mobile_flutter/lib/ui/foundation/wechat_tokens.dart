@@ -4,6 +4,10 @@ abstract final class WeChatColors {
   static const brandPrimary = Color(0xFF07C160);
   static const brandPressed = Color(0xFF06AD56);
   static const lightPageBackground = Color(0xFFEDEDED);
+  // Fixed product-spec colors. Do not substitute theme-dependent surfaces.
+  static const chatNavigationBackground = Color(0xFFF7F7F7);
+  static const chatPageBackground = Color(0xFFEDEDED);
+  static const tabRootPageBackground = Color(0xFFEDEDED);
   static const darkPageBackground = Color(0xFF111111);
   static const lightSurface = Color(0xFFF7F7F7);
   static const darkSurface = Color(0xFF191919);

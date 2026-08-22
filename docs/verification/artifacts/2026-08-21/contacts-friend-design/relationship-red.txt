@@ -1,0 +1,19 @@
+.......F                                                                 [100%]
+================================== FAILURES ===================================
+____________ test_search_returns_authoritative_relationship_state _____________
+
+ctx = (<fastapi.applications.FastAPI object at 0x000002A13EFDF7A0>, Settings(app_name='六合通 Business API', environment='test'...ar_storage_root='/data/private-media', avatar_url_signing_secret=None, avatar_public_base_url='http://localhost:8082'))
+
+    @pytest.mark.asyncio
+    async def test_search_returns_authoritative_relationship_state(ctx):
+        app, settings = ctx
+        async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+            initial = await client.get('/api/v1/users/search?q=bob', headers=bearer(settings, 'u1'))
+>           assert initial.json()['items'][0]['relationship_state'] == 'NONE'
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'relationship_state'
+
+tests\business_api\friendship\test_friendship_api.py:151: KeyError
+=========================== short test summary info ===========================
+FAILED tests/business_api/friendship/test_friendship_api.py::test_search_returns_authoritative_relationship_state
+1 failed, 7 passed in 18.65s

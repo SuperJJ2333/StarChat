@@ -114,15 +114,10 @@ final class GroupChatController extends ChangeNotifier {
   Future<String?> create(String requestedName) async {
     if (!canCreate) return null;
     final invitees = state.selectedMatrixUserIds.toList(growable: false);
-    final selectedNames = state.contacts
-        .where((contact) => invitees.contains(contact.matrixUserId))
-        .map((contact) => contact.displayName);
-    final fallbackName = [
-      currentUserDisplayName.trim().isEmpty ? '我' : currentUserDisplayName,
-      ...selectedNames,
-    ].take(3).join('、');
-    final rawName =
-        requestedName.trim().isEmpty ? fallbackName : requestedName.trim();
+    // An unnamed Matrix room is rendered as “群聊(人数)”. Do not store a
+    // participant-name fallback, otherwise it is incorrectly treated as a
+    // custom group name in every navigation entry point.
+    final rawName = requestedName.trim();
     final name = rawName.characters.take(20).toString();
     _set(GroupChatState(
       status: GroupChatStatus.creating,

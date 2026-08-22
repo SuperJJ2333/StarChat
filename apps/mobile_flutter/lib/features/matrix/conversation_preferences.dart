@@ -14,6 +14,9 @@ final class ConversationPreference {
     this.followedMemberIds = const [],
     this.memberOrderIds = const [],
     this.pinnedAt,
+    this.manualUnread = false,
+    this.hidden = false,
+    this.hiddenAt,
   });
 
   factory ConversationPreference.fromContent(Map<String, Object?> content) {
@@ -35,6 +38,9 @@ final class ConversationPreference {
               .toList()
           : const [],
       pinnedAt: DateTime.tryParse(content['pinned_at']?.toString() ?? ''),
+      manualUnread: content['manual_unread'] == true,
+      hidden: content['hidden'] == true,
+      hiddenAt: DateTime.tryParse(content['hidden_at']?.toString() ?? ''),
     );
   }
 
@@ -48,6 +54,9 @@ final class ConversationPreference {
   final List<String> followedMemberIds;
   final List<String> memberOrderIds;
   final DateTime? pinnedAt;
+  final bool manualUnread;
+  final bool hidden;
+  final DateTime? hiddenAt;
 
   Map<String, Object?> toContent() => {
         'muted': muted,
@@ -60,6 +69,9 @@ final class ConversationPreference {
         'followed_member_ids': followedMemberIds.take(4).toList(),
         'member_order_ids': memberOrderIds,
         if (pinnedAt != null) 'pinned_at': pinnedAt!.toUtc().toIso8601String(),
+        'manual_unread': manualUnread,
+        'hidden': hidden,
+        if (hiddenAt != null) 'hidden_at': hiddenAt!.toUtc().toIso8601String(),
       };
 
   ConversationPreference copyWith({
@@ -74,6 +86,10 @@ final class ConversationPreference {
     List<String>? memberOrderIds,
     DateTime? pinnedAt,
     bool clearPinnedAt = false,
+    bool? manualUnread,
+    bool? hidden,
+    DateTime? hiddenAt,
+    bool clearHiddenAt = false,
   }) =>
       ConversationPreference(
         muted: muted ?? this.muted,
@@ -87,8 +103,41 @@ final class ConversationPreference {
             (followedMemberIds ?? this.followedMemberIds).take(4).toList(),
         memberOrderIds: memberOrderIds ?? this.memberOrderIds,
         pinnedAt: clearPinnedAt ? null : (pinnedAt ?? this.pinnedAt),
+        manualUnread: manualUnread ?? this.manualUnread,
+        hidden: hidden ?? this.hidden,
+        hiddenAt: clearHiddenAt ? null : (hiddenAt ?? this.hiddenAt),
       );
 }
+
+ConversationPreference markUnread(ConversationPreference preference) =>
+    preference.copyWith(manualUnread: true);
+
+ConversationPreference clearUnreadOnOpen(ConversationPreference preference) =>
+    preference.copyWith(manualUnread: false);
+
+ConversationPreference hideConversation(
+  ConversationPreference preference,
+  DateTime hiddenAt,
+) =>
+    preference.copyWith(hidden: true, hiddenAt: hiddenAt);
+
+bool shouldRestoreHidden(
+  ConversationPreference preference, {
+  required DateTime eventAt,
+  required bool isIncoming,
+}) =>
+    preference.hidden &&
+    isIncoming &&
+    (preference.hiddenAt == null || eventAt.isAfter(preference.hiddenAt!));
+
+ConversationPreference restoreForIncomingEvent(
+  ConversationPreference preference, {
+  required DateTime eventAt,
+  required bool isIncoming,
+}) =>
+    shouldRestoreHidden(preference, eventAt: eventAt, isIncoming: isIncoming)
+        ? preference.copyWith(hidden: false, clearHiddenAt: true)
+        : preference;
 
 List<String> reconcileMemberOrder(
   Iterable<String> previous,
