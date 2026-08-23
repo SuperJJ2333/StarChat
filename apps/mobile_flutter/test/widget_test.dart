@@ -18,10 +18,11 @@ void main() {
     await tester.pumpWidget(
       LiuhetongApp(
         themeController: ThemeController(store: _MemoryThemeStore()),
-        home: const CupertinoPageScaffold(child: Center(child: Text('畅聊'))),
+        home: const CupertinoPageScaffold(
+            child: Center(child: Text('畅聊 ChatFlow'))),
       ),
     );
-    expect(find.text('畅聊'), findsOneWidget);
+    expect(find.text('畅聊 ChatFlow'), findsOneWidget);
     expect(tester.widget<CupertinoApp>(find.byType(CupertinoApp)).locale,
         const Locale('zh', 'CN'));
   });

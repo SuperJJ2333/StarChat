@@ -40,7 +40,7 @@
 
         const packet = document.createElement("app-red-packet-card");
         root.append(packet);
-        if (packet.querySelector(".c-red-packet__footer")?.textContent.trim() !== "畅聊彩币红包") {
+        if (packet.querySelector(".c-red-packet__footer")?.textContent.trim() !== "畅聊点钻红包") {
           throw new Error("red packet footer brand is incorrect");
         }
 

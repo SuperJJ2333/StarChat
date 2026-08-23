@@ -32,7 +32,7 @@ function foundation(definition) {
       content.append(row);
     }
     content.append(element("h2", "c-foundation-section__title", "字体与间距"));
-    for (const [name, sample] of [["Display", "1288.50 彩币"], ["Title 1", "畅聊朋友圈"], ["Body", "端到端加密消息正文"], ["Caption", "今天 09:41"]]) content.append(element("p", `c-type-sample c-type-sample--${name.toLowerCase().replace(" ", "-")}`, sample));
+    for (const [name, sample] of [["Display", "1288.50 点钻"], ["Title 1", "畅聊朋友圈"], ["Body", "端到端加密消息正文"], ["Caption", "今天 09:41"]]) content.append(element("p", `c-type-sample c-type-sample--${name.toLowerCase().replace(" ", "-")}`, sample));
   } else if (definition.page === "components") {
     for (const contract of componentContracts) {
       const group = element("section", "c-component-sample");

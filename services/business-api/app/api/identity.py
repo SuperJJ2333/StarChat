@@ -240,7 +240,7 @@ def create_identity_router(
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>六合通邮箱验证</title>
+<title>畅聊 ChatFlow 邮箱验证</title>
 <main><h1>正在验证邮箱…</h1><p id="status">请稍候</p></main>
 <script>
 (async () => {
@@ -253,7 +253,7 @@ def create_identity_router(
     body: JSON.stringify({token}),
   });
   status.textContent = response.ok
-    ? '邮箱验证成功，请返回六合通登录'
+    ? '邮箱验证成功，请返回畅聊 ChatFlow 登录'
     : '验证链接无效或已过期';
 })();
 </script>

@@ -21,21 +21,21 @@ function historyRows(asset) {
 
 function caibi(definition) {
   const root = pageRoot(definition);
-  root.append(navigation(definition.page === "home" ? "彩币" : definition.page === "history" ? "彩币记录" : definition.page === "transaction" ? "交易详情" : "彩币转账", { leading: definition.page === "home" ? undefined : "返回" }));
+  root.append(navigation(definition.page === "home" ? "点钻" : definition.page === "history" ? "点钻记录" : definition.page === "transaction" ? "交易详情" : "点钻转账", { leading: definition.page === "home" ? undefined : "返回" }));
   const content = element("div", "p-finance__content");
   if (definition.page === "home") {
-    content.append(component("app-amount-summary", { label: "彩币余额", amount: fixtures.finance.caibiBalance, asset: "彩币", hint: "彩币使用两位小数，与 USDT 严格隔离" }));
+    content.append(component("app-amount-summary", { label: "点钻余额", amount: fixtures.finance.caibiBalance, asset: "点钻", hint: "点钻使用两位小数，与 USDT 严格隔离" }));
     content.append(component("app-list-tile", { title: "转账", subtitle: "转出方承担 0.5% 手续费", leading: "send" }), component("app-list-tile", { title: "交易记录", leading: "document" }));
   } else if (definition.page === "history") content.append(...historyRows("CAIBI"));
   else if (definition.page === "transaction") {
-    content.append(component("app-status-chip", { status: "success", label: "交易成功" }), component("app-amount-summary", { label: "交易金额", amount: "88.00", asset: "彩币", hint: "原因码：USER_TRANSFER" }));
+    content.append(component("app-status-chip", { status: "success", label: "交易成功" }), component("app-amount-summary", { label: "交易金额", amount: "88.00", asset: "点钻", hint: "原因码：USER_TRANSFER" }));
   } else {
     content.append(field("收款用户", definition.state === "recipient-invalid" ? "unknown-user" : "周然", "输入畅聊号"), field("转账金额", definition.state === "amount-invalid" ? "88.123" : fixtures.finance.caibiTransferAmount, "两位小数"));
-    content.append(element("section", "c-fee-summary", `金额 ${fixtures.finance.caibiTransferAmount} + 手续费 ${fixtures.finance.caibiFee} = 合计 88.44 彩币`));
+    content.append(element("section", "c-fee-summary", `金额 ${fixtures.finance.caibiTransferAmount} + 手续费 ${fixtures.finance.caibiFee} = 合计 88.44 点钻`));
     const errors = {
       "recipient-invalid": "未找到收款用户",
       "amount-invalid": "金额必须保留两位小数",
-      insufficient: "彩币余额不足",
+      insufficient: "点钻余额不足",
       duplicate: "请勿重复提交同一笔转账",
       "unknown-result": "结果暂时未知，请查询原交易"
     };
@@ -48,7 +48,7 @@ function caibi(definition) {
 
 function redpacket(definition) {
   const root = pageRoot(definition);
-  root.append(navigation(definition.page === "detail" ? "红包详情" : "发彩币红包", { leading: "返回" }));
+  root.append(navigation(definition.page === "detail" ? "红包详情" : "发点钻红包", { leading: "返回" }));
   const content = element("div", "p-finance__content");
   if (definition.page === "detail") {
     const visualState = ["available", "claimed", "exhausted", "expired", "withdrawn"].includes(definition.state) ? definition.state : "available";
@@ -66,10 +66,10 @@ function redpacket(definition) {
     const typeLabels = { "group-equal": "群聊等额", "group-random": "群聊拼手气", "direct-equal": "私聊等额", "direct-random": "私聊拼手气" };
     content.append(element("div", "c-segmented-control", typeLabels[definition.state] ?? "群聊拼手气"));
     content.append(field("总金额", "88.00", "最多 10000.00"), field("红包份数", "10", "最多 100 份"), field("祝福语", "周末愉快", "恭喜发财，大吉大利"));
-    if (definition.state.includes("invalid")) content.append(component("app-toast", { kind: "error", message: definition.state === "count-invalid" ? "红包份数必须为 1–100" : definition.state === "minimum-invalid" ? "每份至少 0.01 彩币" : "红包金额格式错误" }));
+    if (definition.state.includes("invalid")) content.append(component("app-toast", { kind: "error", message: definition.state === "count-invalid" ? "红包份数必须为 1–100" : definition.state === "minimum-invalid" ? "每份至少 0.01 点钻" : "红包金额格式错误" }));
     content.append(component("app-action-button", { icon: "gift", label: definition.state === "success" ? "红包已创建" : "塞钱进红包", loading: definition.state === "submitting", action: "redpacket:create" }));
-    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认创建红包", message: "88.00 彩币将转入红包托管，24 小时未领取部分自动退回。", cancel: "取消", confirm: "确认" }));
-    if (definition.state === "failed") root.append(component("app-toast", { kind: "error", message: "红包创建失败，彩币余额未改变" }));
+    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认创建红包", message: "88.00 点钻将转入红包托管，24 小时未领取部分自动退回。", cancel: "取消", confirm: "确认" }));
+    if (definition.state === "failed") root.append(component("app-toast", { kind: "error", message: "红包创建失败，点钻余额未改变" }));
   }
   root.append(content);
   return root;
@@ -81,7 +81,7 @@ function wallet(definition) {
   root.append(navigation(titles[definition.page], { leading: definition.page === "home" ? undefined : "返回" }));
   const content = element("div", "p-finance__content");
   if (definition.page === "home") {
-    content.append(component("app-amount-summary", { label: "USDT-TRC20 余额", amount: fixtures.finance.usdtBalance, asset: "USDT", hint: "六位小数 · 与彩币严格隔离" }));
+    content.append(component("app-amount-summary", { label: "USDT-TRC20 余额", amount: fixtures.finance.usdtBalance, asset: "USDT", hint: "六位小数 · 与点钻严格隔离" }));
     content.append(component("app-list-tile", { title: "充值", subtitle: "获取专属测试充值地址", leading: "wallet" }), component("app-list-tile", { title: "提现", subtitle: "提交后进入财务审核", leading: "send" }), component("app-list-tile", { title: "交易记录", leading: "document" }));
   } else if (definition.page === "history") {
     if (definition.state === "empty") content.append(component("app-empty-state", { title: "暂无交易记录", message: "充值和提现记录会显示在这里" }));

@@ -52,7 +52,7 @@ final class WeChatRedPacketCard extends StatelessWidget {
                 color: CupertinoColors.white.withValues(alpha: .9),
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: const Text('畅聊彩币红包',
+                child: const Text('畅聊点钻红包',
                     style: TextStyle(
                         color: WeChatColors.textSecondary, fontSize: 11)))
           ])));

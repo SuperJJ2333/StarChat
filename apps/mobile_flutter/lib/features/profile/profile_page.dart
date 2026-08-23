@@ -93,7 +93,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                   ),
                   _ProfileMenuTile(
                     icon: CupertinoIcons.money_dollar_circle,
-                    label: '彩币',
+                    label: '点钻',
                     onTap: widget.onCaibi,
                   ),
                   _ProfileMenuTile(

@@ -47,7 +47,7 @@ class SupportQueueService:
             role = session.scalar(select(UserRole.role_code).where(UserRole.user_id == user_id).order_by(UserRole.assigned_at.desc()))
         role = role or RoleCode.USER
         colors = {RoleCode.SUPPORT_AGENT: "#1677FF", RoleCode.FINANCE_SUPPORT: "#13A8A8", RoleCode.SUPPORT_SUPERVISOR: "#722ED1", RoleCode.SUPER_ADMIN: "#CF1322"}
-        return SupportIdentityView(user_id, "官方客服" if role != RoleCode.USER else "", colors.get(role, ""), f"CS-{user_id[:8].upper()}", role, "六合通官方支持人员" if role != RoleCode.USER else "")
+        return SupportIdentityView(user_id, "官方客服" if role != RoleCode.USER else "", colors.get(role, ""), f"CS-{user_id[:8].upper()}", role, "畅聊 ChatFlow 官方支持人员" if role != RoleCode.USER else "")
 
     def open_ticket(self, user_id: str, room_id: str, skill: str) -> SupportTicket:
         now = datetime.now(timezone.utc)

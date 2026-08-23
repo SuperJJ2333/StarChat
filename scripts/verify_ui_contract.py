@@ -30,6 +30,41 @@ def verify() -> list[str]:
     )
     assert int(result.stdout.strip()) == registry["figma"]["expectedScreenCount"]
 
+    brand = registry["brand"]
+    assert brand["internalAssetCode"] == "CAIBI"
+    assert brand["productDisplayName"] == "畅聊 ChatFlow"
+    assert brand["caibiDisplayName"] == "点钻"
+    assert brand["caibiRedPacketLabel"] == "畅聊点钻红包"
+    figma_brand = figma["brand"]
+    for key in (
+        "productDisplayName",
+        "compactProductName",
+        "accountLabel",
+        "caibiDisplayName",
+        "caibiRedPacketLabel",
+        "internalAssetCode",
+    ):
+        assert figma_brand[key] == brand[key], f"Figma brand mapping drift: {key}"
+    user_visible_sources = [
+        ROOT / "apps/mobile_flutter/lib",
+        ROOT / "design-demo/src",
+        ROOT / "services/business-worker/app/integrations/email_sender.py",
+        ROOT / "services/business-api/app/api/identity.py",
+        ROOT / "services/business-api/app/modules/support/service.py",
+        ROOT / "UI_DESIGN.md",
+    ]
+    user_visible_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for item in user_visible_sources
+        for path in ([item] if item.is_file() else item.rglob("*"))
+        if path.is_file() and path.suffix in {".dart", ".js", ".py", ".md"}
+    )
+    assert "彩币" not in user_visible_text, "User-visible asset naming drift: 彩币"
+    assert "畅聊彩币红包" not in user_visible_text, "User-visible red-packet naming drift"
+    assert "六合通" not in user_visible_text, "User-visible product naming drift: 六合通"
+    for required in (brand["productDisplayName"], brand["caibiDisplayName"], brand["caibiRedPacketLabel"]):
+        assert required in user_visible_text, f"User-visible brand text missing: {required}"
+
     figma_variables = figma["entities"]["variables"]
     for group, values in registry["tokenMappings"].items():
         for value in values:

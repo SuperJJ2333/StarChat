@@ -77,7 +77,7 @@ final class LiuhetongApp extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
         animation: themeController,
         builder: (context, _) => CupertinoApp(
-          title: '畅聊',
+          title: '畅聊 ChatFlow',
           locale: const Locale('zh', 'CN'),
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: const [Locale('zh', 'CN'), Locale('en')],

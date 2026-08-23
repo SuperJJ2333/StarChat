@@ -50,7 +50,7 @@ final class _RedPacketPageState extends State<RedPacketPage> {
   @override
   Widget build(BuildContext context) =>
       ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('彩币红包',
+        const Text('点钻红包',
             style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700)),
         const SizedBox(height: 18),
         CupertinoSlidingSegmentedControl<String>(

@@ -95,7 +95,7 @@ def test_sender_applies_timeout_auth_and_includes_code_and_link() -> None:
         module.SmtpConfig(
             host="smtp.example.test",
             port=587,
-            from_address="六合通 <noreply@example.test>",
+            from_address="畅聊 ChatFlow <noreply@example.test>",
             timeout_seconds=7.5,
             use_starttls=True,
             username="smtp-user",
@@ -119,7 +119,10 @@ def test_sender_applies_timeout_auth_and_includes_code_and_link() -> None:
     assert transport.started_tls is True
     assert transport.login_credentials == ("smtp-user", "smtp-secret")
     assert transport.message["To"] == "alice@example.test"
+    assert transport.message["Subject"] == "畅聊 ChatFlow 邮箱验证"
+    assert transport.message["From"] == "畅聊 ChatFlow <noreply@example.test>"
     body = transport.message.get_body(preferencelist=("plain",)).get_content()
+    assert "欢迎注册畅聊 ChatFlow。" in body
     assert "123456" in body
     assert "https://example.test/verify-email?token=opaque" in body
 

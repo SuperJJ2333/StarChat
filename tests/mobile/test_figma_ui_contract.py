@@ -22,12 +22,12 @@ def test_visible_flutter_brand_uses_changliao_and_internal_identifiers_remain():
     ios_info = read("apps/mobile_flutter/ios/Runner/Info.plist")
 
     assert "六合通" not in sources
-    assert "title: '畅聊'" in main
-    assert 'android:label="畅聊"' in android_manifest
-    assert "<string>畅聊</string>" in ios_info
+    assert "title: '畅聊 ChatFlow'" in main
+    assert 'android:label="畅聊 ChatFlow"' in android_manifest
+    assert "<string>畅聊 ChatFlow</string>" in ios_info
     assert "final class LiuhetongApp" in main
     assert "name: liuhetong_mobile" in pubspec
-    assert "description: 畅聊 Android/iOS Flutter client" in pubspec
+    assert "description: 畅聊 ChatFlow Android/iOS Flutter client" in pubspec
 
 
 def test_semantic_icon_registry_contains_figma_navigation_and_call_icons():
@@ -199,7 +199,7 @@ def test_profile_home_matches_figma_60_profile_information_architecture():
     assert "height: 126" in profile
     assert "width: 72" in profile
     assert "height: 72" in profile
-    for label in ("朋友圈", "彩币", "红包", "钱包", "设置"):
+    for label in ("朋友圈", "点钻", "红包", "钱包", "设置"):
         assert f"label: '{label}'" in profile
     assert "key: const Key('profile-identity-card')" in profile
     assert "onMoments" in profile

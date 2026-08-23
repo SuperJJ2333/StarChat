@@ -427,7 +427,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
                       backgroundColor: WeChatColors.chatNavigationBackground,
                       automaticBackgroundVisibility: false,
                       enableBackgroundFilterBlur: false,
-                      middle: Text('彩币')),
+                      middle: Text('点钻')),
                   child: CaibiPage(api: widget.api)))),
       onRedPacket: () => Navigator.push(
           context,
@@ -469,7 +469,7 @@ final class ProfilePage extends StatelessWidget {
               const SizedBox(height: 16),
               WeChatListTile(
                 leading: const Icon(CupertinoIcons.money_dollar_circle_fill),
-                title: const Text('彩币'),
+                title: const Text('点钻'),
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
@@ -479,7 +479,7 @@ final class ProfilePage extends StatelessWidget {
                               WeChatColors.chatNavigationBackground,
                           automaticBackgroundVisibility: false,
                           enableBackgroundFilterBlur: false,
-                          middle: Text('彩币')),
+                          middle: Text('点钻')),
                       child: CaibiPage(api: api),
                     ),
                   ),

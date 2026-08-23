@@ -57,7 +57,7 @@ final class _RedPacketDetailSheetState extends State<RedPacketDetailSheet> {
                           const SizedBox(height: 16),
                           if (detail != null)
                             Text(
-                                '已领取 ${detail['claimed_count']}/${detail['share_count']}，共 ${detail['total']} 彩币'),
+                                '已领取 ${detail['claimed_count']}/${detail['share_count']}，共 ${detail['total']} 点钻'),
                           if (controller.error != null) Text(controller.error!),
                           const Spacer(),
                           ModernActionButton(

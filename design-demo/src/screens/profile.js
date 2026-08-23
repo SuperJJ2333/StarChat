@@ -13,7 +13,7 @@ function profileHome(definition) {
   }));
   for (const [title, leading, action] of [
     ["朋友圈", "camera", "open:moments-timeline-default"],
-    ["彩币", "gift", "open:caibi-home-default"],
+    ["点钻", "gift", "open:caibi-home-default"],
     ["红包", "gift", "open:redpacket-create-group-equal"],
     ["钱包", "wallet", "open:wallet-home-default"],
     ["设置", "info", "open:profile-settings-default"]

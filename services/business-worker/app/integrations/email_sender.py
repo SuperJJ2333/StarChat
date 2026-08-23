@@ -71,7 +71,7 @@ class SmtpConfig:
         return cls(
             host=host,
             port=int(os.getenv("SMTP_PORT", "1025")),
-            from_address=os.getenv("SMTP_FROM", "畅聊 <noreply@localhost>"),
+            from_address=os.getenv("SMTP_FROM", "畅聊 ChatFlow <noreply@localhost>"),
             timeout_seconds=float(os.getenv("SMTP_TIMEOUT_SECONDS", "10")),
             use_starttls=security == "starttls",
             use_ssl=security == "ssl",
@@ -109,11 +109,11 @@ class SmtpEmailSender:
         link: str,
     ) -> None:
         message = EmailMessage()
-        message["Subject"] = "畅聊邮箱验证"
+        message["Subject"] = "畅聊 ChatFlow 邮箱验证"
         message["From"] = self._config.from_address
         message["To"] = recipient
         message.set_content(
-            "欢迎注册畅聊。\n\n"
+            "欢迎注册畅聊 ChatFlow。\n\n"
             f"验证码：{code}\n"
             "验证码将在 10 分钟后失效。\n\n"
             f"也可以点击验证链接：{link}\n"
@@ -122,11 +122,11 @@ class SmtpEmailSender:
 
     def send_password_reset(self, *, recipient: str, link: str) -> None:
         message = EmailMessage()
-        message["Subject"] = "畅聊密码重置"
+        message["Subject"] = "畅聊 ChatFlow 密码重置"
         message["From"] = self._config.from_address
         message["To"] = recipient
         message.set_content(
-            "我们收到了畅聊密码重置请求。\n\n"
+            "我们收到了畅聊 ChatFlow 密码重置请求。\n\n"
             "链接将在 1 小时后失效。\n\n"
             f"点击重置密码：{link}\n"
         )

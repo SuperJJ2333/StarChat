@@ -81,7 +81,7 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   ) async =>
       await room.sendEvent({
         'msgtype': changliaoRedPacketMessageType,
-        'body': '[畅聊彩币红包]',
+        'body': '[畅聊点钻红包]',
         'packet_id': packetId,
         'greeting': greeting,
       }) ??

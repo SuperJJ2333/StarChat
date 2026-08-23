@@ -101,7 +101,7 @@ final class _ChatRedPacketSheetState extends State<ChatRedPacketSheet> {
               enabled: !busy,
               keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
-              placeholder: '总金额（彩币）',
+              placeholder: '总金额（点钻）',
               padding: const EdgeInsets.all(16),
             ),
             if (widget.isGroup) ...[

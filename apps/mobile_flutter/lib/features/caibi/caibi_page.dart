@@ -32,7 +32,7 @@ final class _CaibiPageState extends State<CaibiPage> {
   @override
   Widget build(BuildContext context) =>
       ListView(padding: const EdgeInsets.all(20), children: [
-        const Text('彩币',
+        const Text('点钻',
             style: TextStyle(fontSize: 32, fontWeight: FontWeight.w700)),
         const SizedBox(height: 18),
         Container(
@@ -42,7 +42,7 @@ final class _CaibiPageState extends State<CaibiPage> {
                 borderRadius: BorderRadius.circular(20)),
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('彩币余额',
+              const Text('点钻余额',
                   style: TextStyle(color: CupertinoColors.secondaryLabel)),
               const SizedBox(height: 8),
               FutureBuilder<Map<String, dynamic>>(
@@ -50,7 +50,7 @@ final class _CaibiPageState extends State<CaibiPage> {
                   builder: (_, s) => Text(
                       s.hasError
                           ? '暂不可用'
-                          : '${s.data?['balance'] ?? '加载中…'} 彩币',
+                          : '${s.data?['balance'] ?? '加载中…'} 点钻',
                       style: const TextStyle(
                           fontSize: 28, fontWeight: FontWeight.w700)))
             ])),

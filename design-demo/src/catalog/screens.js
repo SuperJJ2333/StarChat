@@ -155,10 +155,10 @@ register("profile", "details", [["default", "个人资料 / 默认"], ["edit", "
 register("profile", "avatar", [["picker", "头像 / 相册选择"], ["permission-denied", "头像 / 权限拒绝"], ["crop", "头像 / 裁剪"], ["preview", "头像 / 预览"], ["uploading", "头像 / 上传中"], ["upload-failed", "头像 / 上传失败"], ["restore-confirm", "头像 / 恢复默认确认"], ["fallback", "头像 / 加载失败回退"]]);
 register("profile", "settings", [["default", "设置 / 默认"], ["privacy", "设置 / 账号与隐私"], ["logout-confirm", "设置 / 退出确认"], ["logout-loading", "设置 / 退出中"], ["logout-failed", "设置 / 退出失败"]]);
 
-register("caibi", "home", [["default", "彩币 / 默认"]]);
-register("caibi", "history", [["all", "彩币记录 / 全部"], ["credit", "彩币记录 / 上分"], ["debit", "彩币记录 / 下分"], ["transfer", "彩币记录 / 转账"], ["redpacket", "彩币记录 / 红包"]], { height: 980 });
-register("caibi", "transfer", [["default", "彩币转账 / 默认"], ["amount", "彩币转账 / 金额"], ["fee", "彩币转账 / 手续费"], ["confirm", "彩币转账 / 确认"], ["processing", "彩币转账 / 处理中"], ["success", "彩币转账 / 成功"], ["recipient-invalid", "彩币转账 / 收款人不存在"], ["amount-invalid", "彩币转账 / 金额错误"], ["insufficient", "彩币转账 / 余额不足"], ["duplicate", "彩币转账 / 重复提交"], ["unknown-result", "彩币转账 / 未知结果"]]);
-register("caibi", "transaction", [["detail", "彩币交易 / 详情"]]);
+register("caibi", "home", [["default", "点钻 / 默认"]]);
+register("caibi", "history", [["all", "点钻记录 / 全部"], ["credit", "点钻记录 / 上分"], ["debit", "点钻记录 / 下分"], ["transfer", "点钻记录 / 转账"], ["redpacket", "点钻记录 / 红包"]], { height: 980 });
+register("caibi", "transfer", [["default", "点钻转账 / 默认"], ["amount", "点钻转账 / 金额"], ["fee", "点钻转账 / 手续费"], ["confirm", "点钻转账 / 确认"], ["processing", "点钻转账 / 处理中"], ["success", "点钻转账 / 成功"], ["recipient-invalid", "点钻转账 / 收款人不存在"], ["amount-invalid", "点钻转账 / 金额错误"], ["insufficient", "点钻转账 / 余额不足"], ["duplicate", "点钻转账 / 重复提交"], ["unknown-result", "点钻转账 / 未知结果"]]);
+register("caibi", "transaction", [["detail", "点钻交易 / 详情"]]);
 
 register("redpacket", "create", [["group-equal", "红包 / 群聊等额"], ["group-random", "红包 / 群聊拼手气"], ["direct-equal", "红包 / 私聊等额"], ["direct-random", "红包 / 私聊拼手气"], ["fields", "红包 / 输入字段"], ["amount-invalid", "红包 / 金额错误"], ["count-invalid", "红包 / 份数错误"], ["minimum-invalid", "红包 / 最低金额错误"], ["confirm", "红包 / 创建确认"], ["submitting", "红包 / 创建中"], ["failed", "红包 / 创建失败"], ["success", "红包 / 创建成功"]]);
 register("redpacket", "detail", [["available", "红包详情 / 可领取"], ["claiming", "红包详情 / 领取中"], ["claimed", "红包详情 / 已领取"], ["exhausted", "红包详情 / 已领完"], ["expired", "红包详情 / 已过期"], ["withdrawn", "红包详情 / 已撤回"], ["duplicate", "红包详情 / 重复领取"], ["concurrent-exhausted", "红包详情 / 并发领完"], ["unknown-result", "红包详情 / 未知结果"], ["history", "红包详情 / 领取明细", 1040]]);

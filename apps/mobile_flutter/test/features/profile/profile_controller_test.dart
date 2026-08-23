@@ -155,7 +155,7 @@ void main() {
     expect(find.text('红包'), findsWidgets);
     expect(find.text('钱包'), findsWidgets);
     await tester.tap(find.text('朋友圈'));
-    await tester.tap(find.text('彩币'));
+    await tester.tap(find.text('点钻'));
     await tester.tap(find.text('红包'));
     await tester.tap(find.text('钱包'));
     expect(momentsOpened, isTrue);

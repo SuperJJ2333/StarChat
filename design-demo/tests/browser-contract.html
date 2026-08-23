@@ -88,7 +88,7 @@
           throw new Error("unknown withdrawal result lacks original-order lookup");
         }
         const packet = root.querySelector('[data-screen-id="redpacket-detail-available"]');
-        if (!packet?.textContent.includes("畅聊彩币红包")) {
+        if (!packet?.textContent.includes("畅聊点钻红包")) {
           throw new Error("red packet card lacks the approved brand footer");
         }
         const darkWallet = root.querySelector('[data-screen-id="wallet-home-default-dark"]');

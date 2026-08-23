@@ -22,7 +22,7 @@ export class AppRedPacketCard extends StrictElement {
       element("p", "c-red-packet__status", packetLabels[state] ?? packetLabels.available)
     );
     body.append(content);
-    root.append(body, element("footer", "c-red-packet__footer", "畅聊彩币红包"));
+    root.append(body, element("footer", "c-red-packet__footer", "畅聊点钻红包"));
     return root;
   }
 }
