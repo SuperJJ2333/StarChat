@@ -1,0 +1,9 @@
+BRANCH: phase3-group-member-live-sync
+BASELINE: C:\src\flutter\bin\flutter.bat test test/features/matrix/group_chat_info_test.dart
+BASELINE_RESULT: pre-change red test required replaceMembers (exit 1)
+MODIFIED: C:\src\flutter\bin\flutter.bat test test/features/matrix/group_chat_info_test.dart
+MODIFIED_RESULT: 11 tests passed (exit 0)
+ROLLBACK: pwsh -NoProfile -File ROLLBACK.sh
+ROLLBACK_RESULT: restored copy hash verified (exit 0)
+RESTORED_BEHAVIOR: source remains modified; rollback copy restored to baseline bytes.
+PATHS: MODIFIED_FILE, DIFF_FILE, VERIFICATION.txt, ROLLBACK.sh

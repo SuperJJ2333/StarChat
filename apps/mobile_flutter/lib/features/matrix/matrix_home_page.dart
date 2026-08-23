@@ -43,6 +43,7 @@ import 'direct_chat_info_page.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'group_chat_controller.dart';
 import 'chat_history_search.dart';
+import '../search/global_search_page.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
 import 'matrix_message_reminder_backend.dart';
@@ -435,12 +436,32 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('消息'),
-        trailing: CupertinoButton(
-          key: const Key('messages-more'),
-          padding: EdgeInsets.zero,
-          onPressed: _showMore,
-          child: const Icon(ChangliaoIcons.more, size: 22),
-        ),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          CupertinoButton(
+            key: const Key('messages-search'),
+            padding: EdgeInsets.zero,
+            onPressed: () => Navigator.push(
+                context,
+                CupertinoPageRoute(
+                    builder: (_) => GlobalSearchPage(
+                          api: widget.api,
+                          rooms: visibleRooms
+                              .map((room) => room.getLocalizedDisplayname())
+                              .toList(),
+                          messages: [
+                            for (final room in visibleRooms)
+                              room.lastEvent?.body ?? ''
+                          ],
+                        ))),
+            child: const Icon(CupertinoIcons.search, size: 22),
+          ),
+          CupertinoButton(
+            key: const Key('messages-more'),
+            padding: EdgeInsets.zero,
+            onPressed: _showMore,
+            child: const Icon(ChangliaoIcons.more, size: 22),
+          ),
+        ]),
       ),
       child: SafeArea(
         child: rooms.isEmpty && foldedRooms.isEmpty
@@ -1241,7 +1262,10 @@ class _RoomPageState extends State<RoomPage> {
     if (isGroup) {
       final infoController = GroupChatInfoController(
         MatrixGroupChatInfoGateway(widget.room),
-      );
+      )..bindMembershipChanges(
+          widget.room.client.onSync.stream,
+          roomId: widget.room.id,
+        );
       final contacts = await widget.api.listContacts();
       if (!mounted) return;
       final contactsById = {

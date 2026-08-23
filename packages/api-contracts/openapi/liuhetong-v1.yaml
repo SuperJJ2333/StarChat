@@ -927,6 +927,18 @@
             ],
             "title": "Nickname"
           },
+          "nudge_suffix": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nudge Suffix"
+          },
           "signature": {
             "anyOf": [
               {
@@ -968,6 +980,17 @@
             "title": "Nickname",
             "type": "string"
           },
+          "nudge_suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nudge Suffix"
+          },
           "profile_updated_at": {
             "format": "date-time",
             "title": "Profile Updated At",
@@ -993,6 +1016,7 @@
           "username",
           "nickname",
           "signature",
+          "nudge_suffix",
           "masked_email",
           "avatar_url",
           "avatar_fallback_seed",

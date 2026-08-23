@@ -381,6 +381,22 @@
         "source": "apps/mobile_flutter/lib/ui/components/wechat_date_picker.dart",
         "states": ["idle", "wheel-scrolling", "cancel", "confirm"],
         "tokens": ["surface", "textPrimary", "brandPrimary", "spacing", "radius"]
+      },
+      {
+        "id": "phase2-global-search",
+        "name": "Search / Global Search",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/search/global_search_page.dart",
+        "states": ["focused", "query", "grouped-results", "empty", "loading"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "spacing", "radius"]
+      },
+      {
+        "id": "phase3-group-member-live-sync",
+        "name": "Group Chat / Member Live Sync",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
+        "states": ["loading", "ready", "member-added", "member-removed", "error"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "danger", "spacing", "radius"]
       }
     ]
   }

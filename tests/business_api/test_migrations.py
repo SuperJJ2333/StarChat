@@ -36,8 +36,8 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
     assert "down_revision = '0020_friend_request_reuse'" in revision
 
 
-def test_group_auto_join_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0021_group_auto_join (head)"
+def test_profile_nudge_suffix_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0022_profile_nudge_suffix (head)"
 
 def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
     sql = _normalized_sql(_alembic("upgrade", "head", "--sql"))

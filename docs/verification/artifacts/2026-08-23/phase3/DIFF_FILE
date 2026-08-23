@@ -1,0 +1,77 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+index 5c9a363..7fe4f65 100644
+--- a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
++++ b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+@@ -1,5 +1,6 @@
+ import 'package:flutter/foundation.dart';
+ import 'package:matrix/matrix.dart';
++import 'dart:async';
+ 
+ import 'conversation_preferences.dart';
+ import 'avatar_url_resolver.dart';
+@@ -364,6 +365,25 @@ final class GroupChatInfoController extends ChangeNotifier {
+ 
+   final GroupChatInfoGateway gateway;
+   GroupChatInfoState state = const GroupChatInfoState();
++  StreamSubscription<SyncUpdate>? _membershipSubscription;
++
++  /// Binds Matrix room updates so membership changes refresh this controller
++  /// while the chat-info route stays open.
++  void bindMembershipChanges(Stream<SyncUpdate> updates,
++      {required String roomId}) {
++    _membershipSubscription?.cancel();
++    _membershipSubscription = updates
++        .where((update) => update.rooms?.join?.containsKey(roomId) == true)
++        .listen((_) {
++      if (state.status != GroupChatInfoStatus.loading) unawaited(load());
++    });
++  }
++
++  @override
++  void dispose() {
++    _membershipSubscription?.cancel();
++    super.dispose();
++  }
+ 
+   Future<void> load() async {
+     _set(GroupChatInfoState(
+@@ -440,8 +460,37 @@ final class GroupChatInfoController extends ChangeNotifier {
+       );
+ 
+   Future<void> removeMembers(List<String> ids) async {
+-    await gateway.removeMembers(ids);
+-    await load();
++    try {
++      await gateway.removeMembers(ids);
++      await load();
++    } catch (_) {
++      _set(GroupChatInfoState(
++        status: GroupChatInfoStatus.failed,
++        snapshot: state.snapshot,
++        message: '移除群成员失败，请检查权限和网络',
++      ));
++    }
++  }
++
++  /// Replaces the in-memory member snapshot after a Matrix membership event.
++  /// The page remains mounted, so the title and grid update immediately.
++  void replaceMembers(Iterable<GroupChatMember> members) {
++    final snapshot = state.snapshot;
++    if (snapshot == null) return;
++    final ordered = orderGroupMembers(
++      members: members,
++      ownerId: snapshot.ownerId,
++      adminIds: snapshot.adminIds.toSet(),
++    );
++    final ids = ordered.map((member) => member.matrixUserId).toSet();
++    _set(GroupChatInfoState(
++      status: GroupChatInfoStatus.ready,
++      snapshot: snapshot.copyWith(
++        members: ordered,
++        followedMemberIds:
++            snapshot.followedMemberIds.where(ids.contains).toList(),
++      ),
++    ));
+   }
+ 
+   Future<void> invite(String matrixUserId) async {

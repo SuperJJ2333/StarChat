@@ -233,11 +233,19 @@ void main() {
   testWidgets('history search filters locally decrypted entries',
       (tester) async {
     await tester.pumpWidget(
-      const CupertinoApp(
+      CupertinoApp(
         home: GroupChatHistorySearchPage(
           entries: [
-            GroupChatHistoryEntry(sender: 'Alice', text: '明天开会'),
-            GroupChatHistoryEntry(sender: 'Bob', text: '今天休息'),
+            GroupChatHistoryEntry(
+              sender: 'Alice',
+              text: '明天开会',
+              timestamp: DateTime(2026, 8, 23),
+            ),
+            GroupChatHistoryEntry(
+              sender: 'Bob',
+              text: '今天休息',
+              timestamp: DateTime(2026, 8, 22),
+            ),
           ],
         ),
       ),
@@ -303,5 +311,26 @@ void main() {
       ),
       ['@one:test', '@two:test', '@three:test'],
     );
+  });
+  test('replaces members in place and keeps owner admin ordering', () async {
+    final gateway = FakeGroupChatInfoGateway();
+    final controller = GroupChatInfoController(gateway);
+    await controller.load();
+    gateway.snapshot = gateway.snapshot.copyWith(
+      ownerId: '@owner:test',
+      adminIds: const ['@admin:test'],
+    );
+    await controller.load();
+    controller.replaceMembers([
+      const GroupChatMember(matrixUserId: '@zoe:test', displayName: 'Zoe'),
+      const GroupChatMember(matrixUserId: '@owner:test', displayName: 'Owner'),
+      const GroupChatMember(matrixUserId: '@admin:test', displayName: 'Admin'),
+    ]);
+    expect(controller.state.title, '聊天信息(3)');
+    expect(controller.state.snapshot!.members.map((m) => m.matrixUserId), [
+      '@owner:test',
+      '@admin:test',
+      '@zoe:test',
+    ]);
   });
 }
