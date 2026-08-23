@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
+import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
 
 final class FakeContactsGateway implements ContactsGateway {
   var deleted = false;
@@ -43,10 +45,10 @@ final class FakeContactsGateway implements ContactsGateway {
   }) async {
     lastTags = tags;
     return contact.copyWith(
-        remark: remark,
-        tags: tags,
-        momentsPermission: momentsPermission,
-      );
+      remark: remark,
+      tags: tags,
+      momentsPermission: momentsPermission,
+    );
   }
 
   @override
@@ -327,5 +329,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('好友资料'), findsNothing);
     expect(messageRequests, 1);
+  });
+  testWidgets(
+      'contacts navigation exposes WeChat-style search and more actions',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://example.test'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: api)));
+    await tester.pump();
+    expect(find.byKey(const Key('contacts-search')), findsOneWidget);
+    expect(find.byKey(const Key('contacts-more')), findsOneWidget);
   });
 }

@@ -10,6 +10,7 @@ import '../../ui/components/wechat_contact_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_profile_sections.dart';
+import '../search/global_search_page.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
 
@@ -134,16 +135,57 @@ final class _ContactsPageState extends State<ContactsPage> {
         middle: const Text('通讯录'),
         trailing: businessApi == null
             ? null
-            : CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => AddFriendPage(api: businessApi),
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                CupertinoButton(
+                  key: const Key('contacts-search'),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (_) => GlobalSearchPage(
+                        api: businessApi,
+                        contactsLoader: () => widget.api.listContacts(),
+                      ),
+                    ),
                   ),
+                  child: const Icon(CupertinoIcons.search, size: 22),
                 ),
-                child: const Icon(CupertinoIcons.person_add),
-              ),
+                CupertinoButton(
+                  key: const Key('contacts-more'),
+                  padding: EdgeInsets.zero,
+                  onPressed: () => showCupertinoModalPopup<void>(
+                    context: context,
+                    builder: (sheetContext) => CupertinoActionSheet(
+                      actions: [
+                        CupertinoActionSheetAction(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            widget.onGroupChat?.call();
+                          },
+                          child: const Text('发起群聊'),
+                        ),
+                        CupertinoActionSheetAction(
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            Navigator.push(
+                              context,
+                              CupertinoPageRoute(
+                                builder: (_) => AddFriendPage(api: businessApi),
+                              ),
+                            );
+                          },
+                          child: const Text('添加朋友'),
+                        ),
+                      ],
+                      cancelButton: CupertinoActionSheetAction(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        child: const Text('取消'),
+                      ),
+                    ),
+                  ),
+                  child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
+                ),
+              ]),
       ),
       child: SafeArea(
         child: FutureBuilder<List<ContactSummary>>(
@@ -508,8 +550,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
 
   Future<void> _delete() async {
     try {
-      if (!await _confirm(
-          '删除好友', '删除后将不再显示在你的通讯录中，且需要重新发送好友申请。')) {
+      if (!await _confirm('删除好友', '删除后将不再显示在你的通讯录中，且需要重新发送好友申请。')) {
         return;
       }
       await widget.api.deleteContact(widget.contact.userId);
@@ -644,7 +685,8 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
             child: const Text('取消'),
           ),
           CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
             child: const Text('保存'),
           ),
         ],

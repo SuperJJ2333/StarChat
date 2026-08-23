@@ -397,6 +397,14 @@
         "source": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
         "states": ["loading", "ready", "member-added", "member-removed", "error"],
         "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "danger", "spacing", "radius"]
+      },
+      {
+        "id": "phase4-root-navigation-actions",
+        "name": "Root Navigation / Search and More Actions",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart; apps/mobile_flutter/lib/features/discovery/discovery_page.dart",
+        "states": ["default", "pressed", "sheet-open", "route-opening"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "brandPrimary", "spacing", "radius"]
       }
     ]
   }
