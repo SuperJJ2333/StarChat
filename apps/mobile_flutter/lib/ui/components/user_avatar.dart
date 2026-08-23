@@ -50,7 +50,7 @@ final class _UserAvatarState extends State<UserAvatar> {
               ? '?'
               : widget.nickname.trim().characters.first,
           style: TextStyle(
-            fontSize: widget.size * .4,
+            fontSize: widget.size * WeChatTypography.avatarInitialScale,
             color: WeChatColors.lightTextPrimary,
           ),
         ),
@@ -71,7 +71,7 @@ final class _UserAvatarState extends State<UserAvatar> {
           );
     final retained = AvatarCache.lastSuccessful(widget.fallbackSeed);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(WeChatRadius.control),
+      borderRadius: BorderRadius.circular(WeChatRadius.avatar),
       child: SizedBox(
         width: widget.size,
         height: widget.size,

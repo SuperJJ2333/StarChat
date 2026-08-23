@@ -62,6 +62,7 @@ abstract final class WeChatSpacing {
 abstract final class WeChatRadius {
   static const tag = 4.0;
   static const control = 6.0;
+  static const avatar = control;
   static const bubble = 8.0;
   static const redPacket = 10.0;
   static const dialog = 12.0;
@@ -99,6 +100,8 @@ abstract final class WeChatTypography {
   static const subhead = 14.0;
   static const caption = 12.0;
   static const badge = 11.0;
+  static const actionButtonIcon = 20.0;
+  static const avatarInitialScale = .4;
 }
 
 abstract final class WeChatEffects {
@@ -112,4 +115,5 @@ abstract final class WeChatEffects {
 
 abstract final class WeChatMotion {
   static const actionPressDuration = Duration(milliseconds: 150);
+  static const actionPressScale = .98;
 }

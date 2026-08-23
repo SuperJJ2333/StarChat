@@ -405,6 +405,14 @@
         "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart; apps/mobile_flutter/lib/features/discovery/discovery_page.dart",
         "states": ["default", "pressed", "sheet-open", "route-opening"],
         "tokens": ["surface", "textPrimary", "textSecondary", "brandPrimary", "spacing", "radius"]
+      },
+      {
+        "id": "phase5-core-component-tokenization",
+        "name": "Foundation / Core Component Tokenization",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/ui/components/modern_action_button.dart; apps/mobile_flutter/lib/ui/components/user_avatar.dart; apps/mobile_flutter/lib/ui/components/network_status_capsule.dart",
+        "states": ["default", "pressed", "disabled", "loading", "offline", "reconnecting", "fallback-avatar"],
+        "tokens": ["brandPrimary", "danger", "textPrimary", "textSecondary", "surface", "border", "spacing", "radius", "typography", "motion", "effects"]
       }
     ]
   }

@@ -55,7 +55,7 @@ final class _ModernActionButtonState extends State<ModernActionButton> {
                   widget.onPressed!();
                 },
           child: AnimatedScale(
-            scale: reduced || !pressed ? 1 : .98,
+            scale: reduced || !pressed ? 1 : WeChatMotion.actionPressScale,
             duration:
                 reduced ? Duration.zero : WeChatMotion.actionPressDuration,
             curve: Curves.easeOut,
@@ -81,7 +81,11 @@ final class _ModernActionButtonState extends State<ModernActionButton> {
                     if (widget.loading)
                       CupertinoActivityIndicator(color: foreground)
                     else
-                      Icon(widget.icon, color: foreground, size: 20),
+                      Icon(
+                        widget.icon,
+                        color: foreground,
+                        size: WeChatTypography.actionButtonIcon,
+                      ),
                     const SizedBox(width: WeChatSpacing.actionButtonIconGap),
                     Text(widget.label,
                         style: TextStyle(
