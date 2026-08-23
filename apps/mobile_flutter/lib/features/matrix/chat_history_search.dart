@@ -2,6 +2,17 @@ enum LocalChatSearchKind { text, image, video, file }
 
 enum ChatSearchCategory { date, media, files, links, members }
 
+Map<DateTime, List<LocalChatSearchEntry>> groupChatSearchByDate(
+    Iterable<LocalChatSearchEntry> entries) {
+  final grouped = <DateTime, List<LocalChatSearchEntry>>{};
+  for (final entry in entries) {
+    final day = DateTime(entry.timestamp.year, entry.timestamp.month, entry.timestamp.day);
+    grouped.putIfAbsent(day, () => []).add(entry);
+  }
+  final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+  return {for (final key in keys) key: List.unmodifiable(grouped[key]!)};
+}
+
 final class LocalChatSearchEntry {
   const LocalChatSearchEntry({
     required this.eventId,

@@ -22,6 +22,7 @@ void main() {
     expect(find.text('聊天信息'), findsOneWidget);
     expect(find.text('添加'), findsOneWidget);
     expect(find.text('查找聊天记录'), findsOneWidget);
+    expect(find.text('设置拍一拍'), findsNothing);
     expect(find.text('消息免打扰'), findsOneWidget);
     expect(find.text('置顶聊天'), findsOneWidget);
     expect(find.text('保存到通讯录'), findsOneWidget);

@@ -9,6 +9,7 @@ import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
+import '../../ui/components/wechat_date_picker.dart';
 
 final class GroupChatInfoPage extends StatefulWidget {
   const GroupChatInfoPage({
@@ -1009,9 +1010,11 @@ final class GroupChatHistorySearchPage extends StatefulWidget {
     super.key,
     required this.entries,
     this.isGroup = true,
+    this.onEntryTap,
   });
   final List<GroupChatHistoryEntry> entries;
   final bool isGroup;
+  final ValueChanged<GroupChatHistoryEntry>? onEntryTap;
 
   @override
   State<GroupChatHistorySearchPage> createState() =>
@@ -1099,11 +1102,21 @@ final class _GroupChatHistorySearchPageState
             Expanded(
               child: ListView(
                 children: [
-                  for (final entry in results)
-                    WeChatListTile(
-                      title: Text(entry.sender),
-                      subtitle: Text(entry.text),
+                  for (final group in _group(results).entries) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                      child: Text(_formatDate(group.key),
+                          style: const TextStyle(color: WeChatColors.textSecondary)),
                     ),
+                    for (final entry in group.value)
+                      WeChatListTile(
+                        title: Text(entry.sender),
+                        subtitle: Text(entry.text),
+                        onTap: widget.onEntryTap == null
+                            ? null
+                            : () => widget.onEntryTap!(entry),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -1116,37 +1129,14 @@ final class _GroupChatHistorySearchPageState
   Future<void> _selectCategory(ChatSearchCategory value) async {
     if (value == ChatSearchCategory.date) {
       var selected = selectedDate ?? DateTime.now();
-      await showCupertinoModalPopup<void>(
-        context: context,
-        builder: (context) => Container(
-          height: 320,
-          color: WeChatColors.elevatedSurface(context),
-          child: Column(children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: CupertinoButton(
-                onPressed: () {
-                  setState(() {
-                    category = value;
-                    selectedDate = selected;
-                    selectedSender = null;
-                  });
-                  Navigator.pop(context);
-                },
-                child: const Text('完成'),
-              ),
-            ),
-            Expanded(
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.date,
-                initialDateTime: selected,
-                maximumDate: DateTime.now(),
-                onDateTimeChanged: (date) => selected = date,
-              ),
-            ),
-          ]),
-        ),
-      );
+      final picked = await WeChatDatePicker.show(context, initialDate: selected);
+      if (picked != null && mounted) {
+        setState(() {
+          category = value;
+          selectedDate = picked;
+          selectedSender = null;
+        });
+      }
       return;
     }
     if (value == ChatSearchCategory.members) {
@@ -1199,4 +1189,19 @@ final class _GroupChatHistorySearchPageState
         ChatSearchCategory.links => CupertinoIcons.link,
         ChatSearchCategory.members => CupertinoIcons.person_2,
       };
+
+  Map<DateTime, List<GroupChatHistoryEntry>> _group(
+      Iterable<GroupChatHistoryEntry> entries) {
+    final result = <DateTime, List<GroupChatHistoryEntry>>{};
+    for (final entry in entries) {
+      final timestamp = entry.timestamp;
+      if (timestamp == null) continue;
+      final day = DateTime(timestamp.year, timestamp.month, timestamp.day);
+      result.putIfAbsent(day, () => []).add(entry);
+    }
+    final keys = result.keys.toList()..sort((a, b) => b.compareTo(a));
+    return {for (final key in keys) key: result[key]!};
+  }
+
+  String _formatDate(DateTime date) => '${date.year}年${date.month}月${date.day}日';
 }

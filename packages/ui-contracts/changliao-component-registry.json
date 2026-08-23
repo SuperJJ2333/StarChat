@@ -453,6 +453,8 @@
       "phase1-contact-tag-picker",
       "phase1-contact-delete-confirmation",
       "phase1-chat-info-friend-profile-entry"
+      ,"phase2-chat-history-search"
+      ,"phase2-wechat-date-picker"
     ]
   }
 }

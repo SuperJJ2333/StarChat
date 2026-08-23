@@ -365,6 +365,22 @@
         "source": "apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart",
         "states": ["default", "pressed"],
         "tokens": ["surface", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+      },
+      {
+        "id": "phase2-chat-history-search",
+        "name": "Chat / History Search",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
+        "states": ["default", "query", "date-filtered", "grouped", "empty", "loading"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "spacing", "radius"]
+      },
+      {
+        "id": "phase2-wechat-date-picker",
+        "name": "Shared / WeChat Date Picker",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/ui/components/wechat_date_picker.dart",
+        "states": ["idle", "wheel-scrolling", "cancel", "confirm"],
+        "tokens": ["surface", "textPrimary", "brandPrimary", "spacing", "radius"]
       }
     ]
   }

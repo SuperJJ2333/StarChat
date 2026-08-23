@@ -1370,6 +1370,12 @@ class _RoomPageState extends State<RoomPage> {
       CupertinoPageRoute(
         builder: (_) => GroupChatHistorySearchPage(
           isGroup: isGroup,
+          onEntryTap: (entry) async {
+            Navigator.pop(context);
+            if (entry.eventId.isNotEmpty) {
+              await _scrollToMessage(entry.eventId);
+            }
+          },
           entries: [
             for (final message in messages)
               GroupChatHistoryEntry(
