@@ -13,36 +13,45 @@ typedef MatrixClientOpener = Future<Client> Function({
 });
 typedef MatrixClientDisposer = Future<void> Function(Client client);
 typedef MatrixDatabaseDeleter = Future<void> Function(String path);
+typedef MatrixClientMigrator = Future<void> Function(
+    Client client, Uri homeserver);
 
 final class MatrixClientFactory {
   MatrixClientFactory({
     required this.sessionStore,
+    required this.homeserver,
     Future<String> Function()? supportDirectoryPath,
     MatrixClientOpener? opener,
     MatrixClientDisposer? disposer,
     MatrixDatabaseDeleter? databaseDeleter,
+    MatrixClientMigrator? clientMigrator,
   })  : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath,
         opener = opener ?? _openPersistentClient,
         disposer = disposer ?? _disposeClient,
-        databaseDeleter = databaseDeleter ?? _deleteDatabase;
+        databaseDeleter = databaseDeleter ?? _deleteDatabase,
+        clientMigrator = clientMigrator ?? _migrateHomeserver;
 
   static const clientName = 'liuhetong_mobile';
   static const databaseFileName = 'liuhetong_matrix.sqlite';
 
   final SecureSessionStore sessionStore;
+  final Uri homeserver;
   final Future<String> Function() supportDirectoryPath;
   final MatrixClientOpener opener;
   final MatrixClientDisposer disposer;
   final MatrixDatabaseDeleter databaseDeleter;
+  final MatrixClientMigrator clientMigrator;
 
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
     final cipher = await sessionStore.matrixDatabaseKey();
-    return opener(
+    final client = await opener(
       clientName: clientName,
       databasePath: p.join(directory, databaseFileName),
       cipher: cipher,
     );
+    await clientMigrator(client, homeserver);
+    return client;
   }
 
   Future<Client> reset(Client client) async {
@@ -64,6 +73,38 @@ final class MatrixClientFactory {
       ffiInit: SQfLiteEncryptionHelper.ffiInit,
     );
     await databaseFactory.deleteDatabase(path);
+  }
+
+  /// Retains the encrypted local database, sessions and room history while
+  /// replacing only the persisted Matrix server endpoint.
+  static Future<void> _migrateHomeserver(Client client, Uri homeserver) async {
+    if (!client.isLogged() || client.homeserver == homeserver) return;
+    final token = client.accessToken;
+    final userId = client.userID;
+    final deviceId = client.deviceID;
+    final deviceName = client.deviceName;
+    if (token == null ||
+        userId == null ||
+        deviceId == null ||
+        deviceName == null) {
+      return;
+    }
+    // The SDK has already initialized this persistent client. Re-initializing
+    // would reject a logged-in client and can discard in-memory E2EE state.
+    // Update only the endpoint record that the next sync consumes.
+    client.homeserver = homeserver;
+    final persistedClient = await client.database?.getClient(client.clientName);
+    await client.database?.updateClient(
+      homeserver.toString(),
+      token,
+      client.accessTokenExpiresAt,
+      persistedClient?.tryGet<String>('refresh_token'),
+      userId,
+      deviceId,
+      deviceName,
+      client.prevBatch,
+      client.encryption?.pickledOlmAccount,
+    );
   }
 
   static Future<Client> _openPersistentClient({

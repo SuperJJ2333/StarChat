@@ -30,7 +30,10 @@ Future<void> main() async {
     baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
     sessionStore: store,
   );
-  final matrixFactory = MatrixClientFactory(sessionStore: store);
+  final matrixFactory = MatrixClientFactory(
+    sessionStore: store,
+    homeserver: Uri.parse(AppConfig.matrixHomeserver),
+  );
   final sdkClient = await matrixFactory.create();
   final matrix = MatrixSdkE2eeClient(
     sdkClient,
