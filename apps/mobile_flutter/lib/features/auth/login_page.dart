@@ -203,16 +203,9 @@ final class _LoginPageState extends State<LoginPage>
               ),
               if (_error != null) ...[
                 const SizedBox(height: WeChatSpacing.md),
-                Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    _error!,
-                    key: const Key('auth-login-error'),
-                    style: const TextStyle(
-                      color: WeChatColors.danger,
-                      fontSize: WeChatTypography.subhead,
-                    ),
-                  ),
+                AuthErrorMessage(
+                  key: const Key('auth-login-error'),
+                  message: _error!,
                 ),
               ],
               const SizedBox(height: WeChatSpacing.md),

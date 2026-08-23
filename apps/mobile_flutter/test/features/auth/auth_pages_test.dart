@@ -667,11 +667,13 @@ void main() {
     final error = find.byKey(const Key('auth-verification-code-error'));
     expect(error, findsOneWidget);
     expect(find.text('验证码错误，请重新输入'), findsOneWidget);
-    final errorBox = tester.widget<Container>(error);
     final errorText = tester.widget<Text>(
       find.descendant(of: error, matching: find.text('验证码错误，请重新输入')),
     );
-    expect(errorBox.decoration, isA<BoxDecoration>());
+    expect(
+      find.descendant(of: error, matching: find.byType(Container)),
+      findsOneWidget,
+    );
     expect(errorText.style?.fontSize, greaterThanOrEqualTo(14));
 
     await tester.enterText(find.byType(CupertinoTextField), '123456');
@@ -695,7 +697,8 @@ void main() {
       ),
     ));
     final button = find.byKey(const Key('auth-verification-verify'));
-    final animation = find.descendant(of: button, matching: find.byType(AnimatedScale));
+    final animation =
+        find.descendant(of: button, matching: find.byType(AnimatedScale));
     expect(tester.widget<AnimatedScale>(animation).duration,
         const Duration(milliseconds: 150));
 

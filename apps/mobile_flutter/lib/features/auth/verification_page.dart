@@ -91,28 +91,11 @@ final class _VerificationPageState extends State<VerificationPage> {
                   ),
                   const SizedBox(height: WeChatSpacing.lg),
                   if (state.fieldErrors['code'] case final error?) ...[
-                    Container(
+                    AuthErrorMessage(
                       key: const Key('auth-verification-code-error'),
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: WeChatSpacing.sm),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: WeChatSpacing.md,
-                        vertical: WeChatSpacing.sm,
-                      ),
-                      decoration: BoxDecoration(
-                        color: WeChatColors.errorSurface,
-                        borderRadius: BorderRadius.circular(WeChatRadius.tag),
-                        border: Border.all(color: WeChatColors.errorBorder),
-                      ),
-                      child: Text(
-                        error,
-                        style: const TextStyle(
-                          color: WeChatColors.danger,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      message: error,
                     ),
+                    const SizedBox(height: WeChatSpacing.sm),
                   ],
                   CupertinoTextField(
                     controller: code,

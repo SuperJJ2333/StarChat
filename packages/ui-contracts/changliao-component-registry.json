@@ -459,6 +459,7 @@
       ,"phase3-group-member-live-sync"
       ,"phase4-root-navigation-actions"
       ,"phase5-core-component-tokenization"
+      ,"phase6-auth-form-feedback"
     ]
   }
 }

@@ -89,12 +89,13 @@ final class _RegistrationPageState extends State<RegistrationPage> {
       return const SizedBox.shrink();
     }
     return Padding(
-        padding: const EdgeInsets.only(top: WeChatSpacing.xs),
-        child: Text(message,
-            key: Key('auth-registration-error-$key'),
-            style: const TextStyle(
-                color: WeChatColors.danger,
-                fontSize: WeChatTypography.caption)));
+      padding: const EdgeInsets.only(top: WeChatSpacing.xs),
+      child: AuthErrorMessage(
+        key: Key('auth-registration-error-$key'),
+        message: message,
+        compact: true,
+      ),
+    );
   }
 
   Future<void> _sendVerification() async {
@@ -272,13 +273,14 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                         if (widget.controller.state.message != null &&
                             widget.controller.state.fieldErrors.isEmpty)
                           Padding(
-                              padding:
-                                  const EdgeInsets.only(top: WeChatSpacing.sm),
-                              child: Text(widget.controller.state.message!,
-                                  key: const Key('auth-registration-error'),
-                                  style: const TextStyle(
-                                      color: WeChatColors.danger,
-                                      fontSize: WeChatTypography.caption))),
+                            padding:
+                                const EdgeInsets.only(top: WeChatSpacing.sm),
+                            child: AuthErrorMessage(
+                              key: const Key('auth-registration-error'),
+                              message: widget.controller.state.message!,
+                              compact: true,
+                            ),
+                          ),
                         if (widget.controller.state.registrationSession !=
                             null) ...[
                           const SizedBox(height: WeChatSpacing.sm),

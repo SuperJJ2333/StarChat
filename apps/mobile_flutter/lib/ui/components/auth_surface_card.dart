@@ -49,6 +49,48 @@ final class AuthBrandMark extends StatelessWidget {
       );
 }
 
+/// Shared inline validation treatment for login, registration and verification.
+final class AuthErrorMessage extends StatelessWidget {
+  const AuthErrorMessage({
+    super.key,
+    required this.message,
+    this.compact = false,
+  });
+
+  final String message;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        key: const Key('auth-error-message'),
+        width: double.infinity,
+        padding: compact
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(
+                horizontal: WeChatSpacing.authErrorHorizontal,
+                vertical: WeChatSpacing.authErrorVertical,
+              ),
+        decoration: compact
+            ? null
+            : BoxDecoration(
+                color: WeChatColors.errorSurface,
+                borderRadius: BorderRadius.circular(WeChatRadius.tag),
+                border: Border.all(color: WeChatColors.errorBorder),
+              ),
+        child: Semantics(
+          liveRegion: true,
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: WeChatColors.danger,
+              fontSize: WeChatTypography.authError,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+}
+
 final class AuthAgreementRow extends StatelessWidget {
   const AuthAgreementRow({
     super.key,
@@ -90,7 +132,9 @@ final class AuthAgreementRow extends StatelessWidget {
               decoration: BoxDecoration(
                 color: value ? activeColor : CupertinoColors.transparent,
                 border: Border.all(color: activeColor, width: 1.5),
-                borderRadius: BorderRadius.circular(5),
+                borderRadius: BorderRadius.circular(
+                  WeChatRadius.authAgreementCheckbox,
+                ),
               ),
               child: value
                   ? const Icon(
@@ -287,8 +331,13 @@ final class AuthTextField extends StatelessWidget {
               onChanged: onChanged,
               suffix: trailing,
               placeholder: placeholder,
-              placeholderStyle: TextStyle(color: secondary, fontSize: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              placeholderStyle: TextStyle(
+                color: secondary,
+                fontSize: WeChatTypography.callout,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: WeChatSpacing.authFieldHorizontal,
+              ),
               decoration: BoxDecoration(
                 color: background,
                 border: Border.all(color: border),

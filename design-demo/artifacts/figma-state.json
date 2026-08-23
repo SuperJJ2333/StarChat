@@ -413,6 +413,14 @@
         "source": "apps/mobile_flutter/lib/ui/components/modern_action_button.dart; apps/mobile_flutter/lib/ui/components/user_avatar.dart; apps/mobile_flutter/lib/ui/components/network_status_capsule.dart",
         "states": ["default", "pressed", "disabled", "loading", "offline", "reconnecting", "fallback-avatar"],
         "tokens": ["brandPrimary", "danger", "textPrimary", "textSecondary", "surface", "border", "spacing", "radius", "typography", "motion", "effects"]
+      },
+      {
+        "id": "phase6-auth-form-feedback",
+        "name": "Auth / Shared Form Field and Feedback",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/ui/components/auth_surface_card.dart; apps/mobile_flutter/lib/features/auth/login_page.dart; apps/mobile_flutter/lib/features/auth/registration_page.dart; apps/mobile_flutter/lib/features/auth/verification_page.dart",
+        "states": ["default", "focused", "disabled", "field-error", "server-error", "loading"],
+        "tokens": ["surface", "errorSurface", "errorBorder", "danger", "textSecondary", "spacing", "radius", "typography"]
       }
     ]
   }

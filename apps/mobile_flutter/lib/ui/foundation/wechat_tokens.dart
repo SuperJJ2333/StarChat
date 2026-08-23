@@ -57,6 +57,9 @@ abstract final class WeChatSpacing {
   static const networkCapsuleHorizontal = 14.0;
   static const networkCapsuleVertical = sm;
   static const networkCapsuleIconGap = 6.0;
+  static const authFieldHorizontal = md;
+  static const authErrorHorizontal = md;
+  static const authErrorVertical = sm;
 }
 
 abstract final class WeChatRadius {
@@ -68,6 +71,7 @@ abstract final class WeChatRadius {
   static const dialog = 12.0;
   static const authCard = 12.0;
   static const authControl = 14.0;
+  static const authAgreementCheckbox = tag;
   static const actionButton = authControl;
   static const networkCapsule = 22.0;
 }
@@ -102,6 +106,7 @@ abstract final class WeChatTypography {
   static const badge = 11.0;
   static const actionButtonIcon = 20.0;
   static const avatarInitialScale = .4;
+  static const authError = subhead;
 }
 
 abstract final class WeChatEffects {
