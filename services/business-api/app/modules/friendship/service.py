@@ -91,6 +91,14 @@ class FriendshipService:
             row=s.get(ContactTag,tag_id)
             if not row or row.owner_id!=actor:raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
             s.delete(row);self._audit(s,actor,tag_id,'friend.tag_deleted','CONTACT_TAG_DELETE',key)
+    def rename_tag(self,actor,tag_id,name,key):
+        name=name.strip()
+        with self.factory.begin() as s:
+            row=s.get(ContactTag,tag_id)
+            if not row or row.owner_id!=actor:raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
+            existing=s.scalar(select(ContactTag).where(ContactTag.owner_id==actor,ContactTag.name==name))
+            if existing is not None and existing.id!=tag_id:raise AppError(code='CONTACT_TAG_DUPLICATE',message='标签名称已存在',status_code=409)
+            row.name=name;self._audit(s,actor,tag_id,'friend.tag_renamed','CONTACT_TAG_RENAME',key);return row
     def update_profile(self,actor,target,remark,tags,permission,key):
         low,high=sorted((actor,target))
         with self.factory.begin() as s:

@@ -26,7 +26,8 @@ final class ProfileData {
           maskedEmail: maskedEmail,
           fallbackSeed: fallbackSeed,
           signature: signature ?? this.signature,
-          nudgeSuffix: clearNudgeSuffix ? null : nudgeSuffix ?? this.nudgeSuffix,
+          nudgeSuffix:
+              clearNudgeSuffix ? null : nudgeSuffix ?? this.nudgeSuffix,
           avatarUrl: clearAvatar ? null : avatarUrl ?? this.avatarUrl);
 }
 
@@ -102,14 +103,22 @@ final class ProfileController extends ChangeNotifier {
     }
   }
 
-  Future<void> save(String nickname, String? signature, {String? nudgeSuffix}) async {
+  Future<void> save(String nickname, String? signature,
+      {String? nudgeSuffix}) async {
     _set(ProfileState(ProfileStatus.saving, profile: state.profile));
     try {
-      _set(ProfileState(ProfileStatus.ready,
-          profile: await gateway.updateProfile(
-              nickname: nickname,
-              signature: signature,
-              nudgeSuffix: nudgeSuffix ?? state.profile?.nudgeSuffix)));
+      final requestedNudgeSuffix = nudgeSuffix ?? state.profile?.nudgeSuffix;
+      final updated = await gateway.updateProfile(
+        nickname: nickname,
+        signature: signature,
+        nudgeSuffix: requestedNudgeSuffix,
+      );
+      _set(ProfileState(
+        ProfileStatus.ready,
+        profile: requestedNudgeSuffix != null && requestedNudgeSuffix.isEmpty
+            ? updated.copyWith(clearNudgeSuffix: true)
+            : updated,
+      ));
     } catch (_) {
       _set(ProfileState(ProfileStatus.failed,
           profile: state.profile, message: '资料保存失败，请重试'));

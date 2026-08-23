@@ -196,6 +196,14 @@ void main() {
 
     expect(controller.state.profile!.avatarUrl, 'https://signed/avatar');
   });
+  test('persists an explicit empty nudge suffix as a clear operation',
+      () async {
+    final c = ProfileController(
+        gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
+    await c.load();
+    await c.save('Alice', 'hello', nudgeSuffix: '');
+    expect(c.state.profile!.nudgeSuffix, isNull);
+  });
 
   testWidgets('personal information exposes a saved nudge setting',
       (tester) async {

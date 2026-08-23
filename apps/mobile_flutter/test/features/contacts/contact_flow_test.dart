@@ -9,6 +9,7 @@ final class FakeContactsGateway implements ContactsGateway {
   var deleted = false;
   var blocked = false;
   List<String> lastTags = const [];
+  String? lastRemark;
 
   @override
   Future<Map<String, dynamic>> contactTags() async => {
@@ -21,6 +22,10 @@ final class FakeContactsGateway implements ContactsGateway {
   @override
   Future<Map<String, dynamic>> createContactTag(String name) async =>
       {'id': 'tag-new', 'name': name};
+
+  @override
+  Future<Map<String, dynamic>> renameContactTag(String id, String name) async =>
+      {'id': id, 'name': name};
 
   @override
   Future<void> deleteContactTag(String id) async {}
@@ -44,6 +49,7 @@ final class FakeContactsGateway implements ContactsGateway {
     required String momentsPermission,
   }) async {
     lastTags = tags;
+    lastRemark = remark;
     return contact.copyWith(
       remark: remark,
       tags: tags,
@@ -177,6 +183,16 @@ void main() {
     expect(base.copyWith(remark: '').displayName, 'Alice');
     expect(base.copyWith(remark: '', nickname: '').displayName, 'alice');
   });
+  test('contact details clear an explicitly removed remark', () {
+    const contact = ContactDetails(
+      userId: 'uuid',
+      username: 'alice',
+      nickname: 'Alice',
+      remark: '旧备注',
+      matrixUserId: '@alice:example.test',
+    );
+    expect(contact.copyWith(clearRemark: true).displayName, 'Alice');
+  });
 
   testWidgets('friend profile and settings strictly follow Figma order',
       (tester) async {
@@ -257,6 +273,29 @@ void main() {
     await tester.tap(find.text('完成'));
     await tester.pumpAndSettle();
     expect(gateway.lastTags, containsAll(['同事', '家人']));
+  });
+
+  testWidgets(
+      'friend remark saves through the gateway and is retained by the profile',
+      (tester) async {
+    final gateway = FakeContactsGateway();
+    const contact = ContactDetails(
+      userId: 'user-1',
+      username: 'alice',
+      matrixUserId: '@alice:test',
+      nickname: 'Alice',
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactMorePage(api: gateway, contact: contact),
+    ));
+    await tester.tap(find.text('备注'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(CupertinoTextField), '新的备注');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.lastRemark, '新的备注');
+    expect(find.text('新的备注'), findsOneWidget);
   });
 
   testWidgets(

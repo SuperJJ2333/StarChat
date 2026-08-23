@@ -103,6 +103,7 @@ final class ContactDetails {
 
   ContactDetails copyWith({
     String? remark,
+    bool clearRemark = false,
     List<String>? tags,
     String? momentsPermission,
   }) =>
@@ -111,7 +112,7 @@ final class ContactDetails {
         username: username,
         matrixUserId: matrixUserId,
         nickname: nickname,
-        remark: remark ?? this.remark,
+        remark: clearRemark ? null : remark ?? this.remark,
         avatarUrl: avatarUrl,
         momentsPermission: momentsPermission ?? this.momentsPermission,
         tags: tags ?? this.tags,
@@ -123,6 +124,7 @@ abstract interface class ContactsGateway {
   Future<List<ContactSummary>> listContacts();
   Future<Map<String, dynamic>> contactTags();
   Future<Map<String, dynamic>> createContactTag(String name);
+  Future<Map<String, dynamic>> renameContactTag(String id, String name);
   Future<void> deleteContactTag(String id);
   Future<ContactDetails> updateContactDetails(
     ContactDetails contact, {

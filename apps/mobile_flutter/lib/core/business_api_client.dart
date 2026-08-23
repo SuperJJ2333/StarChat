@@ -210,9 +210,16 @@ final class BusinessApiClient
       _profile(await getJson('/profile/me'));
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname, String? signature, String? nudgeSuffix}) async =>
+          {required String nickname,
+          String? signature,
+          String? nudgeSuffix}) async =>
       _profile(await patchJson(
-          '/profile/me', {'nickname': nickname, 'signature': signature, 'nudge_suffix': nudgeSuffix},
+          '/profile/me',
+          {
+            'nickname': nickname,
+            'signature': signature,
+            'nudge_suffix': nudgeSuffix
+          },
           idempotencyKey: newIdempotencyKey()));
   @override
   Future<AvatarUploadSession> createAvatarUpload(
@@ -410,6 +417,10 @@ final class BusinessApiClient
       postJson('/contact-tags', {'name': name},
           idempotencyKey: newIdempotencyKey());
   @override
+  Future<Map<String, dynamic>> renameContactTag(String id, String name) =>
+      patchJson('/contact-tags/$id', {'name': name},
+          idempotencyKey: newIdempotencyKey());
+  @override
   Future<void> deleteContactTag(String id) async {
     final response = await _authorized((headers) => _client.delete(
           _uri('/contact-tags/$id'),
@@ -417,6 +428,7 @@ final class BusinessApiClient
         ));
     if (response.statusCode >= 400) _decode(response);
   }
+
   Future<Map<String, dynamic>> blocks() => getJson('/blocks');
   Future<Map<String, dynamic>> updateContact(String id,
           {String? remark,
@@ -437,7 +449,15 @@ final class BusinessApiClient
       required String momentsPermission}) async {
     final body = await updateContact(contact.userId,
         remark: remark, tags: tags, momentsPermission: momentsPermission);
-    return ContactSummary.fromJson(body).toDetails();
+    return contact.copyWith(
+      remark: body['remark']?.toString(),
+      clearRemark: body['remark'] == null,
+      tags: (body['tags'] as List? ?? const [])
+          .map((tag) => tag.toString())
+          .toList(growable: false),
+      momentsPermission:
+          body['moments_permission']?.toString() ?? momentsPermission,
+    );
   }
 
   Future<Map<String, dynamic>> blockUser(String id) =>

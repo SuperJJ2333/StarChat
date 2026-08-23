@@ -250,7 +250,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                             fallbackSeed: contact.username,
                             avatarUrl: contact.avatarUrl,
                             onTap: () async {
-                              await Navigator.of(context, rootNavigator: true)
+                              final changed = await Navigator.of(context,
+                                      rootNavigator: true)
                                   .push<bool>(
                                 CupertinoPageRoute(
                                   builder: (_) => ContactProfilePage(
@@ -262,7 +263,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                                   ),
                                 ),
                               );
-                              if (mounted) setState(() {});
+                              if (!mounted) return;
+                              if (changed == true) reload();
                             },
                           ),
                       ],
@@ -759,10 +761,39 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
 
 final class _ContactTagsPageState extends State<ContactTagsPage> {
   final name = TextEditingController();
+  late Future<Map<String, dynamic>> tags = widget.api.contactTags();
   @override
   void dispose() {
     name.dispose();
     super.dispose();
+  }
+
+  Future<void> _rename(Map tag) async {
+    final field = TextEditingController(text: tag['name'].toString());
+    final value = await showCupertinoDialog<String>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('重命名标签'),
+        content: CupertinoTextField(controller: field, autofocus: true),
+        actions: [
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消')),
+          CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext, field.text.trim()),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    field.dispose();
+    if (value == null || value.isEmpty) return;
+    await widget.api.renameContactTag(tag['id'].toString(), value);
+    if (mounted) setState(() => tags = widget.api.contactTags());
+  }
+
+  Future<void> _delete(Map tag) async {
+    await widget.api.deleteContactTag(tag['id'].toString());
+    if (mounted) setState(() => tags = widget.api.contactTags());
   }
 
   @override
@@ -774,7 +805,7 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
             middle: Text('标签')),
         child: SafeArea(
           child: FutureBuilder<Map<String, dynamic>>(
-            future: widget.api.contactTags(),
+            future: tags,
             builder: (_, snapshot) {
               final items = (snapshot.data?['items'] as List?) ?? const [];
               return ListView(
@@ -791,7 +822,10 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
                         label: '创建标签',
                         onPressed: () async {
                           await widget.api.createContactTag(name.text.trim());
-                          if (mounted) setState(() {});
+                          name.clear();
+                          if (mounted) {
+                            setState(() => tags = widget.api.contactTags());
+                          }
                         },
                       ),
                     ],
@@ -800,6 +834,15 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
                     WeChatListTile(
                       leading: const Icon(CupertinoIcons.tag),
                       title: Text(tag['name'].toString()),
+                      onTap: () =>
+                          _rename(Map<String, dynamic>.from(tag as Map)),
+                      trailing: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () =>
+                            _delete(Map<String, dynamic>.from(tag as Map)),
+                        child: const Icon(CupertinoIcons.delete,
+                            color: CupertinoColors.systemRed),
+                      ),
                     ),
                 ],
               );

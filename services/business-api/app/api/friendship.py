@@ -10,6 +10,7 @@ class Strict(BaseModel):model_config=ConfigDict(extra='forbid')
 class RequestBody(Strict):target_user_id:str=Field(min_length=1,max_length=36);message:str=Field(default='',max_length=200)
 class BlockBody(Strict):user_id:str=Field(min_length=1,max_length=36)
 class TagBody(Strict):name:str=Field(min_length=1,max_length=64)
+class TagPatchBody(Strict):name:str=Field(min_length=1,max_length=64)
 class ContactBody(Strict):remark:str|None=Field(default=None,max_length=128);tags:list[str]=Field(default_factory=list,max_length=30);moments_permission:str='DEFAULT'
 class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;moments_permission:str;tags:list[str]
@@ -60,6 +61,9 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage):
     @router.delete('/contact-tags/{tag_id}',status_code=204)
     def delete_tag(tag_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         service.delete_tag(user,tag_id,idempotency_key);return Response(status_code=204)
+    @router.patch('/contact-tags/{tag_id}')
+    def rename_tag(tag_id:str,body:TagPatchBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
+        row=service.rename_tag(user,tag_id,body.name,idempotency_key);return {'id':row.id,'name':row.name}
     @router.get('/users/search',response_model=UserSearchResponse)
     def search(q:Annotated[str,Query(min_length=1,max_length=64)],user=Depends(actor)):return {'items':service.search(user,q),'next_cursor':None}
     return router

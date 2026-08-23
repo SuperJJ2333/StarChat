@@ -860,9 +860,6 @@ class _RoomPageState extends State<RoomPage> {
         await service.applyIncoming(await backend.load());
       }
       reminderService = service;
-      nudgeSuffix = await NudgePreferenceService(
-        MatrixNudgePreferenceBackend(widget.room.client),
-      ).loadSuffix();
     } catch (_) {
       // Chat remains available; choosing reminder will surface a retry state.
     }
@@ -924,6 +921,16 @@ class _RoomPageState extends State<RoomPage> {
     final senderId = widget.room.client.userID;
     if (sender == null || senderId == null) return;
     try {
+      // The profile service is authoritative for a sender's nudge suffix.
+      // Refresh it at send time so a just-saved profile setting is used by
+      // already-open conversations as well.
+      final latestProfile = await widget.api.loadProfile();
+      if (mounted) {
+        setState(() {
+          ownProfile = latestProfile;
+          nudgeSuffix = latestProfile.nudgeSuffix ?? '';
+        });
+      }
       await NudgeService(
         backend: MatrixNudgeBackend(widget.room.client),
         roomId: widget.room.id,
@@ -932,7 +939,7 @@ class _RoomPageState extends State<RoomPage> {
       ).send(
         targetUserId: message.senderId,
         targetDisplayName: targetDisplayName,
-        suffix: nudgeSuffix,
+        suffix: latestProfile.nudgeSuffix ?? '',
       );
     } catch (_) {
       if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
@@ -1005,49 +1012,6 @@ class _RoomPageState extends State<RoomPage> {
         ),
       ),
     );
-  }
-
-  Future<void> _editNudgeSuffix() async {
-    final field = TextEditingController(text: nudgeSuffix);
-    await showCupertinoDialog<void>(
-      context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('设置拍一拍'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 12),
-          child: CupertinoTextField(
-            key: const Key('nudge-suffix-input'),
-            controller: field,
-            maxLength: 30,
-            placeholder: '例如：的肩膀',
-          ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            onPressed: () async {
-              try {
-                final suffix = field.text.trim();
-                await NudgePreferenceService(
-                  MatrixNudgePreferenceBackend(widget.room.client),
-                ).saveSuffix(suffix);
-                if (!dialogContext.mounted) return;
-                Navigator.pop(dialogContext);
-                if (mounted) setState(() => nudgeSuffix = suffix);
-              } catch (_) {
-                if (mounted) setState(() => mediaMessage = '拍一拍设置保存失败');
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    field.dispose();
   }
 
   void _changed() {
@@ -1321,7 +1285,6 @@ class _RoomPageState extends State<RoomPage> {
           onClearLocalHistory: _clearLocalHistory,
           onPreferenceChanged: (preference) =>
               writeConversationPreference(widget.room, preference),
-          onEditNudge: _editNudgeSuffix,
         ),
       ),
     );

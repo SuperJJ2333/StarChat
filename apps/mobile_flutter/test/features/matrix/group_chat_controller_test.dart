@@ -13,6 +13,10 @@ final class FakeContactsGateway implements ContactsGateway {
       {'id': 'tag', 'name': name};
 
   @override
+  Future<Map<String, dynamic>> renameContactTag(String id, String name) async =>
+      {'id': id, 'name': name};
+
+  @override
   Future<void> deleteContactTag(String id) async {}
 
   @override

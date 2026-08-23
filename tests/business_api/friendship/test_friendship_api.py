@@ -111,6 +111,17 @@ async def test_block_list_unblock_and_contact_tags(ctx):
         assert (await client.delete(f"/api/v1/contact-tags/{created.json()['id']}", headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-delete'})).status_code == 204
 
 @pytest.mark.asyncio
+async def test_contact_tag_can_be_renamed_by_its_owner(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        created = await client.post('/api/v1/contact-tags', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-create-rename'}, json={'name': '同事'})
+        assert created.status_code == 201
+        renamed = await client.patch(f"/api/v1/contact-tags/{created.json()['id']}", headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-rename'}, json={'name': '项目组'})
+        assert renamed.status_code == 200
+        assert renamed.json()['name'] == '项目组'
+        assert (await client.get('/api/v1/contact-tags', headers=bearer(settings, 'u1'))).json()['items'][0]['name'] == '项目组'
+
+@pytest.mark.asyncio
 async def test_friend_request_prevents_pending_and_existing_friend_duplicates(ctx):
     app, settings = ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
