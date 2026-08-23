@@ -23,6 +23,7 @@ final class ChatIdentitySnapshot {
           'masked_email': profile.maskedEmail,
           'fallback_seed': profile.fallbackSeed,
           'signature': profile.signature,
+          'nudge_suffix': profile.nudgeSuffix,
           'avatar_url': profile.avatarUrl,
         },
         'contacts': [
@@ -74,6 +75,7 @@ final class ChatIdentitySnapshot {
         maskedEmail: maskedEmail,
         fallbackSeed: fallbackSeed,
         signature: profileJson['signature']?.toString(),
+        nudgeSuffix: profileJson['nudge_suffix']?.toString(),
         avatarUrl: profileJson['avatar_url']?.toString(),
       ),
       contacts: List.unmodifiable(contacts),

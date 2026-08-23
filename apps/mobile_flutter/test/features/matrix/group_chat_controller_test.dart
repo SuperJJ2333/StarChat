@@ -6,6 +6,16 @@ import 'package:liuhetong_mobile/features/matrix/group_chat_page.dart';
 
 final class FakeContactsGateway implements ContactsGateway {
   @override
+  Future<Map<String, dynamic>> contactTags() async => {'items': []};
+
+  @override
+  Future<Map<String, dynamic>> createContactTag(String name) async =>
+      {'id': 'tag', 'name': name};
+
+  @override
+  Future<void> deleteContactTag(String id) async {}
+
+  @override
   Future<List<ContactSummary>> listContacts() async => const [
         ContactSummary(
           userId: 'user-bob',

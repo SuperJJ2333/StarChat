@@ -9,12 +9,15 @@ final class ProfileData {
       required this.maskedEmail,
       required this.fallbackSeed,
       this.signature,
+      this.nudgeSuffix,
       this.avatarUrl});
   final String username, nickname, maskedEmail, fallbackSeed;
-  final String? signature, avatarUrl;
+  final String? signature, nudgeSuffix, avatarUrl;
   ProfileData copyWith(
           {String? nickname,
           String? signature,
+          String? nudgeSuffix,
+          bool clearNudgeSuffix = false,
           String? avatarUrl,
           bool clearAvatar = false}) =>
       ProfileData(
@@ -23,6 +26,7 @@ final class ProfileData {
           maskedEmail: maskedEmail,
           fallbackSeed: fallbackSeed,
           signature: signature ?? this.signature,
+          nudgeSuffix: clearNudgeSuffix ? null : nudgeSuffix ?? this.nudgeSuffix,
           avatarUrl: clearAvatar ? null : avatarUrl ?? this.avatarUrl);
 }
 
@@ -40,7 +44,7 @@ final class AvatarUploadSession {
 abstract interface class ProfileGateway {
   Future<ProfileData> loadProfile();
   Future<ProfileData> updateProfile(
-      {required String nickname, String? signature});
+      {required String nickname, String? signature, String? nudgeSuffix});
   Future<AvatarUploadSession> createAvatarUpload(
       {required String mimeType, required int byteSize});
   Future<void> putAvatar(
@@ -98,12 +102,14 @@ final class ProfileController extends ChangeNotifier {
     }
   }
 
-  Future<void> save(String nickname, String? signature) async {
+  Future<void> save(String nickname, String? signature, {String? nudgeSuffix}) async {
     _set(ProfileState(ProfileStatus.saving, profile: state.profile));
     try {
       _set(ProfileState(ProfileStatus.ready,
           profile: await gateway.updateProfile(
-              nickname: nickname, signature: signature)));
+              nickname: nickname,
+              signature: signature,
+              nudgeSuffix: nudgeSuffix ?? state.profile?.nudgeSuffix)));
     } catch (_) {
       _set(ProfileState(ProfileStatus.failed,
           profile: state.profile, message: '资料保存失败，请重试'));

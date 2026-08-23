@@ -202,6 +202,16 @@ async def test_profile_patch_is_strict_atomic_and_idempotent() -> None:
             headers={**_auth(token), "Idempotency-Key": "profile-update-4"},
             json={"signature": "x" * 141},
         )
+        nudge = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "profile-update-nudge"},
+            json={"nudge_suffix": "拍了拍我"},
+        )
+        long_nudge = await client.patch(
+            "/api/v1/profile/me",
+            headers={**_auth(token), "Idempotency-Key": "profile-update-nudge-long"},
+            json={"nudge_suffix": "x" * 33},
+        )
 
     assert first.status_code == replay.status_code == 200
     assert first.json() == replay.json()
@@ -212,11 +222,15 @@ async def test_profile_patch_is_strict_atomic_and_idempotent() -> None:
     assert username_change.status_code == empty_nickname.status_code == 422
     assert null_nickname.status_code == 422
     assert long_signature.status_code == 422
+    assert nudge.status_code == 200
+    assert nudge.json()["nudge_suffix"] == "拍了拍我"
+    assert long_nudge.status_code == 422
     with factory() as session:
         user = session.get(User, "user-1")
         assert user.username == "Alice"
         assert user.nickname == "Alice Chen"
         assert user.signature == "Hello"
+        assert user.nudge_suffix == "拍了拍我"
         events = list(
             session.scalars(
                 select(OutboxEvent).where(
@@ -229,7 +243,7 @@ async def test_profile_patch_is_strict_atomic_and_idempotent() -> None:
                 select(AuditEvent).where(AuditEvent.action == "identity.profile.updated")
             )
         )
-        assert len(events) == len(audits) == 1
+        assert len(events) == len(audits) == 2
         assert events[0].payload == {"user_id": "user-1"}
     engine.dispose()
 

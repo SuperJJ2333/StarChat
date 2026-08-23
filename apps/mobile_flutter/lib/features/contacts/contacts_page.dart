@@ -403,7 +403,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
             CupertinoDialogAction(
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('确认'),
+              child: const Text('删除'),
             ),
           ],
         ),
@@ -452,6 +452,23 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     if (accepted) await _persist();
   }
 
+  Future<void> _pickTags() async {
+    final updated = await Navigator.push<ContactDetails>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => ContactTagPickerPage(
+          api: widget.api,
+          contact: current,
+        ),
+      ),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      current = updated;
+      tags.text = updated.tags.join(',');
+    });
+  }
+
   Future<void> _choosePermission() async {
     final selected = await showCupertinoModalPopup<String>(
       context: context,
@@ -481,16 +498,39 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   }
 
   Future<void> _setBlocked(bool value) async {
-    if (!value || blocked) return;
+    if (!value || blocked) {
+      return;
+    }
     if (!await _confirm('加入黑名单', '加入后将不再接收对方的好友互动。')) return;
     await widget.api.blockContact(widget.contact.userId);
     if (mounted) setState(() => blocked = true);
   }
 
   Future<void> _delete() async {
-    if (!await _confirm('删除好友', '删除后需要重新发送好友申请。')) return;
-    await widget.api.deleteContact(widget.contact.userId);
-    if (mounted) Navigator.pop(context, const ContactMoreResult.deleted());
+    try {
+      if (!await _confirm(
+          '删除好友', '删除后将不再显示在你的通讯录中，且需要重新发送好友申请。')) {
+        return;
+      }
+      await widget.api.deleteContact(widget.contact.userId);
+      if (mounted) Navigator.pop(context, const ContactMoreResult.deleted());
+    } catch (_) {
+      if (mounted) {
+        await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('删除失败'),
+            content: const Text('删除好友失败，请重试。'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -523,7 +563,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
                     title: const Text('标签'),
                     additionalInfo: Text(tags.text),
                     trailing: const CupertinoListTileChevron(),
-                    onTap: () => _editText('设置标签', tags),
+                    onTap: _pickTags,
                   ),
                   CupertinoListTile(
                     title: const Text('朋友圈权限'),
@@ -550,6 +590,10 @@ final class _ContactMorePageState extends State<ContactMorePage> {
                       '删除好友',
                       style: TextStyle(color: CupertinoColors.systemRed),
                     ),
+                    leading: const Icon(
+                      CupertinoIcons.delete,
+                      color: CupertinoColors.systemRed,
+                    ),
                     onTap: _delete,
                   ),
                 ],
@@ -565,6 +609,110 @@ final class ContactTagsPage extends StatefulWidget {
   final BusinessApiClient api;
   @override
   State<ContactTagsPage> createState() => _ContactTagsPageState();
+}
+
+final class ContactTagPickerPage extends StatefulWidget {
+  const ContactTagPickerPage({
+    super.key,
+    required this.api,
+    required this.contact,
+  });
+  final ContactsGateway api;
+  final ContactDetails contact;
+
+  @override
+  State<ContactTagPickerPage> createState() => _ContactTagPickerPageState();
+}
+
+final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
+  late final selected = {...widget.contact.tags};
+  late Future<Map<String, dynamic>> tags = widget.api.contactTags();
+
+  Future<void> _create() async {
+    final controller = TextEditingController();
+    final value = await showCupertinoDialog<String>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('新建标签'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: CupertinoTextField(controller: controller),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || value.isEmpty) return;
+    await widget.api.createContactTag(value);
+    if (mounted) setState(() => tags = widget.api.contactTags());
+  }
+
+  @override
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
+        navigationBar: CupertinoNavigationBar(
+          backgroundColor: WeChatColors.chatNavigationBackground,
+          automaticBackgroundVisibility: false,
+          enableBackgroundFilterBlur: false,
+          middle: const Text('标签'),
+          trailing: CupertinoButton(
+            padding: EdgeInsets.zero,
+            child: const Text('完成'),
+            onPressed: () async {
+              final updated = await widget.api.updateContactDetails(
+                widget.contact,
+                remark: widget.contact.remark,
+                tags: selected.toList(growable: false),
+                momentsPermission: widget.contact.momentsPermission,
+              );
+              if (context.mounted) Navigator.pop(context, updated);
+            },
+          ),
+        ),
+        child: SafeArea(
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: tags,
+            builder: (_, snapshot) {
+              final items = (snapshot.data?['items'] as List?) ?? const [];
+              return ListView(
+                children: [
+                  WeChatListTile(
+                    title: const Text('新建标签'),
+                    leading: const Icon(CupertinoIcons.add_circled),
+                    onTap: _create,
+                  ),
+                  for (final raw in items)
+                    WeChatListTile(
+                      title: Text(raw['name'].toString()),
+                      trailing: Icon(
+                        selected.contains(raw['name'].toString())
+                            ? CupertinoIcons.check_mark_circled_solid
+                            : CupertinoIcons.circle,
+                        color: selected.contains(raw['name'].toString())
+                            ? WeChatColors.brandPrimary
+                            : WeChatColors.textTertiary,
+                      ),
+                      onTap: () => setState(() {
+                        final name = raw['name'].toString();
+                        selected.contains(name)
+                            ? selected.remove(name)
+                            : selected.add(name);
+                      }),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
 }
 
 final class _ContactTagsPageState extends State<ContactTagsPage> {

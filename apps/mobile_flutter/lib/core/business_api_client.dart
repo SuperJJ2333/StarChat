@@ -203,15 +203,16 @@ final class BusinessApiClient
       maskedEmail: body['masked_email'] as String,
       fallbackSeed: body['avatar_fallback_seed'] as String,
       signature: body['signature']?.toString(),
+      nudgeSuffix: body['nudge_suffix']?.toString(),
       avatarUrl: body['avatar_url']?.toString());
   @override
   Future<ProfileData> loadProfile() async =>
       _profile(await getJson('/profile/me'));
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname, String? signature}) async =>
+          {required String nickname, String? signature, String? nudgeSuffix}) async =>
       _profile(await patchJson(
-          '/profile/me', {'nickname': nickname, 'signature': signature},
+          '/profile/me', {'nickname': nickname, 'signature': signature, 'nudge_suffix': nudgeSuffix},
           idempotencyKey: newIdempotencyKey()));
   @override
   Future<AvatarUploadSession> createAvatarUpload(
@@ -402,10 +403,20 @@ final class BusinessApiClient
   }
 
   Future<Map<String, dynamic>> friendRequests() => getJson('/friends/requests');
+  @override
   Future<Map<String, dynamic>> contactTags() => getJson('/contact-tags');
+  @override
   Future<Map<String, dynamic>> createContactTag(String name) =>
       postJson('/contact-tags', {'name': name},
           idempotencyKey: newIdempotencyKey());
+  @override
+  Future<void> deleteContactTag(String id) async {
+    final response = await _authorized((headers) => _client.delete(
+          _uri('/contact-tags/$id'),
+          headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+        ));
+    if (response.statusCode >= 400) _decode(response);
+  }
   Future<Map<String, dynamic>> blocks() => getJson('/blocks');
   Future<Map<String, dynamic>> updateContact(String id,
           {String? remark,

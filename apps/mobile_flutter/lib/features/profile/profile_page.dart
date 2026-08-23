@@ -344,6 +344,22 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                   title: const Text('邮箱'),
                   additionalInfo: Text(profile.maskedEmail),
                 ),
+                CupertinoListTile(
+                  key: const Key('profile-nudge-row'),
+                  title: const Text('拍一拍'),
+                  additionalInfo: Text(profile.nudgeSuffix ?? '未设置'),
+                  trailing: const CupertinoListTileChevron(),
+                  onTap: () async {
+                    await Navigator.push<void>(
+                      context,
+                      CupertinoPageRoute(
+                        builder: (_) => _ProfileNudgePage(
+                          controller: widget.controller,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -362,6 +378,84 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
               Text(
                 state.message!,
                 style: const TextStyle(color: CupertinoColors.systemRed),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+final class _ProfileNudgePage extends StatefulWidget {
+  const _ProfileNudgePage({required this.controller});
+  final ProfileController controller;
+
+  @override
+  State<_ProfileNudgePage> createState() => _ProfileNudgePageState();
+}
+
+final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
+  late final suffix = TextEditingController(
+    text: widget.controller.state.profile?.nudgeSuffix ?? '',
+  );
+
+  @override
+  void dispose() {
+    suffix.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = widget.controller.state.profile!;
+    final saving = widget.controller.state.status == ProfileStatus.saving;
+    return WeChatPageScaffold.navigation(
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: WeChatColors.chatNavigationBackground,
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
+        middle: const Text('设置拍一拍'),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: saving
+              ? null
+              : () async {
+                  await widget.controller.save(
+                    profile.nickname,
+                    profile.signature,
+                    nudgeSuffix: suffix.text.trim(),
+                  );
+                  if (context.mounted &&
+                      widget.controller.state.status == ProfileStatus.ready) {
+                    Navigator.pop(context);
+                  }
+                },
+          child: const Text('保存'),
+        ),
+      ),
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            CupertinoTextField(
+              key: const Key('profile-nudge-field'),
+              controller: suffix,
+              maxLength: 32,
+              autofocus: true,
+              placeholder: '例如：拍了拍我',
+              padding: const EdgeInsets.all(16),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 10, left: 4),
+              child: Text('朋友拍一拍你时显示的后缀。'),
+            ),
+            if (widget.controller.state.message != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10, left: 4),
+                child: Text(
+                  widget.controller.state.message!,
+                  style: const TextStyle(color: CupertinoColors.systemRed),
+                ),
               ),
           ],
         ),

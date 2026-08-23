@@ -6,6 +6,22 @@ import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 final class FakeContactsGateway implements ContactsGateway {
   var deleted = false;
   var blocked = false;
+  List<String> lastTags = const [];
+
+  @override
+  Future<Map<String, dynamic>> contactTags() async => {
+        'items': [
+          {'id': 'tag-1', 'name': '同事'},
+          {'id': 'tag-2', 'name': '家人'},
+        ],
+      };
+
+  @override
+  Future<Map<String, dynamic>> createContactTag(String name) async =>
+      {'id': 'tag-new', 'name': name};
+
+  @override
+  Future<void> deleteContactTag(String id) async {}
 
   @override
   Future<List<ContactSummary>> listContacts() async => const [
@@ -24,12 +40,14 @@ final class FakeContactsGateway implements ContactsGateway {
     required String? remark,
     required List<String> tags,
     required String momentsPermission,
-  }) async =>
-      contact.copyWith(
+  }) async {
+    lastTags = tags;
+    return contact.copyWith(
         remark: remark,
         tags: tags,
         momentsPermission: momentsPermission,
       );
+  }
 
   @override
   Future<void> blockContact(String userId) async => blocked = true;
@@ -216,6 +234,27 @@ void main() {
         .toList(growable: false);
     expect(ordered, ordered.toList()..sort());
     expect(find.byType(CupertinoSwitch), findsOneWidget);
+  });
+
+  testWidgets('friend tag picker saves multiple selected tags', (tester) async {
+    final gateway = FakeContactsGateway();
+    const contact = ContactDetails(
+      userId: 'user-1',
+      username: 'alice',
+      matrixUserId: '@alice:test',
+      nickname: 'Alice',
+      tags: ['同事'],
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactTagPickerPage(api: gateway, contact: contact),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('同事'), findsOneWidget);
+    expect(find.text('家人'), findsOneWidget);
+    await tester.tap(find.text('家人'));
+    await tester.tap(find.text('完成'));
+    await tester.pumpAndSettle();
+    expect(gateway.lastTags, containsAll(['同事', '家人']));
   });
 
   testWidgets(

@@ -332,6 +332,40 @@
     "caibiDisplayName": "点钻",
     "caibiRedPacketLabel": "畅聊点钻红包",
     "internalAssetCode": "CAIBI",
-    "updatedAt": "2026-08-23"
+    "updatedAt": "2026-08-23",
+    "phaseOneScreens": [
+      {
+        "id": "phase1-profile-personal-info-nudge",
+        "name": "Profile / Personal Info / Nudge",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/profile/profile_page.dart",
+        "states": ["default", "editing", "saving", "error"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+      },
+      {
+        "id": "phase1-contact-tag-picker",
+        "name": "Contact / Tag Picker",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart",
+        "states": ["default", "selected", "creating", "editing", "deleting", "error"],
+        "tokens": ["surface", "brandPrimary", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+      },
+      {
+        "id": "phase1-contact-delete-confirmation",
+        "name": "Contact / Delete Confirmation",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart",
+        "states": ["default", "confirming", "deleting", "error"],
+        "tokens": ["surface", "danger", "textPrimary", "textSecondary", "spacing", "radius"]
+      },
+      {
+        "id": "phase1-chat-info-friend-profile-entry",
+        "name": "Chat Info / Friend Profile Entry",
+        "status": "contract-registered",
+        "source": "apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart",
+        "states": ["default", "pressed"],
+        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+      }
+    ]
   }
 }

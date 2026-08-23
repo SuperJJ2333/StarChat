@@ -121,6 +121,9 @@ final class ContactDetails {
 
 abstract interface class ContactsGateway {
   Future<List<ContactSummary>> listContacts();
+  Future<Map<String, dynamic>> contactTags();
+  Future<Map<String, dynamic>> createContactTag(String name);
+  Future<void> deleteContactTag(String id);
   Future<ContactDetails> updateContactDetails(
     ContactDetails contact, {
     required String? remark,

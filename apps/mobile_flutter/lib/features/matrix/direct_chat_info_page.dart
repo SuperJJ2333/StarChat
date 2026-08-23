@@ -188,12 +188,6 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
               trailing: const CupertinoListTileChevron(),
               onTap: widget.onSearchHistory,
             ),
-            if (widget.onEditNudge != null)
-              WeChatListTile(
-                title: const Text('设置拍一拍'),
-                trailing: const CupertinoListTileChevron(),
-                onTap: widget.onEditNudge,
-              ),
             _switch('消息免打扰', preference.muted,
                 (value) => _update(preference.copyWith(muted: value))),
             _switch('置顶聊天', preference.pinned, (value) {

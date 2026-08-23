@@ -35,6 +35,7 @@ class User(Base):
         default=lambda context: context.get_current_parameters()["username"],
     )
     signature: Mapped[str | None] = mapped_column(String(140))
+    nudge_suffix: Mapped[str | None] = mapped_column(String(32))
     auto_allow_group_join: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('1'))
     avatar_object_key: Mapped[str | None] = mapped_column(String(512))
     matrix_avatar_source_key: Mapped[str | None] = mapped_column(String(512))

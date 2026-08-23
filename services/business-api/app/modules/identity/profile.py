@@ -31,6 +31,7 @@ class ProfileResult:
     username: str
     nickname: str
     signature: str | None
+    nudge_suffix: str | None
     masked_email: str
     avatar_url: str | None
     avatar_fallback_seed: str
@@ -120,11 +121,13 @@ class ProfileService:
                 self._not_found()
             if record.status == "COMPLETED":
                 return self._profile(user)
-            before = {"nickname": user.nickname, "signature": user.signature}
+            before = {"nickname": user.nickname, "signature": user.signature, "nudge_suffix": user.nudge_suffix}
             if "nickname" in normalized:
                 user.nickname = normalized["nickname"]
             if "signature" in normalized:
                 user.signature = normalized["signature"]
+            if "nudge_suffix" in normalized:
+                user.nudge_suffix = normalized["nudge_suffix"]
             user.profile_updated_at = now
             user.updated_at = now
             self._enqueue_profile_changed(session, user_id, now)
@@ -139,7 +142,7 @@ class ProfileService:
                 trace_id=trace_id,
                 source_ip=source_ip,
                 before=before,
-                after={"nickname": user.nickname, "signature": user.signature},
+                after={"nickname": user.nickname, "signature": user.signature, "nudge_suffix": user.nudge_suffix},
             )
             self._complete_idempotency(record, now)
             return self._profile(user)
@@ -373,6 +376,7 @@ class ProfileService:
             username=user.username,
             nickname=user.nickname,
             signature=user.signature,
+            nudge_suffix=user.nudge_suffix,
             masked_email=self._mask_email(user.email),
             avatar_url=avatar_url,
             avatar_fallback_seed=sha256(
@@ -419,6 +423,16 @@ class ProfileService:
                     status_code=422,
                 )
             normalized["signature"] = signature or None
+        if "nudge_suffix" in changes:
+            nudge_suffix = changes["nudge_suffix"]
+            nudge_suffix = nudge_suffix.strip() if nudge_suffix is not None else None
+            if nudge_suffix and len(nudge_suffix) > 32:
+                raise AppError(
+                    code="PROFILE_NUDGE_SUFFIX_INVALID",
+                    message="拍一拍后缀不得超过 32 个字符",
+                    status_code=422,
+                )
+            normalized["nudge_suffix"] = nudge_suffix or None
         return normalized
 
     @staticmethod

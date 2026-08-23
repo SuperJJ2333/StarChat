@@ -12,7 +12,8 @@ const profile = ProfileData(
     nickname: 'Alice',
     maskedEmail: 'al***@example.test',
     fallbackSeed: 'seed',
-    signature: 'hello');
+    signature: 'hello',
+    nudgeSuffix: '拍了拍我');
 
 final class FakeProfileGateway implements ProfileGateway {
   ProfileData loadedProfile = profile;
@@ -23,8 +24,11 @@ final class FakeProfileGateway implements ProfileGateway {
   Future<ProfileData> loadProfile() async => loadedProfile;
   @override
   Future<ProfileData> updateProfile(
-          {required String nickname, String? signature}) async =>
-      profile.copyWith(nickname: nickname, signature: signature);
+          {required String nickname,
+          String? signature,
+          String? nudgeSuffix}) async =>
+      profile.copyWith(
+          nickname: nickname, signature: signature, nudgeSuffix: nudgeSuffix);
   @override
   Future<AvatarUploadSession> createAvatarUpload(
           {required String mimeType, required int byteSize}) async =>
@@ -191,6 +195,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.state.profile!.avatarUrl, 'https://signed/avatar');
+  });
+
+  testWidgets('personal information exposes a saved nudge setting',
+      (tester) async {
+    final gateway = FakeProfileGateway();
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+    );
+    await controller.load();
+    await tester.pumpWidget(
+      CupertinoApp(home: ProfileDetailsPage(controller: controller)),
+    );
+    expect(find.byKey(const Key('profile-nudge-row')), findsOneWidget);
+    expect(find.text('拍了拍我'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('profile-nudge-row')));
+    await tester.pumpAndSettle();
+    expect(find.text('设置拍一拍'), findsOneWidget);
+    final field = find.byKey(const Key('profile-nudge-field'));
+    await tester.enterText(field, '拍了拍我一下');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(controller.state.profile!.nudgeSuffix, '拍了拍我一下');
+    expect(find.text('拍了拍我一下'), findsOneWidget);
   });
 
   testWidgets(
