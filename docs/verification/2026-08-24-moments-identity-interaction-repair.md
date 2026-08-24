@@ -1,7 +1,9 @@
 # 朋友圈身份与互动修复验证记录
 
-日期：2026-08-24  
-实现提交：`fd1edb0`、`ff7ba63`  
+日期：2026-08-24
+
+实现提交：`fd1edb0`、`ff7ba63`
+
 身份显示规则：`remark → nickname → username`
 
 ## 结论
@@ -72,4 +74,3 @@
 ## 已知外部阻塞
 
 `git push origin main` 返回 GitHub 403：本机认证账号 `a1014826460-stack` 没有 `SuperJJ2333/StarChat` 写权限。因此代码已在本地 main 形成提交但尚未同步到 origin；需要仓库所有者授予权限或切换到有权限的凭据后重试 push。
-
