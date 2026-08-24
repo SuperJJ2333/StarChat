@@ -108,6 +108,19 @@ final class ContactDetails {
         remark: remark,
       ).displayName;
 
+  ContactSummary toSummary() => ContactSummary(
+        userId: userId,
+        username: username,
+        matrixUserId: matrixUserId,
+        nickname: nickname,
+        remark: remark,
+        avatarUrl: avatarUrl,
+        nudgeSuffix: nudgeSuffix,
+        momentsPermission: momentsPermission,
+        tags: List.unmodifiable(tags),
+        starred: starred,
+      );
+
   ContactDetails copyWith({
     String? remark,
     bool clearRemark = false,

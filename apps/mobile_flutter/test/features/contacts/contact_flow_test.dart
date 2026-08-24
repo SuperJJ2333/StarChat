@@ -207,6 +207,32 @@ void main() {
     expect(contact.copyWith(clearRemark: true).displayName, 'Alice');
   });
 
+  test('contact details map all identity fields to a summary independently',
+      () {
+    const details = ContactDetails(
+      userId: 'uuid',
+      username: 'alice-login',
+      nickname: 'Alice 昵称',
+      remark: '项目小艾',
+      matrixUserId: '@alice:example.test',
+      avatarUrl: 'https://cdn.example.test/alice.jpg',
+      nudgeSuffix: '拍了拍肩膀',
+      momentsPermission: 'HIDE_THEM',
+      tags: ['项目组'],
+      starred: true,
+    );
+
+    final summary = details.toSummary();
+
+    expect(summary.username, 'alice-login');
+    expect(summary.nickname, 'Alice 昵称');
+    expect(summary.remark, '项目小艾');
+    expect(summary.avatarUrl, 'https://cdn.example.test/alice.jpg');
+    expect(summary.matrixUserId, '@alice:example.test');
+    expect(summary.tags, ['项目组']);
+    expect(summary.starred, isTrue);
+  });
+
   testWidgets('friend profile and settings strictly follow Figma order',
       (tester) async {
     tester.view.physicalSize = const Size(393, 852);

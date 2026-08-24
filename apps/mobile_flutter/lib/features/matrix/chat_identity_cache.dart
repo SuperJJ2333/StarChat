@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -115,17 +116,44 @@ final class SharedPreferencesChatIdentityStore implements ChatIdentityStore {
 
 /// Session identity cache. [hydrate] restores prior avatar URLs before any
 /// RoomPage is allowed to build; [preload] refreshes from the business API.
-final class ChatIdentityCache {
+final class ChatIdentityCacheError {
+  const ChatIdentityCacheError({
+    required this.operation,
+    required this.errorType,
+    required this.accountKeyHash,
+    required this.error,
+    required this.stackTrace,
+  });
+
+  final String operation;
+  final String errorType;
+  final String accountKeyHash;
+  final Object error;
+  final StackTrace stackTrace;
+}
+
+typedef ChatIdentityErrorReporter = void Function(ChatIdentityCacheError error);
+
+final class ChatIdentityCache extends ChangeNotifier {
   ChatIdentityCache(this.api, {String? accountKey, ChatIdentityStore? store})
       : _accountKey = accountKey,
-        _store = store;
+        _store = store,
+        _loadProfile = api!.loadProfile,
+        _loadContacts = api!.listContacts,
+        _onError = null;
 
   ChatIdentityCache.forTesting({
     required String accountKey,
     required ChatIdentityStore store,
+    Future<ProfileData> Function()? loadProfile,
+    Future<List<ContactSummary>> Function()? loadContacts,
+    ChatIdentityErrorReporter? onError,
   })  : api = null,
         _accountKey = accountKey,
-        _store = store;
+        _store = store,
+        _loadProfile = loadProfile,
+        _loadContacts = loadContacts,
+        _onError = onError;
 
   static Future<ChatIdentityCache> create({
     required BusinessApiClient api,
@@ -142,6 +170,9 @@ final class ChatIdentityCache {
   final BusinessApiClient? api;
   final String? _accountKey;
   final ChatIdentityStore? _store;
+  final Future<ProfileData> Function()? _loadProfile;
+  final Future<List<ContactSummary>> Function()? _loadContacts;
+  final ChatIdentityErrorReporter? _onError;
   Future<void>? _hydrate;
   Future<void>? _preload;
   ProfileData? profile;
@@ -161,27 +192,73 @@ final class ChatIdentityCache {
     wasHydratedFromDisk = true;
   }
 
-  Future<void> preload() => _preload ??= _load();
+  Future<void> preload() => _preload ??= _load(operation: 'preload');
 
-  Future<void> _load() async {
+  Future<void> refresh() => _load(operation: 'refresh');
+
+  Future<void> _load({required String operation}) async {
     await hydrate();
-    final gateway = api;
-    if (gateway == null) return;
-    final results = await Future.wait<Object>([
-      gateway.loadProfile(),
-      gateway.listContacts(),
-    ]);
+    final loadProfile = _loadProfile;
+    final loadContacts = _loadContacts;
+    if (loadProfile == null || loadContacts == null) return;
+    try {
+      final results = await Future.wait<Object>([
+        loadProfile(),
+        loadContacts(),
+      ]);
+      _apply(ChatIdentitySnapshot(
+        profile: results[0] as ProfileData,
+        contacts: results[1] as List<ContactSummary>,
+      ));
+    } catch (error, stackTrace) {
+      _report(operation, error, stackTrace);
+      rethrow;
+    }
+    await _persist(operation: '$operation.persist');
+  }
+
+  Future<void> applyUpdatedContact(ContactSummary updated) async {
+    final next = <ContactSummary>[];
+    var replaced = false;
+    for (final contact in contacts) {
+      if (contact.userId == updated.userId ||
+          contact.matrixUserId == updated.matrixUserId) {
+        next.add(updated);
+        replaced = true;
+      } else {
+        next.add(contact);
+      }
+    }
+    if (!replaced) next.add(updated);
+    final currentProfile = profile;
+    if (currentProfile == null) {
+      contacts = List.unmodifiable(next);
+      contactsByMatrixId = {
+        for (final contact in contacts)
+          contact.matrixUserId: contact.toDetails(),
+      };
+      notifyListeners();
+      return;
+    }
     _apply(ChatIdentitySnapshot(
-      profile: results[0] as ProfileData,
-      contacts: results[1] as List<ContactSummary>,
+      profile: currentProfile,
+      contacts: List.unmodifiable(next),
     ));
+    await _persist(operation: 'contact_update.persist');
+  }
+
+  Future<void> _persist({required String operation}) async {
     final store = _store;
     final key = _accountKey;
     if (store != null && key != null && profile != null) {
-      await store.write(
-        key,
-        ChatIdentitySnapshot(profile: profile!, contacts: contacts),
-      );
+      try {
+        await store.write(
+          key,
+          ChatIdentitySnapshot(profile: profile!, contacts: contacts),
+        );
+      } catch (error, stackTrace) {
+        _report(operation, error, stackTrace);
+      }
     }
   }
 
@@ -191,6 +268,28 @@ final class ChatIdentityCache {
     contactsByMatrixId = {
       for (final contact in contacts) contact.matrixUserId: contact.toDetails(),
     };
+    notifyListeners();
+  }
+
+  void _report(String operation, Object error, StackTrace stackTrace) {
+    final cacheError = ChatIdentityCacheError(
+      operation: operation,
+      errorType: error.runtimeType.toString(),
+      accountKeyHash:
+          (_accountKey ?? 'unknown').hashCode.toUnsigned(32).toRadixString(16),
+      error: error,
+      stackTrace: stackTrace,
+    );
+    _onError?.call(cacheError);
+    developer.log(
+      'Identity cache operation failed '
+      'operation=${cacheError.operation} '
+      'account=${cacheError.accountKeyHash} '
+      'error_type=${cacheError.errorType}',
+      name: 'ChatIdentityCache',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   /// Decodes known profile/contact avatar bytes before a chat route transition.
