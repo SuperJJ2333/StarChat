@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -70,9 +71,10 @@ final class _MomentVisibilityPeoplePageState
                     children: [
                       const Text('标签或朋友加载失败，请检查网络后重试'),
                       const SizedBox(height: 12),
-                      CupertinoButton.filled(
+                      ModernActionButton(
+                        icon: CupertinoIcons.refresh,
+                        label: '重试',
                         onPressed: () => setState(() => _data = _load()),
-                        child: const Text('重试'),
                       ),
                     ],
                   ),

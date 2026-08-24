@@ -135,11 +135,13 @@ final class ChatIdentityCacheError {
 typedef ChatIdentityErrorReporter = void Function(ChatIdentityCacheError error);
 
 final class ChatIdentityCache extends ChangeNotifier {
-  ChatIdentityCache(this.api, {String? accountKey, ChatIdentityStore? store})
-      : _accountKey = accountKey,
+  ChatIdentityCache(BusinessApiClient api,
+      {String? accountKey, ChatIdentityStore? store})
+      : api = api,
+        _accountKey = accountKey,
         _store = store,
-        _loadProfile = api!.loadProfile,
-        _loadContacts = api!.listContacts,
+        _loadProfile = api.loadProfile,
+        _loadContacts = api.listContacts,
         _onError = null;
 
   ChatIdentityCache.forTesting({

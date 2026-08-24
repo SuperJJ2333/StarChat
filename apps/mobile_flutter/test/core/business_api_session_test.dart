@@ -147,7 +147,8 @@ void main() {
             jsonEncode({
               'login_token': 'matrix-once',
               'homeserver': 'https://matrix.example',
-              'expires_in': 60
+              'expires_in': 60,
+              'matrix_user_id': '@alice:matrix.example',
             }),
             200);
       }),
@@ -163,6 +164,7 @@ void main() {
 
     expect(grant, isA<MatrixLoginGrant>());
     expect(grant.loginToken, 'matrix-once');
+    expect(grant.matrixUserId, '@alice:matrix.example');
     expect((await store.session())?.matrixUserId, '@alice:matrix.example');
   });
 
