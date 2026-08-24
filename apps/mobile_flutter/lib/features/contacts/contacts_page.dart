@@ -12,6 +12,7 @@ import 'contact_models.dart';
 import 'contact_tag_pages.dart';
 import 'contact_profile_sections.dart';
 import '../search/global_search_page.dart';
+import '../matrix/chat_identity_cache.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
 
@@ -55,6 +56,7 @@ final class ContactsPage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.onGroupChat,
+    this.identityCache,
   });
 
   final ContactsGateway api;
@@ -62,15 +64,35 @@ final class ContactsPage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final VoidCallback? onGroupChat;
+  final ChatIdentityCache? identityCache;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
 }
 
 final class _ContactsPageState extends State<ContactsPage> {
-  late Future<List<ContactSummary>> contacts = widget.api.listContacts();
+  late Future<List<ContactSummary>> contacts;
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
+
+  @override
+  void initState() {
+    super.initState();
+    final cached = widget.identityCache?.contacts ?? const <ContactSummary>[];
+    contacts = cached.isEmpty
+        ? widget.api.listContacts()
+        : Future.value(List.unmodifiable(cached));
+    widget.identityCache?.addListener(_identityChanged);
+  }
+
+  void _identityChanged() {
+    if (!mounted) return;
+    setState(() {
+      contacts = Future.value(
+        List.unmodifiable(widget.identityCache?.contacts ?? const []),
+      );
+    });
+  }
 
   void reload() {
     final next = widget.api.listContacts();
@@ -81,6 +103,7 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   @override
   void dispose() {
+    widget.identityCache?.removeListener(_identityChanged);
     scrollController.dispose();
     super.dispose();
   }
@@ -261,6 +284,13 @@ final class _ContactsPageState extends State<ContactsPage> {
                                     onMessage: widget.onMessage,
                                     onVoice: widget.onVoice,
                                     onVideo: widget.onVideo,
+                                    onContactUpdated:
+                                        widget.identityCache == null
+                                            ? null
+                                            : (updated) => widget.identityCache!
+                                                    .applyUpdatedContact(
+                                                  updated.toSummary(),
+                                                ),
                                   ),
                                 ),
                               );
@@ -333,6 +363,7 @@ final class ContactProfilePage extends StatefulWidget {
     this.onMessage,
     this.onVoice,
     this.onVideo,
+    this.onContactUpdated,
   });
 
   final ContactsGateway api;
@@ -340,6 +371,7 @@ final class ContactProfilePage extends StatefulWidget {
   final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
+  final Future<void> Function(ContactDetails contact)? onContactUpdated;
 
   @override
   State<ContactProfilePage> createState() => _ContactProfilePageState();
@@ -359,7 +391,9 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     if (result.deleted) {
       Navigator.pop(context, true);
     } else {
-      setState(() => contact = result.contact!);
+      final updated = result.contact!;
+      await widget.onContactUpdated?.call(updated);
+      if (mounted) setState(() => contact = updated);
     }
   }
 

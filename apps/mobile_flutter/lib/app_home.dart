@@ -392,6 +392,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
   @override
   Widget build(BuildContext context) => ContactsPage(
         api: widget.api,
+        identityCache: widget.identityCache,
         onMessage: _openMessage,
         onVoice: widget.onVoice,
         onVideo: widget.onVideo,

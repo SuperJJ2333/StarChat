@@ -4,6 +4,8 @@ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_identity_cache.dart';
+import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 
 final class FakeContactsGateway implements ContactsGateway {
   var deleted = false;
@@ -111,6 +113,58 @@ final class IndexedContactsGateway extends FakeContactsGateway {
 }
 
 void main() {
+  testWidgets('contacts rebuild immediately when the shared remark changes',
+      (tester) async {
+    final store = ContactFlowIdentityStore();
+    final cache = ChatIdentityCache.forTesting(
+      accountKey: 'matrix:@me:test',
+      store: store,
+    );
+    await store.write(
+      'matrix:@me:test',
+      const ChatIdentitySnapshot(
+        profile: ProfileData(
+          username: 'me',
+          nickname: '我的昵称',
+          maskedEmail: '',
+          fallbackSeed: 'me',
+        ),
+        contacts: [
+          ContactSummary(
+            userId: 'user-1',
+            username: 'alice',
+            nickname: 'Alice',
+            remark: '旧备注',
+            matrixUserId: '@alice:test',
+          ),
+        ],
+      ),
+    );
+    await cache.hydrate();
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactsPage(
+        api: FakeContactsGateway(),
+        identityCache: cache,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('旧备注'), findsOneWidget);
+
+    await cache.applyUpdatedContact(
+      const ContactSummary(
+        userId: 'user-1',
+        username: 'alice',
+        nickname: 'Alice',
+        remark: '新备注',
+        matrixUserId: '@alice:test',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('新备注'), findsOneWidget);
+    expect(find.text('旧备注'), findsNothing);
+  });
+
   testWidgets('contacts follow Figma star A-Z hash index and grouping',
       (tester) async {
     tester.view.physicalSize = const Size(393, 852);
@@ -420,4 +474,17 @@ void main() {
     expect(find.byKey(const Key('contacts-search')), findsOneWidget);
     expect(find.byKey(const Key('contacts-more')), findsOneWidget);
   });
+}
+
+final class ContactFlowIdentityStore implements ChatIdentityStore {
+  final values = <String, ChatIdentitySnapshot>{};
+
+  @override
+  Future<ChatIdentitySnapshot?> read(String accountKey) async =>
+      values[accountKey];
+
+  @override
+  Future<void> write(String accountKey, ChatIdentitySnapshot snapshot) async {
+    values[accountKey] = snapshot;
+  }
 }

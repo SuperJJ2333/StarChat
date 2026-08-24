@@ -185,6 +185,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   @override
   void initState() {
     super.initState();
+    _identityCache.addListener(_identityChanged);
     syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
       unawaited(_restoreHiddenConversations());
       if (mounted) setState(() {});
@@ -213,8 +214,13 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   @override
   void dispose() {
+    _identityCache.removeListener(_identityChanged);
     syncSubscription?.cancel();
     super.dispose();
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
   }
 
   String _roomTime(Room room) {
@@ -1222,6 +1228,8 @@ class _RoomPageState extends State<RoomPage> {
             initialContact: contact,
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
+            onContactUpdated: (updated) =>
+                _identityCache.applyUpdatedContact(updated.toSummary()),
           ),
         ),
       );
