@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "figma_file_key": "zpzwTbnj1hqx80tyRygX78",
+  "last_checked": "2026-08-25",
+  "tool_status": "unavailable",
+  "tool_status_detail": "No callable Figma read or write tool was exposed in this Codex session. Existing node references are retained; no remote update is claimed.",
+  "surfaces": [
+    {
+      "id": "moments-composer-wechat-v2",
+      "title": "朋友圈发表",
+      "existing_figma_page": "50 Discovery & Moments",
+      "existing_figma_node_id": "29:5798",
+      "approved_browser_artifact": ".superpowers/brainstorm/visual-1787584951/content/composer-layout-options.html",
+      "flutter_widget": "MomentComposerPage",
+      "flutter_file": "apps/mobile_flutter/lib/features/moments/moment_composer_page.dart",
+      "test_file": "apps/mobile_flutter/test/features/moments/moment_composer_page_test.dart",
+      "remote_sync": "blocked_tool_unavailable"
+    },
+    {
+      "id": "moment-visibility-parent-v2",
+      "title": "谁可以看",
+      "existing_figma_page": "50 Discovery & Moments",
+      "existing_figma_node_id": "29:5798",
+      "approved_browser_artifact": ".superpowers/brainstorm/visual-1787584951/content/audience-flow-v2.html",
+      "flutter_widget": "MomentVisibilityPage",
+      "flutter_file": "apps/mobile_flutter/lib/features/moments/moment_visibility_page.dart",
+      "test_file": "apps/mobile_flutter/test/features/moments/moment_visibility_page_test.dart",
+      "remote_sync": "blocked_tool_unavailable"
+    },
+    {
+      "id": "moment-visibility-people-v2",
+      "title": "选择标签或朋友",
+      "existing_figma_page": "50 Discovery & Moments",
+      "existing_figma_node_id": "29:5798",
+      "approved_browser_artifact": ".superpowers/brainstorm/visual-1787584951/content/audience-flow-v2.html",
+      "flutter_widget": "MomentVisibilityPeoplePage",
+      "flutter_file": "apps/mobile_flutter/lib/features/moments/moment_visibility_people_page.dart",
+      "test_file": "apps/mobile_flutter/test/features/moments/moment_visibility_people_page_test.dart",
+      "remote_sync": "blocked_tool_unavailable"
+    }
+  ]
+}

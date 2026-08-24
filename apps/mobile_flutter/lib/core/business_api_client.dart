@@ -512,7 +512,10 @@ final class BusinessApiClient
           required String visibility,
           List<String> imageUrls = const [],
           List<String> includeUserIds = const [],
-          List<String> excludeUserIds = const []}) =>
+          List<String> excludeUserIds = const [],
+          List<String> includeTagIds = const [],
+          List<String> excludeTagIds = const [],
+          String? linkUrl}) =>
       postJson(
           '/moments',
           {
@@ -520,7 +523,10 @@ final class BusinessApiClient
             'visibility': visibility,
             'image_urls': imageUrls,
             'include_user_ids': includeUserIds,
-            'exclude_user_ids': excludeUserIds
+            'exclude_user_ids': excludeUserIds,
+            'include_tag_ids': includeTagIds,
+            'exclude_tag_ids': excludeTagIds,
+            'link_url': linkUrl,
           },
           idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
