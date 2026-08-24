@@ -8,6 +8,9 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_identity_cache.dart';
+import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
+import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_viewer.dart';
 
@@ -57,6 +60,55 @@ Future<BusinessApiClient> momentsApi(
 }
 
 void main() {
+  testWidgets('moments cover renders the signed-in nickname and avatar',
+      (tester) async {
+    final api = await momentsApi((request) async {
+      if (request.url.path == '/api/v1/moments/feed') {
+        return http.Response(jsonEncode({'items': []}), 200,
+            headers: {'content-type': 'application/json'});
+      }
+      if (request.url.path == '/api/v1/moments/preferences') {
+        return http.Response(jsonEncode({'cover_url': null}), 200,
+            headers: {'content-type': 'application/json'});
+      }
+      throw StateError('Unexpected request: ${request.method} ${request.url}');
+    });
+    final identityStore = MomentsIdentityStore();
+    await identityStore.write(
+      'matrix:@me:test',
+      const ChatIdentitySnapshot(
+        profile: ProfileData(
+          username: 'me-login',
+          nickname: '我的昵称',
+          maskedEmail: '',
+          fallbackSeed: 'me-seed',
+          avatarUrl: 'https://cdn.example.test/me.jpg',
+        ),
+        contacts: [],
+      ),
+    );
+    final identityCache = ChatIdentityCache.forTesting(
+      accountKey: 'matrix:@me:test',
+      store: identityStore,
+    );
+    await identityCache.hydrate();
+
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(api: api, identityCache: identityCache),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('我的昵称'), findsOneWidget);
+    expect(find.text('畅聊朋友圈'), findsNothing);
+    final avatar = tester.widget<UserAvatar>(
+      find.byKey(const Key('moment-owner-avatar')),
+    );
+    expect(avatar.nickname, '我的昵称');
+    expect(avatar.fallbackSeed, 'me-seed');
+    expect(avatar.avatarUrl, 'https://cdn.example.test/me.jpg');
+    expect(avatar.diagnosticSource, 'moments-owner');
+  });
+
   testWidgets('moment image grid supports 1 4 and 9 images', (tester) async {
     for (final count in [1, 4, 9]) {
       await tester.pumpWidget(CupertinoApp(
@@ -340,4 +392,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('moment-cover-local-preview')), findsNothing);
   });
+}
+
+final class MomentsIdentityStore implements ChatIdentityStore {
+  final values = <String, ChatIdentitySnapshot>{};
+
+  @override
+  Future<ChatIdentitySnapshot?> read(String accountKey) async =>
+      values[accountKey];
+
+  @override
+  Future<void> write(String accountKey, ChatIdentitySnapshot snapshot) async {
+    values[accountKey] = snapshot;
+  }
 }

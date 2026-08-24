@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/user_avatar.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_api_client.dart';
@@ -12,10 +13,12 @@ import '../../ui/moments/wechat_moment_tile.dart';
 import '../../ui/moments/wechat_moment_viewer.dart';
 import 'moment_models.dart';
 import 'moment_audience_picker_page.dart';
+import '../matrix/chat_identity_cache.dart';
 
 final class MomentsPage extends StatefulWidget {
-  const MomentsPage({super.key, required this.api});
+  const MomentsPage({super.key, required this.api, this.identityCache});
   final BusinessApiClient api;
+  final ChatIdentityCache? identityCache;
   @override
   State<MomentsPage> createState() => _MomentsPageState();
 }
@@ -26,14 +29,28 @@ final class _MomentsPageState extends State<MomentsPage> {
   late Future<Map<String, dynamic>> _feed;
   String? _coverUrl;
   String? _interactionError;
+  late final ChatIdentityCache _identityCache =
+      widget.identityCache ?? ChatIdentityCache(widget.api);
 
   @override
   void initState() {
     super.initState();
+    _identityCache.addListener(_identityChanged);
+    _identityCache.preload().catchError((_) {});
     _feed = widget.api.momentsFeed(mode: 'latest');
     widget.api.momentsPreferences().then((value) {
       if (mounted) setState(() => _coverUrl = value['cover_url']?.toString());
     });
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _identityCache.removeListener(_identityChanged);
+    super.dispose();
   }
 
   Future<void> _toggleLike(MomentItem item) async {
@@ -209,10 +226,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                                         onError: (_, __) {})),
                             alignment: Alignment.bottomRight,
                             padding: const EdgeInsets.all(16),
-                            child: const Text('畅聊朋友圈',
-                                style: TextStyle(
-                                    color: CupertinoColors.white,
-                                    fontSize: 22)))),
+                            child: _ownerIdentity())),
                     for (final m in items)
                       Builder(builder: (_) {
                         final parsed = MomentItem.fromJson(
@@ -229,6 +243,54 @@ final class _MomentsPageState extends State<MomentsPage> {
                   ]);
                 })),
       );
+
+  Widget _ownerIdentity() {
+    final profile = _identityCache.profile;
+    if (profile == null) {
+      return const Icon(
+        CupertinoIcons.person_crop_circle,
+        key: Key('moment-owner-loading-fallback'),
+        color: CupertinoColors.white,
+        size: 64,
+      );
+    }
+    final nickname = profile.nickname.trim().isEmpty
+        ? profile.username.trim()
+        : profile.nickname.trim();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            nickname,
+            key: const Key('moment-owner-nickname'),
+            style: const TextStyle(
+              color: CupertinoColors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: CupertinoColors.white, width: 2),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: UserAvatar(
+            key: const Key('moment-owner-avatar'),
+            nickname: nickname,
+            fallbackSeed: profile.fallbackSeed,
+            avatarUrl: profile.avatarUrl,
+            diagnosticSource: 'moments-owner',
+            size: 64,
+          ),
+        ),
+      ],
+    );
+  }
 
   void _openCover() {
     Navigator.push(

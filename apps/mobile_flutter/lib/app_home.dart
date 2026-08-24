@@ -300,8 +300,15 @@ final class _AppHomeState extends State<AppHome> {
                         reminderService: reminderService,
                         identityCache: _chatIdentityCache,
                       ),
-                2 => DiscoveryPage(api: widget.api),
-                _ => ProfileTabPage(api: widget.api, onLogout: widget.onLogout),
+                2 => DiscoveryPage(
+                    api: widget.api,
+                    identityCache: _chatIdentityCache,
+                  ),
+                _ => ProfileTabPage(
+                    api: widget.api,
+                    onLogout: widget.onLogout,
+                    identityCache: _chatIdentityCache,
+                  ),
               },
             ),
           ),
@@ -401,9 +408,15 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
 }
 
 final class ProfileTabPage extends StatefulWidget {
-  const ProfileTabPage({super.key, required this.api, required this.onLogout});
+  const ProfileTabPage({
+    super.key,
+    required this.api,
+    required this.onLogout,
+    this.identityCache,
+  });
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
+  final ChatIdentityCache? identityCache;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
 }
@@ -420,8 +433,13 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () => Navigator.push(context,
-          CupertinoPageRoute(builder: (_) => MomentsPage(api: widget.api))),
+      onMoments: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => MomentsPage(
+                    api: widget.api,
+                    identityCache: widget.identityCache,
+                  ))),
       onCaibi: () => Navigator.push(
           context,
           CupertinoPageRoute(
@@ -445,8 +463,18 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(navigationBar: CupertinoNavigationBar(backgroundColor: WeChatColors.chatNavigationBackground, automaticBackgroundVisibility: false, enableBackgroundFilterBlur: false, middle: Text('钱包')), child: WalletPage(api: widget.api)))),
-      onSettings: () => Navigator.push(context, CupertinoPageRoute(builder: (_) => SettingsPage(api: widget.api, onLogout: widget.onLogout))));
+              builder: (_) => CupertinoPageScaffold(
+                  navigationBar: CupertinoNavigationBar(
+                      backgroundColor: WeChatColors.chatNavigationBackground,
+                      automaticBackgroundVisibility: false,
+                      enableBackgroundFilterBlur: false,
+                      middle: Text('钱包')),
+                  child: WalletPage(api: widget.api)))),
+      onSettings: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) =>
+                  SettingsPage(api: widget.api, onLogout: widget.onLogout))));
 }
 
 final class ProfilePage extends StatelessWidget {

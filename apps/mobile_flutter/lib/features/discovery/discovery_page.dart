@@ -6,12 +6,14 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../moments/moments_page.dart';
+import '../matrix/chat_identity_cache.dart';
 import '../search/global_search_page.dart';
 
 final class DiscoveryPage extends StatelessWidget {
-  const DiscoveryPage({super.key, required this.api});
+  const DiscoveryPage({super.key, required this.api, this.identityCache});
 
   final BusinessApiClient api;
+  final ChatIdentityCache? identityCache;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -45,7 +47,10 @@ final class DiscoveryPage extends StatelessWidget {
                           Navigator.push(
                             context,
                             CupertinoPageRoute(
-                                builder: (_) => MomentsPage(api: api)),
+                                builder: (_) => MomentsPage(
+                                      api: api,
+                                      identityCache: identityCache,
+                                    )),
                           );
                         },
                         child: const Text('朋友圈'),
@@ -81,7 +86,12 @@ final class DiscoveryPage extends StatelessWidget {
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(builder: (_) => MomentsPage(api: api)),
+                  CupertinoPageRoute(
+                    builder: (_) => MomentsPage(
+                      api: api,
+                      identityCache: identityCache,
+                    ),
+                  ),
                 ),
               ),
               WeChatListTile(
