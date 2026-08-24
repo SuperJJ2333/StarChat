@@ -1,6 +1,6 @@
 # 朋友圈身份与互动修复设计
 
-**状态：** 待书面复核
+**状态：** 已批准
 **日期：** 2026-08-24
 **范围：** Flutter 朋友圈、FastAPI Moments 身份投影与媒体接口、公网 Docker 发布、Android 模拟器验证。
 
@@ -12,12 +12,13 @@
 
 ## 名称语义
 
-产品层面的“昵称”和“用户名”是同一个展示概念。朋友圈的显示优先级固定为：
+朋友圈的显示优先级固定为：
 
 1. 当前查看者在 `ContactProfile.remark` 中为好友设置的非空备注；
-2. 好友的 `User.nickname`，该字段在产品文案中称为用户名。
+2. 好友可修改的公开展示名 `User.nickname`；
+3. 好友不可变的账号标识 `User.username`。
 
-朋友圈不再产生第三种可见名称。数据库中的 `User.username` 是既有不可变账号标识，继续按原身份契约保存和返回，但不参与朋友圈作者名称回退。服务端响应分别保留字段来源，禁止把备注写回或伪装成 `nickname`：
+三个字段保持各自语义：`remark` 属于当前查看者，`nickname` 属于被展示用户的公开资料，`username` 是被展示用户的稳定账号标识。服务端响应分别保留字段来源，禁止把备注写回或伪装成 `nickname`：
 
 ```json
 {
@@ -25,7 +26,7 @@
   "username": "immutable-account-handle",
   "nickname": "product-username",
   "remark": "viewer-owned-remark-or-null",
-  "display_name": "remark-or-nickname",
+  "display_name": "remark-or-nickname-or-username",
   "avatar_url": "signed-url-or-null"
 }
 ```
@@ -48,7 +49,7 @@ Flutter 朋友圈移除“推荐”和“最新”的可见切换，仅请求按
 
 点赞采用可回滚的乐观更新：点击后立即切换图标高亮、`viewer_has_liked`、`like_count` 和当前查看者在点赞者列表中的投影，然后调用带幂等键的 like/unlike API。成功时用服务端权威结果或后台刷新收敛；失败时恢复点击前快照并显示明确错误。连续点击期间禁用重复请求，避免乱序覆盖。
 
-评论图标打开可编辑评论入口。提交按钮在空文本时禁用；提交中显示状态。成功后立即插入服务端返回的评论 DTO 并清空输入，失败时保留草稿和输入焦点，显示服务端错误。评论返回的作者和回复对象同样采用 `remark → nickname` 的 `display_name`。
+评论图标打开可编辑评论入口。提交按钮在空文本时禁用；提交中显示状态。成功后立即插入服务端返回的评论 DTO 并清空输入，失败时保留草稿和输入焦点，显示服务端错误。评论返回的作者和回复对象同样采用 `remark → nickname → username` 的 `display_name`。
 
 ## 封面交互与持久化
 
@@ -67,7 +68,7 @@ Moments feed/detail/personal/notification/comment DTO 增加身份字段，不�
 后端红/绿测试至少覆盖：
 
 - 有备注时 `remark` 与 `display_name` 使用查看者自己的联系人资料；
-- 无备注时 `display_name` 回退 `nickname`；
+- 无备注时 `display_name` 回退 `nickname`，无可用昵称时继续回退 `username`；
 - 不同查看者对同一作者可得到不同备注，且 `nickname`、`username`、`avatar_url` 来源不变；
 - 有头像对象键时返回有效受控 URL，无对象键时返回 null；
 - feed、detail、评论、点赞者和通知使用一致投影；
