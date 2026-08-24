@@ -72,8 +72,8 @@ final class NudgePreferenceService {
   Future<String> loadSuffix() => backend.loadSuffix();
 
   Future<void> saveSuffix(String suffix) {
-    if (suffix.runes.length > 30) {
-      throw ArgumentError.value(suffix, 'suffix', '拍一拍后缀不能超过 30 个字符');
+    if (suffix.runes.length > 10) {
+      throw ArgumentError.value(suffix, 'suffix', '拍一拍后缀不能超过 10 个字符');
     }
     return backend.saveSuffix(suffix.trim());
   }

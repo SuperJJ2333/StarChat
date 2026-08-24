@@ -18,7 +18,7 @@ class StrictModel(BaseModel):
 class ProfilePatch(StrictModel):
     nickname: str | None = Field(default=None, max_length=64)
     signature: str | None = Field(default=None, max_length=140)
-    nudge_suffix: str | None = Field(default=None, max_length=32)
+    nudge_suffix: str | None = Field(default=None, max_length=10)
 
     @field_validator("nickname")
     @classmethod

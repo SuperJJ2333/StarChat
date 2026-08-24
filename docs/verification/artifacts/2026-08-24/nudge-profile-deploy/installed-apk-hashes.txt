@@ -1,0 +1,3 @@
+emulator-5554 d86a722b2dd7321d5aa8071defcfe386a26bc019d21886cd5ed5fc1a5d280072  /data/app/com.liuhetong.mobile-VIa5Yh8qCddcK1a3Jqkwzg==/base.apk
+emulator-5556 d86a722b2dd7321d5aa8071defcfe386a26bc019d21886cd5ed5fc1a5d280072  /data/app/com.liuhetong.mobile-YEz4hJ4oMCgsRPh0BWxAsg==/base.apk
+LOCAL d86a722b2dd7321d5aa8071defcfe386a26bc019d21886cd5ed5fc1a5d280072

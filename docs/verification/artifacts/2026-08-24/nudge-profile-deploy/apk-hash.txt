@@ -1,0 +1,2 @@
+APK=D:\pythonProject\outsource\StarChat\apps\mobile_flutter\build\app\outputs\flutter-apk\app-debug.apk
+SHA256=d86a722b2dd7321d5aa8071defcfe386a26bc019d21886cd5ed5fc1a5d280072

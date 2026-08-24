@@ -947,7 +947,7 @@
           "nudge_suffix": {
             "anyOf": [
               {
-                "maxLength": 32,
+                "maxLength": 10,
                 "type": "string"
               },
               {

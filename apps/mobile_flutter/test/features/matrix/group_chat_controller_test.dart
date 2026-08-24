@@ -179,6 +179,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('发起群聊'), findsOneWidget);
+    expect(find.byKey(const Key('group-chat-name')), findsOneWidget);
     await tester.tap(find.text('bob'));
     await tester.tap(find.text('carol'));
     await tester.enterText(

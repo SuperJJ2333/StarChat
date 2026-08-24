@@ -210,7 +210,7 @@ async def test_profile_patch_is_strict_atomic_and_idempotent() -> None:
         long_nudge = await client.patch(
             "/api/v1/profile/me",
             headers={**_auth(token), "Idempotency-Key": "profile-update-nudge-long"},
-            json={"nudge_suffix": "x" * 33},
+            json={"nudge_suffix": "x" * 11},
         )
 
     assert first.status_code == replay.status_code == 200

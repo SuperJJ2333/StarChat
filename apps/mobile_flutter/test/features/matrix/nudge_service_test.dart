@@ -10,6 +10,11 @@ final class FakeBackend implements NudgeBackend {
 }
 
 void main() {
+  test('nudge preference rejects more than ten characters before persistence',
+      () async {
+    final service = NudgePreferenceService(_PreferenceBackend());
+    expect(() => service.saveSuffix('一二三四五六七八九十壹'), throwsArgumentError);
+  });
   test('nudge suffix belongs to the target profile, not the sender', () async {
     final backend = FakeBackend();
     final service = NudgeService(
@@ -22,4 +27,11 @@ void main() {
     expect(backend.content!['target_user_id'], '@bob:test');
     expect(backend.content!['suffix'], '拍了拍我的肩膀');
   });
+}
+
+final class _PreferenceBackend implements NudgePreferenceBackend {
+  @override
+  Future<String> loadSuffix() async => '';
+  @override
+  Future<void> saveSuffix(String suffix) async {}
 }

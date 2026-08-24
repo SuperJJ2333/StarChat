@@ -440,7 +440,7 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
             CupertinoTextField(
               key: const Key('profile-nudge-field'),
               controller: suffix,
-              maxLength: 32,
+              maxLength: 10,
               autofocus: true,
               placeholder: '例如：拍了拍我',
               padding: const EdgeInsets.all(16),

@@ -428,10 +428,10 @@ class ProfileService:
         if "nudge_suffix" in changes:
             nudge_suffix = changes["nudge_suffix"]
             nudge_suffix = nudge_suffix.strip() if nudge_suffix is not None else None
-            if nudge_suffix and len(nudge_suffix) > 32:
+            if nudge_suffix and len(nudge_suffix) > 10:
                 raise AppError(
                     code="PROFILE_NUDGE_SUFFIX_INVALID",
-                    message="拍一拍后缀不得超过 32 个字符",
+                    message="拍一拍后缀不得超过 10 个字符",
                     status_code=422,
                 )
             normalized["nudge_suffix"] = nudge_suffix or None

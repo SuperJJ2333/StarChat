@@ -1,0 +1,1 @@
+HTTP=200 BODY={"ok":true,"service":"畅聊 Business API","database":"ready"}

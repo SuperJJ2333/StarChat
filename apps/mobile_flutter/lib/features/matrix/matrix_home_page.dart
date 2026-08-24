@@ -41,8 +41,6 @@ import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import 'conversation_preferences.dart';
 import 'direct_chat_info_page.dart';
-import 'matrix_group_chat_adapter.dart';
-import 'group_chat_controller.dart';
 import 'chat_history_search.dart';
 import '../search/global_search_page.dart';
 import 'matrix_emoji_vault.dart';
@@ -329,6 +327,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           api: widget.api,
           room: room,
           roomName: roomName,
+          onCreateGroup: widget.onCreateGroup,
           onVoice: widget.onVoice,
           onVideo: widget.onVideo,
           reminderService: widget.reminderService,
@@ -641,6 +640,7 @@ class RoomPage extends StatefulWidget {
     required this.roomName,
     required this.room,
     this.initialContact,
+    required this.onCreateGroup,
     this.reminderService,
     this.onVoice,
     this.onVideo,
@@ -651,6 +651,7 @@ class RoomPage extends StatefulWidget {
   final String roomName;
   final Room room;
   final ContactDetails? initialContact;
+  final VoidCallback onCreateGroup;
   final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
@@ -1283,33 +1284,11 @@ class _RoomPageState extends State<RoomPage> {
           matrixClient: widget.room.client,
           peerAvatarUrl: avatarUrl,
           preference: preferenceForRoom(widget.room),
-          onAddMember: () => _openDirectGroupPicker(peerId, peerName),
+          onAddMember: widget.onCreateGroup,
           onSearchHistory: _openHistorySearch,
           onClearLocalHistory: _clearLocalHistory,
           onPreferenceChanged: (preference) =>
               writeConversationPreference(widget.room, preference),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openDirectGroupPicker(String peerId, String peerName) async {
-    final contacts = await widget.api.listContacts();
-    if (!mounted) return;
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => DirectGroupMemberPickerPage(
-          contacts: contacts,
-          peerId: peerId,
-          onCreate: (inviteeIds) async {
-            await GroupChatService(
-              MatrixGroupChatBackend(widget.room.client),
-            ).createEncryptedGroupChat(
-              name: '',
-              matrixUserIds: inviteeIds,
-            );
-          },
         ),
       ),
     );

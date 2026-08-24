@@ -3,12 +3,10 @@ import 'package:flutter/cupertino.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import 'package:matrix/matrix.dart';
 
-import '../../ui/components/user_avatar.dart';
 import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'conversation_preferences.dart';
-import '../contacts/contact_models.dart';
 
 final class DirectChatInfoPage extends StatefulWidget {
   const DirectChatInfoPage({
@@ -39,78 +37,6 @@ final class DirectChatInfoPage extends StatefulWidget {
 
   @override
   State<DirectChatInfoPage> createState() => _DirectChatInfoPageState();
-}
-
-final class DirectGroupMemberPickerPage extends StatefulWidget {
-  const DirectGroupMemberPickerPage({
-    super.key,
-    required this.contacts,
-    required this.peerId,
-    required this.onCreate,
-  });
-  final List<ContactSummary> contacts;
-  final String peerId;
-  final Future<void> Function(List<String> inviteeIds) onCreate;
-
-  @override
-  State<DirectGroupMemberPickerPage> createState() =>
-      _DirectGroupMemberPickerPageState();
-}
-
-final class _DirectGroupMemberPickerPageState
-    extends State<DirectGroupMemberPickerPage> {
-  final selected = <String>{};
-  bool saving = false;
-
-  @override
-  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: const Text('发起群聊'),
-          trailing: CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: selected.isEmpty || saving
-                ? null
-                : () async {
-                    setState(() => saving = true);
-                    await widget.onCreate([widget.peerId, ...selected]);
-                    if (context.mounted) Navigator.pop(context);
-                  },
-            child:
-                saving ? const CupertinoActivityIndicator() : const Text('完成'),
-          ),
-        ),
-        child: SafeArea(
-          child: ListView(children: [
-            for (final contact in widget.contacts)
-              if (contact.matrixUserId != widget.peerId)
-                WeChatListTile(
-                  leading: UserAvatar(
-                    nickname: contact.displayName,
-                    fallbackSeed: contact.username,
-                    avatarUrl: contact.avatarUrl,
-                    size: 40,
-                  ),
-                  title: Text(contact.displayName),
-                  trailing: Icon(
-                    selected.contains(contact.matrixUserId)
-                        ? CupertinoIcons.check_mark_circled_solid
-                        : CupertinoIcons.circle,
-                    color: selected.contains(contact.matrixUserId)
-                        ? WeChatColors.brandPrimary
-                        : WeChatColors.textTertiary,
-                  ),
-                  onTap: () => setState(() {
-                    selected.contains(contact.matrixUserId)
-                        ? selected.remove(contact.matrixUserId)
-                        : selected.add(contact.matrixUserId);
-                  }),
-                ),
-          ]),
-        ),
-      );
 }
 
 final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
