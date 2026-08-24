@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
+import 'package:liuhetong_mobile/ui/moments/wechat_moment_viewer.dart';
 
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
@@ -311,5 +312,32 @@ void main() {
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byKey(const Key('moment-change-cover')), findsOneWidget);
     expect(find.text('换封面'), findsOneWidget);
+  });
+
+  testWidgets('selected cover is previewed before persistence completes',
+      (tester) async {
+    final persisted = Completer<String?>();
+    final pixel = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
+    await tester.pumpWidget(CupertinoApp(
+      home: WeChatMomentCoverViewer(
+        url: null,
+        onChangeCover: (onPreview) {
+          onPreview(pixel);
+          return persisted.future;
+        },
+      ),
+    ));
+
+    await tester.tap(find.byKey(const Key('moment-change-cover')));
+    await tester.pump();
+
+    expect(find.byKey(const Key('moment-cover-local-preview')), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+
+    persisted.complete('https://media.example.test/covers/current.png');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('moment-cover-local-preview')), findsNothing);
   });
 }

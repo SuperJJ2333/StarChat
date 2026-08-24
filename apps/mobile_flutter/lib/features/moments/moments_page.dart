@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
@@ -241,11 +242,12 @@ final class _MomentsPageState extends State<MomentsPage> {
     );
   }
 
-  Future<String?> _changeCover() async {
+  Future<String?> _changeCover(ValueChanged<Uint8List> onPreview) async {
     final image = await ImagePicker()
         .pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (image == null) return null;
     final bytes = await image.readAsBytes();
+    onPreview(bytes);
     final extension = image.name.toLowerCase().split('.').last;
     final mimeType = extension == 'png'
         ? 'image/png'

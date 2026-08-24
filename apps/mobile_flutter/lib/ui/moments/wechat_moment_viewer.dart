@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/cupertino.dart';
 
 import '../components/wechat_scaffold.dart';
@@ -31,7 +33,8 @@ final class WeChatMomentCoverViewer extends StatefulWidget {
   });
 
   final String? url;
-  final Future<String?> Function() onChangeCover;
+  final Future<String?> Function(ValueChanged<Uint8List> onPreview)
+      onChangeCover;
 
   @override
   State<WeChatMomentCoverViewer> createState() =>
@@ -42,6 +45,7 @@ final class _WeChatMomentCoverViewerState
     extends State<WeChatMomentCoverViewer> {
   String? _url;
   String? _error;
+  Uint8List? _localPreview;
   bool _uploading = false;
 
   @override
@@ -57,8 +61,15 @@ final class _WeChatMomentCoverViewerState
       _error = null;
     });
     try {
-      final value = await widget.onChangeCover();
-      if (mounted && value != null) setState(() => _url = value);
+      final value = await widget.onChangeCover((bytes) {
+        if (mounted) setState(() => _localPreview = bytes);
+      });
+      if (mounted && value != null) {
+        setState(() {
+          _url = value;
+          _localPreview = null;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -79,18 +90,24 @@ final class _WeChatMomentCoverViewerState
                 color: CupertinoColors.black,
                 child: InteractiveViewer(
                   child: Center(
-                    child: _url == null
-                        ? const Icon(CupertinoIcons.photo,
-                            color: CupertinoColors.white, size: 56)
-                        : Image.network(
-                            _url!,
+                    child: _localPreview != null
+                        ? Image.memory(
+                            _localPreview!,
+                            key: const Key('moment-cover-local-preview'),
                             fit: BoxFit.contain,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              CupertinoIcons.exclamationmark_triangle,
-                              color: CupertinoColors.white,
-                              size: 48,
-                            ),
-                          ),
+                          )
+                        : _url == null
+                            ? const Icon(CupertinoIcons.photo,
+                                color: CupertinoColors.white, size: 56)
+                            : Image.network(
+                                _url!,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  CupertinoIcons.exclamationmark_triangle,
+                                  color: CupertinoColors.white,
+                                  size: 48,
+                                ),
+                              ),
                   ),
                 ),
               ),
