@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将朋友圈完善为微信式好友单列信息流，交付权威身份投影、好友/标签单条可见性、互动、个人封面与动态、媒体、通知和稳定的公网移动端发布。
+**Goal:** 将朋友圈完善为微信式好友单列信息流，交付权威身份投影、好友/标签单条可见性、互动、个人封面与动态、媒体、草稿、原生广告、通知和稳定的公网移动端发布。
 
 **Architecture:** 保留 Moments 的现有表与路由，增加可兼容字段、迁移和专注的 DTO/受众/通知服务。可见性在服务端的单一 `VisibilityPolicy` 中执行；Flutter 仅通过扩展后的 `BusinessApiClient` 调用 API，使用 controller 管理分页、乐观互动、草稿和失败重试。发布时按朋友 ID 与标签 ID 解析并冻结受众，历史动态不被标签后续变化改写。
 
@@ -363,6 +363,40 @@ git add apps/mobile_flutter/lib/features/moments apps/mobile_flutter/test/featur
 git commit -m "feat(moments): add personal cover and interaction notifications"
 ```
 
+
+### Task 8A: 私有草稿保存与原生广告投影
+
+**Files:**
+- Modify: `services/business-api/app/modules/moments/models.py`
+- Modify: `services/business-api/app/modules/moments/service.py`
+- Modify: `services/business-api/app/api/moments.py`
+- Create: `services/business-api/migrations/versions/0026_moment_drafts_native_ads.py`
+- Modify: `tests/business_api/moments/test_moments_api.py`
+- Modify: `apps/mobile_flutter/lib/features/moments/moment_composer_controller.dart`
+- Modify: `apps/mobile_flutter/lib/features/moments/moments_page.dart`
+- Modify: `apps/mobile_flutter/lib/ui/moments/wechat_moment_tile.dart`
+- Modify: `apps/mobile_flutter/test/features/moments/moments_flow_test.dart`
+
+- [ ] **Step 1: 写失败测试。** 断言 `PUT /draft` 仅作者可 `GET`、`DELETE` 后返回 404、草稿不出现在 feed；客户端 dirty composer 返回时显示“保存草稿”，保存后重进恢复文本/媒体/可见性/受众；广告 DTO 具有 `kind=AD`，tile 显示 `广告` key、没有点赞/评论/个人页入口，曝光与点击同 idempotency key 只记录一次。
+- [ ] **Step 2: 运行红测。**
+
+```powershell
+py -3.12 -m pytest tests/business_api/moments/test_moments_api.py -q
+Set-Location apps/mobile_flutter; C:\src\flutter\bin\flutter.bat test test/features/moments/moments_flow_test.dart
+```
+
+- [ ] **Step 3: 实现后端。** 建立 `MomentDraft` 与 `NativeMomentAd` expand-only 迁移；draft 保存完整发表 payload 但仅由 owner 读取/删除，发布成功删除 draft。广告只从受控服务读取；feed 以 `kind: 'AD'` 标记，且广告不调用 MomentLike/MomentComment。新增 impression/click 事件并做 idempotency、audit/outbox。
+- [ ] **Step 4: 实现 Flutter。** composer controller 维护 dirty/snapshot，返回时 `CupertinoAlertDialog` 给“取消/不保存/保存草稿”；保存并重进恢复所有编辑状态；广告 tile 复用常规视觉，右下角 `moment-ad-label`，禁用互动与个人页，调用曝光/点击 API。
+- [ ] **Step 5: 运行绿测、导出契约并提交。**
+
+```powershell
+py -3.12 -m pytest tests/business_api/moments/test_moments_api.py -q
+Set-Location apps/mobile_flutter; C:\src\flutter\bin\flutter.bat test test/features/moments/moments_flow_test.dart
+Set-Location ../..; py -3.12 scripts/export_openapi.py; py -3.12 scripts/export_openapi.py --check
+git add services/business-api apps/mobile_flutter packages/api-contracts/openapi tests/business_api/moments
+git commit -m "feat(moments): persist drafts and label native ads"
+```
+
 ### Task 9: Figma、UI 注册表、HTML 设计演示及端到端证据
 
 **Files:**
@@ -373,7 +407,7 @@ git commit -m "feat(moments): add personal cover and interaction notifications"
 - Modify: `tests/mobile/test_ui_component_registry.py`
 - Create: `docs/verification/2026-08-24-moments-ui-review.md`
 
-- [ ] **Step 1: Figma-first 写红契约测试。** 注册 `moments-feed-v2`、`moment-interactions`、`moment-audience-picker`、`moment-personal-cover`、`moment-notifications`，断言每项有 Flutter file/name、HTML tag、Figma key `19:4`、props/variants/states/token 映射。
+- [ ] **Step 1: Figma-first 写红契约测试。** 注册 `moments-feed-v2`、`moment-interactions`、`moment-audience-picker`、`moment-personal-cover`、`moment-notifications`、`moment-composer-draft`、`moment-native-ad`，断言每项有 Flutter file/name、HTML tag、Figma key `19:4`、props/variants/states/token 映射。
 
 - [ ] **Step 2: 运行红测。**
 
@@ -464,6 +498,6 @@ git commit -m "docs(release): verify Moments public deployment"
 
 ## 自检
 
-- 覆盖规格：身份头像/昵称（Task 2/6）、互动（Task 2/3/6）、本人动态删除（Task 3/8）、媒体/大图（Task 4/7/6）、权限与朋友/标签（Task 1/7）、封面（Task 4/8）、文本/链接/地点（Task 7）、时间/分页/错误（Task 2/5/6）、通知（Task 3/8）、Figma（Task 9）、公网双模拟器（Task 10）。
+- 覆盖规格：身份头像/昵称（Task 2/6）、互动（Task 2/3/6）、本人动态删除（Task 3/8）、媒体/大图（Task 4/7/6）、权限与朋友/标签（Task 1/7）、封面（Task 4/8）、文本/链接/地点（Task 7）、时间/分页/错误（Task 2/5/6）、通知（Task 3/8）、草稿/广告（Task 8A）、Figma（Task 9）、公网双模拟器（Task 10）。
 - 无占位内容；所有接口字段和 Flutter 调用在相应前序任务定义。
 - 已保持数据库变更为 expand-only 新列/新表/新端点，不引入破坏性 OpenAPI。

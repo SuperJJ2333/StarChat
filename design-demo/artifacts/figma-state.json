@@ -209,7 +209,9 @@
       "app-nudge-notice": "18:7",
       "app-contact-tag-management": "19:3",
       "app-contact-tag-members": "19:3",
-      "app-contact-tag-friend-picker": "19:3"
+      "app-contact-tag-friend-picker": "19:3",
+      "app-moments-feed-v2": "19:4",
+      "app-moment-cover-viewer": "19:4"
     },
     "iconComponents": {
       "chat": "53:56",

@@ -36,9 +36,21 @@ abstract final class AvatarCache {
     final queryVersion =
         uri?.queryParameters['v'] ?? uri?.queryParameters['version'];
     final version = queryVersion == null
-        ? avatarUrl.hashCode.toRadixString(16)
+        ? sanitizedUrl(avatarUrl).hashCode.toRadixString(16)
         : 'v=$queryVersion';
     return 'avatar-$userId-$version-${size.round()}';
+  }
+
+  static String sanitizedUrl(String avatarUrl) {
+    final uri = Uri.tryParse(avatarUrl);
+    if (uri == null || !uri.hasScheme) return '<invalid-url>';
+    return Uri(
+      scheme: uri.scheme,
+      userInfo: uri.userInfo,
+      host: uri.host,
+      port: uri.hasPort ? uri.port : null,
+      path: uri.path,
+    ).toString();
   }
 
   static AvatarCacheImageProvider imageProvider({

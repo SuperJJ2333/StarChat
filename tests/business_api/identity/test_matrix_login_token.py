@@ -125,6 +125,7 @@ async def test_matrix_login_token_is_bound_to_authenticated_business_subject(
         "login_token": "one-time-matrix-token",
         "homeserver": "https://matrix.example.test",
         "expires_in": 60,
+        "matrix_user_id": "@alice:matrix.example.test",
     }
     assert gateway.calls == [("@alice:matrix.example.test", 60)]
     assert "one-time-matrix-token" not in caplog.text

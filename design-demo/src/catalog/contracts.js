@@ -43,11 +43,13 @@ export const componentContracts = Object.freeze([
   defineContract({ tagName: "app-moment-tile", rootClass: "c-moment-tile", allowedAttributes: ["author", "content", "location", "time", "state"], allowedStates: ["uploading", "reviewing", "published", "limited", "removed", "failed"], domSignature: [".c-moment-tile", ".c-moment-tile>.c-moment-tile__avatar", ".c-moment-tile>.c-moment-tile__content"] }),
   defineContract({ tagName: "app-moment-grid", rootClass: "c-moment-grid", allowedAttributes: ["count", "failed"], domSignature: [".c-moment-grid", ".c-moment-grid>.c-moment-grid__item"] }),
   defineContract({ tagName: "app-moment-reactions", rootClass: "c-moment-reactions", allowedAttributes: ["likes", "comments"], domSignature: [".c-moment-reactions", ".c-moment-reactions>.c-moment-reactions__likes", ".c-moment-reactions>.c-moment-reactions__comments"] }),
-  defineContract({ tagName: "app-visibility-icon", rootClass: "c-visibility-icon", allowedAttributes: ["visibility", "label"], allowedStates: ["public", "friends", "partial", "excluded", "private"], domSignature: [".c-visibility-icon", ".c-visibility-icon>.c-visibility-icon__icon", ".c-visibility-icon>.c-visibility-icon__label"] })
+  defineContract({ tagName: "app-visibility-icon", rootClass: "c-visibility-icon", allowedAttributes: ["visibility", "label"], allowedStates: ["public", "friends", "partial", "excluded", "private"], domSignature: [".c-visibility-icon", ".c-visibility-icon>.c-visibility-icon__icon", ".c-visibility-icon>.c-visibility-icon__label"] }),
   defineContract({ tagName: "app-nudge-notice", rootClass: "c-nudge-notice", allowedAttributes: ["text"], allowedStates: ["default"] }),
   defineContract({ tagName: "app-contact-tag-management", rootClass: "c-contact-tags", allowedAttributes: ["api"] }),
   defineContract({ tagName: "app-contact-tag-members", rootClass: "c-contact-tag-members", allowedAttributes: ["api", "tag"] }),
   defineContract({ tagName: "app-contact-tag-friend-picker", rootClass: "c-contact-tag-picker", allowedAttributes: ["api", "tag"] }),
+  defineContract({ tagName: "app-moments-feed-v2", rootClass: "c-moments-feed-v2", allowedAttributes: ["mode"], allowedStates: ["latest", "loading", "error", "empty"] }),
+  defineContract({ tagName: "app-moment-cover-viewer", rootClass: "c-moment-cover-viewer", allowedAttributes: ["url", "loading", "error"], allowedStates: ["default", "loading", "error", "empty"] }),
 ]);
 
 export function contractFor(tagName) {

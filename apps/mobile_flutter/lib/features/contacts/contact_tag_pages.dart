@@ -83,8 +83,9 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
             child: FutureBuilder<List<ContactTagSummary>>(
                 future: tags,
                 builder: (_, snapshot) {
-                  if (!snapshot.hasData)
+                  if (!snapshot.hasData) {
                     return const Center(child: CupertinoActivityIndicator());
+                  }
                   final items = snapshot.data!;
                   if (items.isEmpty) return const Center(child: Text('暂无标签'));
                   return ListView(children: [
@@ -207,7 +208,9 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
                                   if (name?.isNotEmpty == true) {
                                     await widget.api
                                         .renameContactTag(widget.tag.id, name!);
-                                    if (mounted) Navigator.pop(context, true);
+                                    if (context.mounted) {
+                                      Navigator.pop(context, true);
+                                    }
                                   }
                                 },
                                 child: const Text('更改标签名称')),
@@ -235,7 +238,9 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
                                   if (yes == true) {
                                     await widget.api
                                         .deleteContactTag(widget.tag.id);
-                                    if (mounted) Navigator.pop(context, true);
+                                    if (context.mounted) {
+                                      Navigator.pop(context, true);
+                                    }
                                   }
                                 },
                                 child: const Text('删除标签'))

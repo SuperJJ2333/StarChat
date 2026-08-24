@@ -47,7 +47,6 @@ final class FakeMatrix implements MatrixSessionGateway {
     isLoggedIn = false;
   }
 
-  @override
   Future<void> logout() async {
     logoutCalls++;
     isLoggedIn = false;

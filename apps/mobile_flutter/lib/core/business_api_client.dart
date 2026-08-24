@@ -528,13 +528,81 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> commentMoment(String id, String text) =>
       postJson('/moments/$id/comments', {'text': text},
           idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> momentDetail(String id) =>
+      getJson('/moments/$id');
+  Future<void> unlikeMoment(String id) => deleteJson('/moments/$id/likes');
+  Future<void> deleteMoment(String id) => deleteJson('/moments/$id');
+  Future<void> deleteMomentComment(String momentId, String commentId) =>
+      deleteJson('/moments/$momentId/comments/$commentId');
+  Future<Map<String, dynamic>> momentDraft() => getJson('/moments/draft');
+  Future<Map<String, dynamic>> saveMomentDraft(Map<String, dynamic> payload) =>
+      putJson('/moments/draft', {'payload': payload});
+  Future<void> deleteMomentDraft() => deleteJson('/moments/draft');
+  Future<Map<String, dynamic>> momentAds() => getJson('/moments/ads');
+  Future<Map<String, dynamic>> beginMomentUpload(
+          {required String fileName,
+          required String mimeType,
+          required int byteSize}) =>
+      postJson('/moments/media/uploads',
+          {'file_name': fileName, 'mime_type': mimeType, 'byte_size': byteSize},
+          idempotencyKey: newIdempotencyKey());
+  Future<void> putMomentUpload(
+      String uploadId, List<int> bytes, String mimeType) async {
+    final response = await _authorized((headers) => _client.put(
+        _uri('/moments/media/uploads/$uploadId/content'),
+        headers: {...headers, 'Content-Type': mimeType},
+        body: bytes));
+    if (response.statusCode >= 400) _decode(response);
+  }
+
+  Future<Map<String, dynamic>> completeMomentUpload(String uploadId) =>
+      postJson('/moments/media/uploads/$uploadId/complete', {},
+          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> beginMomentCoverUpload(
+          {required String fileName,
+          required String mimeType,
+          required int byteSize}) =>
+      postJson('/moments/cover/uploads',
+          {'file_name': fileName, 'mime_type': mimeType, 'byte_size': byteSize},
+          idempotencyKey: newIdempotencyKey());
+  Future<void> putMomentCoverUpload(
+      String uploadId, List<int> bytes, String mimeType) async {
+    final response = await _authorized((headers) => _client.put(
+        _uri('/moments/cover/uploads/$uploadId/content'),
+        headers: {...headers, 'Content-Type': mimeType},
+        body: bytes));
+    if (response.statusCode >= 400) _decode(response);
+  }
+
+  Future<Map<String, dynamic>> completeMomentCoverUpload(String uploadId) =>
+      postJson('/moments/cover/uploads/$uploadId/complete', {},
+          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> setMomentCover(String uploadId) => putJson(
+        '/moments/cover',
+        {'upload_id': uploadId},
+        idempotencyKey: newIdempotencyKey(),
+      );
+  Future<Map<String, dynamic>> personalMoments(String userId) =>
+      getJson('/moments/users/$userId');
+  Future<Map<String, dynamic>> momentNotifications() =>
+      getJson('/moments/notifications');
+  Future<Map<String, dynamic>> momentUnreadCount() =>
+      getJson('/moments/notifications/unread-count');
+  Future<void> markMomentNotificationsRead(List<String> ids) async {
+    await postJson('/moments/notifications/read', {'ids': ids},
+        idempotencyKey: newIdempotencyKey());
+  }
+
   Future<Map<String, dynamic>> momentsPreferences() =>
       getJson('/moments/preferences');
   Future<Map<String, dynamic>> updateMomentsPreferences(
-          {required String historyRange, required bool personalized}) =>
+          {required String historyRange,
+          required bool personalized,
+          String? coverUrl}) =>
       putJson('/moments/preferences', {
         'history_range': historyRange,
-        'personalized_recommendations': personalized
+        'personalized_recommendations': personalized,
+        if (coverUrl != null) 'cover_url': coverUrl
       });
   Future<Map<String, dynamic>> requestWithdrawal(
           {required String amount,
@@ -568,6 +636,13 @@ final class BusinessApiClient
     return _decode(response);
   }
 
+  Future<void> deleteJson(String path) async {
+    final response = await _authorized((headers) => _client.delete(_uri(path),
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+    if (response.statusCode == 204) return;
+    _decode(response);
+  }
+
   Future<Map<String, dynamic>> patchJson(String path, Map<String, dynamic> body,
       {required String idempotencyKey}) async {
     final response = await _authorized((headers) => _client.patch(_uri(path),
@@ -580,10 +655,14 @@ final class BusinessApiClient
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> putJson(
-      String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> putJson(String path, Map<String, dynamic> body,
+      {String? idempotencyKey}) async {
     final response = await _authorized((headers) => _client.put(_uri(path),
-        headers: {...headers, 'Content-Type': 'application/json'},
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+          if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
+        },
         body: jsonEncode(body)));
     return _decode(response);
   }

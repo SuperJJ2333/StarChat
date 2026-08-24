@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
@@ -19,10 +19,15 @@ class CreateMoment(Strict):
     visibility: Literal["PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"]
     image_urls: list[str] = Field(default_factory=list, max_length=9)
     include_user_ids: list[str] = Field(default_factory=list)
-    exclude_user_ids: list[str] = Field(default_factory=list)
+    exclude_user_ids: list[str] = Field(default_factory=list, max_length=30)
+    include_tag_ids: list[str] = Field(default_factory=list, max_length=30)
+    exclude_tag_ids: list[str] = Field(default_factory=list, max_length=30)
     location: str | None = None
     link_url: str | None = None
 
+
+class DraftPayload(Strict):
+    payload: dict = Field(default_factory=dict)
 
 class Comment(Strict):
     text: str = Field(min_length=1, max_length=1000)
@@ -32,6 +37,7 @@ class Comment(Strict):
 class Preferences(Strict):
     history_range: Literal["ALL", "SIX_MONTHS", "ONE_MONTH", "THREE_DAYS"]
     personalized_recommendations: bool
+    cover_url: str | None = None
 
 
 class Report(Strict):
@@ -43,10 +49,14 @@ class BeginUpload(Strict):
     byte_size: int = Field(gt=0)
 
 
-def create_moments_router(settings: Settings, factory):
+class SetCover(Strict):
+    upload_id: str = Field(min_length=1, max_length=36)
+
+
+def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     router = APIRouter(prefix="/moments", tags=["moments"])
-    service = MomentsService(factory)
-    media = MomentMediaService(factory)
+    service = MomentsService(factory, avatar_storage=avatar_storage)
+    media = MomentMediaService(factory, storage=avatar_storage)
     tokens = TokenService(factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
 
     def actor(authorization: Annotated[str | None, Header()] = None):
@@ -60,12 +70,45 @@ def create_moments_router(settings: Settings, factory):
         return service.detail(user, row.id)
 
     @router.get("/feed")
-    def feed(mode: Literal["recommended", "latest"] = "recommended", user=Depends(actor)):
-        return {"items": service.feed(user, mode=mode), "next_cursor": None, "mode": mode}
+    def feed(mode: Literal["recommended", "latest"] = "recommended", cursor: str | None = None, limit: Annotated[int, Query(ge=1, le=50)] = 20, user=Depends(actor)):
+        return {**service.feed(user, mode=mode, cursor=cursor, limit=limit), "mode": mode}
 
     @router.get("/search")
-    def search(q: Annotated[str, Query(min_length=1, max_length=100)], user=Depends(actor)):
-        return {"items": service.feed(user, q=q), "next_cursor": None}
+    def search(q: Annotated[str, Query(min_length=1, max_length=100)], cursor: str | None = None, limit: Annotated[int, Query(ge=1, le=50)] = 20, user=Depends(actor)):
+        return service.feed(user, q=q, cursor=cursor, limit=limit)
+
+    @router.get('/draft')
+    def get_draft(user=Depends(actor)):
+        return service.draft(user)
+
+    @router.put('/draft')
+    def save_draft(body: DraftPayload, user=Depends(actor)):
+        return service.save_draft(user, body.payload)
+
+    @router.delete('/draft', status_code=204)
+    def delete_draft(user=Depends(actor)):
+        service.delete_draft(user); return Response(status_code=204)
+
+    @router.get('/ads')
+    def ads(user=Depends(actor)):
+        return {'items': service.native_ads()}
+
+    @router.get('/notifications')
+    def notifications(user=Depends(actor)):
+        return {'items': service.notifications(user)}
+
+    @router.get('/notifications/unread-count')
+    def notification_unread_count(user=Depends(actor)):
+        return {'count': service.notification_unread_count(user)}
+
+    @router.post('/notifications/read', status_code=204)
+    def mark_notifications_read(ids: list[str], user=Depends(actor)):
+        service.mark_notifications_read(user, ids)
+        return Response(status_code=204)
+
+    @router.get('/users/{user_id}')
+    def personal_timeline(user_id: str, user=Depends(actor)):
+        return {'items': service.personal_timeline(user, user_id)}
 
     @router.get("/preferences")
     def preferences(user=Depends(actor)):
@@ -83,7 +126,39 @@ def create_moments_router(settings: Settings, factory):
     @router.post("/media/uploads/{upload_id}/complete")
     def complete_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         row = media.complete(user, upload_id)
-        return {"id": row.id, "status": row.status, "media_url": f"media://{row.object_key}"}
+        media_url = avatar_storage.signed_read_url(row.object_key, 300) if row.status == "COMPLETED" and avatar_storage else f"media://{row.object_key}"
+        return {"id": row.id, "status": row.status, "media_url": media_url}
+
+    @router.put("/media/uploads/{upload_id}/content", status_code=204)
+    async def put_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+        media.put_content(user, upload_id, bytes(content), (content_type or "").partition(";")[0].strip().casefold())
+        return Response(status_code=204)
+
+    @router.post("/cover/uploads", status_code=201)
+    def begin_cover_upload(body: BeginUpload, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        row = media.begin(user, body.file_name, body.mime_type, body.byte_size, idempotency_key, purpose="MOMENT_COVER")
+        return {"id": row.id, "upload_url": f"/api/v1/moments/cover/uploads/{row.id}/content", "expires_at": row.expires_at}
+
+    @router.put("/cover/uploads/{upload_id}/content", status_code=204)
+    async def put_cover_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+        media.put_content(user, upload_id, bytes(content), (content_type or "").partition(";")[0].strip().casefold())
+        return Response(status_code=204)
+
+    @router.post("/cover/uploads/{upload_id}/complete")
+    def complete_cover_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        row = media.complete(user, upload_id)
+        media_url = avatar_storage.signed_read_url(row.object_key, 300) if row.status == "COMPLETED" and avatar_storage else None
+        return {"id": row.id, "status": row.status, "media_url": media_url}
+
+    @router.put("/cover")
+    def set_cover(body: SetCover, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
+        return service.set_cover(user, body.upload_id, idempotency_key)
 
     @router.get("/{moment_id}")
     def detail(moment_id: str, user=Depends(actor)):
@@ -107,7 +182,9 @@ def create_moments_router(settings: Settings, factory):
     @router.post("/{moment_id}/comments", status_code=201)
     def comment(moment_id: str, body: Comment, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         row = service.comment(user, moment_id, body.text, body.parent_id, idempotency_key)
-        return service.comment_dto(row)
+
+        with service.factory() as session:
+            return service.comment_dto(session, row, user)
 
     @router.delete("/{moment_id}/comments/{comment_id}", status_code=204)
     def delete_comment(moment_id: str, comment_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):

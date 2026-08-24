@@ -21,6 +21,8 @@
    - 不给谁看：先取全部好友，再排除所选朋友与所选标签当前成员的并集。
 6. 标签在发布/编辑时按**标签 ID**提交并在服务端解析为发布者当前联系人投影；标签删除/改名不会扩大历史动态的授权范围。发布时把解析出的好友 ID 去重并冻结到单条动态，后续标签成员增删不追溯改写既有动态可见性。
 7. “选择标签或者朋友”使用一个可搜索的统一选择器，顶部为朋友列表、下方为标签列表；选择标签时即时展示标签人数及展开后的受众数量。
+8. 发布页有任意文字、图片、链接、位置或可见性变更后返回，必须显示“是否保存草稿”确认；保存草稿后下次进入完整恢复编辑状态（图片恢复为本地可访问缓存项或已完成的私人上传引用），放弃则删除草稿。
+9. 支持原生广告接口。广告与正常朋友圈使用相同的信息流卡片、媒体格与互动排版，但右下角必须以小尺寸、低干扰的“广告”标识区分；广告永不伪装为用户动态，不能使用用户点赞/评论、不能进入个人朋友圈，也不能绕过用户的好友动态隐私。
 
 ## 架构
 
@@ -36,6 +38,12 @@ DTO 一次性投影 `author {user_id,nickname,avatar_url}`、`like_users`（有�
 
 新增 `MomentNotification`：点赞与评论写入时为非作者创建未读通知；列表/未读数/标记已读均通过 Moments 应用服务、审计和 Outbox；不包含动态正文或私密媒体内容。删除评论/取消点赞会使对应通知失效或隐藏。
 
+### 草稿与原生广告
+
+`MomentDraft` 是作者私有的业务草稿记录，保存 text、已上传媒体引用、可见性、直接朋友/标签 ID、location、link_url 和 updated_at；它不出现在 feed、搜索、通知、个人已发布动态或任何其他用户 API。返回发表页时客户端先判断 dirty，再提供保存草稿/不保存/继续编辑。草稿图片使用应用私有缓存路径和/或作者已完成但尚未引用的 `MomentMedia`；恢复时必须重新验证文件/媒体归属并显式标记失效项。
+
+`NativeMomentAd` 仅由业务后台/投放提供者写入；feed DTO 以 `kind: "AD"` 与 `ad` 字段标记，包含广告主展示资料、正文、受控媒体、跳转 URL、免责声明和广告 ID。客户端复用 `WeChatMomentTile`，但隐藏点赞/评论/个人主页/删除入口，并在右下角渲染“广告”。广告曝光/点击使用专用幂等事件 API，禁止携带朋友圈正文以外的敏感数据。
+
 ### 媒体与个人页
 
 媒体上传仅允许作者已完成、可引用的 `MomentMedia`；客户端相册多选（最多 9）、本地压缩、预览删除、逐项进度/重试后才发布。服务端返回签名/受控媒体 URL；图片格使用加载、失败占位，大图使用 `InteractiveViewer`（缩放）和 `PageView`（滑动）。
@@ -50,14 +58,16 @@ DTO 一次性投影 `author {user_id,nickname,avatar_url}`、`like_users`（有�
 - `POST /cover/uploads`、`POST /cover/uploads/{id}/complete`、`PUT /cover`；
 - 创建动态增加 `include_tag_ids`/`exclude_tag_ids` 与受众验证；
 - `DELETE /{id}/likes`、`DELETE /{id}/comments/{comment_id}` 在 Flutter client 暴露；
-- `GET /notifications`、`GET /notifications/unread-count`、`POST /notifications/read`。
+- `GET /notifications`、`GET /notifications/unread-count`、`POST /notifications/read`；
+- `GET/PUT/DELETE /draft`；
+- `GET /feed` 可返回受标记的原生广告，`POST /ads/{ad_id}/impressions`、`POST /ads/{ad_id}/clicks`。
 
 所有写请求要求 Idempotency-Key；删除前由客户端二次确认，服务端仍执行作者/评论归属验证。结果使用清晰的错误码，客户端保留草稿或失败队列并提供重试。
 
 ## Flutter 体验
 
 - `MomentsPage` 用 controller 管理初始加载、下拉刷新、游标分页、网络错误与重试；点击头像/昵称进入个人页；点击互动按钮弹出微信式点赞/评论小菜单，长按本人评论弹出删除确认。
-- 发布页支持文字（5000 上限）、链接 URL 预览、位置、好友/标签受众选择、可见性说明、多图压缩上传与进度。没有文字、媒体、链接或位置时禁用发表。
+- 发布页支持文字（5000 上限）、链接 URL 预览、位置、好友/标签受众选择、可见性说明、多图压缩上传与进度。返回含编辑内容的页面必须确认保存草稿；保存后重进完整恢复。没有文字、媒体、链接或位置时禁用发表。
 - 封面区域比例遵循微信横向视觉（3:1 左右），头像重叠在右下；头像圆形，昵称使用强调字重；列表间距、颜色、触感反馈复用现有 WeChat tokens。
 - 时间显示：不足一分钟“刚刚”，一小时内“X分钟前”，当天“X小时前”，前一天“昨天”，同年显示月日，跨年显示年月日。
 
@@ -66,5 +76,6 @@ DTO 一次性投影 `author {user_id,nickname,avatar_url}`、`like_users`（有�
 1. 服务端参数化测试覆盖 5 种可见范围、朋友/非朋友/黑名单、直接好友与标签展开、历史受众冻结、所有读取及互动入口拒绝越权。
 2. Flutter widget/controller 测试覆盖头像昵称、图片状态/大图、互动切换/评论删除、封面、个人动态、草稿/失败重试、下拉/分页、新通知与选择器。
 3. OpenAPI 导出/检查、UI registry/ledger/Figma Drift 检查、定向测试。仅在定位不出跨模块问题时升级全量测试。
-4. 本地变更验证后同步 `/opt/starchat` 公网服务，重建并 force-recreate API/worker；公网 ready health 必须 200。
-5. 构建一次公共域名 APK，安装 `emulator-5554`、`emulator-5556`，回读两台安装 APK SHA-256 必须完全相同。
+4. 测试覆盖草稿保存/放弃/恢复和广告标记、非互动限制与曝光/点击幂等。
+5. 本地变更验证后同步 `/opt/starchat` 公网服务，重建并 force-recreate API/worker；公网 ready health 必须 200。
+6. 构建一次公共域名 APK，安装 `emulator-5554`、`emulator-5556`，回读两台安装 APK SHA-256 必须完全相同。

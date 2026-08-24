@@ -142,6 +142,28 @@ void main() {
     expect(AvatarCache.diskTtl, const Duration(days: 30));
     expect(AvatarCache.maximumMemoryEntries, 200);
   });
+
+  test('avatar cache ignores signed query parameters and sanitizes diagnostics',
+      () {
+    final first = AvatarCache.cacheKey(
+      userId: 'u1',
+      avatarUrl: 'https://media.example.test/avatars/u1/avatar.png?sig=one',
+      size: 48,
+    );
+    final second = AvatarCache.cacheKey(
+      userId: 'u1',
+      avatarUrl: 'https://media.example.test/avatars/u1/avatar.png?sig=two',
+      size: 48,
+    );
+
+    expect(first, second);
+    expect(
+      AvatarCache.sanitizedUrl(
+        'https://media.example.test/avatars/u1/avatar.png?sig=secret&token=hidden',
+      ),
+      'https://media.example.test/avatars/u1/avatar.png',
+    );
+  });
   test(
       'avatar provider does not request disk resizing from a standard cache manager',
       () {

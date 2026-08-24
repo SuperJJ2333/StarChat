@@ -487,6 +487,104 @@
         "spacing",
         "radius"
       ]
+    },
+    {
+      "id": "moments-feed-v2",
+      "flutter": {
+        "name": "MomentsPage",
+        "file": "apps/mobile_flutter/lib/features/moments/moments_page.dart",
+        "props": [
+          "api"
+        ],
+        "variants": {
+          "mode": [
+            "latest"
+          ]
+        },
+        "states": [
+          "default",
+          "loading",
+          "error",
+          "empty"
+        ]
+      },
+      "html": {
+        "tag": "app-moments-feed-v2"
+      },
+      "figma": {
+        "name": "app-moments-feed-v2",
+        "key": "19:4"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "spacing",
+        "radius"
+      ]
+    },
+    {
+      "id": "moment-interactions",
+      "flutter": {
+        "name": "WeChatMomentTile",
+        "file": "apps/mobile_flutter/lib/ui/moments/wechat_moment_tile.dart",
+        "props": [
+          "item",
+          "onLike",
+          "onComment"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "liked",
+          "loading",
+          "error",
+          "commenting"
+        ]
+      },
+      "html": {
+        "tag": "app-moment-reactions"
+      },
+      "figma": {
+        "name": "app-moment-reactions",
+        "key": "25:127"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "danger",
+        "spacing"
+      ]
+    },
+    {
+      "id": "moment-personal-cover",
+      "flutter": {
+        "name": "WeChatMomentCoverViewer",
+        "file": "apps/mobile_flutter/lib/ui/moments/wechat_moment_viewer.dart",
+        "props": [
+          "url",
+          "onChangeCover"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "loading",
+          "error",
+          "empty"
+        ]
+      },
+      "html": {
+        "tag": "app-moment-cover-viewer"
+      },
+      "figma": {
+        "name": "app-moment-cover-viewer",
+        "key": "19:4"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "spacing",
+        "radius"
+      ]
     }
   ],
   "tokenParity": [

@@ -24,6 +24,22 @@ final class UserAvatar extends StatefulWidget {
 }
 
 final class _UserAvatarState extends State<UserAvatar> {
+  void _logLoadError(Object error, StackTrace? stackTrace) {
+    final sanitizedUrl = AvatarCache.sanitizedUrl(widget.avatarUrl ?? '');
+    final sanitizedError =
+        error.toString().replaceAll(RegExp(r'\?[^\s)\]}]+'), '');
+    debugPrint(
+      '[AvatarLoadError] source=${widget.diagnosticSource} '
+      'userId=${widget.fallbackSeed} url=$sanitizedUrl '
+      'errorType=${error.runtimeType} error=$sanitizedError',
+    );
+    debugPrintStack(
+      label: '[AvatarLoadErrorStack] source=${widget.diagnosticSource} '
+          'userId=${widget.fallbackSeed}',
+      stackTrace: stackTrace,
+    );
+  }
+
   Color get fallbackColor {
     final value = widget.fallbackSeed.codeUnits.fold<int>(0, (a, b) => a + b);
     return [
@@ -99,9 +115,12 @@ final class _UserAvatarState extends State<UserAvatar> {
                           ],
                         );
                 },
-                errorBuilder: (_, __, ___) => retained == null
-                    ? _fallback()
-                    : Image(image: retained, fit: BoxFit.cover),
+                errorBuilder: (_, error, stackTrace) {
+                  _logLoadError(error, stackTrace);
+                  return retained == null
+                      ? _fallback()
+                      : Image(image: retained, fit: BoxFit.cover);
+                },
               ),
       ),
     );

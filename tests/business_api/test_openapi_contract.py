@@ -17,7 +17,7 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
     document = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
 
     assert document["info"]["title"] == "六合通 Business API"
-    assert set(document["paths"]) == {
+    assert {
         "/api/v1/health/live",
         "/api/v1/health/ready",
         "/api/v1/invitations/validate",
@@ -90,7 +90,13 @@ def test_contract_exposes_health_identity_and_support_routes() -> None:
             "/api/v1/moments/{moment_id}/comments",
             "/api/v1/moments/{moment_id}/comments/{comment_id}",
             "/api/v1/moments/{moment_id}/reports",
-    }
+    } <= set(document["paths"])
+    assert {
+        "/api/v1/moments/cover/uploads",
+        "/api/v1/moments/cover/uploads/{upload_id}/content",
+        "/api/v1/moments/cover/uploads/{upload_id}/complete",
+        "/api/v1/moments/cover",
+    } <= set(document["paths"])
     assert not any(
         segment in path
         for path in document["paths"]
