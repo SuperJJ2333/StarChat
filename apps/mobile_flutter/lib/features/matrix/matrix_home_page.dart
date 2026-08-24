@@ -40,6 +40,7 @@ import 'chat_red_packet_sheet.dart';
 import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import 'conversation_preferences.dart';
+import 'conversation_presentation.dart';
 import 'direct_chat_info_page.dart';
 import 'chat_history_search.dart';
 import '../search/global_search_page.dart';
@@ -234,6 +235,56 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           '${timestamp.minute.toString().padLeft(2, '0')}';
     }
     return '${timestamp.month}/${timestamp.day}';
+  }
+
+  ConversationIdentity _memberIdentity(User member) {
+    final own = member.id == widget.matrix.sdkClient.userID;
+    final contact = _identityCache.contactsByMatrixId[member.id];
+    final profile = own ? _identityCache.profile : null;
+    return ConversationIdentity(
+      matrixUserId: member.id,
+      remark: contact?.remark,
+      nickname: profile?.nickname ?? contact?.nickname,
+      username: profile?.username ?? contact?.username,
+      matrixDisplayName: member.calcDisplayname(),
+    );
+  }
+
+  String _conversationTitle(Room room) {
+    if (room.isDirectChat) {
+      final peerId = room.directChatMatrixID!;
+      final peer = room.unsafeGetUserFromMemoryOrFallback(peerId);
+      return directConversationTitle(_memberIdentity(peer));
+    }
+    final members = _groupMembersByRoom[room.id] ?? orderedJoinedMembers(room);
+    final title = groupConversationTitle(
+      members.map(_memberIdentity).toList(growable: false),
+    );
+    return title.isEmpty ? '未命名' : title;
+  }
+
+  int _conversationUnread(Room room) {
+    final preference = preferenceForRoom(room);
+    return preference.manualUnread ? 1 : room.notificationCount;
+  }
+
+  String _conversationSubtitle(Room room) {
+    final event = room.lastEvent;
+    if (event == null) return '端到端加密消息';
+    if (room.isDirectChat) return event.text;
+    final sender = conversationSenderName(
+      _memberIdentity(event.senderFromMemoryOrFallback),
+    );
+    final isSenderMessage = event.type == EventTypes.Message ||
+        event.type == EventTypes.Encrypted ||
+        event.type == changliaoNudgeEventType;
+    return groupConversationSubtitle(
+      unreadCount: _conversationUnread(room),
+      senderName: sender,
+      messageContent: event.text,
+      redacted: event.redacted,
+      systemSummary: isSenderMessage ? null : event.text,
+    );
   }
 
   Future<void> _showMore() async {
@@ -502,6 +553,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                         CupertinoPageRoute(
                           builder: (_) => _FoldedGroupChatsPage(
                             rooms: foldedRooms,
+                            titleFor: _conversationTitle,
+                            subtitleFor: _conversationSubtitle,
                             onOpen: (room) {
                               Navigator.pop(context);
                               _openRoom(room);
@@ -517,12 +570,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           : index;
                   final room = rooms[roomIndex];
                   _ensureGroupMembersLoaded([room]);
-                  final roomName = room.getLocalizedDisplayname();
+                  final roomName = _conversationTitle(room);
                   final preference = preferenceForRoom(room);
                   return ConversationListTile(
                     key: ValueKey<String>('conversation-${room.id}'),
                     title: roomName,
-                    subtitle: room.lastEvent?.text ?? '端到端加密消息',
+                    subtitle: _conversationSubtitle(room),
                     timeLabel: _roomTime(room),
                     avatar: room.isDirectChat || room.avatar != null
                         ? MatrixUserAvatar(
@@ -546,8 +599,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                                 ),
                             ],
                           ),
-                    unreadCount:
-                        preference.manualUnread ? 1 : room.notificationCount,
+                    unreadCount: _conversationUnread(room),
                     muted: preference.muted ||
                         room.pushRuleState != PushRuleState.notify,
                     pinnedGroup: !room.isDirectChat && preference.pinned,
@@ -590,9 +642,16 @@ final class _MessagesEmptyState extends StatelessWidget {
 }
 
 final class _FoldedGroupChatsPage extends StatelessWidget {
-  const _FoldedGroupChatsPage({required this.rooms, required this.onOpen});
+  const _FoldedGroupChatsPage({
+    required this.rooms,
+    required this.onOpen,
+    required this.titleFor,
+    required this.subtitleFor,
+  });
   final List<Room> rooms;
   final ValueChanged<Room> onOpen;
+  final String Function(Room room) titleFor;
+  final String Function(Room room) subtitleFor;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -609,8 +668,8 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
               final room = rooms[index];
               final members = orderedJoinedMembers(room).take(9);
               return ConversationListTile(
-                title: room.getLocalizedDisplayname(),
-                subtitle: room.lastEvent?.text ?? '端到端加密消息',
+                title: titleFor(room),
+                subtitle: subtitleFor(room),
                 timeLabel: '',
                 muted: true,
                 avatar: room.avatar != null
