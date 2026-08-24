@@ -36,7 +36,7 @@ final class SessionBootstrapController extends ChangeNotifier {
       final businessResult = await business.restoreSession();
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
-        if (matrix.isLoggedIn) await _bestEffortMatrixLogout();
+        if (matrix.isLoggedIn) await _bestEffortMatrixReset();
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated));
         return;
@@ -61,7 +61,7 @@ final class SessionBootstrapController extends ChangeNotifier {
         if (error.errcode == 'M_UNKNOWN_TOKEN' ||
             error.errcode == 'M_FORBIDDEN') {
           await _bestEffortBusinessLogout();
-          await _bestEffortMatrixLogout();
+          await _bestEffortMatrixReset();
           _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
             message: '登录状态已失效，请重新登录',
@@ -103,7 +103,7 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   Future<void> logout() async {
     await _bestEffortBusinessLogout();
-    await _bestEffortMatrixLogout();
+    await _bestEffortMatrixSuspend();
     _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));
   }
 
@@ -121,9 +121,15 @@ final class SessionBootstrapController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _bestEffortMatrixLogout() async {
+  Future<void> _bestEffortMatrixSuspend() async {
     try {
-      await matrix.logout();
+      await matrix.suspend();
+    } catch (_) {}
+  }
+
+  Future<void> _bestEffortMatrixReset() async {
+    try {
+      await matrix.resetLocalStore();
     } catch (_) {}
   }
 

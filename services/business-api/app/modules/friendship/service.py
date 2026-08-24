@@ -63,7 +63,7 @@ class FriendshipService:
         for user_id in ids:
             profile=profiles.get(user_id)
             if profile is None:continue
-            contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else []})
+            contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'nudge_suffix':profile.nudge_suffix,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else []})
         return items
     def requests(self,actor):
         with self.factory() as s:rows=list(s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor).order_by(FriendRequest.requested_at.desc(),FriendRequest.id.desc())))
@@ -85,12 +85,25 @@ class FriendshipService:
             if old:return old
             row=ContactTag(id=str(uuid4()),owner_id=actor,name=name,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.tag_created','CONTACT_TAG_CREATE',key);return row
     def tags(self,actor):
-        with self.factory() as s:return [{'id':row.id,'name':row.name} for row in s.scalars(select(ContactTag).where(ContactTag.owner_id==actor).order_by(ContactTag.name,ContactTag.id)).all()]
+        with self.factory() as s:
+            rows=s.scalars(select(ContactTag).where(ContactTag.owner_id==actor).order_by(ContactTag.name,ContactTag.id)).all()
+            profiles=s.scalars(select(ContactProfile).where(ContactProfile.owner_id==actor)).all()
+            return [{'id':row.id,'name':row.name,'friend_count':sum(row.name in set(filter(None,(profile.tags or '').split(','))) for profile in profiles)} for row in rows]
     def delete_tag(self,actor,tag_id,key):
+        self.delete_tags(actor,[tag_id],key)
+    def delete_tags(self,actor,tag_ids,key):
+        ids=list(dict.fromkeys(tag_ids))
         with self.factory.begin() as s:
-            row=s.get(ContactTag,tag_id)
-            if not row or row.owner_id!=actor:raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
-            s.delete(row);self._audit(s,actor,tag_id,'friend.tag_deleted','CONTACT_TAG_DELETE',key)
+            if self._idempotency(s,f'friend.tag.delete:{actor}',key,{'tag_ids':ids}):return
+            rows=list(s.scalars(select(ContactTag).where(ContactTag.id.in_(ids),ContactTag.owner_id==actor)).all())
+            if len(rows)!=len(ids):raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
+            names={row.name for row in rows}
+            for profile in s.scalars(select(ContactProfile).where(ContactProfile.owner_id==actor)).all():
+                values=[value for value in (profile.tags or '').split(',') if value and value not in names]
+                profile.tags=','.join(values)
+            for row in rows:
+                self._audit(s,actor,row.id,'friend.tag_deleted','CONTACT_TAG_DELETE',key)
+                s.delete(row)
     def rename_tag(self,actor,tag_id,name,key):
         name=name.strip()
         with self.factory.begin() as s:
@@ -98,6 +111,10 @@ class FriendshipService:
             if not row or row.owner_id!=actor:raise AppError(code='CONTACT_TAG_NOT_FOUND',message='标签不存在',status_code=404)
             existing=s.scalar(select(ContactTag).where(ContactTag.owner_id==actor,ContactTag.name==name))
             if existing is not None and existing.id!=tag_id:raise AppError(code='CONTACT_TAG_DUPLICATE',message='标签名称已存在',status_code=409)
+            old_name=row.name
+            for profile in s.scalars(select(ContactProfile).where(ContactProfile.owner_id==actor)).all():
+                values=[name if value==old_name else value for value in (profile.tags or '').split(',') if value]
+                profile.tags=','.join(values)
             row.name=name;self._audit(s,actor,tag_id,'friend.tag_renamed','CONTACT_TAG_RENAME',key);return row
     def update_profile(self,actor,target,remark,tags,permission,key):
         low,high=sorted((actor,target))

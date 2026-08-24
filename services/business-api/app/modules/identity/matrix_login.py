@@ -11,6 +11,7 @@ class MatrixLoginToken:
     login_token: str
     homeserver: str
     expires_in: int
+    matrix_user_id: str
 
 
 class MatrixLoginTokenService:
@@ -52,4 +53,5 @@ class MatrixLoginTokenService:
             login_token=login_token,
             homeserver=self._public_homeserver_url,
             expires_in=self._expires_in,
+            matrix_user_id=matrix_user_id,
         )

@@ -128,4 +128,31 @@ void main() {
     ]);
     expect(newKey, isNot(oldKey));
   });
+
+  test(
+      'suspend reopens encrypted Matrix storage without deleting database or key',
+      () async {
+    final secureStore = SecureSessionStore(MemoryStore());
+    final oldClient = LogoutTrackingClient('old');
+    final newClient = LogoutTrackingClient('new');
+    final events = <String>[];
+    final factory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://liuhetong888.com'),
+      supportDirectoryPath: () async => '/support',
+      disposer: (client) async => events.add('dispose:${client.clientName}'),
+      opener: (
+          {required clientName, required databasePath, required cipher}) async {
+        events.add('open:$clientName');
+        return newClient;
+      },
+    );
+    final oldKey = await secureStore.matrixDatabaseKey();
+
+    final reopened = await factory.reopen(oldClient);
+
+    expect(reopened, same(newClient));
+    expect(events, ['dispose:old', 'open:liuhetong_mobile']);
+    expect(await secureStore.matrixDatabaseKey(), oldKey);
+  });
 }

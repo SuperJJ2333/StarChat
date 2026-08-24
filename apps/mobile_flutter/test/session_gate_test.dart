@@ -28,6 +28,10 @@ final class GateMatrix implements MatrixSessionGateway {
   @override
   String? get deviceId => 'DEVICE';
   @override
+  Future<void> suspend() async {}
+  @override
+  Future<void> resetLocalStore() async => isLoggedIn = false;
+  @override
   Future<void> logout() async => isLoggedIn = false;
   @override
   Future<void> sync() async {}
@@ -45,6 +49,7 @@ final class _MemoryStore implements SecureKeyValueStore {
   @override
   Future<void> write(String key, String value) async => values[key] = value;
 }
+
 Widget appFor(SessionBootstrapController controller) => CupertinoApp(
       home: SessionGate(
         controller: controller,

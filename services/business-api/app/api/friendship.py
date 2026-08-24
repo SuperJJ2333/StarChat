@@ -11,9 +11,10 @@ class RequestBody(Strict):target_user_id:str=Field(min_length=1,max_length=36);m
 class BlockBody(Strict):user_id:str=Field(min_length=1,max_length=36)
 class TagBody(Strict):name:str=Field(min_length=1,max_length=64)
 class TagPatchBody(Strict):name:str=Field(min_length=1,max_length=64)
+class TagDeleteBatchBody(Strict):tag_ids:list[str]=Field(min_length=1,max_length=30)
 class ContactBody(Strict):remark:str|None=Field(default=None,max_length=128);tags:list[str]=Field(default_factory=list,max_length=30);moments_permission:str='DEFAULT'
 class FriendProjection(BaseModel):
-    user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;moments_permission:str;tags:list[str]
+    user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
 class FriendRequestProjection(BaseModel):
     id:str;username:str;nickname:str;avatar_url:str|None;message:str;status:str;requested_at:str
@@ -58,6 +59,9 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage):
         row=service.create_tag(user,body.name,idempotency_key);return {'id':row.id,'name':row.name}
     @router.get('/contact-tags')
     def tags(user=Depends(actor)):return {'items':service.tags(user),'next_cursor':None}
+    @router.delete('/contact-tags',status_code=204)
+    def delete_tags(body:TagDeleteBatchBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
+        service.delete_tags(user,body.tag_ids,idempotency_key);return Response(status_code=204)
     @router.delete('/contact-tags/{tag_id}',status_code=204)
     def delete_tag(tag_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         service.delete_tag(user,tag_id,idempotency_key);return Response(status_code=204)

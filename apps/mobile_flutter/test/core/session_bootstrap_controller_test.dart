@@ -37,6 +37,16 @@ final class FakeMatrix implements MatrixSessionGateway {
   String? deviceId;
   final Object? syncError;
   int logoutCalls = 0;
+  int suspendCalls = 0;
+  int resetCalls = 0;
+  @override
+  Future<void> suspend() async => suspendCalls++;
+  @override
+  Future<void> resetLocalStore() async {
+    resetCalls++;
+    isLoggedIn = false;
+  }
+
   @override
   Future<void> logout() async {
     logoutCalls++;
@@ -96,7 +106,7 @@ void main() {
     );
     await controller.bootstrap();
     expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(matrix.logoutCalls, 1);
+    expect(matrix.resetCalls, 1);
   });
 
   test('Matrix unknown token clears Business and returns to login', () async {
@@ -154,5 +164,19 @@ void main() {
     );
     await controller.bootstrap();
     expect(controller.state.status, SessionBootstrapStatus.fatalError);
+  });
+
+  test('ordinary logout suspends Matrix without erasing its local store',
+      () async {
+    final matrix =
+        FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
+    final controller = SessionBootstrapController(
+      business: FakeBusiness(BusinessSessionRestore.authenticated,
+          matrixUserId: '@alice:matrix.localhost'),
+      matrix: matrix,
+    );
+    await controller.logout();
+    expect(matrix.suspendCalls, 1);
+    expect(matrix.resetCalls, 0);
   });
 }

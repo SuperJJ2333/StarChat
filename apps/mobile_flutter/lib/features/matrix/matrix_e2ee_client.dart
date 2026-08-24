@@ -13,7 +13,8 @@ abstract interface class MatrixSessionGateway {
   String? get userId;
   String? get deviceId;
   Future<void> sync();
-  Future<void> logout();
+  Future<void> suspend();
+  Future<void> resetLocalStore();
 }
 
 abstract interface class MatrixE2eeClient
@@ -36,10 +37,13 @@ final class MatrixSdkE2eeClient
   MatrixSdkE2eeClient(
     Client client, {
     required this.homeserver,
+    Future<Client> Function(Client client)? reopenClient,
     Future<Client> Function(Client client)? resetClient,
   })  : _client = client,
+        _reopenClient = reopenClient,
         _resetClient = resetClient;
   Client _client;
+  final Future<Client> Function(Client client)? _reopenClient;
   final Future<Client> Function(Client client)? _resetClient;
   final Uri homeserver;
   Client get sdkClient => _client;
@@ -97,15 +101,22 @@ final class MatrixSdkE2eeClient
   }
 
   @override
-  Future<void> logout() async {
+  Future<void> suspend() async {
+    final reopenClient = _reopenClient;
+    if (reopenClient != null) _client = await reopenClient(client);
+  }
+
+  @override
+  Future<void> logout() => resetLocalStore();
+
+  @override
+  Future<void> resetLocalStore() async {
     final current = client;
     try {
       await current.logout();
     } finally {
       final resetClient = _resetClient;
-      if (resetClient != null) {
-        _client = await resetClient(current);
-      }
+      if (resetClient != null) _client = await resetClient(current);
     }
   }
 

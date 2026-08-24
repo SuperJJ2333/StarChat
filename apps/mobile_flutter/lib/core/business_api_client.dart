@@ -92,7 +92,8 @@ final class BusinessApiClient
     return MatrixLoginGrant(
         loginToken: body['login_token'] as String,
         homeserver: body['homeserver'] as String,
-        expiresIn: body['expires_in'] as int);
+        expiresIn: body['expires_in'] as int,
+        matrixUserId: body['matrix_user_id'] as String);
   }
 
   @override
@@ -425,6 +426,20 @@ final class BusinessApiClient
     final response = await _authorized((headers) => _client.delete(
           _uri('/contact-tags/$id'),
           headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+        ));
+    if (response.statusCode >= 400) _decode(response);
+  }
+
+  @override
+  Future<void> deleteContactTags(List<String> ids) async {
+    final response = await _authorized((headers) => _client.delete(
+          _uri('/contact-tags'),
+          headers: {
+            ...headers,
+            'Idempotency-Key': newIdempotencyKey(),
+            'Content-Type': 'application/json'
+          },
+          body: jsonEncode({'tag_ids': ids}),
         ));
     if (response.statusCode >= 400) _decode(response);
   }

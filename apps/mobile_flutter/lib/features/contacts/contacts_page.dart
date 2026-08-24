@@ -9,6 +9,7 @@ import '../../ui/components/wechat_contact_index.dart';
 import '../../ui/components/wechat_contact_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
+import 'contact_tag_pages.dart';
 import 'contact_profile_sections.dart';
 import '../search/global_search_page.dart';
 
@@ -647,11 +648,11 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       );
 }
 
-final class ContactTagsPage extends StatefulWidget {
-  const ContactTagsPage({super.key, required this.api});
+final class LegacyContactTagsPage extends StatefulWidget {
+  const LegacyContactTagsPage({super.key, required this.api});
   final BusinessApiClient api;
   @override
-  State<ContactTagsPage> createState() => _ContactTagsPageState();
+  State<LegacyContactTagsPage> createState() => _ContactTagsPageState();
 }
 
 final class ContactTagPickerPage extends StatefulWidget {
@@ -759,7 +760,7 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
       );
 }
 
-final class _ContactTagsPageState extends State<ContactTagsPage> {
+final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
   final name = TextEditingController();
   late Future<Map<String, dynamic>> tags = widget.api.contactTags();
   @override

@@ -54,6 +54,13 @@ final class MatrixClientFactory {
     return client;
   }
 
+  /// Reopens the persisted client without deleting the encrypted database,
+  /// its SQLCipher key, or any local Olm/Megolm sessions.
+  Future<Client> reopen(Client client) async {
+    await disposer(client);
+    return create();
+  }
+
   Future<Client> reset(Client client) async {
     final directory = await supportDirectoryPath();
     final databasePath = p.join(directory, databaseFileName);

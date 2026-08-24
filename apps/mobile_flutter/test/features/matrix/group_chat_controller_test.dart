@@ -18,6 +18,8 @@ final class FakeContactsGateway implements ContactsGateway {
 
   @override
   Future<void> deleteContactTag(String id) async {}
+  @override
+  Future<void> deleteContactTags(List<String> ids) async {}
 
   @override
   Future<List<ContactSummary>> listContacts() async => const [

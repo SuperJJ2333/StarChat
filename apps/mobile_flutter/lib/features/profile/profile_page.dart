@@ -447,7 +447,7 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
             ),
             const Padding(
               padding: EdgeInsets.only(top: 10, left: 4),
-              child: Text('朋友拍一拍你时显示的后缀。'),
+              child: Text('朋友拍一拍你时显示的后缀；拍自己也使用此后缀。'),
             ),
             if (widget.controller.state.message != null)
               Padding(

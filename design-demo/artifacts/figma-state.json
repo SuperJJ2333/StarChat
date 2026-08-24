@@ -205,7 +205,11 @@
       "app-moment-tile": "25:117",
       "app-moment-grid": "25:122",
       "app-moment-reactions": "25:127",
-      "app-visibility-icon": "25:132"
+      "app-visibility-icon": "25:132",
+      "app-nudge-notice": "18:7",
+      "app-contact-tag-management": "19:3",
+      "app-contact-tag-members": "19:3",
+      "app-contact-tag-friend-picker": "19:3"
     },
     "iconComponents": {
       "chat": "53:56",
@@ -294,7 +298,7 @@
     "formalDuplicateDarkReferences": 9,
     "prototypeLinks": 26,
     "prototypeFlows": 6,
-    "componentBoundTokenAudit": "passed",
+    "componentBoundTokenAudit": "export-ledger-reviewed",
     "screenRegistryExactMatch": true,
     "formalRegistryExactMatch": true,
     "visualQaScreens": [
@@ -339,88 +343,240 @@
         "name": "Profile / Personal Info / Nudge",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/profile/profile_page.dart",
-        "states": ["default", "editing", "saving", "error"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+        "states": [
+          "default",
+          "editing",
+          "saving",
+          "error"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase1-contact-tag-picker",
         "name": "Contact / Tag Picker",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart",
-        "states": ["default", "selected", "creating", "editing", "deleting", "error"],
-        "tokens": ["surface", "brandPrimary", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+        "states": [
+          "default",
+          "selected",
+          "creating",
+          "editing",
+          "deleting",
+          "error"
+        ],
+        "tokens": [
+          "surface",
+          "brandPrimary",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase1-contact-delete-confirmation",
         "name": "Contact / Delete Confirmation",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart",
-        "states": ["default", "confirming", "deleting", "error"],
-        "tokens": ["surface", "danger", "textPrimary", "textSecondary", "spacing", "radius"]
+        "states": [
+          "default",
+          "confirming",
+          "deleting",
+          "error"
+        ],
+        "tokens": [
+          "surface",
+          "danger",
+          "textPrimary",
+          "textSecondary",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase1-chat-info-friend-profile-entry",
         "name": "Chat Info / Friend Profile Entry",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart",
-        "states": ["default", "pressed"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "spacing", "radius"]
+        "states": [
+          "default",
+          "pressed"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase2-chat-history-search",
         "name": "Chat / History Search",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
-        "states": ["default", "query", "date-filtered", "grouped", "empty", "loading"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "spacing", "radius"]
+        "states": [
+          "default",
+          "query",
+          "date-filtered",
+          "grouped",
+          "empty",
+          "loading"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "brandPrimary",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase2-wechat-date-picker",
         "name": "Shared / WeChat Date Picker",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/ui/components/wechat_date_picker.dart",
-        "states": ["idle", "wheel-scrolling", "cancel", "confirm"],
-        "tokens": ["surface", "textPrimary", "brandPrimary", "spacing", "radius"]
+        "states": [
+          "idle",
+          "wheel-scrolling",
+          "cancel",
+          "confirm"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "brandPrimary",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase2-global-search",
         "name": "Search / Global Search",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/search/global_search_page.dart",
-        "states": ["focused", "query", "grouped-results", "empty", "loading"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "spacing", "radius"]
+        "states": [
+          "focused",
+          "query",
+          "grouped-results",
+          "empty",
+          "loading"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "brandPrimary",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase3-group-member-live-sync",
         "name": "Group Chat / Member Live Sync",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart",
-        "states": ["loading", "ready", "member-added", "member-removed", "error"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "divider", "brandPrimary", "danger", "spacing", "radius"]
+        "states": [
+          "loading",
+          "ready",
+          "member-added",
+          "member-removed",
+          "error"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "divider",
+          "brandPrimary",
+          "danger",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase4-root-navigation-actions",
         "name": "Root Navigation / Search and More Actions",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/features/contacts/contacts_page.dart; apps/mobile_flutter/lib/features/discovery/discovery_page.dart",
-        "states": ["default", "pressed", "sheet-open", "route-opening"],
-        "tokens": ["surface", "textPrimary", "textSecondary", "brandPrimary", "spacing", "radius"]
+        "states": [
+          "default",
+          "pressed",
+          "sheet-open",
+          "route-opening"
+        ],
+        "tokens": [
+          "surface",
+          "textPrimary",
+          "textSecondary",
+          "brandPrimary",
+          "spacing",
+          "radius"
+        ]
       },
       {
         "id": "phase5-core-component-tokenization",
         "name": "Foundation / Core Component Tokenization",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/ui/components/modern_action_button.dart; apps/mobile_flutter/lib/ui/components/user_avatar.dart; apps/mobile_flutter/lib/ui/components/network_status_capsule.dart",
-        "states": ["default", "pressed", "disabled", "loading", "offline", "reconnecting", "fallback-avatar"],
-        "tokens": ["brandPrimary", "danger", "textPrimary", "textSecondary", "surface", "border", "spacing", "radius", "typography", "motion", "effects"]
+        "states": [
+          "default",
+          "pressed",
+          "disabled",
+          "loading",
+          "offline",
+          "reconnecting",
+          "fallback-avatar"
+        ],
+        "tokens": [
+          "brandPrimary",
+          "danger",
+          "textPrimary",
+          "textSecondary",
+          "surface",
+          "border",
+          "spacing",
+          "radius",
+          "typography",
+          "motion",
+          "effects"
+        ]
       },
       {
         "id": "phase6-auth-form-feedback",
         "name": "Auth / Shared Form Field and Feedback",
         "status": "contract-registered",
         "source": "apps/mobile_flutter/lib/ui/components/auth_surface_card.dart; apps/mobile_flutter/lib/features/auth/login_page.dart; apps/mobile_flutter/lib/features/auth/registration_page.dart; apps/mobile_flutter/lib/features/auth/verification_page.dart",
-        "states": ["default", "focused", "disabled", "field-error", "server-error", "loading"],
-        "tokens": ["surface", "errorSurface", "errorBorder", "danger", "textSecondary", "spacing", "radius", "typography"]
+        "states": [
+          "default",
+          "focused",
+          "disabled",
+          "field-error",
+          "server-error",
+          "loading"
+        ],
+        "tokens": [
+          "surface",
+          "errorSurface",
+          "errorBorder",
+          "danger",
+          "textSecondary",
+          "spacing",
+          "radius",
+          "typography"
+        ]
       }
     ]
   }

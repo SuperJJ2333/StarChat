@@ -11,10 +11,12 @@ final class MatrixLoginGrant {
   const MatrixLoginGrant(
       {required this.loginToken,
       required this.homeserver,
-      required this.expiresIn});
+      required this.expiresIn,
+      required this.matrixUserId});
   final String loginToken;
   final String homeserver;
   final int expiresIn;
+  final String matrixUserId;
 }
 
 abstract interface class DualDomainBusinessGateway {
@@ -35,6 +37,7 @@ abstract interface class MatrixTokenLoginGateway {
       {required String loginToken, required Uri homeserver});
   Future<void> sync();
   Future<void> logout();
+  Future<void> resetLocalStore();
 }
 
 final class DualDomainLoginService {
@@ -51,20 +54,21 @@ final class DualDomainLoginService {
       deviceName: '畅聊移动端',
     );
     try {
-      // An explicit Business login starts a new dual-domain session. Never
-      // reuse a Matrix identity left by another Business account.
-      if (matrix.isLoggedIn) await matrix.logout();
       final grant = await business.issueMatrixLoginToken();
-      await matrix.loginWithToken(
-        loginToken: grant.loginToken,
-        homeserver: Uri.parse(grant.homeserver),
-      );
-      await matrix.sync();
-      final matrixUserId = matrix.userId;
-      if (matrixUserId == null) {
-        throw StateError('Matrix login did not return a user id');
+      if (matrix.isLoggedIn && matrix.userId != grant.matrixUserId) {
+        await matrix.resetLocalStore();
       }
-      await business.bindMatrixUserId(matrixUserId);
+      if (!matrix.isLoggedIn) {
+        await matrix.loginWithToken(
+          loginToken: grant.loginToken,
+          homeserver: Uri.parse(grant.homeserver),
+        );
+      }
+      if (matrix.userId != grant.matrixUserId) {
+        throw StateError('Matrix login returned an unexpected identity');
+      }
+      await matrix.sync();
+      await business.bindMatrixUserId(grant.matrixUserId);
     } on SocketException catch (error, stackTrace) {
       await _cleanupMatrix();
       Error.throwWithStackTrace(error, stackTrace);

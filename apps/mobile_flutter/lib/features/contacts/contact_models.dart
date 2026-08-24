@@ -6,6 +6,7 @@ final class ContactSummary {
     this.nickname,
     this.remark,
     this.avatarUrl,
+    this.nudgeSuffix,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
     this.starred = false,
@@ -18,6 +19,7 @@ final class ContactSummary {
         nickname: json['nickname']?.toString(),
         remark: json['remark']?.toString(),
         avatarUrl: json['avatar_url']?.toString(),
+        nudgeSuffix: json['nudge_suffix']?.toString(),
         momentsPermission: json['moments_permission']?.toString() ?? 'DEFAULT',
         tags: (json['tags'] as List? ?? const [])
             .map((value) => value.toString())
@@ -31,6 +33,7 @@ final class ContactSummary {
   final String? nickname;
   final String? remark;
   final String? avatarUrl;
+  final String? nudgeSuffix;
   final String momentsPermission;
   final List<String> tags;
   final bool starred;
@@ -52,6 +55,7 @@ final class ContactSummary {
         nickname: nickname ?? this.nickname,
         remark: remark ?? this.remark,
         avatarUrl: avatarUrl,
+        nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission,
         tags: tags,
         starred: starred,
@@ -64,6 +68,7 @@ final class ContactSummary {
         nickname: nickname,
         remark: remark,
         avatarUrl: avatarUrl,
+        nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission,
         tags: tags,
         starred: starred,
@@ -78,6 +83,7 @@ final class ContactDetails {
     this.nickname,
     this.remark,
     this.avatarUrl,
+    this.nudgeSuffix,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
     this.starred = false,
@@ -89,6 +95,7 @@ final class ContactDetails {
   final String? nickname;
   final String? remark;
   final String? avatarUrl;
+  final String? nudgeSuffix;
   final String momentsPermission;
   final List<String> tags;
   final bool starred;
@@ -114,6 +121,7 @@ final class ContactDetails {
         nickname: nickname,
         remark: clearRemark ? null : remark ?? this.remark,
         avatarUrl: avatarUrl,
+        nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission ?? this.momentsPermission,
         tags: tags ?? this.tags,
         starred: starred,
@@ -126,6 +134,7 @@ abstract interface class ContactsGateway {
   Future<Map<String, dynamic>> createContactTag(String name);
   Future<Map<String, dynamic>> renameContactTag(String id, String name);
   Future<void> deleteContactTag(String id);
+  Future<void> deleteContactTags(List<String> ids);
   Future<ContactDetails> updateContactDetails(
     ContactDetails contact, {
     required String? remark,

@@ -359,6 +359,134 @@
       "tokens": [
         "networkCapsule"
       ]
+    },
+    {
+      "id": "nudge-notice",
+      "flutter": {
+        "name": "WeChatNudgeNotice",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_nudge_notice.dart",
+        "props": [
+          "text"
+        ],
+        "variants": {},
+        "states": [
+          "default"
+        ]
+      },
+      "html": {
+        "tag": "app-nudge-notice"
+      },
+      "figma": {
+        "name": "app-nudge-notice",
+        "key": "18:7"
+      },
+      "tokens": [
+        "textSecondary",
+        "caption",
+        "sm"
+      ]
+    },
+    {
+      "id": "contact-tag-management",
+      "flutter": {
+        "name": "ContactTagsPage",
+        "file": "apps/mobile_flutter/lib/features/contacts/contact_tag_pages.dart",
+        "props": [
+          "api"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "pressed",
+          "disabled",
+          "loading",
+          "error",
+          "empty",
+          "destructive"
+        ]
+      },
+      "html": {
+        "tag": "app-contact-tag-management"
+      },
+      "figma": {
+        "name": "app-contact-tag-management",
+        "key": "19:3"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "danger",
+        "spacing",
+        "radius"
+      ]
+    },
+    {
+      "id": "contact-tag-members",
+      "flutter": {
+        "name": "ContactTagMembersPage",
+        "file": "apps/mobile_flutter/lib/features/contacts/contact_tag_pages.dart",
+        "props": [
+          "api",
+          "tag"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "pressed",
+          "disabled",
+          "loading",
+          "error",
+          "empty",
+          "destructive"
+        ]
+      },
+      "html": {
+        "tag": "app-contact-tag-members"
+      },
+      "figma": {
+        "name": "app-contact-tag-members",
+        "key": "19:3"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "danger",
+        "spacing",
+        "radius"
+      ]
+    },
+    {
+      "id": "contact-tag-friend-picker",
+      "flutter": {
+        "name": "ContactTagFriendPickerPage",
+        "file": "apps/mobile_flutter/lib/features/contacts/contact_tag_pages.dart",
+        "props": [
+          "api",
+          "tag"
+        ],
+        "variants": {},
+        "states": [
+          "default",
+          "pressed",
+          "disabled",
+          "loading",
+          "error",
+          "empty"
+        ]
+      },
+      "html": {
+        "tag": "app-contact-tag-friend-picker"
+      },
+      "figma": {
+        "name": "app-contact-tag-friend-picker",
+        "key": "19:3"
+      },
+      "tokens": [
+        "surface",
+        "brandPrimary",
+        "spacing",
+        "radius"
+      ]
     }
   ],
   "tokenParity": [
@@ -452,14 +580,14 @@
       "phase1-profile-personal-info-nudge",
       "phase1-contact-tag-picker",
       "phase1-contact-delete-confirmation",
-      "phase1-chat-info-friend-profile-entry"
-      ,"phase2-chat-history-search"
-      ,"phase2-wechat-date-picker"
-      ,"phase2-global-search"
-      ,"phase3-group-member-live-sync"
-      ,"phase4-root-navigation-actions"
-      ,"phase5-core-component-tokenization"
-      ,"phase6-auth-form-feedback"
+      "phase1-chat-info-friend-profile-entry",
+      "phase2-chat-history-search",
+      "phase2-wechat-date-picker",
+      "phase2-global-search",
+      "phase3-group-member-live-sync",
+      "phase4-root-navigation-actions",
+      "phase5-core-component-tokenization",
+      "phase6-auth-form-feedback"
     ]
   }
 }

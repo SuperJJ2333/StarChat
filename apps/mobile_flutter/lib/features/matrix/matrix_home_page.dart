@@ -20,6 +20,7 @@ import '../../ui/chat/message_action.dart';
 import '../../ui/chat/message_action_sheet.dart';
 import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
+import '../../ui/chat/wechat_nudge_notice.dart';
 import '../../ui/chat/wechat_voice_bubble.dart';
 import '../../ui/components/conversation_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
@@ -939,7 +940,9 @@ class _RoomPageState extends State<RoomPage> {
       ).send(
         targetUserId: message.senderId,
         targetDisplayName: targetDisplayName,
-        suffix: latestProfile.nudgeSuffix ?? '',
+        suffix: message.senderId == senderId
+            ? (latestProfile.nudgeSuffix ?? '')
+            : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
       if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
@@ -1560,31 +1563,34 @@ class _RoomPageState extends State<RoomPage> {
               ),
             ),
           ),
-        WeChatMessageBubble(
-          content: _messageContent(message),
-          avatar: _avatar(message),
-          onAvatarTap: contact == null ? null : () => _openContact(contact),
-          onAvatarDoubleTap: () => _sendNudge(message, displayName),
-          onAvatarLongPress: () {
-            final value = mentionDraft.append(
-              input.text,
-              displayName: displayName,
-              userId: message.senderId,
-            );
-            input
-              ..text = value
-              ..selection = TextSelection.collapsed(offset: value.length);
-          },
-          onLongPress: () => _showMessageActions(message),
-          direction: message.isOwn
-              ? MessageDirection.outgoing
-              : MessageDirection.incoming,
-          state: switch (message.deliveryState) {
-            RoomDeliveryState.sending => MessageDeliveryState.sending,
-            RoomDeliveryState.failed => MessageDeliveryState.failed,
-            RoomDeliveryState.sent => MessageDeliveryState.sent,
-          },
-        ),
+        if (message.kind == RoomMessageKind.system)
+          WeChatNudgeNotice(text: message.text)
+        else
+          WeChatMessageBubble(
+            content: _messageContent(message),
+            avatar: _avatar(message),
+            onAvatarTap: contact == null ? null : () => _openContact(contact),
+            onAvatarDoubleTap: () => _sendNudge(message, displayName),
+            onAvatarLongPress: () {
+              final value = mentionDraft.append(
+                input.text,
+                displayName: displayName,
+                userId: message.senderId,
+              );
+              input
+                ..text = value
+                ..selection = TextSelection.collapsed(offset: value.length);
+            },
+            onLongPress: () => _showMessageActions(message),
+            direction: message.isOwn
+                ? MessageDirection.outgoing
+                : MessageDirection.incoming,
+            state: switch (message.deliveryState) {
+              RoomDeliveryState.sending => MessageDeliveryState.sending,
+              RoomDeliveryState.failed => MessageDeliveryState.failed,
+              RoomDeliveryState.sent => MessageDeliveryState.sent,
+            },
+          ),
         if (message.replyToEventId != null)
           Align(
             alignment:

@@ -1,0 +1,12 @@
+apps/mobile_flutter/lib/core/business_api_client.dart
+apps/mobile_flutter/lib/features/contacts/contact_models.dart
+apps/mobile_flutter/lib/features/contacts/contacts_page.dart
+apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+apps/mobile_flutter/lib/features/profile/profile_controller.dart
+apps/mobile_flutter/test/features/contacts/contact_flow_test.dart
+apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart
+apps/mobile_flutter/test/features/profile/profile_controller_test.dart
+docs/verification/2026-08-23-profile-contact-functional-repair.md
+services/business-api/app/api/friendship.py
+services/business-api/app/modules/friendship/service.py
+tests/business_api/friendship/test_friendship_api.py

@@ -46,6 +46,7 @@ class PublicProfileResult:
     signature: str | None
     avatar_url: str | None
     matrix_user_id: str | None
+    nudge_suffix: str | None
 
 
 class ProfileService:
@@ -399,6 +400,7 @@ class ProfileService:
             signature=user.signature,
             avatar_url=avatar_url,
             matrix_user_id=user.matrix_user_id,
+            nudge_suffix=user.nudge_suffix,
         )
 
     @staticmethod

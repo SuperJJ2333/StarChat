@@ -29,6 +29,8 @@ final class FakeContactsGateway implements ContactsGateway {
 
   @override
   Future<void> deleteContactTag(String id) async {}
+  @override
+  Future<void> deleteContactTags(List<String> ids) async {}
 
   @override
   Future<List<ContactSummary>> listContacts() async => const [
@@ -171,6 +173,17 @@ void main() {
     expect(tester.getTopLeft(index).dy, greaterThan(indexTop + 20));
     expect(tester.getSize(index).height, indexHeight);
   });
+  test('contact remark is a viewer-local display override', () {
+    const contact = ContactSummary(
+        userId: 'u2',
+        username: 'test',
+        nickname: '测试账号',
+        remark: '客服',
+        matrixUserId: '@test:example.test');
+    expect(contact.displayName, '客服');
+    expect(contact.nickname, '测试账号');
+  });
+
   test('contact display name is remark then nickname then username', () {
     const base = ContactSummary(
       userId: 'uuid',

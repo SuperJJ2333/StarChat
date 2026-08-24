@@ -556,6 +556,17 @@
             "title": "Nickname",
             "type": "string"
           },
+          "nudge_suffix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nudge Suffix"
+          },
           "remark": {
             "anyOf": [
               {
@@ -590,6 +601,7 @@
           "remark",
           "avatar_url",
           "matrix_user_id",
+          "nudge_suffix",
           "moments_permission",
           "tags"
         ],
@@ -779,12 +791,17 @@
           "login_token": {
             "title": "Login Token",
             "type": "string"
+          },
+          "matrix_user_id": {
+            "title": "Matrix User Id",
+            "type": "string"
           }
         },
         "required": [
           "login_token",
           "homeserver",
-          "expires_in"
+          "expires_in",
+          "matrix_user_id"
         ],
         "title": "MatrixLoginTokenResponse",
         "type": "object"
@@ -1214,6 +1231,41 @@
           "name"
         ],
         "title": "TagBody",
+        "type": "object"
+      },
+      "TagDeleteBatchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "tag_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Tag Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tag_ids"
+        ],
+        "title": "TagDeleteBatchBody",
+        "type": "object"
+      },
+      "TagPatchBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TagPatchBody",
         "type": "object"
       },
       "TokenResponse": {
@@ -2362,6 +2414,74 @@
       }
     },
     "/api/v1/contact-tags": {
+      "delete": {
+        "operationId": "delete_tags_api_v1_contact_tags_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagDeleteBatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Delete Tags",
+        "tags": [
+          "friends"
+        ]
+      },
       "get": {
         "operationId": "tags_api_v1_contact_tags_get",
         "parameters": [],
@@ -2553,6 +2673,88 @@
           }
         ],
         "summary": "Delete Tag",
+        "tags": [
+          "friends"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_tag_api_v1_contact_tags__tag_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tag_id",
+            "required": true,
+            "schema": {
+              "title": "Tag Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagPatchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Rename Tag",
         "tags": [
           "friends"
         ]

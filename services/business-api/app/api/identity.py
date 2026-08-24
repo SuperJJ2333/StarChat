@@ -99,6 +99,7 @@ class MatrixLoginTokenResponse(BaseModel):
     login_token: str
     homeserver: str
     expires_in: int
+    matrix_user_id: str
 
 
 def create_identity_router(
@@ -376,6 +377,7 @@ def create_identity_router(
             login_token=result.login_token,
             homeserver=result.homeserver,
             expires_in=result.expires_in,
+            matrix_user_id=result.matrix_user_id,
         )
 
     @router.post("/auth/logout", status_code=204)

@@ -50,8 +50,8 @@ async def test_request_accept_list_block_and_search(ctx):
         assert accepted.status_code == 200
         friends = await client.get('/api/v1/friends', headers=bearer(settings, 'u1'))
         friend = friends.json()['items'][0]
-        assert set(friend) == {'user_id', 'username', 'nickname', 'remark', 'avatar_url', 'matrix_user_id', 'moments_permission', 'tags'}
-        assert friend == {'user_id': 'u2', 'username': 'bob', 'nickname': 'Bobby', 'remark': None, 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@bob:matrix.example.test', 'moments_permission': 'DEFAULT', 'tags': []}
+        assert set(friend) == {'user_id', 'username', 'nickname', 'remark', 'avatar_url', 'matrix_user_id', 'nudge_suffix', 'moments_permission', 'tags'}
+        assert friend == {'user_id': 'u2', 'username': 'bob', 'nickname': 'Bobby', 'remark': None, 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@bob:matrix.example.test', 'nudge_suffix': None, 'moments_permission': 'DEFAULT', 'tags': []}
         blocked = await client.post('/api/v1/blocks', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'b1'}, json={'user_id': 'u2'})
         assert blocked.status_code == 201
         search = await client.get('/api/v1/users/search?q=bob', headers=bearer(settings, 'u1'))
@@ -164,3 +164,23 @@ async def test_search_returns_authoritative_relationship_state(ctx):
         assert pending.status_code == 201
         outgoing = await client.get('/api/v1/users/search?q=bob', headers=bearer(settings, 'u1'))
         assert outgoing.json()['items'][0]['relationship_state'] == 'OUTGOING_PENDING'
+
+
+@pytest.mark.asyncio
+async def test_contact_tag_bulk_delete_and_rename_keep_contact_projection_consistent(ctx):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        request = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-request'}, json={'target_user_id': 'u2'})
+        await client.post(f"/api/v1/friends/requests/{request.json()['id']}/accept", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'tag-projection-accept'})
+        await client.patch('/api/v1/friends/u2', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-profile'}, json={'remark': None, 'tags': ['家人'], 'moments_permission': 'DEFAULT'})
+        family = await client.post('/api/v1/contact-tags', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-family'}, json={'name': '家人'})
+        work = await client.post('/api/v1/contact-tags', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-work'}, json={'name': '同事'})
+        renamed = await client.patch(f"/api/v1/contact-tags/{family.json()['id']}", headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-rename'}, json={'name': '亲人'})
+        assert renamed.status_code == 200
+        assert (await client.get('/api/v1/friends', headers=bearer(settings, 'u1'))).json()['items'][0]['tags'] == ['亲人']
+        tags = (await client.get('/api/v1/contact-tags', headers=bearer(settings, 'u1'))).json()['items']
+        assert {item['name']: item['friend_count'] for item in tags} == {'亲人': 1, '同事': 0}
+        deleted = await client.request('DELETE', '/api/v1/contact-tags', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'tag-projection-delete'}, json={'tag_ids': [family.json()['id'], work.json()['id']]})
+        assert deleted.status_code == 204
+        assert (await client.get('/api/v1/contact-tags', headers=bearer(settings, 'u1'))).json()['items'] == []
+        assert (await client.get('/api/v1/friends', headers=bearer(settings, 'u1'))).json()['items'][0]['tags'] == []
