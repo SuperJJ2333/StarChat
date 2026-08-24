@@ -68,22 +68,8 @@ List<User> orderedJoinedMembers(Room room) {
   ];
 }
 
-String groupRoomNavigationTitle(String customName, int memberCount) {
-  final normalizedName = customName.trim();
-  if (normalizedName.isEmpty) return '群聊($memberCount)';
-
-  final characters = normalizedName.characters;
-  final suffix = '($memberCount)';
-  // The navigation bar has room for at most 20 grapheme clusters including
-  // the count. Keep the mandated 8…3 form whenever the full label overflows.
-  final needsMiddleEllipsis = characters.length > 20 ||
-      characters.length + suffix.characters.length > 20;
-  final label = needsMiddleEllipsis
-      ? '${characters.take(8).toString()}...'
-          '${characters.skip(characters.length - 3).toString()}'
-      : normalizedName;
-  return '$label$suffix';
-}
+String groupRoomNavigationTitle(String _, int memberCount) =>
+    '群聊($memberCount)';
 
 Future<List<User>> loadOrderedJoinedMembers(Room room) async {
   await room.requestParticipants([Membership.join]);

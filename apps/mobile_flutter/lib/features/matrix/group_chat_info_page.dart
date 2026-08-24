@@ -180,7 +180,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                   const SizedBox(height: 12),
                   _detailTile(
                     '群聊名称',
-                    snapshot.name,
+                    groupInfoDisplayName(snapshot.name),
                     () => _edit(
                       title: '群聊名称',
                       initialValue: snapshot.name,
@@ -588,7 +588,7 @@ final class GroupQrCodePage extends StatelessWidget {
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               const Icon(CupertinoIcons.qrcode, size: 176),
               const SizedBox(height: 16),
-              Text(snapshot.name.isEmpty ? '群聊' : snapshot.name),
+              Text(groupInfoDisplayName(snapshot.name)),
               const SizedBox(height: 8),
               Text(
                 snapshot.qrJoinEnabled ? '扫描二维码加入群聊' : '群二维码已关闭',
@@ -1106,7 +1106,8 @@ final class _GroupChatHistorySearchPageState
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
                       child: Text(_formatDate(group.key),
-                          style: const TextStyle(color: WeChatColors.textSecondary)),
+                          style: const TextStyle(
+                              color: WeChatColors.textSecondary)),
                     ),
                     for (final entry in group.value)
                       WeChatListTile(
@@ -1129,7 +1130,8 @@ final class _GroupChatHistorySearchPageState
   Future<void> _selectCategory(ChatSearchCategory value) async {
     if (value == ChatSearchCategory.date) {
       var selected = selectedDate ?? DateTime.now();
-      final picked = await WeChatDatePicker.show(context, initialDate: selected);
+      final picked =
+          await WeChatDatePicker.show(context, initialDate: selected);
       if (picked != null && mounted) {
         setState(() {
           category = value;
@@ -1203,5 +1205,6 @@ final class _GroupChatHistorySearchPageState
     return {for (final key in keys) key: result[key]!};
   }
 
-  String _formatDate(DateTime date) => '${date.year}年${date.month}月${date.day}日';
+  String _formatDate(DateTime date) =>
+      '${date.year}年${date.month}月${date.day}日';
 }

@@ -7,6 +7,11 @@ import 'avatar_url_resolver.dart';
 
 const groupChatAccountDataType = 'com.liuhetong.group_chat.settings.v1';
 
+String groupInfoDisplayName(String explicitName) {
+  final normalized = explicitName.trim();
+  return normalized.isEmpty ? '未命名' : normalized;
+}
+
 List<String> normalizeGroupAdminIds(
   Iterable<String> ids, {
   required String ownerId,
@@ -215,7 +220,7 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
     final orderedUsers = [for (final id in order) userById[id]!];
     final activeIds = orderedUsers.map((user) => user.id).toSet();
     return GroupChatInfoSnapshot(
-      name: room.getLocalizedDisplayname(),
+      name: room.name.trim(),
       announcement: room.topic,
       remark: settings['remark']?.toString() ?? '',
       muted: settings['muted'] == true,

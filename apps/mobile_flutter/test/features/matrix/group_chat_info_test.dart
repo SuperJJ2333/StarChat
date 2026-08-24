@@ -88,6 +88,12 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
 }
 
 void main() {
+  test('blank explicit group names display as unnamed', () {
+    expect(groupInfoDisplayName(''), '未命名');
+    expect(groupInfoDisplayName('   '), '未命名');
+    expect(groupInfoDisplayName(' 项目群 '), '项目群');
+  });
+
   test('loads joined members before building a group avatar mosaic', () async {
     final client = Client('test')
       ..homeserver = Uri.parse('https://matrix.example.test');
@@ -175,6 +181,30 @@ void main() {
       expect(find.text(label), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('group info and QR show unnamed for a blank explicit name',
+      (tester) async {
+    final gateway = FakeGroupChatInfoGateway();
+    gateway.snapshot = gateway.snapshot.copyWith(name: '');
+    final controller = GroupChatInfoController(gateway);
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('未命名'), findsOneWidget);
+
+    await tester.pumpWidget(
+      CupertinoApp(home: GroupQrCodePage(snapshot: gateway.snapshot)),
+    );
+    await tester.pump();
+    expect(find.text('未命名'), findsOneWidget);
   });
 
   testWidgets('tapping a group member opens that member profile',
