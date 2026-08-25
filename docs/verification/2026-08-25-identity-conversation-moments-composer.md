@@ -77,3 +77,13 @@
 | `audience-selector.png` | “只给谁看”二级页和完成计数；过期会话触发明确可重试失败态 | `82779CBBFD80A5267C60F9EB8C4BE5651D148B39F85779DFC526FD2C26748EE2` |
 
 模拟器已有生产刷新令牌在验收期间被服务端判定为重复使用/无效，因此在线标签和朋友请求进入“标签或朋友加载失败，请检查网络后重试”的保留状态；没有卸载清数据，也没有绕过认证。静态导航与失败态完成实机验证，标签/朋友双列、搜索、多选和完成回传由 Flutter widget/model 测试覆盖。最终包安装后，权威刷新拒绝按安全策略清除失效 Business 会话并回到登录页；清空 logcat 后重新启动检查 `FATAL EXCEPTION|Unhandled Exception|FlutterError` 为 0。日志中没有令牌值、消息正文或 URL 查询参数。
+
+### 2026-08-25 公网同步部署
+
+- SSH `root@207.56.8.8:23421` 恢复后，将 `7161ae6..ef7e515` 中 35 个现存受控文件同步到 `/opt/starchat`；被新两级可见范围页面替代的 `moment_audience_picker_page.dart` 在备份后删除。
+- 同步包 SHA-256：`CC63C7B0D4F012D46D49EDB188FC0F357D834517879E2B8CD4BB8C43E52EF272`。远端抽查 `moment_composer_page.dart`、`chat_identity_cache.dart`、`contacts_page.dart` 的 SHA-256 与本地逐项一致。
+- 部署前备份：`/opt/starchat-backups/source-before-ef7e515-20260825T035750Z.tar.gz`。
+- Release APK 发布为 `/opt/starchat/releases/mobile/starchat-ef7e515-release.apk`，`latest-release.apk` 指向该文件；远端大小 137,692,120 bytes，SHA-256 `99C5EF7E851D7B8D23C1293EC25CE92CB31ADD9B739DBC3C67CD668ECCB6A035`。
+- 服务器没有既有 APK HTTP 下载路由，本次没有修改公网 Nginx 契约；APK 作为受控发布制品保存在服务器。后端与 Compose 无代码变化，因此没有重建或重启生产容器。
+- `docker compose ... config --quiet` 通过；Business `/health/live` 与 `/health/ready` 均返回 `ok:true`；11 个容器全部 running，带健康检查的服务均为 healthy。
+- 外部 `scripts/verify_public_domains.ps1` 全部通过：三个域名 DNS、HTTP→HTTPS、Business live/ready、Matrix versions/discovery 均成功，管理端与 Synapse 管理 API 继续保持不可公开访问。
