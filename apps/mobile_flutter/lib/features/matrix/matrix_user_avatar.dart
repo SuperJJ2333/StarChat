@@ -3,22 +3,25 @@ import 'package:matrix/matrix.dart';
 
 import '../../ui/components/user_avatar.dart';
 import 'avatar_url_resolver.dart';
+import 'matrix_e2ee_client.dart';
 
 /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
 /// placing the Matrix access token in a cache key or URL.
 final class MatrixUserAvatar extends StatefulWidget {
   const MatrixUserAvatar({
     super.key,
-    required this.client,
+    this.client,
+    this.matrix,
     required this.nickname,
     required this.fallbackSeed,
     this.matrixAvatarUri,
     this.fallbackAvatarUrl,
     this.diagnosticSource = 'unspecified',
     this.size = 48,
-  });
+  }) : assert(client != null || matrix != null);
 
-  final Client client;
+  final Client? client;
+  final MatrixSdkE2eeClient? matrix;
   final String nickname;
   final String fallbackSeed;
   final Uri? matrixAvatarUri;
@@ -36,12 +39,15 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   @override
   void initState() {
     super.initState();
-    resolved = MatrixAvatarUrlResolver.resolveImmediately(
-      avatarUri: widget.matrixAvatarUri,
-      homeserver: widget.client.homeserver,
-      accessToken: widget.client.accessToken,
-      size: widget.size,
-    );
+    final client = widget.client;
+    if (client != null) {
+      resolved = MatrixAvatarUrlResolver.resolveImmediately(
+        avatarUri: widget.matrixAvatarUri,
+        homeserver: client.homeserver,
+        accessToken: client.accessToken,
+        size: widget.size,
+      );
+    }
     _diagnose('initial');
     _resolve();
   }
@@ -51,18 +57,28 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matrixAvatarUri != widget.matrixAvatarUri ||
         oldWidget.size != widget.size ||
-        oldWidget.client != widget.client) {
+        oldWidget.client != widget.client ||
+        oldWidget.matrix != widget.matrix) {
       _resolve();
     }
   }
 
   Future<void> _resolve() async {
     try {
-      final value = await MatrixAvatarUrlResolver.resolveForClient(
-        avatarUri: widget.matrixAvatarUri,
-        client: widget.client,
-        size: widget.size,
-      );
+      final directClient = widget.client;
+      final value = directClient == null
+          ? await widget.matrix!.runClientOperation<ResolvedAvatarUrl?>(
+              (client) => MatrixAvatarUrlResolver.resolveForClient(
+                avatarUri: widget.matrixAvatarUri,
+                client: client,
+                size: widget.size,
+              ),
+            )
+          : await MatrixAvatarUrlResolver.resolveForClient(
+              avatarUri: widget.matrixAvatarUri,
+              client: directClient,
+              size: widget.size,
+            );
       if (mounted) setState(() => resolved = value);
       _diagnose('resolved');
     } catch (_) {

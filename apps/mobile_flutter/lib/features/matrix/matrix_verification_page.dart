@@ -16,7 +16,7 @@ final class MatrixVerificationPage extends StatefulWidget {
 
 final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
   late final MatrixVerificationService service =
-      MatrixVerificationService(widget.matrix.sdkClient);
+      MatrixVerificationService(widget.matrix);
   String status = '等待验证请求';
   Future<void> _action(Future<void> Function() f, String text) async {
     try {

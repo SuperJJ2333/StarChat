@@ -179,7 +179,7 @@ void main() {
   test('matrix binding rejects an unsupported version', () async {
     final storage = MemorySecureKeyValueStore()
       ..values['liuhetong.matrix_local_binding.v1'] = jsonEncode({
-        'version': 2,
+        'version': 3,
         'matrix_user_id': '@alice:matrix.localhost',
         'device_id': 'ALICEDEVICE',
         'homeserver': 'https://matrix.example',
@@ -188,6 +188,76 @@ void main() {
     final store = SecureSessionStore(storage);
 
     expect(store.matrixBinding(), throwsFormatException);
+  });
+
+  test('matrix binding version 2 persists the Ed25519 fingerprint', () async {
+    final storage = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(storage);
+    final binding = MatrixLocalBinding(
+      version: 2,
+      matrixUserId: '@alice:matrix.localhost',
+      deviceId: 'ALICEDEVICE',
+      homeserver: 'https://matrix.example',
+      databaseGeneration: 'generation-1',
+      ed25519Fingerprint: 'ed25519-fingerprint-1',
+    );
+
+    await store.saveMatrixBinding(binding);
+
+    expect(await store.matrixBinding(), binding);
+    final persisted = jsonDecode(
+      storage.values['liuhetong.matrix_local_binding.v1']!,
+    ) as Map<String, dynamic>;
+    expect(persisted['ed25519_fingerprint'], 'ed25519-fingerprint-1');
+  });
+
+  test('matrix binding version 1 remains readable without a fingerprint',
+      () async {
+    final storage = MemorySecureKeyValueStore()
+      ..values['liuhetong.matrix_local_binding.v1'] = jsonEncode({
+        'version': 1,
+        'matrix_user_id': '@alice:matrix.localhost',
+        'device_id': 'ALICEDEVICE',
+        'homeserver': 'https://matrix.example',
+        'database_generation': 'generation-1',
+      });
+    final store = SecureSessionStore(storage);
+
+    final binding = await store.matrixBinding();
+
+    expect(binding?.version, 1);
+    expect(binding?.ed25519Fingerprint, isNull);
+  });
+
+  test('matrix binding version 2 requires a strict fingerprint', () {
+    for (final fingerprint in <String?>[null, '', ' padded ']) {
+      expect(
+        () => MatrixLocalBinding(
+          version: 2,
+          matrixUserId: '@alice:matrix.localhost',
+          deviceId: 'ALICEDEVICE',
+          homeserver: 'https://matrix.example',
+          databaseGeneration: 'generation-1',
+          ed25519Fingerprint: fingerprint,
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
+  test('matrix binding rejects unknown persisted fields', () async {
+    final storage = MemorySecureKeyValueStore()
+      ..values['liuhetong.matrix_local_binding.v1'] = jsonEncode({
+        'version': 2,
+        'matrix_user_id': '@alice:matrix.localhost',
+        'device_id': 'ALICEDEVICE',
+        'homeserver': 'https://matrix.example',
+        'database_generation': 'generation-1',
+        'ed25519_fingerprint': 'fingerprint-1',
+        'unexpected': 'must-not-be-accepted',
+      });
+
+    expect(SecureSessionStore(storage).matrixBinding(), throwsFormatException);
   });
 
   test('concurrent diagnostic salt reads share one generated value', () async {

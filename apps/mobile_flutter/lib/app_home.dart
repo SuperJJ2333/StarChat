@@ -52,37 +52,66 @@ final class AppHome extends StatefulWidget {
 final class _AppHomeState extends State<AppHome> {
   late final DirectChatController directChats =
       DirectChatController(widget.matrix);
-  late final MatrixCallBackend callBackend =
-      MatrixCallBackend(widget.matrix.sdkClient);
-  late final CallController calls = CallController(
-    backend: callBackend,
-    permissions: const WebRtcPermissionGateway(),
-  );
+  MatrixCallBackend? callBackend;
+  CallController? calls;
   bool callPageVisible = false;
   bool incomingCallActive = false;
   MessageReminderService? reminderService;
-  late final MessageReminderSyncBootstrapper reminderBootstrap;
+  MessageReminderSyncBootstrapper? reminderBootstrap;
+  MatrixManagedResource? matrixResources;
   ChatIdentityCache? _chatIdentityCache;
   Future<ChatIdentityCache>? _chatIdentityCacheLoad;
 
   @override
   void initState() {
     super.initState();
-    calls.addListener(_callChanged);
-    reminderBootstrap = MessageReminderSyncBootstrapper(
-      retries: widget.matrix.sdkClient.onSync.stream.map<void>((_) {}),
-      create: _createReminderSync,
-      onReady: (coordinator) {
-        if (mounted) setState(() => reminderService = coordinator.service);
-      },
-    );
-    unawaited(reminderBootstrap.start());
+    unawaited(_initializeMatrixResources());
     unawaited(_identityCache());
   }
 
+  Future<void> _initializeMatrixResources() async {
+    matrixResources = await widget.matrix.registerManagedResource(
+      open: (client) async {
+        final backend = MatrixCallBackend(client);
+        final controller = CallController(
+          backend: backend,
+          permissions: const WebRtcPermissionGateway(),
+        )..addListener(_callChanged);
+        callBackend = backend;
+        calls = controller;
+        final bootstrap = MessageReminderSyncBootstrapper(
+          retries: widget.matrix.syncEvents,
+          create: _createReminderSync,
+          onReady: (coordinator) {
+            if (mounted) setState(() => reminderService = coordinator.service);
+          },
+        );
+        reminderBootstrap = bootstrap;
+        unawaited(bootstrap.start());
+        if (mounted) setState(() {});
+      },
+      close: () async {
+        final controller = calls;
+        final backend = callBackend;
+        calls = null;
+        callBackend = null;
+        reminderService = null;
+        final bootstrap = reminderBootstrap;
+        reminderBootstrap = null;
+        controller?.removeListener(_callChanged);
+        controller?.dispose();
+        backend?.dispose();
+        await bootstrap?.dispose();
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
   Future<MessageReminderSyncCoordinator> _createReminderSync() async {
-    final backend =
-        await MatrixMessageReminderBackend.open(widget.matrix.sdkClient);
+    late MatrixMessageReminderBackend backend;
+    await widget.matrix.runClientOperation<void>((client) async {
+      backend = await MatrixMessageReminderBackend.open(client);
+    });
     return MessageReminderSyncCoordinator(
       source: backend,
       service: MessageReminderService(
@@ -96,7 +125,7 @@ final class _AppHomeState extends State<AppHome> {
       _chatIdentityCacheLoad ??= _createIdentityCache();
 
   Future<ChatIdentityCache> _createIdentityCache() async {
-    final accountKey = widget.matrix.sdkClient.userID;
+    final accountKey = widget.matrix.userId;
     final cache = accountKey == null
         ? ChatIdentityCache(widget.api)
         : await ChatIdentityCache.create(
@@ -111,20 +140,25 @@ final class _AppHomeState extends State<AppHome> {
   }
 
   void _callChanged() {
+    final controller = calls;
+    if (controller == null) return;
     if (!mounted) return;
-    if (calls.state.phase == CallPhase.ringing && !callPageVisible) {
+    if (controller.state.phase == CallPhase.ringing && !callPageVisible) {
       incomingCallActive = true;
       setState(() {});
     } else if (incomingCallActive &&
-        (calls.state.phase == CallPhase.ended ||
-            calls.state.phase == CallPhase.failed ||
-            calls.state.phase == CallPhase.permissionDenied)) {
+        (controller.state.phase == CallPhase.ended ||
+            controller.state.phase == CallPhase.failed ||
+            controller.state.phase == CallPhase.permissionDenied)) {
       incomingCallActive = false;
       setState(() {});
     }
   }
 
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
+    final controller = calls;
+    final backend = callBackend;
+    if (controller == null || backend == null) return;
     try {
       final reference = await directChats.open(contact.matrixUserId);
       if (!mounted) return;
@@ -133,15 +167,15 @@ final class _AppHomeState extends State<AppHome> {
         context,
         CupertinoPageRoute(
           builder: (_) => CallPage(
-            controller: calls,
+            controller: controller,
             displayName: contact.displayName,
             fallbackSeed: contact.username,
             avatarUrl: contact.avatarUrl,
-            mediaBackend: callBackend,
+            mediaBackend: backend,
           ),
         ),
       );
-      await calls.start(
+      await controller.start(
         roomId: reference.roomId,
         matrixUserId: contact.matrixUserId,
         type: type,
@@ -163,11 +197,11 @@ final class _AppHomeState extends State<AppHome> {
         ),
       );
     } finally {
-      if (calls.state.phase == CallPhase.requestingPermission ||
-          calls.state.phase == CallPhase.ringing ||
-          calls.state.phase == CallPhase.connected) {
+      if (controller.state.phase == CallPhase.requestingPermission ||
+          controller.state.phase == CallPhase.ringing ||
+          controller.state.phase == CallPhase.connected) {
         try {
-          await calls.hangup();
+          await controller.hangup();
         } catch (_) {
           // The route is already closing; the backend also observes Matrix end
           // events, so cleanup remains best-effort here.
@@ -207,37 +241,53 @@ final class _AppHomeState extends State<AppHome> {
     );
     controller.dispose();
     if (!mounted || roomId == null) return;
-    final room = widget.matrix.sdkClient.getRoomById(roomId);
-    if (room == null) return;
+    final roomName = await widget.matrix.runClientOperation<String>((client) {
+      final room = client.getRoomById(roomId);
+      if (room == null) throw StateError('Matrix room is unavailable');
+      return room.getLocalizedDisplayname();
+    });
     final identityCache = await _identityCache();
     await identityCache.preload();
     if (!mounted) return;
     await identityCache.precacheAvatarImages(context);
     if (!mounted) return;
-    await Navigator.push(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => RoomPage(
-          api: widget.api,
-          room: room,
-          roomName: room.getLocalizedDisplayname(),
-          onCreateGroup: _createGroupChat,
-          onVoice: (contact) => _openCall(contact, CallMediaType.audio),
-          onVideo: (contact) => _openCall(contact, CallMediaType.video),
-          reminderService: reminderService,
-          initialIdentityCache: identityCache,
-        ),
+    final lease = await widget.matrix.openRoomLease(roomId);
+    if (!mounted) {
+      await lease.cancel();
+      return;
+    }
+    final navigator = Navigator.of(context, rootNavigator: true);
+    late final Route<void> route;
+    route = CupertinoPageRoute<void>(
+      builder: (_) => RoomPage(
+        api: widget.api,
+        roomLease: lease,
+        roomName: roomName,
+        onCreateGroup: _createGroupChat,
+        onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+        onVideo: (contact) => _openCall(contact, CallMediaType.video),
+        reminderService: reminderService,
+        initialIdentityCache: identityCache,
       ),
     );
+    lease.setOnRevoked(() async {
+      if (route.isActive) {
+        navigator.popUntil((candidate) => identical(candidate, route));
+        navigator.removeRoute(route);
+      }
+      await route.popped;
+    });
+    try {
+      await navigator.push(route);
+    } finally {
+      await lease.cancel();
+    }
   }
 
   @override
   void dispose() {
-    calls.removeListener(_callChanged);
-    calls.dispose();
-    callBackend.dispose();
+    unawaited(matrixResources?.cancel());
     directChats.dispose();
-    unawaited(reminderBootstrap.dispose());
     super.dispose();
   }
 
@@ -312,14 +362,14 @@ final class _AppHomeState extends State<AppHome> {
               },
             ),
           ),
-          if (incomingCallActive)
+          if (incomingCallActive && calls != null && callBackend != null)
             Positioned.fill(
               child: CallPage(
-                controller: calls,
-                displayName: calls.state.matrixUserId ?? '加密来电',
-                fallbackSeed: calls.state.matrixUserId ?? 'incoming-call',
+                controller: calls!,
+                displayName: calls!.state.matrixUserId ?? '加密来电',
+                fallbackSeed: calls!.state.matrixUserId ?? 'incoming-call',
                 incoming: true,
-                mediaBackend: callBackend,
+                mediaBackend: callBackend!,
               ),
             ),
         ],
@@ -355,29 +405,44 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
   Future<void> _openMessage(ContactDetails contact) async {
     try {
       final reference = await widget.directChats.open(contact.matrixUserId);
-      final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
-      if (room == null) throw StateError('Matrix room is unavailable');
       final identityCache =
           widget.identityCache ?? ChatIdentityCache(widget.api);
       await identityCache.preload();
       if (!mounted) return;
       await identityCache.precacheAvatarImages(context);
       if (!mounted) return;
-      await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
-          builder: (_) => RoomPage(
-            api: widget.api,
-            room: room,
-            roomName: contact.displayName,
-            initialContact: contact,
-            onCreateGroup: widget.onGroupChat,
-            onVoice: widget.onVoice,
-            onVideo: widget.onVideo,
-            reminderService: widget.reminderService,
-            initialIdentityCache: identityCache,
-          ),
+      final lease = await widget.matrix.openRoomLease(reference.roomId);
+      if (!mounted) {
+        await lease.cancel();
+        return;
+      }
+      final navigator = Navigator.of(context, rootNavigator: true);
+      late final Route<void> route;
+      route = CupertinoPageRoute<void>(
+        builder: (_) => RoomPage(
+          api: widget.api,
+          roomLease: lease,
+          roomName: contact.displayName,
+          initialContact: contact,
+          onCreateGroup: widget.onGroupChat,
+          onVoice: widget.onVoice,
+          onVideo: widget.onVideo,
+          reminderService: widget.reminderService,
+          initialIdentityCache: identityCache,
         ),
       );
+      lease.setOnRevoked(() async {
+        if (route.isActive) {
+          navigator.popUntil((candidate) => identical(candidate, route));
+          navigator.removeRoute(route);
+        }
+        await route.popped;
+      });
+      try {
+        await navigator.push(route);
+      } finally {
+        await lease.cancel();
+      }
     } catch (_) {
       if (!mounted) return;
       await showCupertinoDialog<void>(

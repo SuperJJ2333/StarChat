@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:matrix/matrix.dart';
 import 'package:flutter/foundation.dart';
 import '../auth/login_controller.dart';
@@ -56,6 +58,129 @@ final class MatrixClientContinuityMetadata {
       databaseGeneration == other.databaseGeneration;
 }
 
+abstract interface class MatrixManagedSubscription {
+  Future<void> cancel();
+}
+
+abstract interface class MatrixManagedResource {
+  Future<void> cancel();
+}
+
+abstract interface class _ManagedClientResourceBase
+    implements MatrixManagedResource {
+  bool get canceled;
+  set canceled(bool value);
+  Future<void> attach(Client client);
+  Future<void> detach();
+}
+
+final class _ManagedClientResource implements _ManagedClientResourceBase {
+  _ManagedClientResource({
+    required this.owner,
+    required this.open,
+    required this.close,
+  });
+  final MatrixSdkE2eeClient owner;
+  final Future<void> Function(Client client) open;
+  final Future<void> Function() close;
+  bool opened = false;
+  @override
+  bool canceled = false;
+
+  @override
+  Future<void> attach(Client client) async {
+    if (canceled || opened) return;
+    await open(client);
+    opened = true;
+  }
+
+  @override
+  Future<void> detach() async {
+    if (!opened) return;
+    await close();
+    opened = false;
+  }
+
+  @override
+  Future<void> cancel() => owner._cancelManagedResource(this);
+}
+
+final class MatrixRoomLease implements _ManagedClientResourceBase {
+  MatrixRoomLease._(this.owner, this.roomId);
+  final MatrixSdkE2eeClient owner;
+  final String roomId;
+  Room? _room;
+  FutureOr<void> Function()? _onRevoked;
+  Future<void> Function()? _drainOwner;
+  @override
+  bool canceled = false;
+
+  Room get room =>
+      _room ?? (throw StateError('Matrix room lease is not active'));
+
+  void setOnRevoked(FutureOr<void> Function() callback) =>
+      _onRevoked = callback;
+
+  void bindOwnerDrain(Future<void> Function() drain) => _drainOwner = drain;
+
+  @override
+  Future<void> attach(Client client) async {
+    if (canceled) return;
+    _room = client.getRoomById(roomId) ??
+        (throw StateError('Matrix room is unavailable'));
+  }
+
+  @override
+  Future<void> detach() async {
+    if (_room == null) return;
+    await _onRevoked?.call();
+    await _drainOwner?.call();
+    _room = null;
+  }
+
+  @override
+  Future<void> cancel() => owner._cancelManagedResource(this);
+}
+
+abstract interface class _ManagedClientStreamBase
+    implements MatrixManagedSubscription {
+  bool get canceled;
+  set canceled(bool value);
+  Future<void> attach(Client client);
+  Future<void> detach();
+}
+
+final class _ManagedClientStream<T> implements _ManagedClientStreamBase {
+  _ManagedClientStream({
+    required this.owner,
+    required this.streamFor,
+    required this.onData,
+  });
+
+  final MatrixSdkE2eeClient owner;
+  final Stream<T> Function(Client client) streamFor;
+  final void Function(T event) onData;
+  StreamSubscription<T>? _subscription;
+  @override
+  bool canceled = false;
+
+  @override
+  Future<void> attach(Client client) async {
+    if (canceled) return;
+    await detach();
+    _subscription = streamFor(client).listen(onData);
+  }
+
+  @override
+  Future<void> detach() async {
+    await _subscription?.cancel();
+    _subscription = null;
+  }
+
+  @override
+  Future<void> cancel() => owner._cancelManagedSubscription(this);
+}
+
 final class MatrixSdkE2eeClient
     implements MatrixE2eeClient, MatrixTokenLoginGateway {
   MatrixSdkE2eeClient(
@@ -82,9 +207,13 @@ final class MatrixSdkE2eeClient
   Future<void> _lifecycleTail = Future.value();
   MatrixClientContinuityMetadata? _suspendedMetadata;
   bool _clearFailed = false;
+  bool _activeContinuityValidated = false;
   final Uri homeserver;
-  Client get sdkClient => client;
-  Client get client =>
+  final StreamController<void> _syncEvents = StreamController.broadcast();
+  final List<_ManagedClientStreamBase> _managedSubscriptions = [];
+  final List<_ManagedClientResourceBase> _managedResources = [];
+  @visibleForTesting
+  Client get sdkClient =>
       _client ??
       (throw StateError('Matrix client is suspended and must be resumed'));
   String? _lastRecoveryKey;
@@ -115,6 +244,7 @@ final class MatrixSdkE2eeClient
             identifier: AuthenticationUserIdentifier(user: userId),
             password: password,
             initialDeviceDisplayName: '畅聊移动端');
+        await _persistLoggedInContinuity(active);
       });
 
   @override
@@ -124,12 +254,22 @@ final class MatrixSdkE2eeClient
         await active.checkHomeserver(homeserver);
         await active.login('m.login.token',
             token: loginToken, initialDeviceDisplayName: '畅聊移动端');
+        await _persistLoggedInContinuity(active);
       });
+
+  Future<void> _persistLoggedInContinuity(Client active) async {
+    _activeContinuityValidated = false;
+    await _readContinuityMetadata(active);
+    _activeContinuityValidated = true;
+  }
+
+  Stream<void> get syncEvents => _syncEvents.stream;
 
   @override
   Future<void> sync() => _withClient((active) async {
         await active.sync();
         await _autoJoinInvitedGroups(active);
+        _syncEvents.add(null);
       });
 
   Future<void> _autoJoinInvitedGroups(Client active) async {
@@ -155,7 +295,15 @@ final class MatrixSdkE2eeClient
         final active = _client;
         if (active == null) return;
         final metadata = await _readContinuityMetadata(active);
-        await _suspendClient(active);
+        try {
+          await _detachManagedSubscriptions();
+          await _detachManagedResources();
+          await _suspendClient(active);
+        } catch (error, stackTrace) {
+          await _attachManagedResources(active);
+          await _attachManagedSubscriptions(active);
+          Error.throwWithStackTrace(error, stackTrace);
+        }
         _client = null;
         _suspendedMetadata = metadata;
       });
@@ -165,6 +313,16 @@ final class MatrixSdkE2eeClient
   @override
   Future<void> clearLocalChatData() => _serializeLifecycle(() async {
         final target = _client ?? _pendingCloseClient;
+        await _detachManagedSubscriptions();
+        for (final registration in _managedSubscriptions) {
+          registration.canceled = true;
+        }
+        _managedSubscriptions.clear();
+        await _detachManagedResources();
+        for (final resource in _managedResources) {
+          resource.canceled = true;
+        }
+        _managedResources.clear();
         _client = null;
         _pendingCloseClient = target;
         _clearFailed = true;
@@ -180,6 +338,120 @@ final class MatrixSdkE2eeClient
         return operation(active);
       });
 
+  /// Runs a short SDK operation under the same lifecycle ordering as suspend,
+  /// resume and explicit local clear. Raw SDK handles may not escape the call.
+  Future<T> runClientOperation<T>(
+    FutureOr<T> Function(Client client) operation,
+  ) =>
+      _withClient((active) async {
+        final result = await operation(active);
+        if (_containsSdkHandle(result)) {
+          throw StateError('Matrix SDK handles cannot escape their operation');
+        }
+        return result;
+      });
+
+  Future<MatrixManagedSubscription> subscribeClientStream<T>({
+    required Stream<T> Function(Client client) streamFor,
+    required void Function(T event) onData,
+  }) =>
+      _serializeLifecycle(() async {
+        final active = await _resumeWithinLifecycle();
+        final registration = _ManagedClientStream<T>(
+          owner: this,
+          streamFor: streamFor,
+          onData: onData,
+        );
+        await registration.attach(active);
+        _managedSubscriptions.add(registration);
+        return registration;
+      });
+
+  Future<MatrixManagedResource> registerManagedResource({
+    required Future<void> Function(Client client) open,
+    required Future<void> Function() close,
+  }) =>
+      _serializeLifecycle(() async {
+        final active = await _resumeWithinLifecycle();
+        final resource = _ManagedClientResource(
+          owner: this,
+          open: open,
+          close: close,
+        );
+        await resource.attach(active);
+        _managedResources.add(resource);
+        return resource;
+      });
+
+  Future<MatrixRoomLease> openRoomLease(String roomId) =>
+      _serializeLifecycle(() async {
+        final active = await _resumeWithinLifecycle();
+        final lease = MatrixRoomLease._(this, roomId);
+        await lease.attach(active);
+        _managedResources.add(lease);
+        return lease;
+      });
+
+  Future<void> _cancelManagedResource(_ManagedClientResourceBase resource) =>
+      _serializeLifecycle(() async {
+        await resource.detach();
+        resource.canceled = true;
+        _managedResources.remove(resource);
+      });
+
+  Future<void> _detachManagedResources() async {
+    for (final resource in _managedResources.reversed) {
+      await resource.detach();
+    }
+  }
+
+  Future<void> _attachManagedResources(Client client) async {
+    try {
+      for (final resource in _managedResources) {
+        await resource.attach(client);
+      }
+    } catch (error, stackTrace) {
+      await _detachManagedResources();
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  Future<void> _cancelManagedSubscription(
+    _ManagedClientStreamBase registration,
+  ) =>
+      _serializeLifecycle(() async {
+        await registration.detach();
+        registration.canceled = true;
+        _managedSubscriptions.remove(registration);
+      });
+
+  Future<void> _detachManagedSubscriptions() async {
+    for (final registration in _managedSubscriptions) {
+      await registration.detach();
+    }
+  }
+
+  Future<void> _attachManagedSubscriptions(Client client) async {
+    try {
+      for (final registration in _managedSubscriptions) {
+        await registration.attach(client);
+      }
+    } catch (error, stackTrace) {
+      await _detachManagedSubscriptions();
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  static bool _containsSdkHandle(Object? value) {
+    if (value is Client || value is Room) return true;
+    if (value is Iterable<Object?>) return value.any(_containsSdkHandle);
+    if (value is Map<Object?, Object?>) {
+      return value.keys.any(_containsSdkHandle) ||
+          value.values.any(_containsSdkHandle);
+    }
+    return false;
+  }
+
   Future<T> _serializeLifecycle<T>(Future<T> Function() operation) {
     final result = _lifecycleTail.then<T>((_) => operation());
     _lifecycleTail = result.then<void>(
@@ -191,7 +463,13 @@ final class MatrixSdkE2eeClient
 
   Future<Client> _resumeWithinLifecycle() async {
     final active = _client;
-    if (active != null) return active;
+    if (active != null) {
+      if (!_activeContinuityValidated) {
+        await _readContinuityMetadata(active);
+        _activeContinuityValidated = true;
+      }
+      return active;
+    }
     if (_clearFailed) {
       throw StateError('Matrix local clear must be retried before resume');
     }
@@ -214,7 +492,17 @@ final class MatrixSdkE2eeClient
       await _rejectResumeClient(resumed);
       throw StateError('Matrix client resumed with a different identity');
     }
+    try {
+      await _attachManagedResources(resumed);
+      await _attachManagedSubscriptions(resumed);
+    } catch (error, stackTrace) {
+      await _detachManagedSubscriptions();
+      await _detachManagedResources();
+      await _rejectResumeClient(resumed);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     _client = resumed;
+    _activeContinuityValidated = true;
     return resumed;
   }
 

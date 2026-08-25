@@ -27,12 +27,13 @@ final class LogoutTrackingClient extends Client {
     this.syncError,
   });
 
-  final bool loggedIn;
-  final String? matrixUserId;
-  final String? matrixDeviceId;
+  bool loggedIn;
+  String? matrixUserId;
+  String? matrixDeviceId;
   final Object? syncError;
   var logoutCalls = 0;
   var syncCalls = 0;
+  Room? roomOverride;
 
   @override
   bool isLogged() => loggedIn;
@@ -42,6 +43,46 @@ final class LogoutTrackingClient extends Client {
 
   @override
   String? get deviceID => matrixDeviceId;
+
+  @override
+  Room? getRoomById(String roomId) =>
+      roomOverride?.id == roomId ? roomOverride : super.getRoomById(roomId);
+
+  @override
+  Future<
+      (
+        DiscoveryInformation?,
+        GetVersionsResponse,
+        List<LoginFlow>,
+      )> checkHomeserver(
+    Uri homeserverUrl, {
+    bool checkWellKnown = true,
+    Set<String>? overrideSupportedVersions,
+  }) async =>
+      (null, GetVersionsResponse(versions: const []), const <LoginFlow>[]);
+
+  @override
+  Future<LoginResponse> login(
+    String type, {
+    AuthenticationIdentifier? identifier,
+    String? password,
+    String? token,
+    String? deviceId,
+    String? initialDeviceDisplayName,
+    bool? refreshToken,
+    String? user,
+    String? medium,
+    String? address,
+  }) async {
+    loggedIn = true;
+    matrixUserId ??= '@alice:matrix.test';
+    matrixDeviceId ??= deviceId ?? 'DEVICE-A';
+    return LoginResponse(
+      accessToken: 'test-access-token',
+      deviceId: matrixDeviceId!,
+      userId: matrixUserId!,
+    );
+  }
 
   @override
   Future<void> logout() async => logoutCalls++;
@@ -173,12 +214,143 @@ void main() {
     expect(
       await secureStore.matrixBinding(),
       MatrixLocalBinding(
-        version: 1,
+        version: 2,
         matrixUserId: '@alice:matrix.test',
         deviceId: 'DEVICE-A',
         homeserver: 'https://matrix.test',
         databaseGeneration: 'generation-1',
+        ed25519Fingerprint: 'FINGERPRINT-A',
       ),
+    );
+  });
+
+  test('new factory rejects a changed persisted Ed25519 fingerprint', () async {
+    final secureStore = SecureSessionStore(MemoryStore());
+    final firstFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-A',
+      databaseGenerationFactory: () => 'generation-1',
+    );
+    final firstClient = LogoutTrackingClient(
+      'first-process',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+    );
+    await firstFactory.continuityMetadata(firstClient);
+
+    final restartedFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-B',
+      databaseGenerationFactory: () => 'must-not-replace-persisted-generation',
+    );
+    final restartedClient = LogoutTrackingClient(
+      'second-process',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+    );
+
+    await expectLater(
+      restartedFactory.continuityMetadata(restartedClient),
+      throwsStateError,
+    );
+    expect(
+      (await secureStore.matrixBinding())?.databaseGeneration,
+      'generation-1',
+    );
+  });
+
+  test('first wrapper operation validates the persisted restart fingerprint',
+      () async {
+    final secureStore = SecureSessionStore(MemoryStore());
+    final baselineFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-A',
+      databaseGenerationFactory: () => 'generation-1',
+    );
+    await baselineFactory.continuityMetadata(LogoutTrackingClient(
+      'baseline',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+    ));
+    final restartedClient = LogoutTrackingClient(
+      'restarted',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+    );
+    final restartedFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-B',
+    );
+    final matrix = MatrixSdkE2eeClient(
+      restartedClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      readContinuityMetadata: restartedFactory.continuityMetadata,
+    );
+
+    await expectLater(matrix.sync(), throwsStateError);
+    expect(restartedClient.syncCalls, 0);
+  });
+
+  test('token login persists logged-in continuity before returning', () async {
+    final client = LogoutTrackingClient('login-client');
+    final observedLoggedStates = <bool>[];
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      readContinuityMetadata: (active) async {
+        observedLoggedStates.add(active.isLogged());
+        return testContinuityMetadata(active);
+      },
+    );
+
+    await matrix.loginWithToken(
+      loginToken: 'one-time-token',
+      homeserver: Uri.parse('https://matrix.test'),
+    );
+
+    expect(observedLoggedStates, [false, true]);
+  });
+
+  test('version 1 binding is upgraded once with the current fingerprint',
+      () async {
+    final secureStore = SecureSessionStore(MemoryStore());
+    await secureStore.saveMatrixBinding(MatrixLocalBinding(
+      version: 1,
+      matrixUserId: '@alice:matrix.test',
+      deviceId: 'DEVICE-A',
+      homeserver: 'https://matrix.test',
+      databaseGeneration: 'generation-1',
+    ));
+    final factory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-A',
+    );
+
+    await factory.continuityMetadata(LogoutTrackingClient(
+      'legacy-process',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+    ));
+
+    expect((await secureStore.matrixBinding())?.version, 2);
+    expect(
+      (await secureStore.matrixBinding())?.ed25519Fingerprint,
+      'FINGERPRINT-A',
     );
   });
 
@@ -570,6 +742,174 @@ void main() {
     expect(clearedClients, hasLength(1));
     expect(clearedClients.single, same(resumedClient));
     expect(() => matrix.sdkClient, throwsStateError);
+  });
+
+  test('public client operation waits for an in-flight suspend', () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    final suspendStarted = Completer<void>();
+    final allowSuspend = Completer<void>();
+    final operatedClients = <Client>[];
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {
+        suspendStarted.complete();
+        await allowSuspend.future;
+      },
+      resumeClient: () async => resumedClient,
+    );
+
+    final suspend = matrix.suspend();
+    await suspendStarted.future;
+    final operation = matrix.runClientOperation<void>((client) async {
+      operatedClients.add(client);
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(operatedClients, isEmpty);
+
+    allowSuspend.complete();
+    await suspend;
+    await operation;
+    expect(operatedClients, [resumedClient]);
+  });
+
+  test('public client operation completes before explicit clear', () async {
+    final oldClient = LogoutTrackingClient('old');
+    final operationStarted = Completer<void>();
+    final allowOperation = Completer<void>();
+    final clearedClients = <Client?>[];
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      clearClientData: (client) async => clearedClients.add(client),
+    );
+
+    final operation = matrix.runClientOperation<void>((_) async {
+      operationStarted.complete();
+      await allowOperation.future;
+    });
+    await operationStarted.future;
+    final clear = matrix.clearLocalChatData();
+    await Future<void>.delayed(Duration.zero);
+    expect(clearedClients, isEmpty);
+
+    allowOperation.complete();
+    await operation;
+    await clear;
+    expect(clearedClients, [oldClient]);
+  });
+
+  test('public client operation cannot return a raw Client or Room', () async {
+    final client = LogoutTrackingClient('old');
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+    );
+
+    await expectLater(
+      matrix.runClientOperation<Client>((active) async => active),
+      throwsStateError,
+    );
+  });
+
+  test('managed client stream detaches on suspend and rebuilds on resume',
+      () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    final oldEvents = StreamController<String>.broadcast();
+    final resumedEvents = StreamController<String>.broadcast();
+    final received = <String>[];
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+      resumeClient: () async => resumedClient,
+    );
+    final subscription = await matrix.subscribeClientStream<String>(
+      streamFor: (client) => identical(client, oldClient)
+          ? oldEvents.stream
+          : resumedEvents.stream,
+      onData: received.add,
+    );
+
+    oldEvents.add('before-suspend');
+    await Future<void>.delayed(Duration.zero);
+    await matrix.suspend();
+    oldEvents.add('after-suspend');
+    await Future<void>.delayed(Duration.zero);
+    await matrix.sync();
+    resumedEvents.add('after-resume');
+    await Future<void>.delayed(Duration.zero);
+
+    expect(received, ['before-suspend', 'after-resume']);
+    await subscription.cancel();
+    await oldEvents.close();
+    await resumedEvents.close();
+  });
+
+  test('managed client resource closes before suspend and rebuilds on resume',
+      () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    final events = <String>[];
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (client) async =>
+          events.add('suspend:${client.clientName}'),
+      resumeClient: () async => resumedClient,
+      clearClientData: (client) async =>
+          events.add('clear:${client?.clientName}'),
+    );
+    await matrix.registerManagedResource(
+      open: (client) async => events.add('open:${client.clientName}'),
+      close: () async => events.add('close'),
+    );
+
+    await matrix.suspend();
+    await matrix.sync();
+    await matrix.clearLocalChatData();
+
+    expect(events, [
+      'open:old',
+      'close',
+      'suspend:old',
+      'open:resumed',
+      'close',
+      'clear:resumed',
+    ]);
+  });
+
+  test('room lease is revoked before suspend without holding the queue',
+      () async {
+    final client = LogoutTrackingClient('old');
+    client.roomOverride = Room(id: '!room:matrix.test', client: client);
+    final events = <String>[];
+    final drainStarted = Completer<void>();
+    final allowDrain = Completer<void>();
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async => events.add('suspend'),
+    );
+    final lease = await matrix.openRoomLease('!room:matrix.test');
+    lease.setOnRevoked(() async {
+      events.add('revoke');
+      drainStarted.complete();
+      await allowDrain.future;
+    });
+
+    final suspend = matrix.suspend();
+    await drainStarted.future;
+    await Future<void>.delayed(Duration.zero);
+    expect(events, ['revoke']);
+
+    allowDrain.complete();
+    await suspend;
+
+    expect(events, ['revoke', 'suspend']);
+    expect(() => lease.room, throwsStateError);
   });
 
   test('failed clear blocks resume and retries the same client handle',

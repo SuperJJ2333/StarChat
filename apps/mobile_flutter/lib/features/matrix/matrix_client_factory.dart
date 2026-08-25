@@ -93,15 +93,27 @@ final class MatrixClientFactory {
     final expectedHomeserver = homeserver.toString();
     if (binding == null) {
       await sessionStore.saveMatrixBinding(MatrixLocalBinding(
-        version: 1,
+        version: 2,
         matrixUserId: userId,
         deviceId: deviceId,
         homeserver: expectedHomeserver,
         databaseGeneration: generation,
+        ed25519Fingerprint: fingerprint,
       ));
     } else if (binding.matrixUserId != userId ||
         binding.deviceId != deviceId ||
         binding.homeserver != expectedHomeserver) {
+      throw StateError('Matrix client does not match the local binding');
+    } else if (binding.ed25519Fingerprint == null) {
+      await sessionStore.saveMatrixBinding(MatrixLocalBinding(
+        version: 2,
+        matrixUserId: binding.matrixUserId,
+        deviceId: binding.deviceId,
+        homeserver: binding.homeserver,
+        databaseGeneration: binding.databaseGeneration,
+        ed25519Fingerprint: fingerprint,
+      ));
+    } else if (binding.ed25519Fingerprint != fingerprint) {
       throw StateError('Matrix client does not match the local binding');
     }
     return MatrixClientContinuityMetadata(
