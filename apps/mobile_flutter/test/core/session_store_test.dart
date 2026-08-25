@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 
 final class MemorySecureKeyValueStore implements SecureKeyValueStore {
@@ -69,5 +70,103 @@ void main() {
     expect(await store.session(), isNull);
     expect(await store.matrixDatabaseKey(), firstKey);
     expect(base64Url.decode(base64Url.normalize(firstKey)), hasLength(32));
+  });
+
+  test('business logout preserves the independent matrix identity', () async {
+    final storage = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(storage);
+    final binding = MatrixLocalBinding(
+      version: 1,
+      matrixUserId: '@alice:matrix.localhost',
+      deviceId: 'ALICEDEVICE',
+      homeserver: 'https://matrix.example',
+      databaseGeneration: 'generation-1',
+    );
+    await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
+    await store.saveMatrixBinding(binding);
+    final databaseKey = await store.matrixDatabaseKey();
+    await store.saveEncryptedRecoveryKey('fake-encrypted-recovery-key');
+    final salt = await store.diagnosticSalt();
+
+    await store.clearBusinessSession();
+
+    expect(await store.session(), isNull);
+    expect(await store.matrixBinding(), binding);
+    expect(await store.matrixDatabaseKey(), databaseKey);
+    expect(
+      await store.encryptedRecoveryKey(),
+      'fake-encrypted-recovery-key',
+    );
+    expect(await store.diagnosticSalt(), salt);
+    expect(base64Url.decode(base64Url.normalize(salt)), hasLength(32));
+  });
+
+  test('clearMatrixIdentity deletes matrix material without recreating it',
+      () async {
+    final storage = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(storage);
+    await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
+    await store.saveMatrixBinding(
+      MatrixLocalBinding(
+        version: 1,
+        matrixUserId: '@alice:matrix.localhost',
+        deviceId: 'ALICEDEVICE',
+        homeserver: 'https://matrix.example',
+        databaseGeneration: 'generation-1',
+      ),
+    );
+    await store.matrixDatabaseKey();
+    await store.saveEncryptedRecoveryKey('fake-encrypted-recovery-key');
+    await store.diagnosticSalt();
+    final registrationDeviceKey = await store.registrationDeviceKey();
+
+    await store.clearMatrixIdentity();
+
+    expect(await store.matrixBinding(), isNull);
+    expect(
+      storage.values.keys,
+      isNot(containsAll(<String>{
+        'liuhetong.matrix_local_binding.v1',
+        'liuhetong.matrix_database_key.v1',
+        'liuhetong.encrypted_recovery_key',
+        'liuhetong.diagnostic_salt.v1',
+      })),
+    );
+    expect(
+        storage.values, isNot(contains('liuhetong.matrix_local_binding.v1')));
+    expect(storage.values, isNot(contains('liuhetong.matrix_database_key.v1')));
+    expect(storage.values, isNot(contains('liuhetong.encrypted_recovery_key')));
+    expect(storage.values, isNot(contains('liuhetong.diagnostic_salt.v1')));
+    expect(await store.session(), isNotNull);
+    expect(await store.registrationDeviceKey(), registrationDeviceKey);
+
+    final regeneratedDatabaseKey = await store.matrixDatabaseKey();
+    final regeneratedSalt = await store.diagnosticSalt();
+    expect(regeneratedDatabaseKey, isNotEmpty);
+    expect(regeneratedSalt, isNotEmpty);
+    expect(storage.values, contains('liuhetong.matrix_database_key.v1'));
+    expect(storage.values, contains('liuhetong.diagnostic_salt.v1'));
+  });
+
+  test('matrix binding rejects malformed JSON', () async {
+    final storage = MemorySecureKeyValueStore()
+      ..values['liuhetong.matrix_local_binding.v1'] = '{not-json';
+    final store = SecureSessionStore(storage);
+
+    expect(store.matrixBinding(), throwsFormatException);
+  });
+
+  test('matrix binding rejects an unsupported version', () async {
+    final storage = MemorySecureKeyValueStore()
+      ..values['liuhetong.matrix_local_binding.v1'] = jsonEncode({
+        'version': 2,
+        'matrix_user_id': '@alice:matrix.localhost',
+        'device_id': 'ALICEDEVICE',
+        'homeserver': 'https://matrix.example',
+        'database_generation': 'generation-1',
+      });
+    final store = SecureSessionStore(storage);
+
+    expect(store.matrixBinding(), throwsFormatException);
   });
 }

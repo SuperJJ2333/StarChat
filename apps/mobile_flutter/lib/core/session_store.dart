@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 
 abstract interface class SecureKeyValueStore {
   Future<String?> read(String key);
@@ -63,6 +64,8 @@ final class SecureSessionStore {
   static const _legacyRefreshKey = 'liuhetong.refresh_token';
   static const _recoveryKey = 'liuhetong.encrypted_recovery_key';
   static const _matrixDatabaseKey = 'liuhetong.matrix_database_key.v1';
+  static const _matrixBindingKey = 'liuhetong.matrix_local_binding.v1';
+  static const _diagnosticSaltKey = 'liuhetong.diagnostic_salt.v1';
   static const _registrationDeviceKey = 'liuhetong.registration_device_key.v1';
 
   Future<void> saveSession({
@@ -125,6 +128,19 @@ final class SecureSessionStore {
 
   Future<void> clearBusinessSession() => _storage.delete(_sessionKey);
 
+  Future<void> saveMatrixBinding(MatrixLocalBinding binding) =>
+      _storage.write(_matrixBindingKey, jsonEncode(binding.toJson()));
+
+  Future<MatrixLocalBinding?> matrixBinding() async {
+    final encoded = await _storage.read(_matrixBindingKey);
+    if (encoded == null) return null;
+    final value = jsonDecode(encoded);
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid matrix local binding');
+    }
+    return MatrixLocalBinding.fromJson(value);
+  }
+
   Future<String> matrixDatabaseKey() async {
     final existing = await _storage.read(_matrixDatabaseKey);
     if (existing != null) return existing;
@@ -146,6 +162,16 @@ final class SecureSessionStore {
     return value;
   }
 
+  Future<String> diagnosticSalt() async {
+    final existing = await _storage.read(_diagnosticSaltKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final value = base64UrlEncode(
+      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+    );
+    await _storage.write(_diagnosticSaltKey, value);
+    return value;
+  }
+
   Future<void> clearMatrixDatabaseKey() => _storage.delete(_matrixDatabaseKey);
 
   Future<void> saveEncryptedRecoveryKey(String value) => _storage.write(
@@ -158,10 +184,16 @@ final class SecureSessionStore {
     return value == null ? null : utf8.decode(base64Url.decode(value));
   }
 
+  Future<void> clearMatrixIdentity() async {
+    await _storage.delete(_matrixBindingKey);
+    await _storage.delete(_matrixDatabaseKey);
+    await _storage.delete(_recoveryKey);
+    await _storage.delete(_diagnosticSaltKey);
+  }
+
   Future<void> clear() async {
     await clearBusinessSession();
-    await clearMatrixDatabaseKey();
-    await _storage.delete(_recoveryKey);
+    await clearMatrixIdentity();
     await _storage.delete(_legacyAccessKey);
     await _storage.delete(_legacyRefreshKey);
   }
