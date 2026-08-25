@@ -17,7 +17,7 @@
 | Command | Result |
 | --- | --- |
 | `flutter analyze --no-pub`（`apps/mobile_flutter`） | PASS，`No issues found` |
-| `flutter test --no-pub --reporter compact`（`apps/mobile_flutter`） | PASS，281 tests |
+| `flutter test --no-pub --reporter compact`（`apps/mobile_flutter`） | PASS，286 tests |
 | `pytest tests/mobile -q` | PASS，21 tests |
 | `pwsh -NoProfile -File scripts/verify.ps1` | PASS |
 | Matrix Bot suite（由 `verify.ps1`） | PASS，9 tests |
@@ -25,7 +25,9 @@
 | Flutter/HTML/Figma contract（由 `verify.ps1`） | PASS，17 components、326 screens |
 | Alembic offline upgrade / OpenAPI drift / Docker Compose render | PASS |
 
-全量 Flutter 首次运行暴露一个既有 Matrix 登录令牌测试夹具缺少服务端必填 `matrix_user_id`；生产 FastAPI `MatrixLoginTokenResponse` 与 Flutter 解析均要求该字段。补齐夹具并增加返回值断言后，定向测试及 281 项全量测试通过。
+全量 Flutter 首次运行暴露一个既有 Matrix 登录令牌测试夹具缺少服务端必填 `matrix_user_id`；生产 FastAPI `MatrixLoginTokenResponse` 与 Flutter 解析均要求该字段。补齐夹具并增加返回值断言后，定向测试及全量测试通过。
+
+最终独立代码审查发现并修复：带图发表漏传图片、备注成功回写延迟及失败异常外泄、私聊页固定 Matrix 标题、Profile 无缓存失败缺少重试、未解密事件泄露异常正文、身份缓存日志携带原始异常。新增 5 类回归断言后，41 项定向测试、286 项 Flutter 全量测试与完整仓库门禁均通过。
 
 仓库门禁首次运行拦截新可见范围页使用 `CupertinoButton.filled`；按移动端架构边界改为共享 `ModernActionButton` 后，21 项边界测试及完整 `verify.ps1` 通过。
 
@@ -49,4 +51,29 @@
 
 ## 发布阶段
 
-公网健康、APK SHA-256、模拟器序列/安装/启动与 UI 截图证据在 Task 8 完成后追加。
+### 公网 Docker
+
+- 通过 `ssh -p 23421 root@207.56.8.8` 在 `/opt/starchat` 执行生产 compose 只读状态检查。
+- `business-api`、`business-worker`、`business-postgres`、`business-redis`、`synapse`、`postgres`、`element-web`、`mailpit` 均为 running/healthy；`gateway`、`matrix-bot`、`coturn` 为 running。
+- 本次生产代码没有服务端或 compose 变更，因此未做无意义容器重建；公网现有后端继续提供移动端所需契约。
+
+### APK 与模拟器
+
+- Release APK：`apps/mobile_flutter/build/app/outputs/flutter-apk/app-release.apk`，137,692,120 bytes，SHA-256 `99C5EF7E851D7B8D23C1293EC25CE92CB31ADD9B739DBC3C67CD668ECCB6A035`。
+- Debug APK：`apps/mobile_flutter/build/app/outputs/flutter-apk/app-debug.apk`，242,590,330 bytes，SHA-256 `D167561C173DC498504D675568701B9EA5EE02D827A055B52DE7982EA8832454`。
+- 两个 APK 均使用公网 origin `https://liuhetong888.com` 构建。Release 安装被 Android 以 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 拒绝，原因是模拟器现装包签名不同；为保留现有登录数据，没有卸载应用。
+- 将同源 Debug APK 覆盖安装到 `emulator-5554` 成功；包名 `com.liuhetong.mobile`，`versionCode=1`、`versionName=0.1.0`，最终更新时间 `2026-08-25 09:19:18`。
+
+### 模拟器 UI 证据
+
+证据目录：`docs/verification/artifacts/2026-08-25/identity-conversation-moments-composer/`。
+
+| Artifact | 验证点 | SHA-256 |
+| --- | --- | --- |
+| `discovery.png` | 发现页可进入朋友圈 | `0471BDF7394E614ABB4061842D9775635B4CB2CD8CC0054996FB4CCE1B8FD349` |
+| `moments-owner.png` | 朋友圈封面显示当前账号头像与 nickname，不显示固定“畅聊朋友圈” | `64BEF0126DD5EE0CE6D4C38B2AA31C13B465B4486614320C05D9BF65895A9BD5` |
+| `composer.png` | 微信式发表页仅保留“谁可以看 / 添加链接” | `007BBA8B8DC3896204093A3DECAD13133CFDEBE7C54228EEEF1F2041152E9C36` |
+| `audience.png` | 公开/私密与只给谁看/不给谁看分组，后两项为二级入口 | `401309D1FD2F03BFEA22A81265805400D27A432D76951FD7A28EE429208A5564` |
+| `audience-selector.png` | “只给谁看”二级页和完成计数；过期会话触发明确可重试失败态 | `82779CBBFD80A5267C60F9EB8C4BE5651D148B39F85779DFC526FD2C26748EE2` |
+
+模拟器已有生产刷新令牌在验收期间被服务端判定为重复使用/无效，因此在线标签和朋友请求进入“标签或朋友加载失败，请检查网络后重试”的保留状态；没有卸载清数据，也没有绕过认证。静态导航与失败态完成实机验证，标签/朋友双列、搜索、多选和完成回传由 Flutter widget/model 测试覆盖。最终包安装后，权威刷新拒绝按安全策略清除失效 Business 会话并回到登录页；清空 logcat 后重新启动检查 `FATAL EXCEPTION|Unhandled Exception|FlutterError` 为 0。日志中没有令牌值、消息正文或 URL 查询参数。
