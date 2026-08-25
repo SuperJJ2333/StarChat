@@ -79,11 +79,14 @@ final class _ManagedClientResource implements _ManagedClientResourceBase {
     required this.owner,
     required this.open,
     required this.close,
+    this.revoke,
   });
   final MatrixSdkE2eeClient owner;
   final Future<void> Function(Client client) open;
   final Future<void> Function() close;
+  final void Function()? revoke;
   bool opened = false;
+  bool revoked = false;
   @override
   bool canceled = false;
 
@@ -92,6 +95,17 @@ final class _ManagedClientResource implements _ManagedClientResourceBase {
     if (canceled || opened) return;
     await open(client);
     opened = true;
+    revoked = false;
+  }
+
+  void revokeNow() {
+    if (!opened || revoked) return;
+    revoked = true;
+    try {
+      revoke?.call();
+    } catch (_) {
+      debugPrint('E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED');
+    }
   }
 
   @override
@@ -291,46 +305,52 @@ final class MatrixSdkE2eeClient
   }
 
   @override
-  Future<void> suspend() => _serializeLifecycle(() async {
-        final active = _client;
-        if (active == null) return;
-        final metadata = await _readContinuityMetadata(active);
-        try {
-          await _detachManagedSubscriptions();
-          await _detachManagedResources();
-          await _suspendClient(active);
-        } catch (error, stackTrace) {
-          await _attachManagedResources(active);
-          await _attachManagedSubscriptions(active);
-          Error.throwWithStackTrace(error, stackTrace);
-        }
-        _client = null;
-        _suspendedMetadata = metadata;
-      });
+  Future<void> suspend() {
+    _revokeManagedResources();
+    return _serializeLifecycle(() async {
+      final active = _client;
+      if (active == null) return;
+      final metadata = await _readContinuityMetadata(active);
+      try {
+        await _detachManagedSubscriptions();
+        await _detachManagedResources();
+        await _suspendClient(active);
+      } catch (error, stackTrace) {
+        await _attachManagedResources(active);
+        await _attachManagedSubscriptions(active);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      _client = null;
+      _suspendedMetadata = metadata;
+    });
+  }
 
   /// Destructively removes this device's Matrix session and encrypted store.
   /// Only explicit account-switch or confirmed local-clear flows may call it.
   @override
-  Future<void> clearLocalChatData() => _serializeLifecycle(() async {
-        final target = _client ?? _pendingCloseClient;
-        await _detachManagedSubscriptions();
-        for (final registration in _managedSubscriptions) {
-          registration.canceled = true;
-        }
-        _managedSubscriptions.clear();
-        await _detachManagedResources();
-        for (final resource in _managedResources) {
-          resource.canceled = true;
-        }
-        _managedResources.clear();
-        _client = null;
-        _pendingCloseClient = target;
-        _clearFailed = true;
-        await _clearClientData(target);
-        _pendingCloseClient = null;
-        _suspendedMetadata = null;
-        _clearFailed = false;
-      });
+  Future<void> clearLocalChatData() {
+    _revokeManagedResources();
+    return _serializeLifecycle(() async {
+      final target = _client ?? _pendingCloseClient;
+      await _detachManagedSubscriptions();
+      for (final registration in _managedSubscriptions) {
+        registration.canceled = true;
+      }
+      _managedSubscriptions.clear();
+      await _detachManagedResources();
+      for (final resource in _managedResources) {
+        resource.canceled = true;
+      }
+      _managedResources.clear();
+      _client = null;
+      _pendingCloseClient = target;
+      _clearFailed = true;
+      await _clearClientData(target);
+      _pendingCloseClient = null;
+      _suspendedMetadata = null;
+      _clearFailed = false;
+    });
+  }
 
   Future<T> _withClient<T>(Future<T> Function(Client client) operation) =>
       _serializeLifecycle(() async {
@@ -370,6 +390,7 @@ final class MatrixSdkE2eeClient
   Future<MatrixManagedResource> registerManagedResource({
     required Future<void> Function(Client client) open,
     required Future<void> Function() close,
+    void Function()? revoke,
   }) =>
       _serializeLifecycle(() async {
         final active = await _resumeWithinLifecycle();
@@ -377,6 +398,7 @@ final class MatrixSdkE2eeClient
           owner: this,
           open: open,
           close: close,
+          revoke: revoke,
         );
         await resource.attach(active);
         _managedResources.add(resource);
@@ -402,6 +424,14 @@ final class MatrixSdkE2eeClient
   Future<void> _detachManagedResources() async {
     for (final resource in _managedResources.reversed) {
       await resource.detach();
+    }
+  }
+
+  void _revokeManagedResources() {
+    for (final resource in _managedResources) {
+      if (resource case final _ManagedClientResource managed) {
+        managed.revokeNow();
+      }
     }
   }
 
