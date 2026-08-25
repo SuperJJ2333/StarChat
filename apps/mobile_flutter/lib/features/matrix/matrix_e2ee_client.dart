@@ -14,7 +14,7 @@ abstract interface class MatrixSessionGateway {
   String? get deviceId;
   Future<void> sync();
   Future<void> suspend();
-  Future<void> resetLocalStore();
+  Future<void> clearLocalChatData();
 }
 
 abstract interface class MatrixE2eeClient
@@ -110,7 +110,12 @@ final class MatrixSdkE2eeClient
   Future<void> logout() => resetLocalStore();
 
   @override
-  Future<void> resetLocalStore() async {
+  Future<void> resetLocalStore() => clearLocalChatData();
+
+  /// Destructively removes this device's Matrix session and encrypted store.
+  /// Only explicit account-switch or confirmed local-clear flows may call it.
+  @override
+  Future<void> clearLocalChatData() async {
     final current = client;
     try {
       await current.logout();

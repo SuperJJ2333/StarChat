@@ -38,12 +38,12 @@ final class FakeMatrix implements MatrixSessionGateway {
   final Object? syncError;
   int logoutCalls = 0;
   int suspendCalls = 0;
-  int resetCalls = 0;
+  int clearCalls = 0;
   @override
   Future<void> suspend() async => suspendCalls++;
   @override
-  Future<void> resetLocalStore() async {
-    resetCalls++;
+  Future<void> clearLocalChatData() async {
+    clearCalls++;
     isLoggedIn = false;
   }
 
@@ -93,36 +93,53 @@ void main() {
         controller.state.status, SessionBootstrapStatus.offlineAuthenticated);
     expect(business.logoutCalls, 0);
     expect(matrix.logoutCalls, 0);
+    expect(matrix.suspendCalls, 0);
+    expect(matrix.clearCalls, 0);
   });
 
-  test('invalid refresh token clears the matrix domain and returns to login',
-      () async {
-    final matrix =
-        FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
-    final controller = SessionBootstrapController(
-      business: FakeBusiness(BusinessSessionRestore.invalid),
-      matrix: matrix,
-    );
-    await controller.bootstrap();
-    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(matrix.resetCalls, 1);
-  });
+  for (final result in [
+    BusinessSessionRestore.absent,
+    BusinessSessionRestore.invalid,
+  ]) {
+    test('Business $result preserves a locally logged-in Matrix session',
+        () async {
+      final matrix =
+          FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
+      final controller = SessionBootstrapController(
+        business: FakeBusiness(result),
+        matrix: matrix,
+      );
 
-  test('Matrix unknown token clears Business and returns to login', () async {
-    final business = FakeBusiness(BusinessSessionRestore.authenticated,
-        matrixUserId: '@alice:matrix.localhost');
-    final matrix = FakeMatrix(
-      isLoggedIn: true,
-      userId: '@alice:matrix.localhost',
-      syncError: MatrixException.fromJson(
-          {'errcode': 'M_UNKNOWN_TOKEN', 'error': 'expired'}),
-    );
-    final controller =
-        SessionBootstrapController(business: business, matrix: matrix);
-    await controller.bootstrap();
-    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(business.logoutCalls, 1);
-  });
+      await controller.bootstrap();
+
+      expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+      expect(matrix.suspendCalls, 1);
+      expect(matrix.clearCalls, 0);
+    });
+  }
+
+  for (final errcode in ['M_UNKNOWN_TOKEN', 'M_FORBIDDEN']) {
+    test('Matrix $errcode preserves chat data and returns to login', () async {
+      final business = FakeBusiness(BusinessSessionRestore.authenticated,
+          matrixUserId: '@alice:matrix.localhost');
+      final matrix = FakeMatrix(
+        isLoggedIn: true,
+        userId: '@alice:matrix.localhost',
+        syncError:
+            MatrixException.fromJson({'errcode': errcode, 'error': 'expired'}),
+      );
+      final controller =
+          SessionBootstrapController(business: business, matrix: matrix);
+
+      await controller.bootstrap();
+
+      expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+      expect(controller.state.message, '登录状态已失效，请重新登录');
+      expect(business.logoutCalls, 1);
+      expect(matrix.suspendCalls, 1);
+      expect(matrix.clearCalls, 0);
+    });
+  }
 
   test('mismatched domain identities fail closed without deleting data',
       () async {
@@ -136,6 +153,8 @@ void main() {
     expect(controller.state.status, SessionBootstrapStatus.fatalError);
     expect(business.logoutCalls, 0);
     expect(matrix.logoutCalls, 0);
+    expect(matrix.suspendCalls, 0);
+    expect(matrix.clearCalls, 0);
   });
 
   test('missing migrated Business MXID cannot authenticate a Matrix session',
@@ -167,15 +186,18 @@ void main() {
 
   test('ordinary logout suspends Matrix without erasing its local store',
       () async {
+    final business = FakeBusiness(BusinessSessionRestore.authenticated,
+        matrixUserId: '@alice:matrix.localhost');
     final matrix =
         FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
     final controller = SessionBootstrapController(
-      business: FakeBusiness(BusinessSessionRestore.authenticated,
-          matrixUserId: '@alice:matrix.localhost'),
+      business: business,
       matrix: matrix,
     );
     await controller.logout();
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect(business.logoutCalls, 1);
     expect(matrix.suspendCalls, 1);
-    expect(matrix.resetCalls, 0);
+    expect(matrix.clearCalls, 0);
   });
 }

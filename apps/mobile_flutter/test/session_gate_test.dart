@@ -30,7 +30,7 @@ final class GateMatrix implements MatrixSessionGateway {
   @override
   Future<void> suspend() async {}
   @override
-  Future<void> resetLocalStore() async => isLoggedIn = false;
+  Future<void> clearLocalChatData() async => isLoggedIn = false;
   Future<void> logout() async => isLoggedIn = false;
   @override
   Future<void> sync() async {}
