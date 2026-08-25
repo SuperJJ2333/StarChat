@@ -41,6 +41,7 @@ Future<void> main() async {
     suspendClient: matrixFactory.suspend,
     resumeClient: matrixFactory.create,
     clearClientData: matrixFactory.clearLocalChatData,
+    readContinuityMetadata: matrixFactory.continuityMetadata,
   );
   final session = SessionBootstrapController(business: api, matrix: matrix);
   final gate = SessionGate(
