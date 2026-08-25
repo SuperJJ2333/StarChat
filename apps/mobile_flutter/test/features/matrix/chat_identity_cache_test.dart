@@ -117,6 +117,7 @@ void main() {
     expect(errors.single.operation, 'refresh');
     expect(errors.single.errorType, 'StateError');
     expect(errors.single.accountKeyHash, isNotEmpty);
+    expect(errors.single.toDiagnosticString(), isNot(contains('unavailable')));
   });
 }
 

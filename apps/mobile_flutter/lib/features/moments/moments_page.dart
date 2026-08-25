@@ -28,6 +28,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   late Future<Map<String, dynamic>> _feed;
   String? _coverUrl;
   String? _interactionError;
+  String? _identityError;
   late final ChatIdentityCache _identityCache =
       widget.identityCache ?? ChatIdentityCache(widget.api);
 
@@ -35,11 +36,29 @@ final class _MomentsPageState extends State<MomentsPage> {
   void initState() {
     super.initState();
     _identityCache.addListener(_identityChanged);
-    _identityCache.preload().catchError((_) {});
+    _loadIdentity();
     _feed = widget.api.momentsFeed(mode: 'latest');
-    widget.api.momentsPreferences().then((value) {
+    _loadPreferences();
+  }
+
+  Future<void> _loadIdentity() async {
+    if (mounted) setState(() => _identityError = null);
+    try {
+      await _identityCache.preload();
+    } catch (_) {
+      if (mounted && _identityCache.profile == null) {
+        setState(() => _identityError = '资料加载失败');
+      }
+    }
+  }
+
+  Future<void> _loadPreferences() async {
+    try {
+      final value = await widget.api.momentsPreferences();
       if (mounted) setState(() => _coverUrl = value['cover_url']?.toString());
-    });
+    } catch (_) {
+      if (mounted) setState(() => _interactionError = '封面加载失败，请重试');
+    }
   }
 
   void _identityChanged() {
@@ -246,11 +265,27 @@ final class _MomentsPageState extends State<MomentsPage> {
   Widget _ownerIdentity() {
     final profile = _identityCache.profile;
     if (profile == null) {
-      return const Icon(
-        CupertinoIcons.person_crop_circle,
-        key: Key('moment-owner-loading-fallback'),
-        color: CupertinoColors.white,
-        size: 64,
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          const Icon(
+            CupertinoIcons.person_crop_circle,
+            key: Key('moment-owner-loading-fallback'),
+            color: CupertinoColors.white,
+            size: 64,
+          ),
+          if (_identityError != null)
+            CupertinoButton(
+              key: const Key('moment-owner-retry'),
+              padding: const EdgeInsets.only(top: 4),
+              onPressed: _loadIdentity,
+              child: Text(
+                _identityError!,
+                style: const TextStyle(color: CupertinoColors.white),
+              ),
+            ),
+        ],
       );
     }
     final nickname = profile.nickname.trim().isEmpty

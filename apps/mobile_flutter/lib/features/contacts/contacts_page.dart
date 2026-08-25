@@ -384,7 +384,11 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     final result = await Navigator.push<ContactMoreResult>(
       context,
       CupertinoPageRoute(
-        builder: (_) => ContactMorePage(api: widget.api, contact: contact),
+        builder: (_) => ContactMorePage(
+          api: widget.api,
+          contact: contact,
+          onContactUpdated: widget.onContactUpdated,
+        ),
       ),
     );
     if (!mounted || result == null) return;
@@ -392,7 +396,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
       Navigator.pop(context, true);
     } else {
       final updated = result.contact!;
-      await widget.onContactUpdated?.call(updated);
       if (mounted) setState(() => contact = updated);
     }
   }
@@ -447,9 +450,11 @@ final class ContactMorePage extends StatefulWidget {
     super.key,
     required this.api,
     required this.contact,
+    this.onContactUpdated,
   });
   final ContactsGateway api;
   final ContactDetails contact;
+  final Future<void> Function(ContactDetails contact)? onContactUpdated;
   @override
   State<ContactMorePage> createState() => _ContactMorePageState();
 }
@@ -460,6 +465,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   late String permission = widget.contact.momentsPermission;
   late ContactDetails current = widget.contact;
   bool blocked = false;
+  bool saving = false;
+  String? errorMessage;
 
   @override
   void dispose() {
@@ -489,18 +496,34 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       ) ??
       false;
 
-  Future<void> _persist() async {
-    final updated = await widget.api.updateContactDetails(
-      current,
-      remark: remark.text.trim().isEmpty ? null : remark.text.trim(),
-      tags: tags.text
-          .split(',')
-          .map((value) => value.trim())
-          .where((value) => value.isNotEmpty)
-          .toList(growable: false),
-      momentsPermission: permission,
-    );
-    if (mounted) setState(() => current = updated);
+  Future<bool> _persist() async {
+    if (saving) return false;
+    setState(() {
+      saving = true;
+      errorMessage = null;
+    });
+    try {
+      final updated = await widget.api.updateContactDetails(
+        current,
+        remark: remark.text.trim().isEmpty ? null : remark.text.trim(),
+        tags: tags.text
+            .split(',')
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false),
+        momentsPermission: permission,
+      );
+      await widget.onContactUpdated?.call(updated);
+      if (mounted) setState(() => current = updated);
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() => errorMessage = '备注保存失败，请检查网络后重试');
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
   }
 
   Future<void> _editText(
@@ -542,6 +565,8 @@ final class _ContactMorePageState extends State<ContactMorePage> {
       ),
     );
     if (updated == null || !mounted) return;
+    await widget.onContactUpdated?.call(updated);
+    if (!mounted) return;
     setState(() {
       current = updated;
       tags.text = updated.tags.join(',');
@@ -628,6 +653,15 @@ final class _ContactMorePageState extends State<ContactMorePage> {
         child: SafeArea(
           child: ListView(
             children: [
+              if (errorMessage != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: Text(
+                    errorMessage!,
+                    key: const Key('contact-save-error'),
+                    style: const TextStyle(color: CupertinoColors.systemRed),
+                  ),
+                ),
               CupertinoListSection(
                 margin: const EdgeInsets.only(top: 12),
                 children: [

@@ -10,9 +10,14 @@ import '../../ui/foundation/wechat_tokens.dart';
 import 'moment_visibility_page.dart';
 
 final class MomentComposerPage extends StatefulWidget {
-  const MomentComposerPage({super.key, required this.api});
+  const MomentComposerPage({
+    super.key,
+    required this.api,
+    this.initialImages = const [],
+  });
 
   final BusinessApiClient api;
+  final List<XFile> initialImages;
 
   @override
   State<MomentComposerPage> createState() => _MomentComposerPageState();
@@ -21,6 +26,7 @@ final class MomentComposerPage extends StatefulWidget {
 final class _MomentComposerPageState extends State<MomentComposerPage> {
   final text = TextEditingController();
   final images = <XFile>[];
+  final remoteImageUrls = <String>[];
   MomentVisibilitySelection visibility =
       const MomentVisibilitySelection.public();
   String? linkUrl;
@@ -33,6 +39,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   bool get dirty =>
       text.text.trim().isNotEmpty ||
       images.isNotEmpty ||
+      remoteImageUrls.isNotEmpty ||
       linkUrl != null ||
       visibility.visibility != 'PUBLIC' ||
       visibility.selectedCount > 0;
@@ -40,6 +47,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   @override
   void initState() {
     super.initState();
+    images.addAll(widget.initialImages.take(9));
     _loadDraft();
   }
 
@@ -61,6 +69,14 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       setState(() {
         text.text = draft['text']?.toString() ?? '';
         linkUrl = draft['link_url']?.toString();
+        remoteImageUrls
+          ..clear()
+          ..addAll(
+            (draft['image_urls'] as List? ?? const [])
+                .map((value) => value.toString())
+                .where((value) => value.trim().isNotEmpty)
+                .take(9),
+          );
         visibility = MomentVisibilitySelection(
           visibility: mode,
           userIds: users,
@@ -85,7 +101,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   Map<String, dynamic> _payload() => {
         'text': text.text,
         'visibility': visibility.visibility,
-        'image_urls': images.map((item) => item.path).toList(),
+        'image_urls': remoteImageUrls.toList(growable: false),
         'link_url': linkUrl,
         'include_user_ids': visibility.visibility == 'INCLUDE'
             ? visibility.userIds.toList()
@@ -101,7 +117,51 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
             : const [],
       };
 
-  Future<void> _saveDraft() => widget.api.saveMomentDraft(_payload());
+  Future<void> _saveDraft() async {
+    await _uploadPendingImages();
+    await widget.api.saveMomentDraft(_payload());
+  }
+
+  String _mimeType(XFile image) {
+    final explicit = image.mimeType?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    final extension = image.name.toLowerCase().split('.').last;
+    return switch (extension) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'gif' => 'image/gif',
+      _ => 'image/jpeg',
+    };
+  }
+
+  Future<List<String>> _uploadPendingImages() async {
+    while (images.isNotEmpty) {
+      final image = images.first;
+      final bytes = await image.readAsBytes();
+      final mimeType = _mimeType(image);
+      final begun = await widget.api.beginMomentUpload(
+        fileName: image.name,
+        mimeType: mimeType,
+        byteSize: bytes.length,
+      );
+      final uploadId = begun['id']?.toString();
+      if (uploadId == null || uploadId.isEmpty) {
+        throw StateError('Moment upload session is missing an id');
+      }
+      await widget.api.putMomentUpload(uploadId, bytes, mimeType);
+      final completed = await widget.api.completeMomentUpload(uploadId);
+      final mediaUrl = completed['media_url']?.toString().trim();
+      if (mediaUrl == null || mediaUrl.isEmpty) {
+        throw StateError('Moment upload completion is missing a media URL');
+      }
+      if (!mounted) return remoteImageUrls.toList(growable: false);
+      setState(() {
+        images.removeAt(0);
+        remoteImageUrls.add(mediaUrl);
+      });
+    }
+    return remoteImageUrls.toList(growable: false);
+  }
 
   Future<bool> _onBack() async {
     if (_allowPop || _published || _draftSaved || !dirty) return true;
@@ -158,7 +218,9 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   Future<void> _pickImages() async {
     final selected = await ImagePicker().pickMultiImage(imageQuality: 82);
     if (!mounted) return;
-    setState(() => images.addAll(selected.take(9 - images.length)));
+    setState(() => images.addAll(
+          selected.take(9 - images.length - remoteImageUrls.length),
+        ));
   }
 
   Future<void> _openVisibility() async {
@@ -216,10 +278,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       errorMessage = null;
     });
     try {
+      final imageUrls = await _uploadPendingImages();
       await widget.api.publishMoment(
         text: text.text,
         visibility: visibility.visibility,
-        imageUrls: const [],
+        imageUrls: imageUrls,
         includeUserIds: visibility.visibility == 'INCLUDE'
             ? visibility.userIds.toList()
             : const [],
@@ -237,7 +300,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       await widget.api.deleteMomentDraft();
       _published = true;
       _allowPop = true;
-      if (mounted) Navigator.pop(context);
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
         setState(() => errorMessage = error is BusinessApiException
@@ -327,6 +390,35 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      for (final imageUrl in remoteImageUrls)
+                        Stack(
+                          children: [
+                            Image.network(
+                              imageUrl,
+                              width: 84,
+                              height: 84,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const SizedBox(
+                                width: 84,
+                                height: 84,
+                                child: Icon(CupertinoIcons.photo),
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              child: CupertinoButton(
+                                padding: EdgeInsets.zero,
+                                onPressed: () => setState(
+                                  () => remoteImageUrls.remove(imageUrl),
+                                ),
+                                child: const Icon(
+                                  CupertinoIcons.clear_circled_solid,
+                                  color: CupertinoColors.systemGrey,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       for (final image in images)
                         Stack(
                           children: [
@@ -350,7 +442,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                             ),
                           ],
                         ),
-                      if (images.length < 9)
+                      if (images.length + remoteImageUrls.length < 9)
                         CupertinoButton(
                           key: const Key('moment-pick-images'),
                           color: WeChatColors.lightSurface,

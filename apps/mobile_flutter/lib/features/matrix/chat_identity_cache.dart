@@ -121,15 +121,16 @@ final class ChatIdentityCacheError {
     required this.operation,
     required this.errorType,
     required this.accountKeyHash,
-    required this.error,
     required this.stackTrace,
   });
 
   final String operation;
   final String errorType;
   final String accountKeyHash;
-  final Object error;
   final StackTrace stackTrace;
+
+  String toDiagnosticString() =>
+      'operation=$operation account=$accountKeyHash error_type=$errorType';
 }
 
 typedef ChatIdentityErrorReporter = void Function(ChatIdentityCacheError error);
@@ -279,17 +280,12 @@ final class ChatIdentityCache extends ChangeNotifier {
       errorType: error.runtimeType.toString(),
       accountKeyHash:
           (_accountKey ?? 'unknown').hashCode.toUnsigned(32).toRadixString(16),
-      error: error,
       stackTrace: stackTrace,
     );
     _onError?.call(cacheError);
     developer.log(
-      'Identity cache operation failed '
-      'operation=${cacheError.operation} '
-      'account=${cacheError.accountKeyHash} '
-      'error_type=${cacheError.errorType}',
+      'Identity cache operation failed ${cacheError.toDiagnosticString()}',
       name: 'ChatIdentityCache',
-      error: error,
       stackTrace: stackTrace,
     );
   }

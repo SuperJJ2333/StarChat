@@ -129,4 +129,21 @@ void main() {
       '[2条]群聊名称已更新',
     );
   });
+
+  test('undecrypted events use a safe placeholder instead of event text', () {
+    expect(
+      safeConversationMessageContent(
+        undecrypted: true,
+        messageContent: 'MegolmException secret ciphertext detail',
+      ),
+      '消息尚未解密',
+    );
+    expect(
+      safeConversationMessageContent(
+        undecrypted: false,
+        messageContent: '正常消息',
+      ),
+      '正常消息',
+    );
+  });
 }

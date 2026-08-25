@@ -71,6 +71,21 @@ List<User> orderedJoinedMembers(Room room) {
 String groupRoomNavigationTitle(String _, int memberCount) =>
     '群聊($memberCount)';
 
+String directRoomNavigationTitle({
+  required String? peerMatrixUserId,
+  required Map<String, ContactDetails> contactsByMatrixId,
+  required String fallbackRoomName,
+}) {
+  final contact = contactsByMatrixId[peerMatrixUserId];
+  if (contact == null) return fallbackRoomName;
+  return directConversationTitle(ConversationIdentity(
+    matrixUserId: contact.matrixUserId,
+    remark: contact.remark,
+    nickname: contact.nickname,
+    username: contact.username,
+  ));
+}
+
 Future<List<User>> loadOrderedJoinedMembers(Room room) async {
   await room.requestParticipants([Membership.join]);
   return orderedJoinedMembers(room);
@@ -177,7 +192,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       unawaited(_restoreHiddenConversations());
       if (mounted) setState(() {});
     });
-    unawaited(_identityCache.preload());
+    unawaited(_identityCache.preload().catchError((_) {}));
     sync();
   }
 
@@ -257,7 +272,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   String _conversationSubtitle(Room room) {
     final event = room.lastEvent;
     if (event == null) return '端到端加密消息';
-    if (room.isDirectChat) return event.text;
+    final messageContent = safeConversationMessageContent(
+      undecrypted: event.type == EventTypes.Encrypted,
+      messageContent: event.text,
+    );
+    if (room.isDirectChat) return messageContent;
     final sender = conversationSenderName(
       _memberIdentity(event.senderFromMemoryOrFallback),
     );
@@ -267,7 +286,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     return groupConversationSubtitle(
       unreadCount: _conversationUnread(room),
       senderName: sender,
-      messageContent: event.text,
+      messageContent: messageContent,
       redacted: event.redacted,
       systemSummary: isSenderMessage ? null : event.text,
     );
@@ -354,12 +373,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         // A failed account-data write is retried by the next sync.
       }
     }
-    await _identityCache.preload();
+    try {
+      await _identityCache.preload();
+    } catch (_) {
+      // Preserve the last successful identity snapshot and keep the encrypted
+      // room route available when Business identity refresh is unavailable.
+    }
     if (!mounted) return;
     await _identityCache.precacheAvatarImages(context);
     if (!mounted) return;
     final roomName = room.isDirectChat
-        ? room.getLocalizedDisplayname()
+        ? _conversationTitle(room)
         : groupRoomNavigationTitle(
             room.name,
             orderedJoinedMembers(room).length,
@@ -752,7 +776,8 @@ class _RoomPageState extends State<RoomPage> {
     joinedMemberCount = orderedJoinedMembers(widget.room).length;
     ownProfile = _identityCache.profile;
     contactsByMatrixId = _identityCache.contactsByMatrixId;
-    unawaited(_identityCache.preload());
+    _identityCache.addListener(_identityChanged);
+    unawaited(_identityCache.preload().catchError((_) {}));
     unawaited(_refreshJoinedMemberCount());
     unawaited(_loadAnnouncementReadState());
     _load();
@@ -772,7 +797,22 @@ class _RoomPageState extends State<RoomPage> {
 
   String get _navigationTitle => isGroup
       ? groupRoomNavigationTitle(widget.room.name, joinedMemberCount)
-      : widget.roomName;
+      : directRoomNavigationTitle(
+          peerMatrixUserId: widget.room.directChatMatrixID,
+          contactsByMatrixId: contactsByMatrixId,
+          fallbackRoomName: widget.roomName,
+        );
+
+  void _identityChanged() {
+    if (!mounted) return;
+    final mapped = _identityCache.contactsByMatrixId;
+    setState(() {
+      contactsByMatrixId = mapped;
+      ownProfile = _identityCache.profile ?? ownProfile;
+      final peerId = widget.room.directChatMatrixID;
+      if (peerId != null) peer = mapped[peerId] ?? peer;
+    });
+  }
 
   int get _announcementVersion =>
       widget.room.roomAccountData[groupChatAccountDataType]
@@ -1808,6 +1848,7 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   void dispose() {
+    _identityCache.removeListener(_identityChanged);
     controller?.removeListener(_changed);
     controller?.dispose();
     mediaMessageTimer?.cancel();

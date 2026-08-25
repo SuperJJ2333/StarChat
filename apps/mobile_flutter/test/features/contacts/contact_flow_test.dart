@@ -12,6 +12,7 @@ final class FakeContactsGateway implements ContactsGateway {
   var blocked = false;
   List<String> lastTags = const [];
   String? lastRemark;
+  Object? updateError;
 
   @override
   Future<Map<String, dynamic>> contactTags() async => {
@@ -52,6 +53,7 @@ final class FakeContactsGateway implements ContactsGateway {
     required List<String> tags,
     required String momentsPermission,
   }) async {
+    if (updateError case final error?) throw error;
     lastTags = tags;
     lastRemark = remark;
     return contact.copyWith(
@@ -378,8 +380,13 @@ void main() {
       matrixUserId: '@alice:test',
       nickname: 'Alice',
     );
+    ContactDetails? sharedUpdate;
     await tester.pumpWidget(CupertinoApp(
-      home: ContactMorePage(api: gateway, contact: contact),
+      home: ContactMorePage(
+        api: gateway,
+        contact: contact,
+        onContactUpdated: (updated) async => sharedUpdate = updated,
+      ),
     ));
     await tester.tap(find.text('备注'));
     await tester.pumpAndSettle();
@@ -388,7 +395,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(gateway.lastRemark, '新的备注');
+    expect(sharedUpdate?.remark, '新的备注');
     expect(find.text('新的备注'), findsOneWidget);
+  });
+
+  testWidgets('friend remark failure retains input and shows an error',
+      (tester) async {
+    final gateway = FakeContactsGateway()
+      ..updateError = StateError('server detail must not leak');
+    const contact = ContactDetails(
+      userId: 'user-1',
+      username: 'alice',
+      matrixUserId: '@alice:test',
+      nickname: 'Alice',
+      remark: '旧备注',
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: ContactMorePage(api: gateway, contact: contact),
+    ));
+    await tester.tap(find.text('备注'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(CupertinoTextField), '保留的新备注');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('保留的新备注'), findsOneWidget);
+    expect(find.text('备注保存失败，请检查网络后重试'), findsOneWidget);
+    expect(find.textContaining('server detail'), findsNothing);
   });
 
   testWidgets(

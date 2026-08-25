@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 
 void main() {
@@ -11,6 +12,32 @@ void main() {
     expect(
       groupRoomNavigationTitle('123456789012345678901', 12),
       '群聊(12)',
+    );
+  });
+
+  test('direct room navigation title resolves the latest contact identity', () {
+    const contact = ContactDetails(
+      userId: 'alice-id',
+      username: 'alice-login',
+      matrixUserId: '@alice:test',
+      nickname: 'Alice',
+      remark: '项目小艾',
+    );
+    expect(
+      directRoomNavigationTitle(
+        peerMatrixUserId: '@alice:test',
+        contactsByMatrixId: const {'@alice:test': contact},
+        fallbackRoomName: 'Group with Alice',
+      ),
+      '项目小艾',
+    );
+    expect(
+      directRoomNavigationTitle(
+        peerMatrixUserId: '@missing:test',
+        contactsByMatrixId: const {},
+        fallbackRoomName: '安全回退',
+      ),
+      '安全回退',
     );
   });
 }

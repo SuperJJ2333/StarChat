@@ -109,6 +109,38 @@ void main() {
     expect(avatar.diagnosticSource, 'moments-owner');
   });
 
+  testWidgets('owner profile failure shows default avatar and retry action',
+      (tester) async {
+    final api = await momentsApi((request) async {
+      if (request.url.path == '/api/v1/moments/feed') {
+        return http.Response(jsonEncode({'items': []}), 200,
+            headers: {'content-type': 'application/json'});
+      }
+      if (request.url.path == '/api/v1/moments/preferences') {
+        return http.Response(jsonEncode({'cover_url': null}), 200,
+            headers: {'content-type': 'application/json'});
+      }
+      throw StateError('Unexpected request: ${request.method} ${request.url}');
+    });
+    final cache = ChatIdentityCache.forTesting(
+      accountKey: 'matrix:@me:test',
+      store: MomentsIdentityStore(),
+      loadProfile: () async => throw StateError('offline detail'),
+      loadContacts: () async => const [],
+    );
+
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(api: api, identityCache: cache),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const Key('moment-owner-loading-fallback')), findsOneWidget);
+    expect(find.text('资料加载失败'), findsOneWidget);
+    expect(find.byKey(const Key('moment-owner-retry')), findsOneWidget);
+    expect(find.textContaining('offline detail'), findsNothing);
+  });
+
   testWidgets('moment image grid supports 1 4 and 9 images', (tester) async {
     for (final count in [1, 4, 9]) {
       await tester.pumpWidget(CupertinoApp(
