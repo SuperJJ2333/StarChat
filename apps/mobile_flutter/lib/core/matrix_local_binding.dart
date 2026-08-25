@@ -10,20 +10,19 @@ final class MatrixLocalBinding {
       throw const FormatException('Unsupported matrix local binding version');
     }
 
-    String requireValue(String value, String field) {
-      final normalized = value.trim();
-      if (normalized.isEmpty) {
+    String requireOpaqueValue(String value, String field) {
+      if (value.isEmpty || value != value.trim()) {
         throw FormatException('Invalid matrix local binding $field');
       }
-      return normalized;
+      return value;
     }
 
     return MatrixLocalBinding._(
       version: version,
-      matrixUserId: requireValue(matrixUserId, 'matrix_user_id'),
-      deviceId: requireValue(deviceId, 'device_id'),
-      homeserver: requireValue(homeserver, 'homeserver'),
-      databaseGeneration: requireValue(
+      matrixUserId: requireOpaqueValue(matrixUserId, 'matrix_user_id'),
+      deviceId: requireOpaqueValue(deviceId, 'device_id'),
+      homeserver: requireOpaqueValue(homeserver, 'homeserver'),
+      databaseGeneration: requireOpaqueValue(
         databaseGeneration,
         'database_generation',
       ),
