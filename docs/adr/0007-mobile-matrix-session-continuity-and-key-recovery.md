@@ -29,6 +29,8 @@
 
 采用 Matrix 已有的 SSSS、交叉签名、Olm to-device 加密、秘密请求和 room-key backup API，不使用 Business API自定义密钥信封。所谓“服务器中转密钥信封”是 Synapse 对 Olm 加密 `m.secret.send` 事件的暂存与转发，不代表服务器持有或能够解开恢复秘密。
 
+可信恢复由应用层 adapter 使用标准 `m.secret.request` / `m.secret.send`，但自行关联单一目标设备和 request ID；响应解密后、缓存或使用 secret 前，必须从当前设备密钥集合实时重查 MXID、设备 ID、Curve25519 key、验证与封禁状态，并完成时限及备份公钥/版本校验。该 adapter 不得让 SDK 依据请求时的旧设备快照自动缓存 backup secret。
+
 ## 安全理由
 
 如果新设备在没有旧可信设备或用户秘密的情况下只凭服务器登录即可恢复密钥，服务器必然具有恢复能力，端到端加密边界随之失效。本决策选择同设备无感恢复、可信设备端到端传递和可选用户恢复密钥三条路径，同时接受“全部可信设备和恢复密钥均丢失时历史聊天不可恢复”的必要后果。

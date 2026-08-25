@@ -75,7 +75,7 @@ Record attacker, control, assertion, and result for stolen Business Token, stole
 Run:
 
 ```powershell
-rg -n "FAIL|BLOCKED|UNRESOLVED" docs/verification/2026-08-25-matrix-session-continuity-*-review.md
+rg -n "FAIL|BLOCKED|UNRESOLVED" docs/verification/2026-08-25-matrix-session-continuity-domain-review.md docs/verification/2026-08-25-matrix-session-continuity-quality-security-review.md
 ```
 
 Expected: no matches. If a review fails, stop implementation and revise the design/ADR instead of adding a bypass.
@@ -395,7 +395,7 @@ git commit -m "feat(e2ee): add encrypted megolm backup and restore"
 
 - [ ] **Step 1: Write failing trust-policy tests**
 
-Inject `DateTime Function() now` and `Future<void> Function(Duration) delay` without adding a runtime timing dependency. Assert requests target only same-user verified unblocked devices; reject wrong user, current device, unverified, blocked, wrong request ID, wrong sender Curve25519 key, unencrypted response, expired response, and backup-public-key mismatch.
+Inject `DateTime Function() now` and `Future<void> Function(Duration) delay` without adding a runtime timing dependency. Assert backup-secret requests target one same-user verified unblocked device at a time; reject wrong user, current device, unverified, blocked, wrong request ID, wrong sender Curve25519 key, unencrypted response, expired response, and backup-public-key mismatch. Add a revocation-window test that sends the request, marks the target device blocked in current `userDeviceKeys`, then delivers its otherwise valid response and asserts the response is rejected, SSSS cache is not written, and restore is not started.
 
 Test both recovery levels:
 
@@ -421,7 +421,11 @@ Run the Task 5 Step 2 command. Expected: new trusted-recovery cases FAIL.
 
 - [ ] **Step 3: Implement standard Matrix requests**
 
-For the backup secret, call SSSS `request(megolmKey, verifiedOwnDevices)` and accept only the SDK-validated cached secret associated with the pending request. For a missing room session after online backup returns `M_NOT_FOUND`, send a standard `m.room_key_request` only to verified own devices and register the exact devices in `keyManager.outgoingShareRequests`; accept the Olm-encrypted `m.forwarded_room_key` only through the SDK handler.
+For the backup secret, add an application-layer trusted-recovery adapter that uses standard Olm-encrypted `m.secret.request` / `m.secret.send` events but owns the request state. Generate the request ID in the adapter, persist the single target MXID/device ID/Curve25519 key, creation time, and expected backup version, then call `sendToDeviceEncrypted()` for only that target. Do **not** call SSSS `request()`, register SDK `pendingShareRequests`, or accept a secret merely because it appeared in the SDK cache.
+
+Observe the Olm-decrypted `m.secret.send` in the adapter. Before writing SSSS cache or using the secret, reload the target from current `userDeviceKeys` and require the same MXID, device ID and Curve25519 key with `verified == true` and `blocked == false`; then validate the adapter-owned request ID, 15-minute validity, current backup version and derived backup public key. Drop any failing response without a cache write or restore side effect. This current-state lookup is mandatory even if the target was trusted when the request was sent.
+
+For a missing room session after online backup returns `M_NOT_FOUND`, send a standard `m.room_key_request` only to verified own devices and register the exact devices in `keyManager.outgoingShareRequests`; accept the Olm-encrypted `m.forwarded_room_key` only through the SDK handler.
 
 Keep Matrix's 15-minute protocol validity, but return a UI timeout after 30 seconds. A later valid response may still transition the event back to recovery.
 
