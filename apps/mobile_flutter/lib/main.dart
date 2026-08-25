@@ -38,8 +38,9 @@ Future<void> main() async {
   final matrix = MatrixSdkE2eeClient(
     sdkClient,
     homeserver: Uri.parse(AppConfig.matrixHomeserver),
-    reopenClient: matrixFactory.reopen,
-    resetClient: matrixFactory.reset,
+    suspendClient: matrixFactory.suspend,
+    resumeClient: matrixFactory.create,
+    clearClientData: matrixFactory.clearLocalChatData,
   );
   final session = SessionBootstrapController(business: api, matrix: matrix);
   final gate = SessionGate(

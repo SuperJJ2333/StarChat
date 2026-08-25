@@ -37,32 +37,51 @@ final class MatrixSdkE2eeClient
   MatrixSdkE2eeClient(
     Client client, {
     required this.homeserver,
-    Future<Client> Function(Client client)? reopenClient,
-    Future<Client> Function(Client client)? resetClient,
+    Future<void> Function(Client client)? suspendClient,
+    Future<Client> Function()? resumeClient,
+    Future<void> Function(Client? client)? clearClientData,
   })  : _client = client,
-        _reopenClient = reopenClient,
-        _resetClient = resetClient;
-  Client _client;
-  final Future<Client> Function(Client client)? _reopenClient;
-  final Future<Client> Function(Client client)? _resetClient;
+        _suspendClient = suspendClient ?? _defaultSuspend,
+        _resumeClient = resumeClient,
+        _clearClientData = clearClientData ?? _defaultClear;
+  Client? _client;
+  final Future<void> Function(Client client) _suspendClient;
+  final Future<Client> Function()? _resumeClient;
+  final Future<void> Function(Client? client) _clearClientData;
+  Future<Client>? _resumeInFlight;
+  int _lifecycleEpoch = 0;
+  bool _suspendedWasLoggedIn = false;
+  String? _suspendedUserId;
+  String? _suspendedDeviceId;
   final Uri homeserver;
-  Client get sdkClient => _client;
-  Client get client => _client;
+  Client get sdkClient => client;
+  Client get client =>
+      _client ??
+      (throw StateError('Matrix client is suspended and must be resumed'));
   String? _lastRecoveryKey;
 
   /// Recovery key is exposed only to the caller so it can be written to the
   /// platform secure store; it is never sent to the business API.
   String? get lastRecoveryKey => _lastRecoveryKey;
   @override
-  bool get isLoggedIn => client.isLogged();
+  bool get isLoggedIn => _client?.isLogged() ?? _suspendedWasLoggedIn;
   @override
-  String? get userId => client.userID;
+  String? get userId {
+    final active = _client;
+    return active == null ? _suspendedUserId : active.userID;
+  }
+
   @override
-  String? get deviceId => client.deviceID;
+  String? get deviceId {
+    final active = _client;
+    return active == null ? _suspendedDeviceId : active.deviceID;
+  }
+
   @override
   Future<void> login(String userId, String password) async {
-    await client.checkHomeserver(homeserver);
-    await client.login('m.login.password',
+    final active = await _requireClient();
+    await active.checkHomeserver(homeserver);
+    await active.login('m.login.password',
         identifier: AuthenticationUserIdentifier(user: userId),
         password: password,
         initialDeviceDisplayName: '畅聊移动端');
@@ -71,19 +90,21 @@ final class MatrixSdkE2eeClient
   @override
   Future<void> loginWithToken(
       {required String loginToken, required Uri homeserver}) async {
-    await client.checkHomeserver(homeserver);
-    await client.login('m.login.token',
+    final active = await _requireClient();
+    await active.checkHomeserver(homeserver);
+    await active.login('m.login.token',
         token: loginToken, initialDeviceDisplayName: '畅聊移动端');
   }
 
   @override
   Future<void> sync() async {
-    await client.sync();
-    await _autoJoinInvitedGroups();
+    final active = await _requireClient();
+    await active.sync();
+    await _autoJoinInvitedGroups(active);
   }
 
-  Future<void> _autoJoinInvitedGroups() async {
-    final invitedRoomIds = client.rooms
+  Future<void> _autoJoinInvitedGroups(Client active) async {
+    final invitedRoomIds = active.rooms
         .where((room) =>
             room.membership == Membership.invite && !room.isDirectChat)
         .map((room) => room.id)
@@ -91,45 +112,100 @@ final class MatrixSdkE2eeClient
     if (invitedRoomIds.isEmpty) return;
     final result = await autoJoinInvitedRoomIds(
       invitedRoomIds: invitedRoomIds,
-      joinRoom: client.joinRoom,
+      joinRoom: active.joinRoom,
     );
     debugPrint(
       '[GroupSync] invitations=${invitedRoomIds.length} '
       'joined=${result.joinedRoomIds.length} failures=${result.failures.length}',
     );
-    if (result.joinedRoomIds.isNotEmpty) await client.oneShotSync();
+    if (result.joinedRoomIds.isNotEmpty) await active.oneShotSync();
   }
 
   @override
   Future<void> suspend() async {
-    final reopenClient = _reopenClient;
-    if (reopenClient != null) _client = await reopenClient(client);
+    _lifecycleEpoch++;
+    final active = _client;
+    if (active == null) return;
+    _suspendedWasLoggedIn = active.isLogged();
+    _suspendedUserId = active.userID;
+    _suspendedDeviceId = active.deviceID;
+    _client = null;
+    await _suspendClient(active);
   }
-
-  @override
-  Future<void> logout() => resetLocalStore();
-
-  @override
-  Future<void> resetLocalStore() => clearLocalChatData();
 
   /// Destructively removes this device's Matrix session and encrypted store.
   /// Only explicit account-switch or confirmed local-clear flows may call it.
   @override
   Future<void> clearLocalChatData() async {
-    final current = client;
+    _lifecycleEpoch++;
+    final active = _client;
+    _client = null;
+    await _clearClientData(active);
+    _suspendedWasLoggedIn = false;
+    _suspendedUserId = null;
+    _suspendedDeviceId = null;
+  }
+
+  Future<Client> _requireClient() {
+    final active = _client;
+    if (active != null) return Future.value(active);
+    final inFlight = _resumeInFlight;
+    if (inFlight != null) return inFlight;
+    late final Future<Client> operation;
+    operation = _resumeAndValidate(_lifecycleEpoch).whenComplete(() {
+      if (identical(_resumeInFlight, operation)) _resumeInFlight = null;
+    });
+    _resumeInFlight = operation;
+    return operation;
+  }
+
+  Future<Client> _resumeAndValidate(int resumeEpoch) async {
+    final resume = _resumeClient;
+    if (resume == null) {
+      throw StateError('Matrix client resume is not configured');
+    }
+    final resumed = await resume();
+    if (resumeEpoch != _lifecycleEpoch) {
+      await _closeRejectedResume(resumed);
+      throw StateError('Matrix client lifecycle changed during resume');
+    }
+    final identityMatches = resumed.isLogged() == _suspendedWasLoggedIn &&
+        (!_suspendedWasLoggedIn ||
+            (resumed.userID == _suspendedUserId &&
+                resumed.deviceID == _suspendedDeviceId));
+    if (!identityMatches) {
+      await _closeRejectedResume(resumed);
+      throw StateError('Matrix client resumed with a different identity');
+    }
+    _client = resumed;
+    return resumed;
+  }
+
+  Future<void> _closeRejectedResume(Client resumed) async {
     try {
-      await current.logout();
+      await _suspendClient(resumed);
+    } catch (_) {
+      debugPrint('E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED');
+    }
+  }
+
+  static Future<void> _defaultSuspend(Client client) => client.dispose();
+
+  static Future<void> _defaultClear(Client? client) async {
+    if (client == null) return;
+    try {
+      await client.logout();
     } finally {
-      final resetClient = _resetClient;
-      if (resetClient != null) _client = await resetClient(current);
+      await client.dispose();
     }
   }
 
   @override
   Future<void> verifyDevice(String deviceId) async {
-    final userId = client.userID;
+    final active = await _requireClient();
+    final userId = active.userID;
     if (userId == null) throw StateError('Matrix client is not logged in');
-    final device = client.userDeviceKeys[userId]?.deviceKeys[deviceId];
+    final device = active.userDeviceKeys[userId]?.deviceKeys[deviceId];
     if (device == null) {
       throw StateError('Device keys are not available; sync first');
     }
@@ -140,7 +216,8 @@ final class MatrixSdkE2eeClient
   Future<void> backupKeysToEncryptedStore() async {
     // SSSS creates an account-data backed encrypted store. The recovery key
     // remains local and must be persisted by the caller in secure storage.
-    final encryption = client.encryption;
+    final active = await _requireClient();
+    final encryption = active.encryption;
     if (encryption == null) {
       throw StateError('Matrix encryption is not enabled');
     }
@@ -154,7 +231,8 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<void> initializeCrossSigning({required String recoveryKey}) async {
-    final encryption = client.encryption;
+    final active = await _requireClient();
+    final encryption = active.encryption;
     if (encryption == null) {
       throw StateError('Matrix encryption is not enabled');
     }
@@ -163,7 +241,8 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<void> restoreEncryptedBackup({required String recoveryKey}) async {
-    final encryption = client.encryption;
+    final active = await _requireClient();
+    final encryption = active.encryption;
     if (encryption == null) {
       throw StateError('Matrix encryption is not enabled');
     }
@@ -174,7 +253,8 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<String> sendEncryptedText(String roomId, String plaintext) async {
-    final room = client.getRoomById(roomId);
+    final active = await _requireClient();
+    final room = active.getRoomById(roomId);
     if (room == null) throw StateError('Matrix room is not joined');
     final eventId = await room.sendTextEvent(plaintext, parseCommands: false);
     if (eventId == null) throw StateError('Matrix event was not accepted');
@@ -184,7 +264,8 @@ final class MatrixSdkE2eeClient
   @override
   Future<String> sendEncryptedMedia(
       String roomId, List<int> plaintext, String mimeType) async {
-    final room = client.getRoomById(roomId);
+    final active = await _requireClient();
+    final room = active.getRoomById(roomId);
     if (room == null) throw StateError('Matrix room is not joined');
     final eventId = await room.sendFileEvent(MatrixFile(
         bytes: Uint8List.fromList(plaintext),
@@ -197,17 +278,22 @@ final class MatrixSdkE2eeClient
   }
 
   @override
-  Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) =>
-      DirectChatService(MatrixDirectChatBackend(client))
-          .openOrCreateDirectChat(matrixUserId);
+  Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) async {
+    final active = await _requireClient();
+    return DirectChatService(MatrixDirectChatBackend(active))
+        .openOrCreateDirectChat(matrixUserId);
+  }
 
   @override
   Future<String> createEncryptedGroupChat({
     required String name,
     required List<String> matrixUserIds,
-  }) =>
-      GroupChatService(MatrixGroupChatBackend(client)).createEncryptedGroupChat(
-        name: name,
-        matrixUserIds: matrixUserIds,
-      );
+  }) async {
+    final active = await _requireClient();
+    return GroupChatService(MatrixGroupChatBackend(active))
+        .createEncryptedGroupChat(
+      name: name,
+      matrixUserIds: matrixUserIds,
+    );
+  }
 }

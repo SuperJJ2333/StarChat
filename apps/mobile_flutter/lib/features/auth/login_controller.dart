@@ -36,8 +36,8 @@ abstract interface class MatrixTokenLoginGateway {
   Future<void> loginWithToken(
       {required String loginToken, required Uri homeserver});
   Future<void> sync();
-  Future<void> logout();
-  Future<void> resetLocalStore();
+  Future<void> suspend();
+  Future<void> clearLocalChatData();
 }
 
 final class DualDomainLoginService {
@@ -56,7 +56,7 @@ final class DualDomainLoginService {
     try {
       final grant = await business.issueMatrixLoginToken();
       if (matrix.isLoggedIn && matrix.userId != grant.matrixUserId) {
-        await matrix.resetLocalStore();
+        throw StateError('A different Matrix identity is stored locally');
       }
       if (!matrix.isLoggedIn) {
         await matrix.loginWithToken(
@@ -89,7 +89,7 @@ final class DualDomainLoginService {
   }
 
   Future<void> _cleanupMatrix() async {
-    if (matrix.isLoggedIn) await matrix.logout();
+    await matrix.suspend();
   }
 }
 

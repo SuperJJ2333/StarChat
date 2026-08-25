@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_bootstrap_controller.dart';
@@ -28,7 +29,8 @@ final class FakeMatrix implements MatrixSessionGateway {
       {required this.isLoggedIn,
       this.userId,
       this.deviceId = 'DEVICE',
-      this.syncError});
+      this.syncError,
+      this.suspendError});
   @override
   bool isLoggedIn;
   @override
@@ -36,19 +38,18 @@ final class FakeMatrix implements MatrixSessionGateway {
   @override
   String? deviceId;
   final Object? syncError;
-  int logoutCalls = 0;
+  final Object? suspendError;
   int suspendCalls = 0;
   int clearCalls = 0;
   @override
-  Future<void> suspend() async => suspendCalls++;
+  Future<void> suspend() async {
+    suspendCalls++;
+    if (suspendError != null) throw suspendError!;
+  }
+
   @override
   Future<void> clearLocalChatData() async {
     clearCalls++;
-    isLoggedIn = false;
-  }
-
-  Future<void> logout() async {
-    logoutCalls++;
     isLoggedIn = false;
   }
 
@@ -92,7 +93,6 @@ void main() {
     expect(
         controller.state.status, SessionBootstrapStatus.offlineAuthenticated);
     expect(business.logoutCalls, 0);
-    expect(matrix.logoutCalls, 0);
     expect(matrix.suspendCalls, 0);
     expect(matrix.clearCalls, 0);
   });
@@ -152,7 +152,6 @@ void main() {
     await controller.bootstrap();
     expect(controller.state.status, SessionBootstrapStatus.fatalError);
     expect(business.logoutCalls, 0);
-    expect(matrix.logoutCalls, 0);
     expect(matrix.suspendCalls, 0);
     expect(matrix.clearCalls, 0);
   });
@@ -171,7 +170,38 @@ void main() {
 
     expect(controller.state.status, SessionBootstrapStatus.fatalError);
     expect(business.logoutCalls, 0);
-    expect(matrix.logoutCalls, 0);
+    expect(matrix.suspendCalls, 0);
+    expect(matrix.clearCalls, 0);
+  });
+
+  test('suspend failure clears Business and keeps Matrix data recoverable',
+      () async {
+    final business = FakeBusiness(BusinessSessionRestore.absent);
+    final matrix = FakeMatrix(
+      isLoggedIn: true,
+      userId: '@alice:matrix.localhost',
+      suspendError: StateError('close failed'),
+    );
+    final controller =
+        SessionBootstrapController(business: business, matrix: matrix);
+
+    final previousDebugPrint = debugPrint;
+    final diagnostics = <String>[];
+    debugPrint = (message, {wrapWidth}) {
+      if (message != null) diagnostics.add(message);
+    };
+    try {
+      await controller.bootstrap();
+    } finally {
+      debugPrint = previousDebugPrint;
+    }
+
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect(controller.state.message, '聊天会话暂停失败，请重新打开应用后重试');
+    expect(business.logoutCalls, 1);
+    expect(matrix.suspendCalls, 1);
+    expect(matrix.clearCalls, 0);
+    expect(diagnostics, ['E2EE_LIFECYCLE_SUSPEND_FAILED']);
   });
 
   test('local storage failure becomes fatal error', () async {

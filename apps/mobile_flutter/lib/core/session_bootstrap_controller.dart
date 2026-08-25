@@ -36,9 +36,13 @@ final class SessionBootstrapController extends ChangeNotifier {
       final businessResult = await business.restoreSession();
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
-        if (matrix.isLoggedIn) await _bestEffortMatrixSuspend();
-        _set(const SessionBootstrapState(
-            SessionBootstrapStatus.unauthenticated));
+        final suspended =
+            !matrix.isLoggedIn || await _bestEffortMatrixSuspend();
+        if (!suspended) await _bestEffortBusinessLogout();
+        _set(SessionBootstrapState(
+          SessionBootstrapStatus.unauthenticated,
+          message: suspended ? null : _suspendFailureMessage,
+        ));
         return;
       }
       if (!matrix.isLoggedIn) {
@@ -61,10 +65,10 @@ final class SessionBootstrapController extends ChangeNotifier {
         if (error.errcode == 'M_UNKNOWN_TOKEN' ||
             error.errcode == 'M_FORBIDDEN') {
           await _bestEffortBusinessLogout();
-          await _bestEffortMatrixSuspend();
-          _set(const SessionBootstrapState(
+          final suspended = await _bestEffortMatrixSuspend();
+          _set(SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
-            message: '登录状态已失效，请重新登录',
+            message: suspended ? '登录状态已失效，请重新登录' : _suspendFailureMessage,
           ));
           return;
         }
@@ -103,8 +107,11 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   Future<void> logout() async {
     await _bestEffortBusinessLogout();
-    await _bestEffortMatrixSuspend();
-    _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));
+    final suspended = await _bestEffortMatrixSuspend();
+    _set(SessionBootstrapState(
+      SessionBootstrapStatus.unauthenticated,
+      message: suspended ? null : _suspendFailureMessage,
+    ));
   }
 
   void _offlineIfPossible() {
@@ -121,11 +128,17 @@ final class SessionBootstrapController extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<void> _bestEffortMatrixSuspend() async {
+  Future<bool> _bestEffortMatrixSuspend() async {
     try {
       await matrix.suspend();
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      debugPrint('E2EE_LIFECYCLE_SUSPEND_FAILED');
+      return false;
+    }
   }
+
+  static const _suspendFailureMessage = '聊天会话暂停失败，请重新打开应用后重试';
 
   void _set(SessionBootstrapState next) {
     state = next;

@@ -54,20 +54,24 @@ final class MatrixClientFactory {
     return client;
   }
 
-  /// Reopens the persisted client without deleting the encrypted database,
-  /// its SQLCipher key, or any local Olm/Megolm sessions.
-  Future<Client> reopen(Client client) async {
-    await disposer(client);
-    return create();
-  }
+  /// Closes the active handle while retaining the encrypted database, its key,
+  /// and all local Olm/Megolm sessions for a later [create].
+  Future<void> suspend(Client client) => disposer(client);
 
-  Future<Client> reset(Client client) async {
+  Future<void> clearLocalChatData(Client? client) async {
     final directory = await supportDirectoryPath();
     final databasePath = p.join(directory, databaseFileName);
-    await disposer(client);
+    if (client != null) {
+      try {
+        await client.logout();
+      } catch (_) {
+        // Local deletion remains available while the homeserver is offline.
+      } finally {
+        await disposer(client);
+      }
+    }
     await databaseDeleter(databasePath);
     await sessionStore.clearMatrixDatabaseKey();
-    return create();
   }
 
   static Future<String> _defaultSupportPath() async =>

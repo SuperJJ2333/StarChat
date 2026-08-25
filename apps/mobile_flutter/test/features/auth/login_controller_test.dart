@@ -67,23 +67,27 @@ void main() {
     expect(await controller.submit('alice', 'business-password'), isTrue);
     expect(business.loginPasswords, ['business-password']);
     expect(business.tokenRequests, 1);
-    expect(matrix.resets, 0);
+    expect(matrix.clears, 0);
     expect(matrix.tokens, isEmpty);
   });
 
-  test('different Matrix identity resets local storage before token exchange',
+  test('different Matrix identity fails closed without clearing local data',
       () async {
     final business = FakeDualDomainBusiness();
     final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
       ..userId = '@bob:matrix.example.test';
     final service = DualDomainLoginService(
         business: business, matrix: matrix, deviceKey: () => 'device-1');
-    await service.login('alice', 'business-password');
-    expect(matrix.resets, 1);
-    expect(matrix.tokens, ['one-time-login-token']);
+    await expectLater(
+        service.login('alice', 'business-password'), throwsStateError);
+    expect(matrix.clears, 0);
+    expect(matrix.suspends, 1);
+    expect(matrix.tokens, isEmpty);
+    expect(business.logouts, 1);
   });
 
-  test('dual-domain login failure clears both domains', () async {
+  test('dual-domain login failure suspends Matrix without clearing it',
+      () async {
     final business = FakeDualDomainBusiness();
     final matrix = FakeMatrixTokenLogin(isLoggedIn: false)..failSync = true;
     final service = DualDomainLoginService(
@@ -92,8 +96,9 @@ void main() {
     await expectLater(
         service.login('alice', 'business-password'), throwsStateError);
     expect(business.logouts, 1);
-    expect(matrix.logouts, 1);
-    expect(matrix.isLoggedIn, isFalse);
+    expect(matrix.suspends, 1);
+    expect(matrix.clears, 0);
+    expect(matrix.isLoggedIn, isTrue);
   });
 
   test(
@@ -118,7 +123,6 @@ final class FakeDualDomainBusiness implements DualDomainBusinessGateway {
   int tokenRequests = 0;
   final List<String> boundMatrixUsers = [];
   int logouts = 0;
-  int resets = 0;
   @override
   Future<void> loginBusiness(
       {required String username,
@@ -157,8 +161,8 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
   String? userId = '@alice:matrix.example.test';
   final List<String> tokens = [];
   final List<String> homeservers = [];
-  int logouts = 0;
-  int resets = 0;
+  int clears = 0;
+  int suspends = 0;
   bool failSync = false;
   @override
   Future<void> loginWithToken(
@@ -175,16 +179,12 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
   }
 
   @override
-  Future<void> resetLocalStore() async {
-    resets++;
+  Future<void> clearLocalChatData() async {
+    clears++;
     isLoggedIn = false;
     userId = null;
   }
 
   @override
-  Future<void> logout() async {
-    logouts++;
-    isLoggedIn = false;
-    userId = null;
-  }
+  Future<void> suspend() async => suspends++;
 }
