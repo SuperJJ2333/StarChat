@@ -1,6 +1,6 @@
 # ADR-0007：移动端 Matrix 会话连续性与 Megolm 密钥恢复
 
-**状态：** 产品设计已批准；Domain 与 Quality/Security 评审待完成
+**状态：** 已批准（Product、Domain、Quality/Security）
 
 **日期：** 2026-08-25
 
@@ -60,3 +60,5 @@
 2. Quality/Security Review：SQLCipher、系统安全存储、设备信任校验、秘密不出端、日志脱敏、失败路径和端到端测试。
 
 详细状态机、错误码、测试矩阵和发布验收见 `docs/superpowers/specs/2026-08-25-matrix-session-continuity-key-recovery-design.md`。
+
+2026-08-25 的 Domain 与 Quality/Security 预实施评审已批准控制设计；该批准不等同于实现或测试通过。最终实现仍须在 Task 10 完成规格符合性、Domain 与 Quality/Security 后评审，并以实际测试、真实 Synapse、模拟器 E2E 和脱敏日志扫描证据决定发布资格。
