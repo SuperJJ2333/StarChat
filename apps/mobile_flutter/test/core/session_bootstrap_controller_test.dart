@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -8,15 +9,21 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
 
 final class FakeBusiness implements BusinessSessionGateway {
-  FakeBusiness(this.result, {this.matrixUserId, this.error});
+  FakeBusiness(this.result,
+      {this.matrixUserId, this.error, this.logoutBlocker});
   final BusinessSessionRestore result;
   final String? matrixUserId;
   final Object? error;
+  final Completer<void>? logoutBlocker;
   int logoutCalls = 0;
   @override
   Future<String?> currentMatrixUserId() async => matrixUserId;
   @override
-  Future<void> logout() async => logoutCalls++;
+  Future<void> logout() async {
+    logoutCalls++;
+    await logoutBlocker?.future;
+  }
+
   @override
   Future<BusinessSessionRestore> restoreSession() async {
     if (error != null) throw error!;
@@ -30,7 +37,8 @@ final class FakeMatrix implements MatrixSessionGateway {
       this.userId,
       this.deviceId = 'DEVICE',
       this.syncError,
-      this.suspendError});
+      this.suspendError,
+      this.suspendBlocker});
   @override
   bool isLoggedIn;
   @override
@@ -39,12 +47,14 @@ final class FakeMatrix implements MatrixSessionGateway {
   String? deviceId;
   final Object? syncError;
   final Object? suspendError;
+  final Completer<void>? suspendBlocker;
   int suspendCalls = 0;
   int clearCalls = 0;
   @override
   Future<void> suspend() async {
     suspendCalls++;
     if (suspendError != null) throw suspendError!;
+    await suspendBlocker?.future;
   }
 
   @override
@@ -67,6 +77,23 @@ void main() {
     );
     await controller.bootstrap();
     expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect((controller.matrix as FakeMatrix).suspendCalls, 1);
+  });
+
+  test('bootstrap blocks chat access before Matrix suspension drains',
+      () async {
+    final blocker = Completer<void>();
+    final controller = SessionBootstrapController(
+      business: FakeBusiness(BusinessSessionRestore.absent),
+      matrix: FakeMatrix(isLoggedIn: true, suspendBlocker: blocker),
+    );
+
+    final bootstrap = controller.bootstrap();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    blocker.complete();
+    await bootstrap;
   });
 
   test('both restored domains become authenticated', () async {
@@ -229,5 +256,24 @@ void main() {
     expect(business.logoutCalls, 1);
     expect(matrix.suspendCalls, 1);
     expect(matrix.clearCalls, 0);
+  });
+
+  test(
+      'logout blocks chat access after Business clears and before suspend drains',
+      () async {
+    final blocker = Completer<void>();
+    final business = FakeBusiness(BusinessSessionRestore.authenticated);
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: FakeMatrix(isLoggedIn: true, suspendBlocker: blocker),
+    );
+
+    final logout = controller.logout();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(business.logoutCalls, 1);
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    blocker.complete();
+    await logout;
   });
 }

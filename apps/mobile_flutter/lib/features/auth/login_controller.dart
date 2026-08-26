@@ -32,9 +32,11 @@ abstract interface class DualDomainBusinessGateway {
 
 abstract interface class MatrixTokenLoginGateway {
   bool get isLoggedIn;
+  bool get credentialsInvalid;
   String? get userId;
+  String? get deviceId;
   Future<void> loginWithToken(
-      {required String loginToken, required Uri homeserver});
+      {required String loginToken, required Uri homeserver, String? deviceId});
   Future<void> sync();
   Future<void> suspend();
   Future<void> clearLocalChatData();
@@ -58,10 +60,11 @@ final class DualDomainLoginService {
       if (matrix.isLoggedIn && matrix.userId != grant.matrixUserId) {
         throw StateError('A different Matrix identity is stored locally');
       }
-      if (!matrix.isLoggedIn) {
+      if (!matrix.isLoggedIn || matrix.credentialsInvalid) {
         await matrix.loginWithToken(
           loginToken: grant.loginToken,
           homeserver: Uri.parse(grant.homeserver),
+          deviceId: matrix.deviceId,
         );
       }
       if (matrix.userId != grant.matrixUserId) {

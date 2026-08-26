@@ -36,19 +36,30 @@ final class SessionBootstrapController extends ChangeNotifier {
       final businessResult = await business.restoreSession();
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
-        final suspended =
-            !matrix.isLoggedIn || await _bestEffortMatrixSuspend();
-        if (!suspended) await _bestEffortBusinessLogout();
-        _set(SessionBootstrapState(
+        _set(const SessionBootstrapState(
           SessionBootstrapStatus.unauthenticated,
-          message: suspended ? null : _suspendFailureMessage,
         ));
+        final suspended = await _bestEffortMatrixSuspend();
+        if (!suspended) await _bestEffortBusinessLogout();
+        if (!suspended) {
+          _set(const SessionBootstrapState(
+            SessionBootstrapStatus.unauthenticated,
+            message: _suspendFailureMessage,
+          ));
+        }
         return;
       }
       if (!matrix.isLoggedIn) {
         await _bestEffortBusinessLogout();
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated));
+        final suspended = await _bestEffortMatrixSuspend();
+        if (!suspended) {
+          _set(const SessionBootstrapState(
+            SessionBootstrapStatus.unauthenticated,
+            message: _suspendFailureMessage,
+          ));
+        }
         return;
       }
       final expectedMatrixUser = await business.currentMatrixUserId();
@@ -65,11 +76,17 @@ final class SessionBootstrapController extends ChangeNotifier {
         if (error.errcode == 'M_UNKNOWN_TOKEN' ||
             error.errcode == 'M_FORBIDDEN') {
           await _bestEffortBusinessLogout();
-          final suspended = await _bestEffortMatrixSuspend();
-          _set(SessionBootstrapState(
+          _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
-            message: suspended ? '登录状态已失效，请重新登录' : _suspendFailureMessage,
+            message: '登录状态已失效，请重新登录',
           ));
+          final suspended = await _bestEffortMatrixSuspend();
+          if (!suspended) {
+            _set(const SessionBootstrapState(
+              SessionBootstrapStatus.unauthenticated,
+              message: _suspendFailureMessage,
+            ));
+          }
           return;
         }
         rethrow;
@@ -107,11 +124,16 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   Future<void> logout() async {
     await _bestEffortBusinessLogout();
-    final suspended = await _bestEffortMatrixSuspend();
-    _set(SessionBootstrapState(
+    _set(const SessionBootstrapState(
       SessionBootstrapStatus.unauthenticated,
-      message: suspended ? null : _suspendFailureMessage,
     ));
+    final suspended = await _bestEffortMatrixSuspend();
+    if (!suspended) {
+      _set(const SessionBootstrapState(
+        SessionBootstrapStatus.unauthenticated,
+        message: _suspendFailureMessage,
+      ));
+    }
   }
 
   void _offlineIfPossible() {

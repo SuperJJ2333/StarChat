@@ -71,6 +71,22 @@ void main() {
     expect(matrix.tokens, isEmpty);
   });
 
+  test('invalid same-device Matrix credentials are refreshed non-destructively',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
+      ..credentialsInvalid = true;
+    final controller = LoginController.dualDomain(
+        business: business, matrix: matrix, deviceKey: () => 'device-1');
+
+    expect(await controller.submit('alice', 'business-password'), isTrue);
+
+    expect(matrix.tokens, ['one-time-login-token']);
+    expect(matrix.loginDeviceIds, ['DEVICE']);
+    expect(matrix.credentialsInvalid, isFalse);
+    expect(matrix.clears, 0);
+  });
+
   test('different Matrix identity fails closed without clearing local data',
       () async {
     final business = FakeDualDomainBusiness();
@@ -158,18 +174,27 @@ final class FakeMatrixTokenLogin implements MatrixTokenLoginGateway {
   @override
   bool isLoggedIn;
   @override
+  bool credentialsInvalid = false;
+  @override
   String? userId = '@alice:matrix.example.test';
+  @override
+  String? deviceId = 'DEVICE';
   final List<String> tokens = [];
   final List<String> homeservers = [];
+  final List<String?> loginDeviceIds = [];
   int clears = 0;
   int suspends = 0;
   bool failSync = false;
   @override
   Future<void> loginWithToken(
-      {required String loginToken, required Uri homeserver}) async {
+      {required String loginToken,
+      required Uri homeserver,
+      String? deviceId}) async {
     tokens.add(loginToken);
     homeservers.add(homeserver.toString());
+    loginDeviceIds.add(deviceId);
     isLoggedIn = true;
+    credentialsInvalid = false;
     userId = '@alice:matrix.example.test';
   }
 

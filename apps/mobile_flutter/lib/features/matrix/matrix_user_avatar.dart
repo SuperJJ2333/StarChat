@@ -5,6 +5,12 @@ import '../../ui/components/user_avatar.dart';
 import 'avatar_url_resolver.dart';
 import 'matrix_e2ee_client.dart';
 
+typedef MatrixAvatarResolver = Future<ResolvedAvatarUrl?> Function(
+  Client client,
+  Uri? avatarUri,
+  double size,
+);
+
 /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
 /// placing the Matrix access token in a cache key or URL.
 final class MatrixUserAvatar extends StatefulWidget {
@@ -18,6 +24,7 @@ final class MatrixUserAvatar extends StatefulWidget {
     this.fallbackAvatarUrl,
     this.diagnosticSource = 'unspecified',
     this.size = 48,
+    this.resolver,
   }) : assert(client != null || matrix != null);
 
   final Client? client;
@@ -28,6 +35,7 @@ final class MatrixUserAvatar extends StatefulWidget {
   final String? fallbackAvatarUrl;
   final String diagnosticSource;
   final double size;
+  final MatrixAvatarResolver? resolver;
 
   @override
   State<MatrixUserAvatar> createState() => _MatrixUserAvatarState();
@@ -35,6 +43,7 @@ final class MatrixUserAvatar extends StatefulWidget {
 
 final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
+  int _resolutionGeneration = 0;
 
   @override
   void initState() {
@@ -64,28 +73,39 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   }
 
   Future<void> _resolve() async {
+    final generation = ++_resolutionGeneration;
+    final avatarUri = widget.matrixAvatarUri;
+    final size = widget.size;
+    final resolver = widget.resolver ??
+        (Client client, Uri? uri, double requestedSize) =>
+            MatrixAvatarUrlResolver.resolveForClient(
+              avatarUri: uri,
+              client: client,
+              size: requestedSize,
+            );
     try {
       final directClient = widget.client;
       final value = directClient == null
-          ? await widget.matrix!.runClientOperation<ResolvedAvatarUrl?>(
-              (client) => MatrixAvatarUrlResolver.resolveForClient(
-                avatarUri: widget.matrixAvatarUri,
-                client: client,
-                size: widget.size,
-              ),
+          ? await widget.matrix!.resolveAvatar(
+              avatarUri: avatarUri,
+              size: size,
             )
-          : await MatrixAvatarUrlResolver.resolveForClient(
-              avatarUri: widget.matrixAvatarUri,
-              client: directClient,
-              size: widget.size,
-            );
-      if (mounted) setState(() => resolved = value);
+          : await resolver(directClient, avatarUri, size);
+      if (!mounted || generation != _resolutionGeneration) return;
+      setState(() => resolved = value);
       _diagnose('resolved');
     } catch (_) {
+      if (!mounted || generation != _resolutionGeneration) return;
       _diagnose('resolution-failed');
       // Retain the HTTP profile fallback or local text avatar while Matrix
       // media capability discovery is temporarily unavailable.
     }
+  }
+
+  @override
+  void dispose() {
+    _resolutionGeneration++;
+    super.dispose();
   }
 
   void _diagnose(String phase) {

@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
@@ -8,23 +11,67 @@ import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
 
+final class _TestSasRequest implements MatrixSasRequestHandle {
+  const _TestSasRequest(this.id, {this.onAccept});
+  final String id;
+  final Future<void> Function()? onAccept;
+  @override
+  Future<void> accept() => onAccept?.call() ?? Future<void>.value();
+  @override
+  Future<void> confirmSas() async {}
+  @override
+  Future<void> continueSas() async {}
+  @override
+  Future<void> reject() async {}
+  @override
+  void dispose() {}
+}
+
+Future<
+    ({
+      MatrixSasRequestHandle handle,
+      StreamController<MatrixSasRequestHandle> source,
+    })> _issueTrackedSas(
+  MatrixSdkE2eeClient matrix,
+  _TestSasRequest request,
+) async {
+  final source = StreamController<MatrixSasRequestHandle>.broadcast();
+  late MatrixSasRequestHandle handle;
+  await matrix.subscribeSasRequests(
+    testSource: () => source.stream,
+    onData: (request) => handle = request,
+  );
+  source.add(request);
+  await Future<void>.delayed(Duration.zero);
+  return (handle: handle, source: source);
+}
+
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};
+  String? failDeleteOnceFor;
   @override
-  Future<void> delete(String key) async => values.remove(key);
+  Future<void> delete(String key) async {
+    if (failDeleteOnceFor == key) {
+      failDeleteOnceFor = null;
+      throw StateError('simulated secure storage interruption');
+    }
+    values.remove(key);
+  }
+
   @override
   Future<String?> read(String key) async => values[key];
   @override
   Future<void> write(String key, String value) async => values[key] = value;
 }
 
-final class LogoutTrackingClient extends Client {
+class LogoutTrackingClient extends Client {
   LogoutTrackingClient(
     super.name, {
     this.loggedIn = false,
     this.matrixUserId,
     this.matrixDeviceId,
     this.syncError,
+    super.httpClient,
   });
 
   bool loggedIn;
@@ -98,6 +145,28 @@ final class LogoutTrackingClient extends Client {
     syncCalls++;
     if (syncError != null) throw syncError!;
     return SyncUpdate(nextBatch: 'next');
+  }
+}
+
+final class MediaTrackingRoom extends Room {
+  MediaTrackingRoom({required super.id, required super.client});
+
+  MatrixFile? sentFile;
+
+  @override
+  Future<String?> sendFileEvent(
+    MatrixFile file, {
+    String? txid,
+    Event? inReplyTo,
+    String? editEventId,
+    int? shrinkImageMaxDimension,
+    MatrixImageFile? thumbnail,
+    Map<String, dynamic>? extraContent,
+    String? threadRootEventId,
+    String? threadLastEventId,
+  }) async {
+    sentFile = file;
+    return r'$event';
   }
 }
 
@@ -388,6 +457,124 @@ void main() {
     expect(newKey, isNot(oldKey));
   });
 
+  test('factory restart completes a tombstoned clear before reopening storage',
+      () async {
+    final memory = MemoryStore();
+    final secureStore = SecureSessionStore(memory);
+    final oldKey = await secureStore.matrixDatabaseKey();
+    var deleteAttempts = 0;
+    final openedCiphers = <String>[];
+    MatrixClientFactory buildFactory() => MatrixClientFactory(
+          sessionStore: secureStore,
+          homeserver: Uri.parse('https://matrix.test'),
+          supportDirectoryPath: () async => '/support',
+          disposer: (_) async {},
+          databaseDeleter: (_) async {
+            deleteAttempts++;
+            if (deleteAttempts == 1) {
+              throw StateError('simulated process interruption');
+            }
+          },
+          opener: ({
+            required clientName,
+            required databasePath,
+            required cipher,
+          }) async {
+            openedCiphers.add(cipher);
+            return LogoutTrackingClient(clientName);
+          },
+        );
+
+    await expectLater(
+      buildFactory().clearLocalChatData(LogoutTrackingClient('old')),
+      throwsStateError,
+    );
+
+    expect(await secureStore.matrixClearPending(), isTrue);
+    expect(memory.values.values, contains('{"version":1,"pending":true}'));
+    final reopened = await buildFactory().create();
+
+    expect(reopened.clientName, MatrixClientFactory.clientName);
+    expect(deleteAttempts, 2);
+    expect(await secureStore.matrixClearPending(), isFalse);
+    expect(openedCiphers.single, isNot(oldKey));
+  });
+
+  test('tombstone survives close failure and restart completes the clear',
+      () async {
+    final memory = MemoryStore();
+    final secureStore = SecureSessionStore(memory);
+    var deleteCalls = 0;
+    final failingFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      disposer: (_) async => throw StateError('close interrupted'),
+      databaseDeleter: (_) async => deleteCalls++,
+    );
+
+    await expectLater(
+      failingFactory.clearLocalChatData(LogoutTrackingClient('old')),
+      throwsStateError,
+    );
+    expect(await secureStore.matrixClearPending(), isTrue);
+    expect(deleteCalls, 0);
+
+    final recoveryFactory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      databaseDeleter: (_) async => deleteCalls++,
+      opener: ({
+        required clientName,
+        required databasePath,
+        required cipher,
+      }) async =>
+          LogoutTrackingClient(clientName),
+    );
+    await recoveryFactory.create();
+
+    expect(deleteCalls, 1);
+    expect(await secureStore.matrixClearPending(), isFalse);
+  });
+
+  test(
+      'tombstone survives identity-key deletion failure and retries all phases',
+      () async {
+    final memory = MemoryStore();
+    final secureStore = SecureSessionStore(memory);
+    await secureStore.matrixDatabaseKey();
+    memory.failDeleteOnceFor = memory.values.keys.singleWhere(
+      (key) => key.contains('matrix_database_key'),
+    );
+    var deleteCalls = 0;
+    MatrixClientFactory buildFactory() => MatrixClientFactory(
+          sessionStore: secureStore,
+          homeserver: Uri.parse('https://matrix.test'),
+          supportDirectoryPath: () async => '/support',
+          disposer: (_) async {},
+          databaseDeleter: (_) async => deleteCalls++,
+          opener: ({
+            required clientName,
+            required databasePath,
+            required cipher,
+          }) async =>
+              LogoutTrackingClient(clientName),
+        );
+
+    await expectLater(
+      buildFactory().clearLocalChatData(LogoutTrackingClient('old')),
+      throwsStateError,
+    );
+    expect(await secureStore.matrixClearPending(), isTrue);
+    expect(deleteCalls, 1);
+
+    await buildFactory().create();
+
+    expect(deleteCalls, 2);
+    expect(await secureStore.matrixClearPending(), isFalse);
+  });
+
   test('suspend closes storage without reopening or exposing disposed client',
       () async {
     final secureStore = SecureSessionStore(MemoryStore());
@@ -418,7 +605,7 @@ void main() {
 
     await matrix.suspend();
 
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
     expect(oldClient.logoutCalls, 0);
     expect(events, ['dispose:old']);
     expect(await secureStore.matrixDatabaseKey(), oldKey);
@@ -493,13 +680,13 @@ void main() {
     await matrix.suspend();
     expect(resumeAttempts, 0);
     await expectLater(matrix.sync(), throwsStateError);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
 
     await matrix.sync();
 
     expect(resumeAttempts, 2);
     expect(resumedClient.syncCalls, 1);
-    expect(matrix.sdkClient, same(resumedClient));
+    expect(matrix.debugActiveClientName, resumedClient.clientName);
   });
 
   test('resume rejects a different Matrix device identity', () async {
@@ -526,7 +713,7 @@ void main() {
     await matrix.suspend();
 
     await expectLater(matrix.sync(), throwsStateError);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
     expect(wrongClient.syncCalls, 0);
   });
 
@@ -565,7 +752,7 @@ void main() {
 
     expect(resumedClient.syncCalls, 0);
     expect(closed, [oldClient, resumedClient]);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
   });
 
   test('resume rejects the same device from a different database generation',
@@ -603,7 +790,7 @@ void main() {
 
     expect(resumedClient.syncCalls, 0);
     expect(closed, [oldClient, resumedClient]);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
   });
 
   test('concurrent sync operations share one resume attempt', () async {
@@ -653,7 +840,7 @@ void main() {
 
     await sync;
     await suspend;
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
     expect(resumedClient.syncCalls, 1);
     expect(suspendedClients, ['old', 'resumed']);
   });
@@ -682,7 +869,7 @@ void main() {
     final sync = matrix.sync();
     await Future<void>.delayed(Duration.zero);
 
-    expect(matrix.sdkClient, same(oldClient));
+    expect(matrix.debugActiveClientName, oldClient.clientName);
     expect(resumeAttempts, 0);
 
     allowSuspend.complete();
@@ -706,12 +893,12 @@ void main() {
     );
 
     await expectLater(matrix.suspend(), throwsStateError);
-    expect(matrix.sdkClient, same(oldClient));
+    expect(matrix.debugActiveClientName, oldClient.clientName);
 
     await matrix.suspend();
 
     expect(suspendAttempts, 2);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
   });
 
   test('clear waits for an in-flight resume and clears its only handle',
@@ -741,15 +928,15 @@ void main() {
 
     expect(clearedClients, hasLength(1));
     expect(clearedClients.single, same(resumedClient));
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
   });
 
-  test('public client operation waits for an in-flight suspend', () async {
+  test('tracked capability action fails closed during an in-flight suspend',
+      () async {
     final oldClient = LogoutTrackingClient('old');
-    final resumedClient = LogoutTrackingClient('resumed');
     final suspendStarted = Completer<void>();
     final allowSuspend = Completer<void>();
-    final operatedClients = <Client>[];
+    var operated = false;
     final matrix = MatrixSdkE2eeClient(
       oldClient,
       homeserver: Uri.parse('https://matrix.test'),
@@ -757,24 +944,25 @@ void main() {
         suspendStarted.complete();
         await allowSuspend.future;
       },
-      resumeClient: () async => resumedClient,
     );
 
+    final issued = await _issueTrackedSas(
+      matrix,
+      _TestSasRequest('request', onAccept: () async => operated = true),
+    );
     final suspend = matrix.suspend();
     await suspendStarted.future;
-    final operation = matrix.runClientOperation<void>((client) async {
-      operatedClients.add(client);
-    });
-    await Future<void>.delayed(Duration.zero);
-    expect(operatedClients, isEmpty);
+    final operation = issued.handle.accept();
+    await expectLater(operation, throwsStateError);
+    expect(operated, isFalse);
 
     allowSuspend.complete();
     await suspend;
-    await operation;
-    expect(operatedClients, [resumedClient]);
+    expect(operated, isFalse);
+    await issued.source.close();
   });
 
-  test('public client operation completes before explicit clear', () async {
+  test('tracked capability action completes before explicit clear', () async {
     final oldClient = LogoutTrackingClient('old');
     final operationStarted = Completer<void>();
     final allowOperation = Completer<void>();
@@ -785,10 +973,14 @@ void main() {
       clearClientData: (client) async => clearedClients.add(client),
     );
 
-    final operation = matrix.runClientOperation<void>((_) async {
-      operationStarted.complete();
-      await allowOperation.future;
-    });
+    final issued = await _issueTrackedSas(
+      matrix,
+      _TestSasRequest('request', onAccept: () async {
+        operationStarted.complete();
+        await allowOperation.future;
+      }),
+    );
+    final operation = issued.handle.accept();
     await operationStarted.future;
     final clear = matrix.clearLocalChatData();
     await Future<void>.delayed(Duration.zero);
@@ -798,48 +990,231 @@ void main() {
     await operation;
     await clear;
     expect(clearedClients, [oldClient]);
+    await issued.source.close();
   });
 
-  test('public client operation cannot return a raw Client or Room', () async {
+  test('suspend fails closed within a bound without closing an in-use database',
+      () async {
+    final oldClient = LogoutTrackingClient('old');
+    final operationStarted = Completer<void>();
+    final allowOperation = Completer<void>();
+    final suspendedClients = <Client>[];
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      lifecycleDrainTimeout: const Duration(milliseconds: 10),
+      suspendClient: (client) async => suspendedClients.add(client),
+    );
+    final issued = await _issueTrackedSas(
+      matrix,
+      _TestSasRequest('request', onAccept: () async {
+        operationStarted.complete();
+        await allowOperation.future;
+      }),
+    );
+    final operation = issued.handle.accept();
+    await operationStarted.future;
+
+    await expectLater(
+      matrix.suspend(),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_LIFECYCLE_DRAIN_TIMEOUT',
+      )),
+    );
+
+    expect(suspendedClients, isEmpty);
+    expect(matrix.debugHasActiveClient, isTrue);
+    allowOperation.complete();
+    await operation;
+    await matrix.suspend();
+    expect(suspendedClients, [oldClient]);
+    await issued.source.close();
+  });
+
+  test('unknown token records explicit invalid credential state', () async {
+    final matrix = MatrixSdkE2eeClient(
+      LogoutTrackingClient(
+        'old',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'DEVICE-A',
+        syncError: MatrixException.fromJson(const {
+          'errcode': 'M_UNKNOWN_TOKEN',
+          'error': 'expired',
+        }),
+      ),
+      homeserver: Uri.parse('https://matrix.test'),
+      readContinuityMetadata: (_) async => const MatrixClientContinuityMetadata(
+        isLoggedIn: true,
+        userId: '@alice:matrix.test',
+        deviceId: 'DEVICE-A',
+        ed25519Fingerprint: 'FINGERPRINT-A',
+        databaseGeneration: 'generation-a',
+      ),
+    );
+
+    expect(matrix.credentialsInvalid, isFalse);
+    await expectLater(matrix.sync(), throwsA(isA<MatrixException>()));
+    expect(matrix.credentialsInvalid, isTrue);
+    expect(matrix.deviceId, 'DEVICE-A');
+  });
+
+  test(
+      'token response tuple preserves continuity before a phased tombstone clear',
+      () async {
+    Map<String, dynamic>? loginBody;
+    final httpClient = MockClient((request) async {
+      if (request.url.path.endsWith('/login')) {
+        loginBody = jsonDecode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          jsonEncode({
+            'access_token': 'replacement-token',
+            'refresh_token': 'replacement-refresh-token',
+            'expires_in_ms': 60000,
+            'device_id': 'DEVICE-A',
+            'user_id': '@alice:matrix.test',
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      return http.Response('{}', 404);
+    });
+    final client = LogoutTrackingClient(
+      'old',
+      loggedIn: true,
+      matrixUserId: '@alice:matrix.test',
+      matrixDeviceId: 'DEVICE-A',
+      syncError: MatrixException.fromJson(const {
+        'errcode': 'M_UNKNOWN_TOKEN',
+        'error': 'expired',
+      }),
+      httpClient: httpClient,
+    );
+    final sessionStore = SecureSessionStore(MemoryStore());
+    final oldCipher = await sessionStore.matrixDatabaseKey();
+    final factory = MatrixClientFactory(
+      sessionStore: sessionStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      fingerprintReader: (_) => 'FINGERPRINT-A',
+      databaseGenerationFactory: () => 'generation-a',
+    );
+    final before = await factory.continuityMetadata(client);
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      readContinuityMetadata: factory.continuityMetadata,
+    );
+    await expectLater(matrix.sync(), throwsA(isA<MatrixException>()));
+
+    await matrix.loginWithToken(
+      loginToken: 'one-time-token',
+      homeserver: Uri.parse('https://matrix.test'),
+      deviceId: 'DEVICE-A',
+    );
+    final after = await factory.continuityMetadata(client);
+
+    expect(loginBody?['device_id'], 'DEVICE-A');
+    expect(matrix.credentialsInvalid, isFalse);
+    expect(
+      (
+        after.userId,
+        after.deviceId,
+        after.ed25519Fingerprint,
+        after.databaseGeneration,
+      ),
+      (
+        before.userId,
+        before.deviceId,
+        before.ed25519Fingerprint,
+        before.databaseGeneration,
+      ),
+    );
+    expect(client.accessToken, 'replacement-token');
+    expect(client.accessTokenExpiresAt, isNotNull);
+    expect(client.logoutCalls, 0);
+
+    var deleteAttempts = 0;
+    MatrixClientFactory clearFactory({required bool interruptDelete}) =>
+        MatrixClientFactory(
+          sessionStore: sessionStore,
+          homeserver: Uri.parse('https://matrix.test'),
+          supportDirectoryPath: () async => '/support',
+          disposer: (_) async {},
+          databaseDeleter: (_) async {
+            deleteAttempts++;
+            if (interruptDelete) {
+              throw StateError('simulated interruption after token refresh');
+            }
+          },
+          opener: ({
+            required clientName,
+            required databasePath,
+            required cipher,
+          }) async {
+            expect(cipher, isNot(oldCipher));
+            return LogoutTrackingClient(clientName);
+          },
+        );
+    await expectLater(
+      clearFactory(interruptDelete: true).clearLocalChatData(client),
+      throwsStateError,
+    );
+    expect(await sessionStore.matrixClearPending(), isTrue);
+
+    await clearFactory(interruptDelete: false).create();
+
+    expect(deleteAttempts, 2);
+    expect(await sessionStore.matrixClearPending(), isFalse);
+    expect(await sessionStore.matrixBinding(), isNull);
+  });
+
+  test('conversation capability returns only immutable snapshot data',
+      () async {
     final client = LogoutTrackingClient('old');
     final matrix = MatrixSdkE2eeClient(
       client,
       homeserver: Uri.parse('https://matrix.test'),
     );
 
-    await expectLater(
-      matrix.runClientOperation<Client>((active) async => active),
-      throwsStateError,
-    );
+    final snapshot = await matrix.conversations.snapshot();
+    expect(snapshot, isA<MatrixConversationSnapshot>());
+    expect(snapshot.rooms, isEmpty);
+    expect(snapshot.rooms.clear, throwsUnsupportedError);
   });
 
   test('managed client stream detaches on suspend and rebuilds on resume',
       () async {
     final oldClient = LogoutTrackingClient('old');
     final resumedClient = LogoutTrackingClient('resumed');
-    final oldEvents = StreamController<String>.broadcast();
-    final resumedEvents = StreamController<String>.broadcast();
+    final oldEvents = StreamController<MatrixSasRequestHandle>.broadcast();
+    final resumedEvents = StreamController<MatrixSasRequestHandle>.broadcast();
     final received = <String>[];
+    var sourceGeneration = 0;
     final matrix = MatrixSdkE2eeClient(
       oldClient,
       homeserver: Uri.parse('https://matrix.test'),
       suspendClient: (_) async {},
       resumeClient: () async => resumedClient,
     );
-    final subscription = await matrix.subscribeClientStream<String>(
-      streamFor: (client) => identical(client, oldClient)
-          ? oldEvents.stream
-          : resumedEvents.stream,
-      onData: received.add,
+    final subscription = await matrix.subscribeSasRequests(
+      testSource: () =>
+          sourceGeneration++ == 0 ? oldEvents.stream : resumedEvents.stream,
+      onData: (_) => received.add(
+        sourceGeneration == 1 ? 'before-suspend' : 'after-resume',
+      ),
     );
 
-    oldEvents.add('before-suspend');
+    oldEvents.add(const _TestSasRequest('before-suspend'));
     await Future<void>.delayed(Duration.zero);
     await matrix.suspend();
-    oldEvents.add('after-suspend');
+    oldEvents.add(const _TestSasRequest('after-suspend'));
     await Future<void>.delayed(Duration.zero);
     await matrix.sync();
-    resumedEvents.add('after-resume');
+    resumedEvents.add(const _TestSasRequest('after-resume'));
     await Future<void>.delayed(Duration.zero);
 
     expect(received, ['before-suspend', 'after-resume']);
@@ -862,9 +1237,11 @@ void main() {
       clearClientData: (client) async =>
           events.add('clear:${client?.clientName}'),
     );
-    await matrix.registerManagedResource(
-      open: (client) async => events.add('open:${client.clientName}'),
+    var opens = 0;
+    await matrix.registerVerificationLifecycle(
+      open: () async => events.add('open:${opens++ == 0 ? 'old' : 'resumed'}'),
       close: () async => events.add('close'),
+      revoke: () {},
     );
 
     await matrix.suspend();
@@ -894,8 +1271,10 @@ void main() {
       suspendClient: (_) async => events.add('suspend'),
     );
     final lease = await matrix.openRoomLease('!room:matrix.test');
-    lease.setOnRevoked(() async {
+    lease.setOnRevoked(() {
       events.add('revoke');
+    });
+    lease.bindOwnerDrain(() async {
       drainStarted.complete();
       await allowDrain.future;
     });
@@ -909,6 +1288,74 @@ void main() {
     await suspend;
 
     expect(events, ['revoke', 'suspend']);
+    expect(() => lease.room, throwsStateError);
+  });
+
+  test('room lease owns encrypted media sends and rejects them after revoke',
+      () async {
+    final client = LogoutTrackingClient('old');
+    final room = MediaTrackingRoom(
+      id: '!room:matrix.test',
+      client: client,
+    );
+    client.roomOverride = room;
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+    );
+    final lease = await matrix.openRoomLease(room.id);
+
+    expect(
+      await lease.sendEncryptedMedia(room.id, [1, 2, 3], 'image/png'),
+      r'$event',
+    );
+    expect(room.sentFile?.bytes, [1, 2, 3]);
+    expect(room.sentFile?.mimeType, 'image/png');
+
+    await matrix.suspend();
+    await expectLater(
+      lease.sendEncryptedMedia(room.id, [4], 'image/png'),
+      throwsStateError,
+    );
+  });
+
+  test('room lease reentrant cancellation cannot deadlock suspension',
+      () async {
+    final client = LogoutTrackingClient('old');
+    client.roomOverride = Room(id: '!room:matrix.test', client: client);
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+    );
+    final lease = await matrix.openRoomLease('!room:matrix.test');
+    lease.setOnRevoked(lease.cancel);
+
+    await matrix.suspend().timeout(const Duration(milliseconds: 100));
+
+    expect(() => lease.room, throwsStateError);
+  });
+
+  test('room lease callback and drain failures do not prevent database close',
+      () async {
+    final client = LogoutTrackingClient('old');
+    client.roomOverride = Room(id: '!room:matrix.test', client: client);
+    final events = <String>[];
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async => events.add('suspend'),
+    );
+    final lease = await matrix.openRoomLease('!room:matrix.test');
+    lease.setOnRevoked(() => throw StateError('sensitive callback detail'));
+    lease.bindOwnerDrain(
+      () async => throw StateError('sensitive route detail'),
+    );
+
+    await matrix.suspend();
+
+    expect(events, ['suspend']);
     expect(() => lease.room, throwsStateError);
   });
 
@@ -940,7 +1387,7 @@ void main() {
     await matrix.clearLocalChatData();
 
     expect(clearedClients, [oldClient, oldClient]);
-    expect(() => matrix.sdkClient, throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
   });
 
   test('login sync failure suspends without deleting Matrix identity or key',

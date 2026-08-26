@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:matrix/matrix.dart';
-import 'package:matrix/encryption/utils/key_verification.dart';
-
 import 'matrix_e2ee_client.dart';
 
 enum MatrixVerificationRequestPhase { incoming, revoked }
@@ -30,30 +27,6 @@ final class MatrixVerificationRequestSnapshot {
   int get hashCode => Object.hash(requestId, phase);
 }
 
-abstract interface class MatrixSasRequestHandle {
-  Future<void> accept();
-  Future<void> continueSas();
-  Future<void> confirmSas();
-  Future<void> reject();
-  void dispose();
-}
-
-final class _SdkSasRequestHandle implements MatrixSasRequestHandle {
-  _SdkSasRequestHandle(this.request);
-  final KeyVerification request;
-
-  @override
-  Future<void> accept() => request.acceptVerification();
-  @override
-  Future<void> continueSas() => request.continueVerification(EventTypes.Sas);
-  @override
-  Future<void> confirmSas() => request.acceptSas();
-  @override
-  Future<void> reject() => request.rejectVerification();
-  @override
-  void dispose() => request.dispose();
-}
-
 final class _IncomingSasEvent {
   const _IncomingSasEvent(this.generation, this.handle);
   final int generation;
@@ -65,14 +38,13 @@ final class _IncomingSasEvent {
 final class MatrixVerificationService {
   MatrixVerificationService(
     this.matrix, {
-    Stream<MatrixSasRequestHandle> Function(Client client)? incomingRequests,
+    Stream<MatrixSasRequestHandle> Function()? incomingRequests,
     String Function()? requestIdFactory,
-  })  : _incomingRequests = incomingRequests ?? _sdkIncomingRequests,
+  })  : _incomingRequests = incomingRequests,
         _requestIdFactory = requestIdFactory ?? _newOpaqueRequestId;
 
   final MatrixSdkE2eeClient matrix;
-  final Stream<MatrixSasRequestHandle> Function(Client client)
-      _incomingRequests;
+  final Stream<MatrixSasRequestHandle> Function()? _incomingRequests;
   final String Function() _requestIdFactory;
   final Map<String, MatrixSasRequestHandle> _requests = {};
   final List<MatrixSasRequestHandle> _revokedRequests = [];
@@ -80,16 +52,24 @@ final class MatrixVerificationService {
   MatrixManagedSubscription? _subscription;
   MatrixManagedResource? _lifecycleResource;
   Future<void>? _lifecycleSetup;
+  Future<void>? _listenSetup;
+  Future<void> _requestTail = Future<void>.value();
+  bool _disposed = false;
   void Function(MatrixVerificationRequestSnapshot state)? _onState;
   int _generation = 0;
   bool _lifecycleRevoked = false;
 
   Future<void> _ensureLifecycle() => _lifecycleSetup ??= () async {
-        _lifecycleResource = await matrix.registerManagedResource(
-          open: (_) async => _lifecycleRevoked = false,
+        final resource = await matrix.registerVerificationLifecycle(
+          open: () async => _lifecycleRevoked = false,
           revoke: _revokeForLifecycleTransition,
           close: _closeRequests,
         );
+        if (_disposed) {
+          await resource.cancel();
+          return;
+        }
+        _lifecycleResource = resource;
       }();
 
   Future<MatrixVerificationRequestSnapshot> start(
@@ -98,56 +78,52 @@ final class MatrixVerificationService {
   }) async {
     await _ensureLifecycle();
     late MatrixVerificationRequestSnapshot snapshot;
-    await matrix.runClientOperation<void>((client) async {
-      final encryption = client.encryption;
-      if (encryption == null) {
-        throw StateError('Matrix encryption is disabled');
-      }
-      final sdkRequest = KeyVerification(
-        encryption: encryption,
-        userId: userId,
-        deviceId: deviceId,
-      );
-      final handle = _SdkSasRequestHandle(sdkRequest);
-      late final String requestId;
-      try {
-        requestId = _nextRequestId();
-      } catch (_) {
-        handle.dispose();
-        rethrow;
-      }
-      _requests[requestId] = handle;
-      snapshot = MatrixVerificationRequestSnapshot(
-        requestId: requestId,
-        phase: MatrixVerificationRequestPhase.incoming,
-      );
-      try {
-        await sdkRequest.start();
-      } catch (_) {
-        _requests.remove(requestId);
-        handle.dispose();
-        rethrow;
-      }
-    });
-    _emitState(snapshot);
+    await matrix.startSasRequest(
+      userId,
+      deviceId: deviceId,
+      onStarted: (handle) {
+        final requestId = _nextRequestId();
+        _requests[requestId] = handle;
+        snapshot = MatrixVerificationRequestSnapshot(
+          requestId: requestId,
+          phase: MatrixVerificationRequestPhase.incoming,
+        );
+        _emitState(snapshot);
+      },
+    );
     return snapshot;
   }
 
   Future<void> listenForIncoming(
     void Function(MatrixVerificationRequestSnapshot state) onState,
+  ) {
+    if (_disposed) {
+      return Future<void>.error(
+        StateError('Matrix verification service is disposed'),
+      );
+    }
+    return _listenSetup = _listenForIncoming(onState);
+  }
+
+  Future<void> _listenForIncoming(
+    void Function(MatrixVerificationRequestSnapshot state) onState,
   ) async {
     await _ensureLifecycle();
+    if (_disposed) return;
     _onState = onState;
     await _subscription?.cancel();
-    _subscription = await matrix.subscribeClientStream<_IncomingSasEvent>(
-      streamFor: (client) {
-        final sourceGeneration = _generation;
-        return _incomingRequests(client).map(
-          (handle) => _IncomingSasEvent(sourceGeneration, handle),
-        );
-      },
-      onData: (event) => unawaited(_adoptIncoming(event)),
+    final sourceGeneration = _generation;
+    final subscription = await matrix.subscribeSasRequests(
+      testSource: _incomingRequests,
+      onData: (handle) => unawaited(
+        _adoptIncoming(_IncomingSasEvent(sourceGeneration, handle)),
+      ),
     );
+    if (_disposed) {
+      await subscription.cancel();
+      return;
+    }
+    _subscription = subscription;
   }
 
   Future<void> accept(String requestId) =>
@@ -165,7 +141,7 @@ final class MatrixVerificationService {
       return;
     }
     try {
-      await matrix.runClientOperation<void>((_) async {
+      await _serializeRequests(() async {
         if (event.generation != _generation) {
           event.handle.dispose();
           return;
@@ -198,7 +174,7 @@ final class MatrixVerificationService {
     if (!_requests.containsKey(requestId)) {
       throw StateError('Matrix verification request is unavailable');
     }
-    await matrix.runClientOperation<void>((_) async {
+    await _serializeRequests(() async {
       final request = _requests[requestId];
       if (request == null) {
         throw StateError('Matrix verification request is unavailable');
@@ -207,8 +183,18 @@ final class MatrixVerificationService {
     });
   }
 
+  Future<T> _serializeRequests<T>(Future<T> Function() operation) {
+    final result = _requestTail.then<T>((_) => operation());
+    _requestTail = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return result;
+  }
+
   Future<void> _closeRequests() async {
     _revokeForLifecycleTransition();
+    await _requestTail;
     _disposeRevokedRequests();
   }
 
@@ -247,6 +233,14 @@ final class MatrixVerificationService {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      await _listenSetup;
+    } catch (_) {}
+    try {
+      await _lifecycleSetup;
+    } catch (_) {}
     await _subscription?.cancel();
     _subscription = null;
     await _lifecycleResource?.cancel();
@@ -267,9 +261,6 @@ final class MatrixVerificationService {
     _issuedRequestIds.add(requestId);
     return requestId;
   }
-
-  static Stream<MatrixSasRequestHandle> _sdkIncomingRequests(Client client) =>
-      client.onKeyVerificationRequest.stream.map(_SdkSasRequestHandle.new);
 
   static String _newOpaqueRequestId() => base64UrlEncode(
         List<int>.generate(18, (_) => Random.secure().nextInt(256)),

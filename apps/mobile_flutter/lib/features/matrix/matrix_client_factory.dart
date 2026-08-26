@@ -57,10 +57,14 @@ final class MatrixClientFactory {
 
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
+    final databasePath = p.join(directory, databaseFileName);
+    if (await sessionStore.matrixClearPending()) {
+      await _completePendingClear(databasePath);
+    }
     final cipher = await sessionStore.matrixDatabaseKey();
     final client = await opener(
       clientName: clientName,
-      databasePath: p.join(directory, databaseFileName),
+      databasePath: databasePath,
       cipher: cipher,
     );
     await clientMigrator(client, homeserver);
@@ -132,6 +136,7 @@ final class MatrixClientFactory {
   Future<void> clearLocalChatData(Client? client) async {
     final directory = await supportDirectoryPath();
     final databasePath = p.join(directory, databaseFileName);
+    await sessionStore.markMatrixClearPending();
     if (client != null) {
       try {
         await client.logout();
@@ -141,9 +146,14 @@ final class MatrixClientFactory {
         await disposer(client);
       }
     }
+    await _completePendingClear(databasePath);
+  }
+
+  Future<void> _completePendingClear(String databasePath) async {
     await databaseDeleter(databasePath);
     await sessionStore.clearMatrixIdentity();
     _unboundDatabaseGeneration = null;
+    await sessionStore.clearMatrixClearPending();
   }
 
   static Future<String> _defaultSupportPath() async =>

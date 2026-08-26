@@ -9,18 +9,26 @@ import 'matrix_e2ee_client.dart';
 /// Selects local media and hands it directly to Matrix SDK. In encrypted rooms
 /// Matrix performs attachment encryption and sends only ciphertext to Synapse.
 /// Plaintext is never sent to the business API.
-final class MediaMessageService {
+abstract interface class RoomPickedMediaSender {
+  Future<String> sendImage(String roomId);
+  Future<String> sendFile(String roomId);
+  Future<void> dispose();
+}
+
+final class MediaMessageService implements RoomPickedMediaSender {
   MediaMessageService(this.matrix);
-  final MatrixE2eeClient matrix;
+  final MatrixEncryptedMediaGateway matrix;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
 
+  @override
   Future<String> sendImage(String roomId) async {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image == null) throw StateError('Image selection cancelled');
     return _send(roomId, image.path, image.mimeType ?? 'image/jpeg');
   }
 
+  @override
   Future<String> sendFile(String roomId) async {
     final file = await openFile();
     if (file == null) throw StateError('File selection cancelled');
@@ -62,5 +70,6 @@ final class MediaMessageService {
     return matrix.sendEncryptedMedia(roomId, bytes, mimeType);
   }
 
+  @override
   Future<void> dispose() => _recorder.dispose();
 }

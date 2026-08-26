@@ -35,6 +35,44 @@ final class FakeSasRequest implements MatrixSasRequestHandle {
 }
 
 void main() {
+  test(
+      'dispose drains asynchronous incoming setup and cancels its subscription',
+      () async {
+    var streamCancels = 0;
+    var streamListens = 0;
+    final incoming = StreamController<MatrixSasRequestHandle>.broadcast(
+      onListen: () => streamListens++,
+      onCancel: () => streamCancels++,
+    );
+    final suspendStarted = Completer<void>();
+    final allowSuspend = Completer<void>();
+    final matrix = MatrixSdkE2eeClient(
+      Client('verification'),
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {
+        suspendStarted.complete();
+        await allowSuspend.future;
+      },
+      resumeClient: () async => Client('resumed-verification'),
+    );
+    final suspension = matrix.suspend();
+    await suspendStarted.future;
+    final service = MatrixVerificationService(
+      matrix,
+      incomingRequests: () => incoming.stream,
+    );
+    final listen = service.listenForIncoming((_) {});
+    final dispose = service.dispose();
+
+    allowSuspend.complete();
+    await suspension;
+    await listen;
+    await dispose;
+
+    expect(streamListens, streamCancels);
+    await incoming.close();
+  });
+
   test('incoming callback exposes only immutable state and an opaque id',
       () async {
     final incoming = StreamController<MatrixSasRequestHandle>.broadcast();
@@ -44,7 +82,7 @@ void main() {
     );
     final service = MatrixVerificationService(
       matrix,
-      incomingRequests: (_) => incoming.stream,
+      incomingRequests: () => incoming.stream,
       requestIdFactory: () => 'opaque-request-1',
     );
     final snapshots = <MatrixVerificationRequestSnapshot>[];
@@ -73,7 +111,7 @@ void main() {
         Client('verification'),
         homeserver: Uri.parse('https://matrix.test'),
       ),
-      incomingRequests: (_) => incoming.stream,
+      incomingRequests: () => incoming.stream,
       requestIdFactory: () => 'request-${++nextId}',
     );
     final snapshots = <MatrixVerificationRequestSnapshot>[];
@@ -104,7 +142,7 @@ void main() {
         Client('verification'),
         homeserver: Uri.parse('https://matrix.test'),
       ),
-      incomingRequests: (_) => incoming.stream,
+      incomingRequests: () => incoming.stream,
       requestIdFactory: () => 'request-${++nextId}',
     );
     final snapshots = <MatrixVerificationRequestSnapshot>[];
@@ -148,7 +186,7 @@ void main() {
     );
     final service = MatrixVerificationService(
       matrix,
-      incomingRequests: (_) => incoming.stream,
+      incomingRequests: () => incoming.stream,
       requestIdFactory: () => 'request-${++nextId}',
     );
     final snapshots = <MatrixVerificationRequestSnapshot>[];
@@ -185,7 +223,7 @@ void main() {
         Client('verification'),
         homeserver: Uri.parse('https://matrix.test'),
       ),
-      incomingRequests: (_) => incoming.stream,
+      incomingRequests: () => incoming.stream,
       requestIdFactory: () => 'reused-id',
     );
     await service.listenForIncoming((_) {});
@@ -217,7 +255,7 @@ void main() {
       );
       final service = MatrixVerificationService(
         matrix,
-        incomingRequests: (_) => incoming.stream,
+        incomingRequests: () => incoming.stream,
         requestIdFactory: () => 'request-1',
       );
       final snapshots = <MatrixVerificationRequestSnapshot>[];

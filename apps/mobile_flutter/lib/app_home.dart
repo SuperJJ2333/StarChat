@@ -19,7 +19,6 @@ import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
-import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/message_reminder_service.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
@@ -59,20 +58,26 @@ final class _AppHomeState extends State<AppHome> {
   MessageReminderService? reminderService;
   MessageReminderSyncBootstrapper? reminderBootstrap;
   MatrixManagedResource? matrixResources;
+  MatrixAppHomeCapability? _matrixHomeCapability;
+  Future<void>? _matrixResourceSetup;
+  bool _disposed = false;
   ChatIdentityCache? _chatIdentityCache;
   Future<ChatIdentityCache>? _chatIdentityCacheLoad;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_initializeMatrixResources());
+    _matrixResourceSetup = _initializeMatrixResources();
+    unawaited(_matrixResourceSetup);
     unawaited(_identityCache());
   }
 
   Future<void> _initializeMatrixResources() async {
-    matrixResources = await widget.matrix.registerManagedResource(
-      open: (client) async {
-        final backend = MatrixCallBackend(client);
+    final resource = await widget.matrix.registerAppHomeResource(
+      open: (capability) async {
+        if (_disposed) return;
+        _matrixHomeCapability = capability;
+        final backend = capability.createCallBackend();
         final controller = CallController(
           backend: backend,
           permissions: const WebRtcPermissionGateway(),
@@ -95,6 +100,7 @@ final class _AppHomeState extends State<AppHome> {
         final backend = callBackend;
         calls = null;
         callBackend = null;
+        _matrixHomeCapability = null;
         reminderService = null;
         final bootstrap = reminderBootstrap;
         reminderBootstrap = null;
@@ -105,13 +111,19 @@ final class _AppHomeState extends State<AppHome> {
         if (mounted) setState(() {});
       },
     );
+    if (_disposed) {
+      await resource.cancel();
+      return;
+    }
+    matrixResources = resource;
   }
 
   Future<MessageReminderSyncCoordinator> _createReminderSync() async {
-    late MatrixMessageReminderBackend backend;
-    await widget.matrix.runClientOperation<void>((client) async {
-      backend = await MatrixMessageReminderBackend.open(client);
-    });
+    final capability = _matrixHomeCapability;
+    if (capability == null) {
+      throw StateError('Matrix home capability is unavailable');
+    }
+    final backend = await capability.openMessageReminderBackend();
     return MessageReminderSyncCoordinator(
       source: backend,
       service: MessageReminderService(
@@ -133,6 +145,7 @@ final class _AppHomeState extends State<AppHome> {
             accountKey: 'matrix:$accountKey',
           );
     await cache.hydrate();
+    if (_disposed) return cache;
     _chatIdentityCache = cache;
     if (mounted) setState(() {});
     unawaited(cache.preload());
@@ -241,11 +254,7 @@ final class _AppHomeState extends State<AppHome> {
     );
     controller.dispose();
     if (!mounted || roomId == null) return;
-    final roomName = await widget.matrix.runClientOperation<String>((client) {
-      final room = client.getRoomById(roomId);
-      if (room == null) throw StateError('Matrix room is unavailable');
-      return room.getLocalizedDisplayname();
-    });
+    final roomName = await widget.matrix.conversations.roomDisplayName(roomId);
     final identityCache = await _identityCache();
     await identityCache.preload();
     if (!mounted) return;
@@ -286,9 +295,25 @@ final class _AppHomeState extends State<AppHome> {
 
   @override
   void dispose() {
-    unawaited(matrixResources?.cancel());
+    _disposed = true;
+    unawaited(_disposeMatrixResources());
     directChats.dispose();
     super.dispose();
+  }
+
+  Future<void> _disposeMatrixResources() async {
+    try {
+      await _matrixResourceSetup;
+    } catch (_) {
+      return;
+    }
+    final resource = matrixResources;
+    matrixResources = null;
+    try {
+      await resource?.cancel();
+    } catch (_) {
+      debugPrint('E2EE_HOME_RESOURCE_DISPOSE_FAILED');
+    }
   }
 
   @override

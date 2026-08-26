@@ -68,6 +68,28 @@ final class SecureSessionStore {
   static const _matrixBindingKey = 'liuhetong.matrix_local_binding.v1';
   static const _diagnosticSaltKey = 'liuhetong.diagnostic_salt.v1';
   static const _registrationDeviceKey = 'liuhetong.registration_device_key.v1';
+  static const _matrixClearTombstoneKey = 'liuhetong.matrix_clear_tombstone.v1';
+  static const _matrixClearTombstoneValue = '{"version":1,"pending":true}';
+
+  Future<void> markMatrixClearPending() => _runMatrixIdentityOperation(
+        () => _storage.write(
+          _matrixClearTombstoneKey,
+          _matrixClearTombstoneValue,
+        ),
+      );
+
+  Future<bool> matrixClearPending() => _runMatrixIdentityOperation(() async {
+        final value = await _storage.read(_matrixClearTombstoneKey);
+        if (value == null) return false;
+        if (value != _matrixClearTombstoneValue) {
+          throw const FormatException('Invalid Matrix clear tombstone');
+        }
+        return true;
+      });
+
+  Future<void> clearMatrixClearPending() => _runMatrixIdentityOperation(
+        () => _storage.delete(_matrixClearTombstoneKey),
+      );
 
   Future<void> saveSession({
     required String accessToken,

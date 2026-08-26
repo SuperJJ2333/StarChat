@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -8,22 +10,29 @@ import 'matrix_e2ee_client.dart';
 import 'matrix_verification_service.dart';
 
 final class MatrixVerificationPage extends StatefulWidget {
-  const MatrixVerificationPage({super.key, required this.matrix});
+  const MatrixVerificationPage({
+    super.key,
+    required this.matrix,
+    this.serviceFactory,
+  });
   final MatrixSdkE2eeClient matrix;
+  final MatrixVerificationService Function(MatrixSdkE2eeClient matrix)?
+      serviceFactory;
   @override
   State<MatrixVerificationPage> createState() => _MatrixVerificationPageState();
 }
 
 final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
   late final MatrixVerificationService service =
-      MatrixVerificationService(widget.matrix);
+      widget.serviceFactory?.call(widget.matrix) ??
+          MatrixVerificationService(widget.matrix);
   String status = '等待验证请求';
   String? requestId;
 
   @override
   void initState() {
     super.initState();
-    service.listenForIncoming((state) {
+    unawaited(service.listenForIncoming((state) {
       if (!mounted) return;
       setState(() {
         if (state.phase == MatrixVerificationRequestPhase.incoming) {
@@ -34,7 +43,9 @@ final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
           status = '验证请求已失效，请等待新请求';
         }
       });
-    });
+    }).catchError((_) {
+      debugPrint('E2EE_VERIFICATION_SETUP_FAILED');
+    }));
   }
 
   Future<void> _requestAction(
@@ -53,8 +64,9 @@ final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
     try {
       await f();
       if (mounted) setState(() => status = text);
-    } catch (e) {
-      if (mounted) setState(() => status = e.toString());
+    } catch (_) {
+      debugPrint('E2EE_VERIFICATION_ACTION_FAILED');
+      if (mounted) setState(() => status = '验证操作失败，请重试');
     }
   }
 
@@ -99,7 +111,9 @@ final class _MatrixVerificationPageState extends State<MatrixVerificationPage> {
       ])));
   @override
   void dispose() {
-    service.dispose();
+    unawaited(service.dispose().catchError((_) {
+      debugPrint('E2EE_VERIFICATION_DISPOSE_FAILED');
+    }));
     super.dispose();
   }
 }
