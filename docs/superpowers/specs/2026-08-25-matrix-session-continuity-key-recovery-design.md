@@ -220,7 +220,20 @@ E2EE_SECRET_REJECTED_UNVERIFIED
 E2EE_MEGOLM_SESSION_MISSING
 E2EE_MEGOLM_SESSION_CORRUPT
 E2EE_LOCAL_CLEAR_FAILED
+E2EE_LIFECYCLE_DRAIN_TIMEOUT
+E2EE_LIFECYCLE_SUSPEND_FAILED
+E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED
+E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED
+E2EE_ROOM_LEASE_DRAIN_TIMEOUT
+E2EE_ROOM_LEASE_DRAIN_FAILED
+E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED
+E2EE_HOME_RESOURCE_DISPOSE_FAILED
 ```
+
+生命周期诊断事件固定且只允许输出 `trace_id`、`stage`、`outcome`、
+`event_code` 四个字段。每个 Matrix 会话生命周期创建一个新的随机
+`trace_id`，该生命周期内的启动、暂停、恢复和资源回收共享该值；不得使用
+固定 trace，也不得附加异常文本、消息、密钥、Token 或完整 Matrix 标识。
 
 严禁记录消息正文、附件内容、恢复密钥、Megolm/Olm 会话密钥、Access Token、完整 MXID或完整房间/事件/设备 ID。一次恢复链路共享 `trace_id`。身份标识使用 HMAC-SHA256 脱敏：每次安装生成独立诊断盐并存入系统安全存储，输出前 12 字节十六进制；诊断盐不得进入日志、分析、崩溃报告或验证材料。该设计只允许同一安装内关联故障，不能跨设备反查真实标识。
 

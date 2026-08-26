@@ -15,16 +15,24 @@ void main() {
     logger.record(
       stage: MatrixSecurityStage.roomLeaseDrain,
       outcome: MatrixSecurityOutcome.timeout,
-      code: MatrixSecurityCode.roomLeaseDrainTimeout,
+      eventCode: MatrixSecurityCode.roomLeaseDrainTimeout,
     );
 
     expect(jsonDecode(output.single), {
       'trace_id': 'trace-test',
       'stage': 'room_lease_drain',
       'outcome': 'timeout',
-      'code': 'E2EE_ROOM_LEASE_DRAIN_TIMEOUT',
+      'event_code': 'E2EE_ROOM_LEASE_DRAIN_TIMEOUT',
     });
     expect(output.single, isNot(contains('exception')));
     expect(output.single, isNot(contains('room_id')));
+  });
+
+  test('new lifecycle traces are non-empty and unique', () {
+    final first = MatrixSecurityLogger.create(sink: (_) {});
+    final second = MatrixSecurityLogger.create(sink: (_) {});
+
+    expect(first.traceId, isNotEmpty);
+    expect(second.traceId, isNot(first.traceId));
   });
 }

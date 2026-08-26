@@ -43,7 +43,11 @@ Future<void> main() async {
     clearClientData: matrixFactory.clearLocalChatData,
     readContinuityMetadata: matrixFactory.continuityMetadata,
   );
-  final session = SessionBootstrapController(business: api, matrix: matrix);
+  final session = SessionBootstrapController(
+    business: api,
+    matrix: matrix,
+    securityLogger: matrix.securityLogger,
+  );
   final gate = SessionGate(
     controller: session,
     unauthenticatedBuilder: (_) => AuthenticationFlow(

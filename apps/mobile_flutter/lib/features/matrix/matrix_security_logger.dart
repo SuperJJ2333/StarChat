@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 /// A deliberately small, allowlisted lifecycle logger.
 ///
@@ -28,6 +29,8 @@ enum MatrixSecurityCode {
   lifecycleDrainTimeout('E2EE_LIFECYCLE_DRAIN_TIMEOUT'),
   lifecycleSuspendFailed('E2EE_LIFECYCLE_SUSPEND_FAILED'),
   lifecycleResumeRejectCloseFailed('E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED'),
+  lifecycleResourceRevokeFailed('E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED'),
+  roomLeaseRevokeCallbackFailed('E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED'),
   homeResourceDisposeFailed('E2EE_HOME_RESOURCE_DISPOSE_FAILED');
 
   const MatrixSecurityCode(this.value);
@@ -44,16 +47,30 @@ final class MatrixSecurityLogger {
   final String Function() _traceId;
   final void Function(String line) _sink;
 
+  factory MatrixSecurityLogger.create({
+    required void Function(String line) sink,
+    String Function()? traceIdFactory,
+  }) {
+    final traceId = (traceIdFactory ?? _newTraceId)();
+    return MatrixSecurityLogger(traceId: () => traceId, sink: sink);
+  }
+
+  String get traceId => _traceId();
+
   void record({
     required MatrixSecurityStage stage,
     required MatrixSecurityOutcome outcome,
-    required MatrixSecurityCode code,
+    required MatrixSecurityCode eventCode,
   }) {
     _sink(jsonEncode({
       'trace_id': _traceId(),
       'stage': stage.value,
       'outcome': outcome.value,
-      'code': code.value,
+      'event_code': eventCode.value,
     }));
   }
+
+  static String _newTraceId() => base64UrlEncode(
+        List<int>.generate(18, (_) => Random.secure().nextInt(256)),
+      ).replaceAll('=', '');
 }

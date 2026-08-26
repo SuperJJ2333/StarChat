@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 
 import '../features/matrix/matrix_e2ee_client.dart';
+import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
 
 enum SessionBootstrapStatus {
@@ -26,11 +27,14 @@ final class SessionBootstrapController extends ChangeNotifier {
   SessionBootstrapController({
     required this.business,
     required this.matrix,
+    MatrixSecurityLogger? securityLogger,
     this.remoteLogoutTimeout = const Duration(seconds: 5),
-  });
+  }) : securityLogger =
+            securityLogger ?? MatrixSecurityLogger.create(sink: (_) {});
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
+  final MatrixSecurityLogger securityLogger;
   final Duration remoteLogoutTimeout;
   SessionBootstrapState state =
       const SessionBootstrapState(SessionBootstrapStatus.loading);
@@ -171,7 +175,11 @@ final class SessionBootstrapController extends ChangeNotifier {
       await matrix.suspend();
       return true;
     } catch (_) {
-      debugPrint('E2EE_LIFECYCLE_SUSPEND_FAILED');
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.lifecycleSuspendFailed,
+      );
       return false;
     }
   }

@@ -455,7 +455,11 @@ final class _ManagedClientResource implements _ManagedClientResourceBase {
     try {
       revoke?.call();
     } catch (_) {
-      debugPrint('E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED');
+      owner.securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.lifecycleResourceRevokeFailed,
+      );
     }
   }
 
@@ -519,11 +523,19 @@ final class MatrixRoomLease
         final result = callback();
         if (result is Future<void>) {
           unawaited(result.catchError((_) {
-            debugPrint('E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED');
+            owner.securityLogger.record(
+              stage: MatrixSecurityStage.roomLeaseDrain,
+              outcome: MatrixSecurityOutcome.failure,
+              eventCode: MatrixSecurityCode.roomLeaseRevokeCallbackFailed,
+            );
           }));
         }
       } catch (_) {
-        debugPrint('E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED');
+        owner.securityLogger.record(
+          stage: MatrixSecurityStage.roomLeaseDrain,
+          outcome: MatrixSecurityOutcome.failure,
+          eventCode: MatrixSecurityCode.roomLeaseRevokeCallbackFailed,
+        );
       }
     }
   }
@@ -539,14 +551,14 @@ final class MatrixRoomLease
       owner.securityLogger.record(
         stage: MatrixSecurityStage.roomLeaseDrain,
         outcome: MatrixSecurityOutcome.timeout,
-        code: MatrixSecurityCode.roomLeaseDrainTimeout,
+        eventCode: MatrixSecurityCode.roomLeaseDrainTimeout,
       );
       throw StateError('E2EE_ROOM_LEASE_DRAIN_TIMEOUT');
     } catch (_) {
       owner.securityLogger.record(
         stage: MatrixSecurityStage.roomLeaseDrain,
         outcome: MatrixSecurityOutcome.failure,
-        code: MatrixSecurityCode.roomLeaseDrainFailed,
+        eventCode: MatrixSecurityCode.roomLeaseDrainFailed,
       );
       throw StateError('E2EE_ROOM_LEASE_DRAIN_FAILED');
     }
@@ -614,10 +626,7 @@ final class MatrixSdkE2eeClient
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
         securityLogger = securityLogger ??
-            MatrixSecurityLogger(
-              traceId: () => 'matrix-lifecycle',
-              sink: (line) => debugPrint(line),
-            );
+            MatrixSecurityLogger.create(sink: (line) => debugPrint(line));
   Client? _client;
   Client? _pendingCloseClient;
   final Future<void> Function(Client client) _suspendClient;
@@ -881,7 +890,7 @@ final class MatrixSdkE2eeClient
       securityLogger.record(
         stage: MatrixSecurityStage.lifecycle,
         outcome: MatrixSecurityOutcome.timeout,
-        code: MatrixSecurityCode.lifecycleDrainTimeout,
+        eventCode: MatrixSecurityCode.lifecycleDrainTimeout,
       );
       throw StateError('E2EE_LIFECYCLE_DRAIN_TIMEOUT');
     }
@@ -1135,7 +1144,7 @@ final class MatrixSdkE2eeClient
       securityLogger.record(
         stage: MatrixSecurityStage.lifecycle,
         outcome: MatrixSecurityOutcome.failure,
-        code: MatrixSecurityCode.lifecycleResumeRejectCloseFailed,
+        eventCode: MatrixSecurityCode.lifecycleResumeRejectCloseFailed,
       );
       Error.throwWithStackTrace(error, stackTrace);
     }
@@ -1152,11 +1161,7 @@ final class MatrixSdkE2eeClient
 
   static Future<void> _defaultClear(Client? client) async {
     if (client == null) return;
-    try {
-      await client.logout();
-    } finally {
-      await client.dispose();
-    }
+    await client.dispose();
   }
 
   static Future<MatrixClientContinuityMetadata> _unconfiguredContinuityMetadata(

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_bootstrap_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
 
 final class FakeBusiness implements BusinessSessionGateway {
@@ -225,26 +225,27 @@ void main() {
       userId: '@alice:matrix.localhost',
       suspendError: StateError('close failed'),
     );
-    final controller =
-        SessionBootstrapController(business: business, matrix: matrix);
-
-    final previousDebugPrint = debugPrint;
     final diagnostics = <String>[];
-    debugPrint = (message, {wrapWidth}) {
-      if (message != null) diagnostics.add(message);
-    };
-    try {
-      await controller.bootstrap();
-    } finally {
-      debugPrint = previousDebugPrint;
-    }
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      securityLogger: MatrixSecurityLogger(
+        traceId: () => 'trace-test',
+        sink: diagnostics.add,
+      ),
+    );
+
+    await controller.bootstrap();
 
     expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
     expect(controller.state.message, '聊天会话暂停失败，请重新打开应用后重试');
     expect(business.logoutCalls, 1);
     expect(matrix.suspendCalls, 1);
     expect(matrix.clearCalls, 0);
-    expect(diagnostics, ['E2EE_LIFECYCLE_SUSPEND_FAILED']);
+    expect(diagnostics, [
+      '{"trace_id":"trace-test","stage":"lifecycle",'
+          '"outcome":"failure","event_code":"E2EE_LIFECYCLE_SUSPEND_FAILED"}',
+    ]);
   });
 
   test('local storage failure becomes fatal error', () async {

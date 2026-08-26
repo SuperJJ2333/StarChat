@@ -71,6 +71,7 @@ final class BusinessApiClient
       required String password,
       required String deviceKey,
       required String deviceName}) async {
+    final previous = await sessionStore.session();
     final response = await _client.post(_uri('/auth/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -80,9 +81,14 @@ final class BusinessApiClient
           'device_name': deviceName
         }));
     final body = _decode(response);
+    final returnedMatrixUserId = body['matrix_user_id']?.toString();
     await sessionStore.saveSession(
         accessToken: body['access_token'] as String,
-        refreshToken: body['refresh_token'] as String);
+        refreshToken: body['refresh_token'] as String,
+        matrixUserId:
+            returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+                ? previous?.matrixUserId
+                : returnedMatrixUserId);
     return body;
   }
 
@@ -344,10 +350,10 @@ final class BusinessApiClient
     if (stored == null) return null;
     return _BusinessSessionRevocation(() async {
       await _client.post(
-          _uri('/auth/logout'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'refresh_token': stored.refreshToken}),
-        );
+        _uri('/auth/logout'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': stored.refreshToken}),
+      );
     });
   }
 

@@ -10,6 +10,7 @@ import 'features/contacts/contact_models.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'features/matrix/chat_identity_cache.dart';
@@ -318,7 +319,11 @@ final class _AppHomeState extends State<AppHome> {
     try {
       await resource?.cancel();
     } catch (_) {
-      debugPrint('E2EE_HOME_RESOURCE_DISPOSE_FAILED');
+      widget.matrix.securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.homeResourceDisposeFailed,
+      );
     }
   }
 

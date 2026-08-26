@@ -149,6 +149,15 @@ class LogoutTrackingClient extends Client {
   }
 }
 
+final class _NeverLogoutClient extends LogoutTrackingClient {
+  _NeverLogoutClient(super.name);
+
+  final neverCompletes = Completer<void>();
+
+  @override
+  Future<void> logout() => neverCompletes.future;
+}
+
 final class MediaTrackingRoom extends Room {
   MediaTrackingRoom({required super.id, required super.client});
 
@@ -457,8 +466,29 @@ void main() {
       'dispose:old',
       'delete:/support/liuhetong_matrix.sqlite',
     ]);
-    expect(oldClient.logoutCalls, 1);
+    expect(oldClient.logoutCalls, 0);
     expect(newKey, isNot(oldKey));
+  });
+
+  test('explicit clear never waits for a homeserver logout', () async {
+    final secureStore = SecureSessionStore(MemoryStore());
+    final client = _NeverLogoutClient('old');
+    final events = <String>[];
+    final factory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      supportDirectoryPath: () async => '/support',
+      disposer: (_) async => events.add('dispose'),
+      databaseDeleter: (_) async => events.add('delete'),
+    );
+
+    await factory.clearLocalChatData(client).timeout(
+          const Duration(milliseconds: 100),
+        );
+
+    expect(events, ['dispose', 'delete']);
+    expect(client.logoutCalls, 0);
+    expect(await secureStore.matrixClearPending(), isFalse);
   });
 
   test('factory restart completes a tombstoned clear before reopening storage',
@@ -1429,7 +1459,7 @@ void main() {
 
     expect(events, [
       '{"trace_id":"trace-test","stage":"room_lease_drain",'
-          '"outcome":"timeout","code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}',
+          '"outcome":"timeout","event_code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}',
     ]);
   });
 

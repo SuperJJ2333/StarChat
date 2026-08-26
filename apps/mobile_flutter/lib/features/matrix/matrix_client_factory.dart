@@ -138,13 +138,10 @@ final class MatrixClientFactory {
     final databasePath = p.join(directory, databaseFileName);
     await sessionStore.markMatrixClearPending();
     if (client != null) {
-      try {
-        await client.logout();
-      } catch (_) {
-        // Local deletion remains available while the homeserver is offline.
-      } finally {
-        await disposer(client);
-      }
+      // Explicit local clear is entirely local. SDK logout may issue an
+      // unbounded homeserver request, so it must not delay deletion of this
+      // device's SQLCipher store, device binding, or local keys.
+      await disposer(client);
     }
     await _completePendingClear(databasePath);
   }
