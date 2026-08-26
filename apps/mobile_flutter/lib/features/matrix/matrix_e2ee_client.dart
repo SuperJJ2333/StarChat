@@ -51,6 +51,13 @@ abstract interface class MatrixE2eeClient
   Future<String> sendEncryptedText(String roomId, String plaintext);
 }
 
+abstract interface class MatrixRecoveryClient {
+  Future<void> unlockSecretStorage(String recoveryKey);
+  Future<void> restoreAllInboundSessions();
+  Future<bool> backupKeyMatchesCurrentVersion();
+  Future<void> uploadPendingInboundSessions();
+}
+
 abstract interface class MatrixEncryptedMediaGateway {
   /// The SDK encrypts these local plaintext bytes during upload whenever the
   /// target room is encrypted. Callers must never forward them to business APIs.
@@ -348,6 +355,15 @@ final class MatrixConversationCapability {
         final room = client.getRoomById(roomId);
         if (room == null) throw StateError('Matrix room is unavailable');
         return room.getLocalizedDisplayname();
+      });
+
+  Future<int> totalUnreadCount() => _owner._withClient((client) async {
+        var count = 0;
+        for (final room in client.rooms) {
+          final preference = preferenceForRoom(room);
+          count += preference.manualUnread ? 1 : room.notificationCount;
+        }
+        return count;
       });
 
   Future<void> markReadOnOpen(String roomId) =>
@@ -1445,6 +1461,7 @@ final class _ManagedClientStream<T> implements _ManagedClientStreamBase {
 final class MatrixSdkE2eeClient
     implements
         MatrixE2eeClient,
+        MatrixRecoveryClient,
         MatrixTokenLoginGateway,
         AvatarMediaCapability {
   MatrixSdkE2eeClient(
@@ -1624,6 +1641,8 @@ final class MatrixSdkE2eeClient
         try {
           await active.sync();
           await _autoJoinInvitedGroups(active);
+          await active.encryption?.keyManager
+              .uploadInboundGroupSessions(skipIfInProgress: true);
           _syncEvents.add(null);
         } on MatrixException catch (error) {
           if (error.errcode == 'M_UNKNOWN_TOKEN' ||
@@ -1633,6 +1652,40 @@ final class MatrixSdkE2eeClient
           rethrow;
         }
       }, authorizeAccess: true);
+
+  @override
+  Future<void> unlockSecretStorage(String recoveryKey) =>
+      _withClient((active) async {
+        final encryption = active.encryption;
+        if (encryption == null) {
+          throw StateError('Matrix encryption is not enabled');
+        }
+        final handle = encryption.ssss.open();
+        await handle.unlock(recoveryKey: recoveryKey);
+        await handle.maybeCacheAll();
+      });
+
+  @override
+  Future<bool> backupKeyMatchesCurrentVersion() => _withClient((active) async {
+        final encryption = active.encryption;
+        if (encryption == null) return false;
+        return encryption.keyManager.isCached();
+      });
+
+  @override
+  Future<void> restoreAllInboundSessions() => _withClient((active) async {
+        final encryption = active.encryption;
+        if (encryption == null) {
+          throw StateError('Matrix encryption is not enabled');
+        }
+        await encryption.keyManager.loadAllKeys();
+      });
+
+  @override
+  Future<void> uploadPendingInboundSessions() => _withClient((active) async {
+        await active.encryption?.keyManager
+            .uploadInboundGroupSessions(skipIfInProgress: true);
+      });
 
   Future<void> _autoJoinInvitedGroups(Client active) async {
     final invitedRoomIds = active.rooms

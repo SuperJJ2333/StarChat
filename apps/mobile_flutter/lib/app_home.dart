@@ -25,6 +25,7 @@ import 'features/matrix/message_reminder_service.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
+import 'ui/components/message_unread_badge.dart';
 import 'ui/foundation/changliao_icons.dart';
 import 'ui/foundation/wechat_tokens.dart';
 import 'ui/theme/theme_controller.dart';
@@ -66,6 +67,8 @@ final class _AppHomeState extends State<AppHome> {
   bool _disposed = false;
   ChatIdentityCache? _chatIdentityCache;
   Future<ChatIdentityCache>? _chatIdentityCacheLoad;
+  int _totalUnreadCount = 0;
+  StreamSubscription<void>? _unreadSubscription;
 
   @override
   void initState() {
@@ -73,6 +76,17 @@ final class _AppHomeState extends State<AppHome> {
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
     unawaited(_identityCache());
+    _unreadSubscription = widget.matrix.syncEvents.listen((_) {
+      unawaited(_refreshUnreadCount());
+    });
+    unawaited(_refreshUnreadCount());
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    final unread = await widget.matrix.conversations.totalUnreadCount();
+    if (mounted && unread != _totalUnreadCount) {
+      setState(() => _totalUnreadCount = unread);
+    }
   }
 
   Future<void> _initializeMatrixResources() async {
@@ -305,6 +319,7 @@ final class _AppHomeState extends State<AppHome> {
     _disposed = true;
     unawaited(_disposeMatrixResources());
     directChats.dispose();
+    _unreadSubscription?.cancel();
     super.dispose();
   }
 
@@ -333,10 +348,16 @@ final class _AppHomeState extends State<AppHome> {
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
               activeColor: const Color(0xff07c160),
-              items: const [
+              items: [
                 BottomNavigationBarItem(
-                  icon: Icon(ChangliaoIcons.messages),
-                  activeIcon: Icon(ChangliaoIcons.messagesFilled),
+                  icon: MessageUnreadBadge(
+                    unreadCount: _totalUnreadCount,
+                    child: const Icon(ChangliaoIcons.messages),
+                  ),
+                  activeIcon: MessageUnreadBadge(
+                    unreadCount: _totalUnreadCount,
+                    child: const Icon(ChangliaoIcons.messagesFilled),
+                  ),
                   label: '消息',
                 ),
                 BottomNavigationBarItem(
