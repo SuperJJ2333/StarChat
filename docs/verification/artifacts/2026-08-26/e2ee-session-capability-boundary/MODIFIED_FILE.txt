@@ -1,16 +1,4 @@
-original_commit=22b06b421c14d49c3dc0206193698fdd17803b43
-modified_copy=D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity
- M apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
- M apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
- M apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart
- M apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart
- M apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart
- M apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
- M apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart
- M apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
- M apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart
- M apps/mobile_flutter/lib/features/matrix/nudge_service.dart
- M apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart
- M apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
- M apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
- M apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart
+Changed branch/field: feat/e2ee-session-continuity / MatrixAccountSwitchRequired.fromMxid,toMxid; confirmed switch; MatrixRoomLease operation tracking.
+Baseline: 22b06b421c14d49c3dc0206193698fdd17803b43
+Modified tree: HEAD 57c96f0 plus unstaged implementation verified below.
+Artifact SHA256: 487D3494DA06A207D2974BCC4E867B50174BE311E67E533B41B07449DF2875BE

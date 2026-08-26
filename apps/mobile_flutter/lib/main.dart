@@ -48,18 +48,18 @@ Future<void> main() async {
     matrix: matrix,
     securityLogger: matrix.securityLogger,
   );
+  final login = DualDomainLoginService(
+    business: api,
+    matrix: matrix,
+    deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+  );
   final gate = SessionGate(
     controller: session,
     unauthenticatedBuilder: (_) => AuthenticationFlow(
       api: api,
-      onLogin: (username, password) async {
-        final login = DualDomainLoginService(
-          business: api,
-          matrix: matrix,
-          deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
-        );
-        await login.login(username, password);
-      },
+      onLogin: login.login,
+      onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
+      onCancelMatrixAccountSwitch: api.logoutBusiness,
       onAuthenticated: session.bootstrap,
     ),
     authenticatedBuilder: (_) => AppHome(

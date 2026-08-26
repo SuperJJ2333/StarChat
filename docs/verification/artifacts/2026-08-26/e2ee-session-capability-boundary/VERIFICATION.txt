@@ -7,7 +7,7 @@ ROLLBACK: D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity
 
 BASELINE
 COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity status --short -- apps/mobile_flutter
-INPUT: HEAD 22b06b421c14d49c3dc0206193698fdd17803b43 plus unstaged Room-capability integration
+INPUT: BASELINE 22b06b421c14d49c3dc0206193698fdd17803b43
 LITERAL RESULT:
  M apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
  M apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
@@ -51,14 +51,14 @@ EXIT: 0
 
 RESTORED BEHAVIOR/STATUS: Executing ROLLBACK.sh on a copy restores the pre-integration source behavior; this worktree remains changed for commit.
 ROLLBACK_COPY_COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply --reverse DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check diff --exit-code --quiet
-ROLLBACK_COPY_RESULT: apply=0 reverse_check=0 reverse=0 restored_diff=0
+ROLLBACK_COPY_RESULT: apply=0 reverse_check=0 reverse=0 restored_diff=0 (re-run after final DIFF_FILE regeneration)
 ROLLBACK_COPY_EXIT_STATUS: 0
 
 ARTIFACT_HYGIENE_FIX:
 COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity diff --check 5309463^ 5309463
 LITERAL RESULT: no output after DIFF_FILE regeneration
 EXIT: 0
-DIFF_FILE_SHA256: 11F16E3B98318107225D831543945AA7B5D4722BD797EAD44B94C698ABAAC66E
+DIFF_FILE_SHA256: 487D3494DA06A207D2974BCC4E867B50174BE311E67E533B41B07449DF2875BE
 
 POST_FIX_HYGIENE_COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity diff --check HEAD^ HEAD
 POST_FIX_HYGIENE_RESULT: DIFF_FILE.patch is marked -whitespace because valid unified diff represents blank added lines as +<space>.
@@ -74,3 +74,25 @@ FULL_RESULT: All tests passed! (363 tests)
 FULL_EXIT: 0
 ANALYZE_RESULT: No issues found!
 ANALYZE_EXIT: 0
+
+CURRENT_SCOPE: baseline 22b06b4 -> working tree HEAD 57c96f0 plus Task 4 and lease operation tracking changes.
+
+TASK4_AND_LEASE_TRACKING:
+RED_COMMAND: C:\src\flutter\bin\flutter.bat test test/features/auth/login_controller_test.dart
+RED_RESULT: compile failed because MatrixAccountSwitchRequired fields and confirmAccountSwitchAndLogin() did not exist.
+GREEN_COMMAND: C:\src\flutter\bin\flutter.bat test test/features/auth/login_controller_test.dart test/features/auth/auth_pages_test.dart test/features/matrix/matrix_client_factory_test.dart -r compact
+GREEN_RESULT: All tests passed! (81 tests).
+FULL_COMMAND: C:\src\flutter\bin\flutter.bat test -r compact
+FULL_RESULT: All tests passed! (366 tests).
+FULL_EXIT: 0
+ANALYZE_COMMAND: C:\src\flutter\bin\flutter.bat analyze
+ANALYZE_RESULT: No issues found!
+ANALYZE_EXIT: 0
+DIFF_CHECK_COMMAND: git diff --check
+DIFF_CHECK_RESULT: no output
+DIFF_CHECK_EXIT: 0
+ROLLBACK_COPY_COMMAND: git worktree add --detach D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check 22b06b4; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply --reverse --check DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply --reverse DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check diff --exit-code --quiet
+ROLLBACK_COPY_RESULT: apply=0 reverse_check=0 reverse=0 restored_diff=0 (re-run after final DIFF_FILE regeneration)
+ROLLBACK_COPY_EXIT_STATUS: 0
+RESTORED BEHAVIOR/STATUS: rollback copy restored baseline cleanly; active worktree remains modified.
+DIFF_FILE_SHA256: 487D3494DA06A207D2974BCC4E867B50174BE311E67E533B41B07449DF2875BE

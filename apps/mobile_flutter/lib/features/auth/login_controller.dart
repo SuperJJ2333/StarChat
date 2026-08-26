@@ -31,8 +31,21 @@ abstract interface class DualDomainBusinessGateway {
   Future<void> logoutBusiness();
 }
 
+enum MatrixIdentityDecision {
+  firstLogin,
+  reuse,
+  reauthenticate,
+  switchRequired
+}
+
 final class MatrixAccountSwitchRequired implements Exception {
-  const MatrixAccountSwitchRequired();
+  const MatrixAccountSwitchRequired({
+    required this.fromMxid,
+    required this.toMxid,
+  });
+
+  final String fromMxid;
+  final String toMxid;
 
   @override
   String toString() => 'MATRIX_ACCOUNT_SWITCH_REQUIRED';
@@ -51,11 +64,13 @@ abstract interface class MatrixTokenLoginGateway {
 }
 
 final class DualDomainLoginService {
-  const DualDomainLoginService(
+  DualDomainLoginService(
       {required this.business, required this.matrix, required this.deviceKey});
   final DualDomainBusinessGateway business;
   final MatrixTokenLoginGateway matrix;
   final String Function() deviceKey;
+  MatrixAccountSwitchRequired? _pendingAccountSwitch;
+
   Future<void> login(String username, String password) async {
     await business.loginBusiness(
       username: username,
@@ -66,20 +81,24 @@ final class DualDomainLoginService {
     try {
       final boundMatrixUserId = await business.currentMatrixUserId();
       if (matrix.isLoggedIn && !matrix.credentialsInvalid) {
-        if (boundMatrixUserId != null &&
-            matrix.userId == boundMatrixUserId) {
+        if (boundMatrixUserId != null && matrix.userId == boundMatrixUserId) {
           await matrix.sync();
           await business.bindMatrixUserId(boundMatrixUserId);
           return;
         }
-        if (boundMatrixUserId != null &&
-            matrix.userId != boundMatrixUserId) {
-          throw const MatrixAccountSwitchRequired();
+        if (boundMatrixUserId != null && matrix.userId != boundMatrixUserId) {
+          throw _requireAccountSwitch(
+            fromMxid: matrix.userId!,
+            toMxid: boundMatrixUserId,
+          );
         }
       }
       final grant = await business.issueMatrixLoginToken();
       if (matrix.isLoggedIn && matrix.userId != grant.matrixUserId) {
-        throw const MatrixAccountSwitchRequired();
+        throw _requireAccountSwitch(
+          fromMxid: matrix.userId!,
+          toMxid: grant.matrixUserId,
+        );
       }
       if (!matrix.isLoggedIn || matrix.credentialsInvalid) {
         await matrix.loginWithToken(
@@ -93,6 +112,8 @@ final class DualDomainLoginService {
       }
       await matrix.sync();
       await business.bindMatrixUserId(grant.matrixUserId);
+    } on MatrixAccountSwitchRequired {
+      rethrow;
     } on SocketException catch (error, stackTrace) {
       await _cleanupMatrix();
       Error.throwWithStackTrace(error, stackTrace);
@@ -110,6 +131,51 @@ final class DualDomainLoginService {
       }
       Error.throwWithStackTrace(error, stackTrace);
     }
+  }
+
+  /// Completes only the destructive Matrix part of a switch the user has
+  /// explicitly confirmed. A second grant is required because login tokens
+  /// are short lived and an account may have changed while the prompt was up.
+  Future<void> confirmAccountSwitchAndLogin() async {
+    final pending = _pendingAccountSwitch;
+    if (pending == null) {
+      throw StateError('No Matrix account switch is pending');
+    }
+
+    // Validate the fresh grant before mutating any of the old local data.
+    final grant = await business.issueMatrixLoginToken();
+    if (grant.matrixUserId != pending.toMxid) {
+      throw StateError('Matrix account switch target changed');
+    }
+
+    await matrix.clearLocalChatData();
+    try {
+      await matrix.loginWithToken(
+        loginToken: grant.loginToken,
+        homeserver: Uri.parse(grant.homeserver),
+      );
+      if (matrix.userId != pending.toMxid || matrix.deviceId == null) {
+        throw StateError('Matrix login returned an unexpected identity');
+      }
+      await matrix.sync();
+      await business.bindMatrixUserId(pending.toMxid);
+      _pendingAccountSwitch = null;
+    } catch (error, stackTrace) {
+      await _cleanupMatrix();
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  MatrixAccountSwitchRequired _requireAccountSwitch({
+    required String fromMxid,
+    required String toMxid,
+  }) {
+    final required = MatrixAccountSwitchRequired(
+      fromMxid: fromMxid,
+      toMxid: toMxid,
+    );
+    _pendingAccountSwitch = required;
+    return required;
   }
 
   Future<void> _cleanupMatrix() async {
@@ -191,6 +257,8 @@ final class LoginController extends ChangeNotifier {
         state = const LoginState(LoginStatus.failed, message: '网络连接不稳定，请重试');
         notifyListeners();
         return false;
+      } on MatrixAccountSwitchRequired {
+        rethrow;
       } catch (_) {
         state = const LoginState(LoginStatus.failed, message: '服务暂时不可用，请稍后重试');
         notifyListeners();

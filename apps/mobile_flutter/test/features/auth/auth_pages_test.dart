@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_page.dart';
+import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
 import 'package:liuhetong_mobile/features/auth/registration_page.dart';
 import 'package:liuhetong_mobile/features/auth/verification_page.dart';
@@ -206,6 +207,53 @@ void main() {
     await tester.tap(login);
     await tester.pumpAndSettle();
     expect(submissions, 1);
+  });
+  testWidgets(
+      'Matrix account switch requires explicit destructive confirmation',
+      (tester) async {
+    useIPhone15Viewport(tester);
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    var confirmations = 0;
+    var cancellations = 0;
+    await tester.pumpWidget(CupertinoApp(
+      home: LoginPage(
+        api: api,
+        onLogin: (_, __) async => throw const MatrixAccountSwitchRequired(
+          fromMxid: '@old:matrix.example.test',
+          toMxid: '@new:matrix.example.test',
+        ),
+        onConfirmMatrixAccountSwitch: () async => confirmations += 1,
+        onCancelMatrixAccountSwitch: () async => cancellations += 1,
+        onAuthenticated: () async {},
+      ),
+    ));
+
+    await tester.enterText(find.byKey(const Key('auth-login-identity')), 'new');
+    await tester.enterText(
+        find.byKey(const Key('auth-login-password')), 'password');
+    await tester.tap(find.byKey(const Key('auth-agreement-checkbox')));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(ModernActionButton, '登录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('切换聊天账号'), findsOneWidget);
+    expect(confirmations, 0);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    expect(confirmations, 0);
+    expect(cancellations, 1);
+
+    await tester.tap(find.widgetWithText(ModernActionButton, '登录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('确认切换').last);
+    await tester.pump();
+    expect(confirmations, 1);
+    expect(cancellations, 1);
   });
   testWidgets('agreement policies and inline registration expose callbacks', (
     tester,

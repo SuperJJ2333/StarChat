@@ -567,6 +567,7 @@ final class MatrixRoomLease
         }
         return operation(room);
       });
+
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo => _snapshotRoomInfo(_activeRoom);
 
@@ -578,12 +579,13 @@ final class MatrixRoomLease
 
   Future<RoomTimelineCapability> openRoomTimeline({
     required void Function() onUpdate,
-  }) async {
-    final timeline = await _activeRoom.getTimeline(onUpdate: onUpdate);
-    final capability = _SdkRoomTimelineCapability(this, timeline);
-    _timelines.add(capability);
-    return capability;
-  }
+  }) =>
+      _withLeaseOperation((room) async {
+        final timeline = await room.getTimeline(onUpdate: onUpdate);
+        final capability = _SdkRoomTimelineCapability(this, timeline);
+        _timelines.add(capability);
+        return capability;
+      });
 
   Future<MatrixEmojiVaultBackend> openEmojiVaultBackend() async {
     _activeRoom;
@@ -598,46 +600,47 @@ final class MatrixRoomLease
   Future<void> updateConversationPreference(
     ConversationPreference preference,
   ) =>
-      _withLeaseOperation((room) => writeConversationPreference(room, preference));
+      _withLeaseOperation(
+          (room) => writeConversationPreference(room, preference));
 
-  Future<DateTime?> serverNow() async {
-    final homeserver = _activeRoom.client.homeserver;
-    if (homeserver == null) return null;
-    try {
-      return await MatrixServerClock(
-        homeserver: homeserver,
-        httpClient: _activeRoom.client.httpClient,
-      ).now();
-    } catch (_) {
-      return null;
-    }
-  }
+  Future<DateTime?> serverNow() => _withLeaseOperation((room) async {
+        final homeserver = room.client.homeserver;
+        if (homeserver == null) return null;
+        try {
+          return await MatrixServerClock(
+            homeserver: homeserver,
+            httpClient: room.client.httpClient,
+          ).now();
+        } catch (_) {
+          return null;
+        }
+      });
 
-  Future<List<MatrixForwardDestinationSnapshot>>
-      forwardingDestinations() async {
-    final client = _activeRoom.client;
-    final vaultRoomId = client
-        .accountData[emojiVaultAccountDataType]?.content['room_id']
-        ?.toString();
-    final reminderRoomId = client
-        .accountData[messageReminderAccountDataType]?.content['room_id']
-        ?.toString();
-    return [
-      for (final target in client.rooms)
-        if (target.id != roomId &&
-            target.encrypted &&
-            !isMatrixControlRoom(
-              roomId: target.id,
-              displayName: target.getLocalizedDisplayname(),
-              vaultRoomId: vaultRoomId,
-              reminderRoomId: reminderRoomId,
-            ))
-          MatrixForwardDestinationSnapshot(
-            id: target.id,
-            displayName: target.getLocalizedDisplayname(),
-          ),
-    ];
-  }
+  Future<List<MatrixForwardDestinationSnapshot>> forwardingDestinations() =>
+      _withLeaseOperation((room) async {
+        final client = room.client;
+        final vaultRoomId = client
+            .accountData[emojiVaultAccountDataType]?.content['room_id']
+            ?.toString();
+        final reminderRoomId = client
+            .accountData[messageReminderAccountDataType]?.content['room_id']
+            ?.toString();
+        return [
+          for (final target in client.rooms)
+            if (target.id != roomId &&
+                target.encrypted &&
+                !isMatrixControlRoom(
+                  roomId: target.id,
+                  displayName: target.getLocalizedDisplayname(),
+                  vaultRoomId: vaultRoomId,
+                  reminderRoomId: reminderRoomId,
+                ))
+              MatrixForwardDestinationSnapshot(
+                id: target.id,
+                displayName: target.getLocalizedDisplayname(),
+              ),
+        ];
+      });
 
   Future<void> sendEncryptedAttachment({
     required Uint8List bytes,
@@ -729,43 +732,44 @@ final class MatrixRoomLease
     String sourceRoomId,
     String targetRoomId,
     String eventId,
-  ) async {
-    _requireRoomId(sourceRoomId);
-    final source = _activeRoom;
-    final target = source.client.getRoomById(targetRoomId);
-    if (target == null || !target.encrypted) {
-      throw StateError('只能转发到端到端加密会话');
-    }
-    final event = _eventForInteraction(eventId);
-    if (event.roomId != null && event.roomId != source.id) {
-      throw StateError('消息不属于当前会话');
-    }
-    if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
-        .contains(event.messageType)) {
-      final attachment = await event.downloadAndDecryptAttachment();
-      final mimeType = event.content['info'] is Map
-          ? (event.content['info'] as Map)['mimetype']?.toString()
-          : null;
-      await target.sendFileEvent(
-        MatrixFile.fromMimeType(
-          bytes: attachment.bytes,
-          name: event.body,
-          mimeType: mimeType,
-        ),
-      );
-      return;
-    }
-    if (event.messageType != MessageTypes.Text) {
-      throw StateError('该消息类型不能转发');
-    }
-    await target.sendEvent({
-      'msgtype': MessageTypes.Text,
-      'body': event.body,
-      if (event.content['format'] != null) 'format': event.content['format'],
-      if (event.content['formatted_body'] != null)
-        'formatted_body': event.content['formatted_body'],
-    });
-  }
+  ) =>
+      _withLeaseOperation((source) async {
+        _requireRoomId(sourceRoomId);
+        final target = source.client.getRoomById(targetRoomId);
+        if (target == null || !target.encrypted) {
+          throw StateError('只能转发到端到端加密会话');
+        }
+        final event = _eventForInteraction(eventId);
+        if (event.roomId != null && event.roomId != source.id) {
+          throw StateError('消息不属于当前会话');
+        }
+        if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
+            .contains(event.messageType)) {
+          final attachment = await event.downloadAndDecryptAttachment();
+          final mimeType = event.content['info'] is Map
+              ? (event.content['info'] as Map)['mimetype']?.toString()
+              : null;
+          await target.sendFileEvent(
+            MatrixFile.fromMimeType(
+              bytes: attachment.bytes,
+              name: event.body,
+              mimeType: mimeType,
+            ),
+          );
+          return;
+        }
+        if (event.messageType != MessageTypes.Text) {
+          throw StateError('该消息类型不能转发');
+        }
+        await target.sendEvent({
+          'msgtype': MessageTypes.Text,
+          'body': event.body,
+          if (event.content['format'] != null)
+            'format': event.content['format'],
+          if (event.content['formatted_body'] != null)
+            'formatted_body': event.content['formatted_body'],
+        });
+      });
 
   void _requireRoomId(String requestedRoomId) {
     if (requestedRoomId != roomId) {
@@ -881,6 +885,12 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
     _lease._activeRoom;
   }
 
+  Future<T> _withOperation<T>(Future<T> Function() operation) =>
+      _lease._withLeaseOperation((_) async {
+        _ensureActive();
+        return operation();
+      });
+
   Event? eventById(String eventId) {
     if (_disposed) return null;
     for (final event in _timeline.events) {
@@ -949,52 +959,40 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
   }
 
   @override
-  Future<String> sendText(String text) async {
-    _ensureActive();
-    return await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
-        (throw StateError('消息发送失败'));
-  }
+  Future<String> sendText(String text) => _withOperation(() async =>
+      await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
+      (throw StateError('消息发送失败')));
 
   @override
-  Future<String> sendRedPacketReference(
-      String packetId, String greeting) async {
-    _ensureActive();
-    return await _lease._activeRoom.sendEvent({
-          'msgtype': changliaoRedPacketMessageType,
-          'body': '[畅聊点钻红包]',
-          'packet_id': packetId,
-          'greeting': greeting,
-        }) ??
-        (throw StateError('红包消息发送失败'));
-  }
+  Future<String> sendRedPacketReference(String packetId, String greeting) =>
+      _withOperation(() async =>
+          await _lease._activeRoom.sendEvent({
+            'msgtype': changliaoRedPacketMessageType,
+            'body': '[畅聊点钻红包]',
+            'packet_id': packetId,
+            'greeting': greeting,
+          }) ??
+          (throw StateError('红包消息发送失败')));
 
   @override
-  Future<Uint8List> loadAttachment(String eventId) async {
-    _ensureActive();
-    final event = eventById(eventId) ??
-        (throw StateError('Matrix timeline event is unavailable'));
-    return (await event.downloadAndDecryptAttachment()).bytes;
-  }
+  Future<Uint8List> loadAttachment(String eventId) => _withOperation(() async {
+        final event = eventById(eventId) ??
+            (throw StateError('Matrix timeline event is unavailable'));
+        return (await event.downloadAndDecryptAttachment()).bytes;
+      });
 
   @override
-  Future<void> retry(String transactionId) async {
-    _ensureActive();
-    final event = eventById(transactionId) ??
-        (throw StateError('Matrix timeline event is unavailable'));
-    await event.sendAgain();
-  }
+  Future<void> retry(String transactionId) => _withOperation(() async {
+        final event = eventById(transactionId) ??
+            (throw StateError('Matrix timeline event is unavailable'));
+        await event.sendAgain();
+      });
 
   @override
-  Future<void> loadHistory() {
-    _ensureActive();
-    return _timeline.requestHistory();
-  }
+  Future<void> loadHistory() => _withOperation(_timeline.requestHistory);
 
   @override
-  Future<void> markRead() {
-    _ensureActive();
-    return _timeline.setReadMarker();
-  }
+  Future<void> markRead() => _withOperation(_timeline.setReadMarker);
 
   @override
   void dispose() {
@@ -1012,158 +1010,170 @@ final class _SdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
 
   Client get _client => _lease._activeRoom.client;
 
+  Future<T> _withOperation<T>(Future<T> Function(Client client) operation) =>
+      _lease._withLeaseOperation((_) => operation(_client));
+
   @override
   String? readStoredRoomId() =>
       _client.accountData[emojiVaultAccountDataType]?.content['room_id']
           as String?;
 
   @override
-  Future<String> createEncryptedVaultRoom() async {
-    final roomId = await _client.createGroupChat(
-      groupName: '畅聊表情仓库',
-      enableEncryption: true,
-      invite: const [],
-      preset: CreateRoomPreset.privateChat,
-      visibility: Visibility.private,
-      waitForSync: true,
-    );
-    var room = _client.getRoomById(roomId);
-    if (room == null) {
-      throw StateError('Matrix did not create the emoji vault room');
-    }
-    if (!room.encrypted) {
-      await room.enableEncryption();
-      await _client.oneShotSync();
-      room = _client.getRoomById(roomId);
-    }
-    if (room == null || !room.encrypted) {
-      throw StateError('Matrix did not create an encrypted emoji vault room');
-    }
-    return roomId;
-  }
+  Future<String> createEncryptedVaultRoom() => _withOperation((client) async {
+        final roomId = await client.createGroupChat(
+          groupName: '畅聊表情仓库',
+          enableEncryption: true,
+          invite: const [],
+          preset: CreateRoomPreset.privateChat,
+          visibility: Visibility.private,
+          waitForSync: true,
+        );
+        var room = client.getRoomById(roomId);
+        if (room == null) {
+          throw StateError('Matrix did not create the emoji vault room');
+        }
+        if (!room.encrypted) {
+          await room.enableEncryption();
+          await client.oneShotSync();
+          room = client.getRoomById(roomId);
+        }
+        if (room == null || !room.encrypted) {
+          throw StateError(
+              'Matrix did not create an encrypted emoji vault room');
+        }
+        return roomId;
+      });
 
   @override
-  Future<void> storeRoomId(String roomId) async {
-    final userId = _client.userID;
-    if (userId == null) throw StateError('Matrix client is not logged in');
-    await _client.setAccountData(
-      userId,
-      emojiVaultAccountDataType,
-      {'room_id': roomId},
-    );
-    await _client.oneShotSync();
-  }
+  Future<void> storeRoomId(String roomId) => _withOperation((client) async {
+        final userId = client.userID;
+        if (userId == null) throw StateError('Matrix client is not logged in');
+        await client.setAccountData(
+          userId,
+          emojiVaultAccountDataType,
+          {'room_id': roomId},
+        );
+        await client.oneShotSync();
+      });
 
-  Future<Room> _room(String roomId) async {
-    var room = _client.getRoomById(roomId);
+  Future<Room> _room(Client client, String roomId) async {
+    var room = client.getRoomById(roomId);
     if (room == null) {
-      await _client.sync();
-      room = _client.getRoomById(roomId);
+      await client.sync();
+      room = client.getRoomById(roomId);
     }
     if (room == null) throw StateError('Emoji vault room is not joined');
     return room;
   }
 
   @override
-  Future<bool> isRoomEncrypted(String roomId) async =>
-      (await _room(roomId)).encrypted;
+  Future<bool> isRoomEncrypted(String roomId) =>
+      _withOperation((client) async => (await _room(client, roomId)).encrypted);
 
   @override
   Future<Map<String, Object?>> uploadEncrypted(
     String roomId,
     Uint8List bytes,
     String mimeType,
-  ) async {
-    final room = await _room(roomId);
-    if (!room.encrypted) {
-      throw StateError('Emoji media upload requires an encrypted room');
-    }
-    final encrypted = await MatrixFile(
-      bytes: bytes,
-      name: '畅聊加密表情',
-      mimeType: mimeType,
-    ).encrypt();
-    final uri = await _client.uploadContent(
-      encrypted.data,
-      filename: 'emoji.ciphertext',
-      contentType: 'application/octet-stream',
-    );
-    return {
-      'url': uri.toString(),
-      'mimetype': mimeType,
-      'v': 'v2',
-      'key': {
-        'alg': 'A256CTR',
-        'ext': true,
-        'k': encrypted.k,
-        'key_ops': ['encrypt', 'decrypt'],
-        'kty': 'oct',
-      },
-      'iv': encrypted.iv,
-      'hashes': {'sha256': encrypted.sha256},
-    };
-  }
+  ) =>
+      _withOperation((client) async {
+        final room = await _room(client, roomId);
+        if (!room.encrypted) {
+          throw StateError('Emoji media upload requires an encrypted room');
+        }
+        final encrypted = await MatrixFile(
+          bytes: bytes,
+          name: '畅聊加密表情',
+          mimeType: mimeType,
+        ).encrypt();
+        final uri = await client.uploadContent(
+          encrypted.data,
+          filename: 'emoji.ciphertext',
+          contentType: 'application/octet-stream',
+        );
+        return {
+          'url': uri.toString(),
+          'mimetype': mimeType,
+          'v': 'v2',
+          'key': {
+            'alg': 'A256CTR',
+            'ext': true,
+            'k': encrypted.k,
+            'key_ops': ['encrypt', 'decrypt'],
+            'kty': 'oct',
+          },
+          'iv': encrypted.iv,
+          'hashes': {'sha256': encrypted.sha256},
+        };
+      });
 
   @override
   Future<void> sendEncryptedEvent(
     String roomId,
     String type,
     Map<String, Object?> content,
-  ) async {
-    final room = await _room(roomId);
-    if (!room.encrypted || !_client.encryptionEnabled) {
-      throw StateError('Emoji metadata requires Matrix E2EE');
-    }
-    final eventId =
-        await room.sendEvent(Map<String, dynamic>.from(content), type: type);
-    if (eventId == null) throw StateError('Emoji vault event was not accepted');
-  }
+  ) =>
+      _withOperation((client) async {
+        final room = await _room(client, roomId);
+        if (!room.encrypted || !client.encryptionEnabled) {
+          throw StateError('Emoji metadata requires Matrix E2EE');
+        }
+        final eventId = await room.sendEvent(Map<String, dynamic>.from(content),
+            type: type);
+        if (eventId == null) {
+          throw StateError('Emoji vault event was not accepted');
+        }
+      });
 
   @override
-  Future<List<EmojiVaultEvent>> loadEvents(String roomId) async {
-    final timeline = await (await _room(roomId)).getTimeline();
-    try {
-      return timeline.events
-          .map(_decodeEvent)
-          .whereType<EmojiVaultEvent>()
-          .toList(growable: false);
-    } finally {
-      timeline.cancelSubscriptions();
-    }
-  }
+  Future<List<EmojiVaultEvent>> loadEvents(String roomId) =>
+      _withOperation((client) async {
+        final timeline = await (await _room(client, roomId)).getTimeline();
+        try {
+          return timeline.events
+              .map(_decodeEvent)
+              .whereType<EmojiVaultEvent>()
+              .toList(growable: false);
+        } finally {
+          timeline.cancelSubscriptions();
+        }
+      });
 
   @override
   Future<Uint8List> downloadAndDecrypt(
     String roomId,
     Map<String, Object?> encryptedFile,
-  ) async {
-    final room = await _room(roomId);
-    if (!room.encrypted || !_client.encryptionEnabled) {
-      throw StateError('Emoji media download requires Matrix E2EE');
-    }
-    final url = encryptedFile['url']?.toString();
-    final key = encryptedFile['key'];
-    final hashes = encryptedFile['hashes'];
-    if (url == null || key is! Map || hashes is! Map) {
-      throw StateError('Encrypted emoji descriptor is invalid');
-    }
-    final downloadUri = await Uri.parse(url).getDownloadUri(_client);
-    final ciphertext = (await _client.httpClient.get(
-      downloadUri,
-      headers: {'authorization': 'Bearer ${_client.accessToken}'},
-    ))
-        .bodyBytes;
-    final plaintext = await _client.nativeImplementations.decryptFile(
-      EncryptedFile(
-        data: ciphertext,
-        k: key['k']!.toString(),
-        iv: encryptedFile['iv']!.toString(),
-        sha256: hashes['sha256']!.toString(),
-      ),
-    );
-    if (plaintext == null) throw StateError('Encrypted emoji integrity failed');
-    return plaintext;
-  }
+  ) =>
+      _withOperation((client) async {
+        final room = await _room(client, roomId);
+        if (!room.encrypted || !client.encryptionEnabled) {
+          throw StateError('Emoji media download requires Matrix E2EE');
+        }
+        final url = encryptedFile['url']?.toString();
+        final key = encryptedFile['key'];
+        final hashes = encryptedFile['hashes'];
+        if (url == null || key is! Map || hashes is! Map) {
+          throw StateError('Encrypted emoji descriptor is invalid');
+        }
+        final downloadUri = await Uri.parse(url).getDownloadUri(client);
+        final ciphertext = (await client.httpClient.get(
+          downloadUri,
+          headers: {'authorization': 'Bearer ${client.accessToken}'},
+        ))
+            .bodyBytes;
+        final plaintext = await client.nativeImplementations.decryptFile(
+          EncryptedFile(
+            data: ciphertext,
+            k: key['k']!.toString(),
+            iv: encryptedFile['iv']!.toString(),
+            sha256: hashes['sha256']!.toString(),
+          ),
+        );
+        if (plaintext == null) {
+          throw StateError('Encrypted emoji integrity failed');
+        }
+        return plaintext;
+      });
 
   EmojiVaultEvent? _decodeEvent(Event event) {
     if (!event.type.startsWith('com.changliao.emoji.')) return null;
@@ -1208,71 +1218,75 @@ final class _SdkGroupChatInfoGateway implements GroupChatInfoGateway {
 
   Room get _room => _lease._activeRoom;
 
+  Future<T> _withOperation<T>(Future<T> Function(Room room) operation) =>
+      _lease._withLeaseOperation(operation);
+
   Map<String, Object?> get _settings =>
       _cachedSettings ??= Map<String, Object?>.from(
         _room.roomAccountData[groupChatAccountDataType]?.content ?? const {},
       );
 
   @override
-  Future<GroupChatInfoSnapshot> load() async {
-    final users = await _room.requestParticipants([Membership.join]);
-    final invited = await _room.requestParticipants([Membership.invite]);
-    final modern = _room.roomAccountData[conversationPreferenceType]?.content;
-    final settings =
-        modern == null ? _settings : Map<String, Object?>.from(modern);
-    _cachedSettings = settings;
-    final allMembers = [...users, ...invited];
-    final order = reconcileMemberOrder(
-      settings['member_order_ids'] is List
-          ? (settings['member_order_ids'] as List)
-              .map((value) => value.toString())
-          : const <String>[],
-      allMembers.map((user) => user.id),
-    );
-    final userById = {for (final user in allMembers) user.id: user};
-    final ownerId = settings['owner_id']?.toString().isNotEmpty == true
-        ? settings['owner_id'].toString()
-        : _room.getState(EventTypes.RoomCreate)?.senderId ?? '';
-    final adminIds = normalizeGroupAdminIds(
-      settings['admin_ids'] is List
-          ? (settings['admin_ids'] as List).map((value) => value.toString())
-          : const <String>[],
-      ownerId: ownerId,
-    );
-    final orderedUsers = [for (final id in order) userById[id]!];
-    final activeIds = orderedUsers.map((user) => user.id).toSet();
-    final followed = settings['followed_member_ids'];
-    return GroupChatInfoSnapshot(
-      name: _room.name.trim(),
-      announcement: _room.topic,
-      remark: settings['remark']?.toString() ?? '',
-      muted: settings['muted'] == true,
-      pinned: settings['pinned'] == true,
-      saved: settings['saved'] == true,
-      folded: settings['folded'] == true,
-      notifyMentionMe: settings['notify_mention_me'] != false,
-      notifyMentionAll: settings['notify_mention_all'] != false,
-      notifyAnnouncement: settings['notify_announcement'] != false,
-      followedMemberIds: followed is List
-          ? followed
-              .map((value) => value.toString())
-              .where(activeIds.contains)
-              .take(4)
-              .toList()
-          : const [],
-      ownerId: ownerId,
-      adminIds: adminIds,
-      qrJoinEnabled: settings['qr_join_enabled'] != false,
-      joinApprovalRequired: settings['join_approval_required'] == true,
-      onlyManagersCanRename: settings['only_managers_can_rename'] == true,
-      currentUserId: _room.client.userID,
-      members: orderGroupMembers(
-        members: [for (final user in orderedUsers) _member(user)],
-        ownerId: ownerId,
-        adminIds: adminIds.toSet(),
-      ),
-    );
-  }
+  Future<GroupChatInfoSnapshot> load() => _withOperation((room) async {
+        final users = await room.requestParticipants([Membership.join]);
+        final invited = await room.requestParticipants([Membership.invite]);
+        final modern =
+            room.roomAccountData[conversationPreferenceType]?.content;
+        final settings =
+            modern == null ? _settings : Map<String, Object?>.from(modern);
+        _cachedSettings = settings;
+        final allMembers = [...users, ...invited];
+        final order = reconcileMemberOrder(
+          settings['member_order_ids'] is List
+              ? (settings['member_order_ids'] as List)
+                  .map((value) => value.toString())
+              : const <String>[],
+          allMembers.map((user) => user.id),
+        );
+        final userById = {for (final user in allMembers) user.id: user};
+        final ownerId = settings['owner_id']?.toString().isNotEmpty == true
+            ? settings['owner_id'].toString()
+            : room.getState(EventTypes.RoomCreate)?.senderId ?? '';
+        final adminIds = normalizeGroupAdminIds(
+          settings['admin_ids'] is List
+              ? (settings['admin_ids'] as List).map((value) => value.toString())
+              : const <String>[],
+          ownerId: ownerId,
+        );
+        final orderedUsers = [for (final id in order) userById[id]!];
+        final activeIds = orderedUsers.map((user) => user.id).toSet();
+        final followed = settings['followed_member_ids'];
+        return GroupChatInfoSnapshot(
+          name: room.name.trim(),
+          announcement: room.topic,
+          remark: settings['remark']?.toString() ?? '',
+          muted: settings['muted'] == true,
+          pinned: settings['pinned'] == true,
+          saved: settings['saved'] == true,
+          folded: settings['folded'] == true,
+          notifyMentionMe: settings['notify_mention_me'] != false,
+          notifyMentionAll: settings['notify_mention_all'] != false,
+          notifyAnnouncement: settings['notify_announcement'] != false,
+          followedMemberIds: followed is List
+              ? followed
+                  .map((value) => value.toString())
+                  .where(activeIds.contains)
+                  .take(4)
+                  .toList()
+              : const [],
+          ownerId: ownerId,
+          adminIds: adminIds,
+          qrJoinEnabled: settings['qr_join_enabled'] != false,
+          joinApprovalRequired: settings['join_approval_required'] == true,
+          onlyManagersCanRename: settings['only_managers_can_rename'] == true,
+          currentUserId: room.client.userID,
+          members: orderGroupMembers(
+            members: [for (final user in orderedUsers) _member(user)],
+            ownerId: ownerId,
+            adminIds: adminIds.toSet(),
+          ),
+        );
+      });
 
   GroupChatMember _member(User user) => GroupChatMember(
         matrixUserId: user.id,
@@ -1284,17 +1298,19 @@ final class _SdkGroupChatInfoGateway implements GroupChatInfoGateway {
       );
 
   @override
-  Future<void> invite(String matrixUserId) => _room.invite(matrixUserId);
+  Future<void> invite(String matrixUserId) =>
+      _withOperation((room) => room.invite(matrixUserId));
 
   @override
-  Future<void> leave() => _room.leave();
+  Future<void> leave() => _withOperation((room) => room.leave());
 
   @override
-  Future<void> removeMembers(List<String> matrixUserIds) async {
-    for (final userId in matrixUserIds) {
-      await _room.kick(userId);
-    }
-  }
+  Future<void> removeMembers(List<String> matrixUserIds) =>
+      _withOperation((room) async {
+        for (final userId in matrixUserIds) {
+          await room.kick(userId);
+        }
+      });
 
   @override
   Future<void> setAdminIds(List<String> matrixUserIds) => _writeSetting(
@@ -1310,15 +1326,17 @@ final class _SdkGroupChatInfoGateway implements GroupChatInfoGateway {
       _writeSetting(key, value);
 
   @override
-  Future<void> rename(String name) => _room.setName(name);
+  Future<void> rename(String name) =>
+      _withOperation((room) => room.setName(name));
 
   @override
-  Future<void> setAnnouncement(String announcement) async {
-    await _room.setDescription(announcement);
-    final version =
-        ((_settings['announcement_version'] as num?)?.toInt() ?? 0) + 1;
-    await _writeSetting('announcement_version', version);
-  }
+  Future<void> setAnnouncement(String announcement) =>
+      _withOperation((room) async {
+        await room.setDescription(announcement);
+        final version =
+            ((_settings['announcement_version'] as num?)?.toInt() ?? 0) + 1;
+        await _writeSetting('announcement_version', version);
+      });
 
   @override
   Future<void> setPreference(
@@ -1352,18 +1370,19 @@ final class _SdkGroupChatInfoGateway implements GroupChatInfoGateway {
   @override
   Future<void> setRemark(String remark) => _writeSetting('remark', remark);
 
-  Future<void> _writeSetting(String key, Object value) async {
-    final userId = _room.client.userID;
-    if (userId == null) throw StateError('Matrix 账号尚未登录');
-    final next = {..._settings, key: value};
-    await _room.client.setAccountDataPerRoom(
-      userId,
-      _room.id,
-      conversationPreferenceType,
-      next,
-    );
-    _cachedSettings = next;
-  }
+  Future<void> _writeSetting(String key, Object value) =>
+      _withOperation((room) async {
+        final userId = room.client.userID;
+        if (userId == null) throw StateError('Matrix 账号尚未登录');
+        final next = {..._settings, key: value};
+        await room.client.setAccountDataPerRoom(
+          userId,
+          room.id,
+          conversationPreferenceType,
+          next,
+        );
+        _cachedSettings = next;
+      });
 }
 
 abstract interface class _ManagedClientStreamBase
