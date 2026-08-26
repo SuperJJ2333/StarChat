@@ -8,6 +8,7 @@ import 'avatar_url_resolver.dart';
 import 'conversation_preferences.dart';
 import 'matrix_control_rooms.dart';
 import 'direct_chat_controller.dart';
+import 'decryption_state_controller.dart';
 import 'emoji_vault.dart';
 import 'group_chat_controller.dart';
 import 'group_chat_info_controller.dart';
@@ -217,6 +218,8 @@ final class MatrixEventSnapshot {
     required this.senderId,
     required this.sender,
     required this.redacted,
+    this.eventId = '',
+    this.decryptionState = MessageDecryptionState.decrypted,
   });
   final String type;
   final String text;
@@ -225,6 +228,8 @@ final class MatrixEventSnapshot {
   final String senderId;
   final MatrixMemberSnapshot sender;
   final bool redacted;
+  final String eventId;
+  final MessageDecryptionState decryptionState;
 }
 
 @immutable
@@ -386,8 +391,13 @@ final class MatrixConversationCapability {
         }
       });
 
-  static MatrixConversationRoomSnapshot _snapshotRoom(Room room) {
-    final event = room.lastEvent;
+  MatrixConversationRoomSnapshot _snapshotRoom(Room room) {
+    final originalEvent = room.lastEvent;
+    final cachedEvent = originalEvent == null
+        ? null
+        : _owner._decryptedTimelineEvents[originalEvent.eventId];
+    final event =
+        cachedEvent == null ? originalEvent : Event.fromJson(cachedEvent, room);
     final joined = room.getParticipants([Membership.join]);
     final membersById = {for (final user in joined) user.id: user};
     final memberOrder = reconcileMemberOrder(
@@ -413,12 +423,20 @@ final class MatrixConversationCapability {
           ? null
           : MatrixEventSnapshot(
               type: event.type,
+              eventId: event.eventId,
               text: event.text,
               body: event.body,
               originServerTs: event.originServerTs,
               senderId: event.senderId,
               sender: member(event.senderFromMemoryOrFallback),
               redacted: event.redacted,
+              decryptionState: cachedEvent != null
+                  ? MessageDecryptionState.decrypted
+                  : event.type == EventTypes.Encrypted
+                      ? (event.content['can_request_session'] == true
+                          ? MessageDecryptionState.missingKey
+                          : MessageDecryptionState.decrypting)
+                      : MessageDecryptionState.decrypted,
             ),
       preference: preferenceForRoom(room),
       notificationCount: room.notificationCount,
@@ -1446,7 +1464,9 @@ final class MatrixSdkE2eeClient
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
         securityLogger = securityLogger ??
-            MatrixSecurityLogger.create(sink: (line) => debugPrint(line));
+            MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
+    _attachDecryptionListener(client);
+  }
   Client? _client;
   Client? _pendingCloseClient;
   final Future<void> Function(Client client) _suspendClient;
@@ -1466,6 +1486,10 @@ final class MatrixSdkE2eeClient
   bool _credentialsInvalid = false;
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
+  final StreamController<MatrixDecryptionUpdate> _decryptionUpdates =
+      StreamController.broadcast();
+  final Map<String, Map<String, dynamic>> _decryptedTimelineEvents = {};
+  StreamSubscription<EventUpdate>? _decryptionSubscription;
   final List<_ManagedClientStreamBase> _managedSubscriptions = [];
   final List<_ManagedClientResourceBase> _managedResources = [];
   late final MatrixConversationCapability conversations =
@@ -1571,6 +1595,29 @@ final class MatrixSdkE2eeClient
   }
 
   Stream<void> get syncEvents => _syncEvents.stream;
+  Stream<MatrixDecryptionUpdate> get decryptionUpdates =>
+      _decryptionUpdates.stream;
+
+  void _attachDecryptionListener(Client client) {
+    _decryptionSubscription?.cancel();
+    _decryptionSubscription = client.onEvent.stream.listen((update) {
+      final eventId = update.content['event_id']?.toString();
+      if (eventId == null || eventId.isEmpty) return;
+      final type = update.content['type']?.toString();
+      if (update.type == EventUpdateType.decryptedTimelineQueue &&
+          type != EventTypes.Encrypted) {
+        _decryptedTimelineEvents[eventId] =
+            Map<String, dynamic>.from(update.content);
+      }
+      final state = type != EventTypes.Encrypted
+          ? MessageDecryptionState.decrypted
+          : (update.content['can_request_session'] == true
+              ? MessageDecryptionState.missingKey
+              : MessageDecryptionState.decrypting);
+      _decryptionUpdates.add(MatrixDecryptionUpdate(eventId, state));
+      _syncEvents.add(null);
+    });
+  }
 
   @override
   Future<void> sync() => _withClient((active) async {
@@ -1961,6 +2008,7 @@ final class MatrixSdkE2eeClient
       await _rejectResumeClient(resumed);
       Error.throwWithStackTrace(error, stackTrace);
     }
+    _attachDecryptionListener(resumed);
     _client = resumed;
     _activeContinuityValidated = true;
     return resumed;

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_presentation.dart';
+import 'package:liuhetong_mobile/features/matrix/decryption_state_controller.dart';
 
 void main() {
   test('direct title is remark then nickname with defensive fallbacks', () {
@@ -130,17 +131,24 @@ void main() {
     );
   });
 
-  test('undecrypted events use a safe placeholder instead of event text', () {
+  test('undecrypted events expose an actionable state without event text', () {
     expect(
       safeConversationMessageContent(
-        undecrypted: true,
+        decryptionState: MessageDecryptionState.decrypting,
         messageContent: 'MegolmException secret ciphertext detail',
       ),
-      '消息尚未解密',
+      '正在解密',
     );
     expect(
       safeConversationMessageContent(
-        undecrypted: false,
+        decryptionState: MessageDecryptionState.missingKey,
+        messageContent: 'MegolmException secret ciphertext detail',
+      ),
+      '缺少密钥，无法解密',
+    );
+    expect(
+      safeConversationMessageContent(
+        decryptionState: MessageDecryptionState.decrypted,
         messageContent: '正常消息',
       ),
       '正常消息',

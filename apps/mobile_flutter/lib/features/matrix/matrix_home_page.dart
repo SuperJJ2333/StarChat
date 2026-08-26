@@ -39,6 +39,7 @@ import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import 'conversation_preferences.dart';
 import 'conversation_presentation.dart';
+import 'decryption_state_controller.dart';
 import 'direct_chat_info_page.dart';
 import 'chat_history_search.dart';
 import '../search/global_search_page.dart';
@@ -135,6 +136,9 @@ class MatrixHomePage extends StatefulWidget {
 class _MatrixHomePageState extends State<MatrixHomePage> {
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
+  StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
+  late final DecryptionStateController decryptionStates =
+      DecryptionStateController();
   List<_RoomSnapshot> _rooms = const [];
   String? _vaultRoomId;
   String? _reminderRoomId;
@@ -164,6 +168,21 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     syncSubscription = widget.matrix.syncEvents.listen((_) {
       unawaited(_refreshClientSnapshot());
       unawaited(_restoreHiddenConversations());
+      if (mounted) setState(() {});
+    });
+    decryptionSubscription = widget.matrix.decryptionUpdates.listen((update) {
+      switch (update.state) {
+        case MessageDecryptionState.decrypted:
+          decryptionStates.lateKeyReceived(update.eventId);
+        case MessageDecryptionState.missingKey:
+          decryptionStates.markMissingKey(update.eventId,
+              eventCode: update.eventCode ?? 'MISSING_ROOM_KEY');
+        case MessageDecryptionState.decrypting:
+          decryptionStates.markDecrypting(update.eventId);
+        case MessageDecryptionState.failed:
+          decryptionStates.markFailed(update.eventId,
+              eventCode: update.eventCode ?? 'DECRYPTION_FAILED');
+      }
       if (mounted) setState(() {});
     });
     unawaited(_identityCache.preload().catchError((_) {}));
@@ -215,6 +234,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   void dispose() {
     _identityCache.removeListener(_identityChanged);
     syncSubscription?.cancel();
+    decryptionSubscription?.cancel();
+    decryptionStates.dispose();
     super.dispose();
   }
 
@@ -275,7 +296,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final event = room.lastEvent;
     if (event == null) return '端到端加密消息';
     final messageContent = safeConversationMessageContent(
-      undecrypted: event.type == 'm.room.encrypted',
+      decryptionState: decryptionStates.knownStateFor(event.eventId)?.state ??
+          event.decryptionState,
       messageContent: event.text,
     );
     if (room.isDirect) return messageContent;
