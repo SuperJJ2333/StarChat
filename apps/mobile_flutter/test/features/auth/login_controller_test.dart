@@ -66,9 +66,26 @@ void main() {
 
     expect(await controller.submit('alice', 'business-password'), isTrue);
     expect(business.loginPasswords, ['business-password']);
-    expect(business.tokenRequests, 1);
+    expect(business.tokenRequests, 0);
     expect(matrix.clears, 0);
     expect(matrix.tokens, isEmpty);
+  });
+
+  test('different Matrix identity fails closed before requesting a token',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
+      ..userId = '@bob:matrix.example.test';
+    final service = DualDomainLoginService(
+        business: business, matrix: matrix, deviceKey: () => 'device-1');
+
+    await expectLater(
+      service.login('alice', 'business-password'),
+      throwsA(isA<MatrixAccountSwitchRequired>()),
+    );
+
+    expect(business.tokenRequests, 0);
+    expect(matrix.clears, 0);
   });
 
   test('invalid same-device Matrix credentials are refreshed non-destructively',
@@ -95,7 +112,8 @@ void main() {
     final service = DualDomainLoginService(
         business: business, matrix: matrix, deviceKey: () => 'device-1');
     await expectLater(
-        service.login('alice', 'business-password'), throwsStateError);
+        service.login('alice', 'business-password'),
+        throwsA(isA<MatrixAccountSwitchRequired>()));
     expect(matrix.clears, 0);
     expect(matrix.suspends, 1);
     expect(matrix.tokens, isEmpty);
@@ -139,6 +157,9 @@ final class FakeDualDomainBusiness implements DualDomainBusinessGateway {
   int tokenRequests = 0;
   final List<String> boundMatrixUsers = [];
   int logouts = 0;
+  @override
+  Future<String?> currentMatrixUserId() async =>
+      '@alice:matrix.example.test';
   @override
   Future<void> loginBusiness(
       {required String username,

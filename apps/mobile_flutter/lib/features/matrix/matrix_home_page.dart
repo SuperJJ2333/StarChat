@@ -6,7 +6,6 @@ import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
-import '../../core/local_notification_scheduler.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
@@ -46,7 +45,8 @@ import 'chat_history_search.dart';
 import '../search/global_search_page.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
-import 'matrix_message_reminder_backend.dart';
+import 'matrix_message_reminder_backend.dart'
+    show messageReminderAccountDataType;
 import 'media_message_service.dart';
 import 'message_reminder_service.dart';
 import 'message_interaction_service.dart';
@@ -963,19 +963,10 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _loadReminderService() async {
     try {
       final provided = widget.reminderService;
-      final MessageReminderService service;
-      if (provided != null) {
-        service = provided;
-      } else {
-        final backend =
-            await MatrixMessageReminderBackend.open(widget.room.client);
-        service = MessageReminderService(
-          backend: backend,
-          scheduler: FlutterLocalNotificationScheduler(),
-        );
-        await service.applyIncoming(await backend.load());
+      if (provided == null) {
+        throw StateError('提醒同步服务尚未就绪');
       }
-      reminderService = service;
+      reminderService = provided;
     } catch (_) {
       // Chat remains available; choosing reminder will surface a retry state.
     }

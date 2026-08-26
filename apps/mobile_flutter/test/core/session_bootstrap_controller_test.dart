@@ -16,12 +16,21 @@ final class FakeBusiness implements BusinessSessionGateway {
   final Object? error;
   final Completer<void>? logoutBlocker;
   int logoutCalls = 0;
+  int localClearCalls = 0;
   @override
   Future<String?> currentMatrixUserId() async => matrixUserId;
-  @override
   Future<void> logout() async {
     logoutCalls++;
     await logoutBlocker?.future;
+  }
+
+  @override
+  Future<BusinessSessionRevocation?> clearLocalSession() async {
+    localClearCalls++;
+    return _FakeRevocation(() async {
+      logoutCalls++;
+      await logoutBlocker?.future;
+    });
   }
 
   @override
@@ -29,6 +38,13 @@ final class FakeBusiness implements BusinessSessionGateway {
     if (error != null) throw error!;
     return result;
   }
+}
+
+final class _FakeRevocation implements BusinessSessionRevocation {
+  const _FakeRevocation(this._revoke);
+  final Future<void> Function() _revoke;
+  @override
+  Future<void> revoke() => _revoke();
 }
 
 final class FakeMatrix implements MatrixSessionGateway {
@@ -259,7 +275,7 @@ void main() {
   });
 
   test(
-      'logout blocks chat access after Business clears and before suspend drains',
+      'logout blocks chat access after local Business clear and before suspend drains',
       () async {
     final blocker = Completer<void>();
     final business = FakeBusiness(BusinessSessionRestore.authenticated);
@@ -272,8 +288,32 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(business.logoutCalls, 1);
+    expect(business.localClearCalls, 1);
     expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
     blocker.complete();
     await logout;
+  });
+
+  test('logout completes when remote Business revocation never completes',
+      () async {
+    final remoteNeverCompletes = Completer<void>();
+    final business = FakeBusiness(
+      BusinessSessionRestore.authenticated,
+      logoutBlocker: remoteNeverCompletes,
+    );
+    final matrix = FakeMatrix(isLoggedIn: true);
+    final controller = SessionBootstrapController(
+      business: business,
+      matrix: matrix,
+      remoteLogoutTimeout: const Duration(milliseconds: 10),
+    );
+
+    await controller.logout().timeout(const Duration(milliseconds: 100));
+
+    expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
+    expect(business.localClearCalls, 1);
+    expect(business.logoutCalls, 1);
+    expect(matrix.suspendCalls, 1);
+    expect(matrix.clearCalls, 0);
   });
 }

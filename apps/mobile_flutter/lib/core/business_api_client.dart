@@ -28,7 +28,22 @@ enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 abstract interface class BusinessSessionGateway {
   Future<BusinessSessionRestore> restoreSession();
   Future<String?> currentMatrixUserId();
-  Future<void> logout();
+  Future<BusinessSessionRevocation?> clearLocalSession();
+}
+
+/// Opaque authority to revoke the server-side session after local access has
+/// already been removed. The credential used by the implementation is never
+/// exposed to controllers or logs.
+abstract interface class BusinessSessionRevocation {
+  Future<void> revoke();
+}
+
+final class _BusinessSessionRevocation implements BusinessSessionRevocation {
+  const _BusinessSessionRevocation(this._revoke);
+  final Future<void> Function() _revoke;
+
+  @override
+  Future<void> revoke() => _revoke();
 }
 
 final class BusinessApiClient
@@ -311,20 +326,29 @@ final class BusinessApiClient
     return replacement;
   }
 
-  @override
   Future<void> logout() async {
-    final stored = await sessionStore.session();
+    final revocation = await clearLocalSession();
+    if (revocation == null) return;
     try {
-      if (stored != null) {
-        await _client.post(
+      await revocation.revoke().timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Local authorization is already removed. Server revocation is
+      // deliberately bounded and retried by normal token expiry policy.
+    }
+  }
+
+  @override
+  Future<BusinessSessionRevocation?> clearLocalSession() async {
+    final stored = await sessionStore.session();
+    await sessionStore.clearBusinessSession();
+    if (stored == null) return null;
+    return _BusinessSessionRevocation(() async {
+      await _client.post(
           _uri('/auth/logout'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'refresh_token': stored.refreshToken}),
         );
-      }
-    } finally {
-      await sessionStore.clearBusinessSession();
-    }
+    });
   }
 
   Future<String?> currentUserId() async {

@@ -26,8 +26,16 @@ abstract interface class DualDomainBusinessGateway {
       required String deviceKey,
       required String deviceName});
   Future<MatrixLoginGrant> issueMatrixLoginToken();
+  Future<String?> currentMatrixUserId();
   Future<void> bindMatrixUserId(String matrixUserId);
   Future<void> logoutBusiness();
+}
+
+final class MatrixAccountSwitchRequired implements Exception {
+  const MatrixAccountSwitchRequired();
+
+  @override
+  String toString() => 'MATRIX_ACCOUNT_SWITCH_REQUIRED';
 }
 
 abstract interface class MatrixTokenLoginGateway {
@@ -56,9 +64,22 @@ final class DualDomainLoginService {
       deviceName: '畅聊移动端',
     );
     try {
+      final boundMatrixUserId = await business.currentMatrixUserId();
+      if (matrix.isLoggedIn && !matrix.credentialsInvalid) {
+        if (boundMatrixUserId != null &&
+            matrix.userId == boundMatrixUserId) {
+          await matrix.sync();
+          await business.bindMatrixUserId(boundMatrixUserId);
+          return;
+        }
+        if (boundMatrixUserId != null &&
+            matrix.userId != boundMatrixUserId) {
+          throw const MatrixAccountSwitchRequired();
+        }
+      }
       final grant = await business.issueMatrixLoginToken();
       if (matrix.isLoggedIn && matrix.userId != grant.matrixUserId) {
-        throw StateError('A different Matrix identity is stored locally');
+        throw const MatrixAccountSwitchRequired();
       }
       if (!matrix.isLoggedIn || matrix.credentialsInvalid) {
         await matrix.loginWithToken(

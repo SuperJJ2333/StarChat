@@ -23,10 +23,15 @@ final class SessionBootstrapState {
 }
 
 final class SessionBootstrapController extends ChangeNotifier {
-  SessionBootstrapController({required this.business, required this.matrix});
+  SessionBootstrapController({
+    required this.business,
+    required this.matrix,
+    this.remoteLogoutTimeout = const Duration(seconds: 5),
+  });
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
+  final Duration remoteLogoutTimeout;
   SessionBootstrapState state =
       const SessionBootstrapState(SessionBootstrapStatus.loading);
 
@@ -40,7 +45,7 @@ final class SessionBootstrapController extends ChangeNotifier {
           SessionBootstrapStatus.unauthenticated,
         ));
         final suspended = await _bestEffortMatrixSuspend();
-        if (!suspended) await _bestEffortBusinessLogout();
+        if (!suspended) await _clearLocalBusinessSession();
         if (!suspended) {
           _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
@@ -50,9 +55,9 @@ final class SessionBootstrapController extends ChangeNotifier {
         return;
       }
       if (!matrix.isLoggedIn) {
-        await _bestEffortBusinessLogout();
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated));
+        await _clearLocalBusinessSession();
         final suspended = await _bestEffortMatrixSuspend();
         if (!suspended) {
           _set(const SessionBootstrapState(
@@ -75,11 +80,11 @@ final class SessionBootstrapController extends ChangeNotifier {
       } on MatrixException catch (error) {
         if (error.errcode == 'M_UNKNOWN_TOKEN' ||
             error.errcode == 'M_FORBIDDEN') {
-          await _bestEffortBusinessLogout();
           _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
             message: '登录状态已失效，请重新登录',
           ));
+          await _clearLocalBusinessSession();
           final suspended = await _bestEffortMatrixSuspend();
           if (!suspended) {
             _set(const SessionBootstrapState(
@@ -123,10 +128,10 @@ final class SessionBootstrapController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await _bestEffortBusinessLogout();
     _set(const SessionBootstrapState(
       SessionBootstrapStatus.unauthenticated,
     ));
+    await _clearLocalBusinessSession();
     final suspended = await _bestEffortMatrixSuspend();
     if (!suspended) {
       _set(const SessionBootstrapState(
@@ -144,9 +149,20 @@ final class SessionBootstrapController extends ChangeNotifier {
     ));
   }
 
-  Future<void> _bestEffortBusinessLogout() async {
+  Future<void> _clearLocalBusinessSession() async {
     try {
-      await business.logout();
+      final revocation = await business.clearLocalSession();
+      if (revocation != null) {
+        unawaited(_revokeBusinessSession(revocation));
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _revokeBusinessSession(
+    BusinessSessionRevocation revocation,
+  ) async {
+    try {
+      await revocation.revoke().timeout(remoteLogoutTimeout);
     } catch (_) {}
   }
 

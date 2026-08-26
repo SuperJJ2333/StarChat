@@ -14,6 +14,7 @@ import 'group_invitation_auto_join.dart';
 import 'matrix_call_adapter.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
+import 'matrix_security_logger.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -146,7 +147,15 @@ final class _SdkAppHomeCapability implements MatrixAppHomeCapability {
   @override
   MatrixCallBackend createCallBackend() {
     _ensureActive();
-    return MatrixCallBackend(_client);
+    return MatrixCallBackend(
+      _client,
+      ensureActive: () {
+        _ensureActive();
+        if (!identical(_owner._client, _client)) {
+          throw StateError('Matrix home capability belongs to an old session');
+        }
+      },
+    );
   }
 
   @override
@@ -158,7 +167,17 @@ final class _SdkAppHomeCapability implements MatrixAppHomeCapability {
       if (!identical(active, _client)) {
         throw StateError('Matrix home capability belongs to an old session');
       }
-      backend = await MatrixMessageReminderBackend.open(active);
+      backend = await MatrixMessageReminderBackend.open(
+        active,
+        ensureActive: () {
+          _ensureActive();
+          if (!identical(_owner._client, _client)) {
+            throw StateError(
+              'Matrix home capability belongs to an old session',
+            );
+          }
+        },
+      );
     });
     return backend;
   }
@@ -459,7 +478,6 @@ final class MatrixRoomLease
   Room? _room;
   FutureOr<void> Function()? _onRevoked;
   Future<void> Function()? _drainOwner;
-  Future<void>? _revocationDrain;
   @override
   bool canceled = false;
 
@@ -490,7 +508,6 @@ final class MatrixRoomLease
     if (canceled) return;
     _room = client.getRoomById(roomId) ??
         (throw StateError('Matrix room is unavailable'));
-    _revocationDrain = null;
   }
 
   void revokeNow() {
@@ -509,23 +526,29 @@ final class MatrixRoomLease
         debugPrint('E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED');
       }
     }
-    final drain = _drainOwner;
-    _revocationDrain = drain == null
-        ? Future<void>.value()
-        : drain().catchError((_) {
-            debugPrint('E2EE_ROOM_LEASE_DRAIN_FAILED');
-          });
   }
 
   @override
   Future<void> detach() async {
     revokeNow();
-    final pending = _revocationDrain;
-    if (pending == null) return;
+    final drain = _drainOwner;
+    if (drain == null) return;
     try {
-      await pending;
-    } finally {
-      _revocationDrain = null;
+      await Future<void>.sync(drain).timeout(owner.lifecycleDrainTimeout);
+    } on TimeoutException {
+      owner.securityLogger.record(
+        stage: MatrixSecurityStage.roomLeaseDrain,
+        outcome: MatrixSecurityOutcome.timeout,
+        code: MatrixSecurityCode.roomLeaseDrainTimeout,
+      );
+      throw StateError('E2EE_ROOM_LEASE_DRAIN_TIMEOUT');
+    } catch (_) {
+      owner.securityLogger.record(
+        stage: MatrixSecurityStage.roomLeaseDrain,
+        outcome: MatrixSecurityOutcome.failure,
+        code: MatrixSecurityCode.roomLeaseDrainFailed,
+      );
+      throw StateError('E2EE_ROOM_LEASE_DRAIN_FAILED');
     }
   }
 
@@ -582,13 +605,19 @@ final class MatrixSdkE2eeClient
     Future<void> Function(Client? client)? clearClientData,
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
+    MatrixSecurityLogger? securityLogger,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
   })  : _client = client,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
-            readContinuityMetadata ?? _unconfiguredContinuityMetadata;
+            readContinuityMetadata ?? _unconfiguredContinuityMetadata,
+        securityLogger = securityLogger ??
+            MatrixSecurityLogger(
+              traceId: () => 'matrix-lifecycle',
+              sink: (line) => debugPrint(line),
+            );
   Client? _client;
   Client? _pendingCloseClient;
   final Future<void> Function(Client client) _suspendClient;
@@ -596,6 +625,7 @@ final class MatrixSdkE2eeClient
   final Future<void> Function(Client? client) _clearClientData;
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
+  final MatrixSecurityLogger securityLogger;
   Future<void> _lifecycleTail = Future.value();
   final Duration lifecycleDrainTimeout;
   int _inFlightClientOperations = 0;
@@ -720,7 +750,8 @@ final class MatrixSdkE2eeClient
           await _autoJoinInvitedGroups(active);
           _syncEvents.add(null);
         } on MatrixException catch (error) {
-          if (error.errcode == 'M_UNKNOWN_TOKEN') {
+          if (error.errcode == 'M_UNKNOWN_TOKEN' ||
+              error.errcode == 'M_FORBIDDEN') {
             _credentialsInvalid = true;
           }
           rethrow;
@@ -777,12 +808,20 @@ final class MatrixSdkE2eeClient
     return _serializeLifecycle(() async {
       final target = _client ?? _pendingCloseClient;
       await _waitForClientOperationsToDrain();
-      await _detachManagedSubscriptions();
+      try {
+        await _detachManagedSubscriptions();
+        await _detachManagedResources();
+      } catch (error, stackTrace) {
+        if (target != null) {
+          await _attachManagedResources(target);
+          await _attachManagedSubscriptions(target);
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      }
       for (final registration in _managedSubscriptions) {
         registration.canceled = true;
       }
       _managedSubscriptions.clear();
-      await _detachManagedResources();
       for (final resource in _managedResources) {
         resource.canceled = true;
       }
@@ -839,7 +878,11 @@ final class MatrixSdkE2eeClient
     try {
       await drained.future.timeout(lifecycleDrainTimeout);
     } on TimeoutException {
-      debugPrint('E2EE_LIFECYCLE_DRAIN_TIMEOUT');
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.timeout,
+        code: MatrixSecurityCode.lifecycleDrainTimeout,
+      );
       throw StateError('E2EE_LIFECYCLE_DRAIN_TIMEOUT');
     }
   }
@@ -1089,7 +1132,11 @@ final class MatrixSdkE2eeClient
       await _suspendClient(resumed);
     } catch (error, stackTrace) {
       _pendingCloseClient = resumed;
-      debugPrint('E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED');
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        code: MatrixSecurityCode.lifecycleResumeRejectCloseFailed,
+      );
       Error.throwWithStackTrace(error, stackTrace);
     }
   }

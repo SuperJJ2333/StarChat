@@ -19,6 +19,7 @@ import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
+import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/message_reminder_service.dart';
 import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
@@ -57,6 +58,7 @@ final class _AppHomeState extends State<AppHome> {
   bool incomingCallActive = false;
   MessageReminderService? reminderService;
   MessageReminderSyncBootstrapper? reminderBootstrap;
+  MatrixMessageReminderBackend? reminderBackend;
   MatrixManagedResource? matrixResources;
   MatrixAppHomeCapability? _matrixHomeCapability;
   Future<void>? _matrixResourceSetup;
@@ -104,10 +106,13 @@ final class _AppHomeState extends State<AppHome> {
         reminderService = null;
         final bootstrap = reminderBootstrap;
         reminderBootstrap = null;
+        final reminders = reminderBackend;
+        reminderBackend = null;
         controller?.removeListener(_callChanged);
         controller?.dispose();
-        backend?.dispose();
         await bootstrap?.dispose();
+        await reminders?.dispose();
+        await backend?.dispose();
         if (mounted) setState(() {});
       },
     );
@@ -124,6 +129,7 @@ final class _AppHomeState extends State<AppHome> {
       throw StateError('Matrix home capability is unavailable');
     }
     final backend = await capability.openMessageReminderBackend();
+    reminderBackend = backend;
     return MessageReminderSyncCoordinator(
       source: backend,
       service: MessageReminderService(

@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
 
 final class _TestSasRequest implements MatrixSasRequestHandle {
@@ -175,6 +176,9 @@ final class LifecycleBusiness implements DualDomainBusinessGateway {
 
   @override
   Future<void> bindMatrixUserId(String matrixUserId) async {}
+
+  @override
+  Future<String?> currentMatrixUserId() async => '@alice:matrix.test';
 
   @override
   Future<MatrixLoginGrant> issueMatrixLoginToken() async =>
@@ -1033,33 +1037,36 @@ void main() {
     await issued.source.close();
   });
 
-  test('unknown token records explicit invalid credential state', () async {
-    final matrix = MatrixSdkE2eeClient(
-      LogoutTrackingClient(
-        'old',
-        loggedIn: true,
-        matrixUserId: '@alice:matrix.test',
-        matrixDeviceId: 'DEVICE-A',
-        syncError: MatrixException.fromJson(const {
-          'errcode': 'M_UNKNOWN_TOKEN',
-          'error': 'expired',
-        }),
-      ),
-      homeserver: Uri.parse('https://matrix.test'),
-      readContinuityMetadata: (_) async => const MatrixClientContinuityMetadata(
-        isLoggedIn: true,
-        userId: '@alice:matrix.test',
-        deviceId: 'DEVICE-A',
-        ed25519Fingerprint: 'FINGERPRINT-A',
-        databaseGeneration: 'generation-a',
-      ),
-    );
+  for (final errcode in ['M_UNKNOWN_TOKEN', 'M_FORBIDDEN']) {
+    test('$errcode records explicit invalid credential state', () async {
+      final matrix = MatrixSdkE2eeClient(
+        LogoutTrackingClient(
+          'old',
+          loggedIn: true,
+          matrixUserId: '@alice:matrix.test',
+          matrixDeviceId: 'DEVICE-A',
+          syncError: MatrixException.fromJson({
+            'errcode': errcode,
+            'error': 'expired',
+          }),
+        ),
+        homeserver: Uri.parse('https://matrix.test'),
+        readContinuityMetadata: (_) async =>
+            const MatrixClientContinuityMetadata(
+          isLoggedIn: true,
+          userId: '@alice:matrix.test',
+          deviceId: 'DEVICE-A',
+          ed25519Fingerprint: 'FINGERPRINT-A',
+          databaseGeneration: 'generation-a',
+        ),
+      );
 
-    expect(matrix.credentialsInvalid, isFalse);
-    await expectLater(matrix.sync(), throwsA(isA<MatrixException>()));
-    expect(matrix.credentialsInvalid, isTrue);
-    expect(matrix.deviceId, 'DEVICE-A');
-  });
+      expect(matrix.credentialsInvalid, isFalse);
+      await expectLater(matrix.sync(), throwsA(isA<MatrixException>()));
+      expect(matrix.credentialsInvalid, isTrue);
+      expect(matrix.deviceId, 'DEVICE-A');
+    });
+  }
 
   test(
       'token response tuple preserves continuity before a phased tombstone clear',
@@ -1337,7 +1344,7 @@ void main() {
     expect(() => lease.room, throwsStateError);
   });
 
-  test('room lease callback and drain failures do not prevent database close',
+  test('room lease drain failure retains the active database for retry',
       () async {
     final client = LogoutTrackingClient('old');
     client.roomOverride = Room(id: '!room:matrix.test', client: client);
@@ -1353,10 +1360,77 @@ void main() {
       () async => throw StateError('sensitive route detail'),
     );
 
-    await matrix.suspend();
+    await expectLater(
+      matrix.suspend(),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_ROOM_LEASE_DRAIN_FAILED',
+      )),
+    );
 
+    expect(events, isEmpty);
+    expect(matrix.debugHasActiveClient, isTrue);
+    lease.bindOwnerDrain(() async {});
+    await matrix.suspend();
     expect(events, ['suspend']);
-    expect(() => lease.room, throwsStateError);
+  });
+
+  test('room lease drain timeout retains the active database for retry',
+      () async {
+    final client = LogoutTrackingClient('old');
+    client.roomOverride = Room(id: '!room:matrix.test', client: client);
+    final events = <String>[];
+    final neverDrains = Completer<void>();
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      lifecycleDrainTimeout: const Duration(milliseconds: 10),
+      suspendClient: (_) async => events.add('suspend'),
+    );
+    final lease = await matrix.openRoomLease('!room:matrix.test');
+    lease.bindOwnerDrain(() => neverDrains.future);
+
+    await expectLater(
+      matrix.suspend(),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_ROOM_LEASE_DRAIN_TIMEOUT',
+      )),
+    );
+
+    expect(events, isEmpty);
+    expect(matrix.debugHasActiveClient, isTrue);
+    lease.bindOwnerDrain(() async {});
+    await matrix.suspend();
+    expect(events, ['suspend']);
+  });
+
+  test('room lease timeout emits an allowlisted security event', () async {
+    final client = LogoutTrackingClient('old');
+    client.roomOverride = Room(id: '!room:matrix.test', client: client);
+    final events = <String>[];
+    final matrix = MatrixSdkE2eeClient(
+      client,
+      homeserver: Uri.parse('https://matrix.test'),
+      lifecycleDrainTimeout: const Duration(milliseconds: 10),
+      suspendClient: (_) async {},
+      securityLogger: MatrixSecurityLogger(
+        traceId: () => 'trace-test',
+        sink: events.add,
+      ),
+    );
+    final lease = await matrix.openRoomLease('!room:matrix.test');
+    final neverDrains = Completer<void>();
+    lease.bindOwnerDrain(() => neverDrains.future);
+
+    await expectLater(matrix.suspend(), throwsStateError);
+
+    expect(events, [
+      '{"trace_id":"trace-test","stage":"room_lease_drain",'
+          '"outcome":"timeout","code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}',
+    ]);
   });
 
   test('failed clear blocks resume and retries the same client handle',

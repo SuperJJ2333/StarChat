@@ -107,24 +107,55 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
 }
 
 final class MatrixCallBackend implements CallBackend {
-  MatrixCallBackend._(this.client, this.voip, this.delegate);
+  MatrixCallBackend._(
+    this._client,
+    this._voip,
+    this._delegate,
+    this._ensureActive,
+  );
 
-  factory MatrixCallBackend(Client client) {
+  factory MatrixCallBackend(
+    Client client, {
+    void Function()? ensureActive,
+  }) {
     late MatrixCallBackend backend;
     final delegate = FlutterWebRtcDelegate(
-      onNewCall: (call) => backend._attach(call),
-      onCallEnded: (call) => backend._ended(call),
+      onNewCall: (call) => backend._execute(() => backend._attach(call)),
+      onCallEnded: (call) => backend._execute(() => backend._ended(call)),
     );
-    backend = MatrixCallBackend._(client, VoIP(client, delegate), delegate);
+    backend = MatrixCallBackend._(
+      client,
+      VoIP(client, delegate),
+      delegate,
+      ensureActive ?? () {},
+    );
     return backend;
   }
 
-  final Client client;
-  final VoIP voip;
-  final FlutterWebRtcDelegate delegate;
+  final Client _client;
+  final VoIP _voip;
+  final FlutterWebRtcDelegate _delegate;
+  final void Function() _ensureActive;
   final _events = StreamController<CallBackendEvent>.broadcast();
   StreamSubscription<CallState>? _callStates;
   CallSession? _call;
+  var _disposed = false;
+  int _operations = 0;
+  Completer<void>? _operationsDrained;
+
+  Future<T> _execute<T>(Future<T> Function() operation) async {
+    if (_disposed) throw StateError('Matrix call backend is disposed');
+    _ensureActive();
+    if (_operations++ == 0) _operationsDrained = Completer<void>();
+    try {
+      return await operation();
+    } finally {
+      if (--_operations == 0) {
+        _operationsDrained?.complete();
+        _operationsDrained = null;
+      }
+    }
+  }
 
   webrtc.MediaStream? get localMediaStream =>
       _call?.localUserMediaStream?.stream;
@@ -135,9 +166,13 @@ final class MatrixCallBackend implements CallBackend {
   Stream<CallBackendEvent> get callEvents => _events.stream;
 
   @override
-  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async {
-    final room = client.getRoomById(roomId);
-    final localUserId = client.userID;
+  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) =>
+      _execute(() => _isEncryptedDirectRoom(roomId, matrixUserId));
+
+  Future<bool> _isEncryptedDirectRoom(
+      String roomId, String matrixUserId) async {
+    final room = _client.getRoomById(roomId);
+    final localUserId = _client.userID;
     if (room == null ||
         localUserId == null ||
         room.membership != Membership.join ||
@@ -153,13 +188,16 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   @override
-  Future<void> start(
+  Future<void> start(String roomId, String matrixUserId, CallMediaType type) =>
+      _execute(() => _start(roomId, matrixUserId, type));
+
+  Future<void> _start(
       String roomId, String matrixUserId, CallMediaType type) async {
-    if (!await isEncryptedDirectRoom(roomId, matrixUserId)) {
+    if (!await _isEncryptedDirectRoom(roomId, matrixUserId)) {
       throw StateError('Unsafe Matrix call room');
     }
-    final room = client.getRoomById(roomId)!;
-    final call = await voip.inviteToCall(
+    final room = _client.getRoomById(roomId)!;
+    final call = await _voip.inviteToCall(
       room,
       type == CallMediaType.video ? CallType.kVideo : CallType.kVoice,
       userId: matrixUserId,
@@ -170,7 +208,7 @@ final class MatrixCallBackend implements CallBackend {
   Future<void> _attach(CallSession call) async {
     if (identical(_call, call)) return;
     _call = call;
-    delegate.markActive(true);
+    _delegate.markActive(true);
     await _callStates?.cancel();
     _callStates = call.onCallStateChanged.stream.listen((state) {
       if (state == CallState.kConnected) {
@@ -183,14 +221,14 @@ final class MatrixCallBackend implements CallBackend {
       // The delegate is awaited by the SDK's sync event handler. Complete that
       // handler before a server-backed membership request, otherwise the
       // incoming-call UI can deadlock behind the sync that delivered it.
-      unawaited(_validateIncoming(call));
+      unawaited(_execute(() => _validateIncoming(call)).catchError((_) {}));
     }
   }
 
   Future<void> _validateIncoming(CallSession call) async {
     await Future<void>.delayed(Duration.zero);
-    final localUserId = client.userID;
-    final memberEvents = await client.getMembersByRoom(
+    final localUserId = _client.userID;
+    final memberEvents = await _client.getMembersByRoom(
           call.room.id,
           membership: Membership.join,
         ) ??
@@ -228,7 +266,7 @@ final class MatrixCallBackend implements CallBackend {
 
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
-    delegate.markActive(false);
+    _delegate.markActive(false);
     final interrupted = call.hangupReason == CallErrorCode.iceFailed;
     _events.add(interrupted
         ? const CallBackendEvent.networkInterrupted()
@@ -242,25 +280,33 @@ final class MatrixCallBackend implements CallBackend {
       _call ?? (throw StateError('No active Matrix call'));
 
   @override
-  Future<void> accept() => _active.answer();
+  Future<void> accept() => _execute(_active.answer);
   @override
-  Future<void> reject() => _active.reject(reason: CallErrorCode.userHangup);
+  Future<void> reject() =>
+      _execute(() => _active.reject(reason: CallErrorCode.userHangup));
   @override
-  Future<void> hangup() => _active.hangup(reason: CallErrorCode.userHangup);
+  Future<void> hangup() =>
+      _execute(() => _active.hangup(reason: CallErrorCode.userHangup));
   @override
-  Future<void> setMuted(bool value) => _active.setMicrophoneMuted(value);
+  Future<void> setMuted(bool value) =>
+      _execute(() => _active.setMicrophoneMuted(value));
   @override
   Future<void> setSpeaker(bool value) => webrtc.Helper.setSpeakerphoneOn(value);
 
   @override
-  Future<void> switchCamera() async {
-    final tracks = _active.localUserMediaStream?.stream?.getVideoTracks() ?? [];
-    if (tracks.isEmpty) return;
-    await webrtc.Helper.switchCamera(tracks.first);
-  }
+  Future<void> switchCamera() => _execute(() async {
+        final tracks =
+            _active.localUserMediaStream?.stream?.getVideoTracks() ?? [];
+        if (tracks.isEmpty) return;
+        await webrtc.Helper.switchCamera(tracks.first);
+      });
 
   Future<void> dispose() async {
+    _disposed = true;
+    final drained = _operationsDrained;
+    if (drained != null) await drained.future;
     await _callStates?.cancel();
+    _callStates = null;
     await _events.close();
   }
 }

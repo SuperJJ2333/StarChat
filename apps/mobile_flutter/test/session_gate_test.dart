@@ -14,7 +14,7 @@ final class GateBusiness implements BusinessSessionGateway {
   @override
   Future<String?> currentMatrixUserId() async => '@alice:matrix.localhost';
   @override
-  Future<void> logout() async {}
+  Future<BusinessSessionRevocation?> clearLocalSession() async => null;
   @override
   Future<BusinessSessionRestore> restoreSession() async => result;
 }
