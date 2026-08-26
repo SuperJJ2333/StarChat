@@ -120,6 +120,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.identityCache,
+    this.onUnreadChanged,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -129,6 +130,7 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final ChatIdentityCache? identityCache;
+  final VoidCallback? onUnreadChanged;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -387,6 +389,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   Future<void> _openRoom(_RoomSnapshot snapshot) async {
     await widget.matrix.conversations.markReadOnOpen(snapshot.id);
+    widget.onUnreadChanged?.call();
     try {
       await _identityCache.preload();
     } catch (_) {

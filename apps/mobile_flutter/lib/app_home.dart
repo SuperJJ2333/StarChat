@@ -348,6 +348,9 @@ final class _AppHomeState extends State<AppHome> {
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
               activeColor: const Color(0xff07c160),
+              onTap: (index) {
+                if (index == 0) unawaited(_refreshUnreadCount());
+              },
               items: [
                 BottomNavigationBarItem(
                   icon: MessageUnreadBadge(
@@ -392,6 +395,7 @@ final class _AppHomeState extends State<AppHome> {
                             _openCall(contact, CallMediaType.video),
                         reminderService: reminderService,
                         identityCache: _chatIdentityCache,
+                        onUnreadChanged: () => unawaited(_refreshUnreadCount()),
                       ),
                 1 => _chatIdentityCache == null
                     ? const Center(child: CupertinoActivityIndicator())

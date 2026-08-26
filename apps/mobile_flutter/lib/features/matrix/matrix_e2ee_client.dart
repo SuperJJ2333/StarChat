@@ -19,6 +19,7 @@ import 'matrix_call_adapter.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
+import 'matrix_recovery_service.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
@@ -1462,6 +1463,7 @@ final class MatrixSdkE2eeClient
     implements
         MatrixE2eeClient,
         MatrixRecoveryClient,
+        MatrixRecoveryBackend,
         MatrixTokenLoginGateway,
         AvatarMediaCapability {
   MatrixSdkE2eeClient(
@@ -1652,6 +1654,24 @@ final class MatrixSdkE2eeClient
           rethrow;
         }
       }, authorizeAccess: true);
+
+  @override
+  Future<RecoveryBootstrapResult> bootstrapOnlineBackup(
+          {String? recoveryKey}) =>
+      _withClient((active) async {
+        final encryption = active.encryption;
+        if (encryption == null) {
+          throw StateError('Matrix encryption is not enabled');
+        }
+        if (recoveryKey != null) {
+          final handle = encryption.ssss.open();
+          await handle.unlock(recoveryKey: recoveryKey);
+          await handle.maybeCacheAll();
+        }
+        return await encryption.keyManager.isCached()
+            ? RecoveryBootstrapResult.reused
+            : RecoveryBootstrapResult.needsSecretStorageUnlock;
+      });
 
   @override
   Future<void> unlockSecretStorage(String recoveryKey) =>

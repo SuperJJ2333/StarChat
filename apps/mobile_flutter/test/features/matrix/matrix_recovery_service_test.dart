@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_recovery_service.dart';
+import 'package:liuhetong_mobile/core/session_store.dart';
 
 final class _Backend implements MatrixRecoveryBackend {
   String? unlocked;
@@ -23,6 +24,18 @@ final class _Backend implements MatrixRecoveryBackend {
 }
 
 void main() {
+  test(
+      'missing local recovery key preserves the Matrix store and requests action',
+      () async {
+    final backend = _Backend();
+    final service = MatrixRecoveryService(backend);
+    final restored = await service.restoreFromLocalSecureStorage(
+      SecureSessionStore(_MemoryStore()),
+    );
+    expect(restored, isFalse);
+    expect(backend.restoreCalls, 0);
+    expect(service.state, MatrixRecoveryState.needsRecoveryKey);
+  });
   test('stored recovery key unlocks backup, restores sessions, and uploads',
       () async {
     final backend = _Backend();
@@ -43,4 +56,14 @@ void main() {
     expect(backend.restoreCalls, 0);
     expect(backend.uploadCalls, 0);
   });
+}
+
+final class _MemoryStore implements SecureKeyValueStore {
+  final values = <String, String>{};
+  @override
+  Future<void> delete(String key) async => values.remove(key);
+  @override
+  Future<String?> read(String key) async => values[key];
+  @override
+  Future<void> write(String key, String value) async => values[key] = value;
 }

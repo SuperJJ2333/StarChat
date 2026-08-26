@@ -13,6 +13,7 @@ import 'features/auth/login_controller.dart';
 import 'features/auth/authentication_flow.dart';
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'features/matrix/matrix_recovery_service.dart';
 import 'session_gate.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
@@ -48,6 +49,7 @@ Future<void> main() async {
     matrix: matrix,
     securityLogger: matrix.securityLogger,
   );
+  final recovery = MatrixRecoveryService(matrix);
   final login = DualDomainLoginService(
     business: api,
     matrix: matrix,
@@ -71,6 +73,16 @@ Future<void> main() async {
   );
   runApp(LiuhetongApp(home: gate, themeController: themeController));
   unawaited(session.bootstrap());
+  unawaited(() async {
+    try {
+      if (await recovery.restoreFromLocalSecureStorage(store)) {
+        await matrix.sync();
+      }
+    } catch (_) {
+      // The encrypted database and secure-store records remain intact. The
+      // recovery UI can present a retry/import flow without exposing secrets.
+    }
+  }());
 }
 
 final class LiuhetongApp extends StatelessWidget {

@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../core/session_store.dart';
+
 enum RecoveryBootstrapResult {
   created,
   reused,
@@ -51,6 +53,19 @@ final class MatrixRecoveryService extends ChangeNotifier {
 
   Future<void> uploadPendingInboundSessions() =>
       _backend.uploadPendingInboundSessions();
+
+  /// Restores only when this device already holds a user-owned recovery key.
+  /// A missing key leaves Matrix data untouched and requires a verified device
+  /// or an explicit recovery-key import.
+  Future<bool> restoreFromLocalSecureStorage(SecureSessionStore store) async {
+    final recoveryKey = await store.encryptedRecoveryKey();
+    if (recoveryKey == null || recoveryKey.isEmpty) {
+      _setState(MatrixRecoveryState.needsRecoveryKey);
+      return false;
+    }
+    await restoreFromRecoveryKey(recoveryKey);
+    return true;
+  }
 
   void _setState(MatrixRecoveryState next) {
     if (_state == next) return;
