@@ -1549,4 +1549,87 @@ void main() {
     expect(await secureStore.matrixDatabaseKey(), oldKey);
     expect(business.logouts, 1);
   });
+  test('revoked session cannot reopen a room lease', () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    var resumeCalls = 0;
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+      resumeClient: () async {
+        resumeCalls++;
+        return resumedClient;
+      },
+    );
+
+    await matrix.suspend();
+
+    await expectLater(
+      matrix.openRoomLease('!room:matrix.test'),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_LIFECYCLE_ACCESS_REVOKED',
+      )),
+    );
+    expect(resumeCalls, 0);
+  });
+
+  test('revoked session cannot register a home resource', () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    var resumeCalls = 0;
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+      resumeClient: () async {
+        resumeCalls++;
+        return resumedClient;
+      },
+    );
+
+    await matrix.suspend();
+
+    await expectLater(
+      matrix.registerAppHomeResource(
+        open: (_) async {},
+        close: () async {},
+      ),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_LIFECYCLE_ACCESS_REVOKED',
+      )),
+    );
+    expect(resumeCalls, 0);
+  });
+
+  test('revoked session cannot register a subscription', () async {
+    final oldClient = LogoutTrackingClient('old');
+    final resumedClient = LogoutTrackingClient('resumed');
+    var resumeCalls = 0;
+    final matrix = MatrixSdkE2eeClient(
+      oldClient,
+      homeserver: Uri.parse('https://matrix.test'),
+      suspendClient: (_) async {},
+      resumeClient: () async {
+        resumeCalls++;
+        return resumedClient;
+      },
+    );
+
+    await matrix.suspend();
+
+    await expectLater(
+      matrix.subscribeSasRequests(onData: (_) {}),
+      throwsA(isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'E2EE_LIFECYCLE_ACCESS_REVOKED',
+      )),
+    );
+    expect(resumeCalls, 0);
+  });
 }

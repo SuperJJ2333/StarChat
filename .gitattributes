@@ -1,1 +1,2 @@
 *.sh text eol=lf
+docs/verification/artifacts/2026-08-26/e2ee-session-capability-boundary/DIFF_FILE.patch -whitespace

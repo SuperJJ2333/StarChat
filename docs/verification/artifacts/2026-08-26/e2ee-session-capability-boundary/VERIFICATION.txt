@@ -45,7 +45,7 @@ EXIT: 0
 
 ROLLBACK
 COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity apply --reverse --check D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\DIFF_FILE.patch
-INPUT: DIFF_FILE.patch
+INPUT: DIFF_FILE.patch (regenerated from Git's byte-preserving patch output)
 LITERAL RESULT: patch reverses cleanly on an equivalent checkout
 EXIT: 0
 
@@ -53,3 +53,24 @@ RESTORED BEHAVIOR/STATUS: Executing ROLLBACK.sh on a copy restores the pre-integ
 ROLLBACK_COPY_COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply --reverse DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check diff --exit-code --quiet
 ROLLBACK_COPY_RESULT: apply=0 reverse_check=0 reverse=0 restored_diff=0
 ROLLBACK_COPY_EXIT_STATUS: 0
+
+ARTIFACT_HYGIENE_FIX:
+COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity diff --check 5309463^ 5309463
+LITERAL RESULT: no output after DIFF_FILE regeneration
+EXIT: 0
+DIFF_FILE_SHA256: 11F16E3B98318107225D831543945AA7B5D4722BD797EAD44B94C698ABAAC66E
+
+POST_FIX_HYGIENE_COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity diff --check HEAD^ HEAD
+POST_FIX_HYGIENE_RESULT: DIFF_FILE.patch is marked -whitespace because valid unified diff represents blank added lines as +<space>.
+POST_FIX_HYGIENE_EXIT_STATUS: 0
+
+LIFECYCLE_FIX:
+RED_COMMAND: C:\src\flutter\bin\flutter.bat test test/features/matrix/matrix_client_factory_test.dart -r expanded
+RED_RESULT: post-suspend room lease and home resource incorrectly resumed the SDK client; 2 assertions failed.
+GREEN_COMMAND: C:\src\flutter\bin\flutter.bat test test/features/matrix/matrix_client_factory_test.dart -r expanded
+GREEN_RESULT: All tests passed! (43 tests); room lease, home resource, and subscription reject E2EE_LIFECYCLE_ACCESS_REVOKED without resume.
+FULL_COMMAND: C:\src\flutter\bin\flutter.bat test -r compact
+FULL_RESULT: All tests passed! (363 tests)
+FULL_EXIT: 0
+ANALYZE_RESULT: No issues found!
+ANALYZE_EXIT: 0

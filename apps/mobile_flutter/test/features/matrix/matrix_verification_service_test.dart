@@ -55,13 +55,14 @@ void main() {
       },
       resumeClient: () async => Client('resumed-verification'),
     );
-    final suspension = matrix.suspend();
-    await suspendStarted.future;
     final service = MatrixVerificationService(
       matrix,
       incomingRequests: () => incoming.stream,
     );
     final listen = service.listenForIncoming((_) {});
+    await Future<void>.delayed(Duration.zero);
+    final suspension = matrix.suspend();
+    await suspendStarted.future;
     final dispose = service.dispose();
 
     allowSuspend.complete();

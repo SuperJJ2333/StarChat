@@ -557,13 +557,24 @@ final class MatrixRoomLease
   Room get _activeRoom =>
       _room ?? (throw StateError('Matrix room lease is not active'));
 
+  Future<T> _withLeaseOperation<T>(
+    Future<T> Function(Room room) operation,
+  ) =>
+      owner._withClient((active) async {
+        final room = _activeRoom;
+        if (!identical(room.client, active)) {
+          throw StateError('Matrix room lease client mismatch');
+        }
+        return operation(room);
+      });
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo => _snapshotRoomInfo(_activeRoom);
 
-  Future<MatrixRoomInfoSnapshot> refreshRoomInfo() async {
-    await _activeRoom.requestParticipants([Membership.join]);
-    return roomInfo;
-  }
+  Future<MatrixRoomInfoSnapshot> refreshRoomInfo() =>
+      _withLeaseOperation((room) async {
+        await room.requestParticipants([Membership.join]);
+        return _snapshotRoomInfo(room);
+      });
 
   Future<RoomTimelineCapability> openRoomTimeline({
     required void Function() onUpdate,
@@ -587,7 +598,7 @@ final class MatrixRoomLease
   Future<void> updateConversationPreference(
     ConversationPreference preference,
   ) =>
-      writeConversationPreference(_activeRoom, preference);
+      _withLeaseOperation((room) => writeConversationPreference(room, preference));
 
   Future<DateTime?> serverNow() async {
     final homeserver = _activeRoom.client.homeserver;
@@ -633,9 +644,13 @@ final class MatrixRoomLease
     required String name,
     required String mimeType,
   }) =>
-      _activeRoom.sendFileEvent(
-        MatrixFile.fromMimeType(bytes: bytes, name: name, mimeType: mimeType),
-      );
+      _withLeaseOperation((room) => room.sendFileEvent(
+            MatrixFile.fromMimeType(
+              bytes: bytes,
+              name: name,
+              mimeType: mimeType,
+            ),
+          ));
 
   void setOnRevoked(FutureOr<void> Function() callback) =>
       _onRevoked = callback;
@@ -661,11 +676,11 @@ final class MatrixRoomLease
     required Uri? avatarUri,
     required double size,
   }) =>
-      MatrixAvatarUrlResolver.resolveForClient(
-        avatarUri: avatarUri,
-        client: _activeRoom.client,
-        size: size,
-      );
+      _withLeaseOperation((room) => MatrixAvatarUrlResolver.resolveForClient(
+            avatarUri: avatarUri,
+            client: room.client,
+            size: size,
+          ));
 
   @override
   Future<void> sendEncrypted(
@@ -686,13 +701,16 @@ final class MatrixRoomLease
   Future<void> _sendEvent(
     Map<String, Object?> content, {
     String? type,
-  }) async {
-    final payload = Map<String, dynamic>.from(content);
-    final eventId = type == null
-        ? await _activeRoom.sendEvent(payload)
-        : await _activeRoom.sendEvent(payload, type: type);
-    if (eventId == null) throw StateError('Matrix room event was not accepted');
-  }
+  }) =>
+      _withLeaseOperation((room) async {
+        final payload = Map<String, dynamic>.from(content);
+        final eventId = type == null
+            ? await room.sendEvent(payload)
+            : await room.sendEvent(payload, type: type);
+        if (eventId == null) {
+          throw StateError('Matrix room event was not accepted');
+        }
+      });
 
   @override
   Future<void> redact(
@@ -701,7 +719,9 @@ final class MatrixRoomLease
     String reason,
   ) {
     _requireRoomId(requestedRoomId);
-    return _activeRoom.redactEvent(eventId, reason: reason);
+    return _withLeaseOperation(
+      (room) => room.redactEvent(eventId, reason: reason),
+    );
   }
 
   @override
@@ -1677,11 +1697,18 @@ final class MatrixSdkE2eeClient
     }
   }
 
+  void _requireLifecycleAccess() {
+    if (_accessRevoked) {
+      throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+    }
+  }
+
   Future<MatrixManagedSubscription> _registerInternalStream<T>({
     required Stream<T> Function(Client client) streamFor,
     required void Function(T event) onData,
   }) =>
       _serializeLifecycle(() async {
+        _requireLifecycleAccess();
         final active = await _resumeWithinLifecycle();
         final registration = _ManagedClientStream<T>(
           owner: this,
@@ -1699,6 +1726,7 @@ final class MatrixSdkE2eeClient
     void Function()? revoke,
   }) =>
       _serializeLifecycle(() async {
+        _requireLifecycleAccess();
         final active = await _resumeWithinLifecycle();
         final resource = _ManagedClientResource(
           owner: this,
@@ -1797,6 +1825,7 @@ final class MatrixSdkE2eeClient
 
   Future<MatrixRoomLease> openRoomLease(String roomId) =>
       _serializeLifecycle(() async {
+        _requireLifecycleAccess();
         final active = await _resumeWithinLifecycle();
         final lease = MatrixRoomLease._(this, roomId);
         await lease.attach(active);
