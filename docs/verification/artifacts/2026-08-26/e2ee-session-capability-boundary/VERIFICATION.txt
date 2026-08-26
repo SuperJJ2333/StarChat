@@ -75,7 +75,7 @@ FULL_EXIT: 0
 ANALYZE_RESULT: No issues found!
 ANALYZE_EXIT: 0
 
-CURRENT_SCOPE: baseline 22b06b4 -> working tree HEAD 57c96f0 plus Task 4 and lease operation tracking changes.
+CURRENT_SCOPE: baseline 22b06b4 -> HEAD a00efbb (feat/e2ee): Task 4 account switch and lease operation tracking changes.
 
 TASK4_AND_LEASE_TRACKING:
 RED_COMMAND: C:\src\flutter\bin\flutter.bat test test/features/auth/login_controller_test.dart
