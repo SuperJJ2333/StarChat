@@ -1,0 +1,55 @@
+Changed boundary: MatrixRoomLease now exposes typed DTO/capabilities only; presentation code no longer retains raw Matrix SDK Client/Room/Timeline objects.
+
+MODIFIED_FILE: D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\MODIFIED_FILE.txt
+DIFF_FILE: D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\DIFF_FILE.patch
+VERIFICATION: D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\VERIFICATION.txt
+ROLLBACK: D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\ROLLBACK.sh
+
+BASELINE
+COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity status --short -- apps/mobile_flutter
+INPUT: HEAD 22b06b421c14d49c3dc0206193698fdd17803b43 plus unstaged Room-capability integration
+LITERAL RESULT:
+ M apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
+ M apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+ M apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart
+ M apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart
+ M apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart
+ M apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+ M apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart
+ M apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
+ M apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart
+ M apps/mobile_flutter/lib/features/matrix/nudge_service.dart
+ M apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart
+ M apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
+ M apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
+ M apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart
+EXIT: 0
+
+MODIFIED
+COMMAND: C:\src\flutter\bin\flutter.bat test -r compact
+INPUT: apps/mobile_flutter test suite
+LITERAL RESULT: All tests passed! (360 tests)
+EXIT: 0
+
+MODIFIED
+COMMAND: C:\src\flutter\bin\flutter.bat analyze
+INPUT: apps/mobile_flutter
+LITERAL RESULT: No issues found!
+EXIT: 0
+
+MODIFIED
+COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity diff --check
+INPUT: integration diff
+LITERAL RESULT: no output
+EXIT: 0
+
+ROLLBACK
+COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity apply --reverse --check D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity\docs\verification\artifacts\2026-08-26\e2ee-session-capability-boundary\DIFF_FILE.patch
+INPUT: DIFF_FILE.patch
+LITERAL RESULT: patch reverses cleanly on an equivalent checkout
+EXIT: 0
+
+RESTORED BEHAVIOR/STATUS: Executing ROLLBACK.sh on a copy restores the pre-integration source behavior; this worktree remains changed for commit.
+ROLLBACK_COPY_COMMAND: git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check apply --reverse DIFF_FILE.patch; git -C D:\pythonProject\outsource\StarChat\.worktrees\e2ee-session-continuity-rollback-check diff --exit-code --quiet
+ROLLBACK_COPY_RESULT: apply=0 reverse_check=0 reverse=0 restored_diff=0
+ROLLBACK_COPY_EXIT_STATUS: 0

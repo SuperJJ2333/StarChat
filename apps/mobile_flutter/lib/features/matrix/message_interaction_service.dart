@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
-import 'package:matrix/matrix.dart';
 
 abstract interface class MessageInteractionBackend {
   Future<void> send(String roomId, Map<String, Object?> content);
@@ -130,73 +129,5 @@ final class MatrixServerClock {
     final date = response.headers['date'];
     if (date == null) throw StateError('Matrix homeserver 未返回服务器时间');
     return HttpDate.parse(date).toUtc();
-  }
-}
-
-final class MatrixMessageInteractionBackend
-    implements MessageInteractionBackend {
-  const MatrixMessageInteractionBackend({
-    required this.client,
-    required this.timeline,
-  });
-
-  final Client client;
-  final Timeline timeline;
-
-  Room _room(String roomId) =>
-      client.getRoomById(roomId) ?? (throw StateError('找不到 Matrix 会话：$roomId'));
-
-  @override
-  Future<void> send(String roomId, Map<String, Object?> content) async {
-    await _room(roomId).sendEvent(Map<String, dynamic>.from(content));
-  }
-
-  @override
-  Future<void> redact(String roomId, String eventId, String reason) async {
-    await _room(roomId).redactEvent(eventId, reason: reason);
-  }
-
-  @override
-  Future<void> forwardEncryptedCopy(
-    String sourceRoomId,
-    String targetRoomId,
-    String eventId,
-  ) async {
-    final source = _room(sourceRoomId);
-    final target = _room(targetRoomId);
-    if (!target.encrypted) {
-      throw StateError('只能转发到端到端加密会话');
-    }
-    final event = timeline.events.firstWhere(
-      (candidate) => candidate.eventId == eventId,
-    );
-    if (event.roomId != null && event.roomId != source.id) {
-      throw StateError('消息不属于当前会话');
-    }
-    if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
-        .contains(event.messageType)) {
-      final attachment = await event.downloadAndDecryptAttachment();
-      final mimeType = event.content['info'] is Map
-          ? (event.content['info'] as Map)['mimetype']?.toString()
-          : null;
-      await target.sendFileEvent(
-        MatrixFile.fromMimeType(
-          bytes: attachment.bytes,
-          name: event.body,
-          mimeType: mimeType,
-        ),
-      );
-      return;
-    }
-    if (event.messageType != MessageTypes.Text) {
-      throw StateError('该消息类型不能转发');
-    }
-    await target.sendEvent({
-      'msgtype': MessageTypes.Text,
-      'body': event.body,
-      if (event.content['format'] != null) 'format': event.content['format'],
-      if (event.content['formatted_body'] != null)
-        'formatted_body': event.content['formatted_body'],
-    });
   }
 }

@@ -7,8 +7,8 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
-import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
+import 'chat_history_search.dart';
 import '../../ui/components/wechat_date_picker.dart';
 
 final class GroupChatInfoPage extends StatefulWidget {
@@ -19,6 +19,7 @@ final class GroupChatInfoPage extends StatefulWidget {
     required this.onSearchHistory,
     required this.onClearLocalHistory,
     required this.onLeft,
+    this.avatarMedia,
     this.onMemberTap,
   });
 
@@ -27,6 +28,7 @@ final class GroupChatInfoPage extends StatefulWidget {
   final VoidCallback onSearchHistory;
   final Future<void> Function() onClearLocalHistory;
   final VoidCallback onLeft;
+  final AvatarMediaCapability? avatarMedia;
   final ValueChanged<GroupChatMember>? onMemberTap;
 
   @override
@@ -160,6 +162,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         ? snapshot.members
                         : snapshot.members.take(collapsedMemberCount).toList(),
                     onAdd: widget.onAddMember,
+                    avatarMedia: widget.avatarMedia,
                     onMemberTap: widget.onMemberTap,
                     onRemove: snapshot.canManage
                         ? () => Navigator.push(
@@ -504,11 +507,13 @@ final class _MemberGrid extends StatelessWidget {
   const _MemberGrid(
       {required this.members,
       required this.onAdd,
+      this.avatarMedia,
       this.onMemberTap,
       this.onRemove});
 
   final List<GroupChatMember> members;
   final VoidCallback onAdd;
+  final AvatarMediaCapability? avatarMedia;
   final ValueChanged<GroupChatMember>? onMemberTap;
   final VoidCallback? onRemove;
 
@@ -529,6 +534,7 @@ final class _MemberGrid extends StatelessWidget {
                 _MemberCell(
                   key: Key('group-member-${members[index].matrixUserId}'),
                   member: members[index],
+                  avatarMedia: avatarMedia,
                   onTap: onMemberTap == null
                       ? null
                       : () => onMemberTap!(members[index]),
@@ -791,8 +797,14 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
 }
 
 final class _MemberCell extends StatelessWidget {
-  const _MemberCell({super.key, required this.member, this.onTap});
+  const _MemberCell({
+    super.key,
+    required this.member,
+    this.avatarMedia,
+    this.onTap,
+  });
   final GroupChatMember member;
+  final AvatarMediaCapability? avatarMedia;
   final VoidCallback? onTap;
 
   @override
@@ -801,9 +813,9 @@ final class _MemberCell extends StatelessWidget {
       onPressed: onTap,
       child: Column(
         children: [
-          member.client != null && member.matrixAvatarUri != null
+          avatarMedia != null && member.matrixAvatarUri != null
               ? MatrixUserAvatar(
-                  client: member.client!,
+                  avatarMedia: avatarMedia!,
                   matrixAvatarUri: member.matrixAvatarUri,
                   nickname: member.displayName,
                   fallbackSeed: member.matrixUserId,

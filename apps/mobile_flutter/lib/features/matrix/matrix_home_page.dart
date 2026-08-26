@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
@@ -45,8 +44,6 @@ import 'chat_history_search.dart';
 import '../search/global_search_page.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
-import 'matrix_message_reminder_backend.dart'
-    show messageReminderAccountDataType;
 import 'media_message_service.dart';
 import 'message_reminder_service.dart';
 import 'message_interaction_service.dart';
@@ -54,19 +51,6 @@ import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
 import 'voice_composer.dart';
-
-List<User> orderedJoinedMembers(Room room) {
-  final joined = room.getParticipants([Membership.join]);
-  final byId = {for (final member in joined) member.id: member};
-  final order = reconcileMemberOrder(
-    preferenceForRoom(room).memberOrderIds,
-    joined.map((member) => member.id),
-  );
-  return [
-    for (final id in order)
-      if (byId[id] != null) byId[id]!
-  ];
-}
 
 String groupRoomNavigationTitle(String _, int memberCount) =>
     '群聊($memberCount)';
@@ -84,11 +68,6 @@ String directRoomNavigationTitle({
     nickname: contact.nickname,
     username: contact.username,
   ));
-}
-
-Future<List<User>> loadOrderedJoinedMembers(Room room) async {
-  await room.requestParticipants([Membership.join]);
-  return orderedJoinedMembers(room);
 }
 
 final class _RoomAvatarSnapshot {
@@ -296,15 +275,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final event = room.lastEvent;
     if (event == null) return '端到端加密消息';
     final messageContent = safeConversationMessageContent(
-      undecrypted: event.type == EventTypes.Encrypted,
+      undecrypted: event.type == 'm.room.encrypted',
       messageContent: event.text,
     );
     if (room.isDirect) return messageContent;
     final sender = conversationSenderName(
       _memberIdentity(event.sender),
     );
-    final isSenderMessage = event.type == EventTypes.Message ||
-        event.type == EventTypes.Encrypted ||
+    final isSenderMessage = event.type == 'm.room.message' ||
+        event.type == 'm.room.encrypted' ||
         event.type == changliaoNudgeEventType;
     return groupConversationSubtitle(
       unreadCount: _conversationUnread(room),
@@ -566,7 +545,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                         CupertinoPageRoute(
                           builder: (_) => _FoldedGroupChatsPage(
                             rooms: foldedRooms,
-                            matrix: widget.matrix,
+                            avatarMedia: widget.matrix,
                             onOpen: (room) {
                               Navigator.pop(context);
                               _openRoom(room);
@@ -590,7 +569,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     timeLabel: room.timeLabel,
                     avatar: room.isDirect || room.avatar != null
                         ? MatrixUserAvatar(
-                            matrix: widget.matrix,
+                            avatarMedia: widget.matrix,
                             nickname: roomName,
                             fallbackSeed: room.id,
                             matrixAvatarUri: room.avatar,
@@ -600,7 +579,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                             avatars: [
                               for (final member in room.groupAvatars)
                                 MatrixUserAvatar(
-                                  matrix: widget.matrix,
+                                  avatarMedia: widget.matrix,
                                   nickname: member.nickname,
                                   fallbackSeed: member.fallbackSeed,
                                   matrixAvatarUri: member.uri,
@@ -651,11 +630,11 @@ final class _MessagesEmptyState extends StatelessWidget {
 final class _FoldedGroupChatsPage extends StatelessWidget {
   const _FoldedGroupChatsPage({
     required this.rooms,
-    required this.matrix,
+    required this.avatarMedia,
     required this.onOpen,
   });
   final List<_RoomSnapshot> rooms;
-  final MatrixSdkE2eeClient matrix;
+  final AvatarMediaCapability avatarMedia;
   final ValueChanged<_RoomSnapshot> onOpen;
 
   @override
@@ -678,7 +657,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
                 muted: true,
                 avatar: room.avatar != null
                     ? MatrixUserAvatar(
-                        matrix: matrix,
+                        avatarMedia: avatarMedia,
                         nickname: room.displayName,
                         fallbackSeed: room.id,
                         matrixAvatarUri: room.avatar,
@@ -687,7 +666,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
                         avatars: [
                           for (final member in room.groupAvatars)
                             MatrixUserAvatar(
-                              matrix: matrix,
+                              avatarMedia: avatarMedia,
                               nickname: member.nickname,
                               fallbackSeed: member.fallbackSeed,
                               matrixAvatarUri: member.uri,
@@ -707,8 +686,7 @@ class RoomPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.roomName,
-    Room? room,
-    this.roomLease,
+    required this.roomLease,
     this.initialContact,
     required this.onCreateGroup,
     this.reminderService,
@@ -716,14 +694,11 @@ class RoomPage extends StatefulWidget {
     this.onVideo,
     this.initialIdentityCache,
     this.mediaSenderFactory,
-  })  : _room = room,
-        assert(room != null || roomLease != null);
+  });
 
   final BusinessApiClient api;
   final String roomName;
-  final Room? _room;
-  final MatrixRoomLease? roomLease;
-  Room get room => roomLease?.room ?? _room!;
+  final MatrixRoomLease roomLease;
   final ContactDetails? initialContact;
   final VoidCallback onCreateGroup;
   final MessageReminderService? reminderService;
@@ -746,7 +721,6 @@ class _RoomPageState extends State<RoomPage> {
   final recalledDrafts = <String, String>{};
   final selection = MessageSelectionController();
   RoomTimelineController? controller;
-  Timeline? roomTimeline;
   LocalHiddenEvents? hiddenEvents;
   final mentionDraft = MentionDraft();
   RoomMessageViewModel? replyingTo;
@@ -766,18 +740,21 @@ class _RoomPageState extends State<RoomPage> {
   String? mediaMessage;
   Timer? mediaMessageTimer;
   bool mediaMessageVisible = false;
+  late MatrixRoomInfoSnapshot roomInfo;
   late int joinedMemberCount;
   int? readAnnouncementVersion;
   String? highlightedMessageId;
 
-  bool get isGroup => !widget.room.isDirectChat;
+  bool get isGroup => !roomInfo.isDirect;
 
   @override
   void initState() {
     super.initState();
-    widget.roomLease?.bindOwnerDrain(_drainMatrixOperations);
+    widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
+    roomInfo = widget.roomLease.roomInfo;
     peer = widget.initialContact;
-    joinedMemberCount = orderedJoinedMembers(widget.room).length;
+    joinedMemberCount =
+        roomInfo.members.where((member) => member.isJoined).length;
     ownProfile = _identityCache.profile;
     contactsByMatrixId = _identityCache.contactsByMatrixId;
     _identityCache.addListener(_identityChanged);
@@ -809,9 +786,14 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _refreshJoinedMemberCount() async {
     if (!isGroup) return;
     try {
-      await widget.room.requestParticipants([Membership.join]);
-      final count = orderedJoinedMembers(widget.room).length;
-      if (mounted) setState(() => joinedMemberCount = count);
+      final refreshed = await widget.roomLease.refreshRoomInfo();
+      if (mounted) {
+        setState(() {
+          roomInfo = refreshed;
+          joinedMemberCount =
+              refreshed.members.where((member) => member.isJoined).length;
+        });
+      }
     } catch (_) {
       // Preserve the synchronized local count if a transient member request
       // fails; the next room sync refreshes the title.
@@ -819,9 +801,9 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   String get _navigationTitle => isGroup
-      ? groupRoomNavigationTitle(widget.room.name, joinedMemberCount)
+      ? groupRoomNavigationTitle(roomInfo.name, joinedMemberCount)
       : directRoomNavigationTitle(
-          peerMatrixUserId: widget.room.directChatMatrixID,
+          peerMatrixUserId: roomInfo.directPeerId,
           contactsByMatrixId: contactsByMatrixId,
           fallbackRoomName: widget.roomName,
         );
@@ -832,17 +814,14 @@ class _RoomPageState extends State<RoomPage> {
     setState(() {
       contactsByMatrixId = mapped;
       ownProfile = _identityCache.profile ?? ownProfile;
-      final peerId = widget.room.directChatMatrixID;
+      final peerId = roomInfo.directPeerId;
       if (peerId != null) peer = mapped[peerId] ?? peer;
     });
   }
 
-  int get _announcementVersion =>
-      widget.room.roomAccountData[groupChatAccountDataType]
-          ?.content['announcement_version'] as int? ??
-      0;
+  int get _announcementVersion => roomInfo.announcementVersion;
 
-  String get _announcement => isGroup ? widget.room.topic.trim() : '';
+  String get _announcement => isGroup ? roomInfo.topic.trim() : '';
 
   bool get _showAnnouncement =>
       _announcement.isNotEmpty &&
@@ -850,8 +829,7 @@ class _RoomPageState extends State<RoomPage> {
 
   Future<void> _loadAnnouncementReadState() async {
     final preferences = await SharedPreferences.getInstance();
-    final version =
-        preferences.getInt('announcement-read:${widget.room.id}') ?? 0;
+    final version = preferences.getInt('announcement-read:${roomInfo.id}') ?? 0;
     if (mounted) setState(() => readAnnouncementVersion = version);
   }
 
@@ -867,28 +845,28 @@ class _RoomPageState extends State<RoomPage> {
       ),
     );
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setInt('announcement-read:${widget.room.id}', version);
+    await preferences.setInt('announcement-read:${roomInfo.id}', version);
     if (mounted) setState(() => readAnnouncementVersion = version);
   }
 
   Future<void> _load() async {
     try {
-      final accountId = widget.room.client.userID;
+      final accountId = roomInfo.currentUserId;
       if (accountId == null) throw StateError('Matrix 账号尚未登录');
       hiddenEvents = SharedPreferencesLocalHiddenEvents(
         preferences: await SharedPreferences.getInstance(),
         accountId: accountId,
       );
-      final timeline =
-          await widget.room.getTimeline(onUpdate: () => controller?.refresh());
+      final timeline = await widget.roomLease.openRoomTimeline(
+        onUpdate: () => controller?.refresh(),
+      );
       if (!mounted) {
-        timeline.cancelSubscriptions();
+        timeline.dispose();
         return;
       }
       controller = RoomTimelineController(
-        MatrixRoomTimelineAdapter(widget.room, timeline),
+        MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
-      roomTimeline = timeline;
       setState(() => loading = false);
       await controller!.markRead();
       await _loadEmojiVault();
@@ -910,10 +888,9 @@ class _RoomPageState extends State<RoomPage> {
       final contacts = _identityCache.contacts;
       final profile = _identityCache.profile;
       final mapped = _identityCache.contactsByMatrixId;
-      final participantIds = widget.room
-          .getParticipants()
+      final participantIds = roomInfo.members
           .map((participant) => participant.id)
-          .where((id) => id != widget.room.client.userID)
+          .where((id) => id != roomInfo.currentUserId)
           .toSet();
       ContactDetails? resolvedPeer;
       for (final contact in contacts) {
@@ -937,7 +914,7 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _loadEmojiVault() async {
     try {
       final session = await MatrixEmojiVault.open(
-        MatrixSdkEmojiVaultBackend(widget.room.client),
+        await widget.roomLease.openEmojiVaultBackend(),
       );
       final items = <CustomEmojiItem>[];
       for (final item in session.vault.items) {
@@ -1006,12 +983,10 @@ class _RoomPageState extends State<RoomPage> {
 
   Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
     try {
-      await widget.room.sendFileEvent(
-        MatrixFile.fromMimeType(
-          bytes: item.bytes,
-          name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
-          mimeType: item.mimeType,
-        ),
+      await widget.roomLease.sendEncryptedAttachment(
+        bytes: item.bytes,
+        name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
+        mimeType: item.mimeType,
       );
       await emojiVault?.vault.markRecent(item.id);
       if (mounted) setState(() => composerPanel = ComposerPanel.none);
@@ -1025,7 +1000,7 @@ class _RoomPageState extends State<RoomPage> {
     String targetDisplayName,
   ) async {
     final sender = ownProfile;
-    final senderId = widget.room.client.userID;
+    final senderId = roomInfo.currentUserId;
     if (sender == null || senderId == null) return;
     try {
       // The profile service is authoritative for a sender's nudge suffix.
@@ -1039,8 +1014,8 @@ class _RoomPageState extends State<RoomPage> {
         });
       }
       await NudgeService(
-        backend: MatrixNudgeBackend(widget.room.client),
-        roomId: widget.room.id,
+        backend: widget.roomLease,
+        roomId: roomInfo.id,
         senderId: senderId,
         senderDisplayName: sender.nickname,
       ).send(
@@ -1089,7 +1064,7 @@ class _RoomPageState extends State<RoomPage> {
                       onPressed: () async {
                         try {
                           await service.create(
-                            roomId: widget.room.id,
+                            roomId: roomInfo.id,
                             eventId: message.id,
                             dueAt: selected,
                           );
@@ -1150,50 +1125,30 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   MessageInteractionService? get _interaction {
-    final timeline = roomTimeline;
-    final userId = widget.room.client.userID;
-    if (timeline == null || userId == null) return null;
+    final userId = roomInfo.currentUserId;
+    if (controller == null || userId == null) return null;
     return MessageInteractionService(
-      backend: MatrixMessageInteractionBackend(
-        client: widget.room.client,
-        timeline: timeline,
-      ),
-      roomId: widget.room.id,
+      backend: widget.roomLease,
+      roomId: roomInfo.id,
       currentUserId: userId,
     );
   }
 
-  Future<DateTime?> _serverNow() async {
-    final homeserver = widget.room.client.homeserver;
-    if (homeserver == null) return null;
-    try {
-      return await MatrixServerClock(
-        homeserver: homeserver,
-        httpClient: widget.room.client.httpClient,
-      ).now();
-    } catch (_) {
-      return null;
-    }
-  }
+  Future<DateTime?> _serverNow() => widget.roomLease.serverNow();
 
   Future<void> _sendMedia({required bool image}) async {
     if (mediaBusy) return;
-    final lease = widget.roomLease;
-    if (lease == null) {
-      _showMediaMessage('加密会话尚未准备好');
-      return;
-    }
-    final service =
-        widget.mediaSenderFactory?.call(lease) ?? MediaMessageService(lease);
+    final service = widget.mediaSenderFactory?.call(widget.roomLease) ??
+        MediaMessageService(widget.roomLease);
     setState(() {
       mediaBusy = true;
       mediaMessage = image ? '正在加密发送图片…' : '正在加密发送文件…';
     });
     try {
       if (image) {
-        await service.sendImage(widget.room.id);
+        await service.sendImage(roomInfo.id);
       } else {
-        await service.sendFile(widget.room.id);
+        await service.sendFile(roomInfo.id);
       }
       if (mounted) _showMediaMessage(image ? '图片已发送' : '文件已发送');
     } catch (_) {
@@ -1261,7 +1216,7 @@ class _RoomPageState extends State<RoomPage> {
     final redPacketController = ChatRedPacketController(
       business: BusinessChatRedPacketGateway(widget.api),
       references: TimelineRedPacketReferenceGateway(timeline),
-      roomId: isGroup ? widget.room.id : null,
+      roomId: isGroup ? roomInfo.id : null,
       recipientId: isGroup ? null : peer!.userId,
     );
     await Navigator.push<void>(
@@ -1284,10 +1239,9 @@ class _RoomPageState extends State<RoomPage> {
         child: SafeArea(
           child: VoiceComposer(
             service: MediaMessageService(
-              widget.roomLease ??
-                  (throw StateError('Matrix room lease is unavailable')),
+              widget.roomLease,
             ),
-            roomId: widget.room.id,
+            roomId: roomInfo.id,
           ),
         ),
       ),
@@ -1335,10 +1289,10 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _openConversationDetails() async {
     if (isGroup) {
       final infoController = GroupChatInfoController(
-        MatrixGroupChatInfoGateway(widget.room),
+        widget.roomLease.openGroupChatInfoGateway(),
       )..bindMembershipChanges(
-          widget.room.client.onSync.stream,
-          roomId: widget.room.id,
+          widget.roomLease.membershipChanges,
+          roomId: roomInfo.id,
         );
       final contacts = await widget.api.listContacts();
       if (!mounted) return;
@@ -1363,15 +1317,16 @@ class _RoomPageState extends State<RoomPage> {
               Navigator.pop(context);
               Navigator.pop(context);
             },
+            avatarMedia: widget.roomLease,
           ),
         ),
       );
       infoController.dispose();
       return;
     }
-    User? member;
-    for (final participant in widget.room.getParticipants()) {
-      if (participant.id != widget.room.client.userID) {
+    MatrixRoomMemberSnapshot? member;
+    for (final participant in roomInfo.members) {
+      if (participant.id != roomInfo.currentUserId) {
         member = participant;
         break;
       }
@@ -1379,23 +1334,22 @@ class _RoomPageState extends State<RoomPage> {
     final contact = peer;
     final peerId = contact?.matrixUserId ?? member?.id;
     if (peerId == null) return;
-    final peerName =
-        contact?.displayName ?? member?.calcDisplayname() ?? peerId;
-    final avatarUrl = contact?.avatarUrl ?? member?.avatarUrl?.toString();
+    final peerName = contact?.displayName ?? member?.displayName ?? peerId;
+    final avatarUrl = contact?.avatarUrl ?? member?.avatarUri?.toString();
     await Navigator.push<void>(
       context,
       CupertinoPageRoute(
         builder: (_) => DirectChatInfoPage(
           peerName: peerName,
           peerId: peerId,
-          matrixClient: widget.room.client,
+          avatarMedia: widget.roomLease,
           peerAvatarUrl: avatarUrl,
-          preference: preferenceForRoom(widget.room),
+          preference: roomInfo.preference,
           onAddMember: widget.onCreateGroup,
           onSearchHistory: _openHistorySearch,
           onClearLocalHistory: () => _trackAction(_clearLocalHistory),
           onPreferenceChanged: (preference) =>
-              writeConversationPreference(widget.room, preference),
+              widget.roomLease.updateConversationPreference(preference),
         ),
       ),
     );
@@ -1480,7 +1434,7 @@ class _RoomPageState extends State<RoomPage> {
     if (store == null) return;
     for (final message
         in controller?.messages ?? const <RoomMessageViewModel>[]) {
-      await store.hide(widget.room.id, message.id);
+      await store.hide(roomInfo.id, message.id);
     }
     if (mounted) setState(() {});
   }
@@ -1523,14 +1477,19 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _avatar(RoomMessageViewModel message) {
     final contact = contactsByMatrixId[message.senderId];
-    final member =
-        widget.room.unsafeGetUserFromMemoryOrFallback(message.senderId);
+    MatrixRoomMemberSnapshot? member;
+    for (final candidate in roomInfo.members) {
+      if (candidate.id == message.senderId) {
+        member = candidate;
+        break;
+      }
+    }
     return MatrixUserAvatar(
-      client: widget.room.client,
+      avatarMedia: widget.roomLease,
       diagnosticSource: 'room-message',
       nickname: _displayName(message.senderId, message.isOwn),
       fallbackSeed: message.senderId.isEmpty ? 'me' : message.senderId,
-      matrixAvatarUri: message.isOwn ? null : member.avatarUrl,
+      matrixAvatarUri: message.isOwn ? null : member?.avatarUri,
       fallbackAvatarUrl:
           message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
       size: WeChatDimensions.messageAvatar,
@@ -1592,8 +1551,8 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
     final contact = contactsByMatrixId[message.senderId];
-    User? member;
-    for (final participant in widget.room.getParticipants()) {
+    MatrixRoomMemberSnapshot? member;
+    for (final participant in roomInfo.members) {
       if (participant.id == message.senderId) {
         member = participant;
         break;
@@ -1602,7 +1561,7 @@ class _RoomPageState extends State<RoomPage> {
     final displayName = resolveMessageSenderDisplayName(
       senderId: message.senderId,
       contactDisplayName: contact?.displayName,
-      matrixDisplayName: member?.calcDisplayname(),
+      matrixDisplayName: member?.displayName,
     );
     if (message.isRecalled) {
       return Padding(
@@ -1760,7 +1719,7 @@ class _RoomPageState extends State<RoomPage> {
     switch (action) {
       case MessageAction.deleteLocal:
         if (hiddenEvents == null) return;
-        await hiddenEvents!.hide(widget.room.id, message.id);
+        await hiddenEvents!.hide(roomInfo.id, message.id);
         if (mounted) setState(() {});
       case MessageAction.multiSelect:
         setState(() => selection.startWith(message.id));
@@ -1798,7 +1757,7 @@ class _RoomPageState extends State<RoomPage> {
     final store = hiddenEvents;
     if (store == null) return;
     for (final eventId in selection.selectedIds) {
-      await store.hide(widget.room.id, eventId);
+      await store.hide(roomInfo.id, eventId);
     }
     if (!mounted) return;
     setState(selection.exit);
@@ -1807,29 +1766,12 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
     final interaction = _interaction;
     if (interaction == null) return;
-    final vaultRoomId = widget
-        .room.client.accountData[emojiVaultAccountDataType]?.content['room_id']
-        ?.toString();
-    final reminderRoomId = widget.room.client
-        .accountData[messageReminderAccountDataType]?.content['room_id']
-        ?.toString();
-    final targets = widget.room.client.rooms
-        .where(
-          (room) =>
-              room.id != widget.room.id &&
-              room.encrypted &&
-              !isMatrixControlRoom(
-                roomId: room.id,
-                displayName: room.getLocalizedDisplayname(),
-                vaultRoomId: vaultRoomId,
-                reminderRoomId: reminderRoomId,
-              ),
-        )
-        .toList(growable: false);
+    final targets = await widget.roomLease.forwardingDestinations();
     if (targets.isEmpty) {
       setState(() => mediaMessage = '没有可用的端到端加密会话');
       return;
     }
+    if (!mounted) return;
     await showCupertinoModalPopup<void>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
@@ -1856,7 +1798,7 @@ class _RoomPageState extends State<RoomPage> {
                   }
                 }));
               },
-              child: Text(target.getLocalizedDisplayname()),
+              child: Text(target.displayName),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
@@ -1883,7 +1825,7 @@ class _RoomPageState extends State<RoomPage> {
   Widget build(BuildContext context) {
     final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
     final messages = hiddenEvents?.visibleItems(
-          widget.room.id,
+          roomInfo.id,
           allMessages,
           eventId: (message) => message.id,
         ) ??

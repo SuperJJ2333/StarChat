@@ -1325,7 +1325,7 @@ void main() {
     await suspend;
 
     expect(events, ['revoke', 'suspend']);
-    expect(() => lease.room, throwsStateError);
+    expect(() => lease.roomInfo, throwsStateError);
   });
 
   test('room lease owns encrypted media sends and rejects them after revoke',
@@ -1371,7 +1371,7 @@ void main() {
 
     await matrix.suspend().timeout(const Duration(milliseconds: 100));
 
-    expect(() => lease.room, throwsStateError);
+    expect(() => lease.roomInfo, throwsStateError);
   });
 
   test('room lease drain failure retains the active database for retry',

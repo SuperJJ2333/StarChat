@@ -1,0 +1,2686 @@
+diff --git a/apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart b/apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
+index db7159b..a34348d 100644
+--- a/apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
++++ b/apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
+@@ -1,7 +1,6 @@
+ import 'package:flutter/cupertino.dart';
+ 
+ import '../../ui/components/wechat_scaffold.dart';
+-import 'package:matrix/matrix.dart';
+ 
+ import 'matrix_user_avatar.dart';
+ import '../../ui/components/wechat_list_tile.dart';
+@@ -13,7 +12,7 @@ final class DirectChatInfoPage extends StatefulWidget {
+     super.key,
+     required this.peerName,
+     required this.peerId,
+-    required this.matrixClient,
++    required this.avatarMedia,
+     required this.preference,
+     required this.onAddMember,
+     required this.onSearchHistory,
+@@ -25,7 +24,7 @@ final class DirectChatInfoPage extends StatefulWidget {
+ 
+   final String peerName;
+   final String peerId;
+-  final Client matrixClient;
++  final AvatarMediaCapability avatarMedia;
+   final String? peerAvatarUrl;
+   final ConversationPreference preference;
+   final VoidCallback onAddMember;
+@@ -140,7 +139,7 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
+   Widget _person(String name, String id, String? avatarUrl) =>
+       Column(mainAxisSize: MainAxisSize.min, children: [
+         MatrixUserAvatar(
+-          client: widget.matrixClient,
++          avatarMedia: widget.avatarMedia,
+           nickname: name,
+           fallbackSeed: id,
+           matrixAvatarUri: Uri.tryParse(avatarUrl ?? ''),
+diff --git a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+index 32f4845..4f7b99f 100644
+--- a/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
++++ b/apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart
+@@ -1,10 +1,6 @@
+ import 'package:flutter/foundation.dart';
+-import 'package:matrix/matrix.dart';
+ import 'dart:async';
+ 
+-import 'conversation_preferences.dart';
+-import 'avatar_url_resolver.dart';
+-
+ const groupChatAccountDataType = 'com.liuhetong.group_chat.settings.v1';
+ 
+ String groupInfoDisplayName(String explicitName) {
+@@ -50,6 +46,9 @@ enum GroupChatPreference {
+   notifyAnnouncement,
+ }
+ 
++/// App-owned membership DTO, deliberately independent from Matrix SDK enums.
++enum GroupMemberMembership { joined, invited }
++
+ final class GroupChatMember {
+   const GroupChatMember({
+     required this.matrixUserId,
+@@ -57,8 +56,7 @@ final class GroupChatMember {
+     this.avatarUrl,
+     this.avatarHeaders = const {},
+     this.matrixAvatarUri,
+-    this.client,
+-    this.membership = Membership.join,
++    this.membership = GroupMemberMembership.joined,
+   });
+ 
+   final String matrixUserId;
+@@ -66,9 +64,8 @@ final class GroupChatMember {
+   final String? avatarUrl;
+   final Map<String, String> avatarHeaders;
+   final Uri? matrixAvatarUri;
+-  final Client? client;
+-  final Membership membership;
+-  bool get isJoined => membership == Membership.join;
++  final GroupMemberMembership membership;
++  bool get isJoined => membership == GroupMemberMembership.joined;
+ }
+ 
+ final class GroupChatInfoSnapshot {
+@@ -172,183 +169,6 @@ abstract interface class GroupChatInfoGateway {
+   Future<void> removeMembers(List<String> matrixUserIds);
+ }
+ 
+-final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
+-  MatrixGroupChatInfoGateway(this.room);
+-
+-  final Room room;
+-  Map<String, Object?>? _cachedSettings;
+-
+-  Map<String, Object?> get _settings =>
+-      _cachedSettings ??= Map<String, Object?>.from(
+-        room.roomAccountData[groupChatAccountDataType]?.content ?? const {},
+-      );
+-
+-  @override
+-  Future<GroupChatInfoSnapshot> load() async {
+-    final localJoined = room.getParticipants([Membership.join]).length;
+-    final users = await room.requestParticipants([Membership.join]);
+-    final invited = await room.requestParticipants([Membership.invite]);
+-    debugPrint(
+-      '[GroupMembers] local_joined=$localJoined '
+-      'server_joined=${users.length} server_invited=${invited.length}',
+-    );
+-    final modern = room.roomAccountData[conversationPreferenceType]?.content;
+-    final settings =
+-        modern == null ? _settings : Map<String, Object?>.from(modern);
+-    _cachedSettings = settings;
+-    final followed = settings['followed_member_ids'];
+-    final storedOrder = settings['member_order_ids'];
+-    final allMembers = [...users, ...invited];
+-    final order = reconcileMemberOrder(
+-      storedOrder is List
+-          ? storedOrder.map((value) => value.toString())
+-          : const <String>[],
+-      allMembers.map((user) => user.id),
+-    );
+-    // State events can arrive before the membership endpoint's pagination.
+-    // Keep every joined/invited participant once, preserving the stored order.
+-    final userById = {for (final user in allMembers) user.id: user};
+-    final ownerId = settings['owner_id']?.toString().isNotEmpty == true
+-        ? settings['owner_id'].toString()
+-        : room.getState(EventTypes.RoomCreate)?.senderId ?? '';
+-    final adminIds = normalizeGroupAdminIds(
+-      settings['admin_ids'] is List
+-          ? (settings['admin_ids'] as List).map((value) => value.toString())
+-          : const <String>[],
+-      ownerId: ownerId,
+-    );
+-    final orderedUsers = [for (final id in order) userById[id]!];
+-    final activeIds = orderedUsers.map((user) => user.id).toSet();
+-    return GroupChatInfoSnapshot(
+-      name: room.name.trim(),
+-      announcement: room.topic,
+-      remark: settings['remark']?.toString() ?? '',
+-      muted: settings['muted'] == true,
+-      pinned: settings['pinned'] == true,
+-      saved: settings['saved'] == true,
+-      folded: settings['folded'] == true,
+-      notifyMentionMe: settings['notify_mention_me'] != false,
+-      notifyMentionAll: settings['notify_mention_all'] != false,
+-      notifyAnnouncement: settings['notify_announcement'] != false,
+-      followedMemberIds: followed is List
+-          ? followed
+-              .map((value) => value.toString())
+-              .where(activeIds.contains)
+-              .take(4)
+-              .toList()
+-          : const [],
+-      ownerId: ownerId,
+-      adminIds: adminIds,
+-      qrJoinEnabled: settings['qr_join_enabled'] != false,
+-      joinApprovalRequired: settings['join_approval_required'] == true,
+-      onlyManagersCanRename: settings['only_managers_can_rename'] == true,
+-      currentUserId: room.client.userID,
+-      members: orderGroupMembers(members: [
+-        for (final user in orderedUsers) await _member(user),
+-      ], ownerId: ownerId, adminIds: adminIds.toSet()),
+-    );
+-  }
+-
+-  Future<GroupChatMember> _member(User user) async {
+-    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
+-      avatarUri: user.avatarUrl,
+-      homeserver: room.client.homeserver,
+-      accessToken: room.client.accessToken,
+-      size: 48,
+-    );
+-    return GroupChatMember(
+-      matrixUserId: user.id,
+-      displayName: user.calcDisplayname(),
+-      avatarUrl: avatar?.url,
+-      avatarHeaders: avatar?.headers ?? const {},
+-      matrixAvatarUri: user.avatarUrl,
+-      client: room.client,
+-      membership: user.membership,
+-    );
+-  }
+-
+-  @override
+-  Future<void> invite(String matrixUserId) => room.invite(matrixUserId);
+-
+-  @override
+-  Future<void> leave() => room.leave();
+-
+-  @override
+-  Future<void> removeMembers(List<String> matrixUserIds) async {
+-    for (final userId in matrixUserIds) {
+-      await room.kick(userId);
+-    }
+-  }
+-
+-  @override
+-  Future<void> setAdminIds(List<String> matrixUserIds) => _writeSetting(
+-      'admin_ids',
+-      normalizeGroupAdminIds(matrixUserIds,
+-          ownerId: room.getState(EventTypes.RoomCreate)?.senderId ?? ''));
+-
+-  @override
+-  Future<void> setGroupSetting(String key, Object value) =>
+-      _writeSetting(key, value);
+-
+-  @override
+-  Future<void> rename(String name) async {
+-    await room.setName(name);
+-  }
+-
+-  @override
+-  Future<void> setAnnouncement(String announcement) async {
+-    await room.setDescription(announcement);
+-    final version =
+-        ((_settings['announcement_version'] as num?)?.toInt() ?? 0) + 1;
+-    await _writeSetting('announcement_version', version);
+-  }
+-
+-  @override
+-  Future<void> setPreference(
+-    GroupChatPreference preference,
+-    bool value,
+-  ) async {
+-    await _writeSetting(
+-      switch (preference) {
+-        GroupChatPreference.muted => 'muted',
+-        GroupChatPreference.pinned => 'pinned',
+-        GroupChatPreference.saved => 'saved',
+-        GroupChatPreference.folded => 'folded',
+-        GroupChatPreference.notifyMentionMe => 'notify_mention_me',
+-        GroupChatPreference.notifyMentionAll => 'notify_mention_all',
+-        GroupChatPreference.notifyAnnouncement => 'notify_announcement',
+-      },
+-      value,
+-    );
+-    if (preference == GroupChatPreference.pinned) {
+-      await _writeSetting(
+-        'pinned_at',
+-        value ? DateTime.now().toUtc().toIso8601String() : '',
+-      );
+-    }
+-  }
+-
+-  @override
+-  Future<void> setFollowedMemberIds(List<String> matrixUserIds) =>
+-      _writeSetting('followed_member_ids', matrixUserIds.take(4).toList());
+-
+-  @override
+-  Future<void> setRemark(String remark) => _writeSetting('remark', remark);
+-
+-  Future<void> _writeSetting(String key, Object value) async {
+-    final userId = room.client.userID;
+-    if (userId == null) throw StateError('Matrix 账号尚未登录');
+-    final next = {..._settings, key: value};
+-    await room.client.setAccountDataPerRoom(
+-      userId,
+-      room.id,
+-      conversationPreferenceType,
+-      next,
+-    );
+-    _cachedSettings = next;
+-  }
+-}
+-
+ enum GroupChatInfoStatus { idle, loading, ready, saving, failed }
+ 
+ final class GroupChatInfoState {
+@@ -370,16 +190,13 @@ final class GroupChatInfoController extends ChangeNotifier {
+ 
+   final GroupChatInfoGateway gateway;
+   GroupChatInfoState state = const GroupChatInfoState();
+-  StreamSubscription<SyncUpdate>? _membershipSubscription;
++  StreamSubscription<void>? _membershipSubscription;
+ 
+   /// Binds Matrix room updates so membership changes refresh this controller
+   /// while the chat-info route stays open.
+-  void bindMembershipChanges(Stream<SyncUpdate> updates,
+-      {required String roomId}) {
++  void bindMembershipChanges(Stream<void> updates, {required String roomId}) {
+     _membershipSubscription?.cancel();
+-    _membershipSubscription = updates
+-        .where((update) => update.rooms?.join?.containsKey(roomId) == true)
+-        .listen((_) {
++    _membershipSubscription = updates.listen((_) {
+       if (state.status != GroupChatInfoStatus.loading) unawaited(load());
+     });
+   }
+diff --git a/apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart b/apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart
+index e33b270..e4d8f66 100644
+--- a/apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart
++++ b/apps/mobile_flutter/lib/features/matrix/group_chat_info_page.dart
+@@ -7,8 +7,8 @@ import '../../ui/components/wechat_list_tile.dart';
+ import '../../ui/foundation/wechat_tokens.dart';
+ import '../contacts/contact_models.dart';
+ import 'group_chat_info_controller.dart';
+-import 'chat_history_search.dart';
+ import 'matrix_user_avatar.dart';
++import 'chat_history_search.dart';
+ import '../../ui/components/wechat_date_picker.dart';
+ 
+ final class GroupChatInfoPage extends StatefulWidget {
+@@ -19,6 +19,7 @@ final class GroupChatInfoPage extends StatefulWidget {
+     required this.onSearchHistory,
+     required this.onClearLocalHistory,
+     required this.onLeft,
++    this.avatarMedia,
+     this.onMemberTap,
+   });
+ 
+@@ -27,6 +28,7 @@ final class GroupChatInfoPage extends StatefulWidget {
+   final VoidCallback onSearchHistory;
+   final Future<void> Function() onClearLocalHistory;
+   final VoidCallback onLeft;
++  final AvatarMediaCapability? avatarMedia;
+   final ValueChanged<GroupChatMember>? onMemberTap;
+ 
+   @override
+@@ -160,6 +162,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
+                         ? snapshot.members
+                         : snapshot.members.take(collapsedMemberCount).toList(),
+                     onAdd: widget.onAddMember,
++                    avatarMedia: widget.avatarMedia,
+                     onMemberTap: widget.onMemberTap,
+                     onRemove: snapshot.canManage
+                         ? () => Navigator.push(
+@@ -504,11 +507,13 @@ final class _MemberGrid extends StatelessWidget {
+   const _MemberGrid(
+       {required this.members,
+       required this.onAdd,
++      this.avatarMedia,
+       this.onMemberTap,
+       this.onRemove});
+ 
+   final List<GroupChatMember> members;
+   final VoidCallback onAdd;
++  final AvatarMediaCapability? avatarMedia;
+   final ValueChanged<GroupChatMember>? onMemberTap;
+   final VoidCallback? onRemove;
+ 
+@@ -529,6 +534,7 @@ final class _MemberGrid extends StatelessWidget {
+                 _MemberCell(
+                   key: Key('group-member-${members[index].matrixUserId}'),
+                   member: members[index],
++                  avatarMedia: avatarMedia,
+                   onTap: onMemberTap == null
+                       ? null
+                       : () => onMemberTap!(members[index]),
+@@ -791,8 +797,14 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
+ }
+ 
+ final class _MemberCell extends StatelessWidget {
+-  const _MemberCell({super.key, required this.member, this.onTap});
++  const _MemberCell({
++    super.key,
++    required this.member,
++    this.avatarMedia,
++    this.onTap,
++  });
+   final GroupChatMember member;
++  final AvatarMediaCapability? avatarMedia;
+   final VoidCallback? onTap;
+ 
+   @override
+@@ -801,9 +813,9 @@ final class _MemberCell extends StatelessWidget {
+       onPressed: onTap,
+       child: Column(
+         children: [
+-          member.client != null && member.matrixAvatarUri != null
++          avatarMedia != null && member.matrixAvatarUri != null
+               ? MatrixUserAvatar(
+-                  client: member.client!,
++                  avatarMedia: avatarMedia!,
+                   matrixAvatarUri: member.matrixAvatarUri,
+                   nickname: member.displayName,
+                   fallbackSeed: member.matrixUserId,
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart b/apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart
+index 21fcb0f..4e6fbb0 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart
+@@ -6,15 +6,25 @@ import 'package:flutter/foundation.dart';
+ import '../auth/login_controller.dart' hide LoginState;
+ import 'avatar_url_resolver.dart';
+ import 'conversation_preferences.dart';
++import 'matrix_control_rooms.dart';
+ import 'direct_chat_controller.dart';
++import 'emoji_vault.dart';
+ import 'group_chat_controller.dart';
++import 'group_chat_info_controller.dart';
+ import 'matrix_direct_chat_adapter.dart';
+ import 'matrix_group_chat_adapter.dart';
+ import 'group_invitation_auto_join.dart';
+ import 'matrix_call_adapter.dart';
+ import 'matrix_emoji_vault.dart';
+ import 'matrix_message_reminder_backend.dart';
++import 'matrix_room_timeline_adapter.dart';
+ import 'matrix_security_logger.dart';
++import 'matrix_user_avatar.dart';
++import 'message_interaction_service.dart';
++import 'nudge_service.dart';
++import 'room_timeline_controller.dart';
++
++const changliaoRedPacketMessageType = 'com.changliao.red_packet';
+ 
+ /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
+ abstract interface class MatrixSessionGateway {
+@@ -474,20 +484,159 @@ final class _ManagedClientResource implements _ManagedClientResourceBase {
+   Future<void> cancel() => owner._cancelManagedResource(this);
+ }
+ 
++/// Immutable room data for presentation code. SDK rooms and users remain
++/// private to this library so they cannot outlive a managed lease.
++@immutable
++final class MatrixRoomMemberSnapshot {
++  const MatrixRoomMemberSnapshot({
++    required this.id,
++    required this.displayName,
++    required this.avatarUri,
++    required this.isJoined,
++  });
++
++  final String id;
++  final String displayName;
++  final Uri? avatarUri;
++  final bool isJoined;
++}
++
++@immutable
++final class MatrixRoomInfoSnapshot {
++  MatrixRoomInfoSnapshot({
++    required this.id,
++    required this.name,
++    required this.topic,
++    required this.isDirect,
++    required this.directPeerId,
++    required this.currentUserId,
++    required this.announcementVersion,
++    required this.preference,
++    required List<MatrixRoomMemberSnapshot> members,
++  }) : members = List.unmodifiable(members);
++
++  final String id;
++  final String name;
++  final String topic;
++  final bool isDirect;
++  final String? directPeerId;
++  final String? currentUserId;
++  final int announcementVersion;
++  final ConversationPreference preference;
++  final List<MatrixRoomMemberSnapshot> members;
++}
++
++@immutable
++final class MatrixForwardDestinationSnapshot {
++  const MatrixForwardDestinationSnapshot({
++    required this.id,
++    required this.displayName,
++  });
++
++  final String id;
++  final String displayName;
++}
++
+ final class MatrixRoomLease
+-    implements _ManagedClientResourceBase, MatrixEncryptedMediaGateway {
++    implements
++        _ManagedClientResourceBase,
++        MatrixEncryptedMediaGateway,
++        AvatarMediaCapability,
++        NudgeBackend,
++        MessageInteractionBackend {
+   MatrixRoomLease._(this.owner, this.roomId);
+   final MatrixSdkE2eeClient owner;
+   final String roomId;
+   Room? _room;
++  final List<_SdkRoomTimelineCapability> _timelines = [];
+   FutureOr<void> Function()? _onRevoked;
+   Future<void> Function()? _drainOwner;
+   @override
+   bool canceled = false;
+ 
+-  Room get room =>
++  Room get _activeRoom =>
+       _room ?? (throw StateError('Matrix room lease is not active'));
+ 
++  /// A non-SDK snapshot valid only while this lease is active.
++  MatrixRoomInfoSnapshot get roomInfo => _snapshotRoomInfo(_activeRoom);
++
++  Future<MatrixRoomInfoSnapshot> refreshRoomInfo() async {
++    await _activeRoom.requestParticipants([Membership.join]);
++    return roomInfo;
++  }
++
++  Future<RoomTimelineCapability> openRoomTimeline({
++    required void Function() onUpdate,
++  }) async {
++    final timeline = await _activeRoom.getTimeline(onUpdate: onUpdate);
++    final capability = _SdkRoomTimelineCapability(this, timeline);
++    _timelines.add(capability);
++    return capability;
++  }
++
++  Future<MatrixEmojiVaultBackend> openEmojiVaultBackend() async {
++    _activeRoom;
++    return _SdkEmojiVaultBackend(this);
++  }
++
++  GroupChatInfoGateway openGroupChatInfoGateway() =>
++      _SdkGroupChatInfoGateway(this);
++
++  Stream<void> get membershipChanges => owner.syncEvents;
++
++  Future<void> updateConversationPreference(
++    ConversationPreference preference,
++  ) =>
++      writeConversationPreference(_activeRoom, preference);
++
++  Future<DateTime?> serverNow() async {
++    final homeserver = _activeRoom.client.homeserver;
++    if (homeserver == null) return null;
++    try {
++      return await MatrixServerClock(
++        homeserver: homeserver,
++        httpClient: _activeRoom.client.httpClient,
++      ).now();
++    } catch (_) {
++      return null;
++    }
++  }
++
++  Future<List<MatrixForwardDestinationSnapshot>>
++      forwardingDestinations() async {
++    final client = _activeRoom.client;
++    final vaultRoomId = client
++        .accountData[emojiVaultAccountDataType]?.content['room_id']
++        ?.toString();
++    final reminderRoomId = client
++        .accountData[messageReminderAccountDataType]?.content['room_id']
++        ?.toString();
++    return [
++      for (final target in client.rooms)
++        if (target.id != roomId &&
++            target.encrypted &&
++            !isMatrixControlRoom(
++              roomId: target.id,
++              displayName: target.getLocalizedDisplayname(),
++              vaultRoomId: vaultRoomId,
++              reminderRoomId: reminderRoomId,
++            ))
++          MatrixForwardDestinationSnapshot(
++            id: target.id,
++            displayName: target.getLocalizedDisplayname(),
++          ),
++    ];
++  }
++
++  Future<void> sendEncryptedAttachment({
++    required Uint8List bytes,
++    required String name,
++    required String mimeType,
++  }) =>
++      _activeRoom.sendFileEvent(
++        MatrixFile.fromMimeType(bytes: bytes, name: name, mimeType: mimeType),
++      );
++
+   void setOnRevoked(FutureOr<void> Function() callback) =>
+       _onRevoked = callback;
+ 
+@@ -507,6 +656,111 @@ final class MatrixRoomLease
+     return owner._sendEncryptedMediaFromLease(this, plaintext, mimeType);
+   }
+ 
++  @override
++  Future<ResolvedAvatarUrl?> resolveAvatar({
++    required Uri? avatarUri,
++    required double size,
++  }) =>
++      MatrixAvatarUrlResolver.resolveForClient(
++        avatarUri: avatarUri,
++        client: _activeRoom.client,
++        size: size,
++      );
++
++  @override
++  Future<void> sendEncrypted(
++    String requestedRoomId,
++    String type,
++    Map<String, Object?> content,
++  ) {
++    _requireRoomId(requestedRoomId);
++    return _sendEvent(content, type: type);
++  }
++
++  @override
++  Future<void> send(String requestedRoomId, Map<String, Object?> content) {
++    _requireRoomId(requestedRoomId);
++    return _sendEvent(content);
++  }
++
++  Future<void> _sendEvent(
++    Map<String, Object?> content, {
++    String? type,
++  }) async {
++    final payload = Map<String, dynamic>.from(content);
++    final eventId = type == null
++        ? await _activeRoom.sendEvent(payload)
++        : await _activeRoom.sendEvent(payload, type: type);
++    if (eventId == null) throw StateError('Matrix room event was not accepted');
++  }
++
++  @override
++  Future<void> redact(
++    String requestedRoomId,
++    String eventId,
++    String reason,
++  ) {
++    _requireRoomId(requestedRoomId);
++    return _activeRoom.redactEvent(eventId, reason: reason);
++  }
++
++  @override
++  Future<void> forwardEncryptedCopy(
++    String sourceRoomId,
++    String targetRoomId,
++    String eventId,
++  ) async {
++    _requireRoomId(sourceRoomId);
++    final source = _activeRoom;
++    final target = source.client.getRoomById(targetRoomId);
++    if (target == null || !target.encrypted) {
++      throw StateError('只能转发到端到端加密会话');
++    }
++    final event = _eventForInteraction(eventId);
++    if (event.roomId != null && event.roomId != source.id) {
++      throw StateError('消息不属于当前会话');
++    }
++    if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
++        .contains(event.messageType)) {
++      final attachment = await event.downloadAndDecryptAttachment();
++      final mimeType = event.content['info'] is Map
++          ? (event.content['info'] as Map)['mimetype']?.toString()
++          : null;
++      await target.sendFileEvent(
++        MatrixFile.fromMimeType(
++          bytes: attachment.bytes,
++          name: event.body,
++          mimeType: mimeType,
++        ),
++      );
++      return;
++    }
++    if (event.messageType != MessageTypes.Text) {
++      throw StateError('该消息类型不能转发');
++    }
++    await target.sendEvent({
++      'msgtype': MessageTypes.Text,
++      'body': event.body,
++      if (event.content['format'] != null) 'format': event.content['format'],
++      if (event.content['formatted_body'] != null)
++        'formatted_body': event.content['formatted_body'],
++    });
++  }
++
++  void _requireRoomId(String requestedRoomId) {
++    if (requestedRoomId != roomId) {
++      throw StateError('Matrix room lease identity mismatch');
++    }
++  }
++
++  Event _eventForInteraction(String eventId) {
++    for (final timeline in _timelines.reversed) {
++      final event = timeline.eventById(eventId);
++      if (event != null) return event;
++    }
++    throw StateError('Matrix timeline event is unavailable');
++  }
++
+   @override
+   Future<void> attach(Client client) async {
+     if (canceled) return;
+@@ -516,6 +770,10 @@ final class MatrixRoomLease
+ 
+   void revokeNow() {
+     if (_room == null) return;
++    for (final timeline in _timelines.toList(growable: false)) {
++      timeline.dispose();
++    }
++    _timelines.clear();
+     _room = null;
+     final callback = _onRevoked;
+     if (callback != null) {
+@@ -568,6 +826,526 @@ final class MatrixRoomLease
+   Future<void> cancel() => owner._cancelManagedResource(this);
+ }
+ 
++MatrixRoomInfoSnapshot _snapshotRoomInfo(Room room) {
++  MatrixRoomMemberSnapshot member(User user) => MatrixRoomMemberSnapshot(
++        id: user.id,
++        displayName: user.calcDisplayname(),
++        avatarUri: user.avatarUrl,
++        isJoined: user.membership == Membership.join,
++      );
++  final settings = room.roomAccountData[groupChatAccountDataType]?.content;
++  final announcementVersion = settings?['announcement_version'];
++  return MatrixRoomInfoSnapshot(
++    id: room.id,
++    name: room.name.trim(),
++    topic: room.topic,
++    isDirect: room.isDirectChat,
++    directPeerId: room.directChatMatrixID,
++    currentUserId: room.client.userID,
++    announcementVersion:
++        announcementVersion is num ? announcementVersion.toInt() : 0,
++    preference: preferenceForRoom(room),
++    members: [for (final user in room.getParticipants()) member(user)],
++  );
++}
++
++final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
++  _SdkRoomTimelineCapability(this._lease, this._timeline);
++
++  final MatrixRoomLease _lease;
++  final Timeline _timeline;
++  bool _disposed = false;
++
++  void _ensureActive() {
++    if (_disposed) throw StateError('Matrix timeline capability is disposed');
++    _lease._activeRoom;
++  }
++
++  Event? eventById(String eventId) {
++    if (_disposed) return null;
++    for (final event in _timeline.events) {
++      if (event.eventId == eventId) return event;
++    }
++    return null;
++  }
++
++  @override
++  List<RoomMessageViewModel> snapshot() {
++    _ensureActive();
++    return _timeline.events
++        .where(
++          (event) =>
++              event.type == EventTypes.Message ||
++              event.type == changliaoNudgeEventType,
++        )
++        .toList(growable: false)
++        .reversed
++        .map(_message)
++        .toList(growable: false);
++  }
++
++  RoomMessageViewModel _message(Event event) {
++    final status = event.status.isError
++        ? RoomDeliveryState.failed
++        : event.status.isSending
++            ? RoomDeliveryState.sending
++            : RoomDeliveryState.sent;
++    final messageType = event.messageType;
++    final info = event.content['info'];
++    final durationMilliseconds =
++        info is Map ? int.tryParse(info['duration']?.toString() ?? '') : null;
++    final mimeType = info is Map ? info['mimetype']?.toString() : null;
++    final nudge = event.type == changliaoNudgeEventType;
++    final nudgeText = nudge
++        ? '${event.content['sender_display_name'] ?? '好友'}拍了拍'
++            '${event.content['target_display_name'] ?? '好友'}'
++            '${event.content['suffix'] ?? ''}'
++        : null;
++    return RoomMessageViewModel(
++      id: event.eventId,
++      senderId: event.senderId,
++      text: event.redacted ? '' : (nudgeText ?? event.text),
++      isOwn: event.senderId == _lease._activeRoom.client.userID,
++      deliveryState: status,
++      timestamp: event.originServerTs.toLocal(),
++      kind: nudge
++          ? RoomMessageKind.system
++          : switch (messageType) {
++              MessageTypes.Image => RoomMessageKind.image,
++              MessageTypes.Audio => RoomMessageKind.voice,
++              MessageTypes.File => RoomMessageKind.file,
++              changliaoRedPacketMessageType => RoomMessageKind.redPacket,
++              _ => RoomMessageKind.text,
++            },
++      mimeType: mimeType,
++      packetId: event.content['packet_id']?.toString(),
++      greeting: event.content['greeting']?.toString(),
++      voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),
++      isRecalled: event.redacted,
++      replyToEventId: ((event.content['m.relates_to'] as Map?)?['m.in_reply_to']
++              as Map?)?['event_id']
++          ?.toString(),
++    );
++  }
++
++  @override
++  Future<String> sendText(String text) async {
++    _ensureActive();
++    return await _lease._activeRoom.sendTextEvent(text, parseCommands: false) ??
++        (throw StateError('消息发送失败'));
++  }
++
++  @override
++  Future<String> sendRedPacketReference(
++      String packetId, String greeting) async {
++    _ensureActive();
++    return await _lease._activeRoom.sendEvent({
++          'msgtype': changliaoRedPacketMessageType,
++          'body': '[畅聊点钻红包]',
++          'packet_id': packetId,
++          'greeting': greeting,
++        }) ??
++        (throw StateError('红包消息发送失败'));
++  }
++
++  @override
++  Future<Uint8List> loadAttachment(String eventId) async {
++    _ensureActive();
++    final event = eventById(eventId) ??
++        (throw StateError('Matrix timeline event is unavailable'));
++    return (await event.downloadAndDecryptAttachment()).bytes;
++  }
++
++  @override
++  Future<void> retry(String transactionId) async {
++    _ensureActive();
++    final event = eventById(transactionId) ??
++        (throw StateError('Matrix timeline event is unavailable'));
++    await event.sendAgain();
++  }
++
++  @override
++  Future<void> loadHistory() {
++    _ensureActive();
++    return _timeline.requestHistory();
++  }
++
++  @override
++  Future<void> markRead() {
++    _ensureActive();
++    return _timeline.setReadMarker();
++  }
++
++  @override
++  void dispose() {
++    if (_disposed) return;
++    _disposed = true;
++    _timeline.cancelSubscriptions();
++    _lease._timelines.remove(this);
++  }
++}
++
++final class _SdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
++  _SdkEmojiVaultBackend(this._lease);
++
++  final MatrixRoomLease _lease;
++
++  Client get _client => _lease._activeRoom.client;
++
++  @override
++  String? readStoredRoomId() =>
++      _client.accountData[emojiVaultAccountDataType]?.content['room_id']
++          as String?;
++
++  @override
++  Future<String> createEncryptedVaultRoom() async {
++    final roomId = await _client.createGroupChat(
++      groupName: '畅聊表情仓库',
++      enableEncryption: true,
++      invite: const [],
++      preset: CreateRoomPreset.privateChat,
++      visibility: Visibility.private,
++      waitForSync: true,
++    );
++    var room = _client.getRoomById(roomId);
++    if (room == null) {
++      throw StateError('Matrix did not create the emoji vault room');
++    }
++    if (!room.encrypted) {
++      await room.enableEncryption();
++      await _client.oneShotSync();
++      room = _client.getRoomById(roomId);
++    }
++    if (room == null || !room.encrypted) {
++      throw StateError('Matrix did not create an encrypted emoji vault room');
++    }
++    return roomId;
++  }
++
++  @override
++  Future<void> storeRoomId(String roomId) async {
++    final userId = _client.userID;
++    if (userId == null) throw StateError('Matrix client is not logged in');
++    await _client.setAccountData(
++      userId,
++      emojiVaultAccountDataType,
++      {'room_id': roomId},
++    );
++    await _client.oneShotSync();
++  }
++
++  Future<Room> _room(String roomId) async {
++    var room = _client.getRoomById(roomId);
++    if (room == null) {
++      await _client.sync();
++      room = _client.getRoomById(roomId);
++    }
++    if (room == null) throw StateError('Emoji vault room is not joined');
++    return room;
++  }
++
++  @override
++  Future<bool> isRoomEncrypted(String roomId) async =>
++      (await _room(roomId)).encrypted;
++
++  @override
++  Future<Map<String, Object?>> uploadEncrypted(
++    String roomId,
++    Uint8List bytes,
++    String mimeType,
++  ) async {
++    final room = await _room(roomId);
++    if (!room.encrypted) {
++      throw StateError('Emoji media upload requires an encrypted room');
++    }
++    final encrypted = await MatrixFile(
++      bytes: bytes,
++      name: '畅聊加密表情',
++      mimeType: mimeType,
++    ).encrypt();
++    final uri = await _client.uploadContent(
++      encrypted.data,
++      filename: 'emoji.ciphertext',
++      contentType: 'application/octet-stream',
++    );
++    return {
++      'url': uri.toString(),
++      'mimetype': mimeType,
++      'v': 'v2',
++      'key': {
++        'alg': 'A256CTR',
++        'ext': true,
++        'k': encrypted.k,
++        'key_ops': ['encrypt', 'decrypt'],
++        'kty': 'oct',
++      },
++      'iv': encrypted.iv,
++      'hashes': {'sha256': encrypted.sha256},
++    };
++  }
++
++  @override
++  Future<void> sendEncryptedEvent(
++    String roomId,
++    String type,
++    Map<String, Object?> content,
++  ) async {
++    final room = await _room(roomId);
++    if (!room.encrypted || !_client.encryptionEnabled) {
++      throw StateError('Emoji metadata requires Matrix E2EE');
++    }
++    final eventId =
++        await room.sendEvent(Map<String, dynamic>.from(content), type: type);
++    if (eventId == null) throw StateError('Emoji vault event was not accepted');
++  }
++
++  @override
++  Future<List<EmojiVaultEvent>> loadEvents(String roomId) async {
++    final timeline = await (await _room(roomId)).getTimeline();
++    try {
++      return timeline.events
++          .map(_decodeEvent)
++          .whereType<EmojiVaultEvent>()
++          .toList(growable: false);
++    } finally {
++      timeline.cancelSubscriptions();
++    }
++  }
++
++  @override
++  Future<Uint8List> downloadAndDecrypt(
++    String roomId,
++    Map<String, Object?> encryptedFile,
++  ) async {
++    final room = await _room(roomId);
++    if (!room.encrypted || !_client.encryptionEnabled) {
++      throw StateError('Emoji media download requires Matrix E2EE');
++    }
++    final url = encryptedFile['url']?.toString();
++    final key = encryptedFile['key'];
++    final hashes = encryptedFile['hashes'];
++    if (url == null || key is! Map || hashes is! Map) {
++      throw StateError('Encrypted emoji descriptor is invalid');
++    }
++    final downloadUri = await Uri.parse(url).getDownloadUri(_client);
++    final ciphertext = (await _client.httpClient.get(
++      downloadUri,
++      headers: {'authorization': 'Bearer ${_client.accessToken}'},
++    ))
++        .bodyBytes;
++    final plaintext = await _client.nativeImplementations.decryptFile(
++      EncryptedFile(
++        data: ciphertext,
++        k: key['k']!.toString(),
++        iv: encryptedFile['iv']!.toString(),
++        sha256: hashes['sha256']!.toString(),
++      ),
++    );
++    if (plaintext == null) throw StateError('Encrypted emoji integrity failed');
++    return plaintext;
++  }
++
++  EmojiVaultEvent? _decodeEvent(Event event) {
++    if (!event.type.startsWith('com.changliao.emoji.')) return null;
++    final content = Map<String, Object?>.from(event.content);
++    final at = DateTime.tryParse(content['at']?.toString() ?? '')?.toUtc() ??
++        event.originServerTs.toUtc();
++    final stableId = content['event_id']?.toString() ?? event.eventId;
++    switch (event.type) {
++      case 'com.changliao.emoji.add':
++        final rawItem = content['item'];
++        if (rawItem is! Map) return null;
++        return EmojiVaultEvent.add(
++          eventId: stableId,
++          at: at,
++          item: EmojiVaultItem.fromJson(Map<String, Object?>.from(rawItem)),
++        );
++      case 'com.changliao.emoji.remove':
++        final itemId = content['item_id']?.toString();
++        return itemId == null
++            ? null
++            : EmojiVaultEvent.remove(eventId: stableId, at: at, itemId: itemId);
++      case 'com.changliao.emoji.recents':
++        final rawIds = content['item_ids'];
++        return rawIds is! List
++            ? null
++            : EmojiVaultEvent.recent(
++                eventId: stableId,
++                at: at,
++                itemIds: rawIds.map((value) => value.toString()).toList(),
++              );
++      default:
++        return null;
++    }
++  }
++}
++
++final class _SdkGroupChatInfoGateway implements GroupChatInfoGateway {
++  _SdkGroupChatInfoGateway(this._lease);
++
++  final MatrixRoomLease _lease;
++  Map<String, Object?>? _cachedSettings;
++
++  Room get _room => _lease._activeRoom;
++
++  Map<String, Object?> get _settings =>
++      _cachedSettings ??= Map<String, Object?>.from(
++        _room.roomAccountData[groupChatAccountDataType]?.content ?? const {},
++      );
++
++  @override
++  Future<GroupChatInfoSnapshot> load() async {
++    final users = await _room.requestParticipants([Membership.join]);
++    final invited = await _room.requestParticipants([Membership.invite]);
++    final modern = _room.roomAccountData[conversationPreferenceType]?.content;
++    final settings =
++        modern == null ? _settings : Map<String, Object?>.from(modern);
++    _cachedSettings = settings;
++    final allMembers = [...users, ...invited];
++    final order = reconcileMemberOrder(
++      settings['member_order_ids'] is List
++          ? (settings['member_order_ids'] as List)
++              .map((value) => value.toString())
++          : const <String>[],
++      allMembers.map((user) => user.id),
++    );
++    final userById = {for (final user in allMembers) user.id: user};
++    final ownerId = settings['owner_id']?.toString().isNotEmpty == true
++        ? settings['owner_id'].toString()
++        : _room.getState(EventTypes.RoomCreate)?.senderId ?? '';
++    final adminIds = normalizeGroupAdminIds(
++      settings['admin_ids'] is List
++          ? (settings['admin_ids'] as List).map((value) => value.toString())
++          : const <String>[],
++      ownerId: ownerId,
++    );
++    final orderedUsers = [for (final id in order) userById[id]!];
++    final activeIds = orderedUsers.map((user) => user.id).toSet();
++    final followed = settings['followed_member_ids'];
++    return GroupChatInfoSnapshot(
++      name: _room.name.trim(),
++      announcement: _room.topic,
++      remark: settings['remark']?.toString() ?? '',
++      muted: settings['muted'] == true,
++      pinned: settings['pinned'] == true,
++      saved: settings['saved'] == true,
++      folded: settings['folded'] == true,
++      notifyMentionMe: settings['notify_mention_me'] != false,
++      notifyMentionAll: settings['notify_mention_all'] != false,
++      notifyAnnouncement: settings['notify_announcement'] != false,
++      followedMemberIds: followed is List
++          ? followed
++              .map((value) => value.toString())
++              .where(activeIds.contains)
++              .take(4)
++              .toList()
++          : const [],
++      ownerId: ownerId,
++      adminIds: adminIds,
++      qrJoinEnabled: settings['qr_join_enabled'] != false,
++      joinApprovalRequired: settings['join_approval_required'] == true,
++      onlyManagersCanRename: settings['only_managers_can_rename'] == true,
++      currentUserId: _room.client.userID,
++      members: orderGroupMembers(
++        members: [for (final user in orderedUsers) _member(user)],
++        ownerId: ownerId,
++        adminIds: adminIds.toSet(),
++      ),
++    );
++  }
++
++  GroupChatMember _member(User user) => GroupChatMember(
++        matrixUserId: user.id,
++        displayName: user.calcDisplayname(),
++        matrixAvatarUri: user.avatarUrl,
++        membership: user.membership == Membership.join
++            ? GroupMemberMembership.joined
++            : GroupMemberMembership.invited,
++      );
++
++  @override
++  Future<void> invite(String matrixUserId) => _room.invite(matrixUserId);
++
++  @override
++  Future<void> leave() => _room.leave();
++
++  @override
++  Future<void> removeMembers(List<String> matrixUserIds) async {
++    for (final userId in matrixUserIds) {
++      await _room.kick(userId);
++    }
++  }
++
++  @override
++  Future<void> setAdminIds(List<String> matrixUserIds) => _writeSetting(
++        'admin_ids',
++        normalizeGroupAdminIds(
++          matrixUserIds,
++          ownerId: _room.getState(EventTypes.RoomCreate)?.senderId ?? '',
++        ),
++      );
++
++  @override
++  Future<void> setGroupSetting(String key, Object value) =>
++      _writeSetting(key, value);
++
++  @override
++  Future<void> rename(String name) => _room.setName(name);
++
++  @override
++  Future<void> setAnnouncement(String announcement) async {
++    await _room.setDescription(announcement);
++    final version =
++        ((_settings['announcement_version'] as num?)?.toInt() ?? 0) + 1;
++    await _writeSetting('announcement_version', version);
++  }
++
++  @override
++  Future<void> setPreference(
++    GroupChatPreference preference,
++    bool value,
++  ) async {
++    await _writeSetting(
++      switch (preference) {
++        GroupChatPreference.muted => 'muted',
++        GroupChatPreference.pinned => 'pinned',
++        GroupChatPreference.saved => 'saved',
++        GroupChatPreference.folded => 'folded',
++        GroupChatPreference.notifyMentionMe => 'notify_mention_me',
++        GroupChatPreference.notifyMentionAll => 'notify_mention_all',
++        GroupChatPreference.notifyAnnouncement => 'notify_announcement',
++      },
++      value,
++    );
++    if (preference == GroupChatPreference.pinned) {
++      await _writeSetting(
++        'pinned_at',
++        value ? DateTime.now().toUtc().toIso8601String() : '',
++      );
++    }
++  }
++
++  @override
++  Future<void> setFollowedMemberIds(List<String> matrixUserIds) =>
++      _writeSetting('followed_member_ids', matrixUserIds.take(4).toList());
++
++  @override
++  Future<void> setRemark(String remark) => _writeSetting('remark', remark);
++
++  Future<void> _writeSetting(String key, Object value) async {
++    final userId = _room.client.userID;
++    if (userId == null) throw StateError('Matrix 账号尚未登录');
++    final next = {..._settings, key: value};
++    await _room.client.setAccountDataPerRoom(
++      userId,
++      _room.id,
++      conversationPreferenceType,
++      next,
++    );
++    _cachedSettings = next;
++  }
++}
++
+ abstract interface class _ManagedClientStreamBase
+     implements MatrixManagedSubscription {
+   bool get canceled;
+@@ -608,7 +1386,10 @@ final class _ManagedClientStream<T> implements _ManagedClientStreamBase {
+ }
+ 
+ final class MatrixSdkE2eeClient
+-    implements MatrixE2eeClient, MatrixTokenLoginGateway {
++    implements
++        MatrixE2eeClient,
++        MatrixTokenLoginGateway,
++        AvatarMediaCapability {
+   MatrixSdkE2eeClient(
+     Client client, {
+     required this.homeserver,
+@@ -1001,6 +1782,7 @@ final class MatrixSdkE2eeClient
+         }
+       });
+ 
++  @override
+   Future<ResolvedAvatarUrl?> resolveAvatar({
+     required Uri? avatarUri,
+     required double size,
+@@ -1260,7 +2042,7 @@ final class MatrixSdkE2eeClient
+     String mimeType,
+   ) =>
+       _withClient((active) async {
+-        final leasedRoom = lease.room;
++        final leasedRoom = lease._activeRoom;
+         if (!identical(leasedRoom.client, active)) {
+           throw StateError('Matrix room lease client mismatch');
+         }
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart b/apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart
+index cacd67b..92b1ee7 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart
+@@ -1,7 +1,5 @@
+ import 'dart:typed_data';
+ 
+-import 'package:matrix/matrix.dart';
+-
+ import 'emoji_vault.dart';
+ 
+ const emojiVaultAccountDataType = 'com.changliao.emoji.vault';
+@@ -86,203 +84,3 @@ final class _MatrixEmojiVaultTransport implements EmojiVaultTransport {
+   Future<void> sendEncrypted(EmojiVaultEvent event) =>
+       backend.sendEncryptedEvent(roomId, event.matrixType, event.toJson());
+ }
+-
+-final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
+-  MatrixSdkEmojiVaultBackend(this.client);
+-
+-  final Client client;
+-
+-  @override
+-  String? readStoredRoomId() =>
+-      client.accountData[emojiVaultAccountDataType]?.content['room_id']
+-          as String?;
+-
+-  @override
+-  Future<String> createEncryptedVaultRoom() async {
+-    final roomId = await client.createGroupChat(
+-      groupName: '畅聊表情仓库',
+-      enableEncryption: true,
+-      invite: const [],
+-      preset: CreateRoomPreset.privateChat,
+-      visibility: Visibility.private,
+-      waitForSync: true,
+-    );
+-    var room = client.getRoomById(roomId);
+-    if (room == null) {
+-      throw StateError('Matrix did not create the emoji vault room');
+-    }
+-    if (!room.encrypted) {
+-      await room.enableEncryption();
+-      await client.oneShotSync();
+-      room = client.getRoomById(roomId);
+-    }
+-    if (room == null || !room.encrypted) {
+-      throw StateError('Matrix did not create an encrypted emoji vault room');
+-    }
+-    return roomId;
+-  }
+-
+-  @override
+-  Future<void> storeRoomId(String roomId) async {
+-    final userId = client.userID;
+-    if (userId == null) throw StateError('Matrix client is not logged in');
+-    await client.setAccountData(
+-      userId,
+-      emojiVaultAccountDataType,
+-      {'room_id': roomId},
+-    );
+-    await client.oneShotSync();
+-  }
+-
+-  Future<Room> _room(String roomId) async {
+-    var room = client.getRoomById(roomId);
+-    if (room == null) {
+-      await client.sync();
+-      room = client.getRoomById(roomId);
+-    }
+-    if (room == null) throw StateError('Emoji vault room is not joined');
+-    return room;
+-  }
+-
+-  @override
+-  Future<bool> isRoomEncrypted(String roomId) async =>
+-      (await _room(roomId)).encrypted;
+-
+-  @override
+-  Future<Map<String, Object?>> uploadEncrypted(
+-    String roomId,
+-    Uint8List bytes,
+-    String mimeType,
+-  ) async {
+-    final room = await _room(roomId);
+-    if (!room.encrypted) {
+-      throw StateError('Emoji media upload requires an encrypted room');
+-    }
+-    final encrypted = await MatrixFile(
+-      bytes: bytes,
+-      name: '畅聊加密表情',
+-      mimeType: mimeType,
+-    ).encrypt();
+-    final uri = await client.uploadContent(
+-      encrypted.data,
+-      filename: 'emoji.ciphertext',
+-      contentType: 'application/octet-stream',
+-    );
+-    return {
+-      'url': uri.toString(),
+-      'mimetype': mimeType,
+-      'v': 'v2',
+-      'key': {
+-        'alg': 'A256CTR',
+-        'ext': true,
+-        'k': encrypted.k,
+-        'key_ops': ['encrypt', 'decrypt'],
+-        'kty': 'oct',
+-      },
+-      'iv': encrypted.iv,
+-      'hashes': {'sha256': encrypted.sha256},
+-    };
+-  }
+-
+-  @override
+-  Future<void> sendEncryptedEvent(
+-    String roomId,
+-    String type,
+-    Map<String, Object?> content,
+-  ) async {
+-    final room = await _room(roomId);
+-    if (!room.encrypted || !client.encryptionEnabled) {
+-      throw StateError('Emoji metadata requires Matrix E2EE');
+-    }
+-    final eventId = await room.sendEvent(
+-      Map<String, dynamic>.from(content),
+-      type: type,
+-    );
+-    if (eventId == null) throw StateError('Emoji vault event was not accepted');
+-  }
+-
+-  @override
+-  Future<List<EmojiVaultEvent>> loadEvents(String roomId) async {
+-    final room = await _room(roomId);
+-    final timeline = await room.getTimeline();
+-    try {
+-      return timeline.events
+-          .map(_decodeEvent)
+-          .whereType<EmojiVaultEvent>()
+-          .toList(growable: false);
+-    } finally {
+-      timeline.cancelSubscriptions();
+-    }
+-  }
+-
+-  @override
+-  Future<Uint8List> downloadAndDecrypt(
+-    String roomId,
+-    Map<String, Object?> encryptedFile,
+-  ) async {
+-    final room = await _room(roomId);
+-    if (!room.encrypted || !client.encryptionEnabled) {
+-      throw StateError('Emoji media download requires Matrix E2EE');
+-    }
+-    final url = encryptedFile['url']?.toString();
+-    final key = encryptedFile['key'];
+-    final hashes = encryptedFile['hashes'];
+-    if (url == null || key is! Map || hashes is! Map) {
+-      throw StateError('Encrypted emoji descriptor is invalid');
+-    }
+-    final downloadUri = await Uri.parse(url).getDownloadUri(client);
+-    final ciphertext = (await client.httpClient.get(
+-      downloadUri,
+-      headers: {'authorization': 'Bearer ${client.accessToken}'},
+-    ))
+-        .bodyBytes;
+-    final plaintext = await client.nativeImplementations.decryptFile(
+-      EncryptedFile(
+-        data: ciphertext,
+-        k: key['k']!.toString(),
+-        iv: encryptedFile['iv']!.toString(),
+-        sha256: hashes['sha256']!.toString(),
+-      ),
+-    );
+-    if (plaintext == null) throw StateError('Encrypted emoji integrity failed');
+-    return plaintext;
+-  }
+-
+-  EmojiVaultEvent? _decodeEvent(Event event) {
+-    if (!event.type.startsWith('com.changliao.emoji.')) return null;
+-    final content = Map<String, Object?>.from(event.content);
+-    final at = DateTime.tryParse(content['at']?.toString() ?? '')?.toUtc() ??
+-        event.originServerTs.toUtc();
+-    final stableId = content['event_id']?.toString() ?? event.eventId;
+-    switch (event.type) {
+-      case 'com.changliao.emoji.add':
+-        final rawItem = content['item'];
+-        if (rawItem is! Map) return null;
+-        return EmojiVaultEvent.add(
+-          eventId: stableId,
+-          at: at,
+-          item: EmojiVaultItem.fromJson(
+-            Map<String, Object?>.from(rawItem),
+-          ),
+-        );
+-      case 'com.changliao.emoji.remove':
+-        final itemId = content['item_id']?.toString();
+-        if (itemId == null) return null;
+-        return EmojiVaultEvent.remove(
+-          eventId: stableId,
+-          at: at,
+-          itemId: itemId,
+-        );
+-      case 'com.changliao.emoji.recents':
+-        final rawIds = content['item_ids'];
+-        if (rawIds is! List) return null;
+-        return EmojiVaultEvent.recent(
+-          eventId: stableId,
+-          at: at,
+-          itemIds: rawIds.map((value) => value.toString()).toList(),
+-        );
+-      default:
+-        return null;
+-    }
+-  }
+-}
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart b/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+index 692e500..48fc29a 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart
+@@ -2,7 +2,6 @@ import 'dart:async';
+ import 'dart:typed_data';
+ 
+ import 'package:flutter/cupertino.dart';
+-import 'package:matrix/matrix.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
+ 
+ import '../../core/business_api_client.dart';
+@@ -45,8 +44,6 @@ import 'chat_history_search.dart';
+ import '../search/global_search_page.dart';
+ import 'matrix_emoji_vault.dart';
+ import 'matrix_control_rooms.dart';
+-import 'matrix_message_reminder_backend.dart'
+-    show messageReminderAccountDataType;
+ import 'media_message_service.dart';
+ import 'message_reminder_service.dart';
+ import 'message_interaction_service.dart';
+@@ -55,19 +52,6 @@ import 'local_hidden_events.dart';
+ import 'room_timeline_controller.dart';
+ import 'voice_composer.dart';
+ 
+-List<User> orderedJoinedMembers(Room room) {
+-  final joined = room.getParticipants([Membership.join]);
+-  final byId = {for (final member in joined) member.id: member};
+-  final order = reconcileMemberOrder(
+-    preferenceForRoom(room).memberOrderIds,
+-    joined.map((member) => member.id),
+-  );
+-  return [
+-    for (final id in order)
+-      if (byId[id] != null) byId[id]!
+-  ];
+-}
+-
+ String groupRoomNavigationTitle(String _, int memberCount) =>
+     '群聊($memberCount)';
+ 
+@@ -86,11 +70,6 @@ String directRoomNavigationTitle({
+   ));
+ }
+ 
+-Future<List<User>> loadOrderedJoinedMembers(Room room) async {
+-  await room.requestParticipants([Membership.join]);
+-  return orderedJoinedMembers(room);
+-}
+-
+ final class _RoomAvatarSnapshot {
+   const _RoomAvatarSnapshot(this.nickname, this.fallbackSeed, this.uri);
+   final String nickname;
+@@ -296,15 +275,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+     final event = room.lastEvent;
+     if (event == null) return '端到端加密消息';
+     final messageContent = safeConversationMessageContent(
+-      undecrypted: event.type == EventTypes.Encrypted,
++      undecrypted: event.type == 'm.room.encrypted',
+       messageContent: event.text,
+     );
+     if (room.isDirect) return messageContent;
+     final sender = conversationSenderName(
+       _memberIdentity(event.sender),
+     );
+-    final isSenderMessage = event.type == EventTypes.Message ||
+-        event.type == EventTypes.Encrypted ||
++    final isSenderMessage = event.type == 'm.room.message' ||
++        event.type == 'm.room.encrypted' ||
+         event.type == changliaoNudgeEventType;
+     return groupConversationSubtitle(
+       unreadCount: _conversationUnread(room),
+@@ -566,7 +545,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                         CupertinoPageRoute(
+                           builder: (_) => _FoldedGroupChatsPage(
+                             rooms: foldedRooms,
+-                            matrix: widget.matrix,
++                            avatarMedia: widget.matrix,
+                             onOpen: (room) {
+                               Navigator.pop(context);
+                               _openRoom(room);
+@@ -590,7 +569,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                     timeLabel: room.timeLabel,
+                     avatar: room.isDirect || room.avatar != null
+                         ? MatrixUserAvatar(
+-                            matrix: widget.matrix,
++                            avatarMedia: widget.matrix,
+                             nickname: roomName,
+                             fallbackSeed: room.id,
+                             matrixAvatarUri: room.avatar,
+@@ -600,7 +579,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
+                             avatars: [
+                               for (final member in room.groupAvatars)
+                                 MatrixUserAvatar(
+-                                  matrix: widget.matrix,
++                                  avatarMedia: widget.matrix,
+                                   nickname: member.nickname,
+                                   fallbackSeed: member.fallbackSeed,
+                                   matrixAvatarUri: member.uri,
+@@ -651,11 +630,11 @@ final class _MessagesEmptyState extends StatelessWidget {
+ final class _FoldedGroupChatsPage extends StatelessWidget {
+   const _FoldedGroupChatsPage({
+     required this.rooms,
+-    required this.matrix,
++    required this.avatarMedia,
+     required this.onOpen,
+   });
+   final List<_RoomSnapshot> rooms;
+-  final MatrixSdkE2eeClient matrix;
++  final AvatarMediaCapability avatarMedia;
+   final ValueChanged<_RoomSnapshot> onOpen;
+ 
+   @override
+@@ -678,7 +657,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
+                 muted: true,
+                 avatar: room.avatar != null
+                     ? MatrixUserAvatar(
+-                        matrix: matrix,
++                        avatarMedia: avatarMedia,
+                         nickname: room.displayName,
+                         fallbackSeed: room.id,
+                         matrixAvatarUri: room.avatar,
+@@ -687,7 +666,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
+                         avatars: [
+                           for (final member in room.groupAvatars)
+                             MatrixUserAvatar(
+-                              matrix: matrix,
++                              avatarMedia: avatarMedia,
+                               nickname: member.nickname,
+                               fallbackSeed: member.fallbackSeed,
+                               matrixAvatarUri: member.uri,
+@@ -707,8 +686,7 @@ class RoomPage extends StatefulWidget {
+     super.key,
+     required this.api,
+     required this.roomName,
+-    Room? room,
+-    this.roomLease,
++    required this.roomLease,
+     this.initialContact,
+     required this.onCreateGroup,
+     this.reminderService,
+@@ -716,14 +694,11 @@ class RoomPage extends StatefulWidget {
+     this.onVideo,
+     this.initialIdentityCache,
+     this.mediaSenderFactory,
+-  })  : _room = room,
+-        assert(room != null || roomLease != null);
++  });
+ 
+   final BusinessApiClient api;
+   final String roomName;
+-  final Room? _room;
+-  final MatrixRoomLease? roomLease;
+-  Room get room => roomLease?.room ?? _room!;
++  final MatrixRoomLease roomLease;
+   final ContactDetails? initialContact;
+   final VoidCallback onCreateGroup;
+   final MessageReminderService? reminderService;
+@@ -746,7 +721,6 @@ class _RoomPageState extends State<RoomPage> {
+   final recalledDrafts = <String, String>{};
+   final selection = MessageSelectionController();
+   RoomTimelineController? controller;
+-  Timeline? roomTimeline;
+   LocalHiddenEvents? hiddenEvents;
+   final mentionDraft = MentionDraft();
+   RoomMessageViewModel? replyingTo;
+@@ -766,18 +740,21 @@ class _RoomPageState extends State<RoomPage> {
+   String? mediaMessage;
+   Timer? mediaMessageTimer;
+   bool mediaMessageVisible = false;
++  late MatrixRoomInfoSnapshot roomInfo;
+   late int joinedMemberCount;
+   int? readAnnouncementVersion;
+   String? highlightedMessageId;
+ 
+-  bool get isGroup => !widget.room.isDirectChat;
++  bool get isGroup => !roomInfo.isDirect;
+ 
+   @override
+   void initState() {
+     super.initState();
+-    widget.roomLease?.bindOwnerDrain(_drainMatrixOperations);
++    widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
++    roomInfo = widget.roomLease.roomInfo;
+     peer = widget.initialContact;
+-    joinedMemberCount = orderedJoinedMembers(widget.room).length;
++    joinedMemberCount =
++        roomInfo.members.where((member) => member.isJoined).length;
+     ownProfile = _identityCache.profile;
+     contactsByMatrixId = _identityCache.contactsByMatrixId;
+     _identityCache.addListener(_identityChanged);
+@@ -809,9 +786,14 @@ class _RoomPageState extends State<RoomPage> {
+   Future<void> _refreshJoinedMemberCount() async {
+     if (!isGroup) return;
+     try {
+-      await widget.room.requestParticipants([Membership.join]);
+-      final count = orderedJoinedMembers(widget.room).length;
+-      if (mounted) setState(() => joinedMemberCount = count);
++      final refreshed = await widget.roomLease.refreshRoomInfo();
++      if (mounted) {
++        setState(() {
++          roomInfo = refreshed;
++          joinedMemberCount =
++              refreshed.members.where((member) => member.isJoined).length;
++        });
++      }
+     } catch (_) {
+       // Preserve the synchronized local count if a transient member request
+       // fails; the next room sync refreshes the title.
+@@ -819,9 +801,9 @@ class _RoomPageState extends State<RoomPage> {
+   }
+ 
+   String get _navigationTitle => isGroup
+-      ? groupRoomNavigationTitle(widget.room.name, joinedMemberCount)
++      ? groupRoomNavigationTitle(roomInfo.name, joinedMemberCount)
+       : directRoomNavigationTitle(
+-          peerMatrixUserId: widget.room.directChatMatrixID,
++          peerMatrixUserId: roomInfo.directPeerId,
+           contactsByMatrixId: contactsByMatrixId,
+           fallbackRoomName: widget.roomName,
+         );
+@@ -832,17 +814,14 @@ class _RoomPageState extends State<RoomPage> {
+     setState(() {
+       contactsByMatrixId = mapped;
+       ownProfile = _identityCache.profile ?? ownProfile;
+-      final peerId = widget.room.directChatMatrixID;
++      final peerId = roomInfo.directPeerId;
+       if (peerId != null) peer = mapped[peerId] ?? peer;
+     });
+   }
+ 
+-  int get _announcementVersion =>
+-      widget.room.roomAccountData[groupChatAccountDataType]
+-          ?.content['announcement_version'] as int? ??
+-      0;
++  int get _announcementVersion => roomInfo.announcementVersion;
+ 
+-  String get _announcement => isGroup ? widget.room.topic.trim() : '';
++  String get _announcement => isGroup ? roomInfo.topic.trim() : '';
+ 
+   bool get _showAnnouncement =>
+       _announcement.isNotEmpty &&
+@@ -850,8 +829,7 @@ class _RoomPageState extends State<RoomPage> {
+ 
+   Future<void> _loadAnnouncementReadState() async {
+     final preferences = await SharedPreferences.getInstance();
+-    final version =
+-        preferences.getInt('announcement-read:${widget.room.id}') ?? 0;
++    final version = preferences.getInt('announcement-read:${roomInfo.id}') ?? 0;
+     if (mounted) setState(() => readAnnouncementVersion = version);
+   }
+ 
+@@ -867,28 +845,28 @@ class _RoomPageState extends State<RoomPage> {
+       ),
+     );
+     final preferences = await SharedPreferences.getInstance();
+-    await preferences.setInt('announcement-read:${widget.room.id}', version);
++    await preferences.setInt('announcement-read:${roomInfo.id}', version);
+     if (mounted) setState(() => readAnnouncementVersion = version);
+   }
+ 
+   Future<void> _load() async {
+     try {
+-      final accountId = widget.room.client.userID;
++      final accountId = roomInfo.currentUserId;
+       if (accountId == null) throw StateError('Matrix 账号尚未登录');
+       hiddenEvents = SharedPreferencesLocalHiddenEvents(
+         preferences: await SharedPreferences.getInstance(),
+         accountId: accountId,
+       );
+-      final timeline =
+-          await widget.room.getTimeline(onUpdate: () => controller?.refresh());
++      final timeline = await widget.roomLease.openRoomTimeline(
++        onUpdate: () => controller?.refresh(),
++      );
+       if (!mounted) {
+-        timeline.cancelSubscriptions();
++        timeline.dispose();
+         return;
+       }
+       controller = RoomTimelineController(
+-        MatrixRoomTimelineAdapter(widget.room, timeline),
++        MatrixRoomTimelineAdapter(timeline),
+       )..addListener(_changed);
+-      roomTimeline = timeline;
+       setState(() => loading = false);
+       await controller!.markRead();
+       await _loadEmojiVault();
+@@ -910,10 +888,9 @@ class _RoomPageState extends State<RoomPage> {
+       final contacts = _identityCache.contacts;
+       final profile = _identityCache.profile;
+       final mapped = _identityCache.contactsByMatrixId;
+-      final participantIds = widget.room
+-          .getParticipants()
++      final participantIds = roomInfo.members
+           .map((participant) => participant.id)
+-          .where((id) => id != widget.room.client.userID)
++          .where((id) => id != roomInfo.currentUserId)
+           .toSet();
+       ContactDetails? resolvedPeer;
+       for (final contact in contacts) {
+@@ -937,7 +914,7 @@ class _RoomPageState extends State<RoomPage> {
+   Future<void> _loadEmojiVault() async {
+     try {
+       final session = await MatrixEmojiVault.open(
+-        MatrixSdkEmojiVaultBackend(widget.room.client),
++        await widget.roomLease.openEmojiVaultBackend(),
+       );
+       final items = <CustomEmojiItem>[];
+       for (final item in session.vault.items) {
+@@ -1006,12 +983,10 @@ class _RoomPageState extends State<RoomPage> {
+ 
+   Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
+     try {
+-      await widget.room.sendFileEvent(
+-        MatrixFile.fromMimeType(
+-          bytes: item.bytes,
+-          name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
+-          mimeType: item.mimeType,
+-        ),
++      await widget.roomLease.sendEncryptedAttachment(
++        bytes: item.bytes,
++        name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
++        mimeType: item.mimeType,
+       );
+       await emojiVault?.vault.markRecent(item.id);
+       if (mounted) setState(() => composerPanel = ComposerPanel.none);
+@@ -1025,7 +1000,7 @@ class _RoomPageState extends State<RoomPage> {
+     String targetDisplayName,
+   ) async {
+     final sender = ownProfile;
+-    final senderId = widget.room.client.userID;
++    final senderId = roomInfo.currentUserId;
+     if (sender == null || senderId == null) return;
+     try {
+       // The profile service is authoritative for a sender's nudge suffix.
+@@ -1039,8 +1014,8 @@ class _RoomPageState extends State<RoomPage> {
+         });
+       }
+       await NudgeService(
+-        backend: MatrixNudgeBackend(widget.room.client),
+-        roomId: widget.room.id,
++        backend: widget.roomLease,
++        roomId: roomInfo.id,
+         senderId: senderId,
+         senderDisplayName: sender.nickname,
+       ).send(
+@@ -1089,7 +1064,7 @@ class _RoomPageState extends State<RoomPage> {
+                       onPressed: () async {
+                         try {
+                           await service.create(
+-                            roomId: widget.room.id,
++                            roomId: roomInfo.id,
+                             eventId: message.id,
+                             dueAt: selected,
+                           );
+@@ -1150,50 +1125,30 @@ class _RoomPageState extends State<RoomPage> {
+   }
+ 
+   MessageInteractionService? get _interaction {
+-    final timeline = roomTimeline;
+-    final userId = widget.room.client.userID;
+-    if (timeline == null || userId == null) return null;
++    final userId = roomInfo.currentUserId;
++    if (controller == null || userId == null) return null;
+     return MessageInteractionService(
+-      backend: MatrixMessageInteractionBackend(
+-        client: widget.room.client,
+-        timeline: timeline,
+-      ),
+-      roomId: widget.room.id,
++      backend: widget.roomLease,
++      roomId: roomInfo.id,
+       currentUserId: userId,
+     );
+   }
+ 
+-  Future<DateTime?> _serverNow() async {
+-    final homeserver = widget.room.client.homeserver;
+-    if (homeserver == null) return null;
+-    try {
+-      return await MatrixServerClock(
+-        homeserver: homeserver,
+-        httpClient: widget.room.client.httpClient,
+-      ).now();
+-    } catch (_) {
+-      return null;
+-    }
+-  }
++  Future<DateTime?> _serverNow() => widget.roomLease.serverNow();
+ 
+   Future<void> _sendMedia({required bool image}) async {
+     if (mediaBusy) return;
+-    final lease = widget.roomLease;
+-    if (lease == null) {
+-      _showMediaMessage('加密会话尚未准备好');
+-      return;
+-    }
+-    final service =
+-        widget.mediaSenderFactory?.call(lease) ?? MediaMessageService(lease);
++    final service = widget.mediaSenderFactory?.call(widget.roomLease) ??
++        MediaMessageService(widget.roomLease);
+     setState(() {
+       mediaBusy = true;
+       mediaMessage = image ? '正在加密发送图片…' : '正在加密发送文件…';
+     });
+     try {
+       if (image) {
+-        await service.sendImage(widget.room.id);
++        await service.sendImage(roomInfo.id);
+       } else {
+-        await service.sendFile(widget.room.id);
++        await service.sendFile(roomInfo.id);
+       }
+       if (mounted) _showMediaMessage(image ? '图片已发送' : '文件已发送');
+     } catch (_) {
+@@ -1261,7 +1216,7 @@ class _RoomPageState extends State<RoomPage> {
+     final redPacketController = ChatRedPacketController(
+       business: BusinessChatRedPacketGateway(widget.api),
+       references: TimelineRedPacketReferenceGateway(timeline),
+-      roomId: isGroup ? widget.room.id : null,
++      roomId: isGroup ? roomInfo.id : null,
+       recipientId: isGroup ? null : peer!.userId,
+     );
+     await Navigator.push<void>(
+@@ -1284,10 +1239,9 @@ class _RoomPageState extends State<RoomPage> {
+         child: SafeArea(
+           child: VoiceComposer(
+             service: MediaMessageService(
+-              widget.roomLease ??
+-                  (throw StateError('Matrix room lease is unavailable')),
++              widget.roomLease,
+             ),
+-            roomId: widget.room.id,
++            roomId: roomInfo.id,
+           ),
+         ),
+       ),
+@@ -1335,10 +1289,10 @@ class _RoomPageState extends State<RoomPage> {
+   Future<void> _openConversationDetails() async {
+     if (isGroup) {
+       final infoController = GroupChatInfoController(
+-        MatrixGroupChatInfoGateway(widget.room),
++        widget.roomLease.openGroupChatInfoGateway(),
+       )..bindMembershipChanges(
+-          widget.room.client.onSync.stream,
+-          roomId: widget.room.id,
++          widget.roomLease.membershipChanges,
++          roomId: roomInfo.id,
+         );
+       final contacts = await widget.api.listContacts();
+       if (!mounted) return;
+@@ -1363,15 +1317,16 @@ class _RoomPageState extends State<RoomPage> {
+               Navigator.pop(context);
+               Navigator.pop(context);
+             },
++            avatarMedia: widget.roomLease,
+           ),
+         ),
+       );
+       infoController.dispose();
+       return;
+     }
+-    User? member;
+-    for (final participant in widget.room.getParticipants()) {
+-      if (participant.id != widget.room.client.userID) {
++    MatrixRoomMemberSnapshot? member;
++    for (final participant in roomInfo.members) {
++      if (participant.id != roomInfo.currentUserId) {
+         member = participant;
+         break;
+       }
+@@ -1379,23 +1334,22 @@ class _RoomPageState extends State<RoomPage> {
+     final contact = peer;
+     final peerId = contact?.matrixUserId ?? member?.id;
+     if (peerId == null) return;
+-    final peerName =
+-        contact?.displayName ?? member?.calcDisplayname() ?? peerId;
+-    final avatarUrl = contact?.avatarUrl ?? member?.avatarUrl?.toString();
++    final peerName = contact?.displayName ?? member?.displayName ?? peerId;
++    final avatarUrl = contact?.avatarUrl ?? member?.avatarUri?.toString();
+     await Navigator.push<void>(
+       context,
+       CupertinoPageRoute(
+         builder: (_) => DirectChatInfoPage(
+           peerName: peerName,
+           peerId: peerId,
+-          matrixClient: widget.room.client,
++          avatarMedia: widget.roomLease,
+           peerAvatarUrl: avatarUrl,
+-          preference: preferenceForRoom(widget.room),
++          preference: roomInfo.preference,
+           onAddMember: widget.onCreateGroup,
+           onSearchHistory: _openHistorySearch,
+           onClearLocalHistory: () => _trackAction(_clearLocalHistory),
+           onPreferenceChanged: (preference) =>
+-              writeConversationPreference(widget.room, preference),
++              widget.roomLease.updateConversationPreference(preference),
+         ),
+       ),
+     );
+@@ -1480,7 +1434,7 @@ class _RoomPageState extends State<RoomPage> {
+     if (store == null) return;
+     for (final message
+         in controller?.messages ?? const <RoomMessageViewModel>[]) {
+-      await store.hide(widget.room.id, message.id);
++      await store.hide(roomInfo.id, message.id);
+     }
+     if (mounted) setState(() {});
+   }
+@@ -1523,14 +1477,19 @@ class _RoomPageState extends State<RoomPage> {
+ 
+   Widget _avatar(RoomMessageViewModel message) {
+     final contact = contactsByMatrixId[message.senderId];
+-    final member =
+-        widget.room.unsafeGetUserFromMemoryOrFallback(message.senderId);
++    MatrixRoomMemberSnapshot? member;
++    for (final candidate in roomInfo.members) {
++      if (candidate.id == message.senderId) {
++        member = candidate;
++        break;
++      }
++    }
+     return MatrixUserAvatar(
+-      client: widget.room.client,
++      avatarMedia: widget.roomLease,
+       diagnosticSource: 'room-message',
+       nickname: _displayName(message.senderId, message.isOwn),
+       fallbackSeed: message.senderId.isEmpty ? 'me' : message.senderId,
+-      matrixAvatarUri: message.isOwn ? null : member.avatarUrl,
++      matrixAvatarUri: message.isOwn ? null : member?.avatarUri,
+       fallbackAvatarUrl:
+           message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
+       size: WeChatDimensions.messageAvatar,
+@@ -1592,8 +1551,8 @@ class _RoomPageState extends State<RoomPage> {
+ 
+   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
+     final contact = contactsByMatrixId[message.senderId];
+-    User? member;
+-    for (final participant in widget.room.getParticipants()) {
++    MatrixRoomMemberSnapshot? member;
++    for (final participant in roomInfo.members) {
+       if (participant.id == message.senderId) {
+         member = participant;
+         break;
+@@ -1602,7 +1561,7 @@ class _RoomPageState extends State<RoomPage> {
+     final displayName = resolveMessageSenderDisplayName(
+       senderId: message.senderId,
+       contactDisplayName: contact?.displayName,
+-      matrixDisplayName: member?.calcDisplayname(),
++      matrixDisplayName: member?.displayName,
+     );
+     if (message.isRecalled) {
+       return Padding(
+@@ -1760,7 +1719,7 @@ class _RoomPageState extends State<RoomPage> {
+     switch (action) {
+       case MessageAction.deleteLocal:
+         if (hiddenEvents == null) return;
+-        await hiddenEvents!.hide(widget.room.id, message.id);
++        await hiddenEvents!.hide(roomInfo.id, message.id);
+         if (mounted) setState(() {});
+       case MessageAction.multiSelect:
+         setState(() => selection.startWith(message.id));
+@@ -1798,7 +1757,7 @@ class _RoomPageState extends State<RoomPage> {
+     final store = hiddenEvents;
+     if (store == null) return;
+     for (final eventId in selection.selectedIds) {
+-      await store.hide(widget.room.id, eventId);
++      await store.hide(roomInfo.id, eventId);
+     }
+     if (!mounted) return;
+     setState(selection.exit);
+@@ -1807,29 +1766,12 @@ class _RoomPageState extends State<RoomPage> {
+   Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
+     final interaction = _interaction;
+     if (interaction == null) return;
+-    final vaultRoomId = widget
+-        .room.client.accountData[emojiVaultAccountDataType]?.content['room_id']
+-        ?.toString();
+-    final reminderRoomId = widget.room.client
+-        .accountData[messageReminderAccountDataType]?.content['room_id']
+-        ?.toString();
+-    final targets = widget.room.client.rooms
+-        .where(
+-          (room) =>
+-              room.id != widget.room.id &&
+-              room.encrypted &&
+-              !isMatrixControlRoom(
+-                roomId: room.id,
+-                displayName: room.getLocalizedDisplayname(),
+-                vaultRoomId: vaultRoomId,
+-                reminderRoomId: reminderRoomId,
+-              ),
+-        )
+-        .toList(growable: false);
++    final targets = await widget.roomLease.forwardingDestinations();
+     if (targets.isEmpty) {
+       setState(() => mediaMessage = '没有可用的端到端加密会话');
+       return;
+     }
++    if (!mounted) return;
+     await showCupertinoModalPopup<void>(
+       context: context,
+       builder: (sheetContext) => CupertinoActionSheet(
+@@ -1856,7 +1798,7 @@ class _RoomPageState extends State<RoomPage> {
+                   }
+                 }));
+               },
+-              child: Text(target.getLocalizedDisplayname()),
++              child: Text(target.displayName),
+             ),
+         ],
+         cancelButton: CupertinoActionSheetAction(
+@@ -1883,7 +1825,7 @@ class _RoomPageState extends State<RoomPage> {
+   Widget build(BuildContext context) {
+     final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
+     final messages = hiddenEvents?.visibleItems(
+-          widget.room.id,
++          roomInfo.id,
+           allMessages,
+           eventId: (message) => message.id,
+         ) ??
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart b/apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart
+index e575137..300e93e 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_room_timeline_adapter.dart
+@@ -1,114 +1,55 @@
+ import 'dart:typed_data';
+ 
+-import 'package:matrix/matrix.dart';
+-
+ import 'room_timeline_controller.dart';
+-import 'nudge_service.dart';
+ 
+-const changliaoRedPacketMessageType = 'com.changliao.red_packet';
++/// Lifecycle-managed room operations required by the timeline. Implementations
++/// stay behind the Matrix session boundary; no SDK room/timeline is retained by
++/// this adapter or its UI consumers.
++abstract interface class RoomTimelineCapability {
++  List<RoomMessageViewModel> snapshot();
++  Future<String> sendText(String text);
++  Future<String> sendRedPacketReference(String packetId, String greeting);
++  Future<Uint8List> loadAttachment(String eventId);
++  Future<void> retry(String transactionId);
++  Future<void> loadHistory();
++  Future<void> markRead();
++  void dispose();
++}
+ 
+ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
+-  MatrixRoomTimelineAdapter(this.room, this.timeline);
++  MatrixRoomTimelineAdapter(this._capability);
+ 
+-  final Room room;
+-  final Timeline timeline;
++  final RoomTimelineCapability _capability;
+ 
+   @override
+-  List<RoomMessageViewModel> snapshot() => timeline.events
+-      .where(
+-        (event) =>
+-            event.type == EventTypes.Message ||
+-            event.type == changliaoNudgeEventType,
+-      )
+-      .toList(growable: false)
+-      .reversed
+-      .map(_message)
+-      .toList(growable: false);
+-
+-  RoomMessageViewModel _message(Event event) {
+-    final status = event.status.isError
+-        ? RoomDeliveryState.failed
+-        : event.status.isSending
+-            ? RoomDeliveryState.sending
+-            : RoomDeliveryState.sent;
+-    final messageType = event.messageType;
+-    final info = event.content['info'];
+-    final durationMilliseconds =
+-        info is Map ? int.tryParse(info['duration']?.toString() ?? '') : null;
+-    final mimeType = info is Map ? info['mimetype']?.toString() : null;
+-    final nudge = event.type == changliaoNudgeEventType;
+-    final nudgeText = nudge
+-        ? '${event.content['sender_display_name'] ?? '好友'}拍了拍'
+-            '${event.content['target_display_name'] ?? '好友'}'
+-            '${event.content['suffix'] ?? ''}'
+-        : null;
+-    return RoomMessageViewModel(
+-      id: event.eventId,
+-      senderId: event.senderId,
+-      text: event.redacted ? '' : (nudgeText ?? event.text),
+-      isOwn: event.senderId == room.client.userID,
+-      deliveryState: status,
+-      timestamp: event.originServerTs.toLocal(),
+-      kind: nudge
+-          ? RoomMessageKind.system
+-          : switch (messageType) {
+-              MessageTypes.Image => RoomMessageKind.image,
+-              MessageTypes.Audio => RoomMessageKind.voice,
+-              MessageTypes.File => RoomMessageKind.file,
+-              changliaoRedPacketMessageType => RoomMessageKind.redPacket,
+-              _ => RoomMessageKind.text,
+-            },
+-      mimeType: mimeType,
+-      packetId: event.content['packet_id']?.toString(),
+-      greeting: event.content['greeting']?.toString(),
+-      voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),
+-      isRecalled: event.redacted,
+-      replyToEventId: ((event.content['m.relates_to'] as Map?)?['m.in_reply_to']
+-              as Map?)?['event_id']
+-          ?.toString(),
+-    );
+-  }
++  List<RoomMessageViewModel> snapshot() => _capability.snapshot();
+ 
+   @override
+-  Future<String> sendText(String text) async =>
+-      await room.sendTextEvent(text, parseCommands: false) ??
+-      (throw StateError('消息发送失败'));
++  Future<String> sendText(String text) async => _capability.sendText(text);
+ 
+   @override
+   Future<String> sendRedPacketReference(
+     String packetId,
+     String greeting,
+   ) async =>
+-      await room.sendEvent({
+-        'msgtype': changliaoRedPacketMessageType,
+-        'body': '[畅聊点钻红包]',
+-        'packet_id': packetId,
+-        'greeting': greeting,
+-      }) ??
+-      (throw StateError('红包消息发送失败'));
++      _capability.sendRedPacketReference(packetId, greeting);
+ 
+   @override
+   Future<Uint8List> loadAttachment(String eventId) async {
+-    final event = timeline.events.firstWhere(
+-      (candidate) => candidate.eventId == eventId,
+-    );
+-    return (await event.downloadAndDecryptAttachment()).bytes;
++    return _capability.loadAttachment(eventId);
+   }
+ 
+   @override
+   Future<void> retry(String transactionId) async {
+-    final event = timeline.events.firstWhere(
+-      (candidate) => candidate.eventId == transactionId,
+-    );
+-    await event.sendAgain();
++    await _capability.retry(transactionId);
+   }
+ 
+   @override
+-  Future<void> loadHistory() => timeline.requestHistory();
++  Future<void> loadHistory() => _capability.loadHistory();
+ 
+   @override
+-  Future<void> markRead() => timeline.setReadMarker();
++  Future<void> markRead() => _capability.markRead();
+ 
+   @override
+-  void dispose() => timeline.cancelSubscriptions();
++  void dispose() => _capability.dispose();
+ }
+diff --git a/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart b/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
+index 261eed1..dd05696 100644
+--- a/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
++++ b/apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart
+@@ -1,41 +1,38 @@
+ import 'package:flutter/cupertino.dart';
+-import 'package:matrix/matrix.dart';
+ 
+ import '../../ui/components/user_avatar.dart';
+ import 'avatar_url_resolver.dart';
+-import 'matrix_e2ee_client.dart';
+ 
+-typedef MatrixAvatarResolver = Future<ResolvedAvatarUrl?> Function(
+-  Client client,
+-  Uri? avatarUri,
+-  double size,
+-);
++/// Minimal managed capability for resolving Matrix media without exposing a
++/// Matrix SDK client to presentation code.
++abstract interface class AvatarMediaCapability {
++  Future<ResolvedAvatarUrl?> resolveAvatar({
++    required Uri? avatarUri,
++    required double size,
++  });
++}
+ 
+ /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
+ /// placing the Matrix access token in a cache key or URL.
+ final class MatrixUserAvatar extends StatefulWidget {
+   const MatrixUserAvatar({
+     super.key,
+-    this.client,
+-    this.matrix,
++    required this.avatarMedia,
+     required this.nickname,
+     required this.fallbackSeed,
+     this.matrixAvatarUri,
+     this.fallbackAvatarUrl,
+     this.diagnosticSource = 'unspecified',
+     this.size = 48,
+-    this.resolver,
+-  }) : assert(client != null || matrix != null);
++  });
+ 
+-  final Client? client;
+-  final MatrixSdkE2eeClient? matrix;
++  final AvatarMediaCapability avatarMedia;
+   final String nickname;
+   final String fallbackSeed;
+   final Uri? matrixAvatarUri;
+   final String? fallbackAvatarUrl;
+   final String diagnosticSource;
+   final double size;
+-  final MatrixAvatarResolver? resolver;
+ 
+   @override
+   State<MatrixUserAvatar> createState() => _MatrixUserAvatarState();
+@@ -48,15 +45,6 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
+   @override
+   void initState() {
+     super.initState();
+-    final client = widget.client;
+-    if (client != null) {
+-      resolved = MatrixAvatarUrlResolver.resolveImmediately(
+-        avatarUri: widget.matrixAvatarUri,
+-        homeserver: client.homeserver,
+-        accessToken: client.accessToken,
+-        size: widget.size,
+-      );
+-    }
+     _diagnose('initial');
+     _resolve();
+   }
+@@ -66,8 +54,7 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
+     super.didUpdateWidget(oldWidget);
+     if (oldWidget.matrixAvatarUri != widget.matrixAvatarUri ||
+         oldWidget.size != widget.size ||
+-        oldWidget.client != widget.client ||
+-        oldWidget.matrix != widget.matrix) {
++        oldWidget.avatarMedia != widget.avatarMedia) {
+       _resolve();
+     }
+   }
+@@ -76,21 +63,11 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
+     final generation = ++_resolutionGeneration;
+     final avatarUri = widget.matrixAvatarUri;
+     final size = widget.size;
+-    final resolver = widget.resolver ??
+-        (Client client, Uri? uri, double requestedSize) =>
+-            MatrixAvatarUrlResolver.resolveForClient(
+-              avatarUri: uri,
+-              client: client,
+-              size: requestedSize,
+-            );
+     try {
+-      final directClient = widget.client;
+-      final value = directClient == null
+-          ? await widget.matrix!.resolveAvatar(
+-              avatarUri: avatarUri,
+-              size: size,
+-            )
+-          : await resolver(directClient, avatarUri, size);
++      final value = await widget.avatarMedia.resolveAvatar(
++        avatarUri: avatarUri,
++        size: size,
++      );
+       if (!mounted || generation != _resolutionGeneration) return;
+       setState(() => resolved = value);
+       _diagnose('resolved');
+diff --git a/apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart b/apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart
+index 11c66f3..45fce04 100644
+--- a/apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart
++++ b/apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart
+@@ -1,7 +1,6 @@
+ import 'dart:io';
+ 
+ import 'package:http/http.dart' as http;
+-import 'package:matrix/matrix.dart';
+ 
+ abstract interface class MessageInteractionBackend {
+   Future<void> send(String roomId, Map<String, Object?> content);
+@@ -132,71 +131,3 @@ final class MatrixServerClock {
+     return HttpDate.parse(date).toUtc();
+   }
+ }
+-
+-final class MatrixMessageInteractionBackend
+-    implements MessageInteractionBackend {
+-  const MatrixMessageInteractionBackend({
+-    required this.client,
+-    required this.timeline,
+-  });
+-
+-  final Client client;
+-  final Timeline timeline;
+-
+-  Room _room(String roomId) =>
+-      client.getRoomById(roomId) ?? (throw StateError('找不到 Matrix 会话：$roomId'));
+-
+-  @override
+-  Future<void> send(String roomId, Map<String, Object?> content) async {
+-    await _room(roomId).sendEvent(Map<String, dynamic>.from(content));
+-  }
+-
+-  @override
+-  Future<void> redact(String roomId, String eventId, String reason) async {
+-    await _room(roomId).redactEvent(eventId, reason: reason);
+-  }
+-
+-  @override
+-  Future<void> forwardEncryptedCopy(
+-    String sourceRoomId,
+-    String targetRoomId,
+-    String eventId,
+-  ) async {
+-    final source = _room(sourceRoomId);
+-    final target = _room(targetRoomId);
+-    if (!target.encrypted) {
+-      throw StateError('只能转发到端到端加密会话');
+-    }
+-    final event = timeline.events.firstWhere(
+-      (candidate) => candidate.eventId == eventId,
+-    );
+-    if (event.roomId != null && event.roomId != source.id) {
+-      throw StateError('消息不属于当前会话');
+-    }
+-    if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
+-        .contains(event.messageType)) {
+-      final attachment = await event.downloadAndDecryptAttachment();
+-      final mimeType = event.content['info'] is Map
+-          ? (event.content['info'] as Map)['mimetype']?.toString()
+-          : null;
+-      await target.sendFileEvent(
+-        MatrixFile.fromMimeType(
+-          bytes: attachment.bytes,
+-          name: event.body,
+-          mimeType: mimeType,
+-        ),
+-      );
+-      return;
+-    }
+-    if (event.messageType != MessageTypes.Text) {
+-      throw StateError('该消息类型不能转发');
+-    }
+-    await target.sendEvent({
+-      'msgtype': MessageTypes.Text,
+-      'body': event.body,
+-      if (event.content['format'] != null) 'format': event.content['format'],
+-      if (event.content['formatted_body'] != null)
+-        'formatted_body': event.content['formatted_body'],
+-    });
+-  }
+-}
+diff --git a/apps/mobile_flutter/lib/features/matrix/nudge_service.dart b/apps/mobile_flutter/lib/features/matrix/nudge_service.dart
+index 9879ca9..c5fcb75 100644
+--- a/apps/mobile_flutter/lib/features/matrix/nudge_service.dart
++++ b/apps/mobile_flutter/lib/features/matrix/nudge_service.dart
+@@ -1,7 +1,3 @@
+-import 'package:matrix/matrix.dart';
+-
+-import 'matrix_message_reminder_backend.dart';
+-
+ const changliaoNudgeEventType = 'com.changliao.nudge';
+ const changliaoNudgePreferenceEventType = 'com.changliao.nudge.preference';
+ 
+@@ -40,25 +36,6 @@ final class NudgeService {
+       });
+ }
+ 
+-final class MatrixNudgeBackend implements NudgeBackend {
+-  const MatrixNudgeBackend(this.client);
+-
+-  final Client client;
+-
+-  @override
+-  Future<void> sendEncrypted(
+-    String roomId,
+-    String type,
+-    Map<String, Object?> content,
+-  ) async {
+-    final room = client.getRoomById(roomId);
+-    if (room == null || !room.encrypted || !client.encryptionEnabled) {
+-      throw StateError('拍一拍只能发送到端到端加密会话');
+-    }
+-    await room.sendEvent(Map<String, dynamic>.from(content), type: type);
+-  }
+-}
+-
+ abstract interface class NudgePreferenceBackend {
+   Future<String> loadSuffix();
+   Future<void> saveSuffix(String suffix);
+@@ -78,44 +55,3 @@ final class NudgePreferenceService {
+     return backend.saveSuffix(suffix.trim());
+   }
+ }
+-
+-final class MatrixNudgePreferenceBackend implements NudgePreferenceBackend {
+-  const MatrixNudgePreferenceBackend(this.client);
+-
+-  final Client client;
+-
+-  Room get _room {
+-    final roomId = client
+-        .accountData[messageReminderAccountDataType]?.content['room_id']
+-        ?.toString();
+-    final room = roomId == null ? null : client.getRoomById(roomId);
+-    if (room == null || !room.encrypted || !client.encryptionEnabled) {
+-      throw StateError('拍一拍设置必须使用账号私有加密配置房间');
+-    }
+-    return room;
+-  }
+-
+-  @override
+-  Future<String> loadSuffix() async {
+-    final timeline = await _room.getTimeline();
+-    try {
+-      final events = timeline.events
+-          .where((event) => event.type == changliaoNudgePreferenceEventType)
+-          .toList(growable: false)
+-        ..sort((a, b) => b.originServerTs.compareTo(a.originServerTs));
+-      return events.isEmpty
+-          ? ''
+-          : events.first.content['suffix']?.toString() ?? '';
+-    } finally {
+-      timeline.cancelSubscriptions();
+-    }
+-  }
+-
+-  @override
+-  Future<void> saveSuffix(String suffix) async {
+-    await _room.sendEvent(
+-      {'suffix': suffix},
+-      type: changliaoNudgePreferenceEventType,
+-    );
+-  }
+-}
+diff --git a/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart b/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart
+index 2d58053..061e28a 100644
+--- a/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart
+@@ -1,8 +1,18 @@
+ import 'package:flutter/cupertino.dart';
+ import 'package:flutter_test/flutter_test.dart';
+-import 'package:matrix/matrix.dart';
+ import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
+ import 'package:liuhetong_mobile/features/matrix/direct_chat_info_page.dart';
++import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
++import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
++
++final class _FakeAvatarMedia implements AvatarMediaCapability {
++  @override
++  Future<ResolvedAvatarUrl?> resolveAvatar({
++    required Uri? avatarUri,
++    required double size,
++  }) async =>
++      null;
++}
+ 
+ void main() {
+   testWidgets('direct chat info exposes shared rows and omits group-only rows',
+@@ -11,7 +21,7 @@ void main() {
+       home: DirectChatInfoPage(
+         peerName: '安然',
+         peerId: '@anran:test',
+-        matrixClient: Client('test')..homeserver = Uri.parse('https://matrix.example.test'),
++        avatarMedia: _FakeAvatarMedia(),
+         preference: const ConversationPreference(),
+         onAddMember: () {},
+         onSearchHistory: () {},
+diff --git a/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart b/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
+index ec8bf18..90c266e 100644
+--- a/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart
+@@ -1,10 +1,8 @@
+ import 'package:flutter/cupertino.dart';
+ import 'package:flutter_test/flutter_test.dart';
+-import 'package:matrix/matrix.dart';
+ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+ import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
+ import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
+-import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+ import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
+ 
+ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
+@@ -94,20 +92,19 @@ void main() {
+     expect(groupInfoDisplayName(' 项目群 '), '项目群');
+   });
+ 
+-  test('loads joined members before building a group avatar mosaic', () async {
+-    final client = Client('test')
+-      ..homeserver = Uri.parse('https://matrix.example.test');
+-    final room = Room(id: '!group:example.test', client: client);
+-    room.setState(
+-      User(
+-        '@alice:example.test',
+-        room: room,
+-        displayName: 'Alice',
+-        membership: 'join',
+-      ),
++  test('group member DTO reports app-owned joined membership', () {
++    const joined = GroupChatMember(
++      matrixUserId: '@alice:example.test',
++      displayName: 'Alice',
++    );
++    const invited = GroupChatMember(
++      matrixUserId: '@bob:example.test',
++      displayName: 'Bob',
++      membership: GroupMemberMembership.invited,
+     );
+ 
+-    expect(orderedJoinedMembers(room), hasLength(1));
++    expect(joined.isJoined, isTrue);
++    expect(invited.isJoined, isFalse);
+   });
+ 
+   test('group chat info controller loads members and persists changes',
+@@ -333,6 +330,18 @@ void main() {
+     );
+   });
+ 
++  test('group member DTO retains only immutable avatar display data', () {
++    const member = GroupChatMember(
++      matrixUserId: '@alice:test',
++      displayName: 'Alice',
++      avatarUrl: 'https://media.example.test/alice.png',
++      avatarHeaders: {'authorization': 'Bearer redacted'},
++    );
++
++    expect(member.avatarUrl, 'https://media.example.test/alice.png');
++    expect(member.avatarHeaders, {'authorization': 'Bearer redacted'});
++  });
++
+   test('group management limits administrators to three', () {
+     expect(
+       normalizeGroupAdminIds(
+diff --git a/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart b/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
+index 7c18726..2f3ad4f 100644
+--- a/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart
+@@ -1325,7 +1325,7 @@ void main() {
+     await suspend;
+ 
+     expect(events, ['revoke', 'suspend']);
+-    expect(() => lease.room, throwsStateError);
++    expect(() => lease.roomInfo, throwsStateError);
+   });
+ 
+   test('room lease owns encrypted media sends and rejects them after revoke',
+@@ -1371,7 +1371,7 @@ void main() {
+ 
+     await matrix.suspend().timeout(const Duration(milliseconds: 100));
+ 
+-    expect(() => lease.room, throwsStateError);
++    expect(() => lease.roomInfo, throwsStateError);
+   });
+ 
+   test('room lease drain failure retains the active database for retry',
+diff --git a/apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart b/apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart
+index ba6210e..0384f84 100644
+--- a/apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart
++++ b/apps/mobile_flutter/test/features/matrix/matrix_user_avatar_test.dart
+@@ -5,7 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
+ import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+ import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+ import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
+-import 'package:matrix/matrix.dart';
++
++final class FakeAvatarMediaCapability implements AvatarMediaCapability {
++  FakeAvatarMediaCapability(this.resolve);
++
++  final Future<ResolvedAvatarUrl?> Function(Uri? uri, double size) resolve;
++
++  @override
++  Future<ResolvedAvatarUrl?> resolveAvatar({
++    required Uri? avatarUri,
++    required double size,
++  }) =>
++      resolve(avatarUri, size);
++}
+ 
+ void main() {
+   testWidgets('late avatar resolution cannot replace the current generation',
+@@ -13,30 +25,24 @@ void main() {
+     final first = Completer<ResolvedAvatarUrl?>();
+     final second = Completer<ResolvedAvatarUrl?>();
+     var calls = 0;
+-    Future<ResolvedAvatarUrl?> resolve(
+-      Client client,
+-      Uri? uri,
+-      double size,
+-    ) =>
++    Future<ResolvedAvatarUrl?> resolve(Uri? uri, double size) =>
+         ++calls == 1 ? first.future : second.future;
+-    final client = Client('avatar');
++    final avatars = FakeAvatarMediaCapability(resolve);
+ 
+     await tester.pumpWidget(CupertinoApp(
+       home: MatrixUserAvatar(
+-        client: client,
++        avatarMedia: avatars,
+         nickname: 'Alice',
+         fallbackSeed: 'alice',
+         matrixAvatarUri: Uri.parse('mxc://matrix.test/old'),
+-        resolver: resolve,
+       ),
+     ));
+     await tester.pumpWidget(CupertinoApp(
+       home: MatrixUserAvatar(
+-        client: client,
++        avatarMedia: avatars,
+         nickname: 'Alice',
+         fallbackSeed: 'alice',
+         matrixAvatarUri: Uri.parse('mxc://matrix.test/new'),
+-        resolver: resolve,
+       ),
+     ));
+ 
