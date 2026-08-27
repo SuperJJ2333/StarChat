@@ -43,7 +43,7 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             roles = [r.value for r in session.scalars(select(UserRole.role_code).where(UserRole.user_id == user_id))]
         return {"user_id": user_id, "username": user.username, "roles": roles, "permissions": sorted(p.value for p in rbac.permissions_for(user_id)), "brand": "ChatFlow", "display_name": "畅聊"}
 
-    @router.get("/overview")
+    @router.get("/context")`n    def context(request: Request, user_id: str = Depends(actor)):`n        info = session_info(user_id)`n        overview_data = overview(request, user_id)`n        modules = {}`n        for name in MODULE_PERMISSIONS:`n            try:`n                modules[name] = module_data(name, user_id).get("items", [])`n            except AppError:`n                modules[name] = []`n        admin_permissions = {"system.admin": "*", "audit.view": "admin.audit.read", "finance.review": "admin.withdrawals.read", "support.ticket.assign": "admin.support.read"}`n        permissions = [admin_permissions.get(p, f"admin.{p.replace(chr(46), chr(95))}") for p in info["permissions"]]`n        return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}`n`n    @router.get("/overview")
     def overview(request: Request, user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
         with session_factory() as session:
@@ -66,3 +66,4 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             return {"items": [], "module": module}
 
     return router
+
