@@ -46,17 +46,40 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
     @router.get("/context")
     def context(request: Request, user_id: str = Depends(actor)):
         info = session_info(user_id)
-        overview_data = overview(request, user_id)
+        actual = set(info["permissions"])
+        is_admin = "system.admin" in actual
+        frontend_map = {
+            "admin.finance.read": "finance.review",
+            "admin.bans.read": "system.admin",
+            "admin.support_roles.read": "support.scope.manage",
+            "admin.analytics.read": "audit.view",
+            "admin.presence.read": "support.ticket.assign",
+            "admin.ads.read": "system.admin",
+            "admin.notices.read": "system.admin",
+            "admin.ledger.read": "audit.view",
+            "admin.withdrawals.read": "finance.review",
+            "admin.operations.create": "system.admin",
+        }
+        permissions = ["*"] if is_admin else [name for name, required in frontend_map.items() if required in actual]
+        overview_data = {}
+        if is_admin:
+            overview_data = overview(request, user_id)
         modules = {}
-        for name in MODULE_PERMISSIONS:
-            try:
+        module_requirements = {
+            "finance": Permission.FINANCE_REVIEW,
+            "security": Permission.SYSTEM_ADMIN,
+            "support-role": Permission.SUPPORT_SCOPE_MANAGE,
+            "analytics": Permission.AUDIT_VIEW,
+            "online": Permission.SUPPORT_TICKET_ASSIGN,
+            "ads": Permission.SYSTEM_ADMIN,
+            "notice": Permission.SYSTEM_ADMIN,
+            "ledger": Permission.AUDIT_VIEW,
+            "wallet": Permission.FINANCE_REVIEW,
+        }
+        for name, required in module_requirements.items():
+            if is_admin or required in actual:
                 modules[name] = module_data(name, user_id).get("items", [])
-            except AppError:
-                modules[name] = []
-        admin_permissions = {"system.admin": "*", "audit.view": "admin.audit.read", "finance.review": "admin.withdrawals.read", "support.ticket.assign": "admin.support.read"}
-        permissions = [admin_permissions.get(p, f"admin.{p.replace(chr(46), chr(95))}") for p in info["permissions"]]
         return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
-
     @router.get("/overview")
     def overview(request: Request, user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
@@ -74,11 +97,13 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             raise AppError(code="ADMIN_MODULE_NOT_FOUND", message="模块不存在", status_code=404)
         require(user_id, permission)
         with session_factory() as session:
-            if module == "users":
+            if module == "analytics":
                 rows = session.scalars(select(User).order_by(User.created_at.desc()).limit(100)).all()
                 return {"items": [{"id": u.id, "username": u.username, "status": u.status.value, "created_at": u.created_at} for u in rows]}
             return {"items": [], "module": module}
 
     return router
+
+
 
 
