@@ -1,18 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../matrix/matrix_e2ee_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/components/wechat_contact_index.dart';
 import '../../ui/components/wechat_contact_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_tag_pages.dart';
+import 'request_friend_page.dart';
 import 'contact_profile_sections.dart';
 import '../search/global_search_page.dart';
 import '../matrix/chat_identity_cache.dart';
+import '../matrix/direct_chat_controller.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
 
@@ -52,6 +58,10 @@ final class ContactsPage extends StatefulWidget {
   const ContactsPage({
     super.key,
     required this.api,
+    this.matrix,
+    required this.pendingFriendRequests,
+    this.directChats,
+    this.onRequestsChanged,
     this.onMessage,
     this.onVoice,
     this.onVideo,
@@ -60,6 +70,10 @@ final class ContactsPage extends StatefulWidget {
   });
 
   final ContactsGateway api;
+  final MatrixSdkE2eeClient? matrix;
+  final ValueNotifier<int> pendingFriendRequests;
+  final DirectChatController? directChats;
+  final VoidCallback? onRequestsChanged;
   final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
@@ -156,7 +170,8 @@ final class _ContactsPageState extends State<ContactsPage> {
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
-        middle: const Text('通讯录'),
+        transitionBetweenRoutes: false,
+        middle: const WeChatNavTitle('通讯录'),
         trailing: businessApi == null
             ? null
             : Row(mainAxisSize: MainAxisSize.min, children: [
@@ -168,7 +183,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                     CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
                         api: businessApi,
-                        contactsLoader: () => widget.api.listContacts(),
+                        matrix: widget.matrix,
                       ),
                     ),
                   ),
@@ -239,13 +254,40 @@ final class _ContactsPageState extends State<ContactsPage> {
                       WeChatListTile(
                         leading: const Icon(CupertinoIcons.person_add_solid),
                         title: const Text('新的朋友'),
-                        onTap: () => Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (_) =>
-                                FriendRequestsPage(api: businessApi),
-                          ),
+                        trailing: ValueListenableBuilder<int>(
+                          valueListenable: widget.pendingFriendRequests,
+                          builder: (_, count, __) => count > 0
+                              ? Container(
+                                  key: const Key('friend-request-badge'),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: const BoxDecoration(
+                                    color: WeChatColors.danger,
+                                    borderRadius:
+                                        BorderRadius.all(Radius.circular(10)),
+                                  ),
+                                  child: Text(
+                                    count > 99 ? '99+' : '$count',
+                                    style: const TextStyle(
+                                        color: CupertinoColors.white,
+                                        fontSize: 11),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
+                        onTap: () async {
+                          await Navigator.push(
+                            context,
+                            CupertinoPageRoute(
+                              builder: (_) => FriendRequestsPage(
+                                api: businessApi,
+                                pendingRequests: widget.pendingFriendRequests,
+                                directChats: widget.directChats,
+                                onRequestsChanged: widget.onRequestsChanged,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       WeChatListTile(
                         leading: const Icon(CupertinoIcons.person_3_fill),
@@ -403,7 +445,6 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: const Text('好友资料'),
@@ -639,7 +680,6 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: const Text('好友设置'),
@@ -772,7 +812,6 @@ final class _ContactTagPickerPageState extends State<ContactTagPickerPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: const Text('标签'),
@@ -868,7 +907,6 @@ final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('标签')),
@@ -923,19 +961,75 @@ final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
 
 final class AddFriendPage extends StatefulWidget {
   const AddFriendPage({super.key, required this.api});
-  final BusinessApiClient api;
+  final AddFriendGateway api;
   @override
   State<AddFriendPage> createState() => _AddFriendState();
 }
 
 final class _AddFriendState extends State<AddFriendPage> {
+  static const _minQueryLength = 2;
+
   final q = TextEditingController();
+  Timer? _debounce;
   List items = [];
+  String? hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+  bool searching = false;
   String? submittingUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    q.addListener(_onChanged);
+  }
+
   @override
   void dispose() {
+    q.removeListener(_onChanged);
+    _debounce?.cancel();
     q.dispose();
     super.dispose();
+  }
+
+  void _onChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), _search);
+  }
+
+  Future<void> _search() async {
+    final query = q.text.trim();
+    if (query.length < _minQueryLength) {
+      if (!mounted) return;
+      setState(() {
+        items = [];
+        searching = false;
+        hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
+      });
+      return;
+    }
+    setState(() => searching = true);
+    try {
+      final result = await widget.api.searchUsers(query);
+      if (!mounted) return;
+      setState(() {
+        items = result['items'] as List;
+        searching = false;
+        hint = items.isEmpty ? '未找到匹配的用户' : null;
+      });
+    } on BusinessApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        items = [];
+        searching = false;
+        hint = error.message;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        items = [];
+        searching = false;
+        hint = '搜索失败，请稍后重试';
+      });
+    }
   }
 
   Future<void> _request(Map user) async {
@@ -968,6 +1062,23 @@ final class _AddFriendState extends State<AddFriendPage> {
     }
   }
 
+  void _openRequestPage(Map user) {
+    final nickname = user['nickname']?.toString();
+    Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => RequestFriendPage(
+          api: widget.api,
+          userId: user['user_id'].toString(),
+          username: user['username'].toString(),
+          nickname:
+              nickname != null && nickname.isNotEmpty ? nickname : user['username'].toString(),
+          avatarUrl: user['avatar_url']?.toString(),
+        ),
+      ),
+    );
+  }
+
   void _message(String text) => showCupertinoDialog<void>(
         context: context,
         builder: (context) => CupertinoAlertDialog(
@@ -984,35 +1095,67 @@ final class _AddFriendState extends State<AddFriendPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('添加朋友')),
         child: SafeArea(
-          child: ListView(
-            children: [
-              CupertinoSearchTextField(
+          child: Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: CupertinoSearchTextField(
                 controller: q,
-                onSubmitted: (value) async {
-                  final result = await widget.api.searchUsers(value);
-                  if (mounted) setState(() => items = result['items'] as List);
-                },
+                placeholder: '畅聊号 / 邮箱',
+                onSubmitted: (_) => _search(),
               ),
-              for (final user in items)
-                WeChatListTile(
-                  title: Text(user['username'].toString()),
-                  subtitle: Text('畅聊号：${user['username']}'),
-                  trailing: ModernActionButton(
-                    icon: _friendIcon(user['relationship_state']?.toString()),
-                    label: _friendLabel(user['relationship_state']?.toString()),
-                    loading: submittingUserId == user['user_id'].toString(),
-                    onPressed: submittingUserId == null
-                        ? () => _request(user as Map)
-                        : null,
+            ),
+            if (searching)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: CupertinoActivityIndicator(),
+              )
+            else if (hint != null)
+              Padding(
+                key: const Key('add-friend-hint'),
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  hint!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: WeChatColors.textSecondary,
                   ),
                 ),
-            ],
-          ),
+              ),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final user in items)
+                    WeChatListTile(
+                      key: Key('add-friend-${user['user_id']}'),
+                      onTap: () => _openRequestPage(user as Map),
+                      leading: UserAvatar(
+                        nickname: (user['nickname']?.toString().isNotEmpty ?? false)
+                            ? user['nickname'].toString()
+                            : user['username'].toString(),
+                        fallbackSeed: user['user_id'].toString(),
+                        avatarUrl: user['avatar_url']?.toString(),
+                        diagnosticSource: 'add-friend-search',
+                      ),
+                      title: Text(user['nickname']?.toString() ?? ''),
+                      subtitle: Text('畅聊号：${user['username']}'),
+                      trailing: ModernActionButton(
+                        icon: _friendIcon(user['relationship_state']?.toString()),
+                        label: _friendLabel(user['relationship_state']?.toString()),
+                        loading: submittingUserId == user['user_id'].toString(),
+                        onPressed: submittingUserId == null
+                            ? () => _request(user as Map)
+                            : null,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ]),
         ),
       );
 }
@@ -1028,8 +1171,21 @@ IconData _friendIcon(String? state) =>
     state == 'FRIEND' ? CupertinoIcons.check_mark : CupertinoIcons.person_add;
 
 final class FriendRequestsPage extends StatefulWidget {
-  const FriendRequestsPage({super.key, required this.api});
+  const FriendRequestsPage({
+    super.key,
+    required this.api,
+    this.pendingRequests,
+    this.directChats,
+    this.onRequestsChanged,
+  });
   final BusinessApiClient api;
+  final ValueNotifier<int>? pendingRequests;
+
+  /// 接受申请成功后用于立即创建双方 DM 会话（消息页即时出现入口）。
+  final DirectChatController? directChats;
+
+  /// 申请状态变化后回调（通讯录/消息页即时刷新）。
+  final VoidCallback? onRequestsChanged;
 
   @override
   State<FriendRequestsPage> createState() => _FriendRequestsPageState();
@@ -1046,6 +1202,32 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
     } else {
       await widget.api.rejectFriendRequest(id);
     }
+    final pending = widget.pendingRequests;
+    if (pending != null && pending.value > 0) {
+      pending.value -= 1;
+    }
+    if (accept) {
+      // 接受即建立与对方的加密会话：消息页立即出现该好友的入口，
+      // 且后续打开聊天不再出现"无法打开加密会话"。
+      final items =
+          ((await widget.api.friendRequests())['items'] as List?) ?? const [];
+      final matrixUserId = items
+          .whereType<Map>()
+          .firstWhere(
+            (item) => item['id']?.toString() == id,
+            orElse: () => const {},
+          )['matrix_user_id']
+          ?.toString();
+      final directChats = widget.directChats;
+      if (matrixUserId != null && matrixUserId.isNotEmpty && directChats != null) {
+        try {
+          await directChats.open(matrixUserId);
+        } catch (_) {
+          // 会话创建失败不阻塞好友接受；后续打开联系人时自动重试。
+        }
+      }
+    }
+    widget.onRequestsChanged?.call();
     if (mounted) _reload();
   }
 
@@ -1053,7 +1235,6 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         backgroundColor: WeChatColors.tabRootPageBackground,
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('新的朋友')),

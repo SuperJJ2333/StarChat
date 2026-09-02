@@ -1,0 +1,6 @@
+Red packet optimization changed fields:
+- mode accepts EQUAL, RANDOM, EXCLUSIVE; exclusive requires room_id + recipient_id + share_count=1.
+- configurable BUSINESS_RED_PACKET_MAX_TOTAL (default 20000.00) enforced by service/API/worker.
+- insufficient balance returns RED_PACKET_BALANCE_INSUFFICIENT / 红包创建失败，账户余额不足.
+- Flutter forms use warm orange styling, left labels, right-aligned fields, numeric keyboard, and suppress green message bubble wrapper.
+

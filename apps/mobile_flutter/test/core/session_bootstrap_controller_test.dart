@@ -95,8 +95,11 @@ void main() {
     expect(matrix.logoutCalls, 0);
   });
 
-  test('invalid refresh token clears the matrix domain and returns to login',
+  test(
+      'invalid business session keeps the encrypted matrix database intact',
       () async {
+    // 同账号重新登录必须仍能解密历史消息：业务会话失效只回登录页，
+    // 不清除本地加密库（Olm/Megolm 会话保留）。
     final matrix =
         FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost');
     final controller = SessionBootstrapController(
@@ -105,7 +108,7 @@ void main() {
     );
     await controller.bootstrap();
     expect(controller.state.status, SessionBootstrapStatus.unauthenticated);
-    expect(matrix.resetCalls, 1);
+    expect(matrix.resetCalls, 0);
   });
 
   test('Matrix unknown token clears Business and returns to login', () async {

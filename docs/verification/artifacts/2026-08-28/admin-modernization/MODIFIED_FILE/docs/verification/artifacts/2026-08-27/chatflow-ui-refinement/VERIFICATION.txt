@@ -1,0 +1,6 @@
+TARGET: design-demo/src/styles/gallery.css and tokens.css
+BASELINE command: npm test before refinement
+MODIFIED command: npm test
+MODIFIED result: 14 tests passed
+ROLLBACK command: bash ROLLBACK.sh backup target
+ROLLBACK result: script syntax verified; MODIFIED_FILE preserved

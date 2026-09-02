@@ -81,7 +81,7 @@ final class MessageInteractionService {
 }
 
 final class MentionDraft {
-  final Map<String, String> _markersByUserId = <String, String>{};
+  final Map<String, List<String>> _userIdsByMarker = <String, List<String>>{};
 
   String append(
     String currentText, {
@@ -89,16 +89,27 @@ final class MentionDraft {
     required String userId,
   }) {
     final marker = '@$displayName';
-    _markersByUserId[userId] = marker;
+    _userIdsByMarker[marker] = [userId];
     return '$currentText$marker ';
   }
 
-  List<String> activeUserIds(String text) => _markersByUserId.entries
-      .where((entry) => text.contains(entry.value))
-      .map((entry) => entry.key)
-      .toList(growable: false);
+  /// Inserts the 群管理员/群主-only 「@所有人」 marker that mentions every
+  /// given member id when the message is sent.
+  String appendAll(
+    String currentText, {
+    required List<String> userIds,
+  }) {
+    const marker = '@所有人';
+    _userIdsByMarker[marker] = List<String>.unmodifiable(userIds);
+    return '$currentText$marker ';
+  }
 
-  void clear() => _markersByUserId.clear();
+  List<String> activeUserIds(String text) => [
+        for (final entry in _userIdsByMarker.entries)
+          if (text.contains(entry.key)) ...entry.value,
+      ];
+
+  void clear() => _userIdsByMarker.clear();
 }
 
 String resolveMessageSenderDisplayName({
@@ -112,6 +123,42 @@ String resolveMessageSenderDisplayName({
   if (matrix != null && matrix.isNotEmpty) return matrix;
   final localPart = senderId.startsWith('@') ? senderId.substring(1) : senderId;
   return localPart.split(':').first;
+}
+
+/// 拍一拍 wording follows the viewer's perspective:
+/// - viewers see their own pat as 「我拍了拍{备注或昵称}」;
+/// - pats from other members show plain nicknames on both sides so the
+///   remark a member set for somebody never reaches anyone else.
+String formatNudgeNotice({
+  required String viewerId,
+  required String senderId,
+  required String senderName,
+  required String targetUserId,
+  required String targetName,
+  String suffix = '',
+  String? viewerRemarkForTarget,
+  String? targetLiveName,
+  String? senderLiveName,
+}) {
+  String? firstNonEmpty(Iterable<String?> values) {
+    for (final value in values) {
+      final trimmed = value?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
+  }
+
+  if (senderId == viewerId) {
+    final target = firstNonEmpty([
+      viewerRemarkForTarget,
+      targetLiveName,
+      targetName,
+    ]);
+    return '我拍了拍${target ?? '好友'}$suffix';
+  }
+  final sender = firstNonEmpty([senderLiveName, senderName]) ?? '好友';
+  final target = firstNonEmpty([targetLiveName, targetName]) ?? '好友';
+  return '$sender拍了拍$target$suffix';
 }
 
 final class MatrixServerClock {

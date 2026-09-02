@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -8,6 +10,7 @@ import '../../ui/components/user_avatar.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../core/business_api_client.dart';
+import '../../core/cache/cache_repository.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import '../../ui/moments/wechat_moment_viewer.dart';
 import 'moment_models.dart';
@@ -37,7 +40,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     super.initState();
     _identityCache.addListener(_identityChanged);
     _loadIdentity();
-    _feed = widget.api.momentsFeed(mode: 'latest');
+    _feed = _loadFeedWithCache();
     _loadPreferences();
   }
 
@@ -63,6 +66,51 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   void _identityChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _reloadFeed() {
+    if (!mounted) return;
+    setState(() {
+      _itemOverrides.clear();
+      _interactionError = null;
+      _feed = _loadFeedWithCache();
+    });
+  }
+
+  /// 朋友圈 Feed 加载（优化 3）：存在缓存时**立即用缓存首绘**，
+  /// 同时后台刷新最新数据并落盘覆盖；无缓存时等待网络。
+  Future<Map<String, dynamic>> _loadFeedWithCache() async {
+    Map<String, dynamic>? cached;
+    try {
+      cached = await (await CacheRepository.instance()).moments.load();
+    } catch (_) {
+      cached = null; // 缓存不可用（如测试环境无插件通道）绝不阻塞加载
+    }
+    if (cached != null) {
+      unawaited(_refreshFeedInBackground());
+      return cached;
+    }
+    final fresh = await widget.api.momentsFeed(mode: 'latest');
+    unawaited(_saveFeedCache(fresh));
+    return fresh;
+  }
+
+  Future<void> _saveFeedCache(Map<String, dynamic> feed) async {
+    try {
+      await (await CacheRepository.instance()).moments.save(feed);
+    } catch (_) {
+      // 落盘失败不影响本次展示。
+    }
+  }
+
+  Future<void> _refreshFeedInBackground() async {
+    try {
+      final fresh = await widget.api.momentsFeed(mode: 'latest');
+      await _saveFeedCache(fresh);
+      if (mounted) setState(() => _feed = Future.value(fresh));
+    } catch (_) {
+      // 后台刷新失败保持缓存首绘内容，不打断浏览。
+    }
   }
 
   @override
@@ -207,10 +255,15 @@ final class _MomentsPageState extends State<MomentsPage> {
                   child: const Icon(CupertinoIcons.settings)),
               CupertinoButton(
                   padding: EdgeInsets.zero,
-                  onPressed: () => Navigator.push(
+                  onPressed: () async {
+                    final didPublish = await Navigator.push<bool>(
                       context,
                       CupertinoPageRoute(
-                          builder: (_) => MomentComposerPage(api: widget.api))),
+                        builder: (_) => MomentComposerPage(api: widget.api),
+                      ),
+                    );
+                    if (didPublish == true) _reloadFeed();
+                  },
                   child: const Icon(CupertinoIcons.camera))
             ])),
         child: SafeArea(

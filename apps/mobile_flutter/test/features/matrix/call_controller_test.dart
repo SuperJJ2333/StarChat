@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 
 final class FakeCallPermissions implements CallPermissionGateway {
@@ -11,6 +12,26 @@ final class FakeCallPermissions implements CallPermissionGateway {
     requests++;
     return allowed;
   }
+}
+
+final class RecordingCallAlerts extends CallAlerts {
+  RecordingCallAlerts() : super(driver: _NoopDriver());
+  int started = 0;
+  int stopped = 0;
+
+  @override
+  void start() => started++;
+
+  @override
+  void stop() => stopped++;
+}
+
+final class _NoopDriver implements CallAlertDriver {
+  @override
+  Future<void> playAlertSound() async {}
+
+  @override
+  Future<void> vibrate() async {}
 }
 
 final class FakeCallBackend implements CallBackend {
@@ -54,8 +75,12 @@ void main() {
   test('outgoing encrypted call transitions and controls media', () async {
     final backend = FakeCallBackend();
     final permissions = FakeCallPermissions();
-    final controller =
-        CallController(backend: backend, permissions: permissions);
+    final alerts = RecordingCallAlerts();
+    final controller = CallController(
+      backend: backend,
+      permissions: permissions,
+      alerts: alerts,
+    );
 
     final start = controller.start(
       roomId: '!dm:example.test',
@@ -65,27 +90,37 @@ void main() {
     expect(controller.state.phase, CallPhase.requestingPermission);
     await start;
     expect(controller.state.phase, CallPhase.ringing);
+    expect(alerts.started, 1, reason: '主叫等待期间维持铃声+震动提醒');
     backend.events.add(const CallBackendEvent.connected());
     await Future<void>.delayed(Duration.zero);
     expect(controller.state.phase, CallPhase.connected);
+    expect(alerts.stopped, greaterThanOrEqualTo(1), reason: '接通即停铃');
+    // 视频通话接通默认打开免提（微信语义）。
+    expect(backend.speaker, isTrue);
+    expect(controller.state.speaker, isTrue);
+    expect(controller.state.connectedAt, isNotNull);
 
     await controller.toggleMute();
     await controller.toggleSpeaker();
     await controller.switchCamera();
     expect(backend.muted, isTrue);
-    expect(backend.speaker, isTrue);
+    expect(backend.speaker, isFalse);
     expect(backend.cameraSwitches, 1);
     await controller.hangup();
     expect(controller.state.phase, CallPhase.ended);
     expect(backend.hangups, 1);
+    controller.dispose();
   });
 
   test('permission denial and unsafe room fail before call signaling',
       () async {
     final deniedBackend = FakeCallBackend();
     final deniedPermissions = FakeCallPermissions()..allowed = false;
-    final denied =
-        CallController(backend: deniedBackend, permissions: deniedPermissions);
+    final denied = CallController(
+      backend: deniedBackend,
+      permissions: deniedPermissions,
+      alerts: RecordingCallAlerts(),
+    );
     await denied.start(
       roomId: '!dm:example.test',
       matrixUserId: '@alice:example.test',
@@ -96,8 +131,11 @@ void main() {
 
     final unsafeBackend = FakeCallBackend()..safeRoom = false;
     final permissions = FakeCallPermissions();
-    final unsafe =
-        CallController(backend: unsafeBackend, permissions: permissions);
+    final unsafe = CallController(
+      backend: unsafeBackend,
+      permissions: permissions,
+      alerts: RecordingCallAlerts(),
+    );
     await expectLater(
       unsafe.start(
         roomId: '!group:example.test',
@@ -108,6 +146,8 @@ void main() {
     );
     expect(permissions.requests, 0);
     expect(unsafeBackend.starts, 0);
+    denied.dispose();
+    unsafe.dispose();
   });
 
   test('incoming call can be accepted or rejected', () async {
@@ -115,6 +155,7 @@ void main() {
     final controller = CallController(
       backend: backend,
       permissions: FakeCallPermissions(),
+      alerts: RecordingCallAlerts(),
     );
     backend.events.add(const CallBackendEvent.incoming(
       roomId: '!dm:example.test',
@@ -138,6 +179,7 @@ void main() {
     await controller.reject();
     expect(backend.rejects, 1);
     expect(controller.state.phase, CallPhase.ended);
+    controller.dispose();
   });
 
   test('network interruption ends without retrying signaling', () async {
@@ -145,10 +187,68 @@ void main() {
     final controller = CallController(
       backend: backend,
       permissions: FakeCallPermissions(),
+      alerts: RecordingCallAlerts(),
     );
     backend.events.add(const CallBackendEvent.networkInterrupted());
     await Future<void>.delayed(Duration.zero);
     expect(controller.state.phase, CallPhase.ended);
     expect(controller.state.message, contains('网络'));
+    controller.dispose();
+  });
+
+  test('outgoing call auto-cancels when nobody answers within the timeout',
+      () async {
+    final backend = FakeCallBackend();
+    final alerts = RecordingCallAlerts();
+    final controller = CallController(
+      backend: backend,
+      permissions: FakeCallPermissions(),
+      alerts: alerts,
+      ringTimeout: const Duration(milliseconds: 60),
+    );
+    await controller.start(
+      roomId: '!dm:example.test',
+      matrixUserId: '@alice:example.test',
+      type: CallMediaType.audio,
+    );
+    expect(controller.state.phase, CallPhase.ringing);
+    expect(backend.hangups, 0);
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(controller.state.phase, CallPhase.ended, reason: '超时自动取消');
+    expect(controller.state.message, '对方无应答，已取消');
+    expect(backend.hangups, 1, reason: '超时后自动挂断');
+    expect(alerts.stopped, greaterThanOrEqualTo(1), reason: '取消即停铃');
+    controller.dispose();
+  });
+
+  test('accepting before the ring timeout cancels the auto-hangup', () async {
+    final backend = FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: FakeCallPermissions(),
+      alerts: RecordingCallAlerts(),
+      ringTimeout: const Duration(milliseconds: 80),
+    );
+    await controller.start(
+      roomId: '!dm:example.test',
+      matrixUserId: '@alice:example.test',
+      type: CallMediaType.audio,
+    );
+    backend.events.add(const CallBackendEvent.connected());
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(controller.state.phase, CallPhase.connected,
+        reason: '接通后超时定时器必须失效');
+    expect(backend.hangups, 0);
+    controller.dispose();
+  });
+
+  test('call duration formatting', () {
+    expect(formatCallDuration(Duration.zero), '00:00');
+    expect(formatCallDuration(const Duration(seconds: 65)), '01:05');
+    expect(
+        formatCallDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
+        '1:02:03');
   });
 }

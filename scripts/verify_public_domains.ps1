@@ -34,13 +34,18 @@ function Test-Dns([string]$Domain) {
     }
 }
 
-function Get-Response([string]$Uri) {
+function Get-Response([string]$Uri, [string]$Method = 'GET') {
     $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
     $client = [System.Net.Http.HttpClient]::new($handler)
     $client.Timeout = [TimeSpan]::FromSeconds(15)
     try {
-        $response = $client.GetAsync($Uri).GetAwaiter().GetResult()
+        $response = if ($Method -eq 'HEAD') {
+            $client.SendAsync([System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Head, $Uri)).GetAwaiter().GetResult()
+        }
+        else {
+            $client.GetAsync($Uri).GetAwaiter().GetResult()
+        }
         $location = if ($null -ne $response.Headers.Location) {
             $response.Headers.Location.ToString()
         }
@@ -63,8 +68,8 @@ function Get-Response([string]$Uri) {
     }
 }
 
-function Assert-Status([string]$Uri, [int[]]$Expected) {
-    $response = Get-Response $Uri
+function Assert-Status([string]$Uri, [int[]]$Expected, [string]$Method = 'GET') {
+    $response = Get-Response $Uri $Method
     if ($null -eq $response) { return $null }
     if ([int]$response.StatusCode -notin $Expected) {
         Add-Failure "$Uri returned $([int]$response.StatusCode), expected $($Expected -join '/')"
@@ -83,14 +88,32 @@ if ($httpRoot -and $httpRoot.Headers.Location -ne "https://$RootDomain/") {
     Add-Failure "HTTP root redirect target is $($httpRoot.Headers.Location)"
 }
 
-$httpWww = Assert-Status "http://$WwwDomain/domain-check?source=www" @(301, 308)
-if ($httpWww -and $httpWww.Headers.Location -ne "https://$RootDomain/domain-check?source=www") {
-    Add-Failure "HTTP www redirect does not preserve path and query"
+# www serves the product landing page (and the Android download path).
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$pubspec = Get-Content -LiteralPath (Join-Path $repoRoot 'apps/mobile_flutter/pubspec.yaml') -Raw -Encoding UTF8
+if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)\+\d+\s*$') {
+    Add-Failure 'pubspec.yaml must declare version: X.Y.Z+build'
+}
+$releaseVersion = $Matches[1]
+$apkUrl = "https://$WwwDomain/downloads/latest-arm64.apk"
+
+$landing = Assert-Status "https://$WwwDomain/" @(200)
+if ($landing) {
+    foreach ($needle in @('畅聊 ChatFlow', '/downloads/latest-arm64.apk')) {
+        if (-not $landing.Content.Contains($needle)) {
+            Add-Failure "www landing page does not mention '$needle'"
+        }
+    }
+    if ($landing.Content) { Write-Host 'PASS: www landing page content' }
 }
 
-$httpsWww = Assert-Status "https://$WwwDomain/domain-check?source=www" @(301, 308)
-if ($httpsWww -and $httpsWww.Headers.Location -ne "https://$RootDomain/domain-check?source=www") {
-    Add-Failure "HTTPS www redirect does not preserve path and query"
+$apk = Assert-Status $apkUrl @(200) 'HEAD'
+if ($apk) {
+    Write-Host "PASS: www APK download head [$([int]$apk.StatusCode)]"
+}
+foreach ($variant in @('arm32', 'x86_64')) {
+    $variantUrl = "https://$WwwDomain/downloads/latest-$variant.apk"
+    Assert-Status $variantUrl @(200) 'HEAD' | Out-Null
 }
 
 Assert-Status "https://$RootDomain/api/v1/health/live" @(200) | Out-Null
@@ -115,7 +138,7 @@ if ($wellKnown) {
 }
 
 Assert-Status "https://$AdminDomain/api/v1/health/live" @(200) | Out-Null
-Assert-Status "https://$AdminDomain/" @(404) | Out-Null
+Assert-Status "https://$AdminDomain/" @(200) | Out-Null
 Assert-Status "https://$RootDomain/_synapse/admin/v1/server_version" @(404) | Out-Null
 Assert-Status "https://$AdminDomain/_synapse/admin/v1/server_version" @(404) | Out-Null
 

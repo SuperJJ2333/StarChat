@@ -1,0 +1,276 @@
+{
+ "version": 5,
+ "base_build": 5,
+ "files": [
+  {
+   "path": "emoji/angry.gif",
+   "sha256": "670c21dfa080082b164f02e9ce957b1903edef57450b5b11949494424cc4e78c",
+   "size": 204823
+  },
+  {
+   "path": "emoji/beer.gif",
+   "sha256": "3b24d280c6b35f08fdbbb5ee2193b824c14d609f371474b081d9967d03fd208d",
+   "size": 195184
+  },
+  {
+   "path": "emoji/broken-heart.gif",
+   "sha256": "6b6a894a67e188ad8b2cc9a8c6963f92329039d018908e1e08a6015744856d33",
+   "size": 176756
+  },
+  {
+   "path": "emoji/cake.gif",
+   "sha256": "1cf42b0d2fabdff9cb9beac2be122aa9ca937c6f662c57da6958e89b42116b56",
+   "size": 197567
+  },
+  {
+   "path": "emoji/cat.gif",
+   "sha256": "462dd7921ae5a8d7491f58eee2986350d858549c9d9ae5f412dc1aebdcfc2b78",
+   "size": 195204
+  },
+  {
+   "path": "emoji/clap.gif",
+   "sha256": "bb36075f5179dc74122a5b46f9e121daa44f96e30d846328f2627ce3121239c4",
+   "size": 72005
+  },
+  {
+   "path": "emoji/coffee.gif",
+   "sha256": "fd14f73817271b76f5ff20e600164f2f36640a6cff68cea1398c436921f937ca",
+   "size": 191498
+  },
+  {
+   "path": "emoji/cool.gif",
+   "sha256": "5870f46e22746547e185e3aa7b785c08923a546ab7203a149cf085f697e083f6",
+   "size": 230866
+  },
+  {
+   "path": "emoji/cry.gif",
+   "sha256": "bbbd7a825db0f7108c8dc30ed10f3dbc3ae517127fbaddba4b832f333437dc99",
+   "size": 279818
+  },
+  {
+   "path": "emoji/dog.gif",
+   "sha256": "34b44ee5fcd1fb023fb6e137a8472bdd296e53a36cbfe1b6dd2a6ab9c90c1f76",
+   "size": 204473
+  },
+  {
+   "path": "emoji/fire.gif",
+   "sha256": "4cfa678bc86f2f4f0cbc3cd0d16c36cf665237a9b1f3956c6e43fa97c55a9dcd",
+   "size": 113477
+  },
+  {
+   "path": "emoji/gift.gif",
+   "sha256": "a45d9e0b4476bb4cc34ff06f2c5861e4ac92afd7e499ca6e307aad091a7fb09d",
+   "size": 2500
+  },
+  {
+   "path": "emoji/grinning.gif",
+   "sha256": "ac4458bcdf1b99cf102aaa2c5ebed023a716d38dec5d369dd7296c390f5414ab",
+   "size": 211443
+  },
+  {
+   "path": "emoji/halo.gif",
+   "sha256": "9b49a3cdf873b72f610f31a4fe608d4342fe83c6f3af9c97b7dbe293698ed635",
+   "size": 224904
+  },
+  {
+   "path": "emoji/heart-eyes.gif",
+   "sha256": "32ccbc693c0c6be28578f70508783e1d782602b3496ca2f0ee56db4c3fb31f4b",
+   "size": 225206
+  },
+  {
+   "path": "emoji/heart.gif",
+   "sha256": "98e701312895ed047fd871ebcf2fc3ea948e3544dddcdae124e579ba0d50ca64",
+   "size": 164982
+  },
+  {
+   "path": "emoji/hearts-face.gif",
+   "sha256": "f4c4fc7bbe1a113359333610e58b64953fa3c278e08aab3e71b36170305474cc",
+   "size": 231129
+  },
+  {
+   "path": "emoji/holding-back-tears.gif",
+   "sha256": "433f66d31374dd8480c28bafea8b5bcb0cca86fcf72dd3c73d1878951ac994cc",
+   "size": 227396
+  },
+  {
+   "path": "emoji/joy.gif",
+   "sha256": "e8b39783b7ed2ec83d25fe61c9a760208cad09c4f73fd443e883422de55c90fe",
+   "size": 138565
+  },
+  {
+   "path": "emoji/kiss.gif",
+   "sha256": "56c371ac37bc3655a368a27530c68326f7f25b6f708fcc57c070c14bf8aecf83",
+   "size": 223723
+  },
+  {
+   "path": "emoji/mask.gif",
+   "sha256": "a9bc2c2c41041149f3d4e08c33c3c18f05d2ed7713ebb2c693f4b8282d4c1f47",
+   "size": 217320
+  },
+  {
+   "path": "emoji/medal.gif",
+   "sha256": "39c859db8eba41c6311cc88783e0bc3e55274b6fb6e72861404d3454ea721a15",
+   "size": 2399
+  },
+  {
+   "path": "emoji/muscle.gif",
+   "sha256": "15f4a58acf4ce50dde90e4aa47526ab0497736ace1be3f2bb3be4b4a59efb910",
+   "size": 178471
+  },
+  {
+   "path": "emoji/nerd.gif",
+   "sha256": "e7d9dff89da0c2ec6e9eb88ff4a2b9718fc83f11a260bec2cbed9f64e870ca5d",
+   "size": 230603
+  },
+  {
+   "path": "emoji/neutral.gif",
+   "sha256": "b2289cc280fddfcfc7eab844b43f3c4119d908fcb4e0147235a05db3dcc45d92",
+   "size": 100249
+  },
+  {
+   "path": "emoji/ok-hand.gif",
+   "sha256": "0e70ae39def00c955314a45727af02967d990c8cdc602aae7822918c9585a468",
+   "size": 169987
+  },
+  {
+   "path": "emoji/party-popper.gif",
+   "sha256": "e271be02d97c8492b59c17e2c6ae5f6405acd55c7cedf8e62c5228db18e3438f",
+   "size": 155029
+  },
+  {
+   "path": "emoji/partying.gif",
+   "sha256": "493b0fea56f5a98a03feee7f41f01673de2e9f4ccd0371e0d15d91305dbf6483",
+   "size": 239010
+  },
+  {
+   "path": "emoji/pig.gif",
+   "sha256": "1dfaacd507a3d3fee2e55b7df59805c63f019f88eeb6cc84f00f9d9adde16ddd",
+   "size": 186659
+  },
+  {
+   "path": "emoji/pleading.gif",
+   "sha256": "fd13e778fc2786bd01024a9692d15a194711b6603a402a0abbafdb2b3c1caaec",
+   "size": 212285
+  },
+  {
+   "path": "emoji/pray.gif",
+   "sha256": "542c38026dc9e7e5818647ab24bb83de0ff6219a2804c11ee3b6cdd390c97193",
+   "size": 199007
+  },
+  {
+   "path": "emoji/relieved.gif",
+   "sha256": "7b267002c7ca3deb6bb9fe5b40905f530d3a8b6e46e1cabb1059cec098712f08",
+   "size": 207558
+  },
+  {
+   "path": "emoji/rocket.gif",
+   "sha256": "2472dfe82511002b065f8dcf3dd0149be57a726d1e3c37ec10e0d2c04642483d",
+   "size": 197586
+  },
+  {
+   "path": "emoji/rofl.gif",
+   "sha256": "ebad1a6b78db5f186f0615a226efb3a4dda68e89fb065d4c8994589f9e2c97bc",
+   "size": 215571
+  },
+  {
+   "path": "emoji/savoring.gif",
+   "sha256": "2e275a5c1f42ea5c1fcdcb90380bc40139e772ea45d987c19c565a50aadec527",
+   "size": 208003
+  },
+  {
+   "path": "emoji/scream.gif",
+   "sha256": "3e5d6a118bf53ea03bc2d04130fed28e83f5ed3b59b044ad1d69273941e00f56",
+   "size": 176632
+  },
+  {
+   "path": "emoji/shocked.gif",
+   "sha256": "38b5116a162311479faba7008772b46ce59485bbf825aeae05e8f786cd27337b",
+   "size": 213405
+  },
+  {
+   "path": "emoji/shushing.gif",
+   "sha256": "f3d26511d2aebf3833a05320c84e917394097eba19a1e2115b23b225d8f7fb8d",
+   "size": 208477
+  },
+  {
+   "path": "emoji/sleeping.gif",
+   "sha256": "aeecdcbe701a25c155a158f7b9ebc86373b6a28d17c726e4854687d315a82cdf",
+   "size": 214888
+  },
+  {
+   "path": "emoji/sleepy.gif",
+   "sha256": "0e4ace7d3487c5a4403f847c0ea1b90423d0ea282b7a7ca7fe763798d8d76041",
+   "size": 212747
+  },
+  {
+   "path": "emoji/smile.gif",
+   "sha256": "16feb9ae02d63a3b011ed1b1abefaf1722f37916a8ad9749fcc65506fd0672a0",
+   "size": 201881
+  },
+  {
+   "path": "emoji/sob.gif",
+   "sha256": "6e19320a3af40ec6b7a85fe0ec12f26beef6ae40b465aa10c18976ad72972b62",
+   "size": 215071
+  },
+  {
+   "path": "emoji/sparkles.gif",
+   "sha256": "bae119de368005756b3e8d1e115ac7989db94ac9ece8878f600d4edbd4585c78",
+   "size": 2191
+  },
+  {
+   "path": "emoji/strawberry.gif",
+   "sha256": "0d05bbd3a1eb4ba84d58cfdc7bdf3f0849bee55653f077116a2a9689419f169d",
+   "size": 2444
+  },
+  {
+   "path": "emoji/sweat-smile.gif",
+   "sha256": "1fcd38ba8e79c98c1b2c51c4b9f88e02db7324a9256d1be81792b65cb6c72387",
+   "size": 217083
+  },
+  {
+   "path": "emoji/thinking.gif",
+   "sha256": "a55f0a31ed00c42c1f7221ac31cba9dcc71b432d05749267b9b60ab8878172d8",
+   "size": 224045
+  },
+  {
+   "path": "emoji/thumbs-down.gif",
+   "sha256": "5a5b40f01422a7e7b765ff221bcc36b1bb6b8dbe97e005d3fbb524b829b26bdc",
+   "size": 128509
+  },
+  {
+   "path": "emoji/thumbs-up.gif",
+   "sha256": "9f9e51f213787cb0d2051492333009c1aee2f61adf91a392183d3e272c60154e",
+   "size": 117195
+  },
+  {
+   "path": "emoji/unamused.gif",
+   "sha256": "2b958e2cc851607a02033531328b9592b12f80ae8e1d7a80dca58bc3ccf05120",
+   "size": 266610
+  },
+  {
+   "path": "emoji/upside-down.gif",
+   "sha256": "2f96d16e7a654fdd8538c541bab983cf0bccbcc8b0a4b5aedb936619d5834707",
+   "size": 208369
+  },
+  {
+   "path": "emoji/watermelon.gif",
+   "sha256": "ed2cb1a308182ee10914c39417c7e11bc10fc04eabeb00e76787ed08d53b9624",
+   "size": 2390
+  },
+  {
+   "path": "emoji/wave.gif",
+   "sha256": "8a7f9689b13b7430d60aeafb03f91d7018f1981aea4eb7f1bc5568425b316042",
+   "size": 123908
+  },
+  {
+   "path": "emoji/wink.gif",
+   "sha256": "917e00a0156a0464a57434028255e01342646c0616b8cbc21470dcd056edefea",
+   "size": 166289
+  },
+  {
+   "path": "emoji/zany.gif",
+   "sha256": "5f4422a115a57cd345b5023db80c3b290080a366c6b47b33e628e019e26b8969",
+   "size": 228542
+  }
+ ]
+}

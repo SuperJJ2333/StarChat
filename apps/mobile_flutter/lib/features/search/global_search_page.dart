@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../matrix/matrix_e2ee_client.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -12,11 +13,16 @@ final class GlobalSearchPage extends StatefulWidget {
   const GlobalSearchPage({
     super.key,
     required this.api,
+    this.matrix,
     this.contactsLoader,
     this.rooms = const [],
     this.messages = const [],
   });
   final BusinessApiClient api;
+
+  /// 搜索入口统一数据源：提供 Matrix 客户端时页面自行加载群聊与最后一条
+  /// 消息摘要，保证「消息 / 通讯录 / 发现」三个入口进入完全相同的搜索页。
+  final MatrixSdkE2eeClient? matrix;
   final Future<List<ContactSummary>> Function()? contactsLoader;
   final List<String> rooms;
   final List<String> messages;
@@ -28,19 +34,41 @@ final class GlobalSearchPage extends StatefulWidget {
 final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   String query = '';
   Future<List<ContactSummary>>? contacts;
+  List<String> matrixRooms = const [];
+  List<String> matrixMessages = const [];
 
   @override
   void initState() {
     super.initState();
     contacts = widget.contactsLoader?.call() ?? widget.api.listContacts();
+    _loadMatrixScope();
+  }
+
+  Future<void> _loadMatrixScope() async {
+    final client = widget.matrix?.sdkClient;
+    if (client == null) return;
+    final rooms = client.rooms;
+    if (!mounted) return;
+    setState(() {
+      matrixRooms = [
+        for (final room in rooms) room.getLocalizedDisplayname(),
+      ];
+      matrixMessages = [
+        for (final room in rooms) room.lastEvent?.body ?? '',
+      ];
+    });
   }
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
+          key: const Key('global-search-nav'),
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
+          // 统一搜索页与页面本体一起滑入，导航标题不做 Hero 飞行，
+          // 避免标题区域空白停顿后再跳现。
+          transitionBetweenRoutes: false,
           middle: const Text('搜索'),
         ),
         child: SafeArea(
@@ -62,10 +90,14 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                       .where(
                           (item) => item.displayName.toLowerCase().contains(q))
                       .toList();
-                  final rooms = widget.rooms
-                      .where((item) => item.toLowerCase().contains(q));
-                  final messages = widget.messages
-                      .where((item) => item.toLowerCase().contains(q));
+                  final rooms = [
+                    ...widget.rooms,
+                    ...matrixRooms,
+                  ].where((item) => item.toLowerCase().contains(q));
+                  final messages = [
+                    ...widget.messages,
+                    ...matrixMessages,
+                  ].where((item) => item.toLowerCase().contains(q));
                   return ListView(children: [
                     if (query.isNotEmpty && friends.isNotEmpty)
                       const _Section('朋友'),

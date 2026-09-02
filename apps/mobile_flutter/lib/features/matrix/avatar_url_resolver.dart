@@ -10,6 +10,10 @@ final class ResolvedAvatarUrl {
 abstract final class MatrixAvatarUrlResolver {
   static final Map<String, Future<ResolvedAvatarUrl?>> _resolved = {};
 
+  /// 全应用统一的头像缩略图请求尺寸：消息页、通讯录、群成员等任何渲染
+  /// 尺寸都请求同一 URL，命中同一缓存条目，杜绝同头像重复下载。
+  static const canonicalThumbnailSize = 96;
+
   /// Builds the deterministic first request without waiting for a server
   /// capability round-trip.  A logged-in Matrix client can use the v1.11
   /// authenticated media endpoint immediately; anonymous clients use the
@@ -30,7 +34,6 @@ abstract final class MatrixAvatarUrlResolver {
       homeserver: homeserver,
       accessToken: accessToken,
       authenticated: accessToken?.isNotEmpty == true,
-      size: size,
     );
   }
 
@@ -42,7 +45,7 @@ abstract final class MatrixAvatarUrlResolver {
     required double size,
   }) {
     if (avatarUri == null) return Future.value(null);
-    final key = '${homeserver ?? ''}|$avatarUri|${size.round()}|'
+    final key = '${homeserver ?? ''}|$avatarUri|'
         '${accessToken == null ? 'public' : 'authenticated'}';
     return _resolved.putIfAbsent(
       key,
@@ -92,7 +95,6 @@ abstract final class MatrixAvatarUrlResolver {
       homeserver: homeserver,
       accessToken: accessToken,
       authenticated: authenticated,
-      size: size,
     );
   }
 
@@ -101,7 +103,6 @@ abstract final class MatrixAvatarUrlResolver {
     required Uri homeserver,
     required String? accessToken,
     required bool authenticated,
-    required double size,
   }) {
     final mediaPath = authenticated
         ? '/_matrix/client/v1/media/thumbnail'
@@ -109,8 +110,8 @@ abstract final class MatrixAvatarUrlResolver {
     final target = homeserver.replace(
       path: '$mediaPath/${avatarUri.host}${avatarUri.path}',
       queryParameters: {
-        'width': size.round().toString(),
-        'height': size.round().toString(),
+        'width': canonicalThumbnailSize.toString(),
+        'height': canonicalThumbnailSize.toString(),
         'method': 'crop',
         'animated': 'false',
       },

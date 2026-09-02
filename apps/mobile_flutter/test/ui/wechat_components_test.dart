@@ -4,6 +4,7 @@ import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_unread_badge.dart';
 import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 import 'package:liuhetong_mobile/ui/finance/wechat_red_packet_card.dart';
+import 'package:liuhetong_mobile/ui/finance/wechat_transfer_card.dart';
 import 'package:liuhetong_mobile/ui/components/modern_action_button.dart';
 import 'package:liuhetong_mobile/ui/components/immersive_auth_scaffold.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
@@ -18,7 +19,57 @@ void main() {
     final box = tester.widget<DecoratedBox>(find.byType(DecoratedBox).last);
     expect((box.decoration as BoxDecoration).color, const Color(0xFF95EC69));
   });
-  testWidgets('message row exposes a 40px tappable avatar', (tester) async {
+  testWidgets('red packet card is rendered without the outgoing green message bubble',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: WeChatMessageBubble(
+        direction: MessageDirection.outgoing,
+        decorateContent: false,
+        content: WeChatRedPacketCard(
+          greeting: '恭喜发财',
+          state: RedPacketVisualState.available,
+        ),
+      ),
+    ));
+    expect(find.text('畅聊点钻红包'), findsOneWidget);
+    expect(find.text('塞钱进红包'), findsNothing);
+  });
+  testWidgets('transfer card renders wechat-style without a green bubble',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: WeChatMessageBubble(
+        direction: MessageDirection.outgoing,
+        decorateContent: false,
+        content: WeChatTransferCard(
+          amount: '20.00',
+          state: TransferCardState.pending,
+          isOwn: true,
+        ),
+      ),
+    ));
+    expect(find.text('20.00 点钻'), findsOneWidget);
+    expect(find.text('畅聊点钻转账'), findsOneWidget);
+    expect(find.text('等待收款'), findsOneWidget);
+    final box = tester.widget<Container>(
+        find.byKey(const Key('wechat-transfer-card')));
+    expect(
+        (box.decoration! as BoxDecoration).color, const Color(0xFFFA9D3B));
+  });
+  testWidgets('transfer card labels follow role and settlement state',
+      (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+        home: WeChatTransferCard(
+            amount: '6.60', state: TransferCardState.pending, isOwn: false)));
+    expect(find.text('点击收款'), findsOneWidget);
+    await tester.pumpWidget(const CupertinoApp(
+        home: WeChatTransferCard(
+            amount: '6.60', state: TransferCardState.accepted, isOwn: true)));
+    expect(find.text('对方已收款'), findsOneWidget);
+    await tester.pumpWidget(const CupertinoApp(
+        home: WeChatTransferCard(
+            amount: '6.60', state: TransferCardState.returned, isOwn: true)));
+    expect(find.text('已退回'), findsOneWidget);
+  });  testWidgets('message row exposes a 40px tappable avatar', (tester) async {
     var avatarTaps = 0;
     await tester.pumpWidget(
       CupertinoApp(
@@ -129,15 +180,24 @@ void main() {
         home: UserAvatar(nickname: 'Alice', fallbackSeed: 'seed', size: 48)));
     expect(find.text('A'), findsOneWidget);
   });
-  test('avatar cache key is user/version/size-specific with fixed retention',
+  test('avatar cache key is size-independent so pages share one download',
       () {
+    // 头像一致性：消息页(48)与通讯录(40)渲染尺寸不同，也必须命中
+    // 同一条缓存，避免同头像跨页面重复下载。
+    final key48 = AvatarCache.cacheKey(
+      userId: '@alice:example.com',
+      avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+      size: 48,
+    );
+    final key40 = AvatarCache.cacheKey(
+      userId: '@alice:example.com',
+      avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+      size: 40,
+    );
+    expect(key48, key40);
     expect(
-      AvatarCache.cacheKey(
-        userId: '@alice:example.com',
-        avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
-        size: 48,
-      ),
-      'avatar-@alice:example.com-v=9-48',
+      key48,
+      'avatar-@alice:example.com-v=9',
     );
     expect(AvatarCache.diskTtl, const Duration(days: 30));
     expect(AvatarCache.maximumMemoryEntries, 200);
@@ -201,6 +261,24 @@ void main() {
     expect(image.frameBuilder, isNotNull);
   });
   testWidgets(
+      'remote avatar first paint shows a transparent placeholder, never a '
+      'default-avatar flash', (tester) async {
+    await tester.pumpWidget(const CupertinoApp(
+      home: UserAvatar(
+        nickname: 'Alice',
+        fallbackSeed: '@alice-first-paint.example.com',
+        avatarUrl: 'https://cdn.example.com/avatar.png?v=9',
+        size: 48,
+      ),
+    ));
+
+    // Before the first frame decodes there is no default initial on screen.
+    expect(find.text('A'), findsNothing);
+    // The request is wired through the avatar cache provider.
+    final image = tester.widget<Image>(find.byType(Image).first);
+    expect(image.image, isA<AvatarCacheImageProvider>());
+  });
+  testWidgets(
       'group mosaic keeps a default avatar tile for members without a remote image',
       (tester) async {
     await tester.pumpWidget(const CupertinoApp(
@@ -229,3 +307,6 @@ void main() {
     expect(retries, 1);
   });
 }
+
+
+

@@ -58,7 +58,12 @@ final class _LoginPageState extends State<LoginPage>
     final username = _username.text.trim();
     final password = _password.text;
     if (username.isEmpty || password.isEmpty) {
-      setState(() => _error = '请输入用户名和密码');
+      setState(() => _error = '请输入畅聊号/邮箱和密码');
+      return;
+    }
+    if (username.contains('@') &&
+        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(username)) {
+      setState(() => _error = '请输入正确的邮箱地址');
       return;
     }
 

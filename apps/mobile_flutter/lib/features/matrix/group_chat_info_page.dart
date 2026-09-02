@@ -7,9 +7,18 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
+import 'chat_identity_cache.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_date_picker.dart';
+
+/// 成员展示名：备注（查看者本人可见）→ 控制器解析名（Matrix 昵称）。
+String _resolvedMemberName(ChatIdentityCache? cache, GroupChatMember member) {
+  final contact = cache?.contactsByMatrixId[member.matrixUserId];
+  return contact?.displayName.isNotEmpty == true
+      ? contact!.displayName
+      : member.displayName;
+}
 
 final class GroupChatInfoPage extends StatefulWidget {
   const GroupChatInfoPage({
@@ -20,6 +29,7 @@ final class GroupChatInfoPage extends StatefulWidget {
     required this.onClearLocalHistory,
     required this.onLeft,
     this.onMemberTap,
+    this.identityCache,
   });
 
   final GroupChatInfoController controller;
@@ -29,6 +39,10 @@ final class GroupChatInfoPage extends StatefulWidget {
   final VoidCallback onLeft;
   final ValueChanged<GroupChatMember>? onMemberTap;
 
+  /// 身份缓存：成员名按“备注 → 昵称 → 用户名”优先级实时解析；
+  /// 缓存变化（如备注修改）即刻刷新本页显示。
+  final ChatIdentityCache? identityCache;
+
   @override
   State<GroupChatInfoPage> createState() => _GroupChatInfoPageState();
 }
@@ -37,15 +51,22 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
   static const collapsedMemberCount = 9;
   bool expanded = false;
 
+
   @override
   void initState() {
     super.initState();
+    widget.identityCache?.addListener(_identityChanged);
     widget.controller.addListener(_changed);
     widget.controller.load();
   }
 
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    widget.identityCache?.removeListener(_identityChanged);
     widget.controller.removeListener(_changed);
     super.dispose();
   }
@@ -137,7 +158,9 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                 onPressed: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => GroupMemberSearchPage(snapshot: snapshot),
+                    builder: (_) => GroupMemberSearchPage(
+                        snapshot: snapshot,
+                        identityCache: widget.identityCache,),
                   ),
                 ),
                 child: const Icon(CupertinoIcons.search),
@@ -161,12 +184,14 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         : snapshot.members.take(collapsedMemberCount).toList(),
                     onAdd: widget.onAddMember,
                     onMemberTap: widget.onMemberTap,
+                    identityCache: widget.identityCache,
                     onRemove: snapshot.canManage
                         ? () => Navigator.push(
                               context,
                               CupertinoPageRoute(
                                 builder: (_) => GroupMemberRemovalPage(
                                   controller: widget.controller,
+                                  identityCache: widget.identityCache,
                                 ),
                               ),
                             )
@@ -265,6 +290,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         CupertinoPageRoute(
                           builder: (_) => MuteExceptionSettingsPage(
                             controller: widget.controller,
+                            identityCache: widget.identityCache,
                           ),
                         ),
                       ),
@@ -353,8 +379,10 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
 }
 
 final class MuteExceptionSettingsPage extends StatelessWidget {
-  const MuteExceptionSettingsPage({super.key, required this.controller});
+  const MuteExceptionSettingsPage(
+      {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
+  final ChatIdentityCache? identityCache;
 
   @override
   Widget build(BuildContext context) {
@@ -408,6 +436,7 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
               CupertinoPageRoute(
                 builder: (_) => FollowedGroupMemberPickerPage(
                   controller: controller,
+                  identityCache: identityCache,
                 ),
               ),
             ),
@@ -429,8 +458,10 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
 }
 
 final class FollowedGroupMemberPickerPage extends StatefulWidget {
-  const FollowedGroupMemberPickerPage({super.key, required this.controller});
+  const FollowedGroupMemberPickerPage(
+      {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
+  final ChatIdentityCache? identityCache;
 
   @override
   State<FollowedGroupMemberPickerPage> createState() =>
@@ -472,13 +503,14 @@ final class _FollowedGroupMemberPickerPageState
           for (final member in snapshot.members)
             WeChatListTile(
               leading: UserAvatar(
-                nickname: member.displayName,
+                nickname:
+                    _resolvedMemberName(widget.identityCache, member),
                 fallbackSeed: member.matrixUserId,
                 avatarUrl: member.avatarUrl,
                 avatarHeaders: member.avatarHeaders,
                 size: 40,
               ),
-              title: Text(member.displayName),
+              title: Text(_resolvedMemberName(widget.identityCache, member)),
               trailing: Icon(
                 selected.contains(member.matrixUserId)
                     ? CupertinoIcons.check_mark_circled_solid
@@ -505,12 +537,14 @@ final class _MemberGrid extends StatelessWidget {
       {required this.members,
       required this.onAdd,
       this.onMemberTap,
-      this.onRemove});
+      this.onRemove,
+      this.identityCache});
 
   final List<GroupChatMember> members;
   final VoidCallback onAdd;
   final ValueChanged<GroupChatMember>? onMemberTap;
   final VoidCallback? onRemove;
+  final ChatIdentityCache? identityCache;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -529,6 +563,7 @@ final class _MemberGrid extends StatelessWidget {
                 _MemberCell(
                   key: Key('group-member-${members[index].matrixUserId}'),
                   member: members[index],
+                  identityCache: identityCache,
                   onTap: onMemberTap == null
                       ? null
                       : () => onMemberTap!(members[index]),
@@ -669,8 +704,10 @@ final class GroupManagementPage extends StatelessWidget {
 }
 
 final class GroupMemberSearchPage extends StatefulWidget {
-  const GroupMemberSearchPage({super.key, required this.snapshot});
+  const GroupMemberSearchPage(
+      {super.key, required this.snapshot, this.identityCache});
   final GroupChatInfoSnapshot snapshot;
+  final ChatIdentityCache? identityCache;
   @override
   State<GroupMemberSearchPage> createState() => _GroupMemberSearchPageState();
 }
@@ -680,7 +717,9 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
   @override
   Widget build(BuildContext context) {
     final members = widget.snapshot.members.where((member) =>
-        member.displayName.toLowerCase().contains(query.trim().toLowerCase()));
+        _resolvedMemberName(widget.identityCache, member)
+            .toLowerCase()
+            .contains(query.trim().toLowerCase()));
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
@@ -701,13 +740,14 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
               for (final member in members)
                 WeChatListTile(
                   leading: UserAvatar(
-                    nickname: member.displayName,
+                    nickname:
+                        _resolvedMemberName(widget.identityCache, member),
                     fallbackSeed: member.matrixUserId,
                     avatarUrl: member.avatarUrl,
                     avatarHeaders: member.avatarHeaders,
                     size: 40,
                   ),
-                  title: Text(member.displayName),
+                  title: Text(_resolvedMemberName(widget.identityCache, member)),
                   subtitle: Text(member.matrixUserId == widget.snapshot.ownerId
                       ? '群主'
                       : widget.snapshot.adminIds.contains(member.matrixUserId)
@@ -723,8 +763,10 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
 }
 
 final class GroupMemberRemovalPage extends StatefulWidget {
-  const GroupMemberRemovalPage({super.key, required this.controller});
+  const GroupMemberRemovalPage(
+      {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
+  final ChatIdentityCache? identityCache;
   @override
   State<GroupMemberRemovalPage> createState() => _GroupMemberRemovalPageState();
 }
@@ -753,7 +795,7 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
         child: ListView(children: [
           for (final member in removable)
             WeChatListTile(
-              title: Text(member.displayName),
+              title: Text(_resolvedMemberName(widget.identityCache, member)),
               trailing: Icon(selected.contains(member.matrixUserId)
                   ? CupertinoIcons.check_mark_circled_solid
                   : CupertinoIcons.circle),
@@ -791,9 +833,14 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
 }
 
 final class _MemberCell extends StatelessWidget {
-  const _MemberCell({super.key, required this.member, this.onTap});
+  const _MemberCell(
+      {super.key,
+      required this.member,
+      this.onTap,
+      this.identityCache});
   final GroupChatMember member;
   final VoidCallback? onTap;
+  final ChatIdentityCache? identityCache;
 
   @override
   Widget build(BuildContext context) => CupertinoButton(
@@ -805,13 +852,13 @@ final class _MemberCell extends StatelessWidget {
               ? MatrixUserAvatar(
                   client: member.client!,
                   matrixAvatarUri: member.matrixAvatarUri,
-                  nickname: member.displayName,
+                  nickname: _resolvedMemberName(identityCache, member),
                   fallbackSeed: member.matrixUserId,
                   fallbackAvatarUrl: member.avatarUrl,
                   size: 48,
                 )
               : UserAvatar(
-                  nickname: member.displayName,
+                  nickname: _resolvedMemberName(identityCache, member),
                   fallbackSeed: member.matrixUserId,
                   avatarUrl: member.avatarUrl,
                   avatarHeaders: member.avatarHeaders,
@@ -819,7 +866,7 @@ final class _MemberCell extends StatelessWidget {
                 ),
           const SizedBox(height: 5),
           Text(
-            member.displayName,
+            _resolvedMemberName(identityCache, member),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12),

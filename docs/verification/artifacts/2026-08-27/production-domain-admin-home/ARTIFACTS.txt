@@ -1,0 +1,4 @@
+MODIFIED_FILE=/opt/starchat/data/nginx/nginx.conf
+DIFF_FILE=/opt/starchat-backups/20260827-部署前/nginx.conf
+VERIFICATION_FILE=docs/verification/2026-08-27-production-domain-admin-home.md
+ROLLBACK_SCRIPT=docs/verification/artifacts/2026-08-27/production-domain-admin-home/ROLLBACK.sh

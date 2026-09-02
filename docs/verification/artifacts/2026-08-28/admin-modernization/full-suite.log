@@ -1,0 +1,17 @@
+........................................................................ [ 37%]
+.....................................................s.................. [ 75%]
+.......F.......................................                          [100%]
+================================== FAILURES ===================================
+_____________ test_moment_cover_media_migration_is_the_only_head ______________
+
+    def test_moment_cover_media_migration_is_the_only_head() -> None:
+>       assert _alembic("heads").strip() == "0026_moment_cover_media (head)"
+E       AssertionError: assert '0028_notice_...ts_ads (head)' == '0026_moment_..._media (head)'
+E         
+E         - 0026_moment_cover_media (head)
+E         + 0028_notice_receipts_ads (head)
+
+tests\business_api\test_migrations.py:40: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/business_api/test_migrations.py::test_moment_cover_media_migration_is_the_only_head
+1 failed, 189 passed, 1 skipped in 139.24s (0:02:19)

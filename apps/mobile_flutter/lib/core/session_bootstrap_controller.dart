@@ -36,7 +36,9 @@ final class SessionBootstrapController extends ChangeNotifier {
       final businessResult = await business.restoreSession();
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
-        if (matrix.isLoggedIn) await _bestEffortMatrixReset();
+        // 业务会话失效（登出/令牌过期/瞬时刷新失败）时【不得】清除本地
+        // 加密数据库：同账号重新登录后必须仍能解密历史消息。账号隔离
+        // 由登录流程的身份校验保证（不同账号登录时才重置本地库）。
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated));
         return;

@@ -12,23 +12,31 @@ final class WeChatMessageBubble extends StatelessWidget {
     required this.direction,
     required this.content,
     this.avatar,
+    this.senderName,
+    this.decorateContent = true,
     this.state = MessageDeliveryState.sent,
     this.onAvatarTap,
     this.onAvatarDoubleTap,
     this.onAvatarLongPress,
     this.onLongPress,
     this.onRetry,
+    this.senderBadge,
   });
 
   final MessageDirection direction;
   final Widget content;
   final Widget? avatar;
+  final String? senderName;
+  final bool decorateContent;
   final MessageDeliveryState state;
   final VoidCallback? onAvatarTap;
   final VoidCallback? onAvatarDoubleTap;
   final VoidCallback? onAvatarLongPress;
   final VoidCallback? onLongPress;
   final VoidCallback? onRetry;
+
+  /// 发送者头衔徽标（群主/管理员，QQ 式），显示在昵称前。
+  final Widget? senderBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -63,29 +71,33 @@ final class WeChatMessageBubble extends StatelessWidget {
               ),
             ),
           Flexible(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: outgoing
-                    ? WeChatColors.bubbleOutgoing
-                    : CupertinoTheme.of(context).barBackgroundColor,
-                borderRadius: BorderRadius.circular(WeChatRadius.bubble),
-              ),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                child: content,
-              ),
-            ),
+            child: decorateContent
+                ? DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: outgoing
+                          ? WeChatColors.bubbleOutgoing
+                          : CupertinoTheme.of(context).barBackgroundColor,
+                      borderRadius: BorderRadius.circular(WeChatRadius.bubble),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      child: content,
+                    ),
+                  )
+                : content,
           ),
-          if (state == MessageDeliveryState.sending)
-            const Padding(
-              padding: EdgeInsets.all(4),
-              child: CupertinoActivityIndicator(radius: 7),
-            ),
         ],
       ),
     );
 
+    // WeChat shows the sender nickname right above the bubble, aligned with
+    // the bubble edge (avatar width + gutter when an avatar is present).
+    final showSenderName = !outgoing &&
+        senderName != null &&
+        senderName!.trim().isNotEmpty;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onLongPress: onLongPress,
@@ -93,16 +105,43 @@ final class WeChatMessageBubble extends StatelessWidget {
         alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
         child: FractionallySizedBox(
           widthFactor: .86,
-          child: Row(
-            mainAxisAlignment:
-                outgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!outgoing && avatarSlot != null) avatarSlot,
-              if (!outgoing && avatarSlot != null) const SizedBox(width: 8),
-              message,
-              if (outgoing && avatarSlot != null) const SizedBox(width: 8),
-              if (outgoing && avatarSlot != null) avatarSlot,
+              if (showSenderName)
+                Padding(
+                  key: const Key('message-sender-name'),
+                  padding: const EdgeInsets.only(left: 48, bottom: 3),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (senderBadge != null) ...[
+                      senderBadge!,
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        senderName!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: WeChatColors.messageSenderName,
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              Row(
+                mainAxisAlignment:
+                    outgoing ? MainAxisAlignment.end : MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (!outgoing && avatarSlot != null) avatarSlot,
+                  if (!outgoing && avatarSlot != null) const SizedBox(width: 8),
+                  message,
+                  if (outgoing && avatarSlot != null) const SizedBox(width: 8),
+                  if (outgoing && avatarSlot != null) avatarSlot,
+                ],
+              ),
             ],
           ),
         ),
@@ -110,3 +149,5 @@ final class WeChatMessageBubble extends StatelessWidget {
     );
   }
 }
+
+

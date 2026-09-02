@@ -1,0 +1,224 @@
+services:
+  postgres:
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-synapse}
+      POSTGRES_USER: ${POSTGRES_USER:-synapse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-postgres-password}
+      POSTGRES_INITDB_ARGS: "${POSTGRES_INITDB_ARGS:---locale=C --encoding=UTF8}"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-synapse} -d ${POSTGRES_DB:-synapse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  synapse:
+    image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    volumes:
+      - ./data/synapse:/data
+      - ./infra/synapse:/scripts:ro
+    ports:
+      - "${SYNAPSE_HTTP_PORT:-8008}:8008"
+
+  coturn:
+    image: "${COTURN_IMAGE:?COTURN_IMAGE is required}"
+    restart: unless-stopped
+    command:
+      - "--no-cli"
+      - "--fingerprint"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SHARED_SECRET:?TURN_SHARED_SECRET is required}"
+      - "--realm=${MATRIX_SERVER_NAME:-matrix.localhost}"
+      - "--external-ip=${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP is required}"
+      - "--listening-port=3478"
+      - "--min-port=49160"
+      - "--max-port=49200"
+    ports:
+      - "${TURN_PORT:-3478}:3478/udp"
+      - "${TURN_PORT:-3478}:3478/tcp"
+      - "49160-49200:49160-49200/udp"
+
+  element-web:
+    image: "${ELEMENT_WEB_IMAGE:?ELEMENT_WEB_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      - synapse
+    volumes:
+      - ./data/element/config.json:/app/config.json:ro
+    ports:
+      - "${ELEMENT_HTTP_PORT:-8080}:80"
+
+  matrix-bot:
+    build:
+      context: .
+      dockerfile: services/matrix-bot/Dockerfile
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:?PYTHON_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      - synapse
+    environment:
+      APP_NAME: ${BOT_APP_NAME:-六合通 Matrix Bot}
+      LOG_LEVEL: ${BOT_LOG_LEVEL:-INFO}
+      SERVICE_PORT: 8081
+      MATRIX_HOMESERVER_URL: ${SYNAPSE_INTERNAL_BASEURL:-http://synapse:8008/}
+      MATRIX_BOT_USER_ID: ${MATRIX_BOT_USER_ID:-@matrixbot:matrix.localhost}
+      MATRIX_BOT_PASSWORD: ${SYNAPSE_BOT_PASSWORD:-change-this-bot-password}
+      MATRIX_BOT_ACCESS_TOKEN: ${MATRIX_BOT_ACCESS_TOKEN:-}
+      MATRIX_BOT_DEVICE_ID: ${MATRIX_BOT_DEVICE_ID:-STARCHATBOT}
+      MATRIX_BOT_STORE_PATH: ${MATRIX_BOT_STORE_PATH:-/data/bot/store}
+      MATRIX_INTERNAL_API_KEY: ${MATRIX_WEBHOOK_API_KEY:-change-this-internal-api-key}
+      MATRIX_DEFAULT_ROOM_ID: ${MATRIX_DEFAULT_ROOM_ID:-}
+      MATRIX_ROOM_ROUTING_JSON: ${MATRIX_ROOM_ROUTING_JSON:-{}}
+      MATRIX_ALLOWED_ROOM_TARGETS_JSON: ${MATRIX_ALLOWED_ROOM_TARGETS_JSON:-[]}
+      MATRIX_AUTO_REPLY_RULES_JSON: ${MATRIX_AUTO_REPLY_RULES_JSON:-[]}
+      MATRIX_ADMIN_USERS_JSON: ${MATRIX_ADMIN_USERS_JSON:-[]}
+      MATRIX_COMMAND_PREFIX: ${MATRIX_COMMAND_PREFIX:-!}
+      MATRIX_SYNC_TIMEOUT_MS: ${MATRIX_SYNC_TIMEOUT_MS:-30000}
+      MATRIX_SYNC_FULL_STATE: ${MATRIX_SYNC_FULL_STATE:-true}
+      MATRIX_MESSAGE_DEDUP_TTL_SECONDS: ${MATRIX_MESSAGE_DEDUP_TTL_SECONDS:-3600}
+      MATRIX_IDEMPOTENCY_DB_PATH: ${MATRIX_IDEMPOTENCY_DB_PATH:-/data/bot/idempotency.sqlite3}
+      MATRIX_ALLOW_UNVERIFIED_DEVICES: ${MATRIX_ALLOW_UNVERIFIED_DEVICES:-true}
+    volumes:
+      - ./data/bot:/data/bot
+    ports:
+      - "127.0.0.1:${MATRIX_BOT_HTTP_PORT:-8081}:8081"
+
+  business-postgres:
+    image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BUSINESS_POSTGRES_DB:-liuhetong}
+      POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-liuhetong}
+      POSTGRES_PASSWORD: ${BUSINESS_POSTGRES_PASSWORD:-change-this-business-postgres-password}
+    volumes:
+      - ./data/business-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BUSINESS_POSTGRES_USER:-liuhetong} -d ${BUSINESS_POSTGRES_DB:-liuhetong}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  business-redis:
+    image: "${REDIS_IMAGE:?REDIS_IMAGE is required}"
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/business-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    image: "${MAILPIT_IMAGE:?MAILPIT_IMAGE is required}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_HTTP_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  business-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:?PYTHON_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      business-postgres:
+        condition: service_healthy
+      business-redis:
+        condition: service_healthy
+    environment:
+      BUSINESS_APP_NAME: ${BUSINESS_APP_NAME:-六合通 Business API}
+      BUSINESS_ENVIRONMENT: ${BUSINESS_ENVIRONMENT:-development}
+      BUSINESS_DATABASE_URL: ${BUSINESS_DATABASE_URL:-postgresql+psycopg://liuhetong:change-this-business-postgres-password@business-postgres:5432/liuhetong}
+      BUSINESS_REDIS_URL: ${BUSINESS_REDIS_URL:-redis://business-redis:6379/0}
+      BUSINESS_JWT_ISSUER: ${BUSINESS_JWT_ISSUER:-liuhetong}
+      BUSINESS_JWT_SECRET: ${BUSINESS_JWT_SECRET:-change-this-business-jwt-secret}
+      BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
+      BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
+      BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
+      BUSINESS_MATRIX_HOMESERVER_URL: ${BUSINESS_MATRIX_HOMESERVER_URL:-http://synapse:8008/}
+      BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL: ${BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL:-http://localhost:8008/}
+      BUSINESS_MATRIX_SERVER_NAME: ${BUSINESS_MATRIX_SERVER_NAME:-matrix.localhost}
+      BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
+      BUSINESS_MATRIX_PROVISION_SECRET: ${MATRIX_PROVISION_SECRET:-change-this-matrix-provision-secret}
+      BUSINESS_MATRIX_LOGIN_TOKEN_EXPIRES_IN: ${BUSINESS_MATRIX_LOGIN_TOKEN_EXPIRES_IN:-60}
+      BUSINESS_AVATAR_STORAGE_ROOT: ${BUSINESS_AVATAR_STORAGE_ROOT:-/data/private-media}
+      BUSINESS_AVATAR_URL_SIGNING_SECRET: ${BUSINESS_AVATAR_URL_SIGNING_SECRET:-change-this-avatar-url-signing-secret}
+      BUSINESS_AVATAR_PUBLIC_BASE_URL: ${BUSINESS_AVATAR_PUBLIC_BASE_URL:-http://localhost:8082}
+    volumes:
+      - ./data/business-media:/data/private-media
+    ports:
+      - "0.0.0.0:${BUSINESS_API_HTTP_PORT:-8082}:8082"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/api/v1/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  business-worker:
+    build:
+      context: .
+      dockerfile: services/business-worker/Dockerfile
+      args:
+        PYTHON_IMAGE: "${PYTHON_IMAGE:?PYTHON_IMAGE is required}"
+    restart: unless-stopped
+    depends_on:
+      business-api:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      BUSINESS_ENVIRONMENT: ${BUSINESS_ENVIRONMENT:-development}
+      BUSINESS_DATABASE_URL: ${BUSINESS_DATABASE_URL:-postgresql+psycopg://liuhetong:change-this-business-postgres-password@business-postgres:5432/liuhetong}
+      BUSINESS_REDIS_URL: ${BUSINESS_REDIS_URL:-redis://business-redis:6379/0}
+      BUSINESS_JWT_ISSUER: ${BUSINESS_JWT_ISSUER:-liuhetong}
+      BUSINESS_JWT_SECRET: ${BUSINESS_JWT_SECRET:-change-this-business-jwt-secret}
+      BUSINESS_TOTP_ISSUER: ${BUSINESS_TOTP_ISSUER:-六合通}
+      BUSINESS_EMAIL_VERIFICATION_SECRET: ${BUSINESS_EMAIL_VERIFICATION_SECRET:-change-this-email-verification-secret}
+      BUSINESS_PASSWORD_RESET_SECRET: ${BUSINESS_PASSWORD_RESET_SECRET:-change-this-password-reset-secret}
+      BUSINESS_SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
+      BUSINESS_AVATAR_URL_SIGNING_SECRET: ${BUSINESS_AVATAR_URL_SIGNING_SECRET:-change-this-avatar-url-signing-secret}
+      BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL: ${BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL:-http://localhost:8008/}
+      BUSINESS_AVATAR_PUBLIC_BASE_URL: ${BUSINESS_AVATAR_PUBLIC_BASE_URL:-http://localhost:8082}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_DELIVERY_ENABLED: ${SMTP_DELIVERY_ENABLED:-true}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURITY: ${SMTP_SECURITY:-none}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-六合通 <noreply@localhost>}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      EMAIL_VERIFICATION_PUBLIC_BASE_URL: ${EMAIL_VERIFICATION_PUBLIC_BASE_URL:-http://localhost:8082}
+      MATRIX_HOMESERVER_URL: ${SYNAPSE_INTERNAL_BASEURL:-http://synapse:8008/}
+      MATRIX_SERVER_NAME: ${MATRIX_SERVER_NAME:-matrix.localhost}
+      SYNAPSE_ADMIN_ACCESS_TOKEN: ${SYNAPSE_ADMIN_ACCESS_TOKEN:-}
+      BUSINESS_MATRIX_PROVISION_SECRET: ${MATRIX_PROVISION_SECRET:-change-this-matrix-provision-secret}
+      MATRIX_PROVISION_SECRET: ${MATRIX_PROVISION_SECRET:-change-this-matrix-provision-secret}
+      BUSINESS_AVATAR_STORAGE_ROOT: ${BUSINESS_AVATAR_STORAGE_ROOT:-/data/private-media}
+      WORKER_ID: ${BUSINESS_WORKER_ID:-business-worker-1}
+      WORKER_HEARTBEAT_PATH: /tmp/liuhetong-worker-heartbeat
+    volumes:
+      - ./data/business-media:/data/private-media:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,time; p='/tmp/liuhetong-worker-heartbeat'; assert os.path.exists(p) and time.time()-os.path.getmtime(p)<30"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

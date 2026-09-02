@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/ui/chat/encrypted_media_view.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_composer_bar.dart';
 import 'package:liuhetong_mobile/ui/components/call_control_button.dart';
 import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
@@ -9,7 +10,6 @@ import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/foundation/changliao_icons.dart';
-import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 
 void main() {
   testWidgets('Figma root list surfaces use exact semantic light colors',

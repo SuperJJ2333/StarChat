@@ -85,11 +85,16 @@ final class ProfileController extends ChangeNotifier {
     required this.gateway,
     required this.avatarSource,
     Future<void> Function(String userId)? invalidateAvatarCache,
+    this.onAvatarUpdated,
   }) : _invalidateAvatarCache =
             invalidateAvatarCache ?? AvatarCache.invalidateUser;
   final ProfileGateway gateway;
   final AvatarSource avatarSource;
   final Future<void> Function(String userId) _invalidateAvatarCache;
+
+  /// 新头像上传成功（本地缓存已失效）后回调，用于立即刷新所有展示该
+  /// 头像的界面（身份缓存重载 → 各页面重建 → 命中新的签名 URL）。
+  final VoidCallback? onAvatarUpdated;
   ProfileState state = const ProfileState(ProfileStatus.idle);
   AvatarCandidate? _retryCandidate;
   Future<void> load() async {
@@ -164,6 +169,7 @@ final class ProfileController extends ChangeNotifier {
           profile: state.profile, candidate: candidate, progress: .85));
       final profile = await gateway.completeAvatar(session.uploadId);
       await _invalidateAvatarCache(profile.fallbackSeed);
+      onAvatarUpdated?.call();
       _retryCandidate = null;
       _set(ProfileState(ProfileStatus.ready, profile: profile, progress: 1));
     } catch (_) {

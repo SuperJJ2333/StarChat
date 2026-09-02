@@ -27,7 +27,7 @@ void main() {
         delay: (_) => Future.value());
     await controller.submit('user', 'wrong');
     expect(attempts, 1);
-    expect(controller.state.message, '用户名或密码错误');
+    expect(controller.state.message, '账号或密码错误');
   });
   test('business API 401 is shown as username or password error', () async {
     var attempts = 0;
@@ -37,12 +37,12 @@ void main() {
           throw const BusinessApiException(
               statusCode: 401,
               code: 'CREDENTIALS_INVALID',
-              message: '用户名或密码错误');
+              message: '账号或密码错误');
         },
         delay: (_) => Future.value());
     await controller.submit('missing', 'wrong');
     expect(attempts, 1);
-    expect(controller.state.message, '用户名或密码错误');
+    expect(controller.state.message, '账号或密码错误');
   });
   test('http connection reset is shown as a friendly network failure',
       () async {
@@ -83,7 +83,9 @@ void main() {
     expect(matrix.tokens, ['one-time-login-token']);
   });
 
-  test('dual-domain login failure clears both domains', () async {
+  test('dual-domain login failure keeps the local encrypted store intact',
+      () async {
+    // 同设备同账号重试登录必须能解密历史：失败不得清除本地库。
     final business = FakeDualDomainBusiness();
     final matrix = FakeMatrixTokenLogin(isLoggedIn: false)..failSync = true;
     final service = DualDomainLoginService(
@@ -91,9 +93,8 @@ void main() {
 
     await expectLater(
         service.login('alice', 'business-password'), throwsStateError);
-    expect(business.logouts, 1);
-    expect(matrix.logouts, 1);
-    expect(matrix.isLoggedIn, isFalse);
+    expect(matrix.resets, 0);
+    expect(matrix.isLoggedIn, isTrue);
   });
 
   test(

@@ -1,0 +1,182 @@
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --type-brand-size: 34px;
+  --type-brand-weight: 700;
+  --type-brand-line: 42px;
+  --type-brand-tracking: -1px;
+  --type-display-size: 28px;
+  --type-display-weight: 600;
+  --type-display-line: 36px;
+  --type-title-1-size: 22px;
+  --type-title-1-weight: 600;
+  --type-title-1-line: 30px;
+  --type-title-2-size: 18px;
+  --type-title-2-weight: 600;
+  --type-title-2-line: 25px;
+  --type-body-size: 17px;
+  --type-body-weight: 400;
+  --type-body-line: 24px;
+  --type-callout-size: 16px;
+  --type-callout-weight: 400;
+  --type-callout-line: 22px;
+  --type-subhead-size: 14px;
+  --type-subhead-weight: 400;
+  --type-subhead-line: 20px;
+  --type-caption-size: 12px;
+  --type-caption-weight: 400;
+  --type-caption-line: 17px;
+  --type-badge-size: 11px;
+  --type-badge-weight: 500;
+  --type-badge-line: 14px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --radius-tag: 4px;
+  --radius-card: 8px;
+  --radius-red-packet: 10px;
+  --radius-dialog: 12px;
+  --radius-control: 14px;
+  --radius-pill: 999px;
+  --size-screen-width: 393px;
+  --size-screen-height: 852px;
+  --size-screen-long-980: 980px;
+  --size-screen-long-1040: 1040px;
+  --size-screen-long-1180: 1180px;
+  --size-screen-long-1280: 1280px;
+  --size-screen-long-2400: 2400px;
+  --size-safe-top: 59px;
+  --size-navigation: 44px;
+  --size-tab-bar: 49px;
+  --size-safe-bottom: 34px;
+  --size-touch: 44px;
+  --size-home-width: 134px;
+  --size-home-height: 5px;
+  --size-dialog-width: 280px;
+  --size-red-packet-width: 236px;
+  --size-red-packet-height: 96px;
+  --size-hairline: 1px;
+  --size-icon-sm: 12px;
+  --size-icon-md: 20px;
+  --size-icon-lg: 24px;
+  --size-icon-xl: 32px;
+  --size-avatar-message: 40px;
+  --size-avatar-moment: 42px;
+  --size-avatar-conversation: 48px;
+  --size-avatar-detail: 72px;
+  --size-row: 56px;
+  --size-row-conversation: 72px;
+  --size-action-primary: 48px;
+  --size-action-secondary: 40px;
+  --size-composer: 52px;
+  --size-input: 36px;
+  --size-voice: 42px;
+  --size-voice-min: 80px;
+  --size-voice-max: 220px;
+  --size-contact-index: 20px;
+  --size-contact-index-letter: 18px;
+  --size-progress: 3px;
+  --size-moment-image: 104px;
+  --size-gallery-gap: 40px;
+  --size-message-max: 72%;
+  --size-auth-logo: 64px;
+  --size-call-avatar: 96px;
+  --size-call-controls: 72px;
+  --size-content-max: 345px;
+  --size-form-row: 48px;
+  --size-call-hero: 560px;
+  --size-index-overlay: 64px;
+  --size-moments-cover: 280px;
+  --size-moment-composer: 120px;
+  --size-profile-preview: 88px;
+  --size-avatar-preview: 180px;
+  --size-token-swatch: 40px;
+  --size-gallery-card: 425px;
+  --size-gallery-max: 1920px;
+  --size-gallery-control: 160px;
+  --scale-pressed: 0.98;
+  --scale-type-small: 85%;
+  --scale-type-large: 140%;
+  --opacity-pressed: 0.72;
+  --opacity-muted: 0.56;
+  --opacity-disabled: 0.42;
+  --motion-press-out: 80ms;
+  --motion-press-in: 120ms;
+  --motion-page: 220ms;
+  --motion-dialog: 180ms;
+  --motion-message: 160ms;
+  --motion-reduced: 100ms;
+  --shadow-overlay: 0 4px 16px rgb(0 0 0 / 12%);
+  --z-content: 1;
+  --z-navigation: 10;
+  --z-overlay: 100;
+}
+
+[data-theme="light"] {
+  --color-brand-primary: #496a83;
+  --color-brand-pressed: #38566d;
+  --color-page-background: #f3f6f8;
+  --color-surface-primary: #f7f9fa;
+  --color-surface-elevated: #ffffff;
+  --color-text-primary: #191919;
+  --color-text-secondary: #888888;
+  --color-text-tertiary: #b2b2b2;
+  --color-divider: #d9d9d9;
+  --color-on-accent: #ffffff;
+  --color-danger: #fa5151;
+  --color-warning: #fa9d3b;
+  --color-bubble-outgoing: #d7e7f0;
+  --color-bubble-incoming: #ffffff;
+  --color-social-link: #576b95;
+  --color-scrim: #80000000;
+}
+
+[data-theme="dark"] {
+  --color-brand-primary: #87a9bb;
+  --color-brand-pressed: #6f91a4;
+  --color-page-background: #111111;
+  --color-surface-primary: #191919;
+  --color-surface-elevated: #232323;
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #b2b2b2;
+  --color-text-tertiary: #7a7a7a;
+  --color-divider: #2c2c2c;
+  --color-on-accent: #ffffff;
+  --color-danger: #fa5151;
+  --color-warning: #fa9d3b;
+  --color-bubble-outgoing: #2e4556;
+  --color-bubble-incoming: #2c2c2c;
+  --color-social-link: #7d90b5;
+  --color-scrim: #99000000;
+}
+
+/* ChatFlow admin visual system — cool, restrained, grid-first */
+:root {
+  --admin-brand: #4f6f86;
+  --admin-brand-strong: #3c596d;
+  --admin-ink: #1f2d3a;
+  --admin-muted: #718096;
+  --admin-page: #f3f6f8;
+  --admin-surface: #ffffff;
+  --admin-border: #dbe3e8;
+  --admin-danger: #a65d66;
+  --admin-warning: #9a7b4f;
+  --admin-hero: #172733;
+  --admin-hero-glow: #dce7ed;
+  --admin-nav-muted: #a9bac6;
+  --admin-hero-accent: #2e4556;
+  --admin-hero-text: #c7d4dc;
+  --admin-hero-light: #87a9bb;
+  --admin-focus: #6f9bb4;
+  --admin-radius-sm: 8px;
+  --admin-radius-md: 12px;
+  --admin-shadow: 0 8px 24px rgb(31 45 58 / 8%);
+}
+[data-theme="dark"] {
+  --admin-page: #111c24; --admin-surface: #1a2933; --admin-ink: #e6edf2; --admin-muted: #a1b0ba; --admin-border: #30424e;
+}
+/* Final APP-aligned semantic aliases */
+:root{--admin-brand:var(--color-brand-primary);--admin-brand-strong:var(--color-brand-pressed);--admin-page:var(--color-page-background);--admin-surface:var(--color-surface-elevated);--admin-ink:var(--color-text-primary);--admin-muted:var(--color-text-secondary);--admin-border:var(--color-divider);--admin-hero:var(--color-brand-primary);--admin-hero-accent:var(--color-brand-pressed);--admin-hero-glow:var(--color-surface-elevated);--admin-nav-muted:var(--color-on-accent);--admin-hero-text:var(--color-on-accent);--admin-hero-light:var(--color-on-accent);--admin-focus:var(--color-brand-primary);--admin-radius-sm:8px;--admin-radius-md:12px}
+

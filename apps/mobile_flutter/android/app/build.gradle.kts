@@ -15,6 +15,19 @@ android {
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
+    // 安全审计诊断构建（docs/ANDROID_SECURITY_AUDIT.md）：
+    // standard = 生产行为不变；minimal = 权限/高危行为裁剪起点，
+    // 用于与杀软误报做二分定位。
+    flavorDimensions += "edition"
+    productFlavors {
+        create("standard") { dimension = "edition" }
+        create("minimal") {
+            dimension = "edition"
+            applicationIdSuffix = ".audit"
+            versionNameSuffix = "-audit"
+        }
+    }
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
@@ -34,6 +47,13 @@ android {
 
     buildTypes {
         release {
+            // 安全加固：R8 混淆 + 资源收缩，降低被安全厂商灰度启发式误报的概率。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             val storeFilePath = signingProperties.getProperty("storeFile")
             if (!storeFilePath.isNullOrBlank()) {
                 signingConfigs.create("release") {

@@ -1,7 +1,7 @@
 name: liuhetong_mobile
 publish_to: none
 description: 畅聊 ChatFlow Android/iOS Flutter client
-version: 0.1.0+1
+version: 0.3.26+29
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
@@ -25,7 +25,11 @@ dependencies:
   flutter_olm: ^2.0.0
   flutter_openssl_crypto: ^0.5.0
   flutter_svg: 2.2.0
-  image_cropper: 9.1.0
+  url_launcher: 6.3.1
+  image_cropper: ^12.2.1
+  flutter_image_compress: 2.3.0
+  package_info_plus: 8.3.0
+  speech_to_text: 7.0.0
   flutter_webrtc: 0.12.11
   webrtc_interface: 1.5.1
   emoji_picker_flutter: 4.5.3
@@ -35,6 +39,14 @@ dependencies:
   flutter_cache_manager: 3.4.1
   flutter_local_notifications: 19.4.2
   timezone: 0.10.1
+  photo_manager: ^3.12.0
+  audioplayers: ^6.8.1
+  video_compress: ^3.1.4
+  wakelock_plus: ^1.3.3
+  webview_flutter: ^4.10.0
+  video_player: ^2.14.0
+  mobile_scanner: 5.2.3
+  qr_flutter: 4.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -45,7 +57,9 @@ flutter:
   assets:
     - assets/branding/
     - assets/landing.png
-
+    - assets/emoji/
+    - assets/emoji_vector/
+    - assets/html/
 flutter_launcher_icons:
   android: true
   ios: true

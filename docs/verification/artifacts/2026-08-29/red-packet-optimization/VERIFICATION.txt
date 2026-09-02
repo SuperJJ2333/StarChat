@@ -1,0 +1,15 @@
+BASELINE: .venv\\Scripts\\python.exe -m pytest tests\\business_api\\redpacket\\test_redpacket.py (before changes) => new tests failed as expected
+MODIFIED: .venv\\Scripts\\python.exe -m pytest tests\\business_api\\redpacket\\test_redpacket.py tests\\business_api\\redpacket\\test_redpacket_api.py => 8 passed
+MODIFIED: flutter analyze => No issues found
+MODIFIED: flutter test => 321 passed
+MODIFIED: node --test frontend/tests/*.mjs => 26 passed / 0 failed
+MODIFIED: pwsh -NoProfile -File scripts/verify.ps1 => Verification: PASS (matrix-bot 9, business 215+1 skipped, mobile boundary 21, alembic head 0030, OpenAPI drift, compose render)
+MODIFIED: python scripts/export_openapi.py => OpenAPI written
+MODIFIED: adb push + pm install app-debug.apk => Success on emulator-5554 and emulator-5556
+MODIFIED: dumpsys package com.liuhetong.mobile => versionName=0.3.0 versionCode=3 on both emulators
+MODIFIED: launch probe (monkey) => process alive on both emulators; screenshots emulator-5554-launch.png / emulator-5556-launch.png
+APK SHA256 (v0.3.0+3 build) 2D8D3FB36B09E11E9FA839009B7307B1E993267FC0464588DD3761250E814022
+DEPLOYED: 2026-08-29T15:40Z identity.py (login username strip) + 4 frontend files; backup /opt/starchat/backups/20260829T154052Z; business-api image rebuilt and healthy; migration 0030_app_settings (head); /api/v1/health/live ok; admin page 200 with zero red-packet refs in profile.js
+DEPLOY LOG: deploy-20260829T154052Z.log
+ROLLBACK: restore files from /opt/starchat/backups/20260829T154052Z then rebuild business-api container; baseline snapshots retained under baseline/ and rollback-copy/
+FINAL EVIDENCE: docs/verification/2026-08-29-red-packet-wechat-transfer.md

@@ -89,8 +89,8 @@ void main() {
       ),
     );
 
-    expect(find.text('周然 · 语音通话'), findsOneWidget);
-    expect(find.text('畅聊加密来电'), findsOneWidget);
+    expect(find.text('周然 语音通话'), findsOneWidget);
+    expect(find.text('邀请你进行语音通话'), findsOneWidget);
     expect(find.byKey(const Key('call-control-answer')), findsOneWidget);
     expect(find.byKey(const Key('call-control-reject')), findsOneWidget);
     await tester.tap(find.byKey(const Key('call-control-answer')));
@@ -130,7 +130,7 @@ void main() {
       ),
     );
 
-    expect(find.text('端到端加密'), findsOneWidget);
+    expect(find.text('00:00'), findsOneWidget, reason: '接通后展示通话时长');
     expect(find.byKey(const Key('call-control-microphone')), findsOneWidget);
     expect(find.byKey(const Key('call-control-hangup')), findsOneWidget);
     expect(find.byKey(const Key('call-control-speaker')), findsOneWidget);
@@ -172,7 +172,7 @@ void main() {
       ),
     );
 
-    expect(find.text('周然 · 视频通话'), findsOneWidget);
+    expect(find.text('周然 视频通话'), findsOneWidget);
     expect(find.byIcon(ChangliaoIcons.switchCamera), findsOneWidget);
     await tester.tap(find.byKey(const Key('call-control-camera')));
     expect(backend.cameraSwitches, 1);

@@ -17,6 +17,7 @@ abstract final class WeChatColors {
   static const darkTextPrimary = Color(0xFFF5F5F5);
   static const textSecondary = Color(0xFF888888);
   static const textTertiary = Color(0xFFB2B2B2);
+  static const messageSenderName = Color(0xFF999999);
   static const divider = Color(0xFFD9D9D9);
   static const darkDivider = Color(0xFF2C2C2C);
   static const controlBorder = divider;
@@ -24,6 +25,17 @@ abstract final class WeChatColors {
   static const errorSurface = Color(0xFFFFF1F0);
   static const errorBorder = Color(0xFFFFCCC7);
   static const warning = Color(0xFFFA9D3B);
+  static const redPacketPrimary = Color(0xFFE95C3A);
+  static const redPacketMuted = Color(0xFFF2B7A8);
+  static const redPacketPageBackground = Color(0xFFF5F5F5);
+  static const redPacketGradientTop = Color(0xFFFA9D3B);
+  static const redPacketGradientBottom = Color(0xFFF2633A);
+  static const redPacketAction = Color(0xFFFEB60D);
+  // Red-packet creation page uses a soft, brand-tinted light surface instead
+  // of high-saturation warm gradients. The claim dialog keeps the red theme.
+  static const redPacketCreateGradientTop = Color(0xFFE7F5EA);
+  static const redPacketCreateGradientBottom = Color(0xFFF6F7F8);
+  static const redPacketCreateTint = Color(0x1407C160);
   static const bubbleOutgoing = Color(0xFF95EC69);
   static const socialLink = Color(0xFF576B95);
   static const networkCapsuleSurface = Color(0xD9FFFFFF);
@@ -42,6 +54,11 @@ abstract final class WeChatColors {
       CupertinoTheme.brightnessOf(context) == Brightness.dark
           ? darkSurface
           : lightPageBackground;
+
+  static Color resolveTextPrimary(BuildContext context) =>
+      CupertinoTheme.brightnessOf(context) == Brightness.dark
+          ? darkTextPrimary
+          : lightTextPrimary;
 }
 
 abstract final class WeChatSpacing {
@@ -122,3 +139,7 @@ abstract final class WeChatMotion {
   static const actionPressDuration = Duration(milliseconds: 150);
   static const actionPressScale = .98;
 }
+
+
+
+

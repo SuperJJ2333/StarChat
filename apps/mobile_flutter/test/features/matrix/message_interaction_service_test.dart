@@ -139,6 +139,30 @@ void main() {
     expect(draft.activeUserIds('你好'), isEmpty);
   });
 
+  test('mention draft expandAll mentions every member id', () {
+    final draft = MentionDraft();
+    final text = draft.appendAll(
+      '',
+      userIds: ['@a:test', '@b:test', '@c:test'],
+    );
+
+    expect(text, '@所有人 ');
+    expect(draft.activeUserIds('收到 @所有人 请回复'), [
+      '@a:test',
+      '@b:test',
+      '@c:test',
+    ]);
+    expect(draft.activeUserIds('收到'), isEmpty);
+  });
+
+  test('mention draft mixes single mentions with the all-members marker', () {
+    final draft = MentionDraft();
+    var text = draft.append('', displayName: '小明', userId: '@ming:test');
+    text = draft.appendAll(text, userIds: ['@a:test']);
+
+    expect(draft.activeUserIds('@所有人 @小明'), ['@ming:test', '@a:test']);
+  });
+
   test('avatar gestures fall back to Matrix member identity for non-friends',
       () {
     expect(

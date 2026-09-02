@@ -1,0 +1,66 @@
+diff --git a/docs/verification/artifacts/2026-08-27/production-domain-admin-home/BASELINE_FILE b/docs/verification/artifacts/2026-08-27/production-domain-admin-home/MODIFIED_FILE
+index f0edea3..311328a 100644
+--- a/docs/verification/artifacts/2026-08-27/production-domain-admin-home/BASELINE_FILE
++++ b/docs/verification/artifacts/2026-08-27/production-domain-admin-home/MODIFIED_FILE
+@@ -114,57 +114,9 @@ server {
+     }
+ 
+     location / {
+-        return 404;
+-    }
+-}
+-
+-
+-# Employ26 public HTTPS bootstrap: ACME HTTP-01 only.
+-server {
+-    listen 80;
+-    server_name xn--xkrsa875bzrciye600f.monster xn--xkrsa0ti6rf4cf98d.monster;
+-
+-    location ^~ /.well-known/acme-challenge/ {
+-        root /etc/nginx/certs/acme-webroot;
+-        default_type text/plain;
+-    }
+-
+-    location / {
+-        return 308 https://$host$request_uri;
+-    }
+-}
+-
+-
+-# Employ26 public gateway: HTTPS only for 华南师范大学.monster.
+-server {
+-    listen 443 ssl;
+-    http2 on;
+-    server_name xn--xkrsa875bzrciye600f.monster xn--xkrsa0ti6rf4cf98d.monster;
+-
+-    location ^~ /.well-known/acme-challenge/ {
+-        root /etc/nginx/certs/acme-webroot;
+-        default_type text/plain;
+-    }
+-
+-    ssl_certificate /etc/nginx/certs/employ26-fullchain.pem;
+-    ssl_certificate_key /etc/nginx/certs/employ26-privkey.pem;
+-    ssl_protocols TLSv1.2 TLSv1.3;
+-
+-    add_header X-Content-Type-Options "nosniff" always;
+-    add_header X-Frame-Options "DENY" always;
+-    add_header Referrer-Policy "no-referrer" always;
+-    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+-
+-    location / {
+-        proxy_pass http://172.18.0.1:28766;
+-        proxy_http_version 1.1;
+-        proxy_set_header Host $host;
+-        proxy_set_header X-Real-IP $remote_addr;
+-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-        proxy_set_header X-Forwarded-Proto https;
+-        proxy_set_header X-Request-ID $request_id;
+-        proxy_set_header Connection "";
+-        proxy_read_timeout 60s;
+-        proxy_send_timeout 60s;
++        root /usr/share/nginx/html/admin;
++        index admin.html;
++        try_files $uri $uri/ /admin.html;
++        add_header Cache-Control "no-store" always;
+     }
+ }

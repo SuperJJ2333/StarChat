@@ -1,0 +1,11 @@
+final class AppConfig {
+  static const matrixHomeserver = String.fromEnvironment(
+    'LIUHETONG_MATRIX_HOMESERVER',
+    defaultValue: 'https://liuhetong888.com',
+  );
+  static const businessApiBaseUrl = String.fromEnvironment(
+    'LIUHETONG_BUSINESS_API_URL',
+    defaultValue: 'https://liuhetong888.com',
+  );
+}
+

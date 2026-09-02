@@ -1,0 +1,16 @@
+2026-08-29T15:45:13Z
+NAME                           IMAGE                            STATUS
+starchat-business-api-1        starchat-business-api            Up 2 minutes (healthy)
+starchat-business-postgres-1   postgres:16.9-alpine             Up 11 days (healthy)
+starchat-business-redis-1      redis:7.4.2-alpine               Up 11 days (healthy)
+starchat-business-worker-1     starchat-business-worker         Up 3 hours (healthy)
+starchat-coturn-1              coturn/coturn:4.6.3-r3           Up 11 days
+starchat-element-web-1         vectorim/element-web:v1.11.100   Up 11 days (healthy)
+starchat-gateway-1             nginx:1.27.5-alpine              Up 3 hours
+starchat-mailpit-1             axllent/mailpit:v1.27.8          Up 11 days (healthy)
+starchat-matrix-bot-1          starchat-matrix-bot              Up 11 days
+starchat-postgres-1            postgres:16.9-alpine             Up 11 days (healthy)
+starchat-synapse-1             matrixdotorg/synapse:v1.132.0    Up 11 days (healthy)
+sh: 1: cd: can't cd to /app
+0030_app_settings (head)
+50548fb5886bcc1ebd95cadda021e96a  backend/app/api/identity.py

@@ -1,6 +1,61 @@
 {
   "components": {
     "schemas": {
+      "AdBody": {
+        "additionalProperties": false,
+        "properties": {
+          "advertiser_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Advertiser Name",
+            "type": "string"
+          },
+          "link_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Link Url",
+            "type": "string"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "advertiser_name",
+          "text",
+          "link_url"
+        ],
+        "title": "AdBody",
+        "type": "object"
+      },
+      "AdScheduleBody": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "additionalProperties": true,
+            "title": "Audience",
+            "type": "object"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "AdScheduleBody",
+        "type": "object"
+      },
       "AdjustmentRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -35,6 +90,47 @@
           "reason_code"
         ],
         "title": "AdjustmentRequestBody",
+        "type": "object"
+      },
+      "AppUpdateSettingsBody": {
+        "properties": {
+          "apk_url": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Apk Url",
+            "type": "string"
+          },
+          "latest_build": {
+            "minimum": 1.0,
+            "title": "Latest Build",
+            "type": "integer"
+          },
+          "latest_version": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Latest Version",
+            "type": "string"
+          },
+          "min_supported_build": {
+            "minimum": 0.0,
+            "title": "Min Supported Build",
+            "type": "integer"
+          },
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "latest_version",
+          "latest_build",
+          "min_supported_build",
+          "notes",
+          "apk_url"
+        ],
+        "title": "AppUpdateSettingsBody",
         "type": "object"
       },
       "AutoJoinPreference": {
@@ -95,6 +191,42 @@
           "expires_at"
         ],
         "title": "AvatarUploadResponse",
+        "type": "object"
+      },
+      "BanBody": {
+        "additionalProperties": false,
+        "properties": {
+          "duration_minutes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Minutes"
+          },
+          "reason_code": {
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "target_type": {
+            "title": "Target Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_type",
+          "target",
+          "reason_code"
+        ],
+        "title": "BanBody",
         "type": "object"
       },
       "BeginUpload": {
@@ -185,6 +317,29 @@
         "title": "Comment",
         "type": "object"
       },
+      "ComplaintBody": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "description"
+        ],
+        "title": "ComplaintBody",
+        "type": "object"
+      },
       "ContactBody": {
         "additionalProperties": false,
         "properties": {
@@ -215,6 +370,60 @@
           }
         },
         "title": "ContactBody",
+        "type": "object"
+      },
+      "CreateChatTransferRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "receiver_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Receiver Id",
+            "type": "string"
+          },
+          "room_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Id"
+          }
+        },
+        "required": [
+          "receiver_id",
+          "amount"
+        ],
+        "title": "CreateChatTransferRequest",
         "type": "object"
       },
       "CreateMoment": {
@@ -311,7 +520,8 @@
           "mode": {
             "enum": [
               "EQUAL",
-              "RANDOM"
+              "RANDOM",
+              "EXCLUSIVE"
             ],
             "title": "Mode",
             "type": "string"
@@ -366,6 +576,43 @@
           "share_count"
         ],
         "title": "CreateRedPacketRequest",
+        "type": "object"
+      },
+      "DirectCaibiGrantBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              }
+            ],
+            "title": "Amount"
+          },
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "amount",
+          "reason_code"
+        ],
+        "title": "DirectCaibiGrantBody",
         "type": "object"
       },
       "DraftPayload": {
@@ -681,6 +928,17 @@
             "title": "Id",
             "type": "string"
           },
+          "matrix_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix User Id"
+          },
           "message": {
             "title": "Message",
             "type": "string"
@@ -707,6 +965,7 @@
           "username",
           "nickname",
           "avatar_url",
+          "matrix_user_id",
           "message",
           "status",
           "requested_at"
@@ -835,6 +1094,47 @@
         "title": "MatrixLoginTokenResponse",
         "type": "object"
       },
+      "NoticeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "audience": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Audience",
+            "type": "string"
+          },
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "publish_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publish At"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content",
+          "audience"
+        ],
+        "title": "NoticeBody",
+        "type": "object"
+      },
       "OpenTicketRequest": {
         "additionalProperties": false,
         "properties": {
@@ -938,6 +1238,25 @@
           "personalized_recommendations"
         ],
         "title": "Preferences",
+        "type": "object"
+      },
+      "PresenceHeartbeatRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "client_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Version"
+          }
+        },
+        "title": "PresenceHeartbeatRequest",
         "type": "object"
       },
       "PresenceRequest": {
@@ -1105,6 +1424,45 @@
         "title": "ReadyHealthResponse",
         "type": "object"
       },
+      "RedPacketSettingsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "max_total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              }
+            ],
+            "title": "Max Total"
+          }
+        },
+        "required": [
+          "max_total"
+        ],
+        "title": "RedPacketSettingsBody",
+        "type": "object"
+      },
+      "ReferralValidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "referral_code": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Referral Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "referral_code"
+        ],
+        "title": "ReferralValidateRequest",
+        "type": "object"
+      },
       "RefreshRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1151,6 +1509,18 @@
             "minLength": 12,
             "title": "Password",
             "type": "string"
+          },
+          "referral_code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referral Code"
           },
           "username": {
             "maxLength": 64,
@@ -1209,6 +1579,32 @@
             "title": "Message",
             "type": "string"
           },
+          "moments_permission": {
+            "default": "DEFAULT",
+            "maxLength": 30,
+            "title": "Moments Permission",
+            "type": "string"
+          },
+          "remark": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Tags",
+            "type": "array"
+          },
           "target_user_id": {
             "maxLength": 36,
             "minLength": 1,
@@ -1243,6 +1639,22 @@
         "title": "ResetRequest",
         "type": "object"
       },
+      "RetractBody": {
+        "additionalProperties": false,
+        "properties": {
+          "reason_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_code"
+        ],
+        "title": "RetractBody",
+        "type": "object"
+      },
       "ReviewBody": {
         "additionalProperties": false,
         "properties": {
@@ -1256,6 +1668,30 @@
         ],
         "title": "ReviewBody",
         "type": "object"
+      },
+      "RoleBody": {
+        "additionalProperties": false,
+        "properties": {
+          "role_code": {
+            "$ref": "#/components/schemas/RoleCode"
+          }
+        },
+        "required": [
+          "role_code"
+        ],
+        "title": "RoleBody",
+        "type": "object"
+      },
+      "RoleCode": {
+        "enum": [
+          "USER",
+          "SUPPORT_AGENT",
+          "FINANCE_SUPPORT",
+          "SUPPORT_SUPERVISOR",
+          "SUPER_ADMIN"
+        ],
+        "title": "RoleCode",
+        "type": "string"
       },
       "SetCover": {
         "additionalProperties": false,
@@ -1535,6 +1971,368 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/admin/ads": {
+      "post": {
+        "operationId": "create_ad_api_v1_admin_ads_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Ad",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ads/{ad_id}/events/{event_type}": {
+      "post": {
+        "operationId": "ad_event_api_v1_admin_ads__ad_id__events__event_type__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ad_id",
+            "required": true,
+            "schema": {
+              "title": "Ad Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_type",
+            "required": true,
+            "schema": {
+              "title": "Event Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Ad Event",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/ads/{ad_id}/schedule": {
+      "post": {
+        "operationId": "schedule_ad_api_v1_admin_ads__ad_id__schedule_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ad_id",
+            "required": true,
+            "schema": {
+              "title": "Ad Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdScheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Schedule Ad",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/app-update-settings": {
+      "get": {
+        "operationId": "get_app_update_settings_api_v1_admin_app_update_settings_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get App Update Settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "update_app_update_settings_api_v1_admin_app_update_settings_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppUpdateSettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update App Update Settings",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/context": {
       "get": {
         "operationId": "context_api_v1_admin_context_get",
@@ -1585,6 +2383,326 @@
           }
         ],
         "summary": "Context",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/finance/adjustments": {
+      "post": {
+        "operationId": "grant_caibi_to_support_api_v1_admin_finance_adjustments_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectCaibiGrantBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Grant Caibi To Support",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/finance/adjustments/{request_id}/review": {
+      "post": {
+        "operationId": "review_adjustment_api_v1_admin_finance_adjustments__request_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review Adjustment",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/finance/withdrawals/{withdrawal_id}/review": {
+      "post": {
+        "operationId": "review_withdrawal_api_v1_admin_finance_withdrawals__withdrawal_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "withdrawal_id",
+            "required": true,
+            "schema": {
+              "title": "Withdrawal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Review Withdrawal",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/internal/access/ip": {
+      "get": {
+        "operationId": "gateway_ip_access_api_v1_admin_internal_access_ip_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-original-forwarded-for",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Original-Forwarded-For"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Gateway Ip Access",
         "tags": [
           "admin"
         ]
@@ -1655,6 +2773,326 @@
         ]
       }
     },
+    "/api/v1/admin/notices": {
+      "post": {
+        "operationId": "create_notice_api_v1_admin_notices_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Notice",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/notices/{notice_id}": {
+      "put": {
+        "operationId": "update_notice_api_v1_admin_notices__notice_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update Notice",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/notices/{notice_id}/read": {
+      "post": {
+        "operationId": "read_notice_api_v1_admin_notices__notice_id__read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read Notice",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/notices/{notice_id}/retract": {
+      "post": {
+        "operationId": "retract_notice_api_v1_admin_notices__notice_id__retract_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "notice_id",
+            "required": true,
+            "schema": {
+              "title": "Notice Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetractBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Retract Notice",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/overview": {
       "get": {
         "operationId": "overview_api_v1_admin_overview_get",
@@ -1705,6 +3143,301 @@
           }
         ],
         "summary": "Overview",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/red-packet-settings": {
+      "get": {
+        "operationId": "get_red_packet_settings_api_v1_admin_red_packet_settings_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Red Packet Settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "update_red_packet_settings_api_v1_admin_red_packet_settings_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedPacketSettingsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update Red Packet Settings",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/security/bans": {
+      "post": {
+        "operationId": "create_ban_api_v1_admin_security_bans_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create Ban",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/security/bans/{ban_id}/revoke": {
+      "post": {
+        "operationId": "revoke_ban_api_v1_admin_security_bans__ban_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ban_id",
+            "required": true,
+            "schema": {
+              "title": "Ban Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke Ban",
         "tags": [
           "admin"
         ]
@@ -1762,6 +3495,231 @@
         "summary": "Session Info",
         "tags": [
           "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/support-roles/{target_user_id}": {
+      "post": {
+        "operationId": "assign_support_role_api_v1_admin_support_roles__target_user_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_user_id",
+            "required": true,
+            "schema": {
+              "title": "Target User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Assign Support Role",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/support-roles/{target_user_id}/{role_code}": {
+      "delete": {
+        "operationId": "revoke_support_role_api_v1_admin_support_roles__target_user_id___role_code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_user_id",
+            "required": true,
+            "schema": {
+              "title": "Target User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role_code",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/RoleCode"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke Support Role",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/app-updates/latest": {
+      "get": {
+        "operationId": "latest_api_v1_app_updates_latest_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Latest",
+        "tags": [
+          "app-updates"
         ]
       }
     },
@@ -2696,6 +4654,294 @@
         "summary": "Unblock",
         "tags": [
           "friends"
+        ]
+      }
+    },
+    "/api/v1/chat-transfers": {
+      "post": {
+        "operationId": "create_api_v1_chat_transfers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Create",
+        "tags": [
+          "chat-transfers"
+        ]
+      }
+    },
+    "/api/v1/chat-transfers/{transfer_id}": {
+      "get": {
+        "operationId": "detail_api_v1_chat_transfers__transfer_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Detail",
+        "tags": [
+          "chat-transfers"
+        ]
+      }
+    },
+    "/api/v1/chat-transfers/{transfer_id}/accept": {
+      "post": {
+        "operationId": "accept_api_v1_chat_transfers__transfer_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Accept",
+        "tags": [
+          "chat-transfers"
+        ]
+      }
+    },
+    "/api/v1/chat-transfers/{transfer_id}/decline": {
+      "post": {
+        "operationId": "decline_api_v1_chat_transfers__transfer_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "transfer_id",
+            "required": true,
+            "schema": {
+              "title": "Transfer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Decline",
+        "tags": [
+          "chat-transfers"
         ]
       }
     },
@@ -3833,6 +6079,130 @@
         ]
       }
     },
+    "/api/v1/invitations/referral": {
+      "get": {
+        "description": "当前用户专属推荐码（30 分钟轮换，客户端按 rotates_at 实时刷新）。",
+        "operationId": "get_referral_code_api_v1_invitations_referral_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Referral Code Api V1 Invitations Referral Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get Referral Code",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/invitations/referral/validate": {
+      "post": {
+        "description": "公开校验推荐码：只回答有效/无效，不回显邀请人（防枚举）。\n\n双层限流：针对\"IP+码\"窄桶（单码爆破）与针对 IP 宽桶（批量枚举）。",
+        "operationId": "validate_referral_code_api_v1_invitations_referral_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferralValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Referral Code Api V1 Invitations Referral Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Validate Referral Code",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/invitations/validate": {
       "post": {
         "operationId": "validate_invitation_api_v1_invitations_validate_post",
@@ -3907,22 +6277,6 @@
             "schema": {
               "title": "Actor Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
             }
           }
         ],
@@ -4069,22 +6423,6 @@
               "title": "Request Id",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
           }
         ],
         "requestBody": {
@@ -4169,22 +6507,6 @@
               "title": "Idempotency-Key",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
           }
         ],
         "responses": {
@@ -4249,22 +6571,6 @@
             "schema": {
               "title": "Request Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
             }
           }
         ],
@@ -4456,6 +6762,92 @@
         "summary": "Transfer",
         "tags": [
           "ledger"
+        ]
+      }
+    },
+    "/api/v1/media/images/compress": {
+      "post": {
+        "operationId": "compress_image_api_v1_media_images_compress_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sizes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sizes"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "webp",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Compress Image Api V1 Media Images Compress Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Compress Image",
+        "tags": [
+          "media"
         ]
       }
     },
@@ -6349,6 +8741,66 @@
         ]
       }
     },
+    "/api/v1/presence/heartbeat": {
+      "post": {
+        "operationId": "presence_heartbeat_api_v1_presence_heartbeat_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresenceHeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Presence Heartbeat",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/profile/avatar": {
       "delete": {
         "operationId": "delete_avatar_api_v1_profile_avatar_delete",
@@ -7044,6 +9496,61 @@
         ]
       }
     },
+    "/api/v1/red-packets/limits": {
+      "get": {
+        "operationId": "limits_api_v1_red_packets_limits_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Limits",
+        "tags": [
+          "red-packets"
+        ]
+      }
+    },
     "/api/v1/red-packets/{packet_id}": {
       "get": {
         "operationId": "detail_api_v1_red_packets__packet_id__get",
@@ -7332,6 +9839,71 @@
           }
         ],
         "summary": "Presence",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/complaints": {
+      "post": {
+        "operationId": "complaint_api_v1_support_complaints_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComplaintBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Complaint",
         "tags": [
           "support"
         ]
@@ -7677,7 +10249,7 @@
             "required": true,
             "schema": {
               "maxLength": 64,
-              "minLength": 1,
+              "minLength": 2,
               "title": "Q",
               "type": "string"
             }
@@ -8128,22 +10700,6 @@
               "title": "Withdrawal Id",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
           }
         ],
         "responses": {
@@ -8209,22 +10765,6 @@
               "title": "Withdrawal Id",
               "type": "string"
             }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
-            }
           }
         ],
         "responses": {
@@ -8289,22 +10829,6 @@
             "schema": {
               "title": "Withdrawal Id",
               "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "X-TOTP-Code",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Totp-Code"
             }
           }
         ],

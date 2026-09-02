@@ -30,15 +30,16 @@ abstract final class AvatarCache {
   static String cacheKey({
     required String userId,
     required String avatarUrl,
-    required double size,
+    double? size,
   }) {
+    // 渲染尺寸不参与键：所有页面共享同一条头像缓存，避免重复下载。
     final uri = Uri.tryParse(avatarUrl);
     final queryVersion =
         uri?.queryParameters['v'] ?? uri?.queryParameters['version'];
     final version = queryVersion == null
         ? sanitizedUrl(avatarUrl).hashCode.toRadixString(16)
         : 'v=$queryVersion';
-    return 'avatar-$userId-$version-${size.round()}';
+    return 'avatar-$userId-$version';
   }
 
   static String sanitizedUrl(String avatarUrl) {

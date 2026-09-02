@@ -11,6 +11,7 @@ import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
 import 'features/auth/authentication_flow.dart';
+import 'features/statistics/statistics_tool.dart';
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'session_gate.dart';
@@ -19,6 +20,7 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppConfig.loadRuntimeVersion();
   final themeController = ThemeController(
     store: SharedPreferencesThemePreferenceStore(
       await SharedPreferences.getInstance(),
@@ -67,7 +69,7 @@ Future<void> main() async {
   unawaited(session.bootstrap());
 }
 
-final class LiuhetongApp extends StatelessWidget {
+final class LiuhetongApp extends StatefulWidget {
   const LiuhetongApp({
     super.key,
     required this.home,
@@ -78,23 +80,45 @@ final class LiuhetongApp extends StatelessWidget {
   final ThemeController themeController;
 
   @override
+  State<LiuhetongApp> createState() => _LiuhetongAppState();
+}
+
+/// Rebuilds the app shell whenever the system brightness changes so the
+/// `system` theme preference tracks the OS dark-mode switch live.
+final class _LiuhetongAppState extends State<LiuhetongApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: themeController,
+        animation: widget.themeController,
         builder: (context, _) => CupertinoApp(
+          navigatorKey: statisticsNavigatorKey,
           title: '畅聊 ChatFlow',
           locale: const Locale('zh', 'CN'),
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
-          theme: WeChatTheme.build(themeController.resolve(
-            WidgetsBinding.instance.platformDispatcher.platformBrightness,
-          )),
-          builder: (context, child) => CupertinoTheme(
-            data: WeChatTheme.build(
-              themeController.resolve(MediaQuery.platformBrightnessOf(context)),
+          theme: WeChatTheme.build(
+            widget.themeController.resolve(
+              WidgetsBinding.instance.platformDispatcher.platformBrightness,
             ),
-            child: child!,
           ),
-          home: home,
+          home: widget.home,
         ),
       );
 }

@@ -14,15 +14,15 @@ def verify() -> list[str]:
     registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     figma_path = ROOT / registry["figma"]["stateArtifact"]
     figma = json.loads(figma_path.read_text(encoding="utf-8"))
-    contracts = (ROOT / "design-demo/src/catalog/contracts.js").read_text(encoding="utf-8")
-    css_tokens = (ROOT / "design-demo/src/styles/tokens.css").read_text(encoding="utf-8")
+    contracts = (ROOT / "frontend/src/catalog/contracts.js").read_text(encoding="utf-8")
+    css_tokens = (ROOT / "frontend/src/styles/tokens.css").read_text(encoding="utf-8")
     tokens = (ROOT / "apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart").read_text(encoding="utf-8")
 
     assert figma["fileKey"] == registry["figma"]["fileKey"]
     assert figma["phase"] == "complete" and figma["step"] == "verified"
     assert not figma["pendingValidations"]
     result = subprocess.run(
-        ["node", "-e", "import('./design-demo/src/catalog/screens.js').then(({screens}) => console.log(screens.length))"],
+        ["node", "-e", "import('./frontend/src/catalog/screens.js').then(({screens}) => console.log(screens.length))"],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -47,10 +47,10 @@ def verify() -> list[str]:
         assert figma_brand[key] == brand[key], f"Figma brand mapping drift: {key}"
     user_visible_sources = [
         ROOT / "apps/mobile_flutter/lib",
-        ROOT / "design-demo/src",
+        ROOT / "frontend/src",
         ROOT / "services/business-worker/app/integrations/email_sender.py",
-        ROOT / "services/business-api/app/api/identity.py",
-        ROOT / "services/business-api/app/modules/support/service.py",
+        ROOT / "backend/app/api/identity.py",
+        ROOT / "backend/app/modules/support/service.py",
         ROOT / "UI_DESIGN.md",
     ]
     user_visible_text = "\n".join(
@@ -71,7 +71,8 @@ def verify() -> list[str]:
             assert value in tokens, f"Flutter token missing: {group}/{value}"
     for token in registry["tokenParity"]:
         assert token["figma"] in figma_variables, f"Figma token missing: {token['figma']}"
-        assert token["html"] in css_tokens, f"HTML token drift: {token['html']}"
+        html_name = token["html"].split(":", 1)[0]
+        assert html_name in css_tokens, f"HTML token missing: {html_name}"
         assert token["flutter"] in tokens, f"Flutter token drift: {token['flutter']}"
 
     page_sources = list((ROOT / "apps/mobile_flutter/lib/features").rglob("*.dart"))

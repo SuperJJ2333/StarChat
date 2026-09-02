@@ -1,0 +1,97 @@
+Admin modernization verification
+
+Changed branch/field: EmailVerificationRequest.code accepts flexible email verification values; SUPER_ADMIN direct writes need no secondary code or additional approval; frontend admin uses cool blue-gray tokens instead of high-saturation green.
+
+Paths:
+MODIFIED_FILE: docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE
+DIFF_FILE: docs/verification/artifacts/2026-08-28/admin-modernization/DIFF_FILE
+VERIFICATION.txt: docs/verification/artifacts/2026-08-28/admin-modernization/VERIFICATION.txt
+ROLLBACK.sh: docs/verification/artifacts/2026-08-28/admin-modernization/ROLLBACK.sh
+
+BASELINE command: py -3.12 -m pytest tests/business_api/identity/test_email_verification.py -q
+BASELINE input: backend identity verification API
+BASELINE literal output/result: 6 passed
+BASELINE exit status: 0
+
+MODIFIED command: npm --prefix frontend test; PYTHONPATH=backend py -3.12 -m pytest tests/business_api/admin/test_admin_api.py tests/business_api/identity/test_email_verification.py tests/business_api/ledger/test_adjustments.py tests/business_api/wallet/test_wallet_service.py -q; py -3.12 scripts/verify_ui_contract.py
+MODIFIED input: UTF-8 frontend, direct-admin routes, flexible email verification input, blue-gray token system
+MODIFIED literal output/result: frontend 23 passed; backend 20 passed; UI contract drift: PASS (17 components, 326 screens)
+MODIFIED exit status: 0
+
+ROLLBACK command: pwsh -NoProfile -File docs/verification/artifacts/2026-08-28/admin-modernization/ROLLBACK.sh -Target <copy> -Backup docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE
+ROLLBACK input: separate disposable frontend copy
+ROLLBACK literal output/result: script emits ROLLBACK_RESTORED and copies the preserved MODIFIED_FILE state into target
+ROLLBACK exit status: executable script created; dry-run copy hash matches active frontend: AD8AA3A2112EEC2A0E7EF7660A2AD9F9045B2F3C9AF066D6DEEE2F384D377764
+
+Restored behavior/status: rollback restores the preserved frontend copy; active frontend remains modified.
+
+STATIC_DEMO command: Invoke-WebRequest http://127.0.0.1:4571/demo.html and /admin.html
+STATIC_DEMO input: frontend static server
+STATIC_DEMO literal output/result: DEMO_HTTP=200 CONTENT_TYPE=text/html; charset=utf-8 HAS_ADMIN=True; ADMIN_HTTP=200 CONTENT_TYPE=text/html; charset=utf-8 HAS_LOGIN=True
+STATIC_DEMO exit status: 0
+SIX_DIGIT_SCAN command: rg -n '6 位|6位|六位|\\d{6}|six.?digit' apps/mobile_flutter/lib/features/auth backend/app/api/identity.py frontend/src/screens/auth.js frontend/src/admin-home.js
+SIX_DIGIT_SCAN literal output/result: AUTH_AND_ADMIN_SIX_DIGIT_SCAN=0_MATCHES
+SIX_DIGIT_SCAN exit status: 0
+
+FULL_SUITE command: pwsh -NoProfile -File docs/verification/artifacts/2026-08-28/admin-modernization/run-full-suite.ps1
+FULL_SUITE input: tests/business_api tests/business_worker
+FULL_SUITE literal output/result: 190 passed, 1 skipped in 144.34s
+FULL_SUITE exit status: 0
+MIGRATION command: cd backend; py -3.12 -m alembic heads; py -3.12 -m alembic upgrade head --sql
+MIGRATION literal output/result: 0028_notice_receipts_ads (head); offline SQL generated through 0028
+MIGRATION exit status: 0
+COMPOSE command: docker compose --env-file .env.example config --quiet
+COMPOSE literal output/result: configuration valid
+COMPOSE exit status: 0
+
+REPOSITORY_VERIFY command: pwsh -NoProfile -File scripts/verify.ps1
+REPOSITORY_VERIFY input: complete repository verification gate
+REPOSITORY_VERIFY literal output/result: Matrix Bot 9 passed; Business API and Worker 190 passed, 1 skipped; Flutter boundary 21 passed; UI contract PASS (17 components, 326 screens); AST parse PASS (95 files); Alembic migrations PASS; OpenAPI contract PASS; Docker Compose render PASS; Verification: PASS
+REPOSITORY_VERIFY exit status: 0
+
+ADMIN_DIRECT_WRITE_ADR_REVIEW command: PYTHONPATH=backend py -3.12 -m pytest tests/business_api/admin/test_admin_api.py tests/business_api/ledger/test_adjustments.py tests/business_api/wallet/test_wallet_service.py -q
+ADMIN_DIRECT_WRITE_ADR_REVIEW input: ADR-0008 direct administrator modification, idempotency, audit and Outbox assertions
+ADMIN_DIRECT_WRITE_ADR_REVIEW literal output/result: 17 passed in 22.36s
+ADMIN_DIRECT_WRITE_ADR_REVIEW exit status: 0
+
+ADR_REVIEW result: ADR-0008 now states that system.admin administrators modify directly without approval, secondary verification, or TOTP; RBAC, idempotency keys, reason codes, actor identity, AuditEvent, and Transactional Outbox remain mandatory. Focused tests prove a direct notice update replays idempotently and persists its audit and Outbox records; direct adjustment and withdrawal transitions require no finance/second-approver step.
+
+MIGRATION_RECHECK command: cd backend; py -3.12 -m alembic heads; py -3.12 -m alembic upgrade head --sql
+MIGRATION_RECHECK literal output/result: 0028_notice_receipts_ads (head); offline SQL generated through 0028
+MIGRATION_RECHECK exit status: 0
+
+COMPOSE_RECHECK command: docker compose --env-file .env.example config --quiet
+COMPOSE_RECHECK literal output/result: configuration valid
+COMPOSE_RECHECK exit status: 0
+
+FINAL_GATE command: pwsh -NoProfile -File scripts/verify.ps1
+FINAL_GATE literal output/result: Matrix Bot 9 passed; Business API and Worker 193 passed, 1 skipped; Flutter boundary 21 passed; UI contract PASS (17 components, 326 screens); Business API import PASS; AST parse PASS (95 files); Alembic migrations PASS; OpenAPI contract PASS; Docker Compose render PASS; Verification: PASS
+FINAL_GATE exit status: 0
+
+PRODUCTION_DEPLOY command: archive frontend/backend, Compose, Nginx and worker Dockerfile; upload to root@207.56.8.8:/opt/starchat; rebuild and restart business-api, business-worker and gateway.
+PRODUCTION_DEPLOY input: production synchronization archive
+PRODUCTION_DEPLOY literal output/result: archive SHA-256 matches local and remote; business-api healthy; business-worker healthy; gateway running; Alembic head 0028_notice_receipts_ads; Nginx syntax test successful; admin page title is ChatFlow 畅聊 · 管理后台.
+PRODUCTION_DEPLOY exit status: 0
+
+PRODUCTION_TOTP_VERIFY command: inspect deployed OpenAPI and POST /api/v1/admin/notices without Authorization or X-TOTP-Code through admin gateway.
+PRODUCTION_TOTP_VERIFY literal output/result: TOTP_HEADER_PRESENT=False; request result HTTP_STATUS=401 with AUTH_REQUIRED (not TOTP_REQUIRED).
+PRODUCTION_TOTP_VERIFY exit status: 0
+PRODUCTION_BACKUP: /opt/starchat/backups/20260829T133206Z
+PRODUCTION_EVIDENCE: docs/verification/artifacts/2026-08-29/production-sync-20260829T133206Z/deploy-verification.log
+
+ADJUSTMENT_ERROR_REGRESSION command: PYTHONPATH=backend py -3.12 -m pytest tests/business_api/admin/test_admin_api.py tests/business_api/ledger/test_adjustments.py tests/business_api/wallet/test_wallet_service.py -q
+ADJUSTMENT_ERROR_REGRESSION literal output/result: 18 passed
+ADJUSTMENT_ERROR_REGRESSION exit status: 0
+
+PRODUCTION_ADJUSTMENT_ERROR_FIX command: deploy backend/app/api/admin.py; rebuild business-api and business-worker; probe missing adjustment transition.
+PRODUCTION_ADJUSTMENT_ERROR_FIX literal output/result: business-api and business-worker healthy; missing adjustment review returns HTTP 409 ADJUSTMENT_TRANSITION_INVALID with Chinese action message, replacing the prior HTTP 500.
+PRODUCTION_ADJUSTMENT_ERROR_FIX exit status: 0
+
+DIRECT_CAIBI_GRANT command: npm --prefix frontend test; PYTHONPATH=backend py -3.12 -m pytest tests/business_api/admin/test_admin_api.py tests/business_api/ledger/test_adjustments.py tests/business_api/wallet/test_wallet_service.py -q
+DIRECT_CAIBI_GRANT input: administrator direct CAIBI grant form and API route
+DIRECT_CAIBI_GRANT literal output/result: frontend 26 passed; backend 19 passed. The server rejects a target without SUPPORT_AGENT (422 SUPPORT_ROLE_REQUIRED), posts a balanced 88.00 CAIBI transaction to a configured support agent, replays idempotently, writes AuditEvent admin.caibi.granted, and enqueues ledger.posted.
+DIRECT_CAIBI_GRANT exit status: 0
+
+PRODUCTION_DIRECT_CAIBI_GRANT command: deploy frontend/src/admin-home.js and backend/app/api/admin.py; rebuild business-api and business-worker; inspect OpenAPI and gateway-served frontend source.
+PRODUCTION_DIRECT_CAIBI_GRANT literal output/result: business-api healthy; business-worker healthy; gateway running; OpenAPI route grant_caibi_to_support_api_v1_admin_finance_adjustments_post exposes Idempotency-Key; served UI contains 发放点钻给客服, 客服用户 ID and 发放数量（点钻）.
+PRODUCTION_DIRECT_CAIBI_GRANT exit status: 0

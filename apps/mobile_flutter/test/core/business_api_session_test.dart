@@ -122,6 +122,45 @@ void main() {
     expect(balanceCalls, 2);
   });
 
+  test('concurrent 401s share a single refresh flight', () async {
+    // 回归：并发请求同时 401 时只允许一次 refresh 网络调用。
+    // 服务端对已消费 refresh token 的重放按 TOKEN_REUSE 撤销整个设备令牌族，
+    // 无 single-flight 锁时首页聚合加载会互相触发撤族，把用户踢回登录页。
+    final storage = MemoryStore();
+    final store = SecureSessionStore(storage);
+    await store.saveSession(accessToken: 'expired-a', refreshToken: 'valid-r');
+    var refreshCalls = 0;
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: store,
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/auth/refresh') {
+          refreshCalls++;
+          // 模拟网络往返，放大多个调用方同时进入刷新窗口的竞态。
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return http.Response(
+            jsonEncode({'access_token': 'new-a', 'refresh_token': 'new-r'}),
+            200,
+          );
+        }
+        if (request.headers['Authorization'] == 'Bearer expired-a') {
+          return http.Response('{}', 401);
+        }
+        expect(request.headers['Authorization'], 'Bearer new-a');
+        return http.Response(jsonEncode({'ok': true}), 200);
+      }),
+    );
+
+    final results = await Future.wait([
+      api.caibiBalance(),
+      api.latestAppUpdate(),
+    ]);
+
+    expect(results, hasLength(2));
+    expect(refreshCalls, 1);
+    expect((await store.session())?.refreshToken, 'new-r');
+  });
+
   test(
       'typed dual-domain API stores Business tokens then binds Matrix identity',
       () async {

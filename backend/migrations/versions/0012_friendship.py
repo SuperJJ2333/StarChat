@@ -1,0 +1,11 @@
+"""Authoritative friendship domain."""
+from alembic import op
+import sqlalchemy as sa
+revision='0012_friendship';down_revision='0011_wallet_webhook_events';branch_labels=None;depends_on=None
+def upgrade():
+    op.create_table('friend_requests',sa.Column('id',sa.String(36),primary_key=True),sa.Column('requester_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('target_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('message',sa.Text(),nullable=False),sa.Column('status',sa.String(20),nullable=False),sa.Column('idempotency_key',sa.String(128),nullable=False),sa.Column('created_at',sa.DateTime(timezone=True),nullable=False),sa.Column('resolved_at',sa.DateTime(timezone=True)),sa.UniqueConstraint('requester_id','idempotency_key',name='uq_friend_request_idempotency'))
+    op.create_table('friendships',sa.Column('id',sa.String(36),primary_key=True),sa.Column('user_low_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('user_high_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('created_at',sa.DateTime(timezone=True),nullable=False),sa.UniqueConstraint('user_low_id','user_high_id',name='uq_friendship_pair'))
+    op.create_table('contact_profiles',sa.Column('id',sa.String(36),primary_key=True),sa.Column('owner_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('contact_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('remark',sa.String(128)),sa.Column('tags',sa.Text(),nullable=False),sa.Column('moments_permission',sa.String(30),nullable=False),sa.UniqueConstraint('owner_id','contact_id',name='uq_contact_profile'))
+    op.create_table('user_blocks',sa.Column('id',sa.String(36),primary_key=True),sa.Column('blocker_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('blocked_id',sa.String(36),sa.ForeignKey('users.id'),nullable=False),sa.Column('idempotency_key',sa.String(128),nullable=False),sa.Column('created_at',sa.DateTime(timezone=True),nullable=False),sa.UniqueConstraint('blocker_id','blocked_id',name='uq_user_block'))
+def downgrade():
+    for table in ('user_blocks','contact_profiles','friendships','friend_requests'):op.drop_table(table)

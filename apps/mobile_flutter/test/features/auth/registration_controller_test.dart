@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/features/auth/invitation_validation.dart';
 import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
 
 final class FakeRegistrationGateway implements RegistrationGateway {
@@ -13,9 +14,25 @@ final class FakeRegistrationGateway implements RegistrationGateway {
   final List<String> verifiedCodes = [];
   final List<String> verifiedTokens = [];
 
+  /// 好友推荐码（选填）校验与绑定记录。
+  bool referralValid = true;
+  final List<String> validatedReferrals = [];
+  final List<String> registeredReferrals = [];
+
   @override
-  Future<bool> validateInvitation(String invitationCode) async =>
-      invitationValid;
+  Future<InvitationValidationResult> validateInvitation(
+      String invitationCode) async =>
+      invitationValid
+          ? const InvitationValidationResult(
+              InvitationValidationState.ready, '邀请码可用')
+          : const InvitationValidationResult(
+              InvitationValidationState.invalid, '邀请码无效');
+
+  @override
+  Future<bool> validateReferralCode(String referralCode) async {
+    validatedReferrals.add(referralCode);
+    return referralValid;
+  }
 
   @override
   Future<RegistrationReceipt> register(
@@ -23,8 +40,10 @@ final class FakeRegistrationGateway implements RegistrationGateway {
       String? nickname,
       required String email,
       required String password,
-      required String invitationCode}) async {
+      required String invitationCode,
+      String referralCode = ''}) async {
     registerCalls++;
+    registeredReferrals.add(referralCode);
     if (registerError != null) throw registerError!;
     return const RegistrationReceipt(
         registrationSession: 'session-1',
@@ -90,7 +109,7 @@ void main() {
             invitationCode: 'BAD'),
         isFalse);
     expect(gateway.registerCalls, 0);
-    expect(controller.state.fieldErrors['invitation_code'], '邀请码无效或已失效');
+    expect(controller.state.fieldErrors['invitation_code'], '邀请码无效');
   });
 
   test('registration validates username email and password before network',
@@ -162,7 +181,7 @@ void main() {
   });
 
   test(
-      'verification accepts either six digit code or link token then polls ACTIVE',
+      'verification accepts an email code or link token then polls ACTIVE',
       () async {
     final gateway = FakeRegistrationGateway();
     final controller =
@@ -205,7 +224,7 @@ void main() {
     expect(controller.state.registrationSession, 'session-1');
   });
 
-  test('short verification code is rejected with a user-facing message',
+  test('short verification code is submitted without a client-side length rule',
       () async {
     final controller =
         RegistrationController(gateway: FakeRegistrationGateway());
@@ -218,7 +237,8 @@ void main() {
 
     await controller.verifyCode('123');
 
-    expect(controller.state.fieldErrors, {'code': '请输入 6 位数字验证码'});
+    expect(controller.state.fieldErrors, isEmpty);
+    expect(controller.state.status, RegistrationFlowStatus.provisioning);
   });
 
   test(
@@ -242,5 +262,57 @@ void main() {
             invitationCode: 'INVITE'),
         isTrue);
     expect(gateway.registerCalls, 3);
+  });
+
+  test('valid referral code is validated and forwarded to register', () async {
+    final gateway = FakeRegistrationGateway();
+    final controller = RegistrationController(gateway: gateway);
+
+    expect(
+        await controller.register(
+            username: 'alice',
+            email: 'alice@example.test',
+            password: 'correct horse battery staple',
+            invitationCode: 'INVITE',
+            referralCode: 'AB2CD3FG'),
+        isTrue);
+    expect(gateway.validatedReferrals, ['AB2CD3FG']);
+    expect(gateway.registeredReferrals, ['AB2CD3FG']);
+    expect(
+        controller.state.status, RegistrationFlowStatus.awaitingVerification);
+  });
+
+  test('invalid referral code blocks submit with a clear field error', () async {
+    final gateway = FakeRegistrationGateway()..referralValid = false;
+    final controller = RegistrationController(gateway: gateway);
+
+    expect(
+        await controller.register(
+            username: 'alice',
+            email: 'alice@example.test',
+            password: 'correct horse battery staple',
+            invitationCode: 'INVITE',
+            referralCode: 'WRONG123'),
+        isFalse);
+    expect(gateway.validatedReferrals, ['WRONG123']);
+    // 无效推荐码不进入注册调用（用户可清空或改正）。
+    expect(gateway.registerCalls, 0);
+    expect(controller.state.fieldErrors['referral_code'], contains('邀请码无效'));
+  });
+
+  test('empty referral code skips validation and register omits binding',
+      () async {
+    final gateway = FakeRegistrationGateway();
+    final controller = RegistrationController(gateway: gateway);
+
+    expect(
+        await controller.register(
+            username: 'alice',
+            email: 'alice@example.test',
+            password: 'correct horse battery staple',
+            invitationCode: 'INVITE'),
+        isTrue);
+    expect(gateway.validatedReferrals, isEmpty);
+    expect(gateway.registeredReferrals, ['']);
   });
 }

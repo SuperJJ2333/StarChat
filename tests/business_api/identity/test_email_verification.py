@@ -78,7 +78,7 @@ def _challenge(factory, user_id: str) -> EmailVerificationChallenge:
         )
 
 
-def test_six_digit_code_verifies_once_without_storing_plaintext(
+def test_email_code_verifies_once_without_storing_plaintext(
     verification_components,
 ) -> None:
     factory, _, _, codec, _, verification = verification_components
@@ -231,7 +231,7 @@ def test_resend_waits_sixty_seconds_and_invalidates_old_code_and_link(
 
 
 @pytest.mark.asyncio
-async def test_verification_api_is_strict_and_status_never_exposes_user_uuid(
+async def test_verification_api_accepts_non_six_digit_code_and_status_never_exposes_user_uuid(
     verification_components,
 ) -> None:
     factory, _, invitations, codec, _, _ = verification_components
@@ -285,9 +285,9 @@ async def test_verification_api_is_strict_and_status_never_exposes_user_uuid(
                 "token": codec.link_token(challenge.id),
             },
         )
-        short_code = await client.post(
+        flexible_code = await client.post(
             "/api/v1/auth/email-verifications/verify",
-            headers={"Idempotency-Key": "api-short-code"},
+            headers={"Idempotency-Key": "api-flexible-code"},
             json={"registration_session": registration_session, "code": "123"},
         )
         verified = await client.post(
@@ -300,10 +300,8 @@ async def test_verification_api_is_strict_and_status_never_exposes_user_uuid(
         )
 
     assert missing_credential.status_code == both_credentials.status_code == 422
-    assert short_code.status_code == 422
-    assert short_code.json()["error"]["fields"] == [
-        {"loc": ["body", "code"], "msg": "请输入 6 位数字验证码", "type": "email_verification_code_invalid"}
-    ]
+    assert flexible_code.status_code != 422
+    assert flexible_code.json()["error"]["code"] == "EMAIL_VERIFICATION_INVALID"
     assert verified.status_code == 202
     assert verified.json() == {"status": "PENDING_MATRIX"}
     assert status.status_code == 200

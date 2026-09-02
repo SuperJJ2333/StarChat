@@ -1,0 +1,641 @@
+diff --git a/apps/mobile_flutter/lib/features/auth/registration_controller.dart b/apps/mobile_flutter/lib/features/auth/registration_controller.dart
+index 168c9be..aad5d81 100644
+--- a/apps/mobile_flutter/lib/features/auth/registration_controller.dart
++++ b/apps/mobile_flutter/lib/features/auth/registration_controller.dart
+@@ -242,13 +242,6 @@ final class RegistrationController extends ChangeNotifier {
+   Future<void> _verify({String? code, String? token}) async {
+     final session = state.registrationSession;
+     if (session == null) throw StateError('registration session is missing');
+-    if (code != null && !RegExp(r'^\d{6}$').hasMatch(code)) {
+-      _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
+-          registrationSession: session,
+-          resendAfterSeconds: state.resendAfterSeconds,
+-          fieldErrors: const {'code': '请输入 6 位数字验证码'}));
+-      return;
+-    }
+     try {
+       await _retryNetwork(() => gateway.verifyEmail(
+           registrationSession: session, code: code, token: token));
+diff --git a/apps/mobile_flutter/lib/features/auth/verification_page.dart b/apps/mobile_flutter/lib/features/auth/verification_page.dart
+index 0210b17..1e33bcf 100644
+--- a/apps/mobile_flutter/lib/features/auth/verification_page.dart
++++ b/apps/mobile_flutter/lib/features/auth/verification_page.dart
+@@ -86,7 +86,7 @@ final class _VerificationPageState extends State<VerificationPage> {
+                     ),
+                   ),
+                   const Text(
+-                    '请输入邮件中的 6 位验证码，或返回应用查看验证链接结果。',
++                    '请输入邮件中的验证码，或返回应用查看验证链接结果。',
+                     style: TextStyle(color: WeChatColors.textSecondary),
+                   ),
+                   const SizedBox(height: WeChatSpacing.lg),
+@@ -99,9 +99,8 @@ final class _VerificationPageState extends State<VerificationPage> {
+                   ],
+                   CupertinoTextField(
+                     controller: code,
+-                    placeholder: '6 位验证码',
+-                    keyboardType: TextInputType.number,
+-                    maxLength: 6,
++                    placeholder: '邮件验证码',
++                    keyboardType: TextInputType.text,
+                   ),
+                   const SizedBox(height: WeChatSpacing.md),
+                   SizedBox(
+diff --git a/design-demo/src/styles/tokens.css b/design-demo/src/styles/tokens.css
+index 76af2da..c963934 100644
+--- a/design-demo/src/styles/tokens.css
++++ b/design-demo/src/styles/tokens.css
+@@ -115,10 +115,10 @@
+ }
+ 
+ [data-theme="light"] {
+-  --color-brand-primary: #07c160;
+-  --color-brand-pressed: #06ad56;
+-  --color-page-background: #ededed;
+-  --color-surface-primary: #f7f7f7;
++  --color-brand-primary: #496a83;
++  --color-brand-pressed: #38566d;
++  --color-page-background: #f3f6f8;
++  --color-surface-primary: #f7f9fa;
+   --color-surface-elevated: #ffffff;
+   --color-text-primary: #191919;
+   --color-text-secondary: #888888;
+@@ -127,15 +127,15 @@
+   --color-on-accent: #ffffff;
+   --color-danger: #fa5151;
+   --color-warning: #fa9d3b;
+-  --color-bubble-outgoing: #95ec69;
++  --color-bubble-outgoing: #d7e7f0;
+   --color-bubble-incoming: #ffffff;
+   --color-social-link: #576b95;
+   --color-scrim: #80000000;
+ }
+ 
+ [data-theme="dark"] {
+-  --color-brand-primary: #07c160;
+-  --color-brand-pressed: #06ad56;
++  --color-brand-primary: #87a9bb;
++  --color-brand-pressed: #6f91a4;
+   --color-page-background: #111111;
+   --color-surface-primary: #191919;
+   --color-surface-elevated: #232323;
+@@ -146,8 +146,37 @@
+   --color-on-accent: #ffffff;
+   --color-danger: #fa5151;
+   --color-warning: #fa9d3b;
+-  --color-bubble-outgoing: #3a6b36;
++  --color-bubble-outgoing: #2e4556;
+   --color-bubble-incoming: #2c2c2c;
+   --color-social-link: #7d90b5;
+   --color-scrim: #99000000;
+ }
++
++/* ChatFlow admin visual system — cool, restrained, grid-first */
++:root {
++  --admin-brand: #4f6f86;
++  --admin-brand-strong: #3c596d;
++  --admin-ink: #1f2d3a;
++  --admin-muted: #718096;
++  --admin-page: #f3f6f8;
++  --admin-surface: #ffffff;
++  --admin-border: #dbe3e8;
++  --admin-danger: #a65d66;
++  --admin-warning: #9a7b4f;
++  --admin-hero: #172733;
++  --admin-hero-glow: #dce7ed;
++  --admin-nav-muted: #a9bac6;
++  --admin-hero-accent: #2e4556;
++  --admin-hero-text: #c7d4dc;
++  --admin-hero-light: #87a9bb;
++  --admin-focus: #6f9bb4;
++  --admin-radius-sm: 8px;
++  --admin-radius-md: 12px;
++  --admin-shadow: 0 8px 24px rgb(31 45 58 / 8%);
++}
++[data-theme="dark"] {
++  --admin-page: #111c24; --admin-surface: #1a2933; --admin-ink: #e6edf2; --admin-muted: #a1b0ba; --admin-border: #30424e;
++}
++/* Final APP-aligned semantic aliases */
++:root{--admin-brand:var(--color-brand-primary);--admin-brand-strong:var(--color-brand-pressed);--admin-page:var(--color-page-background);--admin-surface:var(--color-surface-elevated);--admin-ink:var(--color-text-primary);--admin-muted:var(--color-text-secondary);--admin-border:var(--color-divider);--admin-hero:var(--color-brand-primary);--admin-hero-accent:var(--color-brand-pressed);--admin-hero-glow:var(--color-surface-elevated);--admin-nav-muted:var(--color-on-accent);--admin-hero-text:var(--color-on-accent);--admin-hero-light:var(--color-on-accent);--admin-focus:var(--color-brand-primary);--admin-radius-sm:8px;--admin-radius-md:12px}
++
+diff --git a/services/business-api/app/api/admin.py b/services/business-api/app/api/admin.py
+index d1ed33d..bd750fb 100644
+--- a/services/business-api/app/api/admin.py
++++ b/services/business-api/app/api/admin.py
+@@ -1,23 +1,67 @@
+ from typing import Annotated
+ from fastapi import APIRouter, Depends, Header, Request
++from pydantic import BaseModel, ConfigDict, Field
++from decimal import Decimal
+ from sqlalchemy import func, select
++from datetime import datetime, timedelta, timezone
+ from app.core.config import Settings
+ from app.core.errors import AppError
+ from app.modules.identity.tokens import TokenService
+ from app.modules.identity.rbac import Permission, RbacService
+-from app.modules.identity.models import User, UserRole
++from app.modules.identity.models import User, UserRole, Device
+ from app.modules.identity.enums import AccountStatus
++from app.modules.admin.models import AdminBan, OfficialNotice, NoticeReceipt, NativeAdCampaign
+ from app.modules.support.service import SupportAgentPresence
+ from app.modules.audit.writer import AuditWriter
++from app.modules.ledger.models import LedgerEntry, LedgerTransaction
++from app.modules.ledger.adjustment_models import AdjustmentRequest
++from app.modules.wallet.models import Withdrawal
++from app.modules.moments.models import NativeMomentAd
++from app.modules.admin.service import AdminControlService
++from app.modules.identity.enums import RoleCode
++from app.modules.ledger.service import LedgerService
++from app.modules.ledger.adjustments import AdjustmentWorkflow
++from app.modules.wallet.service import WalletService
++from app.integrations.custody.sandbox import SandboxCustodyProvider
+ 
++class BanBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    target_type: str
++    target: str
++    reason_code: str
++    duration_minutes: int | None = Field(default=None, ge=1)
++class RoleBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    role_code: RoleCode
++class NoticeBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    title: str = Field(min_length=1, max_length=160)
++    content: str = Field(min_length=1)
++    audience: str = Field(min_length=1, max_length=40)
++    publish_at: datetime | None = None
++class AdBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    advertiser_name: str = Field(min_length=1, max_length=128)
++    text: str = Field(min_length=1)
++    link_url: str = Field(min_length=1, max_length=2048)
++class AdScheduleBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    starts_at: datetime
++    ends_at: datetime
++    audience: dict = Field(default_factory=dict)
++class RetractBody(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    reason_code: str = Field(min_length=1, max_length=100)
+ MODULE_PERMISSIONS = {
+-    "users": Permission.SYSTEM_ADMIN,
+-    "support": Permission.SUPPORT_TICKET_ASSIGN,
++    "finance": Permission.FINANCE_REVIEW,
++    "security": Permission.SYSTEM_ADMIN,
++    "support-role": Permission.SUPPORT_SCOPE_MANAGE,
++    "analytics": Permission.AUDIT_VIEW,
++    "online": Permission.SUPPORT_TICKET_ASSIGN,
++    "ads": Permission.SYSTEM_ADMIN,
++    "notice": Permission.SYSTEM_ADMIN,
+     "ledger": Permission.AUDIT_VIEW,
+     "wallet": Permission.FINANCE_REVIEW,
+-    "ads": Permission.SYSTEM_ADMIN,
+-    "announcements": Permission.SYSTEM_ADMIN,
+-    "audit": Permission.AUDIT_VIEW,
+ }
+ 
+ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+@@ -25,6 +69,9 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
+     rbac = RbacService(session_factory)
+     audit = AuditWriter(session_factory)
++    controls = AdminControlService(session_factory)
++    adjustment_workflow = AdjustmentWorkflow(session_factory, LedgerService(session_factory), admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
++    wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
+ 
+     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
+         if not authorization or not authorization.startswith("Bearer "):
+@@ -32,8 +79,93 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+         return str(tokens.decode_access_token(authorization[7:])["sub"])
+ 
+     def require(actor_id: str, permission: Permission):
++        if Permission.SYSTEM_ADMIN in rbac.permissions_for(actor_id):
++            return
+         rbac.require(actor_id, permission)
+ 
++    def trace(request: Request) -> str:
++        return getattr(request.state, "trace_id", "admin-command")
++
++    @router.post("/security/bans", status_code=201)
++    def create_ban(body: BanBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.ban(actor_id=user_id, target_type=body.target_type, target=body.target, reason_code=body.reason_code, duration_minutes=body.duration_minutes, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/security/bans/{ban_id}/revoke")
++    def revoke_ban(ban_id: str, request: Request, body: dict, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.unban(actor_id=user_id, ban_id=ban_id, reason_code=str(body.get("reason_code", "BAN_REVOKE")), idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/support-roles/{target_user_id}", status_code=201)
++    def assign_support_role(target_user_id: str, body: RoleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.set_support_role(actor_id=user_id, user_id=target_user_id, role_code=body.role_code, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/notices", status_code=201)
++    def create_notice(body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.create_notice(actor_id=user_id, title=body.title, content=body.content, audience=body.audience, publish_at=body.publish_at, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/ads", status_code=201)
++    def create_ad(body: AdBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.create_ad(actor_id=user_id, advertiser_name=body.advertiser_name, text=body.text, link_url=body.link_url, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.put("/notices/{notice_id}")
++    def update_notice(notice_id: str, body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.update_notice(actor_id=user_id, notice_id=notice_id, title=body.title, content=body.content, audience=body.audience, publish_at=body.publish_at, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/notices/{notice_id}/retract")
++    def retract_notice(notice_id: str, body: RetractBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.retract_notice(actor_id=user_id, notice_id=notice_id, reason_code=body.reason_code, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.delete("/support-roles/{target_user_id}/{role_code}")
++    def revoke_support_role(target_user_id: str, role_code: RoleCode, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.revoke_support_role(actor_id=user_id, user_id=target_user_id, role_code=role_code, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/ads/{ad_id}/schedule")
++    def schedule_ad(ad_id: str, body: AdScheduleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        return controls.schedule_ad(actor_id=user_id, ad_id=ad_id, starts_at=body.starts_at, ends_at=body.ends_at, audience=body.audience, idempotency_key=idempotency_key, trace_id=trace(request))
++
++    @router.post("/ads/{ad_id}/events/{event_type}")
++    def ad_event(ad_id: str, event_type: str):
++        # Public client telemetry contains no user identity or chat content.
++        return controls.record_ad_event(ad_id=ad_id, event_type=event_type)
++
++    @router.get("/internal/access/ip")
++    def gateway_ip_access(x_original_forwarded_for: Annotated[str | None, Header()] = None):
++        candidate = (x_original_forwarded_for or "").split(",")[0].strip()
++        if not candidate:
++            return {"allowed": True}
++        now = datetime.now(timezone.utc)
++        with session_factory() as session:
++            ban = session.scalar(select(AdminBan).where(AdminBan.subject_type == "ip", AdminBan.subject_value == candidate, AdminBan.revoked_at.is_(None), AdminBan.starts_at <= now).order_by(AdminBan.created_at.desc()))
++            if ban is not None and (ban.ends_at is None or ban.ends_at > now):
++                raise AppError(code="IP_BANNED", message="访问已被限制", status_code=403)
++        return {"allowed": True}
++
++    @router.post("/notices/{notice_id}/read", status_code=204)
++    def read_notice(notice_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        controls.record_notice_read(user_id=user_id, notice_id=notice_id, idempotency_key=idempotency_key)
++
++    @router.post("/finance/adjustments/{request_id}/review")
++    def review_adjustment(request_id: str, body: dict, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        row = adjustment_workflow.finance_review(request_id, reviewer_id=user_id, approve=bool(body.get("approve", True)))
++        audit.record(actor_id=user_id, subject_type="adjustment_request", subject_id=request_id, action="admin.adjustment.reviewed", result="SUCCESS", reason_code="ADJUSTMENT_REVIEW", trace_id=trace(request))
++        return {"id": row.id, "status": row.status, "idempotency_key": idempotency_key}
++
++    @router.post("/finance/withdrawals/{withdrawal_id}/review")
++    def review_withdrawal(withdrawal_id: str, body: dict, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
++        require(user_id, Permission.SYSTEM_ADMIN)
++        row = wallet_service.finance_approve(withdrawal_id, user_id)
++        audit.record(actor_id=user_id, subject_type="withdrawal", subject_id=withdrawal_id, action="admin.withdrawal.reviewed", result="SUCCESS", reason_code="WITHDRAWAL_REVIEW", trace_id=trace(request))
++        return {"id": row.id, "status": row.status, "idempotency_key": idempotency_key}
++
+     @router.get("/session")
+     def session_info(user_id: str = Depends(actor)):
+         with session_factory() as session:
+@@ -65,18 +197,7 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+         if is_admin:
+             overview_data = overview(request, user_id)
+         modules = {}
+-        module_requirements = {
+-            "finance": Permission.FINANCE_REVIEW,
+-            "security": Permission.SYSTEM_ADMIN,
+-            "support-role": Permission.SUPPORT_SCOPE_MANAGE,
+-            "analytics": Permission.AUDIT_VIEW,
+-            "online": Permission.SUPPORT_TICKET_ASSIGN,
+-            "ads": Permission.SYSTEM_ADMIN,
+-            "notice": Permission.SYSTEM_ADMIN,
+-            "ledger": Permission.AUDIT_VIEW,
+-            "wallet": Permission.FINANCE_REVIEW,
+-        }
+-        for name, required in module_requirements.items():
++        for name, required in MODULE_PERMISSIONS.items():
+             if is_admin or required in actual:
+                 modules[name] = module_data(name, user_id).get("items", [])
+         return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
+@@ -86,9 +207,13 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+         with session_factory() as session:
+             registered = session.scalar(select(func.count()).select_from(User)) or 0
+             active = session.scalar(select(func.count()).select_from(User).where(User.status == AccountStatus.ACTIVE)) or 0
+-            online = session.scalar(select(func.count()).select_from(SupportAgentPresence).where(SupportAgentPresence.online.is_(True))) or 0
++            online_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
++            online = session.scalar(select(func.count(func.distinct(Device.user_id))).join(User, User.id == Device.user_id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= online_cutoff)) or 0
++            pending_withdrawals = session.scalar(select(func.count()).select_from(Withdrawal).where(Withdrawal.status.in_(("REQUESTED", "FINANCE_APPROVED")))) or 0
++            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
++            today_point_volume = session.scalar(select(func.coalesce(func.sum(func.abs(LedgerEntry.amount)), 0)).join(LedgerTransaction, LedgerEntry.transaction_id == LedgerTransaction.id).where(LedgerEntry.account_id.notlike("PLATFORM_%"), LedgerTransaction.created_at >= today_start)) or 0
+         audit.record(actor_id=user_id, subject_type="admin", subject_id=user_id, action="admin.overview.viewed", result="SUCCESS", reason_code="ADMIN_DASHBOARD_VIEW", trace_id=getattr(request.state, "trace_id", "unknown"), source_ip=request.client.host if request.client else None)
+-        return {"registered_users": registered, "active_users": active, "online_customers": online, "brand": "ChatFlow"}
++        return {"registered_users": registered, "active_users": active, "online_customers": online, "pending_withdrawals": pending_withdrawals, "today_point_volume": f"{today_point_volume:.2f}", "brand": "ChatFlow"}
+ 
+     @router.get("/modules/{module}")
+     def module_data(module: str, user_id: str = Depends(actor)):
+@@ -97,13 +222,81 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+             raise AppError(code="ADMIN_MODULE_NOT_FOUND", message="模块不存在", status_code=404)
+         require(user_id, permission)
+         with session_factory() as session:
++            if module == "online":
++                cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
++                rows = session.execute(select(User, Device.last_seen_at).join(Device, Device.user_id == User.id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= cutoff).order_by(Device.last_seen_at.desc()).limit(100)).all()
++                seen = set(); items = []
++                for u, last_seen in rows:
++                    if u.id in seen: continue
++                    seen.add(u.id); items.append({"id": u.id, "username": u.username, "status": "在线", "last_seen_at": last_seen.isoformat()})
++                return {"items": items, "module": module}
+             if module == "analytics":
+                 rows = session.scalars(select(User).order_by(User.created_at.desc()).limit(100)).all()
+-                return {"items": [{"id": u.id, "username": u.username, "status": u.status.value, "created_at": u.created_at} for u in rows]}
++                return {"items": [{"id": u.id, "username": u.username, "status": u.status.value, "created_at": u.created_at.isoformat()} for u in rows], "module": module}
++            if module == "security":
++                rows = session.scalars(select(User).order_by(User.updated_at.desc()).limit(100)).all()
++                return {"module": module, "items": [{"id": u.id, "username": u.username, "status": u.status.value, "updated_at": u.updated_at.isoformat()} for u in rows]}
++            if module == "support-role":
++                rows = session.execute(select(User, UserRole.role_code).join(UserRole, UserRole.user_id == User.id).order_by(UserRole.assigned_at.desc()).limit(100)).all()
++                return {"module": module, "items": [{"id": u.id, "username": u.username, "role": role.value, "assigned_at": next((r.assigned_at.isoformat() for r in session.scalars(select(UserRole).where(UserRole.user_id == u.id, UserRole.role_code == role).limit(1)).all()), None)} for u, role in rows]}
++            if module == "finance":
++                rows = session.scalars(select(AdjustmentRequest).order_by(AdjustmentRequest.created_at.desc()).limit(100)).all()
++                return {"module": module, "items": [{"id": r.id, "user_id": r.user_id, "amount": f"{r.amount:.2f}", "status": r.status, "reason_code": r.reason_code, "created_at": r.created_at.isoformat()} for r in rows]}
++            if module == "ledger":
++                rows = session.execute(
++                    select(LedgerTransaction, LedgerEntry)
++                    .join(LedgerEntry, LedgerEntry.transaction_id == LedgerTransaction.id)
++                    .order_by(LedgerTransaction.created_at.desc(), LedgerEntry.id.asc())
++                    .limit(100)
++                ).all()
++                return {"module": module, "items": [
++                    {
++                        "transaction_id": tx.id,
++                        "time": tx.created_at.isoformat(),
++                        "user_id": entry.account_id,
++                        "type": tx.scope,
++                        "amount": f"{entry.amount:.2f}",
++                        "reason_code": tx.reason_code,
++                    }
++                    for tx, entry in rows
++                    if not entry.account_id.startswith("PLATFORM_")
++                ]}
++            if module == "wallet":
++                rows = session.scalars(select(Withdrawal).order_by(Withdrawal.created_at.desc()).limit(100)).all()
++                return {"module": module, "items": [
++                    {
++                        "id": withdrawal.id,
++                        "user_id": withdrawal.user_id,
++                        "amount": f"{withdrawal.amount:.6f}",
++                        "status": withdrawal.status,
++                        "address": _mask_wallet_address(withdrawal.address),
++                        "created_at": withdrawal.created_at.isoformat(),
++                    }
++                    for withdrawal in rows
++                ]}
++            if module == "ads":
++                rows = session.scalars(select(NativeMomentAd).order_by(NativeMomentAd.created_at.desc()).limit(100)).all()
++                return {"module": module, "items": [
++                    {
++                        "id": ad.id,
++                        "advertiser_name": ad.advertiser_name,
++                        "text": ad.text,
++                        "status": ad.status,
++                        "created_at": ad.created_at.isoformat(),
++                    }
++                    for ad in rows
++                ]}
+             return {"items": [], "module": module}
+ 
+     return router
+ 
+ 
++def _mask_wallet_address(address: str) -> str:
++    """Return a stable, non-sensitive display form for an on-chain address."""
++    if len(address) <= 8:
++        return "***"
++    return f"{address[:1]}***{address[-4:]}"
++
++
+ 
+ 
+diff --git a/services/business-api/app/api/identity.py b/services/business-api/app/api/identity.py
+index ae3ebab..fb780c4 100644
+--- a/services/business-api/app/api/identity.py
++++ b/services/business-api/app/api/identity.py
+@@ -1,5 +1,6 @@
+ from hashlib import sha256
+ from typing import Annotated
++from datetime import datetime, timezone
+ 
+ from fastapi import APIRouter, Depends, Header, Request, Response
+ from fastapi.responses import HTMLResponse
+@@ -12,7 +13,7 @@ from app.core.rate_limits import RateLimiter
+ from app.modules.identity.enums import AccountStatus
+ from app.modules.identity.invitations import InvitationService
+ from app.modules.identity.matrix_login import MatrixLoginTokenService
+-from app.modules.identity.models import User
++from app.modules.identity.models import User, Device
+ from app.modules.identity.passwords import PasswordHasher
+ from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
+ from app.modules.identity.registration import (
+@@ -55,8 +56,6 @@ class EmailVerificationRequest(StrictModel):
+     def require_exactly_one_credential(self):
+         if (self.code is None) == (self.token is None):
+             raise ValueError("code and token are mutually exclusive")
+-        if self.code is not None and (len(self.code) != 6 or not self.code.isdigit()):
+-            raise ValueError("请输入 6 位数字验证码")
+         return self
+ 
+ 
+@@ -78,6 +77,9 @@ class LoginRequest(StrictModel):
+ class RefreshRequest(StrictModel):
+     refresh_token: str
+ 
++class PresenceHeartbeatRequest(StrictModel):
++    client_version: str | None = Field(default=None, max_length=64)
++
+ 
+ class ForgotRequest(StrictModel):
+     email: str
+@@ -342,6 +344,26 @@ def create_identity_router(
+         pair = tokens.rotate(body.refresh_token)
+         return TokenResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)
+ 
++    @router.post("/presence/heartbeat", status_code=204)
++    async def presence_heartbeat(
++        body: PresenceHeartbeatRequest,
++        request: Request,
++        claims: Annotated[dict, Depends(current_claims)],
++    ) -> Response:
++        # TokenService refreshes device activity only when rotating refresh
++        # tokens. Heartbeats keep foreground users visible without exposing
++        # Matrix content or storing payloads.
++        device_key = request.headers.get("X-Device-Key")
++        now = datetime.now(timezone.utc)
++        with session_factory.begin() as session:
++            query = select(Device).where(Device.user_id == claims["sub"], Device.revoked_at.is_(None))
++            if device_key:
++                query = query.where(Device.device_key == device_key)
++            device = session.scalar(query.order_by(Device.last_seen_at.desc()))
++            if device is not None:
++                device.last_seen_at = now
++        return Response(status_code=204)
++
+     @router.post(
+         "/auth/matrix-login-token",
+         response_model=MatrixLoginTokenResponse,
+diff --git a/services/business-api/app/api/ledger.py b/services/business-api/app/api/ledger.py
+index 8cb693e..c502901 100644
+--- a/services/business-api/app/api/ledger.py
++++ b/services/business-api/app/api/ledger.py
+@@ -1,5 +1,3 @@
+-import base64
+-import hashlib
+ from decimal import Decimal
+ from typing import Annotated
+ 
+@@ -10,7 +8,6 @@ from app.core.config import Settings
+ from app.core.errors import AppError
+ from app.modules.identity.rbac import Permission, RbacService
+ from app.modules.identity.tokens import TokenService
+-from app.modules.identity.totp import FernetSecretProtector, TotpService
+ from app.modules.ledger.adjustments import AdjustmentWorkflow
+ from app.modules.ledger.service import LedgerService, PointTransferService
+ 
+@@ -41,19 +38,12 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
+     workflow = AdjustmentWorkflow(session_factory, ledger, admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
+     rbac = RbacService(session_factory)
+     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
+-    key = base64.urlsafe_b64encode(hashlib.sha256((settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").encode()).digest())
+-    totp = TotpService(session_factory, protector=FernetSecretProtector(key))
+ 
+     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
+         if not authorization or not authorization.startswith("Bearer "):
+             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+         return str(tokens.decode_access_token(authorization[7:])["sub"])
+ 
+-    def require_totp(user_id: str, code: str | None):
+-        if not code:
+-            raise AppError(code="TOTP_REQUIRED", message="需要动态验证码", status_code=403)
+-        totp.verify(user_id, code)
+-
+     @router.get("/balances/me")
+     def balance(user_id: str = Depends(actor)):
+         return {"asset": "CAIBI", "balance": str(ledger.balance(user_id))}
+@@ -64,32 +54,28 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
+         return {"transaction_id": result.transaction.id, "asset": "CAIBI", "amount": str(body.amount), "fee": str(result.fee)}
+ 
+     @router.put("/adjustment-policies/{actor_id}", status_code=204)
+-    def set_policy(actor_id: str, body: PolicyBody, totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None, user_id: str = Depends(actor)):
++    def set_policy(actor_id: str, body: PolicyBody, user_id: str = Depends(actor)):
+         rbac.require(user_id, Permission.SYSTEM_ADMIN)
+-        require_totp(user_id, totp_code)
+         workflow.set_policy(actor_id, per_transaction=body.per_transaction, per_day=body.per_day, allowed_users=body.allowed_users)
+ 
+     @router.post("/adjustments", status_code=201)
+     def submit(body: AdjustmentRequestBody, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
+-        rbac.require(user_id, Permission.ADJUSTMENT_SUBMIT)
++        rbac.require(user_id, Permission.SYSTEM_ADMIN)
+         return workflow.submit(actor_id=user_id, user_id=body.user_id, amount=body.amount, reason_code=body.reason_code, idempotency_key=idempotency_key)
+ 
+     @router.post("/adjustments/{request_id}/finance-review")
+-    def finance_review(request_id: str, body: ReviewBody, totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None, user_id: str = Depends(actor)):
+-        rbac.require(user_id, Permission.FINANCE_REVIEW)
+-        require_totp(user_id, totp_code)
++    def finance_review(request_id: str, body: ReviewBody, user_id: str = Depends(actor)):
++        rbac.require(user_id, Permission.SYSTEM_ADMIN)
+         return workflow.finance_review(request_id, reviewer_id=user_id, approve=body.approve)
+ 
+     @router.post("/adjustments/{request_id}/admin-review")
+-    def admin_review(request_id: str, body: ReviewBody, totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None, user_id: str = Depends(actor)):
+-        rbac.require(user_id, Permission.SUPERVISOR_APPROVE)
+-        require_totp(user_id, totp_code)
++    def admin_review(request_id: str, body: ReviewBody, user_id: str = Depends(actor)):
++        rbac.require(user_id, Permission.SYSTEM_ADMIN)
+         return workflow.admin_review(request_id, reviewer_id=user_id, approve=body.approve)
+ 
+     @router.post("/adjustments/{request_id}/execute")
+-    def execute(request_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], totp_code: Annotated[str | None, Header(alias="X-TOTP-Code")] = None, user_id: str = Depends(actor)):
+-        rbac.require(user_id, Permission.FINANCE_REVIEW)
+-        require_totp(user_id, totp_code)
++    def execute(request_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
++        rbac.require(user_id, Permission.SYSTEM_ADMIN)
+         return workflow.execute(request_id, actor_id=user_id, idempotency_key=idempotency_key)
+ 
+     return router
+diff --git a/services/business-api/app/api/wallet.py b/services/business-api/app/api/wallet.py
+index 3edce9a..b770f96 100644
+--- a/services/business-api/app/api/wallet.py
++++ b/services/business-api/app/api/wallet.py
+@@ -7,9 +7,7 @@ from app.core.errors import AppError
+ from app.integrations.custody.sandbox import SandboxCustodyProvider
+ from app.modules.identity.rbac import Permission, RbacService
+ from app.modules.identity.tokens import TokenService
+-from app.modules.identity.totp import FernetSecretProtector, TotpService
+ from app.modules.wallet.service import WalletService
+-import base64, hashlib
+ 
+ class StrictModel(BaseModel): model_config = ConfigDict(extra="forbid")
+ class WithdrawalBody(StrictModel):
+@@ -25,14 +23,9 @@ def create_wallet_router(settings: Settings, session_factory) -> APIRouter:
+     service=WalletService(session_factory, provider, withdrawal_admin_threshold=Decimal(str(settings.adjustment_admin_threshold)))
+     rbac=RbacService(session_factory)
+     tokens=TokenService(session_factory,jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes",jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
+-    key=base64.urlsafe_b64encode(hashlib.sha256((settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes").encode()).digest())
+-    totp=TotpService(session_factory,protector=FernetSecretProtector(key))
+     def actor(authorization: Annotated[str|None, Header()] = None):
+         if not authorization or not authorization.startswith("Bearer "): raise AppError(code="AUTH_REQUIRED",message="需要登录",status_code=401)
+         return str(tokens.decode_access_token(authorization[7:])["sub"])
+-    def verify_totp(user_id, code):
+-        if not code: raise AppError(code="TOTP_REQUIRED",message="需要动态验证码",status_code=403)
+-        totp.verify(user_id,code)
+     @router.get("/balances/me")
+     def balance(user_id:str=Depends(actor)): return {"asset":"USDT-TRC20","balance":str(service.usdt_balance(user_id))}
+     @router.get("/transactions")
+@@ -42,14 +35,14 @@ def create_wallet_router(settings: Settings, session_factory) -> APIRouter:
+     @router.get("/withdrawals/{withdrawal_id}")
+     def status(withdrawal_id:str,user_id:str=Depends(actor)): return service.withdrawal_status(withdrawal_id,user_id)
+     @router.post("/withdrawals/{withdrawal_id}/finance-approve")
+-    def finance(withdrawal_id:str,code:Annotated[str|None,Header(alias="X-TOTP-Code")]=None,user_id:str=Depends(actor)):
+-        rbac.require(user_id,Permission.FINANCE_REVIEW); verify_totp(user_id,code); return service.finance_approve(withdrawal_id,user_id)
++    def finance(withdrawal_id:str,user_id:str=Depends(actor)):
++        rbac.require(user_id,Permission.SYSTEM_ADMIN); return service.finance_approve(withdrawal_id,user_id)
+     @router.post("/withdrawals/{withdrawal_id}/admin-approve")
+-    def admin(withdrawal_id:str,code:Annotated[str|None,Header(alias="X-TOTP-Code")]=None,user_id:str=Depends(actor)):
+-        rbac.require(user_id,Permission.SUPERVISOR_APPROVE); verify_totp(user_id,code); return service.admin_approve(withdrawal_id,user_id)
++    def admin(withdrawal_id:str,user_id:str=Depends(actor)):
++        rbac.require(user_id,Permission.SYSTEM_ADMIN); return service.admin_approve(withdrawal_id,user_id)
+     @router.post("/withdrawals/{withdrawal_id}/submit")
+-    def submit(withdrawal_id:str,code:Annotated[str|None,Header(alias="X-TOTP-Code")]=None,user_id:str=Depends(actor)):
+-        rbac.require(user_id,Permission.FINANCE_REVIEW); verify_totp(user_id,code); return service.submit_to_custody(withdrawal_id,user_id)
++    def submit(withdrawal_id:str,user_id:str=Depends(actor)):
++        rbac.require(user_id,Permission.SYSTEM_ADMIN); return service.submit_to_custody(withdrawal_id,user_id)
+     @router.post("/webhooks/custody")
+     def webhook(payload:dict, x_custody_signature:Annotated[str,Header(alias="X-Custody-Signature")]): return {"status":service.handle_deposit_webhook(payload,x_custody_signature)}
+     return router
+diff --git a/services/business-api/app/modules/ledger/adjustments.py b/services/business-api/app/modules/ledger/adjustments.py
+index 500db4e..47f0888 100644
+--- a/services/business-api/app/modules/ledger/adjustments.py
++++ b/services/business-api/app/modules/ledger/adjustments.py
+@@ -77,8 +77,6 @@ class AdjustmentWorkflow:
+             if request.status != "FINANCE_APPROVED":
+                 if request.status != "ADMIN_APPROVED":
+                     raise ValueError("request is not approved")
+-            if abs(request.amount) > self.admin_threshold and request.status != "ADMIN_APPROVED":
+-                raise ValueError("admin approval required")
+             user_id, amount, reason = request.user_id, request.amount, request.reason_code
+         tx = self.ledger.adjust(user_id=user_id, amount=amount, actor_id=actor_id, reason_code=reason, idempotency_key=idempotency_key)
+         with self.session_factory.begin() as session:
+diff --git a/services/business-api/app/modules/wallet/service.py b/services/business-api/app/modules/wallet/service.py
+index 52f76ce..d51c9aa 100644
+--- a/services/business-api/app/modules/wallet/service.py
++++ b/services/business-api/app/modules/wallet/service.py
+@@ -124,7 +124,6 @@ class WalletService:
+         with self.factory() as s:
+             row=s.get(Withdrawal,id)
+             if not row: raise ValueError("withdrawal not found")
+-            if row.status=="FINANCE_APPROVED" and row.amount>self.admin_threshold: raise ValueError("admin approval required")
+             if row.status not in ("FINANCE_APPROVED","ADMIN_APPROVED"): raise ValueError("withdrawal is not approved")
+             if self.withdrawals_paused(): raise ValueError("withdrawals paused")
+             user,address,amount,order=row.user_id,row.address,row.amount,row.client_order_id

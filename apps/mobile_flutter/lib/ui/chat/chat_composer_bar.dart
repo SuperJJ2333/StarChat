@@ -14,6 +14,8 @@ final class ChatComposerBar extends WeChatComposer {
     super.focusNode,
     super.panel,
     super.onSubmitted,
+    super.voiceField,
+    super.onInputTap,
   });
 
   /// Stable design-contract keys implemented by [WeChatComposer].

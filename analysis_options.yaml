@@ -1,0 +1,7 @@
+# Repository-wide analyzer scope. Verification artifacts under docs/ and
+# stacked-worktree checkouts contain copies of the app that must not be
+# analyzed as part of the root context.
+analyzer:
+  exclude:
+    - docs/**
+    - .worktrees/**

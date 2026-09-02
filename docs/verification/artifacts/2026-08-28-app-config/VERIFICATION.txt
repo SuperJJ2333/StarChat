@@ -1,0 +1,18 @@
+# APP default endpoint regression record
+
+## Error
+A release APK retained development defaults `http://127.0.0.1:8082` and `http://127.0.0.1:8008`. On Android, loopback points to the device itself, causing login to surface “网络未连接” despite validated Wi-Fi and a healthy production API.
+
+## Prevention
+- Release defaults must use `https://liuhetong888.com` for both Business API and Matrix.
+- Local/test execution must opt in with `--dart-define=LIUHETONG_BUSINESS_API_URL=...` and `--dart-define=LIUHETONG_MATRIX_HOMESERVER=...`.
+- `apps/mobile_flutter/test/core/app_config_test.dart` is the release-default regression gate.
+- Release APK installation requires an emulator HTTPS health probe before sign-off.
+
+BASELINE command: `flutter test test/core/app_config_test.dart`
+BASELINE result: exit 1; actual Business API default `http://127.0.0.1:8082`.
+MODIFIED command: `flutter test test/core/app_config_test.dart`
+MODIFIED result: exit 0; 1 passed.
+ROLLBACK command: `Copy-Item MODIFIED_FILE app_config.rollback.dart; replace production defaults with baseline loopback values; flutter test test/core/app_config_test.dart`
+ROLLBACK result: exit 1; regression test detects loopback defaults.
+Restored behavior: production defaults resolve to the public HTTPS endpoint; test/dev can still override with dart defines.

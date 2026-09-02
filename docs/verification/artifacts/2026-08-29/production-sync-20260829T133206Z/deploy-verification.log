@@ -1,0 +1,18 @@
+DEPLOYED_SHA256=
+BACKUP=/opt/starchat/backups/20260829T133206Z
+--- services ---
+NAME                         IMAGE                      COMMAND                  SERVICE           CREATED          STATUS                    PORTS
+starchat-business-api-1      starchat-business-api      "sh -c 'alembic -c a…"   business-api      11 minutes ago   Up 11 minutes (healthy)   127.0.0.1:8082->8082/tcp
+starchat-business-worker-1   starchat-business-worker   "python main.py"         business-worker   11 minutes ago   Up 11 minutes (healthy)   
+starchat-gateway-1           nginx:1.27.5-alpine        "/docker-entrypoint.…"   gateway           8 minutes ago    Up About a minute         127.0.0.1:9080->80/tcp, 127.0.0.1:9443->443/tcp
+--- migration ---
+0028_notice_receipts_ads (head)
+--- schema ---
+TOTP_HEADER_PRESENT= False
+--- auth probe ---
+HTTP_STATUS=401
+{"error":{"code":"AUTH_REQUIRED","message":"需要登录","trace_id":"77464d8f9d384b3c982d4249397ee5cc","fields":[]}}
+--- gateway config ---
+--- page ---
+<title>ChatFlow 畅聊 · 管理后台</title>
+DEPLOY_EXIT=0

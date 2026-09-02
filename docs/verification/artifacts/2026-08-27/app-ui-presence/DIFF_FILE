@@ -1,0 +1,1 @@
+Changes: BusinessApiClient session/device-key heartbeat; ConversationReadState bridge; avatar first-paint fallback; _openRoom try/finally guard; regression tests.

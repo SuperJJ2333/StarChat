@@ -1,24 +1,23 @@
 final class MomentAuthor {
-  const MomentAuthor(
-      {required this.userId,
-      required this.username,
-      required this.nickname,
-      this.remark,
-      required this.displayName,
-      this.avatarUrl});
+  const MomentAuthor({
+    required this.userId,
+    required this.username,
+    required this.nickname,
+    required this.displayName,
+    this.avatarUrl,
+  });
+
+  /// 备注隐私红线：作者展示只取服务端主昵称投影，绝不读取 remark 字段。
   factory MomentAuthor.fromJson(Map<String, dynamic> json) => MomentAuthor(
       userId: json['user_id'].toString(),
       username: json['username']?.toString() ?? '',
       nickname: json['nickname']?.toString() ?? '',
-      remark: json['remark']?.toString(),
       displayName: json['display_name']?.toString() ??
-          json['remark']?.toString() ??
           json['nickname']?.toString() ??
           json['username']?.toString() ??
           '',
       avatarUrl: json['avatar_url']?.toString());
   final String userId, username, nickname, displayName;
-  final String? remark;
   final String? avatarUrl;
 }
 
@@ -56,7 +55,6 @@ final class MomentItem {
       required this.createdAt,
       this.liked = false,
       this.likeCount = 0,
-      this.remark,
       this.likeUsers = const [],
       this.comments = const [],
       this.kind = 'MOMENT',
@@ -88,7 +86,6 @@ final class MomentItem {
             DateTime.now(),
         liked: json['viewer_has_liked'] == true,
         likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
-        remark: json['author']?['remark']?.toString(),
         likeUsers: (json['like_users'] as List? ?? const [])
             .map((v) =>
                 MomentAuthor.fromJson(Map<String, dynamic>.from(v as Map)))
@@ -106,7 +103,6 @@ final class MomentItem {
   final DateTime createdAt;
   final bool liked;
   final int likeCount;
-  final String? remark;
   final String? adLink;
   MomentItem copyWith({
     bool? liked,
@@ -121,7 +117,6 @@ final class MomentItem {
           createdAt: createdAt,
           liked: liked ?? this.liked,
           likeCount: likeCount ?? this.likeCount,
-          remark: remark,
           likeUsers: likeUsers,
           comments: comments ?? this.comments,
           kind: kind,

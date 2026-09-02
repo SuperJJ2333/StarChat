@@ -24,6 +24,8 @@ abstract final class ChangliaoIcons {
   static const IconData settings = CupertinoIcons.settings;
   static const IconData wallet = CupertinoIcons.creditcard;
   static const IconData gift = CupertinoIcons.gift;
+  static const IconData transfer = CupertinoIcons.money_dollar_circle;
+  static const IconData transferFilled = CupertinoIcons.money_dollar_circle_fill;
   static const IconData add = CupertinoIcons.add;
   static const IconData confirm = CupertinoIcons.check_mark;
   static const IconData retry = CupertinoIcons.refresh;

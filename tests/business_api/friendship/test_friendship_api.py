@@ -66,7 +66,7 @@ async def test_friend_requests_and_search_return_business_profile_projection(ctx
         requests = await client.get('/api/v1/friends/requests', headers=bearer(settings, 'u2'))
         request_item = requests.json()['items'][0]
         assert 'requester_id' not in request_item
-        assert request_item == {'id': created.json()['id'], 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'message': '你好', 'status': 'PENDING', 'requested_at': request_item['requested_at']}; assert request_item['requested_at']
+        assert request_item == {'id': created.json()['id'], 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test', 'message': '你好', 'status': 'PENDING', 'requested_at': request_item['requested_at']}; assert request_item['requested_at']
         search = await client.get('/api/v1/users/search?q=alice', headers=bearer(settings, 'u2'))
         assert search.json()['items'] == [{'user_id': 'u1', 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test', 'relationship_state': 'NONE'}]
 
@@ -122,14 +122,18 @@ async def test_contact_tag_can_be_renamed_by_its_owner(ctx):
         assert (await client.get('/api/v1/contact-tags', headers=bearer(settings, 'u1'))).json()['items'][0]['name'] == '项目组'
 
 @pytest.mark.asyncio
-async def test_friend_request_prevents_pending_and_existing_friend_duplicates(ctx):
+async def test_friend_request_dedups_pending_and_blocks_existing_friends(ctx):
     app, settings = ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
         first = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'pending-1'}, json={'target_user_id': 'u2', 'message': 'first'})
+        # 重复申请：更新同一条待处理记录（内容取最新），不新增记录。
         duplicate = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'pending-2'}, json={'target_user_id': 'u2', 'message': 'second'})
-        assert duplicate.status_code == 409
-        assert duplicate.json()['error']['code'] == 'FRIEND_REQUEST_DUPLICATE'
-        assert duplicate.json()['error']['message'] == '不能重复发送好友请求'
+        assert duplicate.status_code == 201
+        assert duplicate.json()['duplicate'] is True
+        assert duplicate.json()['id'] == first.json()['id']
+        received = await client.get('/api/v1/friends/requests', headers=bearer(settings, 'u2'))
+        pending = [item for item in received.json()['items'] if item['status'] == 'PENDING']
+        assert len(pending) == 1 and pending[0]['message'] == 'second'
         accepted = await client.post(f"/api/v1/friends/requests/{first.json()['id']}/accept", headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'pending-accept'})
         assert accepted.status_code == 200
         friend_duplicate = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'friend-duplicate'}, json={'target_user_id': 'u1'})
@@ -138,7 +142,7 @@ async def test_friend_request_prevents_pending_and_existing_friend_duplicates(ct
 
 
 @pytest.mark.asyncio
-async def test_rejected_request_is_reused_with_latest_request_time(ctx):
+async def test_request_after_reject_shows_as_a_fresh_record(ctx):
     app, settings = ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
         initial = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'reuse-first'}, json={'target_user_id': 'u2', 'message': 'old'})
@@ -146,13 +150,14 @@ async def test_rejected_request_is_reused_with_latest_request_time(ctx):
         assert rejected.status_code == 200
         retried = await client.post('/api/v1/friends/requests', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'reuse-second'}, json={'target_user_id': 'u2', 'message': 'new'})
         assert retried.status_code == 201
-        assert retried.json()['id'] == initial.json()['id']
+        assert retried.json()['duplicate'] is False
+        assert retried.json()['id'] != initial.json()['id']
         requests = await client.get('/api/v1/friends/requests', headers=bearer(settings, 'u2'))
-        item = requests.json()['items'][0]
-        assert item['id'] == initial.json()['id']
-        assert item['message'] == 'new'
-        assert item['status'] == 'PENDING'
-        assert item['requested_at']
+        pending = [item for item in requests.json()['items'] if item['status'] == 'PENDING']
+        assert len(pending) == 1
+        assert pending[0]['id'] == retried.json()['id']
+        assert pending[0]['message'] == 'new'
+        assert pending[0]['requested_at']
 
 @pytest.mark.asyncio
 async def test_search_returns_authoritative_relationship_state(ctx):

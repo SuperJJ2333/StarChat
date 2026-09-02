@@ -17,10 +17,15 @@ certificate, Business API health endpoint, Matrix versions endpoint, and
 Matrix well-known response pass external verification:
 
 ```powershell
-flutter build apk --release `
+flutter build apk --release --split-per-abi --flavor standard `
   --dart-define=LIUHETONG_BUSINESS_API_URL=https://liuhetong888.com `
   --dart-define=LIUHETONG_MATRIX_HOMESERVER=https://liuhetong888.com
 ```
+
+> 2026-09-02 起工程含 Gradle flavor（`standard`=生产，`minimal`=安全审计
+> 诊断构建，见 `docs/ANDROID_SECURITY_AUDIT.md`），Android 构建必须显式
+> `--flavor standard`；不带 flavor 的构建会失败。诊断构建额外使用
+> `--flavor minimal --dart-define=LIUHETONG_IN_APP_UPDATE=false`。
 
 Do not append `/api/v1` to `LIUHETONG_BUSINESS_API_URL`; the typed client owns
 that path. Do not publish an APK containing `localhost`, a LAN address, or an

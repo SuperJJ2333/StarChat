@@ -34,4 +34,19 @@ void main() {
     expect(find.text('聊天记录'), findsOneWidget);
     expect(find.text('项目群'), findsWidgets);
   });
+
+  testWidgets('unified search bar renders the shared nav title without hero',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://example.test'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: GlobalSearchPage(api: api, matrix: null),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('global-search-nav')), findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
+  });
 }

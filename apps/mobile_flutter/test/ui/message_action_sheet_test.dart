@@ -20,7 +20,7 @@ void main() {
       ),
     );
 
-    expect(find.text('添加到表情'), findsOneWidget);
+    expect(find.text('收藏'), findsOneWidget);
     expect(find.text('删除'), findsOneWidget);
     expect(find.text('撤回'), findsOneWidget);
     expect(find.text('转发'), findsNothing);

@@ -137,16 +137,16 @@ void main() {
       (tester) async {
     var momentsOpened = false;
     var caibiOpened = false;
-    var redPacketOpened = false;
     var walletOpened = false;
     final controller = ProfileController(
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
     await tester.pumpWidget(CupertinoApp(
         home: ProfileExperiencePage(
+        onInvite: () {},
+        onQrCode: () {},
             controller: controller,
             onMoments: () => momentsOpened = true,
             onCaibi: () => caibiOpened = true,
-            onRedPacket: () => redPacketOpened = true,
             onWallet: () => walletOpened = true,
             onSettings: () {})));
     await tester.pumpAndSettle();
@@ -156,15 +156,22 @@ void main() {
     expect(find.textContaining('畅聊号：alice'), findsOneWidget);
     expect(find.text('hello'), findsWidgets);
     expect(find.text('朋友圈'), findsOneWidget);
-    expect(find.text('红包'), findsWidgets);
     expect(find.text('钱包'), findsWidgets);
+    expect(find.text('红包'), findsNothing, reason: '“我”页不再提供红包入口');
+    // “二维码”入口：身份卡右上角（微信“我的二维码”样式）。
+    expect(find.byKey(const Key('profile-qr-entry')), findsOneWidget);
+    // 邀请码入口固定存在于“设置”上方（需求：“我”页邀请码入口）。
+    expect(find.byKey(const Key('profile-invite-entry')), findsOneWidget);
+    expect(find.text('邀请码'), findsOneWidget);
+    final inviteTop =
+        tester.getTopLeft(find.byKey(const Key('profile-invite-entry'))).dy;
+    final settingsTop = tester.getTopLeft(find.text('设置')).dy;
+    expect(inviteTop, lessThan(settingsTop), reason: '邀请码入口在“设置”上方');
     await tester.tap(find.text('朋友圈'));
     await tester.tap(find.text('点钻'));
-    await tester.tap(find.text('红包'));
     await tester.tap(find.text('钱包'));
     expect(momentsOpened, isTrue);
     expect(caibiOpened, isTrue);
-    expect(redPacketOpened, isTrue);
     expect(walletOpened, isTrue);
     expect(find.text('设置'), findsOneWidget);
     final settingsLabel = tester.widget<Text>(find.text('设置'));
@@ -242,10 +249,10 @@ void main() {
 
     await tester.pumpWidget(CupertinoApp(
       home: ProfileExperiencePage(
+        onInvite: () {},
         controller: controller,
         onMoments: () {},
         onCaibi: () {},
-        onRedPacket: () {},
         onWallet: () {},
         onSettings: () {},
       ),

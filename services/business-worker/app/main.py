@@ -10,6 +10,7 @@ from app.core.database import create_engine, create_session_factory
 from app.core.outbox import OutboxConsumer
 from app.modules.ledger.service import LedgerService
 from app.modules.redpacket.service import RedPacketService
+from app.modules.transfer.service import ChatTransferService
 from app.integrations.custody.sandbox import SandboxCustodyProvider
 from app.modules.wallet.service import WalletService
 from app.modules.identity.registration import VerificationTokenCodec
@@ -23,6 +24,7 @@ from integrations.email_sender import email_sender_from_environment
 from integrations.avatar_reader import LocalPrivateAvatarReader
 from tasks.identity import IdentityEmailVerificationTask, MatrixProfileSyncTask
 from tasks.redpacket_expiry import RedPacketExpiryTask
+from tasks.chat_transfer_expiry import ChatTransferExpiryTask
 from tasks.wallet import WalletMaintenanceTask
 from tasks.moments import MomentsModerationTask
 from worker import Worker
@@ -70,7 +72,8 @@ def main() -> None:
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
     consumer = OutboxConsumer(session_factory)
-    redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory)))
+    redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total))
+    chat_transfer_expiry = ChatTransferExpiryTask(session_factory, ChatTransferService(session_factory, LedgerService(session_factory)))
     wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(settings.adjustment_admin_threshold))
     wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service)
     moments_moderation = MomentsModerationTask(session_factory)
@@ -112,7 +115,7 @@ def main() -> None:
         handlers=identity_handlers,
         worker_id=os.getenv("WORKER_ID", "business-worker-1"),
         heartbeat_path=os.getenv("WORKER_HEARTBEAT_PATH", "/tmp/liuhetong-worker-heartbeat"),
-        maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), wallet_maintenance.run_once, moments_moderation.run_batch],
+        maintenance_tasks=[lambda: redpacket_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), lambda: chat_transfer_expiry.run_batch(now=datetime.now(timezone.utc), limit=100), wallet_maintenance.run_once, moments_moderation.run_batch],
     )
     try:
         worker.run_forever(
@@ -126,4 +129,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 

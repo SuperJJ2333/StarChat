@@ -145,6 +145,7 @@ void main() {
     await cache.hydrate();
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
+        pendingFriendRequests: ValueNotifier<int>(0),
         api: FakeContactsGateway(),
         identityCache: cache,
       ),
@@ -174,7 +175,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      CupertinoApp(home: ContactsPage(api: IndexedContactsGateway())),
+      CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: IndexedContactsGateway())),
     );
     await tester.pumpAndSettle();
 
@@ -212,7 +213,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      CupertinoApp(home: ContactsPage(api: IndexedContactsGateway())),
+      CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: IndexedContactsGateway())),
     );
     await tester.pumpAndSettle();
 
@@ -296,7 +297,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = FakeContactsGateway();
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: gateway)));
+    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
     expect(find.text('产品小艾'), findsOneWidget);
@@ -442,7 +443,7 @@ void main() {
             ],
           ),
           tabBuilder: (_, __) => CupertinoTabView(
-            builder: (_) => ContactsPage(api: gateway),
+            builder: (_) => ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway),
           ),
         ),
       ),
@@ -463,7 +464,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = FakeContactsGateway();
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: gateway)));
+    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('产品小艾'));
@@ -477,6 +478,7 @@ void main() {
     var messageRequests = 0;
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
+        pendingFriendRequests: ValueNotifier<int>(0),
         api: FakeContactsGateway(),
         onMessage: (_) async => messageRequests++,
       ),
@@ -502,7 +504,7 @@ void main() {
       baseUri: Uri.parse('https://example.test'),
       sessionStore: SecureSessionStore(),
     );
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: api)));
     await tester.pump();
     expect(find.byKey(const Key('contacts-search')), findsOneWidget);
     expect(find.byKey(const Key('contacts-more')), findsOneWidget);

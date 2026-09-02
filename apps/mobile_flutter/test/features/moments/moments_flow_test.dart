@@ -3,9 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_identity_cache.dart';
@@ -60,6 +62,13 @@ Future<BusinessApiClient> momentsApi(
 }
 
 void main() {
+  setUp(() async {
+    // CacheRepository 依赖 SharedPreferences；测试环境需注入 mock，
+    // 否则平台通道永不返回导致 Feed 加载挂起。
+    SharedPreferences.setMockInitialValues({});
+    CacheRepository.resetForTest();
+  });
+
   testWidgets('moments cover renders the signed-in nickname and avatar',
       (tester) async {
     final api = await momentsApi((request) async {

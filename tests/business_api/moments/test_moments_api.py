@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 import jwt, pytest
 from httpx import ASGITransport, AsyncClient
@@ -14,6 +15,9 @@ from app.modules.friendship.models import ContactProfile, ContactTag, Friendship
 class MomentAvatarStorage:
     def signed_read_url(self, object_key, expires_in):
         return f"https://media.example.test/{object_key}?signed=1"
+
+    def resign_read_url(self, token, expires_in):
+        return f"https://media.example.test/{token}?expires_in={expires_in}"
 
 def auth(settings, user):
     now = datetime.now(timezone.utc)
@@ -43,7 +47,6 @@ async def test_public_moment_publish_read_like_comment_search(ctx):
             'user_id': 'u1',
             'username': 'alice',
             'nickname': 'alice',
-            'remark': None,
             'display_name': 'alice',
             'avatar_url': None,
         }
@@ -68,7 +71,8 @@ async def test_public_moment_publish_read_like_comment_search(ctx):
 
 
 @pytest.mark.asyncio
-async def test_identity_projection_keeps_sources_and_uses_viewer_remark(ctx):
+async def test_identity_projection_is_remark_free(ctx):
+    """隐私红线：朋友圈任何投影不得读取或返回好友备注，展示名一律主昵称。"""
     app, settings = ctx
     factory = app.state.session_factory
     with factory.begin() as session:
@@ -106,16 +110,17 @@ async def test_identity_projection_keeps_sources_and_uses_viewer_remark(ctx):
         feed = await client.get(
             '/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2')
         )
-        assert feed.json()['items'][0]['author'] == {
+        author = feed.json()['items'][0]['author']
+        assert author == {
             'user_id': 'u1',
             'username': 'alice_id',
             'nickname': 'Alice',
-            'remark': '项目小爱',
-            'display_name': '项目小爱',
+            'display_name': 'Alice',
             'avatar_url': (
                 'https://media.example.test/avatars/u1/avatar.png?signed=1'
             ),
         }
+        assert 'remark' not in author, '朋友圈响应不得包含备注字段'
         await client.post(
             f'/api/v1/moments/{moment_id}/likes',
             headers={**auth(settings, 'u2'), 'Idempotency-Key': 'identity-like'},
@@ -125,13 +130,12 @@ async def test_identity_projection_keeps_sources_and_uses_viewer_remark(ctx):
             headers={**auth(settings, 'u2'), 'Idempotency-Key': 'identity-comment'},
             json={'text': '评论身份'},
         )
-        assert comment.json()['author']['remark'] is None
         assert comment.json()['author']['display_name'] == 'Bob'
         detail = await client.get(
             f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u1')
         )
-        assert detail.json()['like_users'][0]['display_name'] == '项目小波'
-        assert detail.json()['comments'][0]['author']['display_name'] == '项目小波'
+        assert detail.json()['like_users'][0]['display_name'] == 'Bob'
+        assert detail.json()['comments'][0]['author']['display_name'] == 'Bob'
         refreshed_feed = await client.get(
             '/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u1')
         )
@@ -140,12 +144,19 @@ async def test_identity_projection_keeps_sources_and_uses_viewer_remark(ctx):
             refreshed_feed.json()['items'][0]['comments'][0]['author'][
                 'display_name'
             ]
-            == '项目小波'
+            == 'Bob'
         )
         notifications = await client.get(
             '/api/v1/moments/notifications', headers=auth(settings, 'u1')
         )
-        assert notifications.json()['items'][0]['actor']['display_name'] == '项目小波'
+        assert notifications.json()['items'][0]['actor']['display_name'] == 'Bob'
+        # 全响应脱敏断言：设置者本人之外的视图不得出现备注文字。
+        for payload in (
+            feed.json(), detail.json(), comment.json(),
+            notifications.json(), refreshed_feed.json(),
+        ):
+            assert '项目小爱' not in json.dumps(payload, ensure_ascii=False)
+            assert '项目小波' not in json.dumps(payload, ensure_ascii=False)
 
 @pytest.mark.asyncio
 async def test_detail_reply_unlike_and_author_moderated_delete(ctx):
@@ -231,3 +242,82 @@ async def test_draft_is_private_and_can_be_deleted(ctx):
         assert (await client.get('/api/v1/moments/draft', headers=auth(settings, 'u1'))).json()['image_urls'] == ['cached://1']
         assert (await client.delete('/api/v1/moments/draft', headers=auth(settings, 'u1'))).status_code == 204
         assert (await client.get('/api/v1/moments/draft', headers=auth(settings, 'u1'))).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_with_images_publishes_immediately_and_shows_in_feed(ctx):
+    """带图动态与纯文字一致直接 PUBLISHED 并出现在 feed（历史缺陷：
+    带图被置 PENDING_REVIEW 且无审核放行流程，导致永远不可见）。"""
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post('/api/v1/moments', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'img-1'}, json={'text': '带图动态', 'visibility': 'PUBLIC', 'image_urls': ['https://media.example.test/p1.jpg']})
+        assert created.status_code == 201
+        body = created.json()
+        assert body['text'] == '带图动态'
+        assert body['status'] == 'PUBLISHED'
+        assert body['image_urls'] == ['https://media.example.test/p1.jpg']
+
+        feed = await client.get('/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2'))
+        assert feed.status_code == 200
+        shown = [item for item in feed.json()['items'] if item['id'] == body['id']]
+        assert len(shown) == 1, '带图动态必须出现在好友 feed 中'
+        assert shown[0]['image_urls'] == ['https://media.example.test/p1.jpg']
+
+@pytest.mark.asyncio
+async def test_feed_resigns_moment_media_urls_to_long_ttl(ctx):
+    """X-媒体链接在 feed 输出时动态重签为 7 天长期签名：
+    上传完成时刻的 300s 短签 URL 持久化后必然过期，必须重签救活。"""
+    old_app, settings = ctx
+    app = create_app(
+        settings,
+        session_factory=old_app.state.session_factory,
+        avatar_storage=MomentAvatarStorage(),
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            '/api/v1/moments',
+            headers={**auth(settings, 'u1'), 'Idempotency-Key': 'resign-1'},
+            json={
+                'text': '重签验证',
+                'visibility': 'PUBLIC',
+                'image_urls': [
+                    'https://liuhetong888.com/api/v1/profile/avatar/content/'
+                    'gAAAAABexpired?expires_in=300'
+                ],
+            },
+        )
+        assert created.status_code == 201
+        feed = await client.get(
+            '/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2')
+        )
+        item = next(
+            i for i in feed.json()['items'] if i['id'] == created.json()['id']
+        )
+        url = item['image_urls'][0]
+        assert '?expires_in=604800' in url, 'feed 必须以 7 天 TTL 重新签名'
+        assert 'gAAAAABexpired' in url, '内容令牌透传给存储层（旧数据救活）'
+
+@pytest.mark.asyncio
+async def test_storage_resign_recovers_expired_tokens():
+    """存储层：过期短签令牌可被无时效解密救活并按新 TTL 重签。"""
+    import base64
+    from app.integrations.private_storage import LocalPrivateObjectStorage
+
+    storage = LocalPrivateObjectStorage(
+        root="storage-test-root",
+        signing_secret="test-signing-secret-0123456789",
+        public_base_url="https://liuhetong888.com",
+    )
+    short = storage.signed_read_url("moments/p1.png", 300)
+    token = short.split("/content/")[1].split("?")[0]
+
+    # 等价于解密校验失败后的救援路径：直接以无 TTL 解出对象键重签。
+    revived = storage.resign_read_url(token, 604800)
+
+    assert "expires_in=604800" in revived
+    from urllib.parse import unquote
+
+    object_key = storage._fernet.decrypt(
+        unquote(revived.split("/content/")[1].split("?")[0]).encode("ascii")
+    ).decode("utf-8")
+    assert object_key == "moments/p1.png"

@@ -13,7 +13,7 @@ final class MessageActionSheet extends StatelessWidget {
   final ValueChanged<MessageAction> onSelected;
 
   static const _presentation = <MessageAction, (IconData, String)>{
-    MessageAction.addToEmoji: (CupertinoIcons.star, '添加到表情'),
+    MessageAction.addToEmoji: (CupertinoIcons.star, '收藏'),
     MessageAction.forward: (CupertinoIcons.arrowshape_turn_up_right, '转发'),
     MessageAction.deleteLocal: (CupertinoIcons.delete, '删除'),
     MessageAction.multiSelect: (CupertinoIcons.checkmark_square, '多选'),

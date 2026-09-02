@@ -103,17 +103,31 @@ final class _UserAvatarState extends State<UserAvatar> {
                   if (wasSynchronouslyLoaded || frame != null) {
                     AvatarCache.rememberSuccessful(
                         widget.fallbackSeed, provider);
-                    return child;
+                    if (wasSynchronouslyLoaded) return child;
+                    // 首次展示从透明平滑淡入，避免默认占位与真实头像之间的
+                    // 明显跳变；已有 retained 头像时保持无感替换。
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      builder: (_, value, grandChild) =>
+                          Opacity(opacity: value, child: grandChild),
+                      child: child,
+                    );
                   }
-                  return retained == null
-                      ? child
-                      : Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image(image: retained, fit: BoxFit.cover),
-                            Opacity(opacity: 0, child: child),
-                          ],
-                        );
+                  if (retained != null) {
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image(image: retained, fit: BoxFit.cover),
+                        Opacity(opacity: 0, child: child),
+                      ],
+                    );
+                  }
+                  // Nothing cached yet: transparent placeholder until the
+                  // custom avatar decodes (fallback only appears on error),
+                  // so users never see a default-avatar flash.
+                  return const SizedBox.expand();
                 },
                 errorBuilder: (_, error, stackTrace) {
                   _logLoadError(error, stackTrace);

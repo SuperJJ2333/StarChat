@@ -8,6 +8,7 @@ from app.core.errors import AppError
 from app.modules.identity.enums import AccountStatus, HoldType
 from app.modules.identity.models import (
     Device,
+    RefreshToken,
     RefreshTokenFamily,
     SecurityHold,
     User,
@@ -79,6 +80,31 @@ def test_refresh_token_rotates_and_reuse_revokes_family(identity_components) -> 
         family = session.get(RefreshTokenFamily, pair.family_id)
         assert family.revoked_at is not None
         assert family.revoke_reason == "TOKEN_REUSE"
+
+
+def test_refresh_rotation_slides_sixty_day_expiry(identity_components) -> None:
+    """同一设备活跃刷新即滑动续期 60 天；连续 60 天不活跃才过期。"""
+    factory, tokens, _, _, now = identity_components
+    pair = tokens.issue_pair(
+        user_id="user-1", device_key="ios-device-1", display_name="Alice iPhone"
+    )
+
+    rotated = tokens.rotate(pair.refresh_token)
+
+    assert rotated.refresh_token != pair.refresh_token
+    with factory() as session:
+        replacement = (
+            session.query(RefreshToken)
+            .filter(RefreshToken.family_id == pair.family_id)
+            .order_by(RefreshToken.created_at.desc(), RefreshToken.id.desc())
+            .first()
+        )
+        assert replacement is not None
+        assert replacement.token_hash != pair.refresh_token
+        expires_at = replacement.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        assert expires_at == now + timedelta(days=60)
 
 
 def test_device_revocation_revokes_its_token_families(identity_components) -> None:

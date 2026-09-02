@@ -1,18 +1,23 @@
 import 'package:flutter/cupertino.dart';
+import '../contacts/scan_qr_page.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../moments/moments_page.dart';
 import '../matrix/chat_identity_cache.dart';
+import '../matrix/matrix_e2ee_client.dart';
 import '../search/global_search_page.dart';
 
 final class DiscoveryPage extends StatelessWidget {
-  const DiscoveryPage({super.key, required this.api, this.identityCache});
+  const DiscoveryPage(
+      {super.key, required this.api, this.matrix, this.identityCache});
 
   final BusinessApiClient api;
+  final MatrixSdkE2eeClient? matrix;
   final ChatIdentityCache? identityCache;
 
   @override
@@ -22,7 +27,8 @@ final class DiscoveryPage extends StatelessWidget {
             backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
-            middle: const Text('发现'),
+            transitionBetweenRoutes: false,
+            middle: const WeChatNavTitle('发现'),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               CupertinoButton(
                 key: const Key('discovery-search'),
@@ -30,7 +36,7 @@ final class DiscoveryPage extends StatelessWidget {
                 onPressed: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                      builder: (_) => GlobalSearchPage(api: api)),
+                      builder: (_) => GlobalSearchPage(api: api, matrix: matrix)),
                 ),
                 child: const Icon(CupertinoIcons.search, size: 22),
               ),
@@ -44,9 +50,10 @@ final class DiscoveryPage extends StatelessWidget {
                       CupertinoActionSheetAction(
                         onPressed: () {
                           Navigator.pop(sheetContext);
-                          Navigator.push(
-                            context,
+                          Navigator.of(context, rootNavigator: true)
+                              .push(
                             CupertinoPageRoute(
+                                fullscreenDialog: true,
                                 builder: (_) => MomentsPage(
                                       api: api,
                                       identityCache: identityCache,
@@ -71,6 +78,27 @@ final class DiscoveryPage extends StatelessWidget {
             padding: EdgeInsets.zero,
             children: [
               WeChatListTile(
+                key: const Key('discovery-scan-entry'),
+                leading: const SizedBox(
+                  width: 40,
+                  child: Icon(CupertinoIcons.qrcode_viewfinder, size: 21),
+                ),
+                title: const Text('扫一扫'),
+                subtitle: const Text(
+                  '扫描好友二维码，添加朋友',
+                  style: TextStyle(
+                      fontSize: 12, color: WeChatColors.textSecondary),
+                ),
+                trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => ScanQrPage(api: api),
+                  ),
+                ),
+              ),
+              WeChatListTile(
                 leading: const SizedBox(
                   width: 40,
                   child: Icon(CupertinoIcons.photo_on_rectangle, size: 21),
@@ -84,9 +112,10 @@ final class DiscoveryPage extends StatelessWidget {
                   ),
                 ),
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
-                onTap: () => Navigator.push(
-                  context,
+                onTap: () => Navigator.of(context, rootNavigator: true)
+                    .push(
                   CupertinoPageRoute(
+                    fullscreenDialog: true,
                     builder: (_) => MomentsPage(
                       api: api,
                       identityCache: identityCache,
@@ -125,9 +154,8 @@ final class _RecommendedContentPage extends StatelessWidget {
   const _RecommendedContentPage();
 
   @override
-  Widget build(BuildContext context) => const WeChatPageScaffold.navigation(
-        navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
+  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
+        navigationBar: const CupertinoNavigationBar(
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('推荐内容')),

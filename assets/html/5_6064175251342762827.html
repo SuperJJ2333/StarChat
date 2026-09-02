@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover" />
+<title>彩票统计助手</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: system-ui, sans-serif;
+    background: #f4f4f4;
+    padding: 8px;
+    padding-bottom: 240px;
+}
+.card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+h3 {
+    text-align: center;
+    margin-bottom: 8px;
+    font-size: 17px;
+}
+.title {
+    font-weight: bold;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid #eee;
+    font-size: 14px;
+}
+/* 按钮行：间距最小 */
+.fun-btn-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    margin: 2px 0;
+}
+/* 按钮缩小、紧凑 */
+.fun-btn {
+    flex: 1 0 calc(16.66% - 1px);
+    min-width: 42px;
+    padding: 2px 1px;
+    border: none;
+    border-radius: 3px;
+    font-size: 10px;
+    cursor: pointer;
+    touch-action: manipulation;
+    background: #ffc107;
+    color: #000;
+    font-weight: 500;
+    min-height: 22px;
+    white-space: nowrap;
+}
+.fun-btn.redwave { background: #f44336; color: #fff; }
+.fun-btn.bluewave { background: #2196f3; color: #fff; }
+.fun-btn.greenwave { background: #4caf50; color: #fff; }
+.fun-btn.headwave { background: #9c27b0; color: #fff; }
+.fun-btn.tailwave { background: #0288d1; color: #fff; }
+.fun-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+#inputText {
+    width: 100%;
+    height: 180px;
+    padding: 10px;
+    font-size: 14px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    resize: none;
+    line-height: 1.5;
+}
+#inputText:focus { border-color: #009955; outline: none; }
+input {
+    width: 100%;
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+}
+input:focus { border-color: #009955; outline: none; }
+button {
+    width: 100%;
+    padding: 8px;
+    margin: 4px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #fff;
+    font-weight: 500;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-add { background: #009955; }
+.btn-sub { background: #cc3333; }
+.btn-copy { background: #3366cc; }
+.btn-clear-log { background: #ff8800; }
+.btn-clear { background: #cc2222; }
+.btn-reset-input { background: #666; }
+.page-btn {
+    padding: 4px 6px;
+    margin: 2px;
+    border-radius: 4px;
+    border: none;
+    background: #009955;
+    color: #fff;
+    font-size: 12px;
+}
+.page-btn:disabled { background: #999; opacity: 0.7; }
+.grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+.num-item {
+    padding: 6px 2px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.3;
+}
+.num-item.zero { background: #f0f0f0; color: #888; }
+.num-item.has { font-weight: bold; border: 1px solid #009955; }
+.num-item.red { background: #ffe9e9; }
+.num-item.blue { background: #e9f3ff; }
+.num-item.green { background: #e9ffe9; }
+.log-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 12px;
+}
+.log-item button {
+    width: auto;
+    padding: 3px 6px;
+    font-size: 10px;
+    background: #f44;
+    margin:0;
+}
+.empty { text-align: center; color: #999; padding: 12px 0; }
+.last-input {
+    border-radius: 6px;
+    padding: 8px;
+    margin: 4px 0;
+    font-size: 12px;
+    line-height: 1.5;
+    min-height: 70px;
+    white-space: normal;
+    word-break: break-all;
+}
+.last-input.add-bg { background: #e6f7ee; border: 1px solid #009955; color: #006633; }
+.last-input.sub-bg { background: #ffe9e9; border: 1px solid #cc3333; color: #991111; }
+.last-input.def-bg { background: #fff3cd; border: 1px solid #ffc107; color: #856404; }
+.fixed-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    padding: 8px;
+    box-shadow: 0 -1px 4px rgba(0,0,0,0.1);
+}
+.total {
+    font-size: 16px;
+    font-weight: bold;
+    color: #c00;
+    text-align: center;
+}
+.page-wrap { text-align: center; margin: 6px 0; }
+.toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    z-index: 9999;
+    display: none;
+}
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="card">
+    <h3>彩票统计助手</h3>
+    <div class="last-input def-bg" id="lastInput">最后操作：无</div>
+    <textarea id="inputText" placeholder="输入：零头、一尾... 或点击下方功能按钮"></textarea>
+    <!-- 金额、加减、操作按钮 移到输入框下方、功能键上方 -->
+    <input type="text" id="money" placeholder="金额(仅整数)" inputmode="numeric">
+    <button class="btn-add" id="btnAdd" onclick="addMoney()">➕ 加金额</button>
+    <button class="btn-sub" id="btnSub" onclick="subMoney()">➖ 减金额</button>
+    <button class="btn-reset-input" onclick="clearInput()">🔄 清空输入框</button>
+    <button class="btn-copy" onclick="copyBill()">📋 复制账单</button>
+    <button onclick="undoLastRecord()">↩️ 撤销上一批</button>
+    <button class="btn-clear-log" onclick="clearRecordOnly()">清空记录(保留统计)</button>
+    <button class="btn-clear" onclick="clearAllData()">清空全部</button>
+    <!-- 所有分类功能按钮整体下移到操作按钮下面 -->
+    <div class="fun-btn-wrap">
+        <button class="fun-btn" onclick="fillWord('家肖')">家肖</button>
+        <button class="fun-btn" onclick="fillWord('野肖')">野肖</button>
+        <button class="fun-btn" onclick="fillWord('单数')">单数</button>
+        <button class="fun-btn" onclick="fillWord('双数')">双数</button>
+        <button class="fun-btn" onclick="fillWord('大数')">大数</button>
+        <button class="fun-btn" onclick="fillWord('小数')">小数</button>
+        <button class="fun-btn redwave" onclick="fillWord('红波')">红波</button>
+        <button class="fun-btn bluewave" onclick="fillWord('蓝波')">蓝波</button>
+        <button class="fun-btn greenwave" onclick="fillWord('绿波')">绿波</button>
+    </div>
+    <div class="fun-btn-wrap">
+        <button class="fun-btn" onclick="fillWord('小双')">小双</button>
+        <button class="fun-btn" onclick="fillWord('大双')">大双</button>
+        <button class="fun-btn" onclick="fillWord('小单')">小单</button>
+        <button class="fun-btn" onclick="fillWord('大单')">大单</button>
+        <button class="fun-btn redwave" onclick="fillWord('红单')">红单</button>
+        <button class="fun-btn redwave" onclick="fillWord('红双')">红双</button>
+        <button class="fun-btn bluewave" onclick="fillWord('蓝单')">蓝单</button>
+        <button class="fun-btn bluewave" onclick="fillWord('蓝双')">蓝双</button>
+        <button class="fun-btn greenwave" onclick="fillWord('绿单')">绿单</button>
+        <button class="fun-btn greenwave" onclick="fillWord('绿双')">绿双</button>
+    </div>
+    <div class="fun-btn-wrap">
+        <button class="fun-btn headwave" onclick="fillWord('零头')">零头</button>
+        <button class="fun-btn headwave" onclick="fillWord('一头')">一头</button>
+        <button class="fun-btn headwave" onclick="fillWord('二头')">二头</button>
+        <button class="fun-btn headwave" onclick="fillWord('三头')">三头</button>
+        <button class="fun-btn headwave" onclick="fillWord('四头')">四头</button>
+    </div>
+    <div class="fun-btn-wrap">
+        <button class="fun-btn tailwave" onclick="fillWord('零尾')">零尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('一尾')">一尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('二尾')">二尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('三尾')">三尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('四尾')">四尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('五尾')">五尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('六尾')">六尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('七尾')">七尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('八尾')">八尾</button>
+        <button class="fun-btn tailwave" onclick="fillWord('九尾')">九尾</button>
+    </div>
+</div>
+<div class="card">
+    <div class="title">📋 1-49号码面板</div>
+    <div class="grid" id="numGrid"></div>
+</div>
+<div class="card">
+    <div class="title">📊 已投统计</div>
+    <div class="list" id="statList"></div>
+</div>
+<div class="card">
+    <div class="title">📝 投注记录 <span id="recordCount"></span></div>
+    <div class="list" id="recordList"></div>
+    <div class="page-wrap" id="pageBox"></div>
+</div>
+<div class="fixed-bottom">
+    <div class="total" id="totalMoney">总金额：0 元</div>
+</div>
+<script>
+const PAGE_SIZE = 100;
+const MAX_SAVE_NUM = 10000;
+const DEBOUNCE_TIME_ADD = 600;
+const DEBOUNCE_TIME_SUB = 1200;
+const MAX_MONEY = 99999;
+const ZODIAC = {
+    马:[1,13,25,37,49],蛇:[2,14,26,38],龙:[3,15,27,39],兔:[4,16,28,40],
+    虎:[5,17,29,41],牛:[6,18,30,42],鼠:[7,19,31,43],猪:[8,20,32,44],
+    狗:[9,21,33,45],鸡:[10,22,34,46],猴:[11,23,35,47],羊:[12,24,36,48]
+};
+const ZODIAC_NAMES = Object.keys(ZODIAC);
+const JIA_YE = {
+    家肖:["牛","马","羊","狗","鸡","猪"],
+    野肖:["龙","虎","猴","兔","蛇","鼠"]
+};
+const WAVE = {
+    红波:[1,2,7,8,12,13,18,19,23,24,29,30,34,35,40,45,46],
+    蓝波:[3,4,9,10,14,15,20,25,26,31,36,37,41,42,47,48],
+    绿波:[5,6,11,16,17,21,22,27,28,32,33,38,39,43,44,49]
+};
+const SD = {
+    单数:[1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49],
+    双数:[2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48]
+};
+const BS = {
+    小数:[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24],
+    大数:[25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]
+};
+const EXTRA = {
+    小双:[2,4,6,8,10,12,14,16,18,20,22,24],
+    大双:[26,28,30,32,34,36,38,40,42,44,46,48],
+    小单:[1,3,5,7,9,11,13,15,17,19,21,23],
+    大单:[25,27,29,31,33,35,37,39,41,43,45,47,49],
+    红单:[1,7,13,19,23,29,35,45],
+    红双:[2,8,12,18,24,30,34,40,46],
+    蓝单:[3,9,15,25,31,37,41,47],
+    蓝双:[4,10,14,20,26,36,42,48],
+    绿单:[5,11,17,21,27,33,39,43,49],
+    绿双:[6,16,22,28,32,38,44]
+};
+const HEAD_TAIL = {
+    "零头":[1,2,3,4,5,6,7,8,9],
+    "一头":[10,11,12,13,14,15,16,17,18,19],
+    "二头":[20,21,22,23,24,25,26,27,28,29],
+    "三头":[30,31,32,33,34,35,36,37,38,39],
+    "四头":[40,41,42,43,44,45,46,47,48,49],
+    "零尾":[10,20,30,40],
+    "一尾":[1,11,21,31,41],
+    "二尾":[2,12,22,32,42],
+    "三尾":[3,13,23,33,43],
+    "四尾":[4,14,24,34,44],
+    "五尾":[5,15,25,35,45],
+    "六尾":[6,16,26,36,46],
+    "七尾":[7,17,27,37,47],
+    "八尾":[8,18,28,38,48],
+    "九尾":[9,19,29,39,49]
+};
+let lock = false;
+let taskQueue = [];
+let recordArr = [];
+let numCount = {};
+let lastInput = {text:"",money:"",opt:""};
+let pageNow = 1;
+let renderTimer = null;
+function initNumCount(){
+    for(let i=1;i<=49;i++)numCount[pad2(i)]=0;
+}
+function saveAll(){
+    try{
+        localStorage.setItem("49_rec",JSON.stringify(recordArr.slice(-MAX_SAVE_NUM)));
+        localStorage.setItem("49_num",JSON.stringify(numCount));
+        localStorage.setItem("49_last",JSON.stringify(lastInput));
+    }catch(e){
+        showToast("本地存储失败，请清理浏览器缓存");
+    }
+}
+function loadAll(){
+    try{
+        recordArr=JSON.parse(localStorage.getItem("49_rec"))||[];
+        let old=JSON.parse(localStorage.getItem("49_num"))||{};
+        initNumCount();
+        for(let k in old){
+            let v=Number(old[k]);
+            numCount[k]=isNaN(v)?0:v;
+        }
+        lastInput=JSON.parse(localStorage.getItem("49_last"))||{text:"",money:"",opt:""};
+    }catch(e){
+        initNumCount();
+        recordArr=[];
+        lastInput={text:"",money:"",opt:""};
+    }
+}
+function showToast(msg){
+    const t=document.getElementById('toast');
+    t.innerText=msg;
+    t.style.display='block';
+    setTimeout(()=>t.style.display='none',1500);
+}
+function pad2(n){return n<10?'0'+n:''+n;}
+function getZodiacByNum(num){
+    for(let name of ZODIAC_NAMES)if(ZODIAC[name].includes(num))return name;
+    return '-';
+}
+function getWaveClass(num){
+    if(WAVE.红波.includes(num))return'red';
+    if(WAVE.蓝波.includes(num))return'blue';
+    if(WAVE.绿波.includes(num))return'green';
+    return'';
+}
+function debounceRun(fn, delay){
+    taskQueue.push(fn);
+    if(lock) return;
+    lock = true;
+    setBtnDisabled(true);
+    function runTask(){
+        if(taskQueue.length === 0){
+            lock = false;
+            setBtnDisabled(false);
+            return;
+        }
+        const task = taskQueue.shift();
+        task();
+        setTimeout(runTask, delay);
+    }
+    runTask();
+}
+function setBtnDisabled(flag){
+    document.getElementById('btnAdd').disabled=flag;
+    document.getElementById('btnSub').disabled=flag;
+}
+function fillWord(word){
+    let ta = document.getElementById("inputText");
+    const val = ta.value.trim();
+    if(!val.includes(word)){
+        ta.value = val ? val + " " + word : word;
+    }
+    ta.focus();
+}
+function parseTextToNums(text){
+    const allowCnWords = [
+        "家肖","野肖","单数","双数","大数","小数",
+        "红波","蓝波","绿波","小双","大双","小单","大单",
+        "红单","红双","蓝单","蓝双","绿单","绿双",
+        "零头","一头","二头","三头","四头",
+        "零尾","一尾","二尾","三尾","四尾","五尾","六尾","七尾","八尾","九尾",
+        "龙","虎","猴","鼠","蛇","兔","牛","马","猪","鸡","狗","羊"
+    ];
+    const allowSet = new Set(allowCnWords);
+    const allCnChars = text.match(/[\u4e00-\u9fa5]/g) || [];
+    if(allCnChars.length > 0){
+        let tempText = text;
+        for(let word of allowCnWords){
+            tempText = tempText.replaceAll(word, "");
+        }
+        const remainCn = tempText.replace(/[^\u4e00-\u9fa5]/g, "");
+        if(remainCn.length > 0){
+            showToast("禁止输入生肖/波色/头尾以外的中文，非法字："+remainCn);
+            return [];
+        }
+    }
+    let res=[];
+    let nums=text.match(/\d+/g)||[];
+    nums.forEach(p=>{
+        let n=+p;
+        if(n>=1&&n<=49)res.push(n);
+    });
+    ZODIAC_NAMES.forEach(name=>{
+        let mat=(text.match(new RegExp(name,"g"))||[]).length;
+        for(let i=0;i<mat;i++)res.push(...ZODIAC[name]);
+    });
+    let map=[
+        {k:"家肖",list:JIA_YE.家肖},{k:"野肖",list:JIA_YE.野肖},
+        {k:"红波",list:WAVE.红波},{k:"蓝波",list:WAVE.蓝波},{k:"绿波",list:WAVE.绿波},
+        {k:"单数",list:SD.单数},{k:"双数",list:SD.双数},
+        {k:"大数",list:BS.大数},{k:"小数",list:BS.小数}
+    ];
+    map.forEach(item=>{
+        let mat=(text.match(new RegExp(item.k,"g"))||[]).length;
+        for(let i=0;i<mat;i++){
+            if(item.k=="家肖"||item.k=="野肖"){
+                item.list.forEach(n=>res.push(...ZODIAC[n]));
+            }else{
+                res.push(...item.list);
+            }
+        }
+    });
+    for(let key in EXTRA){
+        let mat=(text.match(new RegExp(key,"g"))||[]).length;
+        for(let i=0;i<mat;i++)res.push(...EXTRA[key]);
+    }
+    for(let key in HEAD_TAIL){
+        let mat=(text.match(new RegExp(key,"g"))||[]).length;
+        for(let i=0;i<mat;i++)res.push(...HEAD_TAIL[key]);
+    }
+    return res;
+}
+function bindMoneyInput(){
+    let inp=document.getElementById("money");
+    inp.addEventListener("input",function(){
+        let v=this.value.replace(/[^0-9]/g,"");
+        if(v.length>10)v=v.slice(0,10);
+        let num=+v||0;
+        if(num>MAX_MONEY)v=MAX_MONEY+'';
+        v=v.replace(/^0+/,'')||'';
+        this.value=v;
+    });
+}
+function renderLastTip(){
+    let el=document.getElementById("lastInput");
+    let opt=lastInput.opt=="add"?"✅ 加金额":lastInput.opt=="sub"?"➖ 减金额":"无操作";
+    let t=lastInput.text||"无";
+    let m=lastInput.money?lastInput.money+"元":"无金额";
+    el.innerHTML=`最后操作：<strong>${opt}</strong>｜内容：${t}｜金额：${m}`;
+    el.className="last-input "+(lastInput.opt=="add"?"add-bg":lastInput.opt=="sub"?"sub-bg":"def-bg");
+}
+function renderNumPanel(){
+    let h="";
+    for(let i=1;i<=49;i++){
+        let k=pad2(i),v=numCount[k];
+        let wc=getWaveClass(i),cls=v>0?"has":"zero";
+        h+=`<div class="num-item ${cls} ${wc}" onclick="quickInputNum(${i})">${k}<br>${v}</div>`;
+    }
+    document.getElementById("numGrid").innerHTML=h;
+}
+function renderStat(){
+    let list=[];
+    for(let k in numCount)if(numCount[k]>0)list.push({k,val:numCount[k]});
+    list.sort((a,b)=>b.val-a.val);
+    let el=document.getElementById("statList");
+    if(!list.length){el.innerHTML='<div class="empty">暂无投注数据</div>';return;}
+    let h="";
+    list.forEach(it=>{h+=`${it.k}｜${getZodiacByNum(+it.k)}｜${it.val}元<br>`;});
+    el.innerHTML=h;
+}
+function renderRecord(){
+    let total=recordArr.length;
+    if(total >= MAX_SAVE_NUM){
+        showToast(`记录已达上限${MAX_SAVE_NUM}，旧记录自动截断`);
+    }
+    let totalPage=Math.ceil(total/PAGE_SIZE);
+    if(pageNow>totalPage)pageNow=totalPage||1;
+    let start=(pageNow-1)*PAGE_SIZE;
+    let end=start+PAGE_SIZE;
+    document.getElementById("recordCount").innerText=`(共${total}批)`;
+    let show=[...recordArr].reverse().slice(start,end);
+    let h="";
+    if(show.length){
+        show.forEach((it,idx)=>{
+            let si=start+idx;
+            const per = Math.abs(it.perMoney);
+            const count = it.numList.length;
+            h += `<div class="log-item">
+                <span>${si+1}、${it.type=="加"?"➕":"➖"} 共${count}个号码，单份${per}元</span>
+                <button onclick="delOneRecord(${si})">删</button>
+            </div>`;
+        });
+    }else{
+        h='<div class="empty">暂无投注记录</div>';
+    }
+    document.getElementById("recordList").innerHTML=h;
+    let ph="";
+    if(totalPage>1){
+        ph+=`<button class="page-btn" onclick="changePage(${pageNow-1})" ${pageNow==1?"disabled":""}>上一页</button>`;
+        ph+=`<span> ${pageNow}/${totalPage} </span>`;
+        ph+=`<button class="page-btn" onclick="changePage(${pageNow+1})" ${pageNow==totalPage?"disabled":""}>下一页</button>`;
+    }
+    document.getElementById("pageBox").innerHTML=ph;
+}
+function renderTotalMoney(){
+    let total=0;
+    for(let k in numCount)total+=numCount[k];
+    document.getElementById("totalMoney").innerText=`总金额：${total} 元`;
+}
+function renderAll(){
+    clearTimeout(renderTimer);
+    renderTimer=setTimeout(()=>{
+        renderTotalMoney();
+        renderNumPanel();
+        renderStat();
+        renderRecord();
+    },50);
+}
+function quickInputNum(num){
+    let ta=document.getElementById("inputText");
+    ta.value=ta.value?ta.value+" "+pad2(num):pad2(num);
+    ta.focus();
+}
+function clearInput(){
+    document.getElementById("inputText").value="";
+    document.getElementById("money").value="";
+}
+function changePage(p){
+    pageNow=p;
+    renderAll();
+}
+function delOneRecord(showIdx){
+    if(!confirm("确定删除这条整批记录？")) return;
+    const show = [...recordArr].reverse();
+    const oriIdx = recordArr.length - 1 - showIdx;
+    if(oriIdx < 0 || oriIdx >= recordArr.length) return;
+    const batch = recordArr[oriIdx];
+    batch.numList.forEach(n => {
+        const k = pad2(n);
+        numCount[k] = Math.max(0, numCount[k] - batch.totalChange);
+    });
+    recordArr.splice(oriIdx, 1);
+    saveAll();
+    pageNow = 1;
+    renderAll();
+    showToast("已删除该批次");
+}
+function checkSubMoney(list,fen){
+    const needSub = {};
+    list.forEach(n => {
+        const k = pad2(n);
+        needSub[k] = (needSub[k] || 0) + fen;
+    });
+    for(const k in needSub){
+        if(numCount[k] < needSub[k]) return false;
+    }
+    return true;
+}
+function submitData(type){
+    let text=document.getElementById("inputText").value.trim();
+    let mstr=document.getElementById("money").value.trim();
+    let money=+mstr||0;
+    if(!text || money <= 0){
+        showToast("请输入有效内容与大于0的金额");
+        return;
+    }
+    if(money>MAX_MONEY){
+        showToast("单笔不能超过"+MAX_MONEY);
+        return;
+    }
+    let list=parseTextToNums(text);
+    if(!list.length){
+        showToast("未识别有效号码");
+        return;
+    }
+    if(type==-1&&!checkSubMoney(list,money)){
+        showToast("余额不足");
+        return;
+    }
+    const changeVal = type === 1 ? money : -money;
+    recordArr.push({
+        numList: list,
+        perMoney: money,
+        totalChange: changeVal,
+        type: type === 1 ? "加" : "减",
+        time: new Date().toLocaleString()
+    });
+    list.forEach(n => {
+        const k = pad2(n);
+        const ch = type === 1 ? money : -money;
+        numCount[k] = Math.max(0, numCount[k] + ch);
+    });
+    lastInput={text:text,money:mstr,opt:type==1?"add":"sub"};
+    renderLastTip();
+    saveAll();
+    clearInput();
+    pageNow=1;
+    renderAll();
+    showToast(type==1?"加单成功":"扣单成功");
+}
+function addMoney(){
+    debounceRun(()=>submitData(1), DEBOUNCE_TIME_ADD);
+}
+function subMoney(){
+    if(!confirm("确定扣除？"))return;
+    debounceRun(()=>submitData(-1), DEBOUNCE_TIME_SUB);
+}
+function undoLastRecord(){
+    if(!confirm("确定要撤销上一整批操作吗？")) return;
+    if(!recordArr.length){
+        showToast("暂无记录可撤销");
+        return;
+    }
+    const batch = recordArr.pop();
+    batch.numList.forEach(n => {
+        const k = pad2(n);
+        numCount[k] = Math.max(0, numCount[k] - batch.totalChange);
+    });
+    saveAll();
+    pageNow = 1;
+    renderAll();
+    showToast("已撤销整批操作");
+}
+function clearRecordOnly(){
+    if(!confirm("确定清空记录？统计保留"))return;
+    recordArr=[];
+    saveAll();
+    pageNow=1;
+    renderAll();
+    showToast("已清空记录");
+}
+function clearAllData(){
+    if(!confirm("确定清空所有？不可恢复")||!confirm("再次确认"))return;
+    recordArr=[];
+    initNumCount();
+    lastInput={text:"",money:"",opt:""};
+    saveAll();
+    pageNow=1;
+    renderLastTip();
+    renderAll();
+    showToast("已清空全部");
+}
+async function copyBill(){
+    let list=[];
+    for(let k in numCount)if(numCount[k]>0)list.push({k,val:numCount[k]});
+    if(!list.length){showToast("暂无数据可复制");return;}
+    list.sort((a,b)=>b.val-a.val);
+    let txt="=== 彩票统计账单 ===\r\n";
+    list.forEach(it=>{txt+=`${it.k}｜${getZodiacByNum(+it.k)}｜${it.val}元\r\n`;});
+    txt+=`\r\n号码：${list.map(x=>x.k).join(" ")}\r\n`;
+    let total=0;
+    for(let k in numCount)total+=numCount[k];
+    txt+=`总金额：${total}元`;
+    try{
+        await navigator.clipboard.writeText(txt);
+        showToast("账单已复制");
+    }catch(e){
+        let ta=document.createElement("textarea");
+        ta.value=txt;
+        ta.style.left="-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        showToast("账单已复制");
+    }
+}
+function bindEnter(){
+    document.addEventListener("keydown",e=>{
+        if(e.key=="Enter"&&!lock){
+            e.preventDefault();
+            addMoney();
+        }
+    });
+}
+window.onload=()=>{
+    initNumCount();
+    loadAll();
+    bindMoneyInput();
+    bindEnter();
+    renderLastTip();
+    renderAll();
+    document.addEventListener("visibilitychange",()=>{
+        if(document.hidden)saveAll();
+    });
+    window.addEventListener("beforeunload",()=>{saveAll();});
+};
+</script>
+</body>
+</html>

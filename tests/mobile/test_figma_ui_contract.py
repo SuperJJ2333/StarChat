@@ -120,6 +120,10 @@ def test_messaging_and_call_surfaces_follow_the_figma_component_contract():
     matrix_home = read(
         "apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart"
     )
+    # 会话页（RoomPage）承载聊天输入与时间线（自 matrix_home_page 拆分）。
+    room_page = read(
+        "apps/mobile_flutter/lib/features/matrix/room_page.dart"
+    )
     call_page = read(
         "apps/mobile_flutter/lib/features/matrix/call_page.dart"
     )
@@ -137,8 +141,8 @@ def test_messaging_and_call_surfaces_follow_the_figma_component_contract():
         assert f"Key('{key}')" in composer
     assert "final class CallControlButton" in call_control
     assert "ConversationListTile(" in matrix_home
-    assert "ChatComposerBar(" in matrix_home
-    assert "RoomTimelineController" in matrix_home
+    assert "ChatComposerBar(" in room_page
+    assert "RoomTimelineController" in room_page
     assert "CallControlButton(" in call_page
     assert "widget.controller.toggleMute" in call_page
     assert "widget.controller.toggleSpeaker" in call_page
@@ -199,7 +203,7 @@ def test_profile_home_matches_figma_60_profile_information_architecture():
     assert "height: 126" in profile
     assert "width: 72" in profile
     assert "height: 72" in profile
-    for label in ("朋友圈", "点钻", "红包", "钱包", "设置"):
+    for label in ("朋友圈", "点钻", "钱包", "设置"):
         assert f"label: '{label}'" in profile
     assert "key: const Key('profile-identity-card')" in profile
     assert "onMoments" in profile

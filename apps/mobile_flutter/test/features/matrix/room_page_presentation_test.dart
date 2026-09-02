@@ -1,17 +1,23 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
-import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_presentation.dart';
 
 void main() {
-  test('group room title is generic regardless of the custom name', () {
-    expect(groupRoomNavigationTitle('测试账号1', 3), '群聊(3)');
-    expect(groupRoomNavigationTitle('', 3), '群聊(3)');
+  test('group room title shows the custom name with member count', () {
+    // 群主/管理员改过群名 → “群聊名称（人数）”。
+    expect(groupRoomNavigationTitle('测试账号1', 3), '测试账号1（3）');
+    // 未自定义群名 → 默认“群聊（人数）”。
+    expect(groupRoomNavigationTitle('', 3), '群聊（3）');
+    expect(groupRoomNavigationTitle(null, 5), '群聊（5）');
   });
 
-  test('long custom names never leak into the chat navigation title', () {
+  test('long custom names keep the full title and ellipsize at the widget',
+      () {
+    // 标题函数返回完整文本；一行内省略由 WeChatNavTitle 的
+    // maxLines+ellipsis 处理。
     expect(
       groupRoomNavigationTitle('123456789012345678901', 12),
-      '群聊(12)',
+      '123456789012345678901（12）',
     );
   });
 

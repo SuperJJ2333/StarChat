@@ -70,27 +70,18 @@ final class DualDomainLoginService {
       await matrix.sync();
       await business.bindMatrixUserId(grant.matrixUserId);
     } on SocketException catch (error, stackTrace) {
-      await _cleanupMatrix();
+      // 网络类失败：保留本地加密库与会话，重试登录即可。
       Error.throwWithStackTrace(error, stackTrace);
     } on TimeoutException catch (error, stackTrace) {
-      await _cleanupMatrix();
       Error.throwWithStackTrace(error, stackTrace);
     } on http.ClientException catch (error, stackTrace) {
-      await _cleanupMatrix();
       Error.throwWithStackTrace(error, stackTrace);
     } catch (error, stackTrace) {
-      try {
-        await _cleanupMatrix();
-      } finally {
-        await business.logoutBusiness();
-      }
+      // 账号隔离仍然成立：若之后以其他账号登录，身份校验会重置本地库。
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
-  Future<void> _cleanupMatrix() async {
-    if (matrix.isLoggedIn) await matrix.logout();
-  }
 }
 
 enum LoginStatus { idle, loading, succeeded, failed }
@@ -135,12 +126,12 @@ final class LoginController extends ChangeNotifier {
         notifyListeners();
         return true;
       } on LoginAuthenticationException {
-        state = const LoginState(LoginStatus.failed, message: '用户名或密码错误');
+        state = const LoginState(LoginStatus.failed, message: '账号或密码错误');
         notifyListeners();
         return false;
       } on BusinessApiException catch (error) {
         state = LoginState(LoginStatus.failed,
-            message: error.statusCode == 401 ? '用户名或密码错误' : error.message);
+            message: error.statusCode == 401 ? '账号或密码错误' : error.message);
         notifyListeners();
         return false;
       } on SocketException catch (_) {

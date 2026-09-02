@@ -86,7 +86,7 @@ final class _VerificationPageState extends State<VerificationPage> {
                     ),
                   ),
                   const Text(
-                    '请输入邮件中的 6 位验证码，或返回应用查看验证链接结果。',
+                    '请输入邮件中的验证码，或返回应用查看验证链接结果。',
                     style: TextStyle(color: WeChatColors.textSecondary),
                   ),
                   const SizedBox(height: WeChatSpacing.lg),
@@ -99,9 +99,8 @@ final class _VerificationPageState extends State<VerificationPage> {
                   ],
                   CupertinoTextField(
                     controller: code,
-                    placeholder: '6 位验证码',
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
+                    placeholder: '邮件验证码',
+                    keyboardType: TextInputType.text,
                   ),
                   const SizedBox(height: WeChatSpacing.md),
                   SizedBox(

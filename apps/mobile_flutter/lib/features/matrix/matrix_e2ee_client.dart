@@ -28,8 +28,18 @@ abstract interface class MatrixE2eeClient
 
   /// The SDK encrypts these local plaintext bytes during upload whenever the
   /// target room is encrypted. Callers must never forward them to business APIs.
+  ///
+  /// [thumbnailBytes]（可选）为发送端本地生成的压缩演绎版/封面帧（如
+  /// media_thumbnail 的 ≤800px/≤100KB 缩略图或视频海报）。SDK 会将其
+  /// 一并加密上传并写入事件的 info.thumbnail_file，接收端无需下载完整
+  /// 附件即可渲染预览——服务端始终只接触密文。
   Future<String> sendEncryptedMedia(
-      String roomId, List<int> plaintext, String mimeType);
+      String roomId, List<int> plaintext, String mimeType,
+      {Map<String, dynamic>? extraContent,
+      String? filename,
+      List<int>? thumbnailBytes,
+      int? thumbnailWidth,
+      int? thumbnailHeight});
 }
 
 final class MatrixSdkE2eeClient
@@ -178,13 +188,29 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<String> sendEncryptedMedia(
-      String roomId, List<int> plaintext, String mimeType) async {
+      String roomId, List<int> plaintext, String mimeType,
+      {Map<String, dynamic>? extraContent,
+      String? filename,
+      List<int>? thumbnailBytes,
+      int? thumbnailWidth,
+      int? thumbnailHeight}) async {
     final room = client.getRoomById(roomId);
     if (room == null) throw StateError('Matrix room is not joined');
+    MatrixImageFile? thumbnail;
+    if (thumbnailBytes != null) {
+      thumbnail = MatrixImageFile(
+          bytes: Uint8List.fromList(thumbnailBytes),
+          name: 'thumb.jpg',
+          mimeType: 'image/jpeg',
+          width: thumbnailWidth,
+          height: thumbnailHeight);
+    }
     final eventId = await room.sendFileEvent(MatrixFile(
         bytes: Uint8List.fromList(plaintext),
-        name: '畅聊附件',
-        mimeType: mimeType));
+        name: filename ?? '畅聊附件',
+        mimeType: mimeType),
+        thumbnail: thumbnail,
+        extraContent: extraContent);
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');
     }

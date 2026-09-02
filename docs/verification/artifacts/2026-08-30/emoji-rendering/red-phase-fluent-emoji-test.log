@@ -1,0 +1,43 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/emoji/fluent_emoji_message_test.dart                                                                           
+00:01 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/emoji/fluent_emoji_message_test.dart                                                                           
+00:01 +0: catalog exposes a reverse lookup by unicode character                                                                                                                                        
+00:01 +0 -1: catalog exposes a reverse lookup by unicode character [E]                                                                                                                                 
+  Expected: 'assets/emoji/joy.webp'
+    Actual: 'assets/emoji/joy.gif'
+     Which: is different.
+            Expected: ... emoji/joy.webp
+              Actual: ... emoji/joy.gif
+                                    ^
+             Differ at offset 17
+  
+  package:matcher                                          expect
+  package:flutter_test/src/widget_tester.dart 473:18       expect
+  test\features\emoji\fluent_emoji_message_test.dart 13:5  main.<fn>
+  
+
+To run this test again: C:\src\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/emoji/fluent_emoji_message_test.dart -p vm --plain-name "catalog exposes a reverse lookup by unicode character"
+
+00:01 +0 -1: animated assets are high-resolution WebP with smooth alpha                                                                                                                                
+00:01 +0 -2: animated assets are high-resolution WebP with smooth alpha [E]                                                                                                                            
+  Expected: a string ending with '.webp'
+    Actual: 'assets/emoji/angry.gif'
+  assets/emoji/angry.gif
+  
+  package:matcher                                          expect
+  package:flutter_test/src/widget_tester.dart 473:18       expect
+  test\features\emoji\fluent_emoji_message_test.dart 22:7  main.<fn>
+  
+
+To run this test again: C:\src\flutter\bin\cache\dart-sdk\bin\dart.exe test D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/emoji/fluent_emoji_message_test.dart -p vm --plain-name "animated assets are high-resolution WebP with smooth alpha"
+
+00:01 +0 -2: pure emoji message detection                                                                                                                                                              
+00:01 +1 -2: pure emoji message detection                                                                                                                                                              
+00:01 +1 -2: mixed text or unknown chars render as plain text                                                                                                                                          
+00:01 +2 -2: mixed text or unknown chars render as plain text                                                                                                                                          
+00:01 +2 -2: more than four emojis render as plain text                                                                                                                                                
+00:01 +3 -2: more than four emojis render as plain text                                                                                                                                                
+00:01 +3 -2: catalog lookup covers every bundled emoji exactly once                                                                                                                                    
+00:01 +4 -2: catalog lookup covers every bundled emoji exactly once                                                                                                                                    
+00:01 +4 -2: Some tests failed.                                                                                                                                                                        

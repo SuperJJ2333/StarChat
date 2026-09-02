@@ -1,0 +1,6 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Analyzing mobile_flutter...                                     
+
+  error - Undefined name 'widget'. Try correcting the name to one that is defined, or defining the name - lib\app_home.dart:811:61 - undefined_identifier
+
+1 issue found. (ran in 10.4s)

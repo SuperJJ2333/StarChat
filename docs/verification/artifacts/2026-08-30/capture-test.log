@@ -1,0 +1,88 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Resolving dependencies...
+Downloading packages...
+  cached_network_image 3.4.1 (4.0.0 available)
+  cached_network_image_platform_interface 4.1.1 (5.0.0 available)
+  cached_network_image_web 1.3.1 (2.0.0 available)
+  cli_util 0.4.2 (0.6.0 available)
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.2.1 (2.0.0 available)
+  flutter_cache_manager 3.4.1 (3.4.2 available)
+  flutter_image_compress 2.3.0 (2.5.1 available)
+  flutter_lints 5.0.0 (6.0.0 available)
+  flutter_local_notifications 19.4.2 (22.3.0 available)
+  flutter_local_notifications_linux 6.0.0 (8.0.1 available)
+  flutter_local_notifications_platform_interface 9.1.0 (12.2.0 available)
+  flutter_local_notifications_windows 1.0.3 (3.1.1 available)
+  flutter_secure_storage 9.2.4 (11.0.0 available)
+  flutter_secure_storage_linux 1.2.3 (3.0.2 available)
+  flutter_secure_storage_macos 3.1.3 (4.0.0 available)
+  flutter_secure_storage_platform_interface 1.1.2 (2.0.3 available)
+  flutter_secure_storage_web 1.2.1 (2.1.1 available)
+  flutter_secure_storage_windows 3.1.2 (4.2.2 available)
+  flutter_svg 2.2.0 (2.3.0 available)
+  flutter_webrtc 0.12.11 (1.6.0 available)
+  hooks 2.0.2 (2.2.0 available)
+  image_cropper 9.1.0 (12.2.1 available)
+  image_cropper_for_web 6.1.0 (7.0.0 available)
+  image_cropper_platform_interface 7.2.0 (8.0.0 available)
+  image_picker 1.1.2 (1.2.3 available)
+  intl 0.20.2 (0.20.3 available)
+  js 0.6.7 (0.7.2 available)
+  lints 5.1.1 (6.1.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  matrix 0.34.0 (10.2.2 available)
+  meta 1.18.0 (1.19.0 available)
+  objective_c 9.5.0 (9.6.0 available)
+  olm 2.0.4 (3.1.0 available)
+  package_info_plus 8.3.0 (10.2.1 available)
+  package_info_plus_platform_interface 3.2.1 (4.1.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  record_use 0.6.0 (1.1.1 available)
+  shared_preferences 2.5.3 (2.5.5 available)
+  sqflite_common_ffi 2.3.6 (2.4.2+1 available)
+  sqlcipher_flutter_libs 0.6.8 (0.7.0+eol available)
+  sqlite3 2.9.4 (3.5.2 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.13 available)
+  timezone 0.10.1 (0.11.1 available)
+  url_launcher 6.3.1 (6.3.2 available)
+  vector_math 2.2.0 (2.4.2 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies!
+50 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/capture_preview_page_test.dart
+00:00 +0: view-original loads on demand after tap
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following PathAccessException was thrown running a test:
+Cannot delete file, path =
+'C:\Users\Administrator\AppData\Local\Temp/capture-test-1788106194880941.jpg' (OS Error:
+另一个程序正在使用此文件，进程无法访问。, errno = 32)
+
+When the exception was thrown, this was the stack:
+#0      _File.throwIfError (dart:io/file_impl.dart:779:7)
+#1      _File._deleteSync (dart:io/file_impl.dart:364:5)
+#2      FileSystemEntity.deleteSync (dart:io/file_system_entity.dart:425:7)
+#3      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/capture_preview_page_test.dart:68:16)
+<asynchronous suspension>
+#4      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#5      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+The test description was:
+  view-original loads on demand after tap
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: view-original loads on demand after tap [E]
+  Test failed. See exception logs above.
+  The test description was: view-original loads on demand after tap
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/capture_preview_page_test.dart: view-original loads on demand after tap

@@ -191,6 +191,45 @@ async def test_registration_requires_invitation_and_rejects_phone(api_components
 
 
 @pytest.mark.asyncio
+async def test_login_accepts_email_address_and_clear_error(api_components) -> None:
+    app, _ = api_components
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        by_email = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "Active@Example.com",
+                "password": "correct horse battery staple",
+                "device_key": "device-email-1",
+                "device_name": "Test Phone",
+            },
+        )
+        assert by_email.status_code == 200
+        assert "access_token" in by_email.json()
+        wrong_password = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "active@example.com",
+                "password": "wrong horse battery staple",
+                "device_key": "device-email-2",
+                "device_name": "Test Phone",
+            },
+        )
+        assert wrong_password.status_code == 401
+        assert wrong_password.json()["error"]["message"] == "账号或密码错误"
+        unknown_email = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "nobody@example.com",
+                "password": "correct horse battery staple",
+                "device_key": "device-email-3",
+                "device_name": "Test Phone",
+            },
+        )
+        assert unknown_email.status_code == 401
+        assert unknown_email.json()["error"]["message"] == "账号或密码错误"
+
+
+@pytest.mark.asyncio
 async def test_login_refresh_devices_and_logout(api_components) -> None:
     app, _ = api_components
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

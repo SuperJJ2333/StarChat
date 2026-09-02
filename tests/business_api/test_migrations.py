@@ -36,8 +36,16 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
     assert "down_revision = '0020_friend_request_reuse'" in revision
 
 
-def test_moment_cover_media_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0026_moment_cover_media (head)"
+def test_admin_controls_migration_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0034_referral_bindings (head)"
+
+
+def test_chat_transfer_migration_chains_after_notice_receipts() -> None:
+    revision = (BUSINESS_API_ROOT / "migrations" / "versions" / "0029_chat_transfers.py").read_text(encoding="utf-8")
+    assert 'down_revision = "0028_notice_receipts_ads"' in revision
+    sql = _normalized_sql(_alembic("upgrade", "head", "--sql"))
+    assert "create table chat_transfers" in sql
+    assert "create table app_settings" in sql
 
 def test_registration_profile_upgrade_expands_backfills_then_enforces_profile_fields() -> None:
     sql = _normalized_sql(_alembic("upgrade", "head", "--sql"))

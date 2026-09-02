@@ -7,6 +7,7 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_page.dart';
 import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
+import 'package:liuhetong_mobile/features/auth/invitation_validation.dart';
 import 'package:liuhetong_mobile/features/auth/registration_page.dart';
 import 'package:liuhetong_mobile/features/auth/verification_page.dart';
 import 'package:liuhetong_mobile/ui/components/auth_surface_card.dart';
@@ -17,7 +18,12 @@ final class PageGateway implements RegistrationGateway {
   Object? registerError;
   Object? verifyError;
   @override
-  Future<bool> validateInvitation(String invitationCode) async => true;
+  Future<InvitationValidationResult> validateInvitation(
+          String invitationCode) async =>
+      const InvitationValidationResult(
+          InvitationValidationState.ready, '邀请码可用');
+  @override
+  Future<bool> validateReferralCode(String referralCode) async => true;
   @override
   Future<RegistrationReceipt> register({
     required String username,
@@ -25,6 +31,7 @@ final class PageGateway implements RegistrationGateway {
     required String email,
     required String password,
     required String invitationCode,
+    String referralCode = '',
   }) async =>
       registerError != null
           ? throw registerError!
@@ -428,7 +435,8 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'draft@example.test');
+    await tester.enterText(fields.at(5), 'REFCODE1');
+    await tester.enterText(fields.at(6), 'draft@example.test');
     final back = find.widgetWithText(ModernActionButton, '返回登录');
     tester.widget<ModernActionButton>(back).onPressed!();
     await tester.pump();
@@ -439,6 +447,8 @@ void main() {
     expect(tester.widget<CupertinoTextField>(restored.at(0)).controller?.text,
         '昵称');
     expect(tester.widget<CupertinoTextField>(restored.at(5)).controller?.text,
+        'REFCODE1');
+    expect(tester.widget<CupertinoTextField>(restored.at(6)).controller?.text,
         'draft@example.test');
   });
   testWidgets('taken email appears once below the email field', (tester) async {
@@ -459,7 +469,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'taken@example.test');
+    await tester.enterText(fields.at(6), 'taken@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
@@ -485,7 +495,7 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(CupertinoTextField), findsNWidgets(6));
+      expect(find.byType(CupertinoTextField), findsNWidgets(7));
       expect(find.text('畅聊号'), findsOneWidget);
       expect(find.text('再次输入密码'), findsNWidgets(2));
       expect(find.byKey(const Key('auth-registration-password-visibility')),
@@ -511,7 +521,8 @@ void main() {
       await tester.enterText(fields.at(2), 'correct horse battery staple');
       await tester.enterText(fields.at(3), 'correct horse battery staple');
       await tester.enterText(fields.at(4), 'INVITE');
-      await tester.enterText(fields.at(5), 'alice@example.test');
+      await tester.enterText(fields.at(5), 'REFCODE1');
+      await tester.enterText(fields.at(6), 'alice@example.test');
       await tester.pump();
       expect(
         tester
@@ -566,7 +577,8 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'different password');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'alice@example.test');
+    await tester.enterText(fields.at(5), 'REFCODE1');
+      await tester.enterText(fields.at(6), 'alice@example.test');
     await tester.pump();
     expect(find.text('两次密码输入不一致'), findsOneWidget);
     expect(
@@ -595,7 +607,8 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'alice@example.test');
+    await tester.enterText(fields.at(5), 'REFCODE1');
+      await tester.enterText(fields.at(6), 'alice@example.test');
     await tester.pump();
 
     final action = find.byKey(const Key('auth-registration-send-code'));
@@ -727,7 +740,8 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'draft@example.test');
+    await tester.enterText(fields.at(5), 'REFCODE1');
+    await tester.enterText(fields.at(6), 'draft@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
@@ -755,7 +769,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'countdown@example.test');
+    await tester.enterText(fields.at(6), 'countdown@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
@@ -818,5 +832,79 @@ void main() {
       ),
     );
     expect(tester.getTopLeft(find.byType(Image).first), before);
+  });
+
+  testWidgets('login rejects malformed email addresses with a clear error',
+      (tester) async {
+    useIPhone15Viewport(tester);
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    var submissions = 0;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: LoginPage(
+          api: api,
+          onLogin: (_, __) async => submissions += 1,
+          onAuthenticated: () async {},
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byKey(const Key('auth-login-identity')), 'a@b');
+    await tester.enterText(
+      find.byKey(const Key('auth-login-password')),
+      'correct horse battery staple',
+    );
+    final agreement = find.byKey(const Key('auth-agreement-checkbox'));
+    await tester.ensureVisible(agreement);
+    await tester.tap(agreement);
+    await tester.pump();
+    final login = find.widgetWithText(ModernActionButton, '登录');
+    await tester.ensureVisible(login);
+    await tester.tap(login);
+    await tester.pumpAndSettle();
+
+    expect(find.text('请输入正确的邮箱地址'), findsOneWidget);
+    expect(submissions, 0);
+  });
+
+  testWidgets('login accepts well formed email identifiers', (tester) async {
+    useIPhone15Viewport(tester);
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('http://localhost'),
+      sessionStore: SecureSessionStore(),
+    );
+    var submittedIdentity = '';
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: LoginPage(
+          api: api,
+          onLogin: (identity, _) async => submittedIdentity = identity,
+          onAuthenticated: () async {},
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('auth-login-identity')),
+      'Alice@Example.com',
+    );
+    await tester.enterText(
+      find.byKey(const Key('auth-login-password')),
+      'correct horse battery staple',
+    );
+    final agreement = find.byKey(const Key('auth-agreement-checkbox'));
+    await tester.ensureVisible(agreement);
+    await tester.tap(agreement);
+    await tester.pump();
+    final login = find.widgetWithText(ModernActionButton, '登录');
+    await tester.ensureVisible(login);
+    await tester.tap(login);
+    await tester.pumpAndSettle();
+
+    expect(find.text('请输入正确的邮箱地址'), findsNothing);
+    expect(submittedIdentity, 'Alice@Example.com');
   });
 }

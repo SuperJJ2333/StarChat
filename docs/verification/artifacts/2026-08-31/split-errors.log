@@ -1,0 +1,69 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Analyzing mobile_flutter...                                     
+
+  error - The method 'RoomPage' isn't defined for the type '_AppHomeState'. Try correcting the name to the name of an existing method, or defining a method named 'RoomPage' - lib\app_home.dart:392:25 - undefined_method
+  error - The method 'RoomPage' isn't defined for the type '_ContactsTabPageState'. Try correcting the name to the name of an existing method, or defining a method named 'RoomPage' - lib\app_home.dart:546:27 - undefined_method
+warning - Unused import: 'dart:io'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:2:8 - unused_import
+warning - Unused import: 'package:shared_preferences/shared_preferences.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:6:8 - unused_import
+warning - Unused import: '../../core/local_notification_scheduler.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:10:8 - unused_import
+warning - Unused import: '../profile/profile_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:13:8 - unused_import
+warning - Unused import: '../redpacket/red_packet_claim_dialog.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:14:8 - unused_import
+warning - Unused import: '../../ui/chat/chat_composer_bar.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:15:8 - unused_import
+warning - Unused import: '../../ui/chat/chat_composer_state.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:16:8 - unused_import
+warning - Unused import: '../../ui/chat/chat_emoji_panel.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:17:8 - unused_import
+warning - Unused import: '../../ui/chat/chat_more_panel.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:18:8 - unused_import
+warning - Unused import: '../../ui/chat/message_action.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:20:8 - unused_import
+warning - Unused import: '../../ui/chat/message_action_sheet.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:21:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_attachment_tile.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:22:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_mention_panel.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:23:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_message_bubble.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:24:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_nudge_notice.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:25:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_voice_bubble.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:26:8 - unused_import
+warning - Unused import: '../../ui/finance/wechat_red_packet_card.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:31:8 - unused_import
+warning - Unused import: '../../ui/finance/wechat_transfer_card.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:32:8 - unused_import
+warning - Unused import: '../transfer/chat_transfer_adapters.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:37:8 - unused_import
+warning - Unused import: '../transfer/chat_transfer_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:38:8 - unused_import
+warning - Unused import: '../transfer/chat_transfer_detail_sheet.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:39:8 - unused_import
+warning - Unused import: '../transfer/chat_transfer_sheet.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:40:8 - unused_import
+warning - Unused import: 'image_picker_page.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:42:8 - unused_import
+warning - Unused import: 'capture_preview_page.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:43:8 - unused_import
+warning - Unused import: 'voice_recording_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:44:8 - unused_import
+warning - Unused import: 'voice_playback_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:45:8 - unused_import
+warning - Unused import: '../../ui/chat/wechat_hold_to_talk.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:46:8 - unused_import
+warning - Unused import: '../../ui/chat/voice_recording_overlay.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:47:8 - unused_import
+warning - Unused import: '../../features/emoji/fluent_emoji_catalog.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:48:8 - unused_import
+warning - Unused import: '../../ui/chat/emoji_text.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:49:8 - unused_import
+warning - Unused import: '../../ui/chat/encrypted_media_view.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:50:8 - unused_import
+warning - Unused import: '../../ui/chat/super_emoji_message.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:51:8 - unused_import
+warning - Unused import: 'media_cache.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:52:8 - unused_import
+warning - Unused import: 'matrix_room_timeline_adapter.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:55:8 - unused_import
+warning - Unused import: 'chat_red_packet_adapters.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:56:8 - unused_import
+warning - Unused import: 'chat_red_packet_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:57:8 - unused_import
+warning - Unused import: 'chat_red_packet_sheet.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:58:8 - unused_import
+warning - Unused import: 'group_chat_info_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:59:8 - unused_import
+warning - Unused import: 'group_chat_info_page.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:60:8 - unused_import
+warning - Unused import: 'direct_chat_info_page.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:64:8 - unused_import
+warning - Unused import: 'chat_history_search.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:65:8 - unused_import
+warning - Unused import: 'media_message_service.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:70:8 - unused_import
+warning - Unused import: 'message_interaction_service.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:72:8 - unused_import
+warning - Unused import: 'local_hidden_events.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:74:8 - unused_import
+warning - Unused import: 'room_timeline_controller.dart'. Try removing the import directive - lib\features\matrix\matrix_home_page.dart:75:8 - unused_import
+  error - The method 'RoomPage' isn't defined for the type '_MatrixHomePageState'. Try correcting the name to the name of an existing method, or defining a method named 'RoomPage' - lib\features\matrix\matrix_home_page.dart:447:27 - undefined_method
+warning - Unused import: '../../core/app_config.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:3:8 - unused_import
+warning - Duplicate import. Try removing all but one import of the library - lib\features\matrix\room_page.dart:11:8 - duplicate_import
+warning - Unused import: '../../core/app_config.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:11:8 - unused_import
+warning - Unused import: '../../ui/chat/group_avatar_mosaic.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:22:8 - unused_import
+warning - Unused import: '../../ui/components/conversation_list_tile.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:30:8 - unused_import
+warning - Unused import: '../../ui/chat/conversation_action_sheet.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:33:8 - unused_import
+warning - Unused import: '../../ui/theme/theme_controller.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:38:8 - unused_import
+warning - Unused import: '../../ui/theme/theme_picker_sheet.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:39:8 - unused_import
+warning - Unused import: 'conversation_read_state.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:65:8 - unused_import
+warning - Unused import: '../search/global_search_page.dart'. Try removing the import directive - lib\features\matrix\room_page.dart:69:8 - unused_import
+  error - The method 'orderedJoinedMembers' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'orderedJoinedMembers' - lib\features\matrix\room_page.dart:165:25 - undefined_method
+  error - The method 'orderedJoinedMembers' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'orderedJoinedMembers' - lib\features\matrix\room_page.dart:192:26 - undefined_method
+  error - The method 'orderedJoinedMembers' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'orderedJoinedMembers' - lib\features\matrix\room_page.dart:230:36 - undefined_method
+  error - The method 'orderedJoinedMembers' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'orderedJoinedMembers' - lib\features\matrix\room_page.dart:251:21 - undefined_method
+  error - The method 'groupRoomNavigationTitle' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'groupRoomNavigationTitle' - lib\features\matrix\room_page.dart:260:9 - undefined_method
+  error - The method 'directRoomNavigationTitle' isn't defined for the type '_RoomPageState'. Try correcting the name to the name of an existing method, or defining a method named 'directRoomNavigationTitle' - lib\features\matrix\room_page.dart:261:9 - undefined_method
+
+64 issues found. (ran in 10.9s)

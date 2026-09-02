@@ -1,0 +1,5 @@
+NAME                         IMAGE                      COMMAND                  SERVICE           CREATED              STATUS                        PORTS
+starchat-business-api-1      starchat-business-api      "sh -c 'alembic -c a…"   business-api      About a minute ago   Up About a minute (healthy)   127.0.0.1:8082->8082/tcp
+starchat-business-worker-1   starchat-business-worker   "python main.py"         business-worker   About a minute ago   Up About a minute (healthy)   
+starchat-gateway-1           nginx:1.27.5-alpine        "/docker-entrypoint.…"   gateway           22 minutes ago       Up 15 minutes                 127.0.0.1:9080->80/tcp, 127.0.0.1:9443->443/tcp
+{"ok":true,"service":"畅聊 Business API"}

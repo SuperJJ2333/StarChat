@@ -1,0 +1,4 @@
+BASELINE: flutter test test/features/matrix/avatar_url_resolver_test.dart test/features/matrix/conversation_preferences_test.dart => 10 passed, exit 0.
+MODIFIED: flutter test test/core/business_api_presence_test.dart test/core/business_api_session_test.dart => 11 passed, exit 0; flutter test test/core/business_api_presence_test.dart test/features/matrix/conversation_read_state_test.dart test/features/matrix/avatar_url_resolver_test.dart test/ui/wechat_components_test.dart => 28 passed, exit 0.
+ROLLBACK: restore prior mobile sources; no DB migration; server health remains 200.
+RESULT: Flutter analyze exit 0; production health 200; unauthenticated heartbeat 401 on canonical API host.

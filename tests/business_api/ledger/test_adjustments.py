@@ -26,14 +26,17 @@ def test_small_adjustment_requires_finance_review_then_executes(workflow):
     executed = workflow.execute(request.id, actor_id="finance-1", idempotency_key="execute-1")
     assert executed.status == "EXECUTED"
 
-def test_large_adjustment_requires_admin_second_approval(workflow):
+def test_large_adjustment_executes_after_the_admin_direct_review(workflow):
     request = workflow.submit(actor_id="support-1", user_id="user-1", amount=Decimal("1500.00"), reason_code="SUPPORT_CREDIT", idempotency_key="adj-2")
-    workflow.finance_review(request.id, reviewer_id="finance-1", approve=True)
-    with pytest.raises(ValueError, match="admin approval"):
-        workflow.execute(request.id, actor_id="finance-1", idempotency_key="execute-2")
-    approved = workflow.admin_review(request.id, reviewer_id="admin-1", approve=True)
-    assert approved.status == "ADMIN_APPROVED"
-    assert workflow.execute(request.id, actor_id="finance-1", idempotency_key="execute-2").status == "EXECUTED"
+    reviewed = workflow.finance_review(request.id, reviewer_id="admin-1", approve=True)
+    assert reviewed.status == "FINANCE_APPROVED"
+    assert workflow.execute(request.id, actor_id="admin-1", idempotency_key="execute-2").status == "EXECUTED"
+
+def test_admin_can_review_submitted_adjustment_without_finance_approval(workflow):
+    request = workflow.submit(actor_id="support-1", user_id="user-1", amount=Decimal("10.00"), reason_code="ADMIN_DIRECT", idempotency_key="adj-direct")
+    reviewed = workflow.admin_review(request.id, reviewer_id="admin-1", approve=True)
+    assert reviewed.status == "ADMIN_APPROVED"
+    assert workflow.execute(request.id, actor_id="admin-1", idempotency_key="execute-direct").status == "EXECUTED"
 
 def test_policy_limits_and_user_scope_are_enforced(workflow):
     with pytest.raises(ValueError, match="scope"):

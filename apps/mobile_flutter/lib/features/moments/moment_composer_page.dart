@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,16 +9,21 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'moment_visibility_page.dart';
+import 'moment_image_preprocessor.dart';
 
 final class MomentComposerPage extends StatefulWidget {
   const MomentComposerPage({
     super.key,
     required this.api,
     this.initialImages = const [],
+    this.imagePreprocessor,
   });
 
   final BusinessApiClient api;
   final List<XFile> initialImages;
+
+  /// 可注入的图片压缩管线（缺省为原生 JPEG 压缩实现）。
+  final MomentImagePreprocessor? imagePreprocessor;
 
   @override
   State<MomentComposerPage> createState() => _MomentComposerPageState();
@@ -83,12 +89,12 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           tagIds: tags,
         );
       });
-    } catch (error) {
+    } on BusinessApiException catch (error) {
+      if (!mounted || error.code == 'MOMENT_DRAFT_NOT_FOUND') return;
+      setState(() => errorMessage = error.message);
+    } catch (_) {
       if (!mounted) return;
-      setState(() {
-        errorMessage =
-            error is BusinessApiException ? error.message : '草稿加载失败，可继续编辑并稍后重试';
-      });
+      setState(() => errorMessage = '草稿加载失败，可继续编辑并稍后重试');
     }
   }
 
@@ -122,33 +128,34 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     await widget.api.saveMomentDraft(_payload());
   }
 
-  String _mimeType(XFile image) {
-    final explicit = image.mimeType?.trim();
-    if (explicit != null && explicit.isNotEmpty) return explicit;
-    final extension = image.name.toLowerCase().split('.').last;
-    return switch (extension) {
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      'gif' => 'image/gif',
-      _ => 'image/jpeg',
-    };
+  String _jpegFileName(String original) {
+    final base = original.replaceAll(RegExp(r'\.[^.]+$'), '');
+    final safe = base.isEmpty ? 'moment' : base;
+    return '$safe.jpg';
   }
 
   Future<List<String>> _uploadPendingImages() async {
+    final preprocessor = widget.imagePreprocessor ?? MomentImagePreprocessor();
     while (images.isNotEmpty) {
       final image = images.first;
-      final bytes = await image.readAsBytes();
-      final mimeType = _mimeType(image);
+      final Uint8List bytes;
+      try {
+        bytes = await image.readAsBytes();
+      } catch (_) {
+        throw const MomentImageException('读取图片失败，请重新选择该图片');
+      }
+      final processed = await preprocessor.process(bytes);
+      final mimeType = 'image/jpeg';
       final begun = await widget.api.beginMomentUpload(
-        fileName: image.name,
+        fileName: _jpegFileName(image.name),
         mimeType: mimeType,
-        byteSize: bytes.length,
+        byteSize: processed.lengthInBytes,
       );
       final uploadId = begun['id']?.toString();
       if (uploadId == null || uploadId.isEmpty) {
         throw StateError('Moment upload session is missing an id');
       }
-      await widget.api.putMomentUpload(uploadId, bytes, mimeType);
+      await widget.api.putMomentUpload(uploadId, processed, mimeType);
       final completed = await widget.api.completeMomentUpload(uploadId);
       final mediaUrl = completed['media_url']?.toString().trim();
       if (mediaUrl == null || mediaUrl.isEmpty) {
@@ -195,9 +202,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
         return true;
       } catch (error) {
         if (mounted) {
-          setState(() => errorMessage = error is BusinessApiException
+          setState(() => errorMessage = error is MomentImageException
               ? error.message
-              : '草稿保存失败，请检查网络后重试');
+              : error is BusinessApiException
+                  ? error.message
+                  : '草稿保存失败，请检查网络后重试');
         }
         return false;
       }
@@ -216,12 +225,34 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   }
 
   Future<void> _pickImages() async {
-    final selected = await ImagePicker().pickMultiImage(imageQuality: 82);
+    final remaining = 9 - images.length - remoteImageUrls.length;
+    if (remaining <= 0) {
+      setState(() => errorMessage = '最多只能发布 9 张图片');
+      return;
+    }
+    final List<XFile> selected;
+    try {
+      // pickMultipleMedia：Android 13+ 走系统 Photo Picker（无需媒体
+      // 权限，且允许误选视频），12- 回退多选实现。
+      selected = await ImagePicker().pickMultipleMedia();
+    } catch (_) {
+      setState(() => errorMessage = '选择图片失败，请重试');
+      return;
+    }
     if (!mounted) return;
-    setState(() => images.addAll(
-          selected.take(9 - images.length - remoteImageUrls.length),
-        ));
+    // Photo Picker 允许选中视频：朋友圈仅支持图片，按 MIME/扩展名过滤。
+    final imageOnly = selected.where(isSupportedMomentImage).toList();
+    if (imageOnly.length < selected.length) {
+      setState(() => errorMessage = '朋友圈仅支持图片，已跳过 ${selected.length - imageOnly.length} 个视频/文件');
+    }
+    if (imageOnly.isEmpty) return;
+    final truncated = imageOnly.length > remaining;
+    setState(() {
+      images.addAll(imageOnly.take(remaining));
+      if (truncated) errorMessage = '一次最多发布 9 张图片，已截取前 $remaining 张';
+    });
   }
+
 
   Future<void> _openVisibility() async {
     final selected = await Navigator.push<MomentVisibilitySelection>(
@@ -300,12 +331,14 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       await widget.api.deleteMomentDraft();
       _published = true;
       _allowPop = true;
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
-        setState(() => errorMessage = error is BusinessApiException
+        setState(() => errorMessage = error is MomentImageException
             ? error.message
-            : '发表失败，内容已保留，请检查网络后重试');
+            : error is BusinessApiException
+                ? error.message
+                : '发表失败，内容已保留，请检查网络后重试');
       }
     } finally {
       if (mounted) setState(() => saving = false);
@@ -315,7 +348,10 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   @override
   Widget build(BuildContext context) => PopScope(
         canPop: false,
-        onPopInvokedWithResult: (_, __) async {
+        onPopInvokedWithResult: (didPop, result) async {
+          // didPop=true 说明本次 pop 已由代码触发（发布成功携带结果返回），
+          // 若再弹一层会把用户带过朋友圈页、落回发现页。
+          if (didPop) return;
           if (await _onBack() && context.mounted) Navigator.pop(context);
         },
         child: WeChatPageScaffold.navigation(
@@ -516,4 +552,16 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           ),
         ),
       );
+}
+
+/// 朋友圈图片候选过滤（纯逻辑）：按 MIME，缺失时按扩展名兜底。
+/// Photo Picker 允许选中视频/文件，朋友圈仅接受图片。
+bool isSupportedMomentImage(XFile file) {
+  final mime = (file.mimeType ?? '').toLowerCase();
+  if (mime.isNotEmpty) return mime.startsWith('image/');
+  const extensions = {'.jpg', '.jpeg', '.png', '.webp', '.gif'};
+  final name = file.name;
+  final dot = name.lastIndexOf('.');
+  if (dot < 0) return false;
+  return extensions.contains(name.substring(dot).toLowerCase());
 }

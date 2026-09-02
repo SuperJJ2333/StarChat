@@ -27,7 +27,7 @@ void main() {
     expect(
       resolved?.url,
       'https://matrix.example.test/_matrix/client/v1/media/thumbnail/'
-      'media.example.test/a1b2c3?width=48&height=48&method=crop&animated=false',
+      'media.example.test/a1b2c3?width=96&height=96&method=crop&animated=false',
     );
     expect(resolved?.headers, {'authorization': 'Bearer matrix-token'});
   });
@@ -44,7 +44,7 @@ void main() {
     expect(
       resolved?.url,
       'https://matrix.example.test/_matrix/client/v1/media/thumbnail/'
-      'media.example.test/a1b2c3?width=48&height=48&method=crop&animated=false',
+      'media.example.test/a1b2c3?width=96&height=96&method=crop&animated=false',
     );
     expect(resolved?.headers, {'authorization': 'Bearer matrix-token'});
   });
@@ -62,7 +62,7 @@ void main() {
     expect(
       resolved?.url,
       'https://matrix.example.test/_matrix/media/v3/thumbnail/'
-      'media.example.test/a1b2c3?width=40&height=40&method=crop&animated=false',
+      'media.example.test/a1b2c3?width=96&height=96&method=crop&animated=false',
     );
     expect(resolved?.headers, isEmpty);
   });
@@ -107,5 +107,28 @@ void main() {
 
     expect(await first, await second);
     expect(capabilityChecks, 1);
+  });
+
+  test('message list and contacts request the same canonical thumbnail',
+      () async {
+    // 头像一致性：渲染尺寸不同（48/40）也必须命中同一缩略图 URL，
+    // 保证同头像只下载一次、两页展示时延一致。
+    final conversation = await MatrixAvatarUrlResolver.resolve(
+      avatarUri: Uri.parse('mxc://media.example.test/a1b2c3'),
+      homeserver: Uri.parse('https://matrix.example.test'),
+      accessToken: 'matrix-token',
+      authenticatedMediaSupported: () async => true,
+      size: MatrixAvatarUrlResolver.canonicalThumbnailSize.toDouble(),
+    );
+    final contacts = await MatrixAvatarUrlResolver.resolve(
+      avatarUri: Uri.parse('mxc://media.example.test/a1b2c3'),
+      homeserver: Uri.parse('https://matrix.example.test'),
+      accessToken: 'matrix-token',
+      authenticatedMediaSupported: () async => true,
+      size: 40,
+    );
+
+    expect(contacts?.url, conversation?.url);
+    expect(contacts?.url, contains('width=96'));
   });
 }

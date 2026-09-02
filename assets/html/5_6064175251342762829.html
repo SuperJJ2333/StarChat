@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>彩票总单统计助手</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{padding:12px;font-family:system-ui,sans-serif;background:#fff}
+h4{font-size:15px;margin:6px 0;color:#333}
+textarea{width:100%;height:150px;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+.btn-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+button{flex:1;min-width:72px;padding:9px;border:none;border-radius:5px;background:#1677ff;color:#fff;font-size:14px}
+button.danger{background:#ff4d4f}
+pre{width:100%;background:#f5f6f8;border-radius:6px;white-space:pre-wrap;padding:10px;font-size:14px;line-height:1.5}
+</style>
+</head>
+<body>
+<h4>粘贴账单内容</h4>
+<textarea id="inputArea"></textarea>
+<div class="btn-wrap">
+<button onclick="addBill()">导入数据</button>
+<button onclick="mergeSort()">合并排序</button>
+<button onclick="clearAll()">清空重置</button>
+<button onclick="clearStorage()" class="danger">清空缓存</button>
+<button onclick="copyResult()">一键复制</button>
+</div>
+<h4>生成标准账单</h4>
+<pre id="outputArea"></pre>
+<script>
+const STORAGE_KEY = "billList_49";
+let billList = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+function saveToLocal() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(billList));
+}
+function parseLine(str){
+    str = str.trim();
+    if(!str || !str.includes("｜")) return null;
+    let seg = str.split("｜");
+    if(seg.length < 3) return null;
+    let num = seg[0].trim();
+    let sx = seg[1].trim();
+    let moneyStr = seg[2].replace(/[^0-9.]/g, "").trim();
+    let money = parseFloat(moneyStr);
+    if(!num || !sx || isNaN(money) || money < 0) return null;
+    return {num, sx, money};
+}
+function addBill(){
+    let text = inputArea.value;
+    let lines = text.split("\n");
+    for(let line of lines){
+        let res = parseLine(line);
+        if(res) billList.push(res);
+    }
+    inputArea.value = "";
+    saveToLocal();
+    mergeSort();
+}
+function mergeSort(){
+    if(billList.length === 0){
+        outputArea.innerText = "暂无账单数据";
+        return;
+    }
+    let map = {};
+    for(let item of billList){
+        let key = item.num;
+        let fen = Math.round(item.money * 100);
+        if(map[key]){
+            map[key].fen += fen;
+        }else{
+            map[key] = { num:item.num, sx:item.sx, fen:fen };
+        }
+    }
+    let arr = Object.values(map);
+    arr.sort((a,b) => b.fen - a.fen);
+    let totalFen = 0;
+    let numList = [];
+    let outStr = "=== 49统计账单 ===\n";
+    arr.forEach(v => {
+        let yuan = (v.fen / 100).toFixed(2);
+        totalFen += v.fen;
+        numList.push(v.num);
+        outStr += `${v.num}｜${v.sx}｜${yuan}元\n`;
+    });
+    outStr += `\n号码汇总：${numList.join(" ")}\n总金额：${(totalFen / 100).toFixed(2)}元`;
+    outputArea.innerText = outStr;
+    saveToLocal();
+}
+function clearAll(){
+    billList = [];
+    inputArea.value = "";
+    outputArea.innerText = "暂无账单数据";
+    saveToLocal();
+}
+function clearStorage(){
+    if(!confirm("确定清空所有缓存？不可恢复！")) return;
+    localStorage.removeItem(STORAGE_KEY);
+    billList = [];
+    outputArea.innerText = "缓存已清空";
+}
+async function copyResult(){
+    try {
+        await navigator.clipboard.writeText(outputArea.innerText);
+        alert("复制成功");
+    }catch(e){
+        alert("复制失败，请手动复制");
+    }
+}
+window.addEventListener("load", mergeSort);
+</script>
+</body>
+</html>

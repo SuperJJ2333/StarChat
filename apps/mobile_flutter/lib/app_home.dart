@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
+import 'core/app_config.dart';
 import 'core/local_notification_scheduler.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
@@ -12,24 +14,33 @@ import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_home_page.dart';
+import 'features/matrix/room_page.dart';
 import 'features/matrix/chat_identity_cache.dart';
 import 'features/matrix/group_chat_controller.dart';
 import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_controller.dart';
+import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
 import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/message_reminder_service.dart';
-import 'features/redpacket/redpacket_page.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
 import 'ui/foundation/changliao_icons.dart';
 import 'ui/foundation/wechat_tokens.dart';
 import 'ui/theme/theme_controller.dart';
+import 'features/profile/about_page.dart';
+import 'features/profile/invite_code_page.dart';
+import 'features/profile/my_qr_code_page.dart';
+import 'features/profile/invite_controller.dart';
 import 'features/profile/profile_controller.dart';
 import 'features/profile/profile_page.dart';
 import 'features/profile/avatar_source.dart';
+import 'features/friendship/friend_request_watch.dart';
+import 'features/update/app_update.dart';
+import 'features/update/update_integrity.dart';
+import 'features/update/app_update_dialog.dart';
 
 final class AppHome extends StatefulWidget {
   const AppHome({
@@ -49,7 +60,7 @@ final class AppHome extends StatefulWidget {
   State<AppHome> createState() => _AppHomeState();
 }
 
-final class _AppHomeState extends State<AppHome> {
+final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   late final DirectChatController directChats =
       DirectChatController(widget.matrix);
   late final MatrixCallBackend callBackend =
@@ -60,6 +71,12 @@ final class _AppHomeState extends State<AppHome> {
   );
   bool callPageVisible = false;
   bool incomingCallActive = false;
+  bool appResumed = true;
+
+  /// 本次通话摘要是否已发送：ended 分支可能随 notifyListeners 多次进入，
+  /// 必须去重，确保一次通话只落一条通话状态气泡。
+  bool callSummarySent = false;
+  late final CallNotifications callNotifications = CallNotifications();
   MessageReminderService? reminderService;
   late final MessageReminderSyncBootstrapper reminderBootstrap;
   ChatIdentityCache? _chatIdentityCache;
@@ -78,6 +95,180 @@ final class _AppHomeState extends State<AppHome> {
     );
     unawaited(reminderBootstrap.start());
     unawaited(_identityCache());
+    unawaited(_verifyDataIntegrity());
+    unawaited(_checkForAppUpdate());
+    unawaited(_startFriendRequestWatch());
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  DateTime? _lastUpdateCheckAt;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    appResumed = state == AppLifecycleState.resumed;
+    // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
+    if (appResumed && incomingCallActive) {
+      unawaited(callNotifications.hideIncoming());
+    }
+    // 用户从后台回到前台时补一次更新检查（30 分钟节流）：
+    // 仅靠冷启动会让长期驻留的会话长时间收不到更新提醒。
+    if (state != AppLifecycleState.resumed) return;
+    final last = _lastUpdateCheckAt;
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 30)) {
+      return;
+    }
+    _lastUpdateCheckAt = DateTime.now();
+    unawaited(_checkForAppUpdate());
+  }
+
+  Timer? _friendRequestPollTimer;
+  FriendRequestWatch? _friendRequestWatch;
+  final ValueNotifier<int> pendingFriendRequests = ValueNotifier<int>(0);
+
+  Future<void> _startFriendRequestWatch() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final notifier = FriendRequestNotifier(onTap: _openFriendRequests);
+      _friendRequestWatch = FriendRequestWatch(widget.api, prefs, notifier: notifier);
+      _friendRequestPollTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => unawaited(_pollFriendRequests()),
+      );
+      await _pollFriendRequests();
+    } catch (_) {
+      // 通知巡检失败不能影响主流程。
+    }
+  }
+
+  /// 好友关系变化后：身份缓存立即重载 → 通讯录/消息页即时刷新。
+  Future<void> _refreshAfterFriendChanges() async {
+    try {
+      final cache = await _identityCache();
+      await cache.refresh();
+    } catch (_) {}
+    pendingFriendRequests.value = pendingFriendRequests.value; // 触发监听重建
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _pollFriendRequests() async {
+    final watch = _friendRequestWatch;
+    if (watch == null) return;
+    try {
+      pendingFriendRequests.value = await watch.poll();
+    } catch (_) {
+      // 下个周期重试。
+    }
+  }
+
+  void _openFriendRequests() {
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).push(
+      CupertinoPageRoute(
+        builder: (_) => FriendRequestsPage(
+          api: widget.api,
+          pendingRequests: pendingFriendRequests,
+          directChats: directChats,
+          onRequestsChanged: () => unawaited(_refreshAfterFriendChanges()),
+        ),
+      ),
+    );
+  }
+
+  AppUpdateDeferStore? _deferStore;
+
+  /// 更新后数据完整性校验：版本变化时验证关键本地存储可读，只报告、
+  /// 从不清理或重置数据。
+  Future<void> _verifyDataIntegrity() async {
+    try {
+      final report = await UpdateDataIntegrity.verify(
+        currentBuild: AppConfig.appBuildNumber,
+        checks: [
+          UpdateIntegrityCheck('preferences', () async {
+            await SharedPreferences.getInstance();
+            return true;
+          }),
+          UpdateIntegrityCheck('secure-session', () async {
+            await widget.api.currentMatrixUserId();
+            return true;
+          }),
+        ],
+      );
+      if (report == null || report.allOk || !mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          key: const Key('update-integrity-warning'),
+          title: const Text('数据完整性提醒'),
+          content: const Text(
+              '版本更新后的例行校验未全部通过。您的数据未被修改或清除，'
+              '如遇异常请联系客服。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      // Integrity verification must never block the session.
+    }
+  }
+
+  int _deferredUpdateBuild = 0;
+
+  Future<void> _recordDeferredUpdate(int build) async {
+    _deferredUpdateBuild = build;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _deferStore ??= AppUpdateDeferStore(prefs);
+      await _deferStore!.record(build, DateTime.now());
+    } catch (_) {
+      // Recording the choice must never break the flow.
+    }
+  }
+
+  /// Silent best-effort check; network failures must never block the session.
+  /// 诊断构建（LIUHETONG_IN_APP_UPDATE=false）整体跳过，避免
+  /// "下载 APK 并拉起安装"高危行为参与安全软件误报判定。
+  Future<void> _checkForAppUpdate() async {
+    if (!AppConfig.inAppUpdateEnabled) return;
+    AppUpdateInfo? info;
+    try {
+      info = parseAppUpdate(await widget.api.latestAppUpdate());
+    } catch (_) {
+      return;
+    }
+    final pending = resolvePendingUpdate(
+      info: info,
+      currentBuild: AppConfig.appBuildNumber,
+      currentVersion: AppConfig.appVersionName,
+    );
+    if (!mounted ||
+        pending == null ||
+        pending.latestBuild <= _deferredUpdateBuild) {
+      return;
+    }
+    if (!requiresForcedUpdate(pending, AppConfig.appBuildNumber)) {
+      await showAppUpdateDialog(
+        context,
+        info: pending,
+        currentBuild: AppConfig.appBuildNumber,
+        onDeferred: () => unawaited(_recordDeferredUpdate(pending.latestBuild)),
+      );
+      return;
+    }
+    // 强制更新：即使弹窗因任何原因被关闭，也立即重新弹出，直到更新完成。
+    while (mounted &&
+        pending.latestBuild > _deferredUpdateBuild &&
+        requiresForcedUpdate(pending, AppConfig.appBuildNumber)) {
+      await showAppUpdateDialog(
+        context,
+        info: pending,
+        currentBuild: AppConfig.appBuildNumber,
+      );
+    }
   }
 
   Future<MessageReminderSyncCoordinator> _createReminderSync() async {
@@ -112,15 +303,52 @@ final class _AppHomeState extends State<AppHome> {
 
   void _callChanged() {
     if (!mounted) return;
-    if (calls.state.phase == CallPhase.ringing && !callPageVisible) {
+    final phase = calls.state.phase;
+    if (phase == CallPhase.ringing && !callPageVisible) {
+      // 来电：前台直接呈现接听页；后台/锁屏/其他应用之上
+      // 以全屏意图通知覆盖提醒，点击拉起接听页。
       incomingCallActive = true;
+      if (!appResumed) {
+        unawaited(callNotifications.showIncoming(
+          callerName: calls.state.matrixUserId ?? '加密来电',
+          video: calls.state.type == CallMediaType.video,
+        ));
+      }
       setState(() {});
-    } else if (incomingCallActive &&
-        (calls.state.phase == CallPhase.ended ||
-            calls.state.phase == CallPhase.failed ||
-            calls.state.phase == CallPhase.permissionDenied)) {
+    } else if (phase == CallPhase.connected) {
+      if (incomingCallActive) {
+        incomingCallActive = false;
+        unawaited(callNotifications.hideIncoming());
+      }
+      // 通话中前台服务：按 Home 键/切换应用后通话继续、麦克风摄像头不回收。
+      unawaited(callNotifications.showOngoing(title: '端到端加密通话进行中'));
+      setState(() {});
+    } else if (phase == CallPhase.ended ||
+        phase == CallPhase.failed ||
+        phase == CallPhase.permissionDenied) {
+      final hadCallUi = incomingCallActive || callPageVisible;
+      // 主叫在结束时落一条通话摘要消息（接通=时长，未接通=已取消），
+      // 被叫端经同步收到同一消息，双端会话各显示一条。
+      if (callPageVisible && !callSummarySent) {
+        callSummarySent = true;
+        final connectedAt = calls.state.connectedAt;
+        final roomId = calls.state.roomId;
+        final type = calls.state.type ?? CallMediaType.audio;
+        if (roomId != null) {
+          unawaited(callBackend.sendCallSummary(
+            roomId: roomId,
+            type: type,
+            connected: connectedAt != null,
+            duration: connectedAt == null
+                ? Duration.zero
+                : DateTime.now().difference(connectedAt),
+          ));
+        }
+      }
       incomingCallActive = false;
-      setState(() {});
+      unawaited(callNotifications.hideIncoming());
+      unawaited(callNotifications.hideOngoing());
+      if (hadCallUi) setState(() {});
     }
   }
 
@@ -129,6 +357,7 @@ final class _AppHomeState extends State<AppHome> {
       final reference = await directChats.open(contact.matrixUserId);
       if (!mounted) return;
       callPageVisible = true;
+      callSummarySent = false;
       final navigation = Navigator.push(
         context,
         CupertinoPageRoute(
@@ -138,6 +367,7 @@ final class _AppHomeState extends State<AppHome> {
             fallbackSeed: contact.username,
             avatarUrl: contact.avatarUrl,
             mediaBackend: callBackend,
+            autoCloseOnEnd: true,
           ),
         ),
       );
@@ -233,6 +463,9 @@ final class _AppHomeState extends State<AppHome> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _friendRequestPollTimer?.cancel();
+    pendingFriendRequests.dispose();
     calls.removeListener(_callChanged);
     calls.dispose();
     callBackend.dispose();
@@ -291,6 +524,7 @@ final class _AppHomeState extends State<AppHome> {
                     : ContactsTabPage(
                         api: widget.api,
                         matrix: widget.matrix,
+                        pendingFriendRequests: pendingFriendRequests,
                         directChats: directChats,
                         onVoice: (contact) =>
                             _openCall(contact, CallMediaType.audio),
@@ -301,6 +535,7 @@ final class _AppHomeState extends State<AppHome> {
                         identityCache: _chatIdentityCache,
                       ),
                 2 => DiscoveryPage(
+                        matrix: widget.matrix,
                     api: widget.api,
                     identityCache: _chatIdentityCache,
                   ),
@@ -335,6 +570,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
+    required this.pendingFriendRequests,
     this.reminderService,
     this.identityCache,
   });
@@ -344,6 +580,7 @@ final class ContactsTabPage extends StatefulWidget {
   final ContactAction onVoice;
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
+  final ValueNotifier<int> pendingFriendRequests;
   final MessageReminderService? reminderService;
   final ChatIdentityCache? identityCache;
 
@@ -399,6 +636,8 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
   @override
   Widget build(BuildContext context) => ContactsPage(
         api: widget.api,
+        matrix: widget.matrix,
+        pendingFriendRequests: widget.pendingFriendRequests,
         identityCache: widget.identityCache,
         onMessage: _openMessage,
         onVoice: widget.onVoice,
@@ -423,7 +662,15 @@ final class ProfileTabPage extends StatefulWidget {
 
 final class _ProfileTabPageState extends State<ProfileTabPage> {
   late final ProfileController controller = ProfileController(
-      gateway: widget.api, avatarSource: GalleryAvatarSource());
+    gateway: widget.api,
+    avatarSource: GalleryAvatarSource(),
+    onAvatarUpdated: _refreshAvatarDisplays,
+  );
+
+  void _refreshAvatarDisplays() {
+    unawaited(widget.identityCache?.refresh());
+    if (mounted) setState(() {});
+  }
   @override
   void dispose() {
     controller.dispose();
@@ -433,9 +680,9 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () => Navigator.push(
-          context,
+      onMoments: () => Navigator.of(context, rootNavigator: true).push(
           CupertinoPageRoute(
+              fullscreenDialog: true,
               builder: (_) => MomentsPage(
                     api: widget.api,
                     identityCache: widget.identityCache,
@@ -445,31 +692,32 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
           CupertinoPageRoute(
               builder: (_) => CupertinoPageScaffold(
                   navigationBar: CupertinoNavigationBar(
-                      backgroundColor: WeChatColors.chatNavigationBackground,
                       automaticBackgroundVisibility: false,
                       enableBackgroundFilterBlur: false,
                       middle: Text('点钻')),
                   child: CaibiPage(api: widget.api)))),
-      onRedPacket: () => Navigator.push(
-          context,
-          CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(
-                  navigationBar: CupertinoNavigationBar(
-                      backgroundColor: WeChatColors.chatNavigationBackground,
-                      automaticBackgroundVisibility: false,
-                      enableBackgroundFilterBlur: false,
-                      middle: Text('红包')),
-                  child: RedPacketPage(api: widget.api)))),
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
               builder: (_) => CupertinoPageScaffold(
                   navigationBar: CupertinoNavigationBar(
-                      backgroundColor: WeChatColors.chatNavigationBackground,
                       automaticBackgroundVisibility: false,
                       enableBackgroundFilterBlur: false,
                       middle: Text('钱包')),
                   child: WalletPage(api: widget.api)))),
+      onInvite: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => InviteCodePage(
+                  controller: InviteCodeController(gateway: widget.api)))),
+      onQrCode: () {
+        final profile = controller.state.profile;
+        if (profile == null) return;
+        Navigator.push(
+            context,
+            CupertinoPageRoute(
+                builder: (_) => MyQrCodePage(profile: profile)));
+      },
       onSettings: () => Navigator.push(
           context,
           CupertinoPageRoute(
@@ -490,7 +738,6 @@ final class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('我')),
@@ -506,30 +753,10 @@ final class ProfilePage extends StatelessWidget {
                   CupertinoPageRoute(
                     builder: (_) => CupertinoPageScaffold(
                       navigationBar: CupertinoNavigationBar(
-                          backgroundColor:
-                              WeChatColors.chatNavigationBackground,
                           automaticBackgroundVisibility: false,
                           enableBackgroundFilterBlur: false,
                           middle: Text('点钻')),
                       child: CaibiPage(api: api),
-                    ),
-                  ),
-                ),
-              ),
-              WeChatListTile(
-                leading: const Icon(CupertinoIcons.gift_fill),
-                title: const Text('红包'),
-                onTap: () => Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => CupertinoPageScaffold(
-                      navigationBar: CupertinoNavigationBar(
-                          backgroundColor:
-                              WeChatColors.chatNavigationBackground,
-                          automaticBackgroundVisibility: false,
-                          enableBackgroundFilterBlur: false,
-                          middle: Text('红包')),
-                      child: RedPacketPage(api: api),
                     ),
                   ),
                 ),
@@ -542,8 +769,6 @@ final class ProfilePage extends StatelessWidget {
                   CupertinoPageRoute(
                     builder: (_) => CupertinoPageScaffold(
                       navigationBar: CupertinoNavigationBar(
-                          backgroundColor:
-                              WeChatColors.chatNavigationBackground,
                           automaticBackgroundVisibility: false,
                           enableBackgroundFilterBlur: false,
                           middle: Text('钱包')),
@@ -599,7 +824,6 @@ final class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('设置')),
@@ -632,8 +856,13 @@ final class SettingsPage extends StatelessWidget {
               _SettingsTile(
                 icon: CupertinoIcons.info,
                 label: '关于畅聊',
-                detail: '1.1',
-                onTap: () {},
+                detail: 'V${AppConfig.appVersionName}',
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => AboutChangliaoPage(api: api),
+                  ),
+                ),
               ),
               const SizedBox(height: 2),
               SizedBox(
@@ -775,7 +1004,6 @@ final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
         navigationBar: const CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('账号与隐私'),

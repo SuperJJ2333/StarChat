@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "figma": {
     "fileKey": "zpzwTbnj1hqx80tyRygX78",
-    "stateArtifact": "design-demo/artifacts/figma-state.json",
+    "stateArtifact": "frontend/artifacts/figma-state.json",
     "mode": "export-ledger",
-    "expectedScreenCount": 326
+    "expectedScreenCount": 330
   },
   "tokenMappings": {
     "colors": [

@@ -48,6 +48,15 @@ final class ContactSummary {
     return username;
   }
 
+  /// 主昵称（用户自设昵称），绝不包含备注。聊天/群聊/朋友圈等
+  /// 他人可见或本人聊天场景的展示必须使用该值（备注隐私红线）。
+  String get primaryDisplayName {
+    for (final value in [nickname, username]) {
+      if (value != null && value.trim().isNotEmpty) return value.trim();
+    }
+    return username;
+  }
+
   ContactSummary copyWith({String? remark, String? nickname}) => ContactSummary(
         userId: userId,
         username: username,
@@ -108,6 +117,14 @@ final class ContactDetails {
         remark: remark,
       ).displayName;
 
+  /// 主昵称（不含备注），供聊天等场景展示（备注隐私红线）。
+  String get primaryDisplayName => ContactSummary(
+        userId: userId,
+        username: username,
+        matrixUserId: matrixUserId,
+        nickname: nickname,
+      ).primaryDisplayName;
+
   ContactSummary toSummary() => ContactSummary(
         userId: userId,
         username: username,
@@ -139,6 +156,19 @@ final class ContactDetails {
         tags: tags ?? this.tags,
         starred: starred,
       );
+}
+
+/// 添加朋友：畅聊号/邮箱前缀搜索 + 好友申请（含备注/标签/朋友圈权限）。
+abstract interface class AddFriendGateway {
+  Future<Map<String, dynamic>> searchUsers(String query);
+  Future<Map<String, dynamic>> requestFriend(
+    String userId, {
+    String message,
+    String? remark,
+    List<String> tags,
+    String momentsPermission,
+  });
+  Future<Map<String, dynamic>> contactTags();
 }
 
 abstract interface class ContactsGateway {

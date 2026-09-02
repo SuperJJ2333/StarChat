@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
@@ -14,16 +15,22 @@ final class ProfileExperiencePage extends StatefulWidget {
     required this.controller,
     required this.onMoments,
     required this.onCaibi,
-    required this.onRedPacket,
     required this.onWallet,
+    required this.onInvite,
     required this.onSettings,
+    this.onQrCode,
   });
 
   final ProfileController controller;
   final VoidCallback onMoments;
   final VoidCallback onCaibi;
-  final VoidCallback onRedPacket;
   final VoidCallback onWallet;
+
+  /// 邀请码入口：好友注册填写邀请码，建立邀请关系。
+  final VoidCallback onInvite;
+
+  /// “我的二维码”入口（身份卡右上角）；缺省时隐藏角标。
+  final VoidCallback? onQrCode;
   final VoidCallback onSettings;
 
   @override
@@ -58,7 +65,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
           backgroundColor: WeChatColors.chatNavigationBackground,
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
-          middle: Text('我')),
+          middle: const WeChatNavTitle('我')),
       child: SafeArea(
         child: profile == null
             ? Center(
@@ -84,6 +91,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                         ),
                       ),
                     ),
+                    onQrCode: widget.onQrCode,
                   ),
                   const SizedBox(height: 12),
                   _ProfileMenuTile(
@@ -97,14 +105,15 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                     onTap: widget.onCaibi,
                   ),
                   _ProfileMenuTile(
-                    icon: ChangliaoIcons.gift,
-                    label: '红包',
-                    onTap: widget.onRedPacket,
-                  ),
-                  _ProfileMenuTile(
                     icon: ChangliaoIcons.wallet,
                     label: '钱包',
                     onTap: widget.onWallet,
+                  ),
+                  _ProfileMenuTile(
+                    key: const Key('profile-invite-entry'),
+                    icon: CupertinoIcons.person_crop_circle_badge_plus,
+                    label: '邀请码',
+                    onTap: widget.onInvite,
                   ),
                   _ProfileMenuTile(
                     icon: ChangliaoIcons.settings,
@@ -119,10 +128,17 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
 }
 
 final class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.profile, required this.onTap});
+  const _IdentityCard({
+    required this.profile,
+    required this.onTap,
+    this.onQrCode,
+  });
 
   final ProfileData profile;
   final VoidCallback onTap;
+
+  /// 右上角「二维码」入口：点击打开“我的二维码”页（微信式）。
+  final VoidCallback? onQrCode;
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +149,9 @@ final class _IdentityCard extends StatelessWidget {
       key: const Key('profile-identity-card'),
       padding: EdgeInsets.zero,
       onPressed: onTap,
-      child: Container(
+      child: Stack(
+        children: [
+          Container(
         height: 126,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
@@ -195,12 +213,28 @@ final class _IdentityCard extends StatelessWidget {
           ],
         ),
       ),
+          if (onQrCode != null)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: CupertinoButton(
+                key: const Key('profile-qr-entry'),
+                minimumSize: const Size(44, 44),
+                padding: const EdgeInsets.all(10),
+                onPressed: onQrCode,
+                child: Icon(CupertinoIcons.qrcode,
+                    size: 22, color: WeChatColors.textSecondary),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
 
 final class _ProfileMenuTile extends StatelessWidget {
   const _ProfileMenuTile({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
@@ -297,7 +331,6 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     final profile = state.profile!;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('个人信息'),
@@ -411,7 +444,6 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
     final saving = widget.controller.state.status == ProfileStatus.saving;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('设置拍一拍'),

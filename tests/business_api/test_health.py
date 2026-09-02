@@ -56,6 +56,7 @@ def test_production_accepts_required_secrets() -> None:
         synapse_admin_access_token="test-synapse-admin-access-token",
         matrix_provision_secret="test-matrix-provision-secret",
         avatar_url_signing_secret="test-avatar-url-signing-secret",
+        referral_code_secret="test-referral-code-secret",
         matrix_public_homeserver_url="https://matrix.example.test",
         avatar_public_base_url="https://api.example.test",
     )
@@ -74,6 +75,7 @@ def test_production_rejects_public_matrix_provision_secret() -> None:
             synapse_admin_access_token="test-synapse-admin-access-token",
             matrix_provision_secret="development-matrix-provision-secret",
             avatar_url_signing_secret="test-avatar-url-signing-secret",
+            referral_code_secret="test-referral-code-secret",
         )
 
 
@@ -86,6 +88,7 @@ def test_production_rejects_public_matrix_provision_secret() -> None:
         ("synapse_admin_access_token", "change-this-synapse-admin-token"),
         ("matrix_provision_secret", "change-this-matrix-provision-secret"),
         ("avatar_url_signing_secret", "change-this-avatar-url-signing-secret"),
+        ("referral_code_secret", "change-this-referral-code-secret"),
     ],
 )
 def test_production_rejects_public_placeholder_secrets(field, value) -> None:
@@ -99,6 +102,7 @@ def test_production_rejects_public_placeholder_secrets(field, value) -> None:
         "synapse_admin_access_token": secure,
         "matrix_provision_secret": secure,
         "avatar_url_signing_secret": secure,
+        "referral_code_secret": secure,
         "matrix_public_homeserver_url": "https://matrix.example.test",
         "avatar_public_base_url": "https://api.example.test",
         field: value,
@@ -119,6 +123,7 @@ def test_production_rejects_cleartext_public_urls() -> None:
             synapse_admin_access_token="test-synapse-admin-access-token",
             matrix_provision_secret="test-matrix-provision-secret",
             avatar_url_signing_secret="test-avatar-url-signing-secret",
+            referral_code_secret="test-referral-code-secret",
         )
 
 

@@ -8,6 +8,9 @@ import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
 
 import 'call_controller.dart';
 
+/// 通话结束摘要消息的自定义 msgtype（同红包/转账的自定义消息模式）。
+const changliaoCallMessageType = 'com.changliao.call';
+
 bool isVerifiedDirectParticipantSet(
   Set<String> participantIds, {
   required String localUserId,
@@ -257,6 +260,27 @@ final class MatrixCallBackend implements CallBackend {
     final tracks = _active.localUserMediaStream?.stream?.getVideoTracks() ?? [];
     if (tracks.isEmpty) return;
     await webrtc.Helper.switchCamera(tracks.first);
+  }
+
+  /// 通话结束摘要：呼叫方落一条会话消息（加密房间自动加密），
+  /// 双端时间线各显示“通话时长/已取消”。
+  Future<void> sendCallSummary({
+    required String roomId,
+    required CallMediaType type,
+    required bool connected,
+    required Duration duration,
+  }) async {
+    final room = client.getRoomById(roomId);
+    if (room == null) return;
+    await room.sendEvent({
+      'msgtype': changliaoCallMessageType,
+      'body': connected
+          ? (type == CallMediaType.video ? '[视频通话]' : '[语音通话]')
+          : '已取消',
+      'call_type': type == CallMediaType.video ? 'video' : 'voice',
+      'call_connected': connected,
+      'duration_ms': duration.inMilliseconds,
+    });
   }
 
   Future<void> dispose() async {

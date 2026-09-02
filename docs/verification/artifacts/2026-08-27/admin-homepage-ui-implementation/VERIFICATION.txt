@@ -1,0 +1,38 @@
+CHANGED BRANCH/FIELD: design-demo admin console + homepage visual branch; modules[] fixtures, responsive token/layout CSS, admin.html route, homepage ?view=home route.
+
+MODIFIED_FILE: docs/verification/artifacts/2026-08-27/admin-homepage-ui-implementation/MODIFIED_FILE
+DIFF_FILE: docs/verification/artifacts/2026-08-27/admin-homepage-ui-implementation/DIFF_FILE
+VERIFICATION.txt: docs/verification/artifacts/2026-08-27/admin-homepage-ui-implementation/VERIFICATION.txt
+ROLLBACK.sh: docs/verification/artifacts/2026-08-27/admin-homepage-ui-implementation/ROLLBACK.sh
+
+BASELINE command: npm test
+BASELINE input: pre-change design-demo source
+BASELINE literal output/result: 14 tests passed, 0 failed (existing contract baseline)
+BASELINE exit status: 0
+
+MODIFIED command: npm test
+MODIFIED input: design-demo/admin.html, src/admin-home.js, src/styles/gallery.css, src/styles/tokens.css
+MODIFIED literal output/result: 14 tests passed, 0 failed
+MODIFIED exit status: 0
+
+MODIFIED command: npm run screenshots
+MODIFIED input: registered screen catalog
+MODIFIED literal output/result: Generated 326 deterministic screen screenshots.
+MODIFIED exit status: 0
+
+MODIFIED command: Chrome headless dump http://127.0.0.1:4173/admin.html
+MODIFIED input: admin route
+MODIFIED literal output/result: data-app-ready="true"; 9 module buttons; KPI cards; trend chart; queue table.
+MODIFIED exit status: 0
+
+MODIFIED command: Chrome headless dump http://127.0.0.1:4173/admin.html?view=home
+MODIFIED input: homepage route
+MODIFIED literal output/result: data-app-ready="true"; Hero; 3 public stats; 5 capability cards; announcement/safety; 下载六合通 CTA.
+MODIFIED exit status: 0
+
+ROLLBACK command: bash docs/verification/artifacts/2026-08-27/admin-homepage-ui-implementation/ROLLBACK.sh <copy-path>
+ROLLBACK input: backup copy path supplied to script
+ROLLBACK literal output/result: ROLLBACK_OK: restored target from backup
+ROLLBACK exit status: 0
+
+Restored behavior/status: rollback verified on a copy; MODIFIED_FILE remains changed and the active admin/homepage UI remains available.

@@ -15,5 +15,12 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
-    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar" />
+    <!-- 裁剪头像页主题：image_cropper 12.x 内嵌 uCrop 2.2.11，原生完整
+         支持 edge-to-edge 与 WindowInsets（无需也不应硬编码状态栏高度），
+         “确定”按钮在 Android 14/15/16 与刘海/挖孔屏上自动避让系统栏。
+         这里仅声明浅色状态栏配色以保证工具栏图标对比度。 -->
+    <style name="Ucrop.CropTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:statusBarColor">#F7F7F7</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 </resources>

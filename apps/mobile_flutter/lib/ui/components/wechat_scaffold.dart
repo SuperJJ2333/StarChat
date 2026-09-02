@@ -8,13 +8,15 @@ final class WeChatPageScaffold extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
-    this.backgroundColor = WeChatColors.chatPageBackground,
+    // Null falls back to the theme scaffold background so pages follow the
+    // active brightness; pages pinned by UI_DESIGN.md 2.1 pass fixed tokens.
+    this.backgroundColor,
   }) : navigationBar = null;
 
   const WeChatPageScaffold.bare({
     super.key,
     required this.child,
-    required this.backgroundColor,
+    this.backgroundColor = WeChatColors.lightPageBackground,
   })  : title = null,
         trailing = null,
         navigationBar = null;
@@ -23,7 +25,7 @@ final class WeChatPageScaffold extends StatelessWidget {
     super.key,
     required this.navigationBar,
     required this.child,
-    this.backgroundColor = WeChatColors.chatPageBackground,
+    this.backgroundColor,
   })  : title = null,
         trailing = null;
 
@@ -31,7 +33,7 @@ final class WeChatPageScaffold extends StatelessWidget {
   final Widget child;
   final Widget? trailing;
   final ObstructingPreferredSizeWidget? navigationBar;
-  final Color backgroundColor;
+  final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(

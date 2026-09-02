@@ -1,0 +1,14 @@
+TARGET: docs/superpowers/specs/2026-08-27-admin-homepage-ui-design.md
+BASELINE command: content assertion against docs/verification/artifacts/2026-08-27/admin-homepage-ui-design/baseline.md
+BASELINE input: # Baseline
+BASELINE output/result: expected missing module
+BASELINE exit status: 0
+MODIFIED command: content assertion against docs/verification/artifacts/2026-08-27/admin-homepage-ui-design/MODIFIED_FILE
+MODIFIED input: design specification copy
+MODIFIED output/result: pass: 9 modules + homepage
+MODIFIED exit status: 0
+ROLLBACK command: bash docs/verification/artifacts/2026-08-27/admin-homepage-ui-design/ROLLBACK.sh docs/verification/artifacts/2026-08-27/admin-homepage-ui-design/rollback-copy.md
+ROLLBACK input: rollback-copy.md exists
+ROLLBACK output/result: ROLLBACK_OK: copy restored to absent baseline
+ROLLBACK exit status: 0
+Restored behavior/status: rollback-copy.md absent; MODIFIED_FILE remains changed.

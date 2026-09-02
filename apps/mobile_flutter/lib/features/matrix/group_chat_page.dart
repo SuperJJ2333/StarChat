@@ -112,6 +112,22 @@ final class _GroupChatPageState extends State<GroupChatPage> {
                         ),
                       ),
                       Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                        child: Text(
+                          // 群聊人数下限 3 人（含自己）；仅选 1 人无法创建，
+                          // 如需单聊请使用好友"发消息"。
+                          state.selectedMatrixUserIds.length < 2
+                              ? '群聊至少需要 3 名成员（含你自己）。'
+                                  '仅选择 1 位联系人时无法创建；'
+                                  '如需单聊请回到会话列表直接发起。'
+                              : '创建后将以加密群聊运行',
+                          key: const Key('group-chat-min-hint'),
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: WeChatColors.textSecondary),
+                        ),
+                      ),
+                      Padding(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                         child: ModernActionButton(
                           key: const Key('group-chat-create'),

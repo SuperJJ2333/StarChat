@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
 import '../features/auth/login_controller.dart';
 import '../features/auth/registration_controller.dart';
 import '../features/profile/profile_controller.dart';
+import '../features/profile/invite_controller.dart';
+import '../features/auth/invitation_validation.dart';
 import '../features/contacts/contact_models.dart';
+import '../features/profile/complaint_models.dart';
+import '../features/redpacket/red_packet_controller.dart';
 
 final class BusinessApiException implements Exception {
   const BusinessApiException(
@@ -37,7 +42,11 @@ final class BusinessApiClient
         RegistrationGateway,
         DualDomainBusinessGateway,
         ProfileGateway,
-        ContactsGateway {
+        ContactsGateway,
+        AddFriendGateway,
+        ComplaintGateway,
+        RedPacketViewGateway,
+        ReferralInviteGateway {
   BusinessApiClient(
       {required this.baseUri, required this.sessionStore, http.Client? client})
       : _client = client ?? http.Client();
@@ -49,8 +58,12 @@ final class BusinessApiClient
   String newIdempotencyKey() => _uuid.v4();
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
-  Uri _uri(String path) =>
-      baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
+  Uri _uri(String path) {
+    final url =
+        baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
+    _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
+    return url;
+  }
   Future<Map<String, dynamic>> login(
       {required String username,
       required String password,
@@ -67,7 +80,8 @@ final class BusinessApiClient
     final body = _decode(response);
     await sessionStore.saveSession(
         accessToken: body['access_token'] as String,
-        refreshToken: body['refresh_token'] as String);
+        refreshToken: body['refresh_token'] as String,
+        deviceKey: deviceKey);
     return body;
   }
 
@@ -112,10 +126,35 @@ final class BusinessApiClient
   @override
   Future<void> logoutBusiness() => logout();
   @override
-  Future<bool> validateInvitation(String invitationCode) async {
+  Future<InvitationValidationResult> validateInvitation(
+      String invitationCode) async {
     final response = await _client.post(_uri('/invitations/validate'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'invitation_code': invitationCode}));
+    final body = _decode(response);
+    return mapInvitationCheck(
+      valid: body['valid'] == true,
+      reason: body['reason']?.toString(),
+    );
+  }
+
+  @override
+  Future<ReferralInvite> fetchReferralInvite() async {
+    final body = await getJson('/invitations/referral');
+    return ReferralInvite(
+        code: body['code'] as String,
+        rotatesAt: DateTime.parse(body['rotates_at'] as String),
+        rotatesInSeconds: body['rotates_in_seconds'] as int,
+        shareUrl: body['share_url'] as String,
+        rewardEnabled: (body['reward_enabled'] as bool?) ?? false);
+  }
+
+  @override
+  Future<bool> validateReferralCode(String referralCode) async {
+    final response = await _client.post(
+        _uri('/invitations/referral/validate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'referral_code': referralCode}));
     return _decode(response)['valid'] as bool;
   }
 
@@ -125,9 +164,10 @@ final class BusinessApiClient
       String? nickname,
       required String email,
       required String password,
-      required String invitationCode}) async {
+      required String invitationCode,
+      String referralCode = ''}) async {
     final operation =
-        'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode';
+        'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode:${referralCode.trim().toUpperCase()}';
     final response = await _client.post(_uri('/auth/register'),
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +179,9 @@ final class BusinessApiClient
           if (nickname != null) 'nickname': nickname,
           'email': email,
           'password': password,
-          'invitation_code': invitationCode
+          'invitation_code': invitationCode,
+          if (referralCode.trim().isNotEmpty)
+            'referral_code': referralCode.trim().toUpperCase()
         }));
     final body = _decode(response);
     _pendingIdempotencyKeys.remove(operation);
@@ -285,7 +327,22 @@ final class BusinessApiClient
     }
   }
 
-  Future<StoredBusinessSession> refreshSession() async {
+  /// 进行中的令牌刷新。服务端刷新令牌单次使用，且对已消费令牌的重放
+  /// 会按 TOKEN_REUSE 撤销整个设备令牌族；并发 401 必须共享同一次刷新
+  /// 调用（single-flight），否则首页聚合加载会互相触发撤族踢用户回登录页。
+  Future<StoredBusinessSession>? _refreshFlight;
+
+  Future<StoredBusinessSession> refreshSession() {
+    final existing = _refreshFlight;
+    if (existing != null) return existing;
+    final flight = _refreshSession();
+    _refreshFlight = flight;
+    return flight.whenComplete(() {
+      if (identical(_refreshFlight, flight)) _refreshFlight = null;
+    });
+  }
+
+  Future<StoredBusinessSession> _refreshSession() async {
     final stored = await sessionStore.session();
     if (stored == null) {
       throw const BusinessApiException(
@@ -302,13 +359,41 @@ final class BusinessApiClient
       accessToken: body['access_token'] as String,
       refreshToken: body['refresh_token'] as String,
       matrixUserId: stored.matrixUserId,
+      deviceKey: stored.deviceKey,
     );
     await sessionStore.saveSession(
       accessToken: replacement.accessToken,
       refreshToken: replacement.refreshToken,
       matrixUserId: replacement.matrixUserId,
+      deviceKey: replacement.deviceKey,
     );
     return replacement;
+  }
+
+  /// Records a lightweight authenticated activity heartbeat. It carries no
+  /// Matrix identifiers, message data, or tokens beyond the Authorization
+  /// header and lets the admin presence view reflect foreground usage.
+  Future<void> sendPresenceHeartbeat({String? clientVersion}) async {
+    final session = await sessionStore.session();
+    if (session == null) {
+      throw const BusinessApiException(
+        statusCode: 401,
+        code: 'AUTH_REQUIRED',
+        message: '需要登录',
+      );
+    }
+    final response = await _authorized((headers) => _client.post(
+          _uri('/presence/heartbeat'),
+          headers: {
+            ...headers,
+            if (session.deviceKey != null) 'X-Device-Key': session.deviceKey!,
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            if (clientVersion != null) 'client_version': clientVersion,
+          }),
+        ));
+    if (response.statusCode >= 400) _decode(response);
   }
 
   @override
@@ -362,13 +447,38 @@ final class BusinessApiClient
             if (recipientId != null) 'recipient_id': recipientId
           },
           idempotencyKey: newIdempotencyKey());
+  @override
   Future<Map<String, dynamic>> claimRedPacket(String id) =>
       postJson('/red-packets/$id/claims', {},
           idempotencyKey: newIdempotencyKey());
+  @override
   Future<Map<String, dynamic>> redPacketDetail(String id) =>
       getJson('/red-packets/$id');
   Future<Map<String, dynamic>> listRedPackets({String? roomId}) => getJson(
       '/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}');
+  Future<Map<String, dynamic>> redPacketLimits() =>
+      getJson('/red-packets/limits');
+  Future<Map<String, dynamic>> latestAppUpdate() =>
+      getJson('/app-updates/latest');
+  Future<Map<String, dynamic>> createChatTransfer(
+          {required String receiverId,
+          required String amount,
+          String? note,
+          String? roomId}) =>
+      postJson('/chat-transfers', {
+        'receiver_id': receiverId,
+        'amount': amount,
+        if (note != null && note.isNotEmpty) 'note': note,
+        if (roomId != null) 'room_id': roomId,
+      }, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> acceptChatTransfer(String id) =>
+      postJson('/chat-transfers/$id/accept', {},
+          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> declineChatTransfer(String id) =>
+      postJson('/chat-transfers/$id/decline', {},
+          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> chatTransferDetail(String id) =>
+      getJson('/chat-transfers/$id');
   Future<Map<String, dynamic>> walletBalance() =>
       getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() =>
@@ -411,6 +521,13 @@ final class BusinessApiClient
   }
 
   Future<Map<String, dynamic>> friendRequests() => getJson('/friends/requests');
+  @override
+  Future<Map<String, dynamic>> submitComplaint(
+          {required String category, required String description}) =>
+      postJson('/support/complaints', {
+        'category': category,
+        'description': description,
+      }, idempotencyKey: newIdempotencyKey());
   @override
   Future<Map<String, dynamic>> contactTags() => getJson('/contact-tags');
   @override
@@ -490,13 +607,22 @@ final class BusinessApiClient
     if (response.statusCode >= 400) _decode(response);
   }
 
+  @override
   Future<Map<String, dynamic>> searchUsers(String query) =>
       getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
+  @override
   Future<Map<String, dynamic>> requestFriend(String userId,
-          {String message = ''}) =>
-      postJson(
-          '/friends/requests', {'target_user_id': userId, 'message': message},
-          idempotencyKey: newIdempotencyKey());
+      {String message = '',
+      String? remark,
+      List<String> tags = const [],
+      String momentsPermission = 'DEFAULT'}) =>
+      postJson('/friends/requests', {
+        'target_user_id': userId,
+        'message': message,
+        if (remark != null && remark.isNotEmpty) 'remark': remark,
+        if (tags.isNotEmpty) 'tags': tags,
+        'moments_permission': momentsPermission,
+      }, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> acceptFriendRequest(String id) =>
       postJson('/friends/requests/$id/accept', {},
           idempotencyKey: newIdempotencyKey());
@@ -673,16 +799,39 @@ final class BusinessApiClient
     return _decode(response);
   }
 
+  static const _httpTimeout = Duration(seconds: 8);
+
+  /// debug 模式请求观测：只记录 method/URL/HTTP 状态/错误类型，
+  /// 绝不输出 header、body、token、密码或完整邀请码。
+  void _logRequest(String method, Uri? url, Object outcome) {
+    if (!kDebugMode) return;
+    debugPrint('[api] $method ${url?.path ?? ''} -> $outcome');
+  }
+
   Future<http.Response> _authorized(
-      Future<http.Response> Function(Map<String, String>) operation) async {
+    Future<http.Response> Function(Map<String, String>) operation, {
+    Duration timeout = _httpTimeout,
+  }) async {
     final initial = await sessionStore.session();
-    final response = await operation({
-      if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}'
-    });
+    final requestUrl = _lastRequestUrl;
+    http.Response response;
+    try {
+      response = await operation({
+        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}'
+      }).timeout(timeout);
+    } catch (error) {
+      _logRequest('REQUEST', requestUrl, 'ERROR:${error.runtimeType}');
+      rethrow;
+    }
+    if (response.statusCode >= 400) {
+      _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
+    }
     if (response.statusCode != 401 || initial == null) return response;
     final replacement = await refreshSession();
     return operation({'Authorization': 'Bearer ${replacement.accessToken}'});
   }
+
+  Uri? _lastRequestUrl;
 
   Map<String, dynamic> _decode(http.Response response) {
     final body = jsonDecode(response.body) as Map<String, dynamic>;

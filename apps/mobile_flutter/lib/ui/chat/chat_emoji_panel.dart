@@ -1,11 +1,13 @@
 import 'dart:typed_data';
 
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../features/emoji/fluent_emoji_catalog.dart';
+import '../../features/emoji/fluent_vector_emoji_catalog.dart';
 import '../foundation/wechat_tokens.dart';
 
-enum ChatEmojiTab { recent, all, custom }
+enum ChatEmojiTab { smiley, superEmoji, custom }
 
 final class CustomEmojiItem {
   const CustomEmojiItem({
@@ -21,13 +23,20 @@ final class CustomEmojiItem {
   final String mimeType;
 }
 
+/// 表情面板：顶部三栏**图标**切换（无文字标签）——
+/// - “表情”（笑脸图标）：fluentui-emoji 矢量静态表情（SVG，按 DPR 栅格化，
+///   高 DPI 锐利），插入 Unicode 字符；
+/// - “超级表情”（动态/特效图标）：打包内置的 Animated Fluent Emojis
+///   （256px animated WebP），插入 Unicode 字符，发送路径与普通文本一致；
+/// - “我的表情”（收藏/心形图标）：E2EE 表情仓库的图片/GIF 媒体消息。
+/// 三栏切换完整展示对应类别内容，选中态由分段控件保持同步。
 final class ChatEmojiPanel extends StatefulWidget {
   const ChatEmojiPanel({
     super.key,
     required this.onEmojiSelected,
     required this.customItems,
     required this.onCustomSelected,
-    this.initialTab = ChatEmojiTab.recent,
+    this.initialTab = ChatEmojiTab.superEmoji,
   });
 
   final ValueChanged<String> onEmojiSelected;
@@ -55,10 +64,25 @@ final class _ChatEmojiPanelState extends State<ChatEmojiPanel> {
             width: double.infinity,
             child: CupertinoSlidingSegmentedControl<ChatEmojiTab>(
               groupValue: tab,
-              children: const {
-                ChatEmojiTab.recent: Text('最近'),
-                ChatEmojiTab.all: Text('全部'),
-                ChatEmojiTab.custom: Text('我的表情'),
+              children: {
+                ChatEmojiTab.smiley: _tabIcon(
+                  key: const Key('emoji-tab-smiley'),
+                  icon: CupertinoIcons.smiley,
+                  semanticLabel: '表情',
+                  selected: tab == ChatEmojiTab.smiley,
+                ),
+                ChatEmojiTab.superEmoji: _tabIcon(
+                  key: const Key('emoji-tab-super'),
+                  icon: CupertinoIcons.sparkles,
+                  semanticLabel: '超级表情',
+                  selected: tab == ChatEmojiTab.superEmoji,
+                ),
+                ChatEmojiTab.custom: _tabIcon(
+                  key: const Key('emoji-tab-custom'),
+                  icon: CupertinoIcons.heart_fill,
+                  semanticLabel: '我的表情',
+                  selected: tab == ChatEmojiTab.custom,
+                ),
               },
               onValueChanged: (value) {
                 if (value != null) setState(() => tab = value);
@@ -67,47 +91,105 @@ final class _ChatEmojiPanelState extends State<ChatEmojiPanel> {
           ),
         ),
         Expanded(
-          child: tab == ChatEmojiTab.custom
-              ? _CustomEmojiGrid(
-                  items: widget.customItems,
-                  onSelected: widget.onCustomSelected,
-                )
-              : EmojiPicker(
-                  onEmojiSelected: (_, emoji) =>
-                      widget.onEmojiSelected(emoji.emoji),
-                  config: Config(
-                    height: null,
-                    checkPlatformCompatibility: true,
-                    locale: const Locale('zh', 'CN'),
-                    viewOrderConfig: const ViewOrderConfig(),
-                    emojiViewConfig: EmojiViewConfig(
-                      backgroundColor: panelColor,
-                      noRecents: const Text(
-                        '暂无最近使用',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: WeChatColors.textTertiary,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    skinToneConfig: const SkinToneConfig(
-                      rememberSkinTone: true,
-                    ),
-                    categoryViewConfig: const CategoryViewConfig(),
-                    bottomActionBarConfig: BottomActionBarConfig(
-                      enabled: false,
-                      showBackspaceButton: false,
-                      showSearchViewButton: false,
-                      backgroundColor: panelColor,
-                      buttonColor: panelColor,
-                      buttonIconColor: WeChatColors.brandPrimary,
-                    ),
-                    searchViewConfig: const SearchViewConfig(),
+          child: switch (tab) {
+            ChatEmojiTab.custom => _CustomEmojiGrid(
+                items: widget.customItems,
+                onSelected: widget.onCustomSelected,
+              ),
+            ChatEmojiTab.smiley => _VectorEmojiGrid(
+                onSelected: widget.onEmojiSelected,
+              ),
+            ChatEmojiTab.superEmoji => Container(
+                color: panelColor,
+                child: GridView.builder(
+                  key: const Key('fluent-emoji-grid'),
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 8,
+                    mainAxisSpacing: 6,
+                    crossAxisSpacing: 6,
                   ),
+                  itemCount: fluentEmojis.length,
+                  itemBuilder: (context, index) {
+                    final emoji = fluentEmojis[index];
+                    return CupertinoButton(
+                      key: Key('fluent-emoji-${emoji.name}'),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => widget.onEmojiSelected(emoji.char),
+                      child: Image.asset(
+                        emoji.asset,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.high,
+                      ),
+                    );
+                  },
                 ),
+              ),
+          },
         ),
       ],
+    );
+  }
+}
+
+/// 矢量静态表情网格：GridView 惰性构建可见项；SvgPicture 解析结果由
+/// flutter_svg 全局缓存复用，同表情多处出现不重复解析，滑动无卡顿。
+/// 三栏图标标签：笑脸=表情、动态/特效=超级表情、心形=我的表情。
+Widget _tabIcon({
+  required Key key,
+  required IconData icon,
+  required String semanticLabel,
+  required bool selected,
+}) =>
+    Semantics(
+      label: semanticLabel,
+      button: true,
+      child: Icon(
+        icon,
+        key: key,
+        size: 22,
+        color: selected
+            ? WeChatColors.brandPrimary
+            : WeChatColors.textSecondary,
+      ),
+    );
+
+final class _VectorEmojiGrid extends StatelessWidget {
+  const _VectorEmojiGrid({required this.onSelected});
+
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
+    final panelColor =
+        dark ? WeChatColors.darkSurface : WeChatColors.lightSurface;
+    return Container(
+      color: panelColor,
+      child: GridView.builder(
+        key: const Key('vector-emoji-grid'),
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 8,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
+        ),
+        itemCount: vectorEmojis.length,
+        itemBuilder: (context, index) {
+          final emoji = vectorEmojis[index];
+          return CupertinoButton(
+            key: Key('vector-emoji-${emoji.name}'),
+            padding: EdgeInsets.zero,
+            onPressed: () => onSelected(emoji.char),
+            child: SvgPicture.asset(
+              emoji.asset,
+              fit: BoxFit.contain,
+            ),
+          );
+        },
+      ),
     );
   }
 }

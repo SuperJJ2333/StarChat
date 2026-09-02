@@ -1,4 +1,4 @@
-enum ComposerPanel { none, voice, emoji, more }
+enum ComposerPanel { none, voice, emoji, mention, more, tools }
 
 final class ChatComposerState {
   const ChatComposerState({
@@ -11,5 +11,5 @@ final class ChatComposerState {
   final bool hasText;
   final ComposerPanel panel;
 
-  bool get showsSend => hasText;
+  bool get showsSend => hasText && panel != ComposerPanel.voice;
 }

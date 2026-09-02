@@ -1,0 +1,13 @@
+# Moments publish verification
+
+- Draft 404 semantics: `MOMENT_DRAFT_NOT_FOUND` is treated as an empty composer; no error banner blocks publishing.
+- Composer returns to Moments and triggers a fresh `momentsFeed(mode=latest)` request after publish/cancel.
+- Focused Flutter tests: `flutter test test/features/moments/moment_composer_page_test.dart test/features/moments/moments_flow_test.dart` -> 13 passed.
+- Release build: `flutter build apk --release` -> succeeded.
+- APK SHA-256: `6B64129B560D1E27BF484B7F676A01412B283BAE8353D366CD7299F6D6D0A9AA`.
+- Emulator install: `adb -s emulator-5554 install -r app-release.apk` -> `Success`; package `com.liuhetong.mobile`, versionName `0.1.0`, MainActivity foreground.
+
+Code changes:
+- `moment_composer_page.dart`: 404 `MOMENT_DRAFT_NOT_FOUND` is ignored as an empty initial draft; successful publish pops with `true`.
+- `moments_page.dart`: camera route awaits result and refreshes latest feed only after successful publish.
+- Tests include draft-not-found regression; focused suite and analyze pass.

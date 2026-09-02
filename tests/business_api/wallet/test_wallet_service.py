@@ -25,15 +25,21 @@ def test_duplicate_signed_deposit_webhook_credits_once(wallet):
     assert service.handle_deposit_webhook(event.payload, event.signature) == "CREDITED"
     assert service.usdt_balance("user-1") == Decimal("12.345678")
 
-def test_withdrawal_requires_two_approvers_for_large_amount(wallet):
+def test_withdrawal_submits_after_the_admin_direct_review(wallet):
     service, provider = wallet
     service.credit_for_test("user-1", Decimal("2000.000000"))
     request = service.request_withdrawal(user_id="user-1", amount=Decimal("1500.000000"), address="TTEST", client_order_id="wd-1", reason_code="USER_WITHDRAWAL")
-    service.finance_approve(request.id, approver_id="finance-1")
-    with pytest.raises(ValueError, match="admin approval"):
-        service.submit_to_custody(request.id, actor_id="finance-1")
-    service.admin_approve(request.id, approver_id="admin-1")
-    submitted = service.submit_to_custody(request.id, actor_id="finance-1")
+    service.finance_approve(request.id, approver_id="admin-1")
+    submitted = service.submit_to_custody(request.id, actor_id="admin-1")
+    assert submitted.status == "PROVIDER_SUBMITTED"
+
+def test_admin_can_approve_requested_withdrawal_without_finance_step(wallet):
+    service, provider = wallet
+    service.credit_for_test("user-direct", Decimal("20.000000"))
+    request = service.request_withdrawal(user_id="user-direct", amount=Decimal("2.000000"), address="TDIRECT", client_order_id="wd-direct", reason_code="ADMIN_DIRECT")
+    approved = service.admin_approve(request.id, approver_id="admin-1")
+    assert approved.status == "ADMIN_APPROVED"
+    submitted = service.submit_to_custody(request.id, actor_id="admin-1")
     assert submitted.status == "PROVIDER_SUBMITTED"
 
 def test_reconciliation_mismatch_pauses_withdrawals(wallet):

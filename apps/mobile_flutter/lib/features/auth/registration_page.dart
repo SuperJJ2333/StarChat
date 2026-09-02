@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/auth_surface_card.dart';
@@ -5,6 +7,7 @@ import '../../ui/components/immersive_auth_scaffold.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import 'invitation_validation.dart';
 import 'registration_controller.dart';
 
 final class RegistrationPage extends StatefulWidget {
@@ -26,10 +29,15 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   final password = TextEditingController();
   final passwordConfirmation = TextEditingController();
   final invitation = TextEditingController();
+  final referral = TextEditingController();
   final email = TextEditingController();
   bool _passwordVisible = false;
   bool _confirmationVisible = false;
   bool _submittedAttempted = false;
+  // 邀请码校验状态机（BUG 1）：防抖触发、8s 超时、可"重新加载"。
+  InvitationValidationState _inviteState = InvitationValidationState.initial;
+  String _inviteMessage = '';
+  Timer? _inviteDebounce;
 
   @override
   void initState() {
@@ -39,24 +47,117 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     password.text = widget.controller.draft.password;
     passwordConfirmation.text = widget.controller.draft.passwordConfirmation;
     invitation.text = widget.controller.draft.invitationCode;
+    referral.text = widget.controller.draft.referralCode;
     email.text = widget.controller.draft.email;
     widget.controller.addListener(_changed);
   }
 
   @override
   void dispose() {
+    _inviteDebounce?.cancel();
     widget.controller.removeListener(_changed);
     nickname.dispose();
     username.dispose();
     password.dispose();
     passwordConfirmation.dispose();
     invitation.dispose();
+    referral.dispose();
     email.dispose();
     super.dispose();
   }
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  /// 输入防抖 600ms 后自动校验邀请码（避免每个字符都打接口）。
+  void _scheduleInvitationCheck() {
+    _inviteDebounce?.cancel();
+    final code = invitation.text.trim();
+    if (code.isEmpty) {
+      setState(() {
+        _inviteState = InvitationValidationState.initial;
+        _inviteMessage = '';
+      });
+      return;
+    }
+    _inviteDebounce = Timer(const Duration(milliseconds: 600), () {
+      _runInvitationCheck();
+    });
+  }
+
+  /// 校验一次邀请码：LOADING → 终态；网络/服务端故障提供「重新加载」。
+  Future<void> _runInvitationCheck() async {
+    final code = invitation.text.trim();
+    if (code.isEmpty || _inviteState == InvitationValidationState.loading) {
+      return;
+    }
+    setState(() {
+      _inviteState = InvitationValidationState.loading;
+      _inviteMessage = '正在验证邀请码…';
+    });
+    try {
+      final result = await widget.controller.gateway
+          .validateInvitation(code)
+          .timeout(const Duration(seconds: 8));
+      if (!mounted) return;
+      setState(() {
+        _inviteState = result.state;
+        _inviteMessage = result.message;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final mapped = mapInvitationFailure(error);
+      setState(() {
+        _inviteState = mapped.state;
+        _inviteMessage = mapped.message;
+      });
+    }
+  }
+
+  /// 邀请码校验状态行：加载中/可用/各失效形态 + 失败可重试。
+  Widget _inviteStatusRow() {
+    if (_inviteState == InvitationValidationState.initial) {
+      return const SizedBox.shrink();
+    }
+    final color = switch (_inviteState) {
+      InvitationValidationState.ready => const Color(0xFF07C160),
+      InvitationValidationState.loading => WeChatColors.textSecondary,
+      InvitationValidationState.networkError ||
+      InvitationValidationState.serverError =>
+        WeChatColors.warning,
+      _ => WeChatColors.danger,
+    };
+    final retryable = _inviteState == InvitationValidationState.networkError ||
+        _inviteState == InvitationValidationState.serverError;
+    return Padding(
+      key: const Key('auth-invitation-status'),
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(children: [
+        if (_inviteState == InvitationValidationState.loading)
+          const SizedBox(
+              width: 12,
+              height: 12,
+              child: CupertinoActivityIndicator(radius: 6)),
+        if (_inviteState == InvitationValidationState.ready)
+          const Icon(CupertinoIcons.check_mark, size: 13, color: Color(0xFF07C160)),
+        if (retryable)
+          CupertinoButton(
+            key: const Key('auth-invitation-reload'),
+            minimumSize: Size.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            onPressed: _runInvitationCheck,
+            child: const Text('重新加载',
+                style: TextStyle(
+                    fontSize: 12, color: WeChatColors.brandPrimary)),
+          ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(_inviteMessage,
+              style: TextStyle(fontSize: 12, color: color)),
+        ),
+      ]),
+    );
   }
 
   void _saveDraft() => widget.controller.saveDraft(
@@ -66,6 +167,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         passwordConfirmation: passwordConfirmation.text,
         invitationCode: invitation.text,
         email: email.text,
+        referralCode: referral.text,
       );
 
   Map<String, String> get _errors => RegistrationController.validateFields(
@@ -117,7 +219,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         email: email.text.trim(),
         password: password.text,
         passwordConfirmation: passwordConfirmation.text,
-        invitationCode: invitation.text.trim());
+        invitationCode: invitation.text.trim(),
+        referralCode: referral.text.trim());
     if (ok && mounted) setState(() {});
   }
 
@@ -230,8 +333,22 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                             controller: invitation,
                             enabled: !loading,
                             textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {})),
+                            onChanged: (_) {
+                              setState(() {});
+                              _scheduleInvitationCheck();
+                            }),
+                        _inviteStatusRow(),
                         _fieldError('invitation_code'),
+                        const SizedBox(height: WeChatSpacing.md),
+                        AuthTextField(
+                            key: const Key('auth-registration-referral'),
+                            label: '好友邀请码（选填）',
+                            placeholder: '填写好友的邀请码，建立邀请关系',
+                            controller: referral,
+                            enabled: !loading,
+                            textInputAction: TextInputAction.next,
+                            onChanged: (_) => setState(() {})),
+                        _fieldError('referral_code'),
                         const SizedBox(height: WeChatSpacing.md),
                         AuthTextField(
                             key: const Key('auth-registration-email'),
