@@ -5,6 +5,7 @@ import 'package:matrix/matrix.dart';
 import '../../core/notification/badge_service.dart'
     show ConversationUnreadSnapshot, UnreadSnapshotSource;
 import '../../core/notification/notification_coordinator.dart';
+import '../../core/notification/notification_diagnostics.dart';
 import '../../core/notification/notification_event.dart';
 import 'conversation_preferences.dart';
 import 'conversation_presentation.dart';
@@ -26,12 +27,15 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
   MatrixNotificationEventSource({
     required this.client,
     ConversationReadState? readState,
+    NotificationDiagnostics? diagnostics,
     DateTime Function()? now,
   })  : readState = readState ?? ConversationReadState.shared(),
+        diagnostics = diagnostics ?? NotificationDiagnostics.shared,
         now = now ?? DateTime.now;
 
   final Client client;
   final ConversationReadState readState;
+  final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
 
   final StreamController<IncomingNotification> _controller =
@@ -68,6 +72,7 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
     final currentUserId = client.userID;
     if (currentUserId == null) return;
     final cutoff = now().subtract(_staleWindow);
+    var notifiableRooms = 0;
     joins.forEach((roomId, update) {
       final events = update.timeline?.events;
       if (events == null || events.isEmpty) return;
@@ -84,9 +89,15 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
       if (incoming == null) return;
       final notification = _build(roomId, incoming, currentUserId);
       if (notification != null) {
+        notifiableRooms++;
         _controller.add(notification);
       }
     });
+    // sync 到达诊断（仅在有可通知事件时记录，避免每次心跳刷屏）。
+    if (notifiableRooms > 0) {
+      diagnostics.record(
+          NotificationDiagStage.syncArrived, 'rooms=$notifiableRooms');
+    }
   }
 
   /// 只通知消息类事件；通话信令（m.call.*）由通话状态机处理，

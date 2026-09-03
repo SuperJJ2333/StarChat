@@ -4,11 +4,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/notification/notification_channel_gateway.dart';
 import '../../../core/notification/notification_coordinator.dart';
+import '../../../core/notification/notification_diagnostics.dart';
 import '../../../core/notification/notification_preferences.dart';
 import '../../../core/notification/system_notification_presenter.dart';
 import '../../../ui/components/wechat_scaffold.dart';
 import '../../../ui/foundation/wechat_tokens.dart';
+import 'notification_diagnostics_page.dart';
 
 /// 通知与声音设置页（PRD §43/§67）。
 final class NotificationSettingsPage extends StatefulWidget {
@@ -23,7 +26,7 @@ final class NotificationSettingsPage extends StatefulWidget {
 }
 
 final class _NotificationSettingsPageState
-    extends State<NotificationSettingsPage> {
+    extends State<NotificationSettingsPage> with WidgetsBindingObserver {
   NotificationPreferenceValues _values = const NotificationPreferenceValues();
   NotificationAuthorizationStatus _permission =
       NotificationAuthorizationStatus.undetermined;
@@ -31,7 +34,22 @@ final class _NotificationSettingsPageState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 从系统设置页返回时重新检查权限（用户可能刚在系统中开启通知）。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_load());
+    }
   }
 
   Future<void> _load() async {
@@ -42,6 +60,8 @@ final class _NotificationSettingsPageState
     try {
       permission =
           await widget.coordinator!.systemNotifications.authorizationStatus();
+      NotificationDiagnostics.shared.record(
+          NotificationDiagStage.permission, 'status: ${permission.name}');
     } catch (_) {}
     if (!mounted) return;
     setState(() {
@@ -124,6 +144,10 @@ final class _NotificationSettingsPageState
                     _values.mutedConversationsInBadge,
                     (v) => _update(
                         _values.copyWith(mutedConversationsInBadge: v))),
+                if (showAndroidChannelSettingsActions)
+                  _pickerTile(
+                      '消息通知渠道设置', '提示音与弹窗', _openMessagesChannelSettings),
+                _pickerTile('通知诊断', '排查通知问题', _openDiagnostics),
               ]),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -189,6 +213,23 @@ final class _NotificationSettingsPageState
     try {
       await launchUrl(Uri.parse('app-settings:'));
     } catch (_) {}
+  }
+
+  /// 直达 v2 消息渠道设置页：渠道重要性/声音/震动创建后应用不可修改，
+  /// 用户静音或降级渠道后只能在此恢复（Heads-up 顶部弹窗随之恢复）。
+  Future<void> _openMessagesChannelSettings() async {
+    final opened = await const NotificationChannelGateway()
+        .openChannelSettings(messagesChannelIdV2);
+    if (opened || !mounted) return;
+    await _openSystemSettings();
+  }
+
+  Future<void> _openDiagnostics() async {
+    await Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => const NotificationDiagnosticsPage(),
+      ),
+    );
   }
 
   String _privacyLabel(NotificationPrivacyLevel level) => switch (level) {

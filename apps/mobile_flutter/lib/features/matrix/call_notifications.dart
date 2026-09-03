@@ -1,16 +1,36 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../core/notification/foreground_service_arbiter.dart';
+
 /// 通话系统通知：
 /// - **来电**：全屏意图（full-screen intent）通知，App 在后台/锁屏/其他
 ///   应用界面之上弹出来电，点击拉起通话接听页；进程存活期间 Matrix
 ///   长连接持续同步，来电可达。
 /// - **通话中**：前台服务通知（microphone|camera 类型），按 Home 键或
 ///   切换应用后通话继续、麦克风/摄像头不因退后台被系统回收。
+///
+/// 通话中前台服务与消息保活共用插件唯一的 OS 服务，必须经共享
+/// [ForegroundServiceArbiter] 仲裁：通话结束释放所有权时仲裁器会
+/// 重申保活通知，而不是把消息同步一起停掉。
 final class CallNotifications {
-  CallNotifications({FlutterLocalNotificationsPlugin? plugin})
-      : plugin = plugin ?? FlutterLocalNotificationsPlugin();
+  factory CallNotifications({
+    FlutterLocalNotificationsPlugin? plugin,
+    ForegroundServiceArbiter? arbiter,
+  }) {
+    final resolved = plugin ?? FlutterLocalNotificationsPlugin();
+    return CallNotifications._(
+      resolved,
+      arbiter ??
+          ForegroundServiceArbiter(
+            backend: FlutterForegroundServiceBackend(plugin: resolved),
+          ),
+    );
+  }
+
+  CallNotifications._(this.plugin, this.arbiter);
 
   final FlutterLocalNotificationsPlugin plugin;
+  final ForegroundServiceArbiter arbiter;
   bool _initialized = false;
 
   static const incomingCallId = 41001;
@@ -22,12 +42,29 @@ final class CallNotifications {
   static const _ongoingChannelId = 'call-ongoing';
   static const _ongoingChannelName = '通话中';
 
+  /// 通话中前台服务请求（组合根与仲裁器集成测试共用）。
+  static ForegroundServiceRequest ongoingCallRequest({
+    required String title,
+  }) =>
+      ForegroundServiceRequest(
+        notificationId: ongoingCallId,
+        channelId: _ongoingChannelId,
+        channelName: _ongoingChannelName,
+        channelDescription: '通话进行中的常驻通知，保证切后台后通话继续',
+        title: '畅聊通话中',
+        body: title,
+        category: AndroidNotificationCategory.call,
+        foregroundServiceTypes: const {
+          AndroidServiceForegroundType.foregroundServiceTypeMicrophone,
+          AndroidServiceForegroundType.foregroundServiceTypeCamera,
+        },
+      );
+
   Future<void> _ensureInit() async {
     if (_initialized) return;
-    await plugin.initialize(const InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-      iOS: DarwinInitializationSettings(),
-    ));
+    // 不调用 plugin.initialize：点击回调只能有一个注册者（最后注册者
+    // 胜出），统一由 FlutterLocalSystemNotificationPresenter 注册并分发；
+    // 渠道创建不依赖 initialize。
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     // 通知权限统一由 NotificationCoordinator 在登录后上下文式申请
@@ -122,28 +159,15 @@ final class CallNotifications {
   /// 通话中前台服务：切后台/Home 键后通话继续，麦克风摄像头不被回收。
   Future<void> showOngoing({required String title}) async {
     await _ensureInit();
-    final android = plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await android?.startForegroundService(
-      ongoingCallId,
-      '畅聊通话中',
-      title,
-      notificationDetails: _details(
-        channelId: _ongoingChannelId,
-        title: '畅聊通话中',
-        body: title,
-        ongoing: true,
-      ),
-      foregroundServiceTypes: {
-        AndroidServiceForegroundType.foregroundServiceTypeMicrophone,
-        AndroidServiceForegroundType.foregroundServiceTypeCamera,
-      },
+    await arbiter.acquire(
+      ForegroundServiceOwner.ongoingCall,
+      ongoingCallRequest(title: title),
     );
   }
 
+  /// 通话结束：只释放通话所有权——消息保活若仍在运行会被仲裁器重申，
+  /// 不再出现"挂断电话把消息同步一起停掉"的回归。
   Future<void> hideOngoing() async {
-    final android = plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    await android?.stopForegroundService();
+    await arbiter.release(ForegroundServiceOwner.ongoingCall);
   }
 }

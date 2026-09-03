@@ -119,7 +119,9 @@ $elementData = Join-Path $dataRoot "element"
 $botData = Join-Path $dataRoot "bot"
 $postgresData = Join-Path $dataRoot "postgres"
 
-foreach ($path in @($dataRoot, $synapseData, $elementData, $botData, $postgresData)) {
+$sygnalData = Join-Path $dataRoot "sygnal"
+
+foreach ($path in @($dataRoot, $synapseData, $elementData, $botData, $postgresData, $sygnalData)) {
     if (-not (Test-Path $path)) {
         New-Item -ItemType Directory -Path $path | Out-Null
     }
@@ -184,6 +186,15 @@ Write-RenderedTemplate `
         MATRIX_SERVER_NAME = $env:MATRIX_SERVER_NAME
         SYNAPSE_PUBLIC_BASEURL = $env:SYNAPSE_PUBLIC_BASEURL
     }
+
+$sygnalConfig = Join-Path $sygnalData "sygnal.yaml"
+if (-not (Test-Path $sygnalConfig)) {
+    # Sygnal 推送网关配置：仅首次渲染；运维手工填充 FCM/APNs 凭据后的
+    # 文件绝不能被覆盖或提交（模板：infra/sygnal/sygnal.yaml.template）。
+    Copy-Item `
+        (Join-Path $projectRoot "infra/sygnal/sygnal.yaml.template") `
+        $sygnalConfig
+}
 
 if ($RenderOnly) {
     Write-Host "Configuration rendering complete."

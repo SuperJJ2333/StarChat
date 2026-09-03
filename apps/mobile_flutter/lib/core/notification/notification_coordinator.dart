@@ -10,6 +10,7 @@ import 'haptic_service.dart';
 import 'in_app_banner_controller.dart';
 import 'notification_decision.dart';
 import 'notification_deduplicator.dart';
+import 'notification_diagnostics.dart';
 import 'notification_event.dart';
 import 'notification_policy_engine.dart';
 import 'notification_preferences.dart';
@@ -60,11 +61,13 @@ final class NotificationCoordinator {
     NotificationDeduplicator? deduplicator,
     SoundCooldownGate? cooldownGate,
     NotificationUsageRecorder? usageRecorder,
+    NotificationDiagnostics? diagnostics,
     DateTime Function()? now,
   })  : deduplicator = deduplicator ?? NotificationDeduplicator(),
         cooldownGate = cooldownGate ?? SoundCooldownGate(),
         usageRecorder =
             usageRecorder ?? const SharedPreferencesNotificationUsageRecorder(),
+        diagnostics = diagnostics ?? NotificationDiagnostics.shared,
         now = now ?? DateTime.now;
 
   final NotificationPreferenceStore preferenceStore;
@@ -79,6 +82,7 @@ final class NotificationCoordinator {
   final NotificationDeduplicator deduplicator;
   final SoundCooldownGate cooldownGate;
   final NotificationUsageRecorder usageRecorder;
+  final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
 
   NotificationPreferenceValues _prefs = const NotificationPreferenceValues();
@@ -112,7 +116,12 @@ final class NotificationCoordinator {
 
   Future<void> handleEvent(IncomingNotification notification) async {
     // PRD §25/§66：同一 eventId 双通道只处理一次。
-    if (!deduplicator.tryProcess(notification.event.eventId)) return;
+    if (!deduplicator.tryProcess(notification.event.eventId)) {
+      diagnostics.record(NotificationDiagStage.suppressed, 'duplicate',
+          eventId: notification.event.eventId,
+          roomId: notification.event.conversationId);
+      return;
+    }
     unawaited(usageRecorder.count(NotificationUsageEvents.received));
 
     final event = notification.event;
@@ -130,7 +139,50 @@ final class NotificationCoordinator {
         now: now(),
       ),
     );
+    _diagnoseDecision(decision, notification);
     await _execute(decision, event);
+  }
+
+  /// 策略结果诊断：说明事件是否被抑制、被什么抑制（不含正文）。
+  void _diagnoseDecision(
+    NotificationDecision decision,
+    IncomingNotification notification,
+  ) {
+    final event = notification.event;
+    if (!decision.showInAppBanner &&
+        !decision.showSystemNotification &&
+        !decision.playSound) {
+      diagnostics.record(
+        NotificationDiagStage.suppressed,
+        _suppressionReason(notification),
+        eventId: event.eventId,
+        roomId: event.conversationId,
+      );
+      return;
+    }
+    diagnostics.record(
+      NotificationDiagStage.policy,
+      decision.showSystemNotification
+          ? decision.systemChannel == SystemNotificationChannel.silent
+              ? 'background → silent channel'
+              : 'background → ${decision.systemChannel.name}'
+          : 'foreground feedback (banner=${decision.showInAppBanner}, '
+              'sound=${decision.playSound})',
+      eventId: event.eventId,
+      roomId: event.conversationId,
+    );
+  }
+
+  String _suppressionReason(IncomingNotification notification) {
+    if (notification.isOwnMessage) return 'own message';
+    if (notification.isCurrentConversation) return 'current conversation open';
+    if (appState.callActive) return 'call active';
+    if (notification.muteDecision == MuteNotificationDecision.suppressed) {
+      return 'muted';
+    }
+    if (!_prefs.messageNotificationEnabled) return 'master switch off';
+    if (isWithinDndWindow(_prefs, now())) return 'dnd window';
+    return 'none';
   }
 
   Future<void> _execute(

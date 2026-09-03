@@ -7,35 +7,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/business_api_client.dart';
 
 final class FriendRequestNotifier {
-  FriendRequestNotifier({FlutterLocalNotificationsPlugin? plugin, this.onTap})
+  FriendRequestNotifier({FlutterLocalNotificationsPlugin? plugin})
       : plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   final FlutterLocalNotificationsPlugin plugin;
-  final void Function()? onTap;
-  bool _initialized = false;
 
-  Future<void> initialize() async {
-    if (_initialized) return;
-    await plugin.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-      onDidReceiveNotificationResponse: (_) => onTap?.call(),
-    );
-    await plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-    _initialized = true;
-  }
-
+  /// 展示好友申请系统通知。
+  ///
+  /// 不调用 plugin.initialize、不注册点击回调：点击回调只能有一个注册
+  /// 者（最后 initialize 者胜出），统一由 FlutterLocalSystemNotification
+  /// Presenter 注册并按 payload 集中分发（'friend-requests' → 好友申请页）。
+  /// 渠道由通知详情隐式创建；权限由 NotificationCoordinator 上下文式申请
+  /// （PRD §33），此处不抢先申请。
   Future<void> show({
     required String nickname,
     required String message,
     required String signature,
   }) async {
-    await initialize();
     await plugin.show(
       signature.hashCode & 0x7fffffff,
       '新的朋友请求',

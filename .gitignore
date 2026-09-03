@@ -19,3 +19,8 @@ htmlcov/
 docs/verification/**/*.tmp
 frontend/downloads/
 .codegraph/
+# FCM 凭据（含项目 API 元数据，绝不入库；docs/PUSH_SETUP.md）
+apps/mobile_flutter/android/app/google-services.json
+# APNs 凭据
+*.p8
+!docs/**/*.p8.md

@@ -7,6 +7,14 @@ services:
     ports: !override
       - "127.0.0.1:${ELEMENT_HTTP_PORT:-8080}:80"
 
+  # 生产推送网关：服务器上手工填充 data/sygnal/sygnal.yaml（含真实
+  # FCM/APNs 凭据，绝不提交仓库；模板见 infra/sygnal/sygnal.yaml.template，
+  # 步骤见 docs/PUSH_SETUP.md）。网关经 gateway(nginx) 暴露
+  # /_matrix/push/v1/notify —— 上线前需在 data/nginx/nginx.conf 增加
+  # sygnal 反代 location 并重载 nginx。
+  sygnal:
+    restart: unless-stopped
+
   business-api:
     ports: !override
       - "127.0.0.1:${BUSINESS_API_HTTP_PORT:-8082}:8082"

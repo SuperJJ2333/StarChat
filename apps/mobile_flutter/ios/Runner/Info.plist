@@ -32,6 +32,13 @@
 	<string>用于发起和接听加密视频通话。</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于发起和接听加密语音及视频通话。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<!-- 远程通知：APNs 静默推送唤醒后由 Matrix SDK 在本地拉取/解密
+		     （推送载荷仅 eventId 等不透明标识，不含 E2EE 明文；
+		     见 docs/PUSH_SETUP.md 与 Runner.Push.entitlements 模板）。 -->
+		<string>remote-notification</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

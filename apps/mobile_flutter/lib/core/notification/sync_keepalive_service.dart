@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import 'foreground_service_arbiter.dart';
+import 'notification_diagnostics.dart';
+
 /// 后台/锁屏通知保活（BUG 2 修复）：
 ///
 /// Android 后台进程数分钟内即被冻结/查杀（MIUI 更激进），Matrix 长连接
@@ -67,7 +70,8 @@ final class KeepAliveBatteryGateway {
   /// 是否已在系统电池优化白名单中；查询失败按 true（不再打扰）。
   Future<bool> isIgnoringBatteryOptimizations() async {
     try {
-      return await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
+      return await _channel
+              .invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
           true;
     } catch (_) {
       return true;
@@ -81,7 +85,88 @@ final class KeepAliveBatteryGateway {
   }
 }
 
+/// 仲裁器后端：保活不再直控插件前台服务，而是持有 [ForegroundServiceOwner.keepAlive]
+/// 所有权——通话结束（release ongoingCall）时仲裁器会重申保活通知而非停止服务。
+///
+/// 复用同一插件的渠道初始化逻辑（chatflow_sync 渠道必须先于
+/// startForegroundService 存在）。
+final class ArbiterSyncKeepAliveBackend implements SyncKeepAliveBackend {
+  ArbiterSyncKeepAliveBackend({
+    required this.arbiter,
+    FlutterLocalNotificationsPlugin? plugin,
+    NotificationDiagnostics? diagnostics,
+  })  : plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+        diagnostics = diagnostics ?? NotificationDiagnostics.shared;
+
+  final ForegroundServiceArbiter arbiter;
+  final FlutterLocalNotificationsPlugin plugin;
+  final NotificationDiagnostics diagnostics;
+  bool _initialized = false;
+
+  /// 插件初始化与渠道创建是幂等尽力而为：组合根的通知系统通常已完成
+  /// 初始化；此处失败（原生不可用/渠道已存在）不阻断所有权登记——
+  /// 真正的服务呈现成败由仲裁器统一诊断。
+  Future<void> _ensureInit() async {
+    if (_initialized) return;
+    try {
+      // 不调用 plugin.initialize：点击回调只能有一个注册者（最后注册者
+      // 胜出），统一由 FlutterLocalSystemNotificationPresenter 注册分发。
+      final android = plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await android?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          FlutterSyncKeepAliveBackend.channelId,
+          FlutterSyncKeepAliveBackend.channelName,
+          description: '保持消息与来电实时到达的后台同步服务',
+          importance: Importance.low,
+          playSound: false,
+        ),
+      );
+    } catch (error) {
+      diagnostics.record(NotificationDiagStage.channel,
+          'sync channel init skipped: ${error.runtimeType}');
+    }
+    _initialized = true;
+  }
+
+  @override
+  Future<void> start({
+    required int notificationId,
+    required String channelTitle,
+    required String title,
+    required String body,
+  }) async {
+    await _ensureInit();
+    await arbiter.acquire(
+      ForegroundServiceOwner.keepAlive,
+      ForegroundServiceRequest(
+        notificationId: notificationId,
+        channelId: FlutterSyncKeepAliveBackend.channelId,
+        channelName: FlutterSyncKeepAliveBackend.channelName,
+        channelDescription: '保持消息与来电实时到达的后台同步服务',
+        title: title,
+        body: body,
+        importance: Importance.low,
+        priority: Priority.low,
+        category: AndroidNotificationCategory.service,
+        playSound: false,
+        enableVibration: false,
+        foregroundServiceTypes: const {
+          AndroidServiceForegroundType.foregroundServiceTypeDataSync,
+        },
+      ),
+    );
+  }
+
+  @override
+  Future<void> stop() => arbiter.release(ForegroundServiceOwner.keepAlive);
+}
+
 /// flutter_local_notifications 实现：dataSync 前台服务 + 低优先级常驻通知。
+///
+/// 注意：该插件全局只有一个 Android ForegroundService，与其他业务
+/// （通话中服务）直控同一服务会互踢——组合根应改用
+/// [ArbiterSyncKeepAliveBackend] + 共享仲裁器。保留此实现供独立测试场景。
 final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
   FlutterSyncKeepAliveBackend({FlutterLocalNotificationsPlugin? plugin})
       : plugin = plugin ?? FlutterLocalNotificationsPlugin();
@@ -95,12 +180,9 @@ final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
-    await plugin.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-    );
+    // 不调用 plugin.initialize：点击回调只能有一个注册者（最后注册者
+    // 胜出），统一由 FlutterLocalSystemNotificationPresenter 注册分发；
+    // 渠道创建与前台服务不依赖 initialize。
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await android?.createNotificationChannel(

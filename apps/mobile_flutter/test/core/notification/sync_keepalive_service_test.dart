@@ -55,7 +55,8 @@ void main() {
 
   test('启动/停止联动原生唤醒锁 hooks（息屏防 CPU/WiFi 休眠）', () async {
     final hooks = _RecordingKeepAliveHooks();
-    final service = SyncKeepAliveService(backend: _RecordingKeepAliveBackend(), hooks: hooks);
+    final service = SyncKeepAliveService(
+        backend: _RecordingKeepAliveBackend(), hooks: hooks);
     await service.ensureStarted();
     expect(hooks.acquires, 1);
     await service.stop();

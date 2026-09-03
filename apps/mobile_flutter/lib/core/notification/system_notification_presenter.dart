@@ -1,9 +1,37 @@
+import 'dart:typed_data';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'notification_decision.dart';
+import 'notification_diagnostics.dart';
 
 /// 通知权限状态（PRD §34/§56 权限降级展示用）。
 enum NotificationAuthorizationStatus { undetermined, granted, denied }
+
+/// 系统通知点击统一分发（纯函数，可测）。
+///
+/// flutter_local_notifications 的点击回调是"最后 initialize 者胜出"——
+/// 此前多个组件（好友申请/定时提醒/保活/通话）各自 initialize（多数无
+/// 回调，好友申请的回调会劫持所有点击），消息通知点击被覆盖或误路由。
+/// 现在**只有 presenter 注册一次回调**，所有通知的 payload 在此集中分发。
+void routeSystemNotificationPayload(
+  String payload, {
+  required void Function(String roomId) openConversation,
+  required void Function() openFriendRequests,
+}) {
+  if (payload.isEmpty) return;
+  switch (payload) {
+    case 'friend-requests':
+      openFriendRequests();
+      break;
+    case 'incoming-call':
+      // 来电通知点击仅需回到前台，通话 UI 由 CallController 呈现。
+      break;
+    default:
+      // 消息通知 payload 为 roomId；进入会话后由本地同步+解密呈现内容。
+      openConversation(payload);
+  }
+}
 
 /// 系统通知抽象：可注入测试（PRD §68-3：业务页面不得直接创建系统通知）。
 abstract interface class SystemNotificationPresenter {
@@ -22,14 +50,16 @@ abstract interface class SystemNotificationPresenter {
 
 /// PRD §31 渠道定义。`calls`/`call-ongoing`/`changliao_message_reminders`/
 /// `changliao_friend_requests` 为既有渠道，由各自模块继续使用。
-final class _ChannelSpec {
-  const _ChannelSpec(
+final class ChannelSpec {
+  const ChannelSpec(
     this.id,
     this.name,
     this.description,
     this.importance,
-    this.soundResource,
-  );
+    this.soundResource, {
+    this.legacy = false,
+    this.vibrationEnabled = false,
+  });
 
   final String id;
   final String name;
@@ -38,38 +68,58 @@ final class _ChannelSpec {
 
   /// res/raw 资源名（不含扩展名）；null 表示无声。
   final String? soundResource;
+
+  /// legacy 渠道：老安装已创建（Android 渠道重要性/声音创建后不可修改），
+  /// 保留不删除、不再承载任何通知；新安装也不再创建。
+  final bool legacy;
+
+  /// 渠道级震动（heads-up 渠道需锁屏可感知）。
+  final bool vibrationEnabled;
 }
 
-const _channelSpecs = <_ChannelSpec>[
-  _ChannelSpec(
+/// 消息渠道 v2（heads-up）：渠道创建后重要性/声音不可修改，老安装的
+/// v1（IMPORTANCE_DEFAULT，无顶部弹窗）无法原地升级，必须换新渠道 ID。
+const String messagesChannelIdV2 = 'chatflow_messages_v2';
+
+const _channelSpecs = <ChannelSpec>[
+  ChannelSpec(
     'chatflow_messages',
     '消息通知',
-    '普通聊天消息提醒',
+    '旧版消息渠道（已由新渠道取代；保留不删除以便老安装回退设置）',
     Importance.defaultImportance,
     'chatflow_message',
+    legacy: true,
   ),
-  _ChannelSpec(
+  ChannelSpec(
+    messagesChannelIdV2,
+    '消息通知',
+    '聊天消息提醒（顶部横幅、提示音与震动）',
+    Importance.high,
+    'chatflow_message',
+    vibrationEnabled: true,
+  ),
+  ChannelSpec(
     'chatflow_mentions',
     '提及与我',
     '群聊 @我 的高优先级提醒',
     Importance.high,
     'chatflow_mention',
   ),
-  _ChannelSpec(
+  ChannelSpec(
     'chatflow_attention',
     '特别关注',
     '特别关注联系人的高优先级提醒',
     Importance.high,
     'chatflow_attention',
   ),
-  _ChannelSpec(
+  ChannelSpec(
     'chatflow_system',
     '系统通知',
     '好友申请、业务到账等系统提醒',
     Importance.defaultImportance,
     'chatflow_system',
   ),
-  _ChannelSpec(
+  ChannelSpec(
     'chatflow_silent',
     '静默同步',
     '静音会话与勿扰期间的通知中心记录（无声音无横幅）',
@@ -78,17 +128,47 @@ const _channelSpecs = <_ChannelSpec>[
   ),
 ];
 
+/// 全部渠道规格（含 legacy：老安装保留、新安装不创建）。
+const List<ChannelSpec> allChannelSpecs = _channelSpecs;
+
+/// 在新安装上创建并承载通知的渠道（不含 legacy）。
+final List<ChannelSpec> activeChannelSpecs = [
+  for (final spec in _channelSpecs)
+    if (!spec.legacy) spec,
+];
+
+/// 枚举渠道 → 渠道 ID。
+String _channelIdFor(SystemNotificationChannel channel) => switch (channel) {
+      // v2 heads-up 渠道：v1（chatflow_messages）因 Android 渠道不可
+      // 原地升级而退役为 legacy。
+      SystemNotificationChannel.messages => messagesChannelIdV2,
+      SystemNotificationChannel.mentions => 'chatflow_mentions',
+      SystemNotificationChannel.attention => 'chatflow_attention',
+      SystemNotificationChannel.system => 'chatflow_system',
+      SystemNotificationChannel.silent => 'chatflow_silent',
+    };
+
+/// 枚举渠道 → 渠道规格（messages 已升级到 v2 heads-up 渠道）。
+ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
+    activeChannelSpecs.firstWhere(
+      (spec) => spec.id == _channelIdFor(channel),
+    );
+
 final class FlutterLocalSystemNotificationPresenter
     implements SystemNotificationPresenter {
   FlutterLocalSystemNotificationPresenter({
     FlutterLocalNotificationsPlugin? plugin,
     this.onConversationTap,
-  }) : plugin = plugin ?? FlutterLocalNotificationsPlugin();
+    NotificationDiagnostics? diagnostics,
+  })  : plugin = plugin ?? FlutterLocalNotificationsPlugin(),
+        diagnostics = diagnostics ?? NotificationDiagnostics.shared;
 
   final FlutterLocalNotificationsPlugin plugin;
 
   /// 通知点击回调：payload 为会话 roomId（PRD §63 notification_opened）。
   final void Function(String roomId)? onConversationTap;
+
+  final NotificationDiagnostics diagnostics;
 
   bool _initialized = false;
 
@@ -110,7 +190,9 @@ final class FlutterLocalSystemNotificationPresenter
     );
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    for (final spec in _channelSpecs) {
+    // legacy 渠道不创建：老安装的系统副本继续存在但不再承载通知；
+    // 也绝不调用 deleteNotificationChannel——尊重用户已有渠道选择。
+    for (final spec in activeChannelSpecs) {
       await android?.createNotificationChannel(
         AndroidNotificationChannel(
           spec.id,
@@ -121,10 +203,16 @@ final class FlutterLocalSystemNotificationPresenter
           sound: spec.soundResource == null
               ? null
               : RawResourceAndroidNotificationSound(spec.soundResource!),
+          enableVibration: spec.vibrationEnabled,
+          vibrationPattern: spec.vibrationEnabled
+              ? Int64List.fromList(const [0, 400, 200, 400])
+              : null,
         ),
       );
     }
     _initialized = true;
+    diagnostics.record(NotificationDiagStage.channel,
+        'initialized ${activeChannelSpecs.length} channels');
   }
 
   @override
@@ -165,8 +253,10 @@ final class FlutterLocalSystemNotificationPresenter
             ? NotificationAuthorizationStatus.granted
             : NotificationAuthorizationStatus.denied;
       }
-    } catch (_) {
-      // 查询失败按未确定处理，不影响主流程。
+    } catch (error) {
+      // 查询失败按未确定处理，不影响主流程；留下诊断以便定位层级。
+      diagnostics.record(NotificationDiagStage.permission,
+          'status query failed: ${error.runtimeType}');
     }
     return NotificationAuthorizationStatus.undetermined;
   }
@@ -180,16 +270,26 @@ final class FlutterLocalSystemNotificationPresenter
     required String roomIdPayload,
   }) async {
     await initialize();
-    await plugin.show(
-      notificationId,
-      title,
-      body,
-      NotificationDetails(
-        android: _androidDetails(channel),
-        iOS: _iosDetails(channel),
-      ),
-      payload: roomIdPayload,
-    );
+    try {
+      await plugin.show(
+        notificationId,
+        title,
+        body,
+        NotificationDetails(
+          android: _androidDetails(channel),
+          iOS: _iosDetails(channel),
+        ),
+        payload: roomIdPayload,
+      );
+      diagnostics.record(NotificationDiagStage.systemShow,
+          'ok id=$notificationId channel=${channelSpecFor(channel).id}',
+          roomId: roomIdPayload);
+    } catch (error) {
+      // 系统通知失败（权限/渠道异常）不抛出到通知链路，但必须可诊断。
+      diagnostics.record(NotificationDiagStage.systemShow,
+          'failed id=$notificationId: ${error.runtimeType}',
+          roomId: roomIdPayload);
+    }
   }
 
   @override
@@ -201,9 +301,7 @@ final class FlutterLocalSystemNotificationPresenter
   AndroidNotificationDetails _androidDetails(
     SystemNotificationChannel channel,
   ) {
-    final spec = _channelSpecs.firstWhere(
-      (candidate) => candidate.id == _channelIdFor(channel),
-    );
+    final spec = channelSpecFor(channel);
     final priority = spec.importance == Importance.high
         ? Priority.high
         : spec.importance == Importance.low
@@ -245,12 +343,4 @@ final class FlutterLocalSystemNotificationPresenter
       threadIdentifier: 'chatflow-messages',
     );
   }
-
-  String _channelIdFor(SystemNotificationChannel channel) => switch (channel) {
-        SystemNotificationChannel.messages => 'chatflow_messages',
-        SystemNotificationChannel.mentions => 'chatflow_mentions',
-        SystemNotificationChannel.attention => 'chatflow_attention',
-        SystemNotificationChannel.system => 'chatflow_system',
-        SystemNotificationChannel.silent => 'chatflow_silent',
-      };
 }

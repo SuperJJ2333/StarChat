@@ -29,6 +29,18 @@ services:
     ports:
       - "${SYNAPSE_HTTP_PORT:-8008}:8008"
 
+  # Matrix 推送网关（Push Gateway）：Synapse 收到 notify 请求转发至此，
+  # 由 Sygnal 对接 FCM/APNs。客户端 pusher 的 data.url 指向
+  # https://<网关域名>/_matrix/push/v1/notify（生产经 gateway/nginx 暴露）。
+  # 开发环境 data/sygnal/sygnal.yaml 的 apps 默认为空（无凭据可启动）；
+  # 凭据配置步骤见 docs/PUSH_SETUP.md 与 infra/sygnal/sygnal.yaml.template。
+  sygnal:
+    image: "${SYGNAL_IMAGE:?SYGNAL_IMAGE is required}"
+    restart: unless-stopped
+    volumes:
+      - ./data/sygnal/sygnal.yaml:/sygnal.yaml:ro
+      - ./data/sygnal:/data
+
   coturn:
     image: "${COTURN_IMAGE:?COTURN_IMAGE is required}"
     restart: unless-stopped

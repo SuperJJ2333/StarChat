@@ -57,3 +57,9 @@ report_stats: false
 trusted_key_servers: []
 suppress_key_server_warning: true
 
+# 推送（Matrix Pusher → Sygnal 网关，见 infra/sygnal/sygnal.yaml.template）：
+# E2EE 边界——服务端绝不把消息明文放入推送载荷；客户端 pusher 一律使用
+# format=event_id_only（apps/mobile_flutter/lib/features/push/）。
+push:
+  include_content: false
+

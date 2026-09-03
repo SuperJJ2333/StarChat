@@ -1,9 +1,10 @@
 # ChatFlow 统一通知与音频反馈系统
 
 **适用客户端：** `apps/mobile_flutter`（畅聊 ChatFlow）
-**实现日期：** 2026-09-03
+**实现日期：** 2026-09-03（0.3.32 于 2026-09-04 更新后台可靠性章节）
 **依据：** 《ChatFlow 通知与音频反馈系统 PRD V1.0》§1–§70
-**实施计划：** `docs/superpowers/plans/2026-09-03-notification-audio-feedback-system.md`
+**实施计划：** `docs/superpowers/plans/2026-09-03-notification-audio-feedback-system.md`、
+`docs/superpowers/plans/2026-09-04-background-notification-reliability.md`
 **验收矩阵：** `docs/NOTIFICATION_QA_MATRIX.md`
 
 ---
@@ -11,28 +12,35 @@
 ## 1. 架构总览
 
 ```text
-Matrix Sync (sdkClient.onSync)
+Matrix Sync (sdkClient.onSync)                  [Push 旁路：FCM/APNs → Sygnal（凭据待配置）]
         ↓
 MatrixNotificationEventSource            ← 事件事实：自己消息/当前会话/静音/特别关注/@我
         ↓ IncomingNotification
-NotificationCoordinator（唯一入口）
-        ├─ NotificationDeduplicator       ← eventId TTL 10min 去重（PRD §25/§66）
+NotificationCoordinator（唯一入口，由 NotificationSystemBootstrapper 单例装配）
+        ├─ NotificationDeduplicator       ← eventId 去重（PRD §25/§66；默认持久化 24h）
         ├─ NotificationPolicyEngine       ← 纯函数决策（PRD §22）
         ├─ SoundCooldownGate              ← 同会话 2s / 全局 600ms（PRD §41）
         ↓ NotificationDecision
         ├─ InAppBannerController + InAppBannerOverlay   ← 前台横幅（PRD §7）
         ├─ ForegroundSoundService (audioplayers)        ← 前台音效
         ├─ HapticService                                 ← 震动（PRD §37）
-        ├─ FlutterLocalSystemNotificationPresenter       ← 后台系统通知（PRD §19）
+        ├─ FlutterLocalSystemNotificationPresenter       ← 后台系统通知（PRD §19；v2 heads-up 渠道）
         └─ BadgeService (flutter_app_badger)             ← 桌面角标（PRD §35/§36）
+
+NotificationDiagnostics                  ← 全链路结构化诊断（脱敏，设置页可查看复制）
+ForegroundServiceArbiter                 ← 消息保活(dataSync) 与通话中(mic|camera) 前台服务仲裁
 ```
 
 - 所有代码位于 `apps/mobile_flutter/lib/core/notification/`；Matrix 适配层在
-  `lib/features/matrix/matrix_notification_event_source.dart`。
+  `lib/features/matrix/matrix_notification_event_source.dart`；推送在
+  `lib/features/push/`。
 - **业务页面禁止直接 `AudioPlayer().play(...)` 或创建系统通知**（PRD §2/§68-2/3）。
   纯前台 UI 反馈（发送成功/红包开启/扫码）经 `NotificationFeedback.shared.play(...)`
   间接进入协调器（检查声音开关后播放）。
-- 组合根：`lib/app_home.dart` 的 `_AppHomeState._startNotificationSystem()`。
+- 组合根：`lib/app_home.dart` 的 `_AppHomeState._startNotificationSystem()`
+  ——登录会话内经 `NotificationSystemBootstrapper` **只装配一次**
+  （一个 eventSource + 一个 coordinator）；启动失败置 needsRetry，由下一次
+  生命周期恢复重试（此前"可重试"注释并不存在实际路径）。
 
 ## 2. 通知优先级与决策表（PRD §3/§22）
 
@@ -57,16 +65,25 @@ NotificationCoordinator（唯一入口）
 
 ## 3. Android 通知渠道（PRD §31）
 
-| Channel ID | 用途 | Importance | 声音（res/raw） |
-| --- | --- | --- | --- |
-| `chatflow_messages` | 普通消息 | DEFAULT | chatflow_message.ogg |
-| `chatflow_mentions` | @我 | HIGH | chatflow_mention.ogg |
-| `chatflow_attention` | 特别关注 | HIGH | chatflow_attention.ogg |
-| `chatflow_system` | 系统业务通知 | DEFAULT | chatflow_system.ogg |
-| `chatflow_silent` | 静默同步 | LOW | 无声 |
+| Channel ID | 用途 | Importance | 声音（res/raw） | 备注 |
+| --- | --- | --- | --- | --- |
+| `chatflow_messages_v2` | 普通消息 | **HIGH** | chatflow_message.ogg | 渠道级震动；0.3.32 起启用（Heads-up 顶部弹窗） |
+| `chatflow_mentions` | @我 | HIGH | chatflow_mention.ogg | |
+| `chatflow_attention` | 特别关注 | HIGH | chatflow_attention.ogg | |
+| `chatflow_system` | 系统业务通知 | DEFAULT | chatflow_system.ogg | |
+| `chatflow_silent` | 静默同步 | LOW | 无声 | 静音/勿扰后台仍入通知中心 |
+| `chatflow_messages` | （legacy） | DEFAULT | chatflow_message.ogg | 0.3.30 及之前的消息渠道；**保留不删除**、不再承载通知、新安装不再创建 |
 
-既有渠道行为不变：`calls` / `call-ongoing`（来电全屏意图与前台服务）、
-`changliao_message_reminders`（定时提醒）、`changliao_friend_requests`（好友申请）。
+渠道 v2 迁移原因：Android 渠道创建后重要性/声音不可由应用修改，老安装的
+v1 渠道（IMPORTANCE_DEFAULT，无顶部弹窗）无法原地升级到 heads-up——必须
+换新渠道 ID。用户对 v2 渠道的自定义（静音/降级）只能由用户在系统设置中
+恢复；设置页提供「消息通知渠道设置」深链直达
+（`Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS`，MainActivity
+`chatflow/notification` 通道）。
+
+既有渠道行为不变：`calls` / `calls_ring` / `call-ongoing`（来电全屏意图、
+系统铃声与通话中前台服务）、`changliao_message_reminders`（定时提醒）、
+`changliao_friend_requests`（好友申请）。
 同会话系统通知聚合：`notificationId = sha256(roomId) 前 4 字节`（PRD §16/§42）。
 
 ## 4. 权限（PRD §33/§34/§56）
@@ -189,23 +206,67 @@ NotificationCoordinator（唯一入口）
 - 全部行动打 `chatflow/syncwatchdog` 标签（release logcat 可见）：
   `adb logcat -s flutter | grep syncwatchdog` 可现场定位悬挂形态。
 
+**0.3.32 后台通知可靠性修复**（2026-09-04，见
+`docs/superpowers/plans/2026-09-04-background-notification-reliability.md`）：
+在对"后台/锁屏/进程被杀收不到通知"的根因复查中发现并修复了通知管线自身的
+五个缺陷（与保活层叠加放大了故障）：
+
+1. **单例初始化**：AppHome.initState 曾并发调用 `_startNotificationSystem()`
+   两次——两套 eventSource/coordinator/deduplicator，首套泄漏整个登录会话
+   （双声/双震/双系统通知）。现由 `NotificationSystemBootstrapper`
+   （Future 备忘录）保证一次装配；失败置 needsRetry 并在生命周期恢复时
+   重试（真正实现了此前注释承诺的重试路径）。
+2. **前台服务仲裁**：flutter_local_notifications 全局只有一个 Android
+   ForegroundService——通话结束 `hideOngoing()` 的 `stopForegroundService`
+   会同时杀掉消息保活（keepalive 状态仍 running，仅靠 10 分钟看门狗自愈）。
+   现 `SyncKeepAliveService` 与 `CallNotifications` 共用
+   `ForegroundServiceArbiter`：通话释放所有权后仲裁器**重申**保活通知
+   （41003）而非停服；全部释放才真正 stop。
+3. **渠道 v2**：`chatflow_messages` 为 IMPORTANCE_DEFAULT 无 Heads-up——
+   新渠道 `chatflow_messages_v2`（HIGH + 渠道级震动 + message 音）；v1 保留
+   不删除（见 §3）。
+4. **跨重启去重**：`NotificationDeduplicator` 改为可插拔 store，组合根注入
+   SharedPreferences 持久化实现（TTL 24h）——为推送通道防"系统推送已展示、
+   冷启动同步又提醒一次"奠基；推送点击（`PushTapRouter`）与协调器共用同一
+   store。
+5. **结构化诊断**：`NotificationDiagnostics`（脱敏：无正文/Token/密钥，
+   roomId/eventId 仅 12 字符前缀）区分 6 个层级——sync 到达 / 策略与抑制
+   原因（静音/当前会话/勿扰/总开关/通话中）/ 系统通知调用成败 / 权限状态 /
+   渠道状态（原生 `getChannelState` 读取用户改过的真实配置）/ 前台服务
+   仲裁动作。设置页「通知诊断」可查看与复制（最近 120 条，跨重启保留）。
+6. **权限生命周期**：回前台与设置页 resume 时重查权限状态（从系统设置
+   返回后立即反映）；永久拒绝场景经设置页深链直达应用/渠道通知设置；
+   移除 `FriendRequestNotifier` 抢先弹系统权限框（违反 PRD §33 且与登录
+   引导双弹窗）。
+7. **推送客户端就绪**（凭据待配置）：Matrix Pusher 注册
+   （`lib/features/push/`，format=event_id_only）、FCM 条件接入
+   （缺 google-services.json 时构建与运行零行为变化）、推送点击冷启动
+   路由、登出注销。服务端 Sygnal 网关模板就绪（`infra/sygnal/`）。
+   配置步骤与缺失凭据清单见 `docs/PUSH_SETUP.md`。
+
 **边界与前置条件**：
-- Android 14+ 对 dataSync 前台服务有每日约 6 小时配额，超时系统停服并
-  退回"进程存活期"通知；回前台自动补启。
+- **dataSync 前台服务不是长期可靠方案**：Android 14+ 对 dataSync 前台服务
+  有每日约 6 小时配额，超时系统停服并退回"进程存活期"通知；回前台自动
+  补启。进程被杀后的可达性必须依赖推送通道（FCM/APNs，凭据待配置）。
 - 厂商 ROM（MIUI 等）需用户开启 **自启动** + **省电策略=无限制**，否则
   息屏数分钟后进程仍可能被杀（此为系统级限制，代码无法绕过）。
-- 用户从最近任务划掉 App / 系统深度清理后，前台服务一并停止——该场景
-  属推送通道（FCM/厂商推送）缺失的已知边界。
+- 用户从最近任务划掉 App / 系统深度清理后，前台服务一并停止——在推送
+  凭据配置完成前，该场景仍不可达（推送链路就绪后由系统通知兜底）。
 
 ## 9. 已知限制（后续阶段）
 
-1. **无推送通道**：未接入 FCM/APNs（服务端推送基础设施缺失）。APP 被杀后
-   消息/来电不可达；后台通知依赖 dataSync 前台服务保活（见 §8），前台
-   服务被停/被杀即不可达。
+1. **推送通道待凭据激活**：客户端 Pusher 注册/FCM 接线与服务端 Sygnal
+   模板均已就绪，但 FCM（google-services.json + 服务账号）与 APNs
+   （证书/密钥 + entitlement 签名）凭据缺失，尚未激活——不得硬编码、
+   伪造或宣称完成。缺失清单与人工步骤：`docs/PUSH_SETUP.md`。
+   凭据配置前：APP 被杀后消息/来电仍不可达。
 2. **iOS 自定义通知音**：需要把 CAF/WAV 注册进 Xcode bundle（无法在 Windows
    构建验证），本期 iOS 系统通知使用系统默认音；前台音效不受影响。
-3. **Android 12+ CallStyle**：来电仍使用 full-screen-intent 方案。
-4. **iOS CallKit/PushKit/灵动岛**：未实现（需 Mac 构建环境与 VoIP 推送）。
+3. **Android 12+ CallStyle**：来电仍使用 full-screen-intent 方案；推送
+   兜底通知（进程被杀时）为普通 heads-up，未用 CallStyle。
+4. **iOS CallKit/PushKit/灵动岛**：未实现（需 Mac 构建环境、APNs VoIP
+   推送与 Apple Developer 凭据；设计见 `docs/PUSH_SETUP.md` §来电）。
+   不得用普通 APNs 消息推送冒充 VoIP 推送。
 5. **Android 桌面角标**：自建 MethodChannel（`chatflow/badge`）+ 原生
    ShortcutBadger 1.1.22（flutter_app_badger 1.3.0 与项目 AGP 9 不兼容，已替换）；
    iOS 由 AppDelegate 写 `UIApplication.applicationIconBadgeNumber`。
@@ -213,7 +274,6 @@ NotificationCoordinator（唯一入口）
 6. **每好友自定义音效**：第二阶段（PRD §44）。
 7. **埋点**：仅本地 SharedPreferences 计数（PRD §63 事件名），不含消息内容；
    远端分析待基础设施。
-8. `call_page.dart` 存在用户未提交改动，本期未触碰该文件。
 
 ## 9. 测试与验证（2026-09-03）
 

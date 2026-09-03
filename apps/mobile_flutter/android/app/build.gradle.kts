@@ -6,6 +6,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// FCM 推送（可选凭据）：仅在放置了 android/app/google-services.json 时
+// 应用 google-services 插件。凭据缺失时 FirebaseApp 不初始化，
+// FirebasePushTokenProvider 运行时安全降级（token = null → 不注册
+// pusher），构建产物与无 FCM 时完全一致。
+// 配置步骤见 docs/PUSH_SETUP.md；不得提交真实 google-services.json。
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val signingProperties = Properties()
 val signingFile = rootProject.file("key.properties")
 if (signingFile.exists()) signingFile.inputStream().use { signingProperties.load(it) }

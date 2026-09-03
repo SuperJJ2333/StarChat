@@ -26,12 +26,9 @@ final class FlutterLocalNotificationScheduler
   Future<void> initialize() async {
     if (_initialized) return;
     tz_data.initializeTimeZones();
-    await plugin.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-    );
+    // 不调用 plugin.initialize：点击回调只能有一个注册者（最后注册者
+    // 胜出），统一由 FlutterLocalSystemNotificationPresenter 注册分发；
+    // zonedSchedule 与渠道（详情隐式创建）不依赖 initialize。
     // 通知权限统一由 NotificationCoordinator 在登录后上下文式申请
     // （PRD §33）；此处只处理定时提醒必需的精确闹钟权限。
     await plugin

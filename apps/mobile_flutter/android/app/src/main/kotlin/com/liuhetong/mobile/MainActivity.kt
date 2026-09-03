@@ -58,6 +58,54 @@ class MainActivity : FlutterActivity() {
                             result.success(false)
                         }
                     }
+                    // 直达具体通知渠道设置页：渠道重要性/声音创建后不可由
+                    // 应用修改，用户静音了 v2 消息渠道时只能引导到此修改。
+                    "openChannelSettings" -> {
+                        val channelId = call.argument<String>("channelId")
+                        if (channelId == null) {
+                            result.error("invalid_args", "channelId required", null)
+                        } else {
+                            try {
+                                val intent = Intent(
+                                    Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS
+                                )
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                                    .putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+                                startActivity(intent)
+                                result.success(true)
+                            } catch (_: Exception) {
+                                result.success(false)
+                            }
+                        }
+                    }
+                    // 渠道真实状态（用户可能手动改过重要性/声音）：
+                    // 诊断日志与设置页展示用。
+                    "getChannelState" -> {
+                        val channelId = call.argument<String>("channelId")
+                        if (channelId == null) {
+                            result.error("invalid_args", "channelId required", null)
+                        } else {
+                            try {
+                                val nm = getSystemService(android.app.NotificationManager::class.java)
+                                val channel = nm.getNotificationChannel(channelId)
+                                if (channel == null) {
+                                    result.success(mapOf("exists" to false))
+                                } else {
+                                    result.success(
+                                        mapOf(
+                                            "exists" to true,
+                                            "importance" to channel.importance,
+                                            "sound" to (channel.sound?.toString() ?: ""),
+                                            "vibration" to channel.shouldVibrate(),
+                                            "canBypassDnd" to channel.canBypassDnd()
+                                        )
+                                    )
+                                }
+                            } catch (_: Exception) {
+                                result.success(mapOf("exists" to false))
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

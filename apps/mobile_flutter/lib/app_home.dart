@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
@@ -8,13 +9,17 @@ import 'core/app_config.dart';
 import 'core/local_notification_scheduler.dart';
 import 'core/notification/app_state_manager.dart';
 import 'core/notification/badge_service.dart';
+import 'core/notification/foreground_service_arbiter.dart';
 import 'core/notification/foreground_sound_service.dart';
 import 'core/notification/sync_keepalive_service.dart';
 import 'core/notification/haptic_service.dart';
 import 'core/notification/in_app_banner_controller.dart';
 import 'core/notification/notification_coordinator.dart';
+import 'core/notification/notification_deduplicator.dart';
+import 'core/notification/notification_diagnostics.dart';
 import 'core/notification/notification_feedback.dart';
 import 'core/notification/notification_preferences.dart';
+import 'core/notification/notification_system_bootstrapper.dart';
 import 'core/notification/notification_usage_recorder.dart';
 import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
@@ -43,6 +48,11 @@ import 'features/matrix/matrix_notification_event_source.dart';
 import 'features/matrix/matrix_room_timeline_adapter.dart'
     show changliaoFriendAcceptedEventType, friendAcceptedSystemMessage;
 import 'features/matrix/message_reminder_service.dart';
+import 'features/push/firebase_push_token_provider.dart';
+import 'features/push/firebase_push_wiring.dart';
+import 'features/push/matrix_pusher_service.dart';
+import 'features/push/push_tap_router.dart';
+import 'features/push/push_token_provider.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
 import 'ui/foundation/changliao_icons.dart';
@@ -156,7 +166,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 本次通话摘要是否已发送：ended 分支可能随 notifyListeners 多次进入，
   /// 必须去重，确保一次通话只落一条通话状态气泡。
   bool callSummarySent = false;
-  late final CallNotifications callNotifications = CallNotifications();
+  late final CallNotifications callNotifications = CallNotifications(
+    arbiter: foregroundArbiter,
+  );
   MessageReminderService? reminderService;
   late final MessageReminderSyncBootstrapper reminderBootstrap;
 
@@ -165,9 +177,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   final InAppBannerController notificationBanners = InAppBannerController();
   NotificationCoordinator? _notificationCoordinator;
 
+  /// 前台服务仲裁器：flutter_local_notifications 全局只有一个 Android
+  /// ForegroundService，消息保活与通话中服务必须共用同一仲裁器，
+  /// 否则通话结束的 stopForegroundService 会把消息同步一起停掉。
+  late final ForegroundServiceArbiter foregroundArbiter =
+      ForegroundServiceArbiter(backend: FlutterForegroundServiceBackend());
+
   /// BUG 2 后台/锁屏通知保活：dataSync 前台服务维持 Matrix 同步长连接，
   /// 登录会话期间常驻（AppHome 即登录后的根页面，dispose 即退出登录）。
-  final SyncKeepAliveService syncKeepAlive = SyncKeepAliveService();
+  /// 注意：Android 14+ 对 dataSync 前台服务有每日时长配额（约 6 小时），
+  /// 这是短期缓解而非长期推送方案；长期方案为 Matrix Pusher + Sygnal。
+  late final SyncKeepAliveService syncKeepAlive = SyncKeepAliveService(
+    backend: ArbiterSyncKeepAliveBackend(arbiter: foregroundArbiter),
+  );
 
   /// BUG（后台通知第四次修复）：SDK 同步循环后台悬挂无自愈——看门狗
   /// 以循环心跳为准，停跳先踢 oneShotSync，仍停跳强制重建循环。
@@ -175,6 +197,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     target: ClientSyncWatchdogTarget(widget.matrix.sdkClient),
   );
   MatrixNotificationEventSource? _notificationEventSource;
+
+  /// 通知系统唯一启动器：登录会话内只装配一个 eventSource + coordinator。
+  NotificationSystemBootstrapper? _notificationBootstrapper;
+
+  /// 跨进程重启去重（推送已展示的事件，冷启动同步不得二次提醒）。
+  NotificationDeduplicator? _sharedDeduplicator;
+  NotificationDedupStore? _sharedDedupStore;
+
+  /// 推送（Matrix Pusher + Sygnal/FCM）：注册/注销与点击冷启动路由。
+  PushTapRouter? _pushTapRouter;
+  MatrixPusherService? _pusherService;
+  PushTokenProvider? _pushTokenProvider;
+
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
 
@@ -194,27 +229,104 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_verifyDataIntegrity());
     unawaited(_checkForAppUpdate());
     unawaited(_startFriendRequestWatch());
+    // 通知系统登录会话内只启动一次（保活/看门狗/引导在其就绪后接力）。
+    // 历史缺陷：这里曾并发调用两次 _startNotificationSystem，产生两套
+    // eventSource/coordinator/dedup，首套泄漏整个会话（双声/双震/双通知）。
     unawaited(_startNotificationSystem());
-    // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
-    unawaited(_startNotificationSystem().then((_) async {
-      await syncKeepAlive.ensureStarted();
-      syncWatchdog.start();
-      await _primeBatteryOptimization();
-    }));
     WidgetsBinding.instance.addObserver(this);
   }
 
   /// 组装并启动统一通知协调器（PRD §2/§22）。
+  ///
+  /// 启动失败不抛出：bootstrapper 置 needsRetry 并记录诊断，下一次
+  /// 生命周期恢复（didChangeAppLifecycleState）重试。
   Future<void> _startNotificationSystem() async {
+    unawaited(NotificationDiagnostics.shared.ensureLoaded());
+    final bootstrapper =
+        _notificationBootstrapper ??= NotificationSystemBootstrapper(
+      start: _assembleNotificationSystem,
+      stop: () async {
+        await _notificationEventSource?.stop();
+        await _notificationCoordinator?.dispose();
+      },
+      onReady: () {
+        final coordinator = _notificationCoordinator;
+        if (coordinator == null) return;
+        NotificationFeedback.install(coordinator.playUiSound);
+        NotificationSystemHandle.install(coordinator);
+      },
+    );
+    final ready = await bootstrapper.ensureStarted();
+    if (!ready) return;
+    // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
+    await syncKeepAlive.ensureStarted();
+    syncWatchdog.start();
+    unawaited(() async {
+      await _primeBatteryOptimization();
+      await _primeNotificationPermission();
+    }());
+    unawaited(_startPushIntegration());
+  }
+
+  /// 推送集成（长期后台/被杀可达性）：Matrix Pusher 注册 + FCM 接线 +
+  /// 冷启动点击路由。FCM 凭据缺失或网关未配置时逐级安全降级为
+  /// Noop（不注册 pusher，Matrix 同步通道照常工作），诊断留痕。
+  Future<void> _startPushIntegration() async {
+    final client = widget.matrix.sdkClient;
+    final store = _sharedDedupStore ??=
+        await SharedPreferencesNotificationDedupStore.create();
+    final deduplicator = _sharedDeduplicator ??= NotificationDeduplicator(
+      store: store,
+      ttl: SharedPreferencesNotificationDedupStore.defaultTtl,
+    );
+    final router = _pushTapRouter ??= PushTapRouter(
+      openConversation: (roomId) =>
+          mounted ? _openConversationFromNotification(roomId) : Future.value(),
+      deduplicator: deduplicator,
+    );
+    // 冷启动由通知点击拉起（含常规消息通知与推送兜底通知）。
+    unawaited(routeNotificationLaunch(tapRouter: router));
+
+    final gatewayUrl = AppConfig.sygnalPushGatewayUrl.isEmpty
+        ? null
+        : Uri.tryParse(AppConfig.sygnalPushGatewayUrl);
+    final firebase = await FirebasePushTokenProvider.tryCreate();
+    final tokenProvider =
+        _pushTokenProvider = firebase ?? NoopPushTokenProvider();
+    final pusher = _pusherService = MatrixPusherService(
+      gateway: ClientMatrixPusherGateway(client),
+      tokenProvider: tokenProvider,
+      appId: defaultTargetPlatform == TargetPlatform.iOS
+          ? MatrixPusherService.appIdIOS
+          : MatrixPusherService.appIdAndroid,
+      gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
+      deviceDisplayName: defaultTargetPlatform == TargetPlatform.iOS
+          ? 'ChatFlow iOS'
+          : 'ChatFlow Android',
+    );
+    if (firebase != null) {
+      unawaited(configureFirebasePushHandlers(tapRouter: router));
+    }
+    await pusher.ensureRegistered();
+    await pusher.watchTokenRefresh();
+    // 推送点击路由就绪：通知系统已装配、主页面已挂载。
+    router.markReady();
+  }
+
+  Future<void> _assembleNotificationSystem() async {
+    final dedupStore = _sharedDedupStore ??=
+        await SharedPreferencesNotificationDedupStore.create();
+    final deduplicator = _sharedDeduplicator ??= NotificationDeduplicator(
+      store: dedupStore,
+      ttl: SharedPreferencesNotificationDedupStore.defaultTtl,
+    );
     final eventSource = MatrixNotificationEventSource(
       client: widget.matrix.sdkClient,
     );
     final coordinator = NotificationCoordinator(
       preferenceStore: const SharedPreferencesNotificationPreferenceStore(),
       systemNotifications: FlutterLocalSystemNotificationPresenter(
-        onConversationTap: (roomId) {
-          if (mounted) unawaited(_openConversationFromNotification(roomId));
-        },
+        onConversationTap: _handleNotificationTap,
       ),
       soundService: notificationSounds,
       hapticService: HapticService(),
@@ -225,20 +337,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unreadSource: MatrixUnreadSnapshotSource(
         client: widget.matrix.sdkClient,
       ),
+      deduplicator: deduplicator,
     );
     _notificationEventSource = eventSource;
     _notificationCoordinator = coordinator;
-    NotificationFeedback.install(coordinator.playUiSound);
-    NotificationSystemHandle.install(coordinator);
-    try {
-      await eventSource.start();
-      await coordinator.start();
-      await coordinator.refreshLauncherBadge();
-    } catch (_) {
-      // 通知系统启动失败不阻断会话；下一次生命周期恢复可重试。
-      return;
-    }
-    unawaited(_primeNotificationPermission());
+    await eventSource.start();
+    await coordinator.start();
+    await coordinator.refreshLauncherBadge();
   }
 
   /// BUG2：息屏后台通知的最后一公里——厂商 ROM 会清理"未加白名单"的
@@ -281,6 +386,20 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         false;
     if (goSettings && mounted) {
       await gateway.requestIgnoreBatteryOptimizations();
+    }
+  }
+
+  /// 回前台/设置页返回后的权限状态复核（仅查询，不弹窗）。
+  Future<void> _refreshNotificationPermissionState() async {
+    final coordinator = _notificationCoordinator;
+    if (coordinator == null) return;
+    try {
+      final status =
+          await coordinator.systemNotifications.authorizationStatus();
+      NotificationDiagnostics.shared
+          .record(NotificationDiagStage.permission, 'status: ${status.name}');
+    } catch (_) {
+      // 权限查询失败不打扰主流程；诊断层已有记录。
     }
   }
 
@@ -351,7 +470,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     if (appResumed) {
-      // 回前台：对齐一次桌面角标（PRD §36 reconcile）+ 静默刷新好友资料
+      // 通知系统启动失败的重试（此前 catch 注释承诺了重试但不存在）。
+      if (_notificationBootstrapper?.needsRetry ?? false) {
+        unawaited(_startNotificationSystem());
+      }
+      // 回前台：重新检查通知权限（用户可能刚在系统设置中开启/关闭），
+      // 记入诊断；设置页打开时亦会自行刷新。
+      unawaited(_refreshNotificationPermissionState());
+      // 对齐一次桌面角标（PRD §36 reconcile）+ 静默刷新好友资料
       //（BUG 1：好友头像/昵称变化无需重启即可见）。
       unawaited(_notificationCoordinator?.refreshLauncherBadge());
       unawaited(_chatIdentityCache?.refreshContactsQuietly());
@@ -385,7 +511,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _startFriendRequestWatch() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final notifier = FriendRequestNotifier(onTap: _openFriendRequests);
+      final notifier = FriendRequestNotifier();
       _friendRequestWatch =
           FriendRequestWatch(widget.api, prefs, notifier: notifier);
       _friendRequestPollTimer = Timer.periodic(
@@ -771,16 +897,56 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(reminderBootstrap.dispose());
     NotificationFeedback.uninstall();
     NotificationSystemHandle.uninstall();
-    unawaited(_notificationEventSource?.stop());
-    unawaited(_notificationCoordinator?.dispose());
+    // 通知系统唯一所有者清理（bootstrapper 幂等；兜底直接停引用）。
+    final bootstrapper = _notificationBootstrapper;
+    if (bootstrapper != null) {
+      unawaited(bootstrapper.dispose());
+    } else {
+      unawaited(_notificationEventSource?.stop());
+      unawaited(_notificationCoordinator?.dispose());
+    }
+    // 推送清理：登出/账号切换注销 pusher（服务端停止向本设备推送），
+    // 丢弃挂起的点击路由（不跨账号串会话），释放 Token 提供方。
+    _pushTapRouter?.reset();
+    unawaited(_pusherService?.unregister());
+    unawaited(_pusherService?.dispose());
+    unawaited(_pushTokenProvider?.dispose());
+    unawaited(notificationSounds.dispose());
     super.dispose();
   }
 
-  /// 横幅点击进入会话（PRD §7）：优先复用本地身份缓存与既有的
+  /// 系统通知点击统一分发：只有 presenter 注册一次插件回调（最后
+  /// initialize 者胜出——此前好友申请/通话/保活各自 initialize 互相
+  /// 覆盖，消息通知点击被劫持或失效）。
+  void _handleNotificationTap(String payload) {
+    if (!mounted) return;
+    routeSystemNotificationPayload(
+      payload,
+      openConversation: (roomId) =>
+          unawaited(_openConversationFromNotification(roomId)),
+      openFriendRequests: _openFriendRequests,
+    );
+  }
+
+  /// 横幅/通知/推送点击进入会话（PRD §7）：优先复用本地身份缓存与既有的
   /// RoomPage 组装路径，头像未就绪先用占位，不为导航等待网络。
+  ///
+  /// 冷启动（推送点击拉起进程）：房间可能尚未进入首次同步——短暂等待
+  /// 房间就绪后再进入，避免点击"无反应"。
   Future<void> _openConversationFromNotification(String roomId) async {
-    final room = widget.matrix.sdkClient.getRoomById(roomId);
+    var room = widget.matrix.sdkClient.getRoomById(roomId);
+    if (room == null) {
+      try {
+        await widget.matrix.sdkClient
+            .waitForRoomInSync(roomId)
+            .timeout(const Duration(seconds: 10));
+        room = widget.matrix.sdkClient.getRoomById(roomId);
+      } catch (_) {
+        // 首次同步未及时带回房间：留在当前页，会话仍可从消息列表进入。
+      }
+    }
     if (room == null || !mounted) return;
+    final openedRoom = room;
     unawaited(const SharedPreferencesNotificationUsageRecorder()
         .count(NotificationUsageEvents.opened));
     try {
@@ -793,8 +959,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         CupertinoPageRoute(
           builder: (_) => RoomPage(
             api: widget.api,
-            room: room,
-            roomName: room.getLocalizedDisplayname(),
+            room: openedRoom,
+            roomName: openedRoom.getLocalizedDisplayname(),
             onCreateGroup: _createGroupChat,
             onVoice: (contact) => _openCall(contact, CallMediaType.audio),
             onVideo: (contact) => _openCall(contact, CallMediaType.video),

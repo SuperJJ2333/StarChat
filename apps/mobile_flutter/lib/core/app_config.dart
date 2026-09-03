@@ -19,11 +19,19 @@ final class AppConfig {
     defaultValue: true,
   );
 
+  /// Sygnal 推送网关（Matrix Pusher http 网关）根地址；构建时注入，如
+  /// `--dart-define=LIUHETONG_SYGNAL_URL=https://push.example.com`。
+  /// 为空（默认，凭据未配置）时客户端不注册 pusher，仅使用 Matrix 同步
+  /// 通道；配置与部署步骤见 docs/PUSH_SETUP.md。
+  static const sygnalPushGatewayUrl = String.fromEnvironment(
+    'LIUHETONG_SYGNAL_URL',
+  );
+
   /// Release identity of this build. Keep in sync with `version:` in
   /// pubspec.yaml; tests/mobile/test_app_build_contract.py asserts the match.
   /// 运行时由 [loadRuntimeVersion] 用安装包真实版本覆盖（见 main）。
-  static String appVersionName = '0.3.28';
-  static int appBuildNumber = 31;
+  static String appVersionName = '0.3.32';
+  static int appBuildNumber = 35;
 
   /// 从安装包清单读取真实版本，保证「关于畅聊」与更新判断使用实际值。
   static Future<void> loadRuntimeVersion() async {

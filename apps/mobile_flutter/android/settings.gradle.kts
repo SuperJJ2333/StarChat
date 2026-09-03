@@ -21,6 +21,10 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "9.0.1" apply false
     id("org.jetbrains.kotlin.android") version "2.3.20" apply false
+    // FCM 推送：google-services 插件按需应用（见 app/build.gradle.kts，
+    // 缺少 google-services.json 凭据时不应用，构建零行为变化）。
+    // 4.5.0 为适配 AGP 9 / Gradle 9 的版本线。
+    id("com.google.gms.google-services") version "4.5.0" apply false
 }
 
 include(":app")

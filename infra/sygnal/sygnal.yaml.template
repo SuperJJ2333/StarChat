@@ -1,0 +1,52 @@
+# Sygnal 推送网关配置模板（Matrix Push Gateway，对接 FCM/APNs）。
+#
+# 渲染位置：data/sygnal/sygnal.yaml（scripts/init_matrix.ps1 首次渲染，
+# 已存在时不覆盖——生产环境填入真实凭据后的文件绝不能被提交）。
+#
+# 部署与凭据获取步骤见 docs/PUSH_SETUP.md。开发环境默认 apps 为空
+# （网关可启动，收到 notify 请求只会记录 "no app found"）。
+#
+# 注意：matrix-org/sygnal 于 2025 年归档（最后版本 v0.15.1），仍是
+# Matrix 生态的参考推送网关；如需替代实现，需保持
+# /_matrix/push/v1/notify 协议兼容。
+
+sygnal:
+  db:
+    file: /data/sygnal.db
+  logging:
+    version: 1
+    formatters:
+      journal_fmt:
+        format: '%(name)s: %(levelname)s %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: journal_fmt
+    loggers:
+      sygnal:
+        level: INFO
+    root:
+      level: INFO
+      handlers: [console]
+
+# 应用映射：key 必须与客户端注册 pusher 的 app_id 完全一致
+# （apps/mobile_flutter/lib/features/push/matrix_pusher_service.dart）。
+# 载荷规范：客户端 pusher format=event_id_only——通知只携带 eventId/
+# roomId/类型/未读数等不透明字段与通用文案，绝不含 E2EE 明文。
+apps: {}
+#  # Android（FCM）：使用 FCM v1 时配置 service account 文件；
+#  # 旧版 server key 已被 Google 废弃。凭据文件只放服务器，不入仓库。
+#  com.liuhetong.mobile.android:
+#    type: fcm
+#    # v1 服务账号 JSON（Firebase 控制台 → 项目设置 → 服务账号）：
+#    fcm_service_account_file: /data/sygnal/fcm-service-account.json
+#
+#  # iOS（APNs）：Token-based (.p8) 认证。
+#  com.liuhetong.mobile.ios:
+#    type: apns
+#    keyfile: /data/sygnal/apns/AuthKey_XXXXXXXXXX.p8
+#    key_id: XXXXXXXXXX
+#    team_id: YYYYYYYYYY
+#    platform: production   # 开发构建用 development（沙盒 APNs）
+#    # topic 默认取 bundle id；如需显式指定：
+#    # topic: com.liuhetong.mobile
