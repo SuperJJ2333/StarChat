@@ -13,11 +13,12 @@ class TagBody(Strict):name:str=Field(min_length=1,max_length=64)
 class TagPatchBody(Strict):name:str=Field(min_length=1,max_length=64)
 class TagDeleteBatchBody(Strict):tag_ids:list[str]=Field(min_length=1,max_length=30)
 class ContactBody(Strict):remark:str|None=Field(default=None,max_length=128);tags:list[str]=Field(default_factory=list,max_length=30);moments_permission:str='DEFAULT'
+class DirectConversationBody(Strict):peer_user_id:str=Field(min_length=1,max_length=36);matrix_room_id:str=Field(min_length=1,max_length=255)
 class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
 class FriendRequestProjection(BaseModel):
-    id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;message:str;status:str;requested_at:str
+    id:str;user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;message:str;remark:str|None=None;tags:list[str]=Field(default_factory=list);status:str;requested_at:str
 class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];next_cursor:str|None=None
 class UserSearchProjection(BaseModel):
     user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;relationship_state:str
@@ -43,6 +44,10 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
     @router.post('/friends/requests/{request_id}/reject')
     def reject(request_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.reject(user,request_id,idempotency_key);return {'id':r.id,'status':r.status}
+    @router.delete('/friends/requests/{request_id}')
+    def cancel(request_id:str,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
+        # BUG 2 状态机：申请人撤销待处理申请（PENDING → CANCELLED）。
+        r=service.cancel(user,request_id,idempotency_key);return {'id':r.id,'status':r.status}
     @router.get('/friends',response_model=FriendListResponse)
     def friends(user=Depends(actor)):return {'items':service.list(user),'next_cursor':None}
     @router.patch('/friends/{friend_id}')
@@ -77,4 +82,20 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
     def search(q:Annotated[str,Query(min_length=2,max_length=64)],user=Depends(actor)):
         rate_limiter.hit(f'user-search:{user}', limit=30, window_seconds=60)
         return {'items':service.search(user,q),'next_cursor':None}
+    @router.get('/users/lookup',response_model=UserSearchProjection)
+    def lookup(matrix_user_id:Annotated[str,Query(min_length=3,max_length=255)],user=Depends(actor)):
+        # BUG 2 群成员非好友：按 Matrix ID 反查资料与关系状态，
+        # 404 = 不存在/拉黑/自己（与搜索隐私口径一致）。
+        rate_limiter.hit(f'user-lookup:{user}', limit=30, window_seconds=60)
+        return service.lookup_by_matrix(user,matrix_user_id)
+    @router.get('/direct-conversations')
+    def direct_conversation(peer_user_id:Annotated[str,Query(min_length=1,max_length=36)],user=Depends(actor)):
+        # Canonical Direct Conversation（Phase E）：创建私聊前先查询复用。
+        if peer_user_id==user:raise AppError(code='INVALID_FRIEND_TARGET',message='不能查询自己',status_code=422)
+        return service.direct_conversation(user,peer_user_id)
+    @router.post('/direct-conversations')
+    def register_direct_conversation(body:DirectConversationBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
+        if body.peer_user_id==user:raise AppError(code='INVALID_FRIEND_TARGET',message='不能注册自己',status_code=422)
+        if not body.matrix_room_id.strip():raise AppError(code='VALIDATION_ERROR',message='matrix_room_id 不能为空',status_code=422)
+        return service.register_direct_conversation(user,body.peer_user_id,body.matrix_room_id.strip(),idempotency_key)
     return router

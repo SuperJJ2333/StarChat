@@ -8,7 +8,7 @@ import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../moments/moments_page.dart';
-import '../matrix/chat_identity_cache.dart';
+import '../matrix/profile_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../search/global_search_page.dart';
 
@@ -18,7 +18,7 @@ final class DiscoveryPage extends StatelessWidget {
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient? matrix;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -36,7 +36,8 @@ final class DiscoveryPage extends StatelessWidget {
                 onPressed: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                      builder: (_) => GlobalSearchPage(api: api, matrix: matrix)),
+                      builder: (_) =>
+                          GlobalSearchPage(api: api, matrix: matrix)),
                 ),
                 child: const Icon(CupertinoIcons.search, size: 22),
               ),
@@ -50,13 +51,14 @@ final class DiscoveryPage extends StatelessWidget {
                       CupertinoActionSheetAction(
                         onPressed: () {
                           Navigator.pop(sheetContext);
-                          Navigator.of(context, rootNavigator: true)
-                              .push(
+                          final cache = identityCache;
+                          if (cache == null) return;
+                          Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
                                 fullscreenDialog: true,
                                 builder: (_) => MomentsPage(
                                       api: api,
-                                      identityCache: identityCache,
+                                      identityCache: cache,
                                     )),
                           );
                         },
@@ -112,16 +114,19 @@ final class DiscoveryPage extends StatelessWidget {
                   ),
                 ),
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
-                onTap: () => Navigator.of(context, rootNavigator: true)
-                    .push(
-                  CupertinoPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => MomentsPage(
-                      api: api,
-                      identityCache: identityCache,
+                onTap: () {
+                  final cache = identityCache;
+                  if (cache == null) return;
+                  Navigator.of(context, rootNavigator: true).push(
+                    CupertinoPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => MomentsPage(
+                        api: api,
+                        identityCache: cache,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
               WeChatListTile(
                 leading: const SizedBox(

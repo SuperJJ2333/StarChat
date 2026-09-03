@@ -15,12 +15,14 @@ import '../../ui/moments/wechat_moment_tile.dart';
 import '../../ui/moments/wechat_moment_viewer.dart';
 import 'moment_models.dart';
 import 'moment_composer_page.dart';
-import '../matrix/chat_identity_cache.dart';
+import '../matrix/profile_repository.dart';
 
 final class MomentsPage extends StatefulWidget {
-  const MomentsPage({super.key, required this.api, this.identityCache});
+  /// BUG 1：朋友圈不再自建资料缓存——必须注入全局唯一 ProfileRepository。
+  const MomentsPage(
+      {super.key, required this.api, required this.identityCache});
   final BusinessApiClient api;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository identityCache;
   @override
   State<MomentsPage> createState() => _MomentsPageState();
 }
@@ -32,8 +34,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   String? _coverUrl;
   String? _interactionError;
   String? _identityError;
-  late final ChatIdentityCache _identityCache =
-      widget.identityCache ?? ChatIdentityCache(widget.api);
+  late final ProfileRepository _identityCache = widget.identityCache;
 
   @override
   void initState() {

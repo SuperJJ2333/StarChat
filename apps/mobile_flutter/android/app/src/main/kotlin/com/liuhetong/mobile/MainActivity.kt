@@ -1,5 +1,7 @@
 package com.liuhetong.mobile
 
+import android.content.Intent
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +27,25 @@ class MainActivity : FlutterActivity() {
                     "clear" -> {
                         try {
                             ShortcutBadger.removeCount(applicationContext)
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/notification")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // PRD §56：权限被拒后的降级路径——直达本应用通知设置页
+                    // （Android 13+ 二次拒绝后系统弹窗不再出现）。
+                    "openNotificationSettings" -> {
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                            ).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            startActivity(intent)
                             result.success(true)
                         } catch (_: Exception) {
                             result.success(false)

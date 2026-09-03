@@ -14,10 +14,12 @@ import '../../ui/components/wechat_contact_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_tag_pages.dart';
-import 'request_friend_page.dart';
+import 'add_friend_profile_page.dart';
+import 'friend_request_review_page.dart';
 import 'contact_profile_sections.dart';
 import '../search/global_search_page.dart';
-import '../matrix/chat_identity_cache.dart';
+import '../friendship/friend_acceptance_coordinator.dart';
+import '../matrix/profile_repository.dart';
 import '../matrix/direct_chat_controller.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
@@ -78,7 +80,7 @@ final class ContactsPage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final VoidCallback? onGroupChat;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
@@ -974,7 +976,6 @@ final class _AddFriendState extends State<AddFriendPage> {
   List items = [];
   String? hint = '输入至少 $_minQueryLength 个字符，可通过畅聊号或邮箱搜索';
   bool searching = false;
-  String? submittingUserId;
 
   @override
   void initState() {
@@ -1032,65 +1033,25 @@ final class _AddFriendState extends State<AddFriendPage> {
     }
   }
 
-  Future<void> _request(Map user) async {
-    final userId = user['user_id'].toString();
-    final state = user['relationship_state']?.toString() ?? 'NONE';
-    if (state == 'OUTGOING_PENDING' || state == 'FRIEND') {
-      _message('不能重复发送好友请求');
-      return;
-    }
-    setState(() => submittingUserId = userId);
-    try {
-      await widget.api.requestFriend(userId);
-      if (!mounted) return;
-      setState(() {
-        user['relationship_state'] = 'OUTGOING_PENDING';
-        submittingUserId = null;
-      });
-    } on BusinessApiException catch (error) {
-      if (mounted) {
-        _message(
-          error.code == 'FRIEND_REQUEST_DUPLICATE'
-              ? '不能重复发送好友请求'
-              : error.message,
-        );
-      }
-    } finally {
-      if (mounted && submittingUserId == userId) {
-        setState(() => submittingUserId = null);
-      }
-    }
-  }
-
   void _openRequestPage(Map user) {
+    // BUG 2：先看资料再决定是否添加，禁止快捷直接发送请求。
     final nickname = user['nickname']?.toString();
     Navigator.push(
       context,
       CupertinoPageRoute(
-        builder: (_) => RequestFriendPage(
+        builder: (_) => AddFriendProfilePage(
           api: widget.api,
           userId: user['user_id'].toString(),
           username: user['username'].toString(),
-          nickname:
-              nickname != null && nickname.isNotEmpty ? nickname : user['username'].toString(),
+          nickname: nickname != null && nickname.isNotEmpty
+              ? nickname
+              : user['username'].toString(),
+          relationshipState: user['relationship_state']?.toString() ?? 'NONE',
           avatarUrl: user['avatar_url']?.toString(),
         ),
       ),
     );
   }
-
-  void _message(String text) => showCupertinoDialog<void>(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          content: Text(text),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -1134,22 +1095,30 @@ final class _AddFriendState extends State<AddFriendPage> {
                       key: Key('add-friend-${user['user_id']}'),
                       onTap: () => _openRequestPage(user as Map),
                       leading: UserAvatar(
-                        nickname: (user['nickname']?.toString().isNotEmpty ?? false)
-                            ? user['nickname'].toString()
-                            : user['username'].toString(),
+                        nickname:
+                            (user['nickname']?.toString().isNotEmpty ?? false)
+                                ? user['nickname'].toString()
+                                : user['username'].toString(),
                         fallbackSeed: user['user_id'].toString(),
                         avatarUrl: user['avatar_url']?.toString(),
                         diagnosticSource: 'add-friend-search',
                       ),
                       title: Text(user['nickname']?.toString() ?? ''),
                       subtitle: Text('畅聊号：${user['username']}'),
-                      trailing: ModernActionButton(
-                        icon: _friendIcon(user['relationship_state']?.toString()),
-                        label: _friendLabel(user['relationship_state']?.toString()),
-                        loading: submittingUserId == user['user_id'].toString(),
-                        onPressed: submittingUserId == null
-                            ? () => _request(user as Map)
-                            : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _friendLabel(
+                                user['relationship_state']?.toString()),
+                            key: Key('add-friend-state-${user['user_id']}'),
+                            style: const TextStyle(
+                                fontSize: 13,
+                                color: WeChatColors.textSecondary),
+                          ),
+                          const SizedBox(width: 4),
+                          const CupertinoListTileChevron(),
+                        ],
                       ),
                     ),
                 ],
@@ -1167,9 +1136,6 @@ String _friendLabel(String? state) => switch (state) {
       _ => '添加',
     };
 
-IconData _friendIcon(String? state) =>
-    state == 'FRIEND' ? CupertinoIcons.check_mark : CupertinoIcons.person_add;
-
 final class FriendRequestsPage extends StatefulWidget {
   const FriendRequestsPage({
     super.key,
@@ -1177,6 +1143,8 @@ final class FriendRequestsPage extends StatefulWidget {
     this.pendingRequests,
     this.directChats,
     this.onRequestsChanged,
+    this.identityCache,
+    this.onEstablishDirectChat,
   });
   final BusinessApiClient api;
   final ValueNotifier<int>? pendingRequests;
@@ -1187,6 +1155,15 @@ final class FriendRequestsPage extends StatefulWidget {
   /// 申请状态变化后回调（通讯录/消息页即时刷新）。
   final VoidCallback? onRequestsChanged;
 
+  /// BUG 3：accept 成功后乐观插入好友（本地立即可见，禁止等待重启）。
+  final ProfileRepository? identityCache;
+
+  /// BUG 3：accept 成功后建立私聊并发送好友接受系统消息
+  /// （matrixUserId, friendUserId, friendDisplayName）。
+  final Future<void> Function(
+          String matrixUserId, String friendUserId, String friendDisplayName)?
+      onEstablishDirectChat;
+
   @override
   State<FriendRequestsPage> createState() => _FriendRequestsPageState();
 }
@@ -1196,6 +1173,27 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   void _reload() => setState(() => requests = widget.api.friendRequests());
 
+  /// BUG 2：点击申请进入"通过朋友验证"页；accept/reject 只在该页触发。
+  Future<void> _openReview(Map request) async {
+    final id = request['id'].toString();
+    await Navigator.push(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => FriendRequestReviewPage(
+          request: request,
+          onAccept: () => _resolve(id, true),
+          onReject: () => _resolve(id, false),
+        ),
+      ),
+    );
+    if (mounted) _reload();
+  }
+
+  /// BUG 3：accept 编排（对应领域事件 friend.accepted）。
+  /// 仅当用户在"通过朋友验证"页点击通过验证时才调用 accept API；
+  /// 成功后：乐观插入本地好友 → 建立/取得加密私聊 → 发送好友接受
+  /// 系统消息 → 会话列表刷新。任何后续步骤失败都不回滚好友关系，
+  /// 禁止要求用户退出 APP 才能看到好友。
   Future<void> _resolve(String id, bool accept) async {
     if (accept) {
       await widget.api.acceptFriendRequest(id);
@@ -1207,28 +1205,35 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
       pending.value -= 1;
     }
     if (accept) {
-      // 接受即建立与对方的加密会话：消息页立即出现该好友的入口，
-      // 且后续打开聊天不再出现"无法打开加密会话"。
       final items =
           ((await widget.api.friendRequests())['items'] as List?) ?? const [];
-      final matrixUserId = items
-          .whereType<Map>()
-          .firstWhere(
+      final request = items.whereType<Map>().firstWhere(
             (item) => item['id']?.toString() == id,
             orElse: () => const {},
-          )['matrix_user_id']
-          ?.toString();
-      final directChats = widget.directChats;
-      if (matrixUserId != null && matrixUserId.isNotEmpty && directChats != null) {
-        try {
-          await directChats.open(matrixUserId);
-        } catch (_) {
-          // 会话创建失败不阻塞好友接受；后续打开联系人时自动重试。
-        }
-      }
+          );
+      await _onFriendAccepted(request);
     }
     widget.onRequestsChanged?.call();
     if (mounted) _reload();
+  }
+
+  Future<void> _onFriendAccepted(Map request) async {
+    final cache = widget.identityCache;
+    if (cache == null) return;
+    // BUG 3 编排：乐观插入 + 私聊建立 + 好友接受系统消息。
+    final coordinator = FriendAcceptanceCoordinator(
+      identityCache: cache,
+      establishDirectChat: widget.onEstablishDirectChat ??
+          (matrixUserId, friendUserId, friendDisplayName) async {
+            final directChats = widget.directChats;
+            if (directChats != null) {
+              try {
+                await directChats.open(matrixUserId);
+              } catch (_) {}
+            }
+          },
+    );
+    await coordinator.onAccepted(request);
   }
 
   @override
@@ -1248,8 +1253,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
                   for (final request in items)
                     _FriendRequestTile(
                       request: request as Map,
-                      onAccept: () => _resolve(request['id'].toString(), true),
-                      onReject: () => _resolve(request['id'].toString(), false),
+                      onTap: () => _openReview(request),
                     ),
                   if (items.isEmpty)
                     const Padding(
@@ -1265,45 +1269,54 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 }
 
 final class _FriendRequestTile extends StatelessWidget {
-  const _FriendRequestTile(
-      {required this.request, required this.onAccept, required this.onReject});
+  const _FriendRequestTile({required this.request, required this.onTap});
   final Map request;
-  final VoidCallback onAccept;
-  final VoidCallback onReject;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    // BUG 2 状态机：PENDING/ACCEPTED/REJECTED/EXPIRED/CANCELLED。
     final status = request['status']?.toString() ?? 'PENDING';
     final label = switch (status) {
       'PENDING' => '接受',
       'ACCEPTED' => '已添加',
+      'REJECTED' => '已拒绝',
       'EXPIRED' => '已过期',
-      _ => '已拒绝'
+      'CANCELLED' => '已撤销',
+      _ => '已处理'
     };
-    return GestureDetector(
-      onLongPress: status == 'PENDING' ? onReject : null,
-      child: SizedBox(
-        height: 68,
-        child: WeChatListTile(
-          leading: UserAvatar(
-              nickname: request['nickname']?.toString() ??
-                  request['username']?.toString() ??
-                  '',
-              fallbackSeed: request['username']?.toString() ?? '',
-              avatarUrl: request['avatar_url']?.toString()),
-          title: Text(request['nickname']?.toString() ??
-              request['username']?.toString() ??
-              ''),
-          subtitle: Text(request['message']?.toString().isNotEmpty == true
-              ? request['message'].toString()
-              : '请求添加你为好友'),
-          trailing: SizedBox(
-              width: 64,
-              height: 32,
-              child: CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  onPressed: status == 'PENDING' ? onAccept : null,
-                  child: Text(label))),
+    return SizedBox(
+      height: 68,
+      child: WeChatListTile(
+        onTap: onTap,
+        leading: UserAvatar(
+            nickname: request['nickname']?.toString() ??
+                request['username']?.toString() ??
+                '',
+            fallbackSeed: request['username']?.toString() ?? '',
+            avatarUrl: request['avatar_url']?.toString()),
+        title: Text(request['nickname']?.toString() ??
+            request['username']?.toString() ??
+            ''),
+        subtitle: Text(request['message']?.toString().isNotEmpty == true
+            ? request['message'].toString()
+            : '请求添加你为好友'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              key: Key('friend-request-state-${request['id']}'),
+              style: TextStyle(
+                fontSize: 13,
+                color: status == 'PENDING'
+                    ? WeChatColors.brandPrimary
+                    : WeChatColors.textSecondary,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const CupertinoListTileChevron(),
+          ],
         ),
       ),
     );

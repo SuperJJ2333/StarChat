@@ -22,10 +22,12 @@ import 'features/contacts/contact_models.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'package:matrix/matrix.dart' show Membership;
 import 'features/matrix/direct_chat_controller.dart';
+import 'features/matrix/matrix_direct_chat_adapter.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'features/matrix/room_page.dart';
-import 'features/matrix/chat_identity_cache.dart';
+import 'features/matrix/profile_repository.dart';
 import 'features/matrix/group_chat_controller.dart';
 import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
@@ -36,6 +38,8 @@ import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
 import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/matrix_notification_event_source.dart';
+import 'features/matrix/matrix_room_timeline_adapter.dart'
+    show changliaoFriendAcceptedEventType, friendAcceptedSystemMessage;
 import 'features/matrix/message_reminder_service.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
@@ -75,8 +79,39 @@ final class AppHome extends StatefulWidget {
 }
 
 final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
-  late final DirectChatController directChats =
-      DirectChatController(widget.matrix);
+  late final DirectChatController directChats = DirectChatController(
+    // Canonical Direct Conversation（好友系统重构 Phase E）：
+    // 创建私聊前先查规范房间复用；不存在才 startDirectChat 新建并注册。
+    CanonicalDirectChatGateway(
+      inner: widget.matrix,
+      directory: _ApiCanonicalDirectRoomDirectory(widget.api),
+      businessUserIdOf: (matrixUserId) =>
+          _chatIdentityCache?.contactsByMatrixId[matrixUserId]?.userId,
+      openExistingRoom: _openCanonicalDirectRoom,
+    ),
+  );
+
+  /// 打开规范登记的私聊房间：受邀未加入时先加入，再做加密+双人校验。
+  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) async {
+    final client = widget.matrix.sdkClient;
+    var room = client.getRoomById(roomId);
+    if (room == null || room.membership != Membership.join) {
+      try {
+        await room?.join();
+      } catch (_) {
+        // 可能已在 join 中；下方等待同步兜底。
+      }
+      await client.waitForRoomInSync(roomId, join: true);
+      room = client.getRoomById(roomId);
+    }
+    final backend = MatrixDirectChatBackend(client);
+    final snapshot = await backend.waitForRoom(roomId);
+    final target = snapshot.participantIds
+        .firstWhere((id) => id != client.userID, orElse: () => '');
+    final service = DirectChatService(backend);
+    return service.openExisting(snapshot.roomId, target);
+  }
+
   late final MatrixCallBackend callBackend =
       MatrixCallBackend(widget.matrix.sdkClient);
   late final ForegroundSoundService notificationSounds =
@@ -112,8 +147,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   final InAppBannerController notificationBanners = InAppBannerController();
   NotificationCoordinator? _notificationCoordinator;
   MatrixNotificationEventSource? _notificationEventSource;
-  ChatIdentityCache? _chatIdentityCache;
-  Future<ChatIdentityCache>? _chatIdentityCacheLoad;
+  ProfileRepository? _chatIdentityCache;
+  Future<ProfileRepository>? _chatIdentityCacheLoad;
 
   @override
   void initState() {
@@ -173,17 +208,24 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   /// PRD §33：登录完成后上下文式申请通知权限，绝不在冷启动首屏弹。
+  ///
+  /// 注意：Android 13+ 的 areNotificationsEnabled() 在首次申请前就返回
+  /// "未启用"（系统不暴露"未决定"态），不能以状态查询作为是否引导的前置
+  /// 条件——只要本机没引导过就弹说明框，再触发系统权限申请。
   Future<void> _primeNotificationPermission() async {
     final coordinator = _notificationCoordinator;
     if (coordinator == null || !mounted) return;
     final recorder = const SharedPreferencesNotificationUsageRecorder();
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool('notification.permission_prompted') == true) return;
-      await prefs.setBool('notification.permission_prompted', true);
+      // v2：0.3.27 的引导实现有缺陷（Android 13+ 从未真正申请过权限），
+      // 升级到本版的设备需要重新引导一次；已授权设备自动跳过。
+      if (prefs.getBool('notification.permission_prompted_v2') == true) return;
+      await prefs.setBool('notification.permission_prompted_v2', true);
       final status =
           await coordinator.systemNotifications.authorizationStatus();
-      if (status != NotificationAuthorizationStatus.undetermined) return;
+      // 已授权（Android 12 及以下安装即启用）无需打扰。
+      if (status == NotificationAuthorizationStatus.granted) return;
       if (!mounted) return;
       unawaited(recorder.count(NotificationUsageEvents.permissionPrompted));
       final allow = await showCupertinoDialog<bool>(
@@ -232,8 +274,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     if (appResumed) {
-      // 回前台：对齐一次桌面角标（PRD §36 reconcile）。
+      // 回前台：对齐一次桌面角标（PRD §36 reconcile）+ 静默刷新好友资料
+      //（BUG 1：好友头像/昵称变化无需重启即可见）。
       unawaited(_notificationCoordinator?.refreshLauncherBadge());
+      unawaited(_chatIdentityCache?.refreshContactsQuietly());
     }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
     if (appResumed && incomingCallActive) {
@@ -289,6 +333,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     } catch (_) {
       // 下个周期重试。
     }
+    // BUG 1：好友申请轮询周期（60s）顺带静默刷新好友资料——好友改头像
+    // 后通讯录/消息页/朋友圈在下个周期内自动更新，禁止等待重启。
+    unawaited(_chatIdentityCache?.refreshContactsQuietly());
   }
 
   void _openFriendRequests() {
@@ -300,8 +347,32 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           pendingRequests: pendingFriendRequests,
           directChats: directChats,
           onRequestsChanged: () => unawaited(_refreshAfterFriendChanges()),
+          identityCache: _chatIdentityCache,
+          // BUG 3：accept 后建立私聊 + 发送好友接受系统消息。
+          onEstablishDirectChat:
+              (matrixUserId, friendUserId, friendDisplayName) =>
+                  _establishDirectChatAndGreet(matrixUserId, friendDisplayName),
         ),
       ),
+    );
+  }
+
+  /// BUG 3：好友接受后的私聊建立与系统招呼（"你已添加了 XXX…"，
+  /// ChatFlow 系统消息类型渲染，绝不伪装成对方普通消息）。
+  Future<void> _establishDirectChatAndGreet(
+    String matrixUserId,
+    String friendDisplayName,
+  ) async {
+    final reference = await directChats.open(matrixUserId);
+    final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
+    if (room == null) return;
+    await room.sendEvent(
+      {
+        'body': friendAcceptedSystemMessage(friendDisplayName),
+        'friend_user_id': matrixUserId,
+        'friend_display_name': friendDisplayName,
+      },
+      type: changliaoFriendAcceptedEventType,
     );
   }
 
@@ -412,18 +483,25 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
   }
 
-  Future<ChatIdentityCache> _identityCache() =>
+  Future<ProfileRepository> _identityCache() =>
       _chatIdentityCacheLoad ??= _createIdentityCache();
 
-  Future<ChatIdentityCache> _createIdentityCache() async {
+  Future<ProfileRepository> _createIdentityCache() async {
     final accountKey = widget.matrix.sdkClient.userID;
-    final cache = accountKey == null
-        ? ChatIdentityCache(widget.api)
-        : await ChatIdentityCache.create(
-            api: widget.api,
-            accountKey: 'matrix:$accountKey',
-          );
-    await cache.hydrate();
+    ProfileRepository cache;
+    try {
+      cache = accountKey == null
+          ? ProfileRepository(widget.api)
+          : await ProfileRepository.create(
+              api: widget.api,
+              accountKey: 'matrix:$accountKey',
+            );
+      await cache.hydrate();
+    } catch (_) {
+      // 最终兜底：无持久化的内存仓库——页面必须能渲染，
+      // 绝不允许消息/通讯录停留在加载态（Mi 6 SQLite 故障教训）。
+      cache = ProfileRepository(widget.api, accountKey: accountKey);
+    }
     _chatIdentityCache = cache;
     if (mounted) setState(() {});
     unawaited(cache.preload());
@@ -736,6 +814,26 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       );
 }
 
+/// Canonical Direct Conversation 目录适配（好友系统重构 Phase E）。
+final class _ApiCanonicalDirectRoomDirectory
+    implements CanonicalDirectRoomDirectory {
+  _ApiCanonicalDirectRoomDirectory(this._api);
+  final BusinessApiClient _api;
+
+  @override
+  Future<String?> canonicalRoomId(String peerUserId) =>
+      _api.canonicalDirectRoomId(peerUserId);
+
+  @override
+  Future<String?> registerRoom(String peerUserId, String roomId) async {
+    try {
+      return await _api.registerDirectConversation(peerUserId, roomId);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 final class ContactsTabPage extends StatefulWidget {
   const ContactsTabPage({
     super.key,
@@ -757,7 +855,7 @@ final class ContactsTabPage extends StatefulWidget {
   final VoidCallback onGroupChat;
   final ValueNotifier<int> pendingFriendRequests;
   final MessageReminderService? reminderService;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
@@ -770,7 +868,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
       final identityCache =
-          widget.identityCache ?? ChatIdentityCache(widget.api);
+          widget.identityCache ?? ProfileRepository(widget.api);
       await identityCache.preload();
       if (!mounted) return;
       await identityCache.precacheAvatarImages(context);
@@ -830,7 +928,7 @@ final class ProfileTabPage extends StatefulWidget {
   });
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
 }
@@ -856,13 +954,16 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () =>
-          Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
-              fullscreenDialog: true,
-              builder: (_) => MomentsPage(
-                    api: widget.api,
-                    identityCache: widget.identityCache,
-                  ))),
+      onMoments: () {
+        final cache = widget.identityCache;
+        if (cache == null) return;
+        Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => MomentsPage(
+                  api: widget.api,
+                  identityCache: cache,
+                )));
+      },
       onCaibi: () => Navigator.push(
           context,
           CupertinoPageRoute(

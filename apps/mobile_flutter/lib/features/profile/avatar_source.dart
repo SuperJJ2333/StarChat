@@ -1,8 +1,13 @@
 import 'dart:io';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
+
+/// 服务端头像校验上限（AVATAR_DIMENSIONS_EXCEEDED，1024×1024）。
+/// 高分辨率设备（如 Android 16 全面屏）裁剪输出可达 1440+，必须压回。
+const avatarMaxDimension = 1024;
 
 final class GalleryAvatarSource implements AvatarSource {
   GalleryAvatarSource({ImagePicker? picker, ImageCropper? cropper})
@@ -40,7 +45,16 @@ final class GalleryAvatarSource implements AvatarSource {
               aspectRatioLockEnabled: true, resetAspectRatioEnabled: false)
         ]);
     if (cropped == null) return null;
-    return AvatarCandidate(
-        bytes: await File(cropped.path).readAsBytes(), mimeType: 'image/jpeg');
+    // 压到服务端上限内：保持正方形比例（裁剪已锁定 1:1），
+    // flutter_image_compress 的 minWidth/minHeight 为"最大边界"语义。
+    final compressed = await FlutterImageCompress.compressWithFile(
+      cropped.path,
+      minWidth: avatarMaxDimension,
+      minHeight: avatarMaxDimension,
+      quality: 88,
+      format: CompressFormat.jpeg,
+    );
+    final bytes = compressed ?? await File(cropped.path).readAsBytes();
+    return AvatarCandidate(bytes: bytes, mimeType: 'image/jpeg');
   }
 }

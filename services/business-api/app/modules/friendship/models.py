@@ -19,6 +19,12 @@ class ContactTag(Base):
     __tablename__='contact_tags';__table_args__=(UniqueConstraint('owner_id','name',name='uq_contact_tag_owner_name'),)
     id:Mapped[str]=mapped_column(String(36),primary_key=True);owner_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);name:Mapped[str]=mapped_column(String(64));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
 
+class DirectConversation(Base):
+    """Canonical Direct Conversation（好友系统重构 Phase E）：每对好友
+    至多一条规范私聊房间。创建前先查复用；并发注册冲突以既有行为准。"""
+    __tablename__='direct_conversations';__table_args__=(UniqueConstraint('user_low_id','user_high_id',name='uq_direct_conversation_pair'),)
+    id:Mapped[str]=mapped_column(String(36),primary_key=True);user_low_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);user_high_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);matrix_room_id:Mapped[str]=mapped_column(String(255));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+
 class Complaint(Base):
     __tablename__='complaints'
     id:Mapped[str]=mapped_column(String(36),primary_key=True);user_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);category:Mapped[str]=mapped_column(String(30));description:Mapped[str]=mapped_column(Text);created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))

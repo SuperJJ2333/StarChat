@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// 各域缓存与存储后端的总览：
 /// - **ProfileCache**：昵称/备注/头像 URL 等好友资料快照，由
-///   `ChatIdentityCache` 的 `SharedPreferencesChatIdentityStore` 持久化
+///   `ProfileRepository` 的 `LegacySharedPreferencesStore` 持久化
 ///   （SharedPreferences，键 `identity.*`）——通讯录/会话页**先读缓存
 ///   立即渲染，再后台刷新**，本仓库提供 [profile] 门面与其对齐。
 /// - **AvatarCache**：`flutter_cache_manager`（cached_network_image 共享）
@@ -75,7 +75,7 @@ final class MomentsCache {
       _preferences.remove(CacheRepository.momentsFeedKey);
 }
 
-/// ProfileCache 门面：实际持久化在 ChatIdentityCache 的 identity.* 键。
+/// ProfileCache 门面：实际持久化在 ProfileRepository 的 identity.* 键。
 /// 此处仅暴露缓存语义说明与键前缀，避免第二份事实来源。
 final class ProfileCache {
   const ProfileCache();

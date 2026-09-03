@@ -38,7 +38,8 @@ Map<String, dynamic> _user(String id, String username, String nickname) => {
       'relationship_state': 'NONE',
     };
 
-Future<void> _pumpPage(WidgetTester tester, FakeAddFriendGateway gateway) async {
+Future<void> _pumpPage(
+    WidgetTester tester, FakeAddFriendGateway gateway) async {
   await tester.pumpWidget(CupertinoApp(home: AddFriendPage(api: gateway)));
   await tester.pump();
 }
@@ -87,18 +88,23 @@ void main() {
     expect(find.text('未找到匹配的用户'), findsOneWidget);
   });
 
-  testWidgets('tapping 添加 sends the friend request and flips the state',
-      (tester) async {
+  testWidgets('BUG 2：搜索行不再提供快捷发送；点击行进入用户资料页', (tester) async {
     final gateway = FakeAddFriendGateway(results: [
       _user('u-alice', 'alice', '艾莉丝'),
     ]);
     await _pumpPage(tester, gateway);
 
     await _type(tester, 'alice');
-    await tester.tap(find.text('添加'));
-    await tester.pumpAndSettle();
 
-    expect(gateway.requestedUserIds, ['u-alice']);
-    expect(find.text('申请已发送'), findsOneWidget);
+    // 快捷添加按钮已移除：行上只有状态文字，点击不直接发请求。
+    expect(find.text('添加'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('add-friend-u-alice')));
+    await tester.pumpAndSettle();
+    expect(gateway.requestedUserIds, isEmpty, reason: '点击行/状态不再直接发送好友请求');
+
+    // 点击行进入用户资料页（BUG 2：资料 → 添加到通讯录 → 申请页）。
+    expect(find.text('用户资料'), findsOneWidget);
+    expect(find.text('艾莉丝'), findsOneWidget);
+    expect(find.text('添加到通讯录'), findsOneWidget);
   });
 }

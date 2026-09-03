@@ -66,7 +66,8 @@ async def test_friend_requests_and_search_return_business_profile_projection(ctx
         requests = await client.get('/api/v1/friends/requests', headers=bearer(settings, 'u2'))
         request_item = requests.json()['items'][0]
         assert 'requester_id' not in request_item
-        assert request_item == {'id': created.json()['id'], 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test', 'message': '你好', 'status': 'PENDING', 'requested_at': request_item['requested_at']}; assert request_item['requested_at']
+        # 好友系统重构（BUG 2）：列表补充 user_id/remark/tags 供「通过朋友验证」页展示。
+        assert request_item == {'id': created.json()['id'], 'user_id': 'u1', 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test', 'message': '你好', 'remark': None, 'tags': [], 'status': 'PENDING', 'requested_at': request_item['requested_at']}; assert request_item['requested_at']
         search = await client.get('/api/v1/users/search?q=alice', headers=bearer(settings, 'u2'))
         assert search.json()['items'] == [{'user_id': 'u1', 'username': 'alice', 'nickname': 'Alice', 'avatar_url': 'https://media.example.test/avatar.png?signed=1', 'matrix_user_id': '@alice:matrix.example.test', 'relationship_state': 'NONE'}]
 

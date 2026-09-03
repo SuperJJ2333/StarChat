@@ -4,7 +4,7 @@ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
-import 'package:liuhetong_mobile/features/matrix/chat_identity_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 
 final class FakeContactsGateway implements ContactsGateway {
@@ -118,13 +118,13 @@ void main() {
   testWidgets('contacts rebuild immediately when the shared remark changes',
       (tester) async {
     final store = ContactFlowIdentityStore();
-    final cache = ChatIdentityCache.forTesting(
+    final cache = ProfileRepository.forTesting(
       accountKey: 'matrix:@me:test',
       store: store,
     );
     await store.write(
       'matrix:@me:test',
-      const ChatIdentitySnapshot(
+      const ProfileSnapshot(
         profile: ProfileData(
           username: 'me',
           nickname: '我的昵称',
@@ -511,15 +511,15 @@ void main() {
   });
 }
 
-final class ContactFlowIdentityStore implements ChatIdentityStore {
-  final values = <String, ChatIdentitySnapshot>{};
+final class ContactFlowIdentityStore implements ProfileStore {
+  final values = <String, ProfileSnapshot>{};
 
   @override
-  Future<ChatIdentitySnapshot?> read(String accountKey) async =>
+  Future<ProfileSnapshot?> read(String accountKey) async =>
       values[accountKey];
 
   @override
-  Future<void> write(String accountKey, ChatIdentitySnapshot snapshot) async {
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
     values[accountKey] = snapshot;
   }
 }

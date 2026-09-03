@@ -73,6 +73,16 @@ class ProfileService:
             users = list(session.scalars(select(User).where(User.id.in_(user_ids))))
             return {user.id: self._public_profile(user) for user in users}
 
+    def public_profile_by_matrix_user_id(
+        self, matrix_user_id: str
+    ) -> PublicProfileResult | None:
+        """按 Matrix ID 反查公开资料（群成员非好友进资料页用）。"""
+        with self._session_factory() as session:
+            user = session.scalar(
+                select(User).where(User.matrix_user_id == matrix_user_id)
+            )
+            return None if user is None else self._public_profile(user)
+
     def search_public_profiles(
         self,
         query: str,

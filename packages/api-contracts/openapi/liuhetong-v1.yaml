@@ -615,6 +615,29 @@
         "title": "DirectCaibiGrantBody",
         "type": "object"
       },
+      "DirectConversationBody": {
+        "additionalProperties": false,
+        "properties": {
+          "matrix_room_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Matrix Room Id",
+            "type": "string"
+          },
+          "peer_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Peer User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "peer_user_id",
+          "matrix_room_id"
+        ],
+        "title": "DirectConversationBody",
+        "type": "object"
+      },
       "DraftPayload": {
         "additionalProperties": false,
         "properties": {
@@ -947,12 +970,34 @@
             "title": "Nickname",
             "type": "string"
           },
+          "remark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remark"
+          },
           "requested_at": {
             "title": "Requested At",
             "type": "string"
           },
           "status": {
             "title": "Status",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "user_id": {
+            "title": "User Id",
             "type": "string"
           },
           "username": {
@@ -962,6 +1007,7 @@
         },
         "required": [
           "id",
+          "user_id",
           "username",
           "nickname",
           "avatar_url",
@@ -5414,6 +5460,146 @@
         ]
       }
     },
+    "/api/v1/direct-conversations": {
+      "get": {
+        "operationId": "direct_conversation_api_v1_direct_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "peer_user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 36,
+              "minLength": 1,
+              "title": "Peer User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Direct Conversation",
+        "tags": [
+          "friends"
+        ]
+      },
+      "post": {
+        "operationId": "register_direct_conversation_api_v1_direct_conversations_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Register Direct Conversation",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
     "/api/v1/friends": {
       "get": {
         "operationId": "friends_api_v1_friends_get",
@@ -5596,6 +5782,80 @@
           }
         ],
         "summary": "Request",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/api/v1/friends/requests/{request_id}": {
+      "delete": {
+        "operationId": "cancel_api_v1_friends_requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Cancel",
         "tags": [
           "friends"
         ]
@@ -10296,6 +10556,75 @@
         "summary": "Transfer",
         "tags": [
           "support"
+        ]
+      }
+    },
+    "/api/v1/users/lookup": {
+      "get": {
+        "operationId": "lookup_api_v1_users_lookup_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "matrix_user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 255,
+              "minLength": 3,
+              "title": "Matrix User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSearchProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Lookup",
+        "tags": [
+          "friends"
         ]
       }
     },

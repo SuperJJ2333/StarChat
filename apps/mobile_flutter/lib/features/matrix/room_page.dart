@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/business_api_client.dart';
 import '../../core/local_notification_scheduler.dart';
 import '../contacts/contact_models.dart';
+import '../contacts/add_friend_profile_page.dart';
 import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
 import '../redpacket/red_packet_claim_dialog.dart';
@@ -63,7 +64,7 @@ import '../statistics/statistics_room_scope.dart';
 import '../statistics/statistics_tool.dart';
 import 'media_cache.dart';
 import 'matrix_user_avatar.dart';
-import 'chat_identity_cache.dart';
+import 'profile_repository.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
 import 'chat_red_packet_controller.dart';
@@ -112,13 +113,67 @@ class RoomPage extends StatefulWidget {
   final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
-  final ChatIdentityCache? initialIdentityCache;
+  final ProfileRepository? initialIdentityCache;
 
   /// 语音转文字实现（可注入；默认系统语音识别）。
   final VoiceTranscriber? voiceTranscriber;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
+}
+
+/// BUG 2 群成员点击分流：好友 → "好友资料"页；非好友 → 按 Matrix ID
+/// 反查业务资料后进"用户资料"页（可"添加到通讯录"）；自己不可点。
+/// 反查失败（不存在/拉黑）提示后返回，不再静默无响应。
+Future<void> openGroupMemberProfile(
+  BuildContext context, {
+  required AddFriendGateway api,
+  required Future<Map<String, dynamic>> Function(String matrixUserId)
+      lookupByMatrixId,
+  required GroupChatMember member,
+  String? selfMatrixUserId,
+  ContactDetails? friendContact,
+  void Function(ContactDetails contact)? onOpenFriendContact,
+}) async {
+  if (member.matrixUserId == selfMatrixUserId) return;
+  if (friendContact != null) {
+    onOpenFriendContact?.call(friendContact);
+    return;
+  }
+  try {
+    final profile = await lookupByMatrixId(member.matrixUserId);
+    if (!context.mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      CupertinoPageRoute(
+        builder: (_) => AddFriendProfilePage(
+          api: api,
+          userId: profile['user_id']?.toString() ?? '',
+          username: profile['username']?.toString() ?? member.matrixUserId,
+          nickname:
+              (profile['nickname']?.toString() ?? '').isNotEmpty
+                  ? profile['nickname'].toString()
+                  : member.displayName,
+          relationshipState:
+              profile['relationship_state']?.toString() ?? 'NONE',
+        ),
+      ),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    await showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('无法获取用户资料'),
+        content: const Text('该用户不存在或暂时不可添加。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _RoomPageState extends State<RoomPage> {
@@ -163,8 +218,8 @@ class _RoomPageState extends State<RoomPage> {
   String nudgeSuffix = '';
   Map<String, ContactDetails> contactsByMatrixId = const {};
   ProfileData? ownProfile;
-  late final ChatIdentityCache _identityCache =
-      widget.initialIdentityCache ?? ChatIdentityCache(widget.api);
+  late final ProfileRepository _identityCache =
+      widget.initialIdentityCache ?? ProfileRepository(widget.api);
   ContactDetails? peer;
   bool loading = true;
   bool mediaBusy = false;
@@ -1437,10 +1492,15 @@ class _RoomPageState extends State<RoomPage> {
             onAddMember: () => _openGroupMemberPicker(infoController),
             onSearchHistory: _openHistorySearch,
             onClearLocalHistory: _clearLocalHistory,
-            onMemberTap: (member) async {
-              final contact = contactsById[member.matrixUserId];
-              if (contact != null) await _openContact(contact);
-            },
+            onMemberTap: (member) => openGroupMemberProfile(
+              context,
+              api: widget.api,
+              lookupByMatrixId: widget.api.lookupUserByMatrixId,
+              member: member,
+              selfMatrixUserId: widget.room.client.userID,
+              friendContact: contactsById[member.matrixUserId],
+              onOpenFriendContact: _openContact,
+            ),
             onLeft: () {
               Navigator.pop(context);
               Navigator.pop(context);
@@ -2523,6 +2583,7 @@ class _RoomPageState extends State<RoomPage> {
                   child: ChatMorePanel(
                     onSelected: _handleMoreAction,
                     onCameraLongPress: _startVideoCapture,
+                    onTools: () => _togglePanel(ComposerPanel.tools),
                   ),
                 ),
               if (composerPanel == ComposerPanel.tools)

@@ -197,7 +197,7 @@ void main() {
     expect(key48, key40);
     expect(
       key48,
-      'avatar-@alice:example.com-v=9',
+      'avatar:@alice:example.com:v=9',
     );
     expect(AvatarCache.diskTtl, const Duration(days: 30));
     expect(AvatarCache.maximumMemoryEntries, 200);

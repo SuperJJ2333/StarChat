@@ -7,7 +7,7 @@ from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
-from app.modules.friendship.models import ContactProfile,ContactTag,FriendRequest,Friendship,UserBlock
+from app.modules.friendship.models import ContactProfile,ContactTag,DirectConversation,FriendRequest,Friendship,UserBlock
 
 class FriendshipService:
     def __init__(self,factory,profile_reader):self.factory=factory;self.profile_reader=profile_reader
@@ -80,7 +80,16 @@ class FriendshipService:
         return items
     def requests(self,actor):
         with self.factory() as s:rows=list(s.scalars(select(FriendRequest).where(FriendRequest.target_id==actor).order_by(FriendRequest.requested_at.desc(),FriendRequest.id.desc())))
-        profiles=self.profile_reader.read_public_profiles([row.requester_id for row in rows]);return [{'id':row.id,'username':profiles[row.requester_id].username,'nickname':profiles[row.requester_id].nickname,'avatar_url':profiles[row.requester_id].avatar_url,'matrix_user_id':profiles[row.requester_id].matrix_user_id,'message':row.message,'status':row.status,'requested_at':row.requested_at.isoformat()} for row in rows if row.requester_id in profiles]
+        profiles=self.profile_reader.read_public_profiles([row.requester_id for row in rows]);return [{'id':row.id,'user_id':row.requester_id,'username':profiles[row.requester_id].username,'nickname':profiles[row.requester_id].nickname,'avatar_url':profiles[row.requester_id].avatar_url,'matrix_user_id':profiles[row.requester_id].matrix_user_id,'message':row.message,'remark':row.contact_remark,'tags':row.contact_tags.split(',') if row.contact_tags else [],'status':row.status,'requested_at':row.requested_at.isoformat()} for row in rows if row.requester_id in profiles]
+    def cancel(self,actor,request_id,key):
+        # BUG 2 状态机：申请人撤销自己的待处理申请（PENDING → CANCELLED）。
+        with self.factory.begin() as s:
+            if self._idempotency(s,f'friend.request.cancel:{actor}',key,{'request_id':request_id}):return s.get(FriendRequest,request_id)
+            row=s.get(FriendRequest,request_id)
+            if not row or row.requester_id!=actor:raise AppError(code='FRIEND_REQUEST_NOT_FOUND',message='好友申请不存在',status_code=404)
+            if row.status=='CANCELLED':return row
+            if row.status!='PENDING':raise AppError(code='FRIEND_REQUEST_RESOLVED',message='好友申请已处理',status_code=409)
+            row.status='CANCELLED';row.resolved_at=datetime.now(timezone.utc);self._audit(s,actor,row.id,'friend.request.cancelled','FRIEND_REQUEST_CANCEL',key);return row
     def block(self,actor,target,key):
         with self.factory.begin() as s:
             row=s.scalar(select(UserBlock).where(UserBlock.blocker_id==actor,UserBlock.blocked_id==target))
@@ -154,3 +163,31 @@ class FriendshipService:
             friends={row.user_high_id if row.user_low_id==actor else row.user_low_id for row in friendships}
         profiles=self.profile_reader.search_public_profiles(q,exclude_user_ids=blocked|{actor})
         return [{'user_id':p.user_id,'username':p.username,'nickname':p.nickname,'avatar_url':p.avatar_url,'matrix_user_id':p.matrix_user_id,'relationship_state':'FRIEND' if p.user_id in friends else 'OUTGOING_PENDING' if p.user_id in pending else 'REUSABLE' if p.user_id in reusable else 'NONE'} for p in profiles]
+    def lookup_by_matrix(self,actor,matrix_user_id):
+        # BUG 2 群成员非好友：按 Matrix ID 反查公开资料与关系状态；
+        # 不存在/拉黑双向/自己统一 404（与搜索隐私口径一致）。
+        with self.factory() as s:
+            blocked=set(s.scalars(select(UserBlock.blocked_id).where(UserBlock.blocker_id==actor)).all())|set(s.scalars(select(UserBlock.blocker_id).where(UserBlock.blocked_id==actor)).all())
+            pending={row.target_id for row in s.scalars(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.status=='PENDING')).all()}
+            reusable={row.target_id for row in s.scalars(select(FriendRequest).where(FriendRequest.requester_id==actor,FriendRequest.status.in_(['REJECTED','EXPIRED']))).all()}
+            friendships=list(s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor))).all())
+            friends={row.user_high_id if row.user_low_id==actor else row.user_low_id for row in friendships}
+        profile=self.profile_reader.public_profile_by_matrix_user_id(matrix_user_id)
+        if profile is None or profile.user_id in blocked or profile.user_id==actor:raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
+        return {'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'relationship_state':'FRIEND' if profile.user_id in friends else 'OUTGOING_PENDING' if profile.user_id in pending else 'REUSABLE' if profile.user_id in reusable else 'NONE'}
+    def direct_conversation(self,actor,peer):
+        # Canonical Direct Conversation：创建私聊前先查询复用（Phase E）。
+        low,high=sorted((actor,peer))
+        with self.factory() as s:
+            row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
+            return {'matrix_room_id':row.matrix_room_id} if row else {'matrix_room_id':None}
+    def register_direct_conversation(self,actor,peer,matrix_room_id,key):
+        # 客户端创建 Matrix Direct Chat 后注册；并发双开以 UNIQUE 约束
+        # 的既有行为准（existing=True，客户端弃用自己的房间）。
+        low,high=sorted((actor,peer))
+        with self.factory.begin() as s:
+            if self._idempotency(s,f'friend.direct.register:{actor}',key,{'peer':peer,'matrix_room_id':matrix_room_id}):
+                row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high));return {'matrix_room_id':row.matrix_room_id if row else matrix_room_id,'existing':True}
+            row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
+            if row:row.matrix_room_id=matrix_room_id;self._audit(s,actor,row.id,'friend.direct_room_updated','DIRECT_ROOM_UPDATE',key);return {'matrix_room_id':row.matrix_room_id,'existing':True}
+            row=DirectConversation(id=str(uuid4()),user_low_id=low,user_high_id=high,matrix_room_id=matrix_room_id,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.direct_room_registered','DIRECT_ROOM_REGISTER',key);return {'matrix_room_id':matrix_room_id,'existing':False}

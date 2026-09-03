@@ -7,14 +7,14 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
-import 'chat_identity_cache.dart';
+import 'profile_repository.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/notification/conversation_notification_mode_tile.dart';
 
 /// 成员展示名：备注（查看者本人可见）→ 控制器解析名（Matrix 昵称）。
-String _resolvedMemberName(ChatIdentityCache? cache, GroupChatMember member) {
+String _resolvedMemberName(ProfileRepository? cache, GroupChatMember member) {
   final contact = cache?.contactsByMatrixId[member.matrixUserId];
   return contact?.displayName.isNotEmpty == true
       ? contact!.displayName
@@ -42,7 +42,7 @@ final class GroupChatInfoPage extends StatefulWidget {
 
   /// 身份缓存：成员名按“备注 → 昵称 → 用户名”优先级实时解析；
   /// 缓存变化（如备注修改）即刻刷新本页显示。
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   State<GroupChatInfoPage> createState() => _GroupChatInfoPageState();
@@ -394,7 +394,7 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
   const MuteExceptionSettingsPage(
       {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) {
@@ -473,7 +473,7 @@ final class FollowedGroupMemberPickerPage extends StatefulWidget {
   const FollowedGroupMemberPickerPage(
       {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   State<FollowedGroupMemberPickerPage> createState() =>
@@ -555,7 +555,7 @@ final class _MemberGrid extends StatelessWidget {
   final VoidCallback onAdd;
   final ValueChanged<GroupChatMember>? onMemberTap;
   final VoidCallback? onRemove;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -718,7 +718,7 @@ final class GroupMemberSearchPage extends StatefulWidget {
   const GroupMemberSearchPage(
       {super.key, required this.snapshot, this.identityCache});
   final GroupChatInfoSnapshot snapshot;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
   @override
   State<GroupMemberSearchPage> createState() => _GroupMemberSearchPageState();
 }
@@ -777,7 +777,7 @@ final class GroupMemberRemovalPage extends StatefulWidget {
   const GroupMemberRemovalPage(
       {super.key, required this.controller, this.identityCache});
   final GroupChatInfoController controller;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
   @override
   State<GroupMemberRemovalPage> createState() => _GroupMemberRemovalPageState();
 }
@@ -848,7 +848,7 @@ final class _MemberCell extends StatelessWidget {
       {super.key, required this.member, this.onTap, this.identityCache});
   final GroupChatMember member;
   final VoidCallback? onTap;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) => CupertinoButton(

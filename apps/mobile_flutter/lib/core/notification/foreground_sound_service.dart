@@ -29,8 +29,9 @@ final class AudioplayersSoundEngine implements SoundEngine {
 
   static final AudioContext _context = AudioContext(
     android: AudioContextAndroid(
-      // 即时通讯消息音：notification 通道音量、不抢占音频焦点（PRD §39）。
-      usageType: AndroidUsageType.notificationCommunicationInstant,
+      // PRD §39：前台音效遵循用户媒体音量。media 流在 MIUI 等厂商 ROM
+      // 上最稳（notification 流可能被系统静音策略连坐），且不抢占焦点。
+      usageType: AndroidUsageType.media,
       audioFocus: AndroidAudioFocus.none,
     ),
     iOS: AudioContextIOS(

@@ -12,6 +12,15 @@ const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 const changliaoCallMessageType = 'com.changliao.call';
 const changliaoTransferMessageType = 'com.changliao.transfer';
 
+/// BUG 3 好友接受系统消息：accept 方在私聊房间发送，双端渲染为
+/// 居中灰字系统消息（"你已添加了 XXX，现在可以开始聊天了。"），
+/// 不得伪装成对方名义的普通气泡消息。
+const changliaoFriendAcceptedEventType = 'com.changliao.friend_accepted';
+
+/// 组装好友接受系统消息正文（双端语义一致：互为好友）。
+String friendAcceptedSystemMessage(String friendDisplayName) =>
+    '你已添加了 $friendDisplayName，现在可以开始聊天了。';
+
 final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   MatrixRoomTimelineAdapter(this.room, this.timeline);
 
@@ -23,7 +32,8 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
       .where(
         (event) =>
             event.type == EventTypes.Message ||
-            event.type == changliaoNudgeEventType,
+            event.type == changliaoNudgeEventType ||
+            event.type == changliaoFriendAcceptedEventType,
       )
       .toList(growable: false)
       .reversed
@@ -44,23 +54,30 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
     final attachmentSize =
         info is Map ? int.tryParse(info['size']?.toString() ?? '') : null;
     final nudge = event.type == changliaoNudgeEventType;
+    final friendAccepted = event.type == changliaoFriendAcceptedEventType;
     final nudgeInfo = nudge
         ? NudgeInfo(
             senderId: event.content['sender_id']?.toString() ?? event.senderId,
-            senderName: event.content['sender_display_name']?.toString() ?? '好友',
+            senderName:
+                event.content['sender_display_name']?.toString() ?? '好友',
             targetUserId: event.content['target_user_id']?.toString() ?? '',
-            targetName: event.content['target_display_name']?.toString() ?? '好友',
+            targetName:
+                event.content['target_display_name']?.toString() ?? '好友',
             suffix: event.content['suffix']?.toString() ?? '',
           )
         : null;
     return RoomMessageViewModel(
       id: event.eventId,
       senderId: event.senderId,
-      text: event.redacted ? '' : (nudge ? '' : event.text),
+      text: event.redacted
+          ? ''
+          : friendAccepted
+              ? _friendAcceptedBody(event)
+              : (nudge ? '' : event.text),
       isOwn: event.senderId == room.client.userID,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
-      kind: nudge
+      kind: (nudge || friendAccepted)
           ? RoomMessageKind.system
           : switch (messageType) {
               MessageTypes.Image => RoomMessageKind.image,
@@ -92,8 +109,7 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
           event.content['call_connected']?.toString() == 'true',
       callDuration: Duration(
           milliseconds: messageType == changliaoCallMessageType
-              ? int.tryParse(
-                      event.content['duration_ms']?.toString() ?? '') ??
+              ? int.tryParse(event.content['duration_ms']?.toString() ?? '') ??
                   0
               : 0),
       isRecalled: event.redacted,
@@ -101,6 +117,16 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
               as Map?)?['event_id']
           ?.toString(),
       nudge: nudgeInfo,
+    );
+  }
+
+  /// 好友接受系统消息正文：事件内 body 优先（发送方已拼好），缺失时
+  /// 按事件内好友昵称重组。
+  static String _friendAcceptedBody(Event event) {
+    final body = event.content['body']?.toString();
+    if (body != null && body.isNotEmpty) return body;
+    return friendAcceptedSystemMessage(
+      event.content['friend_display_name']?.toString() ?? '好友',
     );
   }
 

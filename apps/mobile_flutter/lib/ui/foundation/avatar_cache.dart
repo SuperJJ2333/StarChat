@@ -27,19 +27,28 @@ abstract final class AvatarCache {
     }
   }
 
+  /// 头像版本：URL 的 `?v=`/`?version=` 参数，否则用规范化 URL 哈希。
+  /// 好友换头像 → URL/版本变化 → 缓存键变化，旧条目逐出。
+  static String avatarVersion(String avatarUrl) {
+    final uri = Uri.tryParse(avatarUrl);
+    final queryVersion =
+        uri?.queryParameters['v'] ?? uri?.queryParameters['version'];
+    return queryVersion == null
+        ? sanitizedUrl(avatarUrl).hashCode.toRadixString(16)
+        : 'v=$queryVersion';
+  }
+
+  /// 统一缓存键：avatar:{userId}:{avatarVersion}（BUG 1 规范）。
+  static String friendAvatarCacheKey(String userId, String version) =>
+      'avatar:$userId:$version';
+
   static String cacheKey({
     required String userId,
     required String avatarUrl,
     double? size,
   }) {
     // 渲染尺寸不参与键：所有页面共享同一条头像缓存，避免重复下载。
-    final uri = Uri.tryParse(avatarUrl);
-    final queryVersion =
-        uri?.queryParameters['v'] ?? uri?.queryParameters['version'];
-    final version = queryVersion == null
-        ? sanitizedUrl(avatarUrl).hashCode.toRadixString(16)
-        : 'v=$queryVersion';
-    return 'avatar-$userId-$version';
+    return friendAvatarCacheKey(userId, avatarVersion(avatarUrl));
   }
 
   static String sanitizedUrl(String avatarUrl) {

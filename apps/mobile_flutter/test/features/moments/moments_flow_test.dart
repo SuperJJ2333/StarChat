@@ -10,7 +10,7 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
-import 'package:liuhetong_mobile/features/matrix/chat_identity_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
@@ -85,7 +85,7 @@ void main() {
     final identityStore = MomentsIdentityStore();
     await identityStore.write(
       'matrix:@me:test',
-      const ChatIdentitySnapshot(
+      const ProfileSnapshot(
         profile: ProfileData(
           username: 'me-login',
           nickname: '我的昵称',
@@ -96,7 +96,7 @@ void main() {
         contacts: [],
       ),
     );
-    final identityCache = ChatIdentityCache.forTesting(
+    final identityCache = ProfileRepository.forTesting(
       accountKey: 'matrix:@me:test',
       store: identityStore,
     );
@@ -131,7 +131,7 @@ void main() {
       }
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
-    final cache = ChatIdentityCache.forTesting(
+    final cache = ProfileRepository.forTesting(
       accountKey: 'matrix:@me:test',
       store: MomentsIdentityStore(),
       loadProfile: () async => throw StateError('offline detail'),
@@ -196,7 +196,12 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
-    await tester.pumpWidget(CupertinoApp(home: MomentsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+          api: api,
+          identityCache: ProfileRepository.forTesting(
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+    ));
     await tester.pumpAndSettle();
     expect(find.text('推荐'), findsNothing);
     expect(find.text('最新'), findsNothing);
@@ -252,7 +257,12 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
-    await tester.pumpWidget(CupertinoApp(home: MomentsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+          api: api,
+          identityCache: ProfileRepository.forTesting(
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+    ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pumpAndSettle();
@@ -311,7 +321,12 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
-    await tester.pumpWidget(CupertinoApp(home: MomentsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+          api: api,
+          identityCache: ProfileRepository.forTesting(
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+    ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-comment-button')));
     await tester.pumpAndSettle();
@@ -359,7 +374,12 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
-    await tester.pumpWidget(CupertinoApp(home: MomentsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+          api: api,
+          identityCache: ProfileRepository.forTesting(
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+    ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-comment-button')));
     await tester.pumpAndSettle();
@@ -397,7 +417,12 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
-    await tester.pumpWidget(CupertinoApp(home: MomentsPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(
+          api: api,
+          identityCache: ProfileRepository.forTesting(
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+    ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-cover-header')));
     await tester.pumpAndSettle();
@@ -435,15 +460,14 @@ void main() {
   });
 }
 
-final class MomentsIdentityStore implements ChatIdentityStore {
-  final values = <String, ChatIdentitySnapshot>{};
+final class MomentsIdentityStore implements ProfileStore {
+  final values = <String, ProfileSnapshot>{};
 
   @override
-  Future<ChatIdentitySnapshot?> read(String accountKey) async =>
-      values[accountKey];
+  Future<ProfileSnapshot?> read(String accountKey) async => values[accountKey];
 
   @override
-  Future<void> write(String accountKey, ChatIdentitySnapshot snapshot) async {
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
     values[accountKey] = snapshot;
   }
 }

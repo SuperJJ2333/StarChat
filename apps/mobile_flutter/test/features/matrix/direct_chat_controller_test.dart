@@ -8,6 +8,10 @@ final class FakeDirectChatBackend implements DirectChatBackend {
   var creates = 0;
   var failCreate = false;
   String lastMatrixUserId = '@alice:example.test';
+  String? lastAvoidRoomId;
+  DirectChatRoom? repairResult;
+  var repairs = 0;
+  var gateCreate = false;
   final createStarted = Completer<void>();
   final allowCreate = Completer<void>();
 
@@ -16,12 +20,25 @@ final class FakeDirectChatBackend implements DirectChatBackend {
       existing;
 
   @override
-  Future<String> createEncryptedDirectRoom(String matrixUserId) async {
+  Future<DirectChatRoom?> repairDirectRoom(
+    DirectChatRoom room,
+    String matrixUserId,
+  ) async {
+    repairs++;
+    return repairResult;
+  }
+
+  @override
+  Future<String> createEncryptedDirectRoom(
+    String matrixUserId, {
+    String? avoidRoomId,
+  }) async {
     lastMatrixUserId = matrixUserId;
+    lastAvoidRoomId = avoidRoomId;
     creates++;
     if (!createStarted.isCompleted) createStarted.complete();
     if (failCreate) throw StateError('offline');
-    await allowCreate.future;
+    if (gateCreate) await allowCreate.future;
     return '!new:example.test';
   }
 
@@ -92,8 +109,65 @@ void main() {
     expect(gateway.opens, ['@alice:example.test', '@bob:example.test']);
   });
 
-  test('rejects an unencrypted or multi-member room before navigation',
-      () async {
+  test('对方已退出的旧私聊：重新邀请并复用同一房间（不新建）', () async {
+    // 真机 BUG：superJJ 与好友的 DM 中对方 invite→leave，_requireSafe
+    // 直接抛"无法打开加密会话"。修复后应重邀对方恢复会话（保留历史）。
+    final backend = FakeDirectChatBackend()
+      ..existing = const DirectChatRoom(
+        roomId: '!stale:example.test',
+        encrypted: true,
+        joinedMemberCount: 1,
+        participantIds: {'@me:example.test'},
+      )
+      ..repairResult = const DirectChatRoom(
+        roomId: '!stale:example.test',
+        encrypted: true,
+        joinedMemberCount: 2,
+        participantIds: {'@me:example.test', '@alice:example.test'},
+      );
+    final room = await DirectChatService(backend)
+        .openOrCreateDirectChat('@alice:example.test');
+    expect(room.roomId, '!stale:example.test');
+    expect(backend.repairs, 1);
+    expect(backend.creates, 0);
+  });
+
+  test('对方退出且重邀失败：绕开坏房间显式新建', () async {
+    final backend = FakeDirectChatBackend()
+      ..existing = const DirectChatRoom(
+        roomId: '!stale:example.test',
+        encrypted: true,
+        joinedMemberCount: 1,
+        participantIds: {'@me:example.test'},
+      ); // repairResult 为 null：修复失败
+    final room = await DirectChatService(backend)
+        .openOrCreateDirectChat('@alice:example.test');
+    expect(room.roomId, '!new:example.test');
+    expect(backend.lastAvoidRoomId, '!stale:example.test');
+    expect(backend.creates, 1);
+  });
+
+  test('未加密双人房间：补开加密后复用同一房间', () async {
+    final backend = FakeDirectChatBackend()
+      ..existing = const DirectChatRoom(
+        roomId: '!plain:example.test',
+        encrypted: false,
+        joinedMemberCount: 2,
+        participantIds: {'@me:example.test', '@alice:example.test'},
+      )
+      ..repairResult = const DirectChatRoom(
+        roomId: '!plain:example.test',
+        encrypted: true,
+        joinedMemberCount: 2,
+        participantIds: {'@me:example.test', '@alice:example.test'},
+      );
+    final room = await DirectChatService(backend)
+        .openOrCreateDirectChat('@alice:example.test');
+    expect(room.roomId, '!plain:example.test');
+    expect(backend.creates, 0);
+  });
+
+  test('三个成员的异常房间：不可修复则显式新建', () async {
     final backend = FakeDirectChatBackend()
       ..existing = const DirectChatRoom(
         roomId: '!unsafe:example.test',
@@ -105,14 +179,13 @@ void main() {
           '@mallory:example.test'
         },
       );
-    await expectLater(
-      DirectChatService(backend).openOrCreateDirectChat('@alice:example.test'),
-      throwsStateError,
-    );
+    final room = await DirectChatService(backend)
+        .openOrCreateDirectChat('@alice:example.test');
+    expect(room.roomId, '!new:example.test');
+    expect(backend.lastAvoidRoomId, '!unsafe:example.test');
   });
 
-  test('rejects a two-person room that does not contain the target MXID',
-      () async {
+  test('不含目标的双人房间：不可修复则显式新建', () async {
     final backend = FakeDirectChatBackend()
       ..existing = const DirectChatRoom(
         roomId: '!wrong:example.test',
@@ -120,10 +193,10 @@ void main() {
         joinedMemberCount: 2,
         participantIds: {'@me:example.test', '@mallory:example.test'},
       );
-    await expectLater(
-      DirectChatService(backend).openOrCreateDirectChat('@alice:example.test'),
-      throwsStateError,
-    );
+    final room = await DirectChatService(backend)
+        .openOrCreateDirectChat('@alice:example.test');
+    expect(room.roomId, '!new:example.test');
+    expect(backend.lastAvoidRoomId, '!wrong:example.test');
   });
 }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/notification/notification_coordinator.dart';
@@ -175,8 +176,16 @@ final class _NotificationSettingsPageState
       );
 
   Future<void> _openSystemSettings() async {
-    // iOS 支持 app-settings: 深链；Android 由系统设置内搜索应用，
-    // 引导文案兜底（本期不引入原生设置跳转）。
+    // Android：原生直达本应用通知设置（Android 13+ 二次拒绝后系统弹窗
+    // 不再出现，必须引导去系统设置）；iOS：app-settings: 深链。
+    try {
+      const channel = MethodChannel('chatflow/notification');
+      final opened =
+          await channel.invokeMethod<bool>('openNotificationSettings');
+      if (opened == true) return;
+    } catch (_) {
+      // 原生通道不可用（如 iOS）：走下方深链。
+    }
     try {
       await launchUrl(Uri.parse('app-settings:'));
     } catch (_) {}

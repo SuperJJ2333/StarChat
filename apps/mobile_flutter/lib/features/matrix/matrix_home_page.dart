@@ -18,7 +18,7 @@ import '../../ui/theme/theme_controller.dart';
 import '../../ui/theme/theme_picker_sheet.dart';
 import 'matrix_e2ee_client.dart';
 import 'matrix_user_avatar.dart';
-import 'chat_identity_cache.dart';
+import 'profile_repository.dart';
 import 'conversation_preferences.dart';
 import 'conversation_read_state.dart';
 import 'conversation_presentation.dart';
@@ -84,7 +84,7 @@ class MatrixHomePage extends StatefulWidget {
   final MessageReminderService? reminderService;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
-  final ChatIdentityCache? identityCache;
+  final ProfileRepository? identityCache;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -97,8 +97,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   final ConversationReadState _readState = ConversationReadState.shared();
   final Map<String, List<User>> _groupMembersByRoom = {};
   final Set<String> _groupMemberLoadsInFlight = {};
-  late final ChatIdentityCache _identityCache =
-      widget.identityCache ?? ChatIdentityCache(widget.api);
+  late final ProfileRepository _identityCache =
+      widget.identityCache ?? ProfileRepository(widget.api);
 
   Future<void> sync() async {
     if (syncing) return;
