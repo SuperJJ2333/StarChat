@@ -54,7 +54,7 @@ $modeArgument = "--$($BuildMode.ToLowerInvariant())"
 # architecture instead of a 3x-heavy fat APK.
 if ($BuildMode -eq 'Release') {
     $arguments = @(
-        'build', 'apk', $modeArgument, '--split-per-abi',
+        'build', 'apk', $modeArgument, '--flavor', 'standard', '--split-per-abi',
         "--dart-define=LIUHETONG_BUSINESS_API_URL=$origin",
         "--dart-define=LIUHETONG_MATRIX_HOMESERVER=$origin",
         # Dart 代码混淆 + 符号分离：去除 libapp.so 内明文字符串/符号，
@@ -81,6 +81,35 @@ if ($BuildMode -eq 'Release') {
     }
 }
 
+# 清单版本守卫（0.3.29 发布事故教训）：aapt 读取 APK 内部
+# versionName/versionCode 并与 pubspec 期望值比对，不一致即中止——
+# 防止把输出目录里残留的旧构建产物（文件名/内容错位）当作新包发布。
+function Assert-ApkManifestVersion {
+    param([string]$ApkPath, [string]$ExpectedVersionName, [int]$ExpectedVersionCode, [string]$Label)
+    $aaptPath = $null
+    $sdkBuildTools = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
+    if (Test-Path -LiteralPath $sdkBuildTools) {
+        $aaptPath = (Get-ChildItem -LiteralPath $sdkBuildTools -Filter 'aapt.exe' -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1).FullName
+    }
+    if (-not $aaptPath) {
+        $aaptCommand = Get-Command aapt -ErrorAction SilentlyContinue
+        if ($aaptCommand) { $aaptPath = $aaptCommand.Source }
+    }
+    if (-not $aaptPath) { throw "aapt.exe not found under $sdkBuildTools; cannot verify APK manifest version" }
+    $badging = (& $aaptPath dump badging $ApkPath 2>$null | Select-Object -First 1)
+    if (-not $badging -or $badging -notmatch "versionCode='(\d+)' versionName='([^']+)'") {
+        throw "aapt could not parse manifest of $ApkPath"
+    }
+    $actualCode = [int]$Matches[1]; $actualName = $Matches[2]
+    if ($actualName -ne $ExpectedVersionName -or $actualCode -ne $ExpectedVersionCode) {
+        throw ("APK manifest mismatch ({0}) {1}: expected {2}+code{3}, got {4}+code{5}. " +
+               'Stale artifact in flutter-apk output directory?') -f
+               $Label, $ApkPath, $ExpectedVersionName, $ExpectedVersionCode, $actualName, $actualCode
+    }
+    Write-Output "APK_MANIFEST_OK $Label $actualName/$actualCode"
+}
+
 Push-Location $mobileRoot
 try {
     & $flutter @arguments
@@ -103,9 +132,9 @@ if ($BuildMode -eq 'Release') {
     # Public names carry the ABI suffix, e.g. ChatFlow-0.3.0-arm64.apk;
     # the landing page offers arm64 (default), arm32 and x86_64.
     $abiArtifacts = [ordered]@{
-        'arm64-v8a'   = @{ source = 'app-arm64-v8a-release.apk';   published = "ChatFlow-$versionName-arm64.apk" }
-        'armeabi-v7a' = @{ source = 'app-armeabi-v7a-release.apk'; published = "ChatFlow-$versionName-arm32.apk" }
-        'x86_64'      = @{ source = 'app-x86_64-release.apk';      published = "ChatFlow-$versionName-x86_64.apk" }
+        'arm64-v8a'   = @{ source = 'app-arm64-v8a-standard-release.apk';   versionCodePrefix = 2000; published = "ChatFlow-$versionName-arm64.apk" }
+        'armeabi-v7a' = @{ source = 'app-armeabi-v7a-standard-release.apk'; versionCodePrefix = 1000; published = "ChatFlow-$versionName-arm32.apk" }
+        'x86_64'      = @{ source = 'app-x86_64-standard-release.apk';      versionCodePrefix = 4000; published = "ChatFlow-$versionName-x86_64.apk" }
     }
     foreach ($abi in $abiArtifacts.Keys) {
         $candidate = Join-Path $mobileRoot "build\app\outputs\flutter-apk\$($abiArtifacts[$abi].source)"
@@ -114,6 +143,7 @@ if ($BuildMode -eq 'Release') {
         }
         $published = Join-Path $mobileRoot "build\app\outputs\flutter-apk\$($abiArtifacts[$abi].published)"
         Copy-Item -LiteralPath $candidate -Destination $published -Force
+        Assert-ApkManifestVersion -ApkPath $published -ExpectedVersionName $versionName -ExpectedVersionCode ([int]$abiArtifacts[$abi].versionCodePrefix + [int]$versionBuild) -Label $abi
     }
     # arm64-v8a is the default public artifact; modern phones are arm64-only.
     $apk = Join-Path $mobileRoot "build\app\outputs\flutter-apk\$($abiArtifacts['arm64-v8a'].published)"
