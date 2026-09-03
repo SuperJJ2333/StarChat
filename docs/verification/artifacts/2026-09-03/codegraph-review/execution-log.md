@@ -33,3 +33,11 @@
 
 1. `assets/se` 未补 pubspec 声明：SE 是音效构建母带，声明会把母带打入 APK。
 2. `generate_brand_assets_test.dart` 保持 `tool/`：迁入默认套件会重写库内 branding 资产并使 launcher_icon_asset_test 失败（实测 615+1 失败 → 回迁 + 还原资产 → 615 全绿）。
+
+## 2026-09-03 提交与发布记录
+
+- 提交 1：`41fa400 refactor(repo): structure remediation per 2026-09-03 codegraph review`
+- 提交 2：`a78ac0d feat(mobile+api): friend system refactor, direct conversations, 0.3.28 update fixes`
+- 提交前审计：新增文件无 >1MB；两笔提交全量 diff 密钥扫描无命中（仅变量名/删除行误报）；`.codegraph/`（48MB 索引库）已加入 .gitignore 防误提交。历史中既有大文件（APK 审计快照最大 94.3MB kernel_blob.bin、production-sync zip 11MB）低于 GitHub 100MB 单文件上限，但建议后续按 docs/verification/README.md 保留策略清理并用 BFG/rewrite 缩史。
+- **0.3.28 更新弹窗发布：PASS**（生产容器 `starchat-business-api-1` 内执行 publish_app_update_0.3.28.py；幂等键 app-update-publish-0.3.28-20260903b；`GET /api/v1/app-updates/latest` → configured=true, 0.3.28 / build 2031, APK 200 可下载）。
+- GitHub 推送：**暂被阻塞（403）**——本机唯一 GitHub 凭据为 a1014826460-stack（对 SuperJJ2333/StarChat 无写权限）；~/.ssh 三把私钥均未绑定 GitHub。两笔提交已在本地 main 就绪，待授权后 `git push origin main` 即可。
