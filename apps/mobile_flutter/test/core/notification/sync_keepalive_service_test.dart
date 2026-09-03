@@ -52,6 +52,66 @@ void main() {
     await service.ensureStarted();
     expect(backend.starts, 2);
   });
+
+  test('启动/停止联动原生唤醒锁 hooks（息屏防 CPU/WiFi 休眠）', () async {
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(backend: _RecordingKeepAliveBackend(), hooks: hooks);
+    await service.ensureStarted();
+    expect(hooks.acquires, 1);
+    await service.stop();
+    expect(hooks.releases, 1);
+  });
+
+  test('看门狗：运行中周期性重申前台服务与唤醒锁（系统回收后自愈）', () async {
+    final backend = _RecordingKeepAliveBackend();
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    await service.ensureStarted();
+    // 模拟系统静默回收后的自愈：看门狗每拍无条件重申（FGS+唤醒锁）。
+    await service.runWatchdogTick();
+    expect(backend.starts, 2, reason: '前台服务被回收后必须重申');
+    expect(hooks.acquires, 2, reason: '唤醒锁幂等重取');
+    expect(service.isRunning, isTrue);
+  });
+
+  test('看门狗在停止后不再重申', () async {
+    final backend = _RecordingKeepAliveBackend();
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    await service.ensureStarted();
+    await service.stop();
+    await service.runWatchdogTick();
+    expect(backend.starts, 1);
+    expect(hooks.acquires, 1);
+  });
+
+  test('hook 失败不阻断保活主流程', () async {
+    final hooks = _RecordingKeepAliveHooks()..fail = true;
+    final service = SyncKeepAliveService(
+      backend: _RecordingKeepAliveBackend(),
+      hooks: hooks,
+    );
+    await service.ensureStarted();
+    expect(service.isRunning, isTrue);
+  });
+}
+
+final class _RecordingKeepAliveHooks implements KeepAliveHooks {
+  var acquires = 0;
+  var releases = 0;
+  var fail = false;
+
+  @override
+  Future<void> acquire() async {
+    if (fail) throw StateError('wakelock denied');
+    acquires++;
+  }
+
+  @override
+  Future<void> release() async {
+    if (fail) throw StateError('wakelock release denied');
+    releases++;
+  }
 }
 
 final class _RecordingKeepAliveBackend implements SyncKeepAliveBackend {

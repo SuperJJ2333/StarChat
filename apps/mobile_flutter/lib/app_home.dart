@@ -142,6 +142,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             NotificationSystemHandle
                 .coordinator?.preferences.callNotificationEnabled ??
             true,
+        // BUG2 双声去重：后台来电由 calls_ring 渠道系统发声，
+        // 应用内循环静音；回前台（或前台来电）恢复应用内铃声。
+        audible: () => appResumed || !incomingCallActive,
       ),
     ),
   );
@@ -186,7 +189,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_startFriendRequestWatch());
     unawaited(_startNotificationSystem());
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
-    unawaited(_startNotificationSystem().then((_) => syncKeepAlive.ensureStarted()));
+    unawaited(_startNotificationSystem().then((_) async {
+      await syncKeepAlive.ensureStarted();
+      await _primeBatteryOptimization();
+    }));
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -225,6 +231,49 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       return;
     }
     unawaited(_primeNotificationPermission());
+  }
+
+  /// BUG2：息屏后台通知的最后一公里——厂商 ROM 会清理"未加白名单"的
+  /// 后台应用，前台服务+唤醒锁都保不住。登录后一次性引导用户把畅聊
+  /// 加入电池优化白名单；已加白/已引导过则永不打扰。
+  Future<void> _primeBatteryOptimization() async {
+    if (!mounted) return;
+    final gateway = const KeepAliveBatteryGateway();
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('keepalive.battery_prompted_v1') == true) return;
+    if (await gateway.isIgnoringBatteryOptimizations()) {
+      await prefs.setBool('keepalive.battery_prompted_v1', true);
+      return;
+    }
+    await prefs.setBool('keepalive.battery_prompted_v1', true);
+    if (!mounted) return;
+    final goSettings = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('后台消息保障'),
+            content: const Text(
+              '为了在锁屏和后台收到消息通知与来电铃声，请在接下来'
+              '的系统弹窗中允许畅聊"忽略电池优化"。\n'
+              '小米/红米设备另请在 设置→应用管理→畅聊 中开启"自启动"，'
+              '并把省电策略设为"无限制"。',
+            ),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('暂不'),
+              ),
+              CupertinoDialogAction(
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('去设置'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (goSettings && mounted) {
+      await gateway.requestIgnoreBatteryOptimizations();
+    }
   }
 
   /// PRD §33：登录完成后上下文式申请通知权限，绝不在冷启动首屏弹。
@@ -300,6 +349,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(_chatIdentityCache?.refreshContactsQuietly());
       // BUG 2：前台服务可能被系统配额（Android 14+ dataSync 每日上限）
       // 或厂商 ROM 停止；回前台时幂等补启。
+      unawaited(syncKeepAlive.ensureStarted());
+    } else if (state == AppLifecycleState.paused) {
+      // 退后台瞬间重申保活（部分系统在切后台时回收前台服务/唤醒锁）。
       unawaited(syncKeepAlive.ensureStarted());
     }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
@@ -546,6 +598,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         unawaited(callNotifications.showIncoming(
           callerName: calls.state.matrixUserId ?? '加密来电',
           video: calls.state.type == CallMediaType.video,
+          ring: true,
         ));
       }
       setState(() {});

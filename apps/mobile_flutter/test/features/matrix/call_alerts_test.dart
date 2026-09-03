@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
+import 'package:liuhetong_mobile/core/notification/foreground_sound_service.dart';
 
 final class RecordingDriver implements CallAlertDriver {
   final ringtones = <SoundType>[];
@@ -50,6 +51,26 @@ void main() {
     alerts.dispose();
   });
 
+  test('后台来电（通知已带铃声）时 audible 门控静音应用内循环，回前台恢复', () async {
+    // BUG2：后台来电由系统通知渠道发声（calls_ring），应用内循环必须
+    // 同步静音避免双声；用户回到前台后恢复应用内铃声。
+    var audible = false;
+    final engine = _GateSoundEngine();
+    final driver = SoundServiceCallAlertDriver(
+      sound: ForegroundSoundService(engine: engine),
+      audible: () => audible,
+    );
+
+    await driver.startRingtone(SoundType.callVoiceIncoming);
+    expect(engine.loops, isEmpty, reason: '后台时不得启动应用内铃声循环');
+
+    audible = true;
+    await driver.startRingtone(SoundType.callVoiceIncoming);
+    expect(engine.loops, [SoundType.callVoiceIncoming.assetPath]);
+
+    await driver.stopRingtone();
+  });
+
   test('driver failures never break the ringing loop', () async {
     final alerts = CallAlerts(
       driver: _ThrowingDriver(),
@@ -72,4 +93,22 @@ final class _ThrowingDriver implements CallAlertDriver {
 
   @override
   Future<void> vibrate() async => throw StateError('no vibrator');
+}
+
+/// 最小声音引擎假件：记录循环启停（字符串资产路径口径，与真实接口一致）。
+final class _GateSoundEngine implements SoundEngine {
+  final loops = <String>[];
+  var stopped = 0;
+
+  @override
+  Future<void> play(String assetPath, {double volume = 1.0}) async {}
+
+  @override
+  Future<void> playLoop(String assetPath) async => loops.add(assetPath);
+
+  @override
+  Future<void> stopLoop() async => stopped++;
+
+  @override
+  Future<void> dispose() async {}
 }

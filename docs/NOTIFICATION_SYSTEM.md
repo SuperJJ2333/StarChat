@@ -161,6 +161,21 @@ NotificationCoordinator（唯一入口）
   `res/raw/chatflow_message.ogg` 提示音与震动）。
   证据：`docs/verification/artifacts/2026-09-03/bug2-lockscreen-notification.png`。
 
+**0.3.30 三层加固**（用户复测仍无通知后的深度修复）：
+1. **唤醒锁**：前台服务只提升进程优先级，不阻止息屏后 CPU 休眠与
+   WiFi 低功耗断连——长轮询同步仍会停。新增原生 `chatflow/keepalive`
+   通道，保活期间持有 PARTIAL WakeLock + 高性能 WifiLock
+   （API 34+ 用 WIFI_MODE_FULL_LOW_LATENCY），MainActivity onDestroy 释放。
+2. **看门狗**：`SyncKeepAliveService` 每 10 分钟重申前台服务与唤醒锁
+   （系统静默回收后自愈），退后台/回前台生命周期亦重申。
+3. **电池优化白名单引导**：登录后一次性弹窗引导"忽略电池优化"
+   （`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`），MIUI 自启动指引写入文案；
+   已加白/已引导则永不打扰。
+4. **后台来电铃声**：新增 `calls_ring` 渠道（挂
+   `res/raw/chatflow_ringtone.ogg`，Importance.max + 震动）；退后台来电
+   由系统通知发声，应用内循环经 `SoundServiceCallAlertDriver.audible`
+   门控静音（回前台自动恢复），杜绝双声。
+
 **边界与前置条件**：
 - Android 14+ 对 dataSync 前台服务有每日约 6 小时配额，超时系统停服并
   退回"进程存活期"通知；回前台自动补启。

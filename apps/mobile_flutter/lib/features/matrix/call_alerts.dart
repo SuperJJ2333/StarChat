@@ -30,21 +30,33 @@ final class SystemCallAlertDriver implements CallAlertDriver {
 
 /// SE 铃声驱动（PRD §9/§10）：语音/视频来电与主叫等待各自循环铃声，
 /// 震动沿用系统 Haptic（PRD §37）；受"通话通知"设置开关约束。
+///
+/// [audible]（BUG2）：后台/锁屏来电由系统通知渠道（calls_ring，带
+/// chatflow_ringtone.ogg）发声，应用内循环须静音避免双声；回前台后
+/// 门控放开，节拍循环自动恢复应用内铃声。
 final class SoundServiceCallAlertDriver implements CallAlertDriver {
   SoundServiceCallAlertDriver({
     ForegroundSoundService? sound,
     bool Function()? enabled,
+    bool Function()? audible,
   })  : _sound = sound,
-        _enabled = enabled;
+        _enabled = enabled,
+        _audible = audible;
 
   final ForegroundSoundService? _sound;
   final bool Function()? _enabled;
+  final bool Function()? _audible;
   SoundType? _current;
 
   @override
   Future<void> startRingtone(SoundType ringtone) async {
     final enabled = _enabled;
     if (enabled != null && !enabled()) return;
+    final audible = _audible;
+    if (audible != null && !audible()) {
+      // 后台静音：不登记 _current，门控放开后下一节拍即可起循环。
+      return;
+    }
     if (_current == ringtone) return; // 循环中重复触发幂等。
     _current = ringtone;
     final sound = _sound;

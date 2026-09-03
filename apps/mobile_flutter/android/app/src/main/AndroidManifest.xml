@@ -21,6 +21,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA"/>
     <!-- BUG 2 后台/锁屏通知：dataSync 前台服务保活消息同步长连接 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- BUG2 加固：电池优化白名单引导（厂商 ROM 息屏清理的必要条件） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <application
         android:label="畅聊 ChatFlow"
         android:name="${applicationName}"

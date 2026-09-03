@@ -69,7 +69,10 @@ foreach ($pair in @(
         @{ Raw = 'chatflow_message.ogg'; Src = $messageReceived },
         @{ Raw = 'chatflow_attention.ogg'; Src = $messageReceived },
         @{ Raw = 'chatflow_mention.ogg'; Src = $messageReceived },
-        @{ Raw = 'chatflow_system.ogg'; Src = $messageReceived }
+        @{ Raw = 'chatflow_system.ogg'; Src = $messageReceived },
+        # 后台/锁屏来电铃声（BUG2）：来电子渠道声音，由系统通知播放，
+        # 不依赖应用内 audioplayers（进程被限/无焦点时仍可响铃）。
+        @{ Raw = 'chatflow_ringtone.ogg'; Src = $ringtoneSource }
     )) {
     & ffmpeg -hide_banner -loglevel error -y -i $pair.Src -codec:a libvorbis -q:a 4 -ar 44100 -ac 1 (Join-Path $rawDir $pair.Raw)
     Assert-LastExitCode "ogg $($pair.Raw)"

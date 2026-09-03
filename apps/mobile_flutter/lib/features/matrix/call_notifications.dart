@@ -17,6 +17,8 @@ final class CallNotifications {
   static const ongoingCallId = 41002;
   static const _callsChannelId = 'calls';
   static const _callsChannelName = '通话提醒';
+  static const _ringChannelId = 'calls_ring';
+  static const _ringChannelName = '来电铃声';
   static const _ongoingChannelId = 'call-ongoing';
   static const _ongoingChannelName = '通话中';
 
@@ -36,6 +38,17 @@ final class CallNotifications {
       description: '加密语音/视频来电提醒，覆盖在其他应用与锁屏之上',
       importance: Importance.max,
     ));
+    // BUG2 后台/锁屏来电铃声：渠道挂 res/raw/chatflow_ringtone.ogg，由
+    // 系统通知发声——应用内 audioplayers 在后台/无焦点时不可靠。
+    await android?.createNotificationChannel(const AndroidNotificationChannel(
+      _ringChannelId,
+      _ringChannelName,
+      description: '后台与锁屏时的来电铃声（由系统播放）',
+      importance: Importance.max,
+      playSound: true,
+      sound: RawResourceAndroidNotificationSound('chatflow_ringtone'),
+      enableVibration: true,
+    ));
     await android?.createNotificationChannel(const AndroidNotificationChannel(
       _ongoingChannelId,
       _ongoingChannelName,
@@ -51,6 +64,7 @@ final class CallNotifications {
     required String body,
     required bool ongoing,
     bool fullScreenIntent = false,
+    bool ring = false,
   }) =>
       AndroidNotificationDetails(
         channelId,
@@ -62,16 +76,24 @@ final class CallNotifications {
         ongoing: ongoing,
         autoCancel: !ongoing,
         fullScreenIntent: fullScreenIntent,
-        // 响铃/震动由应用内 CallAlerts 驱动，通知不重复发声。
-        playSound: false,
-        enableVibration: false,
+        visibility: NotificationVisibility.public,
+        // 前台路径：响铃/震动由应用内 CallAlerts 驱动，通知不重复发声；
+        // 后台/锁屏（ring=true，calls_ring 渠道）：由系统播放渠道铃声。
+        playSound: ring,
+        enableVibration: ring,
+        sound: ring
+            ? const RawResourceAndroidNotificationSound('chatflow_ringtone')
+            : null,
         ticker: title,
       );
 
   /// 来电覆盖提醒：后台/锁屏/其他应用之上弹出，点击回到接听页。
+  /// [ring]：App 退后台时置 true——经 calls_ring 渠道由系统播放来电
+  /// 铃声（应用内循环同步静音，见 SoundServiceCallAlertDriver.audible）。
   Future<void> showIncoming({
     required String callerName,
     required bool video,
+    bool ring = false,
   }) async {
     await _ensureInit();
     await plugin.show(
@@ -80,11 +102,12 @@ final class CallNotifications {
       callerName,
       NotificationDetails(
         android: _details(
-          channelId: _callsChannelId,
+          channelId: ring ? _ringChannelId : _callsChannelId,
           title: video ? '畅聊视频来电' : '畅聊语音来电',
           body: callerName,
           ongoing: true,
           fullScreenIntent: true,
+          ring: ring,
         ),
       ),
       payload: 'incoming-call',
