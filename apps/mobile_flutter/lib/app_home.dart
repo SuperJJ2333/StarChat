@@ -22,7 +22,7 @@ import 'features/contacts/contact_models.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
-import 'package:matrix/matrix.dart' show Membership;
+import 'package:matrix/matrix.dart' show Membership, Room;
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_direct_chat_adapter.dart';
 import 'features/matrix/matrix_home_page.dart';
@@ -91,7 +91,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     ),
   );
 
-  /// 打开规范登记的私聊房间：受邀未加入时先加入，再做加密+双人校验。
+  /// 打开规范登记的私聊房间：受邀未加入时先加入；对端建的房间我方
+  /// m.direct 可能缺失，补写后房间才具备 DM 语义（否则渲染成"群聊"，
+  /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
   Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) async {
     final client = widget.matrix.sdkClient;
     var room = client.getRoomById(roomId);
@@ -105,9 +107,20 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       room = client.getRoomById(roomId);
     }
     final backend = MatrixDirectChatBackend(client);
-    final snapshot = await backend.waitForRoom(roomId);
+    var snapshot = await backend.waitForRoom(roomId);
     final target = snapshot.participantIds
         .firstWhere((id) => id != client.userID, orElse: () => '');
+    if (target.isNotEmpty &&
+        (room?.isDirectChat != true || room?.directChatMatrixID != target)) {
+      try {
+        await Room(id: roomId, client: client).addToDirectChat(target);
+        await client.waitForRoomInSync(roomId, join: true);
+        room = client.getRoomById(roomId);
+        snapshot = await backend.waitForRoom(roomId);
+      } catch (_) {
+        // m.direct 补写失败不阻断打开；下次进入会再次补写。
+      }
+    }
     final service = DirectChatService(backend);
     return service.openExisting(snapshot.roomId, target);
   }
