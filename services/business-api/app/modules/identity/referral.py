@@ -49,6 +49,22 @@ class ReferralCodec:
             f"{user_id}:{self.window_index(now)}".encode("utf-8"),
             sha256,
         ).digest()
+        return self._encode(digest)
+
+    def derive_static(self, user_id: str) -> str:
+        """用户固定的个人注册邀请码（统一邀请码体系，永不轮换）。
+
+        与轮换码域隔离（"personal-invite:" 前缀）；明文可随时确定性
+        重derive，库中仍只存 sha256。
+        """
+        digest = hmac.new(
+            self._secret,
+            f"personal-invite:{user_id}".encode("utf-8"),
+            sha256,
+        ).digest()
+        return self._encode(digest)
+
+    def _encode(self, digest: bytes) -> str:
         value = int.from_bytes(digest[:8], "big")
         alphabet = self.ALPHABET
         base = len(alphabet)

@@ -11,7 +11,8 @@ void main() {
       home: DirectChatInfoPage(
         peerName: '安然',
         peerId: '@anran:test',
-        matrixClient: Client('test')..homeserver = Uri.parse('https://matrix.example.test'),
+        matrixClient: Client('test')
+          ..homeserver = Uri.parse('https://matrix.example.test'),
         preference: const ConversationPreference(),
         onAddMember: () {},
         onSearchHistory: () {},
@@ -23,7 +24,9 @@ void main() {
     expect(find.text('添加'), findsOneWidget);
     expect(find.text('查找聊天记录'), findsOneWidget);
     expect(find.text('设置拍一拍'), findsNothing);
-    expect(find.text('消息免打扰'), findsOneWidget);
+    // PRD §44：私聊信息页提供 默认/静音/特别关注 三态通知设置。
+    expect(find.text('消息通知'), findsOneWidget);
+    expect(find.text('特别关注'), findsOneWidget);
     expect(find.text('置顶聊天'), findsOneWidget);
     expect(find.text('保存到通讯录'), findsOneWidget);
     expect(find.text('清空聊天记录'), findsOneWidget);

@@ -143,6 +143,7 @@ def create_identity_router(
         password_hasher=password_hasher,
         token_codec=verification_codec,
         referral_service=referral_service,
+        referral_codec=referral_codec,
     )
     email_verification = EmailVerificationService(
         session_factory, token_codec=verification_codec
@@ -200,6 +201,39 @@ def create_identity_router(
             invitation_service.validate(body.invitation_code)
         )
         return {"valid": reason == "OK", "reason": reason}
+
+    @router.get("/invitations/mine")
+    async def get_my_invitation(
+        request: Request,
+        claims: Annotated[dict, Depends(current_claims)],
+    ) -> dict:
+        """当前用户的固定个人注册邀请码（统一邀请码体系，规格 §6.2）。
+
+        首次读取派生并落库；此后仅滚动续期。该码与注册页唯一「邀请码」
+        字段同一体系，经 /invitations/validate 校验、注册时消耗并据此
+        推导邀请关系。30 分钟轮换推荐码端点仅为旧客户端兼容保留。
+        """
+        user_id = claims["sub"]
+        rate_limiter.hit(
+            f"invitation:mine:{user_id}", limit=60, window_seconds=1800
+        )
+        result = invitation_service.ensure_personal(
+            user_id=user_id,
+            codec=referral_codec,
+            max_uses=settings.personal_invite_max_uses,
+            expiry_days=settings.personal_invite_expiry_days,
+        )
+        share_url = (
+            f"{settings.referral_share_base_url}"
+            f"?code={quote(result['code'], safe='')}"
+        )
+        return {
+            "code": result["code"],
+            "max_uses": result["max_uses"],
+            "use_count": result["use_count"],
+            "expires_at": result["expires_at"],
+            "share_url": share_url,
+        }
 
     @router.get("/invitations/referral")
     async def get_referral_code(

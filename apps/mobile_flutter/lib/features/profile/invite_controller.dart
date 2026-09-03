@@ -1,31 +1,27 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
-/// 当前用户的 referral 邀请码（服务端 30 分钟窗口轮换）。
-final class ReferralInvite {
-  const ReferralInvite({
+/// 当前用户的固定个人注册邀请码（统一邀请码体系，规格 §6.2）。
+///
+/// 每个用户一个码，永不轮换；注册页唯一的「邀请码」字段与之同一体系，
+/// 好友注册消耗该码即建立邀请关系。
+final class PersonalInvitation {
+  const PersonalInvitation({
     required this.code,
-    required this.rotatesAt,
-    required this.rotatesInSeconds,
+    required this.maxUses,
+    required this.useCount,
     required this.shareUrl,
-    required this.rewardEnabled,
   });
 
   final String code;
-
-  /// 轮换时间点（服务端返回的 ISO 时间）。
-  final DateTime rotatesAt;
-
-  /// 距下次轮换的秒数（服务端权威；客户端据此做倒计时与自动刷新）。
-  final int rotatesInSeconds;
+  final int maxUses;
+  final int useCount;
   final String shareUrl;
-  final bool rewardEnabled;
+
+  int get remainingUses => maxUses - useCount;
 }
 
-abstract interface class ReferralInviteGateway {
-  Future<ReferralInvite> fetchReferralInvite();
-  Future<bool> validateReferralCode(String referralCode);
+abstract interface class PersonalInvitationGateway {
+  Future<PersonalInvitation> fetchPersonalInvitation();
 }
 
 enum InviteCodeStatus { idle, loading, ready, failed }
@@ -34,59 +30,47 @@ final class InviteCodeState {
   const InviteCodeState({
     this.status = InviteCodeStatus.idle,
     this.invite,
-    this.remainingSeconds = 0,
     this.message,
   });
 
   final InviteCodeStatus status;
-  final ReferralInvite? invite;
-
-  /// 展示用倒计时（本地每秒递减；到 0 触发自动刷新取新码）。
-  final int remainingSeconds;
+  final PersonalInvitation? invite;
   final String? message;
 
   InviteCodeState copyWith({
     InviteCodeStatus? status,
-    ReferralInvite? invite,
-    int? remainingSeconds,
+    PersonalInvitation? invite,
     String? message,
     bool clearMessage = false,
   }) =>
       InviteCodeState(
         status: status ?? this.status,
         invite: invite ?? this.invite,
-        remainingSeconds: remainingSeconds ?? this.remainingSeconds,
         message: clearMessage ? null : (message ?? this.message),
       );
 }
 
-/// 邀请码控制器：
-/// - 打开页面即取当前窗口码；展示**每秒倒计时**；
-/// - 倒计时归零自动重新拉取（服务端窗口切换后旧码立即失效，
-///   客户端"实时同步"新码，无需用户手动操作）；
-/// - 失败可重试（弱网）。
+/// 邀请码控制器：打开页面即拉取个人注册邀请码；失败可重试（弱网）。
+/// 码固定不轮换，无需倒计时；手动刷新同步最新已用次数。
 final class InviteCodeController extends ChangeNotifier {
   InviteCodeController({required this.gateway});
 
-  final ReferralInviteGateway gateway;
+  final PersonalInvitationGateway gateway;
   InviteCodeState state = const InviteCodeState();
-  Timer? _countdownTimer;
   bool _disposed = false;
 
   Future<void> load() async {
-    _countdownTimer?.cancel();
-    state = state.copyWith(status: InviteCodeStatus.loading, clearMessage: true);
+    state =
+        state.copyWith(status: InviteCodeStatus.loading, clearMessage: true);
     notifyListeners();
     try {
-      final invite = await gateway.fetchReferralInvite();
+      final invite = await gateway.fetchPersonalInvitation();
       if (_disposed) return;
-      state = state.copyWith(
+      state = InviteCodeState(
         status: InviteCodeStatus.ready,
         invite: invite,
-        remainingSeconds: invite.rotatesInSeconds,
       );
       notifyListeners();
-      _startCountdown();
     } catch (_) {
       if (_disposed) return;
       state = state.copyWith(
@@ -95,21 +79,6 @@ final class InviteCodeController extends ChangeNotifier {
       );
       notifyListeners();
     }
-  }
-
-  void _startCountdown() {
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_disposed) return;
-      final remaining = state.remainingSeconds;
-      if (remaining <= 1) {
-        // 窗口已切换：立即同步新码（服务端旧码此刻已失效）。
-        load();
-        return;
-      }
-      state = state.copyWith(remainingSeconds: remaining - 1);
-      notifyListeners();
-    });
   }
 
   void showMessage(String message) {
@@ -125,7 +94,6 @@ final class InviteCodeController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _countdownTimer?.cancel();
     super.dispose();
   }
 }

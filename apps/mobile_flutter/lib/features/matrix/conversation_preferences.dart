@@ -5,6 +5,7 @@ const conversationPreferenceType = 'com.liuhetong.conversation.settings.v2';
 final class ConversationPreference {
   const ConversationPreference({
     this.muted = false,
+    this.attention = false,
     this.pinned = false,
     this.saved = false,
     this.folded = false,
@@ -23,6 +24,7 @@ final class ConversationPreference {
     final followed = content['followed_member_ids'];
     return ConversationPreference(
       muted: content['muted'] == true,
+      attention: content['attention'] == true,
       pinned: content['pinned'] == true,
       saved: content['saved'] == true,
       folded: content['folded'] == true,
@@ -44,7 +46,10 @@ final class ConversationPreference {
     );
   }
 
+  /// 会话通知三态（PRD §44）：默认 / 静音（muted） / 特别关注（attention）。
+  /// attention 与 muted 互斥：置 attention 时写端须清 muted。
   final bool muted;
+  final bool attention;
   final bool pinned;
   final bool saved;
   final bool folded;
@@ -60,6 +65,7 @@ final class ConversationPreference {
 
   Map<String, Object?> toContent() => {
         'muted': muted,
+        'attention': attention,
         'pinned': pinned,
         'saved': saved,
         'folded': folded,
@@ -76,6 +82,7 @@ final class ConversationPreference {
 
   ConversationPreference copyWith({
     bool? muted,
+    bool? attention,
     bool? pinned,
     bool? saved,
     bool? folded,
@@ -93,6 +100,7 @@ final class ConversationPreference {
   }) =>
       ConversationPreference(
         muted: muted ?? this.muted,
+        attention: attention ?? this.attention,
         pinned: pinned ?? this.pinned,
         saved: saved ?? this.saved,
         folded: folded ?? this.folded,

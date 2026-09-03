@@ -25,19 +25,17 @@ final class RegistrationStatusReceipt {
 }
 
 abstract interface class RegistrationGateway {
-  /// 校验管理员邀请码：200 → 结果对象（READY/INVALID/EXPIRED/EXHAUSTED）；
-  /// 网络/服务端故障抛异常，由调用方映射为可重试状态。
+  /// 校验注册邀请码（统一邀请码体系）：200 → 结果对象
+  /// （READY/INVALID/EXPIRED/EXHAUSTED）；网络/服务端故障抛异常，
+  /// 由调用方映射为可重试状态。
   Future<InvitationValidationResult> validateInvitation(String invitationCode);
 
-  /// 公开校验好友推荐码（选填字段）：仅提示有效性，不阻断注册。
-  Future<bool> validateReferralCode(String referralCode);
   Future<RegistrationReceipt> register(
       {required String username,
       String? nickname,
       required String email,
       required String password,
-      required String invitationCode,
-      String referralCode = ''});
+      required String invitationCode});
   Future<void> verifyEmail(
       {required String registrationSession, String? code, String? token});
   Future<int> resendVerification(String registrationSession);
@@ -74,7 +72,6 @@ final class RegistrationDraft {
     this.password = '',
     this.passwordConfirmation = '',
     this.invitationCode = '',
-    this.referralCode = '',
     this.email = '',
   });
   final String nickname;
@@ -82,9 +79,6 @@ final class RegistrationDraft {
   final String password;
   final String passwordConfirmation;
   final String invitationCode;
-
-  /// 好友推荐码（选填）：填写且有效才建立邀请关系，无效不阻断注册。
-  final String referralCode;
   final String email;
 }
 
@@ -107,7 +101,6 @@ final class RegistrationController extends ChangeNotifier {
     required String passwordConfirmation,
     required String invitationCode,
     required String email,
-    String referralCode = '',
   }) {
     draft = RegistrationDraft(
       nickname: nickname,
@@ -116,7 +109,6 @@ final class RegistrationController extends ChangeNotifier {
       passwordConfirmation: passwordConfirmation,
       invitationCode: invitationCode,
       email: email,
-      referralCode: referralCode,
     );
   }
 
@@ -178,8 +170,7 @@ final class RegistrationController extends ChangeNotifier {
       required String email,
       required String password,
       String passwordConfirmation = '',
-      required String invitationCode,
-      String referralCode = ''}) async {
+      required String invitationCode}) async {
     final validation = validateFields(
       username: username,
       nickname: nickname ?? username,
@@ -200,25 +191,14 @@ final class RegistrationController extends ChangeNotifier {
       passwordConfirmation: passwordConfirmation,
       invitationCode: invitationCode,
       email: email,
-      referralCode: referralCode,
     );
     _set(const RegistrationState(RegistrationFlowStatus.submitting));
     try {
-      final invitationCheck = await _retryNetwork(
-          () => gateway.validateInvitation(invitationCode));
+      final invitationCheck =
+          await _retryNetwork(() => gateway.validateInvitation(invitationCode));
       if (invitationCheck.state != InvitationValidationState.ready) {
         _set(RegistrationState(RegistrationFlowStatus.failed,
             fieldErrors: {'invitation_code': invitationCheck.message}));
-        return false;
-      }
-      // 好友推荐码选填：填写时先校验，无效给明确提示（可清空/改正），
-      // 避免静默丢失邀请关系；留空直接跳过。
-      final referralClean = referralCode.trim();
-      if (referralClean.isNotEmpty &&
-          !await _retryNetwork(
-              () => gateway.validateReferralCode(referralClean))) {
-        _set(const RegistrationState(RegistrationFlowStatus.failed,
-            fieldErrors: {'referral_code': '邀请码无效，请核对或留空'}));
         return false;
       }
       final receipt = await _retryNetwork(() => gateway.register(
@@ -226,8 +206,7 @@ final class RegistrationController extends ChangeNotifier {
           nickname: nickname,
           email: email,
           password: password,
-          invitationCode: invitationCode,
-          referralCode: referralClean));
+          invitationCode: invitationCode));
       _set(RegistrationState(RegistrationFlowStatus.awaitingVerification,
           registrationSession: receipt.registrationSession,
           resendAfterSeconds: receipt.resendAfterSeconds));

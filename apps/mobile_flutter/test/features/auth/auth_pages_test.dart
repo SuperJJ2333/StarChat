@@ -23,15 +23,12 @@ final class PageGateway implements RegistrationGateway {
       const InvitationValidationResult(
           InvitationValidationState.ready, '邀请码可用');
   @override
-  Future<bool> validateReferralCode(String referralCode) async => true;
-  @override
   Future<RegistrationReceipt> register({
     required String username,
     String? nickname,
     required String email,
     required String password,
     required String invitationCode,
-    String referralCode = '',
   }) async =>
       registerError != null
           ? throw registerError!
@@ -435,8 +432,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'REFCODE1');
-    await tester.enterText(fields.at(6), 'draft@example.test');
+    await tester.enterText(fields.at(5), 'draft@example.test');
     final back = find.widgetWithText(ModernActionButton, '返回登录');
     tester.widget<ModernActionButton>(back).onPressed!();
     await tester.pump();
@@ -447,8 +443,6 @@ void main() {
     expect(tester.widget<CupertinoTextField>(restored.at(0)).controller?.text,
         '昵称');
     expect(tester.widget<CupertinoTextField>(restored.at(5)).controller?.text,
-        'REFCODE1');
-    expect(tester.widget<CupertinoTextField>(restored.at(6)).controller?.text,
         'draft@example.test');
   });
   testWidgets('taken email appears once below the email field', (tester) async {
@@ -469,7 +463,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(6), 'taken@example.test');
+    await tester.enterText(fields.at(5), 'taken@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
@@ -495,7 +489,8 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(CupertinoTextField), findsNWidgets(7));
+      // 统一邀请码：注册页只有一个邀请码字段（原好友邀请码已并入）。
+      expect(find.byType(CupertinoTextField), findsNWidgets(6));
       expect(find.text('畅聊号'), findsOneWidget);
       expect(find.text('再次输入密码'), findsNWidgets(2));
       expect(find.byKey(const Key('auth-registration-password-visibility')),
@@ -521,8 +516,7 @@ void main() {
       await tester.enterText(fields.at(2), 'correct horse battery staple');
       await tester.enterText(fields.at(3), 'correct horse battery staple');
       await tester.enterText(fields.at(4), 'INVITE');
-      await tester.enterText(fields.at(5), 'REFCODE1');
-      await tester.enterText(fields.at(6), 'alice@example.test');
+      await tester.enterText(fields.at(5), 'alice@example.test');
       await tester.pump();
       expect(
         tester
@@ -577,8 +571,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'different password');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'REFCODE1');
-      await tester.enterText(fields.at(6), 'alice@example.test');
+    await tester.enterText(fields.at(5), 'alice@example.test');
     await tester.pump();
     expect(find.text('两次密码输入不一致'), findsOneWidget);
     expect(
@@ -607,8 +600,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'REFCODE1');
-      await tester.enterText(fields.at(6), 'alice@example.test');
+    await tester.enterText(fields.at(5), 'alice@example.test');
     await tester.pump();
 
     final action = find.byKey(const Key('auth-registration-send-code'));
@@ -740,8 +732,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(5), 'REFCODE1');
-    await tester.enterText(fields.at(6), 'draft@example.test');
+    await tester.enterText(fields.at(5), 'draft@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),
@@ -769,7 +760,7 @@ void main() {
     await tester.enterText(fields.at(2), 'correct horse battery staple');
     await tester.enterText(fields.at(3), 'correct horse battery staple');
     await tester.enterText(fields.at(4), 'INVITE');
-    await tester.enterText(fields.at(6), 'countdown@example.test');
+    await tester.enterText(fields.at(5), 'countdown@example.test');
     tester
         .widget<CupertinoButton>(
           find.byKey(const Key('auth-registration-send-code')),

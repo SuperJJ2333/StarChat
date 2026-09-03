@@ -13,10 +13,10 @@ import '../../ui/foundation/wechat_tokens.dart';
 import 'invite_controller.dart';
 
 /// 邀请码页（“我”→ 邀请码）：
-/// - 展示当前用户专属邀请码，30 分钟窗口倒计时，到点自动同步新码；
+/// - 展示当前用户的固定个人注册邀请码（统一邀请码体系，不轮换）；
 /// - 分享：复制邀请码 / 复制邀请链接 / 保存分享图片 / 跳转微信 / 跳转 QQ；
 ///   未安装对应应用时回退为“已复制邀请码”，可直接粘贴发送；
-/// - 好友注册时填写此码即建立邀请关系。
+/// - 好友注册时在唯一「邀请码」字段填写此码，消耗即建立邀请关系。
 final class InviteCodePage extends StatefulWidget {
   const InviteCodePage({super.key, required this.controller});
 
@@ -80,8 +80,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
           as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 3);
-      final data =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
       if (data == null) throw StateError('share image capture failed');
       final result = await PhotoManager.editor.saveImage(
@@ -115,19 +114,14 @@ final class _InviteCodePageState extends State<InviteCodePage> {
     _toast('未找到$appName，邀请码已复制，可直接粘贴发送');
   }
 
-  String _formatCountdown(int totalSeconds) {
-    final minutes = (totalSeconds ~/ 60).toString().padLeft(2, '0');
-    final seconds = (totalSeconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final state = widget.controller.state;
     return WeChatPageScaffold.navigation(
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       navigationBar: CupertinoNavigationBar(
         backgroundColor: WeChatColors.chatNavigationBackground,
         automaticBackgroundVisibility: false,
@@ -179,7 +173,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
           key: const Key('invite-code-list'),
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
           children: [
-            _shareCard(context, invite, state, dark),
+            _shareCard(context, invite, dark),
             const SizedBox(height: 12),
             CupertinoListSection.insetGrouped(
               backgroundColor: dark
@@ -222,8 +216,8 @@ final class _InviteCodePageState extends State<InviteCodePage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Text(
-                '好友注册时填写你的邀请码，即可完成邀请关系绑定。'
-                '为保障账号安全，邀请码每 30 分钟自动更换，旧码立即失效。',
+                '好友注册时在「邀请码」一栏填写你的邀请码即可完成注册，'
+                '并自动建立邀请关系。邀请码长期有效，可邀请人数有限。',
                 style: TextStyle(
                   fontSize: 12,
                   height: 1.5,
@@ -251,8 +245,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                 ),
                 child: Text(state.message!,
                     style: const TextStyle(
-                        fontSize: 13,
-                        color: CupertinoColors.black)),
+                        fontSize: 13, color: CupertinoColors.black)),
               ),
             ),
           ),
@@ -262,7 +255,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
 
   /// 邀请码卡片（被 [RepaintBoundary] 包裹：分享图片直接渲染此卡片）。
   Widget _shareCard(
-      BuildContext context, ReferralInvite invite, InviteCodeState state, bool dark) {
+      BuildContext context, PersonalInvitation invite, bool dark) {
     final foreground =
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
     return RepaintBoundary(
@@ -300,15 +293,15 @@ final class _InviteCodePageState extends State<InviteCodePage> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(CupertinoIcons.timer,
+                Icon(CupertinoIcons.person_2,
                     size: 13,
                     color: dark
                         ? WeChatColors.textSecondary
                         : WeChatColors.textSecondary),
                 const SizedBox(width: 5),
                 Text(
-                  '${_formatCountdown(state.remainingSeconds)} 后自动更新',
-                  key: const Key('invite-countdown'),
+                  '可邀请 ${invite.remainingUses} 位好友',
+                  key: const Key('invite-remaining-uses'),
                   style: TextStyle(
                       fontSize: 12,
                       color: dark

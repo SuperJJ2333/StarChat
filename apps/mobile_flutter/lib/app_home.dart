@@ -6,6 +6,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/business_api_client.dart';
 import 'core/app_config.dart';
 import 'core/local_notification_scheduler.dart';
+import 'core/notification/app_state_manager.dart';
+import 'core/notification/badge_service.dart';
+import 'core/notification/foreground_sound_service.dart';
+import 'core/notification/haptic_service.dart';
+import 'core/notification/in_app_banner_controller.dart';
+import 'core/notification/notification_coordinator.dart';
+import 'core/notification/notification_feedback.dart';
+import 'core/notification/notification_preferences.dart';
+import 'core/notification/notification_usage_recorder.dart';
+import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -19,11 +29,13 @@ import 'features/matrix/chat_identity_cache.dart';
 import 'features/matrix/group_chat_controller.dart';
 import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
+import 'features/matrix/call_alerts.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
 import 'features/matrix/matrix_message_reminder_backend.dart';
+import 'features/matrix/matrix_notification_event_source.dart';
 import 'features/matrix/message_reminder_service.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
@@ -37,10 +49,12 @@ import 'features/profile/invite_controller.dart';
 import 'features/profile/profile_controller.dart';
 import 'features/profile/profile_page.dart';
 import 'features/profile/avatar_source.dart';
+import 'features/settings/notification/notification_settings_page.dart';
 import 'features/friendship/friend_request_watch.dart';
 import 'features/update/app_update.dart';
 import 'features/update/update_integrity.dart';
 import 'features/update/app_update_dialog.dart';
+import 'ui/notification/in_app_banner_overlay.dart';
 
 final class AppHome extends StatefulWidget {
   const AppHome({
@@ -65,9 +79,22 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       DirectChatController(widget.matrix);
   late final MatrixCallBackend callBackend =
       MatrixCallBackend(widget.matrix.sdkClient);
+  late final ForegroundSoundService notificationSounds =
+      ForegroundSoundService();
   late final CallController calls = CallController(
     backend: callBackend,
     permissions: const WebRtcPermissionGateway(),
+    // SE 来电铃声（PRD §9/§10）：语音/视频各自循环铃声，
+    // 受"语音/视频通话通知"设置开关约束。
+    alerts: CallAlerts(
+      driver: SoundServiceCallAlertDriver(
+        sound: notificationSounds,
+        enabled: () =>
+            NotificationSystemHandle
+                .coordinator?.preferences.callNotificationEnabled ??
+            true,
+      ),
+    ),
   );
   bool callPageVisible = false;
   bool incomingCallActive = false;
@@ -79,6 +106,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   late final CallNotifications callNotifications = CallNotifications();
   MessageReminderService? reminderService;
   late final MessageReminderSyncBootstrapper reminderBootstrap;
+
+  // 统一通知系统（PRD §2）：所有声音/震动/角标/系统通知经协调器。
+  final AppStateManager notificationAppState = AppStateManager();
+  final InAppBannerController notificationBanners = InAppBannerController();
+  NotificationCoordinator? _notificationCoordinator;
+  MatrixNotificationEventSource? _notificationEventSource;
   ChatIdentityCache? _chatIdentityCache;
   Future<ChatIdentityCache>? _chatIdentityCacheLoad;
 
@@ -98,7 +131,91 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_verifyDataIntegrity());
     unawaited(_checkForAppUpdate());
     unawaited(_startFriendRequestWatch());
+    unawaited(_startNotificationSystem());
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// 组装并启动统一通知协调器（PRD §2/§22）。
+  Future<void> _startNotificationSystem() async {
+    final eventSource = MatrixNotificationEventSource(
+      client: widget.matrix.sdkClient,
+    );
+    final coordinator = NotificationCoordinator(
+      preferenceStore: const SharedPreferencesNotificationPreferenceStore(),
+      systemNotifications: FlutterLocalSystemNotificationPresenter(
+        onConversationTap: (roomId) {
+          if (mounted) unawaited(_openConversationFromNotification(roomId));
+        },
+      ),
+      soundService: notificationSounds,
+      hapticService: HapticService(),
+      badgeGateway: const MethodChannelLauncherBadgeGateway(),
+      appState: notificationAppState,
+      banners: notificationBanners,
+      eventSource: eventSource,
+      unreadSource: MatrixUnreadSnapshotSource(
+        client: widget.matrix.sdkClient,
+      ),
+    );
+    _notificationEventSource = eventSource;
+    _notificationCoordinator = coordinator;
+    NotificationFeedback.install(coordinator.playUiSound);
+    NotificationSystemHandle.install(coordinator);
+    try {
+      await eventSource.start();
+      await coordinator.start();
+      await coordinator.refreshLauncherBadge();
+    } catch (_) {
+      // 通知系统启动失败不阻断会话；下一次生命周期恢复可重试。
+      return;
+    }
+    unawaited(_primeNotificationPermission());
+  }
+
+  /// PRD §33：登录完成后上下文式申请通知权限，绝不在冷启动首屏弹。
+  Future<void> _primeNotificationPermission() async {
+    final coordinator = _notificationCoordinator;
+    if (coordinator == null || !mounted) return;
+    final recorder = const SharedPreferencesNotificationUsageRecorder();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool('notification.permission_prompted') == true) return;
+      await prefs.setBool('notification.permission_prompted', true);
+      final status =
+          await coordinator.systemNotifications.authorizationStatus();
+      if (status != NotificationAuthorizationStatus.undetermined) return;
+      if (!mounted) return;
+      unawaited(recorder.count(NotificationUsageEvents.permissionPrompted));
+      final allow = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('开启通知'),
+          content: const Text('开启通知后，可以及时收到好友消息和通话邀请。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('暂不开启'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('开启通知'),
+            ),
+          ],
+        ),
+      );
+      if (allow != true) {
+        unawaited(recorder.count(NotificationUsageEvents.permissionDenied));
+        return;
+      }
+      final granted =
+          await coordinator.systemNotifications.requestAuthorization();
+      unawaited(recorder.count(granted
+          ? NotificationUsageEvents.permissionGranted
+          : NotificationUsageEvents.permissionDenied));
+    } catch (_) {
+      // 权限引导失败静默，不打扰主流程。
+    }
   }
 
   DateTime? _lastUpdateCheckAt;
@@ -106,6 +223,18 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     appResumed = state == AppLifecycleState.resumed;
+    // 通知决策的前后台维度（PRD §21）。
+    notificationAppState.updateLifecycle(
+      switch (state) {
+        AppLifecycleState.resumed => AppRunState.foreground,
+        AppLifecycleState.inactive => AppRunState.inactive,
+        _ => AppRunState.background,
+      },
+    );
+    if (appResumed) {
+      // 回前台：对齐一次桌面角标（PRD §36 reconcile）。
+      unawaited(_notificationCoordinator?.refreshLauncherBadge());
+    }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
     if (appResumed && incomingCallActive) {
       unawaited(callNotifications.hideIncoming());
@@ -130,7 +259,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     try {
       final prefs = await SharedPreferences.getInstance();
       final notifier = FriendRequestNotifier(onTap: _openFriendRequests);
-      _friendRequestWatch = FriendRequestWatch(widget.api, prefs, notifier: notifier);
+      _friendRequestWatch =
+          FriendRequestWatch(widget.api, prefs, notifier: notifier);
       _friendRequestPollTimer = Timer.periodic(
         const Duration(seconds: 60),
         (_) => unawaited(_pollFriendRequests()),
@@ -200,8 +330,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         builder: (dialogContext) => CupertinoAlertDialog(
           key: const Key('update-integrity-warning'),
           title: const Text('数据完整性提醒'),
-          content: const Text(
-              '版本更新后的例行校验未全部通过。您的数据未被修改或清除，'
+          content: const Text('版本更新后的例行校验未全部通过。您的数据未被修改或清除，'
               '如遇异常请联系客服。'),
           actions: [
             CupertinoDialogAction(
@@ -304,6 +433,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _callChanged() {
     if (!mounted) return;
     final phase = calls.state.phase;
+    // 通话占用维度（PRD §40）：响铃与通话中抑制普通消息提醒。
+    notificationAppState.setCallActive(
+      phase == CallPhase.ringing || phase == CallPhase.connected,
+    );
     if (phase == CallPhase.ringing && !callPageVisible) {
       // 来电：前台直接呈现接听页；后台/锁屏/其他应用之上
       // 以全屏意图通知覆盖提醒，点击拉起接听页。
@@ -471,7 +604,43 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     callBackend.dispose();
     directChats.dispose();
     unawaited(reminderBootstrap.dispose());
+    NotificationFeedback.uninstall();
+    NotificationSystemHandle.uninstall();
+    unawaited(_notificationEventSource?.stop());
+    unawaited(_notificationCoordinator?.dispose());
     super.dispose();
+  }
+
+  /// 横幅点击进入会话（PRD §7）：优先复用本地身份缓存与既有的
+  /// RoomPage 组装路径，头像未就绪先用占位，不为导航等待网络。
+  Future<void> _openConversationFromNotification(String roomId) async {
+    final room = widget.matrix.sdkClient.getRoomById(roomId);
+    if (room == null || !mounted) return;
+    unawaited(const SharedPreferencesNotificationUsageRecorder()
+        .count(NotificationUsageEvents.opened));
+    try {
+      final cache = await _identityCache();
+      await cache.preload();
+      if (!mounted) return;
+      await cache.precacheAvatarImages(context);
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => RoomPage(
+            api: widget.api,
+            room: room,
+            roomName: room.getLocalizedDisplayname(),
+            onCreateGroup: _createGroupChat,
+            onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+            onVideo: (contact) => _openCall(contact, CallMediaType.video),
+            reminderService: reminderService,
+            initialIdentityCache: cache,
+          ),
+        ),
+      );
+    } catch (_) {
+      // 导航失败保留在当前页；会话仍可从消息列表进入。
+    }
   }
 
   @override
@@ -535,7 +704,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                         identityCache: _chatIdentityCache,
                       ),
                 2 => DiscoveryPage(
-                        matrix: widget.matrix,
+                    matrix: widget.matrix,
                     api: widget.api,
                     identityCache: _chatIdentityCache,
                   ),
@@ -557,6 +726,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 mediaBackend: callBackend,
               ),
             ),
+          // 应用内通知横幅：覆盖在 Tab 内容之上、来电页之下（PRD §7/§40）。
+          InAppBannerOverlay(
+            controller: notificationBanners,
+            onOpenConversation: (conversationId) =>
+                unawaited(_openConversationFromNotification(conversationId)),
+          ),
         ],
       );
 }
@@ -671,6 +846,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
     unawaited(widget.identityCache?.refresh());
     if (mounted) setState(() {});
   }
+
   @override
   void dispose() {
     controller.dispose();
@@ -680,8 +856,8 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () => Navigator.of(context, rootNavigator: true).push(
-          CupertinoPageRoute(
+      onMoments: () =>
+          Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
               fullscreenDialog: true,
               builder: (_) => MomentsPage(
                     api: widget.api,
@@ -713,10 +889,8 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
       onQrCode: () {
         final profile = controller.state.profile;
         if (profile == null) return;
-        Navigator.push(
-            context,
-            CupertinoPageRoute(
-                builder: (_) => MyQrCodePage(profile: profile)));
+        Navigator.push(context,
+            CupertinoPageRoute(builder: (_) => MyQrCodePage(profile: profile)));
       },
       onSettings: () => Navigator.push(
           context,
@@ -844,8 +1018,15 @@ final class SettingsPage extends StatelessWidget {
               _SettingsTile(
                 icon: CupertinoIcons.bell,
                 label: '消息通知',
-                detail: '已开启',
-                onTap: () {},
+                detail: '通知与声音',
+                onTap: () => Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => NotificationSettingsPage(
+                      coordinator: NotificationSystemHandle.coordinator,
+                    ),
+                  ),
+                ),
               ),
               _SettingsTile(
                 icon: CupertinoIcons.wind,

@@ -70,6 +70,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // 桌面角标（PRD §35）：纯 Java 库，厂商启动器适配。
+    implementation("me.leolin:ShortcutBadger:1.1.22")
 }
 
 kotlin {

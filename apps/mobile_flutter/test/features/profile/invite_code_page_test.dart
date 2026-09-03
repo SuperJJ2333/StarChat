@@ -4,26 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/profile/invite_code_page.dart';
 import 'package:liuhetong_mobile/features/profile/invite_controller.dart';
 
-final class FakeReferralGateway implements ReferralInviteGateway {
+/// 统一邀请码（规格 §6.2）：固定个人注册邀请码，不轮换。
+final class FakePersonalInvitationGateway implements PersonalInvitationGateway {
   int fetchCalls = 0;
   Object? fetchError;
 
   @override
-  Future<ReferralInvite> fetchReferralInvite() async {
+  Future<PersonalInvitation> fetchPersonalInvitation() async {
     fetchCalls++;
     final error = fetchError;
     if (error != null) throw error;
-    return ReferralInvite(
+    return const PersonalInvitation(
       code: 'AB2CD3FG',
-      rotatesAt: DateTime.now().toUtc().add(const Duration(minutes: 30)),
-      rotatesInSeconds: 1800,
+      maxUses: 20,
+      useCount: 3,
       shareUrl: 'https://invite.example.test/register?code=AB2CD3FG',
-      rewardEnabled: false,
     );
   }
-
-  @override
-  Future<bool> validateReferralCode(String referralCode) async => true;
 }
 
 void main() {
@@ -55,18 +52,20 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  test('load fetches invite and exposes countdown', () async {
-    final controller = InviteCodeController(gateway: FakeReferralGateway());
+  test('load fetches stable personal invitation', () async {
+    final controller =
+        InviteCodeController(gateway: FakePersonalInvitationGateway());
     await controller.load();
 
     expect(controller.state.status, InviteCodeStatus.ready);
     expect(controller.state.invite!.code, 'AB2CD3FG');
-    expect(controller.state.remainingSeconds, 1800);
+    expect(controller.state.invite!.remainingUses, 17);
     controller.dispose();
   });
 
   test('load failure lands in failed state and retry recovers', () async {
-    final gateway = FakeReferralGateway()..fetchError = Exception('offline');
+    final gateway = FakePersonalInvitationGateway()
+      ..fetchError = Exception('offline');
     final controller = InviteCodeController(gateway: gateway);
     await controller.load();
 
@@ -80,9 +79,9 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('invite page renders code and countdown', (tester) async {
+  testWidgets('invite page renders code and remaining uses', (tester) async {
     final controller =
-        InviteCodeController(gateway: FakeReferralGateway());
+        InviteCodeController(gateway: FakePersonalInvitationGateway());
     await tester.pumpWidget(
       CupertinoApp(home: InviteCodePage(controller: controller)),
     );
@@ -90,15 +89,17 @@ void main() {
 
     expect(find.byKey(const Key('invite-code-value')), findsOneWidget);
     expect(find.text('AB2CD3FG'), findsOneWidget);
-    expect(find.byKey(const Key('invite-countdown')), findsOneWidget);
+    expect(find.byKey(const Key('invite-remaining-uses')), findsOneWidget);
+    expect(find.text('可邀请 17 位好友'), findsOneWidget);
     expect(find.text('我的邀请码'), findsOneWidget);
+    // 统一邀请码：不再有 30 分钟轮换倒计时。
+    expect(find.byKey(const Key('invite-countdown')), findsNothing);
     controller.dispose();
   });
 
-  testWidgets('copy code action writes clipboard with a toast',
-      (tester) async {
+  testWidgets('copy code action writes clipboard with a toast', (tester) async {
     final controller =
-        InviteCodeController(gateway: FakeReferralGateway());
+        InviteCodeController(gateway: FakePersonalInvitationGateway());
     await tester.pumpWidget(
       CupertinoApp(home: InviteCodePage(controller: controller)),
     );
@@ -111,8 +112,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('invite-copy-link')));
     await tester.pump();
-    expect(clipboardText,
-        'https://invite.example.test/register?code=AB2CD3FG');
+    expect(clipboardText, 'https://invite.example.test/register?code=AB2CD3FG');
     controller.dispose();
   });
 }

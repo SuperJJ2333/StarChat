@@ -46,7 +46,7 @@ final class BusinessApiClient
         AddFriendGateway,
         ComplaintGateway,
         RedPacketViewGateway,
-        ReferralInviteGateway {
+        PersonalInvitationGateway {
   BusinessApiClient(
       {required this.baseUri, required this.sessionStore, http.Client? client})
       : _client = client ?? http.Client();
@@ -64,6 +64,7 @@ final class BusinessApiClient
     _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
     return url;
   }
+
   Future<Map<String, dynamic>> login(
       {required String username,
       required String password,
@@ -139,23 +140,14 @@ final class BusinessApiClient
   }
 
   @override
-  Future<ReferralInvite> fetchReferralInvite() async {
-    final body = await getJson('/invitations/referral');
-    return ReferralInvite(
-        code: body['code'] as String,
-        rotatesAt: DateTime.parse(body['rotates_at'] as String),
-        rotatesInSeconds: body['rotates_in_seconds'] as int,
-        shareUrl: body['share_url'] as String,
-        rewardEnabled: (body['reward_enabled'] as bool?) ?? false);
-  }
-
-  @override
-  Future<bool> validateReferralCode(String referralCode) async {
-    final response = await _client.post(
-        _uri('/invitations/referral/validate'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'referral_code': referralCode}));
-    return _decode(response)['valid'] as bool;
+  Future<PersonalInvitation> fetchPersonalInvitation() async {
+    final body = await getJson('/invitations/mine');
+    return PersonalInvitation(
+      code: body['code'] as String,
+      maxUses: (body['max_uses'] as num?)?.toInt() ?? 0,
+      useCount: (body['use_count'] as num?)?.toInt() ?? 0,
+      shareUrl: body['share_url'] as String,
+    );
   }
 
   @override
@@ -164,10 +156,9 @@ final class BusinessApiClient
       String? nickname,
       required String email,
       required String password,
-      required String invitationCode,
-      String referralCode = ''}) async {
+      required String invitationCode}) async {
     final operation =
-        'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode:${referralCode.trim().toUpperCase()}';
+        'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode';
     final response = await _client.post(_uri('/auth/register'),
         headers: {
           'Content-Type': 'application/json',
@@ -180,8 +171,6 @@ final class BusinessApiClient
           'email': email,
           'password': password,
           'invitation_code': invitationCode,
-          if (referralCode.trim().isNotEmpty)
-            'referral_code': referralCode.trim().toUpperCase()
         }));
     final body = _decode(response);
     _pendingIdempotencyKeys.remove(operation);
@@ -465,12 +454,15 @@ final class BusinessApiClient
           required String amount,
           String? note,
           String? roomId}) =>
-      postJson('/chat-transfers', {
-        'receiver_id': receiverId,
-        'amount': amount,
-        if (note != null && note.isNotEmpty) 'note': note,
-        if (roomId != null) 'room_id': roomId,
-      }, idempotencyKey: newIdempotencyKey());
+      postJson(
+          '/chat-transfers',
+          {
+            'receiver_id': receiverId,
+            'amount': amount,
+            if (note != null && note.isNotEmpty) 'note': note,
+            if (roomId != null) 'room_id': roomId,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> acceptChatTransfer(String id) =>
       postJson('/chat-transfers/$id/accept', {},
           idempotencyKey: newIdempotencyKey());
@@ -524,10 +516,13 @@ final class BusinessApiClient
   @override
   Future<Map<String, dynamic>> submitComplaint(
           {required String category, required String description}) =>
-      postJson('/support/complaints', {
-        'category': category,
-        'description': description,
-      }, idempotencyKey: newIdempotencyKey());
+      postJson(
+          '/support/complaints',
+          {
+            'category': category,
+            'description': description,
+          },
+          idempotencyKey: newIdempotencyKey());
   @override
   Future<Map<String, dynamic>> contactTags() => getJson('/contact-tags');
   @override
@@ -612,17 +607,20 @@ final class BusinessApiClient
       getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
   @override
   Future<Map<String, dynamic>> requestFriend(String userId,
-      {String message = '',
-      String? remark,
-      List<String> tags = const [],
-      String momentsPermission = 'DEFAULT'}) =>
-      postJson('/friends/requests', {
-        'target_user_id': userId,
-        'message': message,
-        if (remark != null && remark.isNotEmpty) 'remark': remark,
-        if (tags.isNotEmpty) 'tags': tags,
-        'moments_permission': momentsPermission,
-      }, idempotencyKey: newIdempotencyKey());
+          {String message = '',
+          String? remark,
+          List<String> tags = const [],
+          String momentsPermission = 'DEFAULT'}) =>
+      postJson(
+          '/friends/requests',
+          {
+            'target_user_id': userId,
+            'message': message,
+            if (remark != null && remark.isNotEmpty) 'remark': remark,
+            if (tags.isNotEmpty) 'tags': tags,
+            'moments_permission': momentsPermission,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> acceptFriendRequest(String id) =>
       postJson('/friends/requests/$id/accept', {},
           idempotencyKey: newIdempotencyKey());

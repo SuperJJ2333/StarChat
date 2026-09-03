@@ -32,10 +32,8 @@ final class FlutterLocalNotificationScheduler
         iOS: DarwinInitializationSettings(),
       ),
     );
-    await plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
+    // 通知权限统一由 NotificationCoordinator 在登录后上下文式申请
+    // （PRD §33）；此处只处理定时提醒必需的精确闹钟权限。
     await plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()

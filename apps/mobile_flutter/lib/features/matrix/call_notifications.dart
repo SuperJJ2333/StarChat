@@ -28,7 +28,8 @@ final class CallNotifications {
     ));
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    await android?.requestNotificationsPermission();
+    // 通知权限统一由 NotificationCoordinator 在登录后上下文式申请
+    // （PRD §33），此处不再抢占式弹权限框。
     await android?.createNotificationChannel(const AndroidNotificationChannel(
       _callsChannelId,
       _callsChannelName,

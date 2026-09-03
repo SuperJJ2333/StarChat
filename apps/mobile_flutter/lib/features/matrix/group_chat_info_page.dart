@@ -11,6 +11,7 @@ import 'chat_identity_cache.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_date_picker.dart';
+import '../../ui/notification/conversation_notification_mode_tile.dart';
 
 /// 成员展示名：备注（查看者本人可见）→ 控制器解析名（Matrix 昵称）。
 String _resolvedMemberName(ChatIdentityCache? cache, GroupChatMember member) {
@@ -50,7 +51,6 @@ final class GroupChatInfoPage extends StatefulWidget {
 final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
   static const collapsedMemberCount = 9;
   bool expanded = false;
-
 
   @override
   void initState() {
@@ -159,8 +159,9 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                   context,
                   CupertinoPageRoute(
                     builder: (_) => GroupMemberSearchPage(
-                        snapshot: snapshot,
-                        identityCache: widget.identityCache,),
+                      snapshot: snapshot,
+                      identityCache: widget.identityCache,
+                    ),
                   ),
                 ),
                 child: const Icon(CupertinoIcons.search),
@@ -264,14 +265,25 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     trailing: const CupertinoListTileChevron(),
                     onTap: widget.onSearchHistory,
                   ),
-                  _switchTile(
-                    '消息免打扰',
-                    snapshot.muted,
-                    (value) => widget.controller.setPreference(
-                      GroupChatPreference.muted,
-                      value,
-                    ),
+                  // PRD §44：会话通知三态（默认 / 静音 / 特别关注）。
+                  // 两次偏好写入必须串行：控制器在 saving 状态会丢弃并发保存。
+                  ConversationNotificationModeTile(
+                    muted: snapshot.muted,
+                    attention: snapshot.attention,
+                    onChanged: (mode) {
+                      Future<void>(() async {
+                        await widget.controller.setPreference(
+                          GroupChatPreference.muted,
+                          mode == ConversationNotificationMode.muted,
+                        );
+                        await widget.controller.setPreference(
+                          GroupChatPreference.attention,
+                          mode == ConversationNotificationMode.attention,
+                        );
+                      });
+                    },
                   ),
+                  const SizedBox(height: 12),
                   if (snapshot.muted) ...[
                     _switchTile(
                       '折叠该聊天',
@@ -503,8 +515,7 @@ final class _FollowedGroupMemberPickerPageState
           for (final member in snapshot.members)
             WeChatListTile(
               leading: UserAvatar(
-                nickname:
-                    _resolvedMemberName(widget.identityCache, member),
+                nickname: _resolvedMemberName(widget.identityCache, member),
                 fallbackSeed: member.matrixUserId,
                 avatarUrl: member.avatarUrl,
                 avatarHeaders: member.avatarHeaders,
@@ -740,14 +751,14 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
               for (final member in members)
                 WeChatListTile(
                   leading: UserAvatar(
-                    nickname:
-                        _resolvedMemberName(widget.identityCache, member),
+                    nickname: _resolvedMemberName(widget.identityCache, member),
                     fallbackSeed: member.matrixUserId,
                     avatarUrl: member.avatarUrl,
                     avatarHeaders: member.avatarHeaders,
                     size: 40,
                   ),
-                  title: Text(_resolvedMemberName(widget.identityCache, member)),
+                  title:
+                      Text(_resolvedMemberName(widget.identityCache, member)),
                   subtitle: Text(member.matrixUserId == widget.snapshot.ownerId
                       ? '群主'
                       : widget.snapshot.adminIds.contains(member.matrixUserId)
@@ -834,10 +845,7 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
 
 final class _MemberCell extends StatelessWidget {
   const _MemberCell(
-      {super.key,
-      required this.member,
-      this.onTap,
-      this.identityCache});
+      {super.key, required this.member, this.onTap, this.identityCache});
   final GroupChatMember member;
   final VoidCallback? onTap;
   final ChatIdentityCache? identityCache;

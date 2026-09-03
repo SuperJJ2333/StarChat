@@ -6079,6 +6079,66 @@
         ]
       }
     },
+    "/api/v1/invitations/mine": {
+      "get": {
+        "description": "当前用户的固定个人注册邀请码（统一邀请码体系，规格 §6.2）。\n\n首次读取派生并落库；此后仅滚动续期。该码与注册页唯一「邀请码」\n字段同一体系，经 /invitations/validate 校验、注册时消耗并据此\n推导邀请关系。30 分钟轮换推荐码端点仅为旧客户端兼容保留。",
+        "operationId": "get_my_invitation_api_v1_invitations_mine_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get My Invitation Api V1 Invitations Mine Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get My Invitation",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/invitations/referral": {
       "get": {
         "description": "当前用户专属推荐码（30 分钟轮换，客户端按 rotates_at 实时刷新）。",

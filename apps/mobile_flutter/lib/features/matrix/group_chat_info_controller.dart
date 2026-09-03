@@ -42,6 +42,7 @@ List<GroupChatMember> orderGroupMembers({
 
 enum GroupChatPreference {
   muted,
+  attention,
   pinned,
   saved,
   folded,
@@ -78,6 +79,7 @@ final class GroupChatInfoSnapshot {
     this.announcement = '',
     this.remark = '',
     this.muted = false,
+    this.attention = false,
     this.pinned = false,
     this.saved = false,
     this.folded = false,
@@ -98,6 +100,7 @@ final class GroupChatInfoSnapshot {
   final String remark;
   final List<GroupChatMember> members;
   final bool muted;
+  final bool attention;
   final bool pinned;
   final bool saved;
   final bool folded;
@@ -121,6 +124,7 @@ final class GroupChatInfoSnapshot {
     String? remark,
     List<GroupChatMember>? members,
     bool? muted,
+    bool? attention,
     bool? pinned,
     bool? saved,
     bool? folded,
@@ -141,6 +145,7 @@ final class GroupChatInfoSnapshot {
         remark: remark ?? this.remark,
         members: members ?? this.members,
         muted: muted ?? this.muted,
+        attention: attention ?? this.attention,
         pinned: pinned ?? this.pinned,
         saved: saved ?? this.saved,
         folded: folded ?? this.folded,
@@ -224,6 +229,7 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
       announcement: room.topic,
       remark: settings['remark']?.toString() ?? '',
       muted: settings['muted'] == true,
+      attention: settings['attention'] == true,
       pinned: settings['pinned'] == true,
       saved: settings['saved'] == true,
       folded: settings['folded'] == true,
@@ -311,6 +317,7 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
     await _writeSetting(
       switch (preference) {
         GroupChatPreference.muted => 'muted',
+        GroupChatPreference.attention => 'attention',
         GroupChatPreference.pinned => 'pinned',
         GroupChatPreference.saved => 'saved',
         GroupChatPreference.folded => 'folded',
@@ -429,6 +436,7 @@ final class GroupChatInfoController extends ChangeNotifier {
         () => gateway.setPreference(preference, value),
         (snapshot) => switch (preference) {
           GroupChatPreference.muted => snapshot.copyWith(muted: value),
+          GroupChatPreference.attention => snapshot.copyWith(attention: value),
           GroupChatPreference.pinned => snapshot.copyWith(pinned: value),
           GroupChatPreference.saved => snapshot.copyWith(saved: value),
           GroupChatPreference.folded => snapshot.copyWith(folded: value),

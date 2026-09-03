@@ -1,0 +1,348 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Resolving dependencies...
+Downloading packages...
+  cached_network_image 3.4.1 (4.0.0 available)
+  cached_network_image_platform_interface 4.1.1 (5.0.0 available)
+  cached_network_image_web 1.3.1 (2.0.0 available)
+  cli_util 0.4.2 (0.6.0 available)
+  clock 1.1.2 (1.1.3 available)
+  code_assets 1.2.1 (2.0.0 available)
+  emoji_picker_flutter 4.5.3 (4.5.4 available)
+  flutter_cache_manager 3.4.1 (3.4.2 available)
+  flutter_image_compress 2.3.0 (2.5.1 available)
+  flutter_lints 5.0.0 (6.0.0 available)
+  flutter_local_notifications 19.4.2 (22.3.0 available)
+  flutter_local_notifications_linux 6.0.0 (8.0.1 available)
+  flutter_local_notifications_platform_interface 9.1.0 (12.2.0 available)
+  flutter_local_notifications_windows 1.0.3 (3.1.1 available)
+  flutter_secure_storage 9.2.4 (11.0.0 available)
+  flutter_secure_storage_linux 1.2.3 (3.0.2 available)
+  flutter_secure_storage_macos 3.1.3 (4.0.0 available)
+  flutter_secure_storage_platform_interface 1.1.2 (2.0.3 available)
+  flutter_secure_storage_web 1.2.1 (2.1.1 available)
+  flutter_secure_storage_windows 3.1.2 (4.2.2 available)
+  flutter_svg 2.2.0 (2.3.0 available)
+  flutter_webrtc 0.12.11 (1.6.1 available)
+  hooks 2.0.2 (2.2.0 available)
+  image_picker 1.1.2 (1.2.3 available)
+  intl 0.20.2 (0.20.3 available)
+  jni_flutter 1.0.2 (1.0.3 available)
+  js 0.6.7 (0.7.2 available)
+  lints 5.1.1 (6.1.0 available)
+  matcher 0.12.19 (0.12.20 available)
+  material_color_utilities 0.13.0 (0.13.1 available)
+  matrix 0.34.0 (12.0.1 available)
+  meta 1.18.0 (1.19.0 available)
+  mobile_scanner 5.2.3 (7.4.0 available)
+  objective_c 9.5.0 (9.6.0 available)
+  olm 2.0.4 (3.1.0 available)
+  package_info_plus 8.3.0 (10.2.1 available)
+  package_info_plus_platform_interface 3.2.1 (4.1.0 available)
+  path_provider 2.1.5 (2.1.6 available)
+  qr 3.0.2 (4.0.0 available)
+  record_use 0.6.0 (1.1.1 available)
+  shared_preferences 2.5.3 (2.5.5 available)
+  speech_to_text 7.0.0 (7.4.0 available)
+  sqflite_common_ffi 2.3.6 (2.4.2+1 available)
+  sqlcipher_flutter_libs 0.6.8 (0.7.0+eol available)
+  sqlite3 2.9.4 (3.5.2 available)
+  stack_trace 1.12.1 (1.12.2 available)
+  test_api 0.7.11 (0.7.13 available)
+  timezone 0.10.1 (0.11.1 available)
+  url_launcher 6.3.1 (6.3.2 available)
+  vector_math 2.2.0 (2.4.2 available)
+  wakelock_plus 1.3.3 (1.8.0 available)
+  wakelock_plus_platform_interface 1.6.0 (1.7.0 available)
+  win32 5.15.0 (6.4.0 available)
+  xml 6.6.1 (7.0.1 available)
+Got dependencies!
+54 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart
+00:00 +0: login registration and verification share the immersive background
+00:00 +1: login follows the 10 Auth default frame structure
+00:00 +2: login password visibility toggles the secure field
+00:00 +3: new landing keeps the login card in the first viewport
+00:00 +4: login requires agreement before submitting
+00:00 +5: agreement policies and inline registration expose callbacks
+00:00 +6: login loading freezes agreement and registration actions
+00:01 +7: agreement copy stays in one 44px row at card width
+00:01 +8: dark login title uses the dark primary text token
+00:01 +9: unchecked agreement gives login a muted disabled treatment
+00:01 +10: registration follows the 10 Auth default frame structure
+00:01 +11: registration keeps email sending as the single highlighted action
+00:01 +12: registration preserves entered draft after returning to login
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:436:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  registration preserves entered draft after returning to login
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:01 +12 -1: registration preserves entered draft after returning to login [E]
+  Test failed. See exception logs above.
+  The test description was: registration preserves entered draft after returning to login
+  
+00:01 +12 -1: taken email appears once below the email field
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:469:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  taken email appears once below the email field
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:01 +12 -2: taken email appears once below the email field [E]
+  Test failed. See exception logs above.
+  The test description was: taken email appears once below the email field
+  
+00:01 +12 -2: registration contains all required fields and validates before sending
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:523:20)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  registration contains all required fields and validates before sending
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:01 +12 -3: registration contains all required fields and validates before sending [E]
+  Test failed. See exception logs above.
+  The test description was: registration contains all required fields and validates before sending
+  
+00:01 +12 -3: registration puts each invalid field error below that field without sending
+00:01 +13 -3: registration shows mismatch feedback and gates submit
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:579:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  registration shows mismatch feedback and gates submit
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:02 +13 -4: registration shows mismatch feedback and gates submit [E]
+  Test failed. See exception logs above.
+  The test description was: registration shows mismatch feedback and gates submit
+  
+00:02 +13 -4: registration starts a sixty second resend cooldown after sending
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:609:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  registration starts a sixty second resend cooldown after sending
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:02 +13 -5: registration starts a sixty second resend cooldown after sending [E]
+  Test failed. See exception logs above.
+  The test description was: registration starts a sixty second resend cooldown after sending
+  
+00:02 +13 -5: verification exposes code link result resend change email and status
+00:02 +14 -5: verification shows code error above field and clears on edit
+00:02 +15 -5: verification button provides a nonblocking press scale
+00:02 +16 -5: registration saves the complete draft before verification
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:742:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  registration saves the complete draft before verification
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:02 +16 -6: registration saves the complete draft before verification [E]
+  Test failed. See exception logs above.
+  The test description was: registration saves the complete draft before verification
+  
+00:02 +16 -6: verification countdown continues after changing email
+鈺愨晲鈺?EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK 鈺炩晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?The following IndexError was thrown running a test:
+RangeError (index): Index out of range: index should be less than 6: 6
+
+When the exception was thrown, this was the stack:
+#0      CachingIterable.elementAt (package:flutter/src/foundation/basic_types.dart:191:9)
+#1      _IndexFinderMixin.filter (package:flutter_test/src/finders.dart:1439:28)
+#3      ExpandIterator.moveNext (dart:_internal/iterable.dart:506:21)
+#4      SetBase.addAll (dart:collection/set.dart:58:23)
+#5      _Set.addAll (dart:_compact_hash:1197:11)
+#6      new LinkedHashSet.of (dart:collection/linked_hash_set.dart:193:27)
+#7      Iterable.toSet (dart:core/iterable.dart:532:21)
+#8      _DescendantFinderMixin.allCandidates (package:flutter_test/src/finders.dart:1782:10)
+#9      FinderBase.evaluate (package:flutter_test/src/finders.dart:1030:76)
+#10     WidgetController.state (package:flutter_test/src/controller.dart:932:31)
+#11     WidgetTester.showKeyboard.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1125:42)
+#14     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#15     WidgetTester.showKeyboard (package:flutter_test/src/widget_tester.dart:1124:27)
+#16     WidgetTester.enterText.<anonymous closure> (package:flutter_test/src/widget_tester.dart:1160:13)
+#19     TestAsyncUtils.guard (package:flutter_test/src/test_async_utils.dart:74:41)
+#20     WidgetTester.enterText (package:flutter_test/src/widget_tester.dart:1159:27)
+#21     main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart:770:18)
+<asynchronous suspension>
+#22     testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#23     TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided 6 frames from dart:async, dart:async-patch, and package:stack_trace)
+
+The test description was:
+  verification countdown continues after changing email
+鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲
+00:02 +16 -7: verification countdown continues after changing email [E]
+  Test failed. See exception logs above.
+  The test description was: verification countdown continues after changing email
+  
+00:02 +16 -7: registration verification code carries into verification step
+00:02 +17 -7: keyboard inset moves form but not landing background
+00:02 +18 -7: login rejects malformed email addresses with a clear error
+00:02 +19 -7: login accepts well formed email identifiers
+00:02 +20 -7: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration contains all required fields and validates before sending
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration preserves entered draft after returning to login
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration saves the complete draft before verification
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/auth/auth_pages_test.dart: registration shows mismatch feedback and gates submit
+  ... and 3 more

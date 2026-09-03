@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from uuid import uuid4
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.modules.identity.models import Invitation
@@ -122,3 +123,64 @@ class InvitationService:
             )
         session.refresh(invitation)
         return invitation
+
+    def ensure_personal(
+        self,
+        *,
+        user_id: str,
+        codec,
+        max_uses: int,
+        expiry_days: int,
+    ) -> dict:
+        """发布/刷新当前用户的固定个人注册邀请码（统一邀请码体系）。
+
+        码由 ``codec.derive_static(user_id)`` 确定性派生（永不轮换），
+        首次读取时落 ``invitations`` 行（created_by=user），此后仅滚动
+        续期 expires_at（次数不重置）。经既有 validate / consume 链路
+        生效——哈希算法一致（sha256(去空格大写码)）。
+        """
+        if max_uses < 1:
+            raise ValueError("max_uses must be positive")
+        now = self._now_factory()
+        code = codec.derive_static(user_id)
+        code_hash = hash_opaque_token(code)
+        expires_at = now + timedelta(days=expiry_days)
+        result: dict = {}
+        try:
+            with self._session_factory.begin() as session:
+                invitation = session.scalar(
+                    select(Invitation).where(Invitation.code_hash == code_hash)
+                )
+                if invitation is None:
+                    invitation = Invitation(
+                        id=str(uuid4()),
+                        code_hash=code_hash,
+                        max_uses=max_uses,
+                        use_count=0,
+                        expires_at=expires_at,
+                        created_by=user_id,
+                        created_at=now,
+                    )
+                    session.add(invitation)
+                else:
+                    # 滚动续期保持个人码长期可用；max_uses/use_count 不动。
+                    invitation.expires_at = expires_at
+                session.flush()
+                expires_iso = invitation.expires_at
+                if expires_iso.tzinfo is None:
+                    expires_iso = expires_iso.replace(tzinfo=timezone.utc)
+                # 提交（块退出）前捕获快照，避免提交后访问过期属性。
+                result = {
+                    "code": code,
+                    "max_uses": invitation.max_uses,
+                    "use_count": invitation.use_count,
+                    "expires_at": expires_iso.isoformat(),
+                }
+        except IntegrityError as exc:
+            # 与既有码哈希碰撞（约 2^40 空间，极小概率）或并发首读冲突。
+            raise AppError(
+                code="INVITATION_CODE_BUSY",
+                message="邀请码生成繁忙，请重试",
+                status_code=503,
+            ) from exc
+        return result

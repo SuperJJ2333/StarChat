@@ -7,6 +7,8 @@ import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'friend_qr.dart';
 import 'request_friend_page.dart';
+import '../../core/notification/notification_feedback.dart';
+import '../../core/notification/sound_type.dart';
 
 /// 「扫一扫」页（微信式）：识别好友二维码 → 进入「申请添加朋友」页。
 ///
@@ -34,10 +36,11 @@ final class _ScanQrPageState extends State<ScanQrPage> {
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handling || !mounted) return;
-    final raw = capture.barcodes.isNotEmpty
-        ? capture.barcodes.first.rawValue
-        : null;
+    final raw =
+        capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
     if (raw == null || raw.isEmpty) return;
+    // 扫码识别音：纯前台 UI 反馈。
+    NotificationFeedback.shared.play(SoundType.scan);
     final username = parseFriendQrPayload(raw);
     if (username == null) {
       setState(() => hint = '这不是畅聊好友二维码');
@@ -128,8 +131,8 @@ final class _ScanQrPageState extends State<ScanQrPage> {
                 width: 240,
                 height: 240,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                      color: WeChatColors.brandPrimary, width: 1.5),
+                  border:
+                      Border.all(color: WeChatColors.brandPrimary, width: 1.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),

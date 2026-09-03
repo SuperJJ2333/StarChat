@@ -5,6 +5,8 @@ import 'package:flutter/cupertino.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'red_packet_claim_detail_page.dart';
 import 'red_packet_controller.dart';
+import '../../core/notification/notification_feedback.dart';
+import '../../core/notification/sound_type.dart';
 
 /// WeChat-style centered red-packet claim dialog:
 /// scales out from the center (250ms ease-out) over a frosted-glass backdrop,
@@ -103,6 +105,8 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
     });
     try {
       final amount = await controller.claim(widget.packetId);
+      // 红包开启音（PRD §4）：经统一通知入口的纯前台反馈。
+      NotificationFeedback.shared.play(SoundType.redpacketOpen);
       if (mounted) setState(() => claimedAmount = amount);
     } catch (businessError) {
       if (mounted) {

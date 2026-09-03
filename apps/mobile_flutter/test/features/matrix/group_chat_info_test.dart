@@ -5,7 +5,6 @@ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
-import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   GroupChatInfoSnapshot snapshot = GroupChatInfoSnapshot(
@@ -46,6 +45,7 @@ final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   Future<void> setPreference(GroupChatPreference preference, bool value) async {
     snapshot = switch (preference) {
       GroupChatPreference.muted => snapshot.copyWith(muted: value),
+      GroupChatPreference.attention => snapshot.copyWith(attention: value),
       GroupChatPreference.pinned => snapshot.copyWith(pinned: value),
       GroupChatPreference.saved => snapshot.copyWith(saved: value),
       GroupChatPreference.folded => snapshot.copyWith(folded: value),
@@ -161,23 +161,24 @@ void main() {
       '群公告',
       '备注',
       '查找聊天记录',
-      '消息免打扰',
+      '消息通知',
       '置顶聊天',
       '保存到通讯录',
       '清空聊天记录',
       '退出群聊',
     ];
-    for (final label in orderedLabels.take(7)) {
+    // 三态通知组件比旧的免打扰开关更高，首屏少容纳一项（PRD §44）。
+    for (final label in orderedLabels.take(6)) {
       expect(find.text(label), findsOneWidget);
     }
     final visibleTops = orderedLabels
-        .take(7)
+        .take(6)
         .map((label) => tester.getTopLeft(find.text(label)).dy)
         .toList(growable: false);
     expect(visibleTops, orderedEquals(visibleTops.toList()..sort()));
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pumpAndSettle();
-    for (final label in orderedLabels.skip(7)) {
+    for (final label in orderedLabels.skip(6)) {
       expect(find.text(label), findsOneWidget);
     }
     expect(tester.takeException(), isNull);
@@ -304,17 +305,24 @@ void main() {
     expect(find.text('折叠该聊天'), findsNothing);
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pumpAndSettle();
-    final muteTile = find.ancestor(
-      of: find.text('消息免打扰').first,
-      matching: find.byType(WeChatListTile),
-    );
-    await tester.tap(find.descendant(
-      of: muteTile,
-      matching: find.byType(CupertinoSwitch),
-    ));
+    // 拖动后确保三态组件完全进入视口再点击（PRD §44）。
+    await tester.ensureVisible(find.text('静音').first);
     await tester.pumpAndSettle();
+    // PRD §44：三态切换为"静音"后展开静音专属设置。
+    await tester.tap(find.text('静音').first);
+    await tester.pumpAndSettle();
+    expect(gateway.snapshot.muted, isTrue);
     expect(find.text('折叠该聊天'), findsOneWidget);
     expect(find.text('以下消息仍通知'), findsOneWidget);
+
+    // 切回"默认"收回静音专属设置；"特别关注"互斥静音（PRD §44）。
+    await tester.ensureVisible(find.text('特别关注').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('特别关注').first);
+    await tester.pumpAndSettle();
+    expect(gateway.snapshot.attention, isTrue);
+    expect(gateway.snapshot.muted, isFalse);
+    expect(find.text('折叠该聊天'), findsNothing);
   });
   test('orders owner then administrators then other members by name', () {
     final members = const [

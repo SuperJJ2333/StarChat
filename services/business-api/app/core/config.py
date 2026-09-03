@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     referral_rotation_seconds: int = 1800
     referral_share_base_url: str = "https://liuhetong888.com/register"
     referral_reward_enabled: bool = False
+    # 统一邀请码（规格 §6.2）：用户固定个人注册邀请码的次数与滚动有效期。
+    personal_invite_max_uses: int = 20
+    personal_invite_expiry_days: int = 365
     media_max_upload_bytes: int = 10 * 1024 * 1024
 
     @field_validator("matrix_login_token_expires_in", mode="before")

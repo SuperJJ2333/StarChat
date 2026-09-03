@@ -15,8 +15,12 @@ from app.core.errors import AppError, FieldError
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.identity.enums import AccountStatus
-from app.modules.identity.invitations import InvitationService
-from app.modules.identity.models import EmailVerificationChallenge, User
+from app.modules.identity.invitations import InvitationService, hash_opaque_token
+from app.modules.identity.models import (
+    EmailVerificationChallenge,
+    ReferralBinding,
+    User,
+)
 from app.modules.identity.passwords import PasswordHasher
 
 
@@ -95,6 +99,7 @@ class RegistrationService:
         token_codec: VerificationTokenCodec,
         now_factory=None,
         referral_service=None,
+        referral_codec=None,
     ) -> None:
         self._session_factory = session_factory
         self._invitation_service = invitation_service
@@ -103,6 +108,8 @@ class RegistrationService:
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
         # ReferralService（可选）：好友推荐码绑定，与用户创建同事务提交。
         self._referral_service = referral_service
+        # ReferralCodec（可选）：识别"某用户的个人邀请码"以推导邀请关系。
+        self._referral_codec = referral_codec
 
     def register(
         self,
@@ -223,13 +230,23 @@ class RegistrationService:
                     now=now,
                 )
                 session.flush()
-                self._invitation_service.consume_in_session(
+                invitation = self._invitation_service.consume_in_session(
                     session, code=invitation_code, now=now
                 )
-                # 好友推荐码绑定：与用户创建同事务；码无效/邀请人不可用
-                # 时不阻断注册（管理员邀请码才是注册硬门槛）。
-                referral_bound = False
-                if referral_code_clean and self._referral_service is not None:
+                # 统一邀请码：注册消耗"某用户的个人邀请码"即与该用户建立
+                # 邀请关系（管理员签发的码不建立关系）；旧客户端显式提交
+                # referral_code 的路径在未建立关系时兼容受理。
+                referral_bound = self._bind_invitation_owner_in_session(
+                    session,
+                    invitation=invitation,
+                    invited_user_id=user_id,
+                    now=now,
+                )
+                if (
+                    not referral_bound
+                    and referral_code_clean
+                    and self._referral_service is not None
+                ):
                     binding = self._referral_service.bind_in_session(
                         session,
                         invited_user_id=user_id,
@@ -255,6 +272,50 @@ class RegistrationService:
             verification_token=token,
             referral_bound=referral_bound,
         )
+
+    def _bind_invitation_owner_in_session(
+        self, session, *, invitation, invited_user_id: str, now: datetime
+    ) -> bool:
+        """个人邀请码归属人绑定（统一邀请码体系，规格 §6.2）。
+
+        仅当消耗的邀请码确为某用户的固定个人码（code_hash 等于其
+        derive_static 派生值）且归属人 ACTIVE、非本人时写入绑定；
+        管理员签发码、异常状态一律静默跳过。已绑定（唯一约束）幂等返回。
+        """
+        codec = self._referral_codec
+        if codec is None:
+            return False
+        owner_id = invitation.created_by
+        if owner_id == invited_user_id:
+            return False
+        if invitation.code_hash != hash_opaque_token(
+            codec.derive_static(owner_id)
+        ):
+            return False  # 非个人码（管理员签发）。
+        owner = session.get(User, owner_id)
+        if owner is None or owner.status != AccountStatus.ACTIVE:
+            return False
+        try:
+            # SAVEPOINT：绑定失败（重复等防御场景）只回滚本段，
+            # 绝不影响同一事务内的用户创建。
+            with session.begin_nested():
+                session.add(
+                    ReferralBinding(
+                        id=str(uuid4()),
+                        inviter_user_id=owner_id,
+                        invited_user_id=invited_user_id,
+                        code_hash=invitation.code_hash,
+                        code_window_index=0,
+                        status="ACTIVE",
+                        reward_state="NOT_CONFIGURED",
+                        bound_at=now,
+                        created_at=now,
+                    )
+                )
+                session.flush()
+        except IntegrityError:
+            return False
+        return True
 
     def validate_email_eligible(
         self,

@@ -14,14 +14,9 @@ final class FakeRegistrationGateway implements RegistrationGateway {
   final List<String> verifiedCodes = [];
   final List<String> verifiedTokens = [];
 
-  /// 好友推荐码（选填）校验与绑定记录。
-  bool referralValid = true;
-  final List<String> validatedReferrals = [];
-  final List<String> registeredReferrals = [];
-
   @override
   Future<InvitationValidationResult> validateInvitation(
-      String invitationCode) async =>
+          String invitationCode) async =>
       invitationValid
           ? const InvitationValidationResult(
               InvitationValidationState.ready, '邀请码可用')
@@ -29,21 +24,13 @@ final class FakeRegistrationGateway implements RegistrationGateway {
               InvitationValidationState.invalid, '邀请码无效');
 
   @override
-  Future<bool> validateReferralCode(String referralCode) async {
-    validatedReferrals.add(referralCode);
-    return referralValid;
-  }
-
-  @override
   Future<RegistrationReceipt> register(
       {required String username,
       String? nickname,
       required String email,
       required String password,
-      required String invitationCode,
-      String referralCode = ''}) async {
+      required String invitationCode}) async {
     registerCalls++;
-    registeredReferrals.add(referralCode);
     if (registerError != null) throw registerError!;
     return const RegistrationReceipt(
         registrationSession: 'session-1',
@@ -180,8 +167,7 @@ void main() {
     expect(controller.state.fieldErrors, {'email': '邮箱已被使用'});
   });
 
-  test(
-      'verification accepts an email code or link token then polls ACTIVE',
+  test('verification accepts an email code or link token then polls ACTIVE',
       () async {
     final gateway = FakeRegistrationGateway();
     final controller =
@@ -264,7 +250,9 @@ void main() {
     expect(gateway.registerCalls, 3);
   });
 
-  test('valid referral code is validated and forwarded to register', () async {
+  // 统一邀请码（规格 §6.2）：注册只有一个邀请码字段；邀请关系由服务端
+  // 按"注册消耗了谁的邀请码"推导，客户端不再提交独立的推荐码。
+  test('register submits with the single invitation code only', () async {
     final gateway = FakeRegistrationGateway();
     final controller = RegistrationController(gateway: gateway);
 
@@ -273,46 +261,10 @@ void main() {
             username: 'alice',
             email: 'alice@example.test',
             password: 'correct horse battery staple',
-            invitationCode: 'INVITE',
-            referralCode: 'AB2CD3FG'),
+            invitationCode: 'AB2CD3FG'),
         isTrue);
-    expect(gateway.validatedReferrals, ['AB2CD3FG']);
-    expect(gateway.registeredReferrals, ['AB2CD3FG']);
+    expect(gateway.registerCalls, 1);
     expect(
         controller.state.status, RegistrationFlowStatus.awaitingVerification);
-  });
-
-  test('invalid referral code blocks submit with a clear field error', () async {
-    final gateway = FakeRegistrationGateway()..referralValid = false;
-    final controller = RegistrationController(gateway: gateway);
-
-    expect(
-        await controller.register(
-            username: 'alice',
-            email: 'alice@example.test',
-            password: 'correct horse battery staple',
-            invitationCode: 'INVITE',
-            referralCode: 'WRONG123'),
-        isFalse);
-    expect(gateway.validatedReferrals, ['WRONG123']);
-    // 无效推荐码不进入注册调用（用户可清空或改正）。
-    expect(gateway.registerCalls, 0);
-    expect(controller.state.fieldErrors['referral_code'], contains('邀请码无效'));
-  });
-
-  test('empty referral code skips validation and register omits binding',
-      () async {
-    final gateway = FakeRegistrationGateway();
-    final controller = RegistrationController(gateway: gateway);
-
-    expect(
-        await controller.register(
-            username: 'alice',
-            email: 'alice@example.test',
-            password: 'correct horse battery staple',
-            invitationCode: 'INVITE'),
-        isTrue);
-    expect(gateway.validatedReferrals, isEmpty);
-    expect(gateway.registeredReferrals, ['']);
   });
 }

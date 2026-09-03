@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 
@@ -18,17 +19,35 @@ final class RecordingCallAlerts extends CallAlerts {
   RecordingCallAlerts() : super(driver: _NoopDriver());
   int started = 0;
   int stopped = 0;
+  final ringtones = <SoundType>[];
 
   @override
-  void start() => started++;
+  void start(SoundType ringtone) {
+    ringtones.add(ringtone);
+    started++;
+  }
 
   @override
   void stop() => stopped++;
 }
 
+final class RecordingCallSoundCues implements CallSoundCues {
+  int connectedCount = 0;
+  int endedCount = 0;
+
+  @override
+  void connected() => connectedCount++;
+
+  @override
+  void ended() => endedCount++;
+}
+
 final class _NoopDriver implements CallAlertDriver {
   @override
-  Future<void> playAlertSound() async {}
+  Future<void> startRingtone(SoundType ringtone) async {}
+
+  @override
+  Future<void> stopRingtone() async {}
 
   @override
   Future<void> vibrate() async {}
@@ -76,10 +95,12 @@ void main() {
     final backend = FakeCallBackend();
     final permissions = FakeCallPermissions();
     final alerts = RecordingCallAlerts();
+    final soundCues = RecordingCallSoundCues();
     final controller = CallController(
       backend: backend,
       permissions: permissions,
       alerts: alerts,
+      soundCues: soundCues,
     );
 
     final start = controller.start(
@@ -91,10 +112,13 @@ void main() {
     await start;
     expect(controller.state.phase, CallPhase.ringing);
     expect(alerts.started, 1, reason: '主叫等待期间维持铃声+震动提醒');
+    expect(alerts.ringtones.last, SoundType.callOutgoing,
+        reason: '主叫使用呼叫等待音（PRD §5）');
     backend.events.add(const CallBackendEvent.connected());
     await Future<void>.delayed(Duration.zero);
     expect(controller.state.phase, CallPhase.connected);
     expect(alerts.stopped, greaterThanOrEqualTo(1), reason: '接通即停铃');
+    expect(soundCues.connectedCount, 1, reason: '接通播放确认音（PRD §5）');
     // 视频通话接通默认打开免提（微信语义）。
     expect(backend.speaker, isTrue);
     expect(controller.state.speaker, isTrue);
@@ -109,6 +133,7 @@ void main() {
     await controller.hangup();
     expect(controller.state.phase, CallPhase.ended);
     expect(backend.hangups, 1);
+    expect(soundCues.endedCount, 1, reason: '结束播放结束音（PRD §5）');
     controller.dispose();
   });
 
@@ -152,10 +177,11 @@ void main() {
 
   test('incoming call can be accepted or rejected', () async {
     final backend = FakeCallBackend();
+    final alerts = RecordingCallAlerts();
     final controller = CallController(
       backend: backend,
       permissions: FakeCallPermissions(),
-      alerts: RecordingCallAlerts(),
+      alerts: alerts,
     );
     backend.events.add(const CallBackendEvent.incoming(
       roomId: '!dm:example.test',
@@ -164,6 +190,8 @@ void main() {
     ));
     await Future<void>.delayed(Duration.zero);
     expect(controller.state.phase, CallPhase.ringing);
+    expect(alerts.ringtones.last, SoundType.callVoiceIncoming,
+        reason: '被叫语音来电使用语音铃声（PRD §9）');
     await controller.accept();
     expect(backend.accepts, 1);
     backend.events.add(const CallBackendEvent.connected());
@@ -176,6 +204,8 @@ void main() {
       type: CallMediaType.video,
     ));
     await Future<void>.delayed(Duration.zero);
+    expect(alerts.ringtones.last, SoundType.callVideoIncoming,
+        reason: '被叫视频来电使用视频铃声（PRD §10）');
     await controller.reject();
     expect(backend.rejects, 1);
     expect(controller.state.phase, CallPhase.ended);
@@ -238,8 +268,7 @@ void main() {
     backend.events.add(const CallBackendEvent.connected());
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(const Duration(milliseconds: 150));
-    expect(controller.state.phase, CallPhase.connected,
-        reason: '接通后超时定时器必须失效');
+    expect(controller.state.phase, CallPhase.connected, reason: '接通后超时定时器必须失效');
     expect(backend.hangups, 0);
     controller.dispose();
   });
@@ -247,8 +276,7 @@ void main() {
   test('call duration formatting', () {
     expect(formatCallDuration(Duration.zero), '00:00');
     expect(formatCallDuration(const Duration(seconds: 65)), '01:05');
-    expect(
-        formatCallDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
+    expect(formatCallDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
         '1:02:03');
   });
 }

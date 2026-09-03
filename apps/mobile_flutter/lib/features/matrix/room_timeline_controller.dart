@@ -1,8 +1,20 @@
 import 'package:flutter/foundation.dart';
+import '../../core/notification/notification_feedback.dart';
+import '../../core/notification/sound_type.dart';
 
 enum RoomDeliveryState { sent, sending, failed }
 
-enum RoomMessageKind { text, image, video, file, voice, redPacket, transfer, call, system }
+enum RoomMessageKind {
+  text,
+  image,
+  video,
+  file,
+  voice,
+  redPacket,
+  transfer,
+  call,
+  system
+}
 
 /// Structured payload of a 拍一拍 (nudge) event. Rendering decides the exact
 /// wording per viewer so remarks stay private to the viewer who set them.
@@ -206,6 +218,8 @@ final class RoomTimelineController extends ChangeNotifier {
     notifyListeners();
     try {
       final eventId = await adapter.sendText(text);
+      // PRD §26：发送成功仅作纯前台轻反馈，不计未读不出通知。
+      NotificationFeedback.shared.play(SoundType.messageSent);
       messages = [
         for (final message in messages)
           message.id == transactionId

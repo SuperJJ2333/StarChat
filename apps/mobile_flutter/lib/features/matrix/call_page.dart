@@ -186,6 +186,39 @@ final class _CallPageState extends State<CallPage> {
     );
   }
 
+  /// 语音体顶部预览区（需求：紧凑设备弹性高度）：
+  /// - 视频预呼叫：远端画面弹性展示且不超过 360 高（Expanded+maxHeight）；
+  /// - 语音呼叫：弹性占位 + 大头像。
+  List<Widget> _voicePreviewWidgets(CallViewState state) {
+    if (state.type == CallMediaType.video && widget.mediaBackend != null) {
+      return [
+        Expanded(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: AspectRatio(
+                aspectRatio: 3 / 4,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(WeChatRadius.authControl),
+                  child: RTCVideoView(_remoteRenderer),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      const Spacer(),
+      UserAvatar(
+        nickname: widget.displayName,
+        fallbackSeed: widget.fallbackSeed,
+        avatarUrl: widget.avatarUrl,
+        size: WeChatDimensions.callControl * 1.6,
+      ),
+    ];
+  }
+
   /// 语音通话/来电/等待：居中头像 + 昵称 + 状态，底部操作区。
   Widget _voiceBody(CallViewState state, bool connected, bool outgoingRinging) {
     return SafeArea(
@@ -193,39 +226,7 @@ final class _CallPageState extends State<CallPage> {
         padding: const EdgeInsets.all(WeChatSpacing.xl),
         child: Column(
           children: [
-            Widget preview;
-            if (state.type == CallMediaType.video &&
-                widget.mediaBackend != null) {
-              // 小屏弹性高度：视频预览占满弹性区且不超过 360，
-              // 保证昵称/状态/底部控件在紧凑设备上不溢出。
-              preview = Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 360),
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(WeChatRadius.authControl),
-                        child: RTCVideoView(_remoteRenderer),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            } else {
-              preview = const Spacer();
-            }
-            preview,
-            if (!(state.type == CallMediaType.video &&
-                widget.mediaBackend != null)) ...[
-              UserAvatar(
-                nickname: widget.displayName,
-                fallbackSeed: widget.fallbackSeed,
-                avatarUrl: widget.avatarUrl,
-                size: WeChatDimensions.callControl * 1.6,
-              ),
-            ],
+            ..._voicePreviewWidgets(state),
             const SizedBox(height: WeChatSpacing.md),
             Text(
               title,

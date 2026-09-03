@@ -7,6 +7,7 @@ import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'conversation_preferences.dart';
+import '../../ui/notification/conversation_notification_mode_tile.dart';
 
 final class DirectChatInfoPage extends StatefulWidget {
   const DirectChatInfoPage({
@@ -114,8 +115,15 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
               trailing: const CupertinoListTileChevron(),
               onTap: widget.onSearchHistory,
             ),
-            _switch('消息免打扰', preference.muted,
-                (value) => _update(preference.copyWith(muted: value))),
+            // PRD §44：会话通知三态（默认 / 静音 / 特别关注）。
+            ConversationNotificationModeTile(
+              muted: preference.muted,
+              attention: preference.attention,
+              onChanged: (mode) => _update(preference.copyWith(
+                muted: mode == ConversationNotificationMode.muted,
+                attention: mode == ConversationNotificationMode.attention,
+              )),
+            ),
             _switch('置顶聊天', preference.pinned, (value) {
               _update(preference.copyWith(
                 pinned: value,

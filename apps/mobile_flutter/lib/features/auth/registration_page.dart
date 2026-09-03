@@ -29,7 +29,6 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   final password = TextEditingController();
   final passwordConfirmation = TextEditingController();
   final invitation = TextEditingController();
-  final referral = TextEditingController();
   final email = TextEditingController();
   bool _passwordVisible = false;
   bool _confirmationVisible = false;
@@ -47,7 +46,6 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     password.text = widget.controller.draft.password;
     passwordConfirmation.text = widget.controller.draft.passwordConfirmation;
     invitation.text = widget.controller.draft.invitationCode;
-    referral.text = widget.controller.draft.referralCode;
     email.text = widget.controller.draft.email;
     widget.controller.addListener(_changed);
   }
@@ -61,7 +59,6 @@ final class _RegistrationPageState extends State<RegistrationPage> {
     password.dispose();
     passwordConfirmation.dispose();
     invitation.dispose();
-    referral.dispose();
     email.dispose();
     super.dispose();
   }
@@ -140,7 +137,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
               height: 12,
               child: CupertinoActivityIndicator(radius: 6)),
         if (_inviteState == InvitationValidationState.ready)
-          const Icon(CupertinoIcons.check_mark, size: 13, color: Color(0xFF07C160)),
+          const Icon(CupertinoIcons.check_mark,
+              size: 13, color: Color(0xFF07C160)),
         if (retryable)
           CupertinoButton(
             key: const Key('auth-invitation-reload'),
@@ -148,8 +146,8 @@ final class _RegistrationPageState extends State<RegistrationPage> {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             onPressed: _runInvitationCheck,
             child: const Text('重新加载',
-                style: TextStyle(
-                    fontSize: 12, color: WeChatColors.brandPrimary)),
+                style:
+                    TextStyle(fontSize: 12, color: WeChatColors.brandPrimary)),
           ),
         const SizedBox(width: 4),
         Flexible(
@@ -167,7 +165,6 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         passwordConfirmation: passwordConfirmation.text,
         invitationCode: invitation.text,
         email: email.text,
-        referralCode: referral.text,
       );
 
   Map<String, String> get _errors => RegistrationController.validateFields(
@@ -219,8 +216,7 @@ final class _RegistrationPageState extends State<RegistrationPage> {
         email: email.text.trim(),
         password: password.text,
         passwordConfirmation: passwordConfirmation.text,
-        invitationCode: invitation.text.trim(),
-        referralCode: referral.text.trim());
+        invitationCode: invitation.text.trim());
     if (ok && mounted) setState(() {});
   }
 
@@ -339,16 +335,6 @@ final class _RegistrationPageState extends State<RegistrationPage> {
                             }),
                         _inviteStatusRow(),
                         _fieldError('invitation_code'),
-                        const SizedBox(height: WeChatSpacing.md),
-                        AuthTextField(
-                            key: const Key('auth-registration-referral'),
-                            label: '好友邀请码（选填）',
-                            placeholder: '填写好友的邀请码，建立邀请关系',
-                            controller: referral,
-                            enabled: !loading,
-                            textInputAction: TextInputAction.next,
-                            onChanged: (_) => setState(() {})),
-                        _fieldError('referral_code'),
                         const SizedBox(height: WeChatSpacing.md),
                         AuthTextField(
                             key: const Key('auth-registration-email'),
