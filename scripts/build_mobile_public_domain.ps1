@@ -31,6 +31,24 @@ function Assert-PublicBaseUrl([string]$Value) {
 }
 
 $origin = Assert-PublicBaseUrl $BaseUrl
+if (-not $ValidateOnly) {
+    # 域名能力探测（0.3.29 二次事故教训）：App 编译进哪个 origin，
+    # 哪个就必须真实代理业务 API 与 Matrix。www 域名只服务静态官网，
+    # 误传 www 会让全部登录/同步请求拿到落地页 HTML。
+    foreach ($probe in @('/api/v1/health/live', '/_matrix/client/versions')) {
+        try {
+            $resp = Invoke-WebRequest -Uri ($origin + $probe) -UseBasicParsing -TimeoutSec 20
+            $contentType = [string]$resp.Headers['Content-Type']
+            if ($contentType -notmatch 'json') {
+                throw "origin probe $probe returned Content-Type '$contentType' (expected JSON); $origin does not proxy the app API surface"
+            }
+        }
+        catch {
+            throw "origin probe failed for ${probe}: $($_.Exception.Message). $origin is not usable as the app origin"
+        }
+    }
+    Write-Output "ORIGIN_PROBE_OK $origin"
+}
 if ($ValidateOnly) {
     Write-Output "Public mobile origin valid: $origin"
     exit 0
@@ -110,6 +128,24 @@ function Assert-ApkManifestVersion {
     Write-Output "APK_MANIFEST_OK $Label $actualName/$actualCode"
 }
 
+# libapp.so origin 断言：dart-define 的两个 origin 必须编译进产物。
+# （混淆保留字符串字面量；二进制 grep 即可。）
+function Assert-LibappOrigin {
+    param([string]$ApkPath, [string]$ExpectedOrigin)
+    $soFile = Join-Path ([IO.Path]::GetTempPath()) ("libapp-" + [IO.Path]::GetFileNameWithoutExtension($ApkPath) + ".so")
+    Copy-Item -LiteralPath $ApkPath -Destination ($soFile + ".zip") -Force
+    Expand-Archive -LiteralPath ($soFile + ".zip") -DestinationPath ($soFile + ".dir") -Force
+    $so = Get-ChildItem -LiteralPath ($soFile + ".dir") -Recurse -Filter 'libapp.so' | Select-Object -First 1
+    if (-not $so) { throw "libapp.so not found inside $ApkPath" }
+    $bytes = [IO.File]::ReadAllBytes($so.FullName)
+    $text = [Text.Encoding]::ASCII.GetString($bytes)
+    if (-not $text.Contains($ExpectedOrigin)) {
+        throw "libapp.so of $ApkPath does not contain compiled origin '$ExpectedOrigin'; dart-defines did not take effect"
+    }
+    Remove-Item -LiteralPath ($soFile + ".zip"), ($soFile + ".dir") -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Output "APK_ORIGIN_OK $([IO.Path]::GetFileName($ApkPath)) $ExpectedOrigin"
+}
+
 Push-Location $mobileRoot
 try {
     & $flutter @arguments
@@ -144,6 +180,7 @@ if ($BuildMode -eq 'Release') {
         $published = Join-Path $mobileRoot "build\app\outputs\flutter-apk\$($abiArtifacts[$abi].published)"
         Copy-Item -LiteralPath $candidate -Destination $published -Force
         Assert-ApkManifestVersion -ApkPath $published -ExpectedVersionName $versionName -ExpectedVersionCode ([int]$abiArtifacts[$abi].versionCodePrefix + [int]$versionBuild) -Label $abi
+        Assert-LibappOrigin -ApkPath $published -ExpectedOrigin $origin
     }
     # arm64-v8a is the default public artifact; modern phones are arm64-only.
     $apk = Join-Path $mobileRoot "build\app\outputs\flutter-apk\$($abiArtifacts['arm64-v8a'].published)"
