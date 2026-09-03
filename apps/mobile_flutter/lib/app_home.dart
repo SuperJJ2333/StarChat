@@ -9,6 +9,7 @@ import 'core/local_notification_scheduler.dart';
 import 'core/notification/app_state_manager.dart';
 import 'core/notification/badge_service.dart';
 import 'core/notification/foreground_sound_service.dart';
+import 'core/notification/sync_keepalive_service.dart';
 import 'core/notification/haptic_service.dart';
 import 'core/notification/in_app_banner_controller.dart';
 import 'core/notification/notification_coordinator.dart';
@@ -159,6 +160,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   final AppStateManager notificationAppState = AppStateManager();
   final InAppBannerController notificationBanners = InAppBannerController();
   NotificationCoordinator? _notificationCoordinator;
+
+  /// BUG 2 后台/锁屏通知保活：dataSync 前台服务维持 Matrix 同步长连接，
+  /// 登录会话期间常驻（AppHome 即登录后的根页面，dispose 即退出登录）。
+  final SyncKeepAliveService syncKeepAlive = SyncKeepAliveService();
   MatrixNotificationEventSource? _notificationEventSource;
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
@@ -180,6 +185,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_checkForAppUpdate());
     unawaited(_startFriendRequestWatch());
     unawaited(_startNotificationSystem());
+    // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
+    unawaited(_startNotificationSystem().then((_) => syncKeepAlive.ensureStarted()));
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -291,6 +298,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       //（BUG 1：好友头像/昵称变化无需重启即可见）。
       unawaited(_notificationCoordinator?.refreshLauncherBadge());
       unawaited(_chatIdentityCache?.refreshContactsQuietly());
+      // BUG 2：前台服务可能被系统配额（Android 14+ dataSync 每日上限）
+      // 或厂商 ROM 停止；回前台时幂等补启。
+      unawaited(syncKeepAlive.ensureStarted());
     }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
     if (appResumed && incomingCallActive) {
@@ -694,6 +704,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     calls.dispose();
     callBackend.dispose();
     directChats.dispose();
+    // 退出登录/会话结束：停止消息同步保活前台服务。
+    unawaited(syncKeepAlive.stop());
     unawaited(reminderBootstrap.dispose());
     NotificationFeedback.uninstall();
     NotificationSystemHandle.uninstall();

@@ -10,8 +10,10 @@
 | --- | --- | --- | --- |
 | 前台收到私聊（横幅+声音+轻震+角标，不出系统通知） | ✅ | ✅ | notification_policy_engine_test（§18 组）、notification_coordinator_test |
 | 当前会话收到消息（无横幅/声音/震动/角标） | ✅ | ✅ | notification_policy_engine_test（§18/§53 组） |
-| 后台私聊（系统通知+渠道声，Flutter 不发声） | 🧪 | 🧪 | notification_coordinator_test（后台组）；真机验证渠道行为 |
-| 锁屏私聊 | 🧪 | 🧪 | 无自动化（系统行为）；后台通知路径同上 |
+| 后台私聊（系统通知+渠道声，Flutter 不发声） | ✅ | ✅ | notification_coordinator_test（后台组）+ Mi 6 真机（dataSync 前台服务保活，2026-09-03） |
+| 锁屏私聊 | ✅ | ✅ | Mi 6 息屏实测：锁屏显示通知卡片（bug2-lockscreen-notification.png） |
+| 后台/锁屏来电铃声 | ✅* | 🧪 | 机制同消息（前台服务保活→来电信令可达→应用内铃声循环+全屏意图）；*Mi 6 息屏实测消息链路，来电待双机验收 |
+| 消息同步保活前台服务 | ✅ | ✅ | sync_keepalive_service_test 5 用例 + Mi 6 实测常驻通知 41003 |
 | 自己发送消息（无通知/未读/角标；可选发送音） | ✅ | ✅ | policy §26/§52 组 + coordinator 自己消息组 |
 | 群聊消息 | ✅ | ✅ | policy 普通消息组 |
 | @我（P1、mention 音、双震、mentions 渠道） | ✅ | ✅ | policy §28 组 |

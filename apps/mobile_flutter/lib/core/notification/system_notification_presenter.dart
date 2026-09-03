@@ -216,6 +216,9 @@ final class FlutterLocalSystemNotificationPresenter
       importance: spec.importance,
       priority: priority,
       category: AndroidNotificationCategory.message,
+      // BUG 2 锁屏可见性：内容已按 previewPrivacy 分级裁剪，public
+      // 确保锁屏/息屏时通知与摘要可见（系统级隐私设置仍可进一步隐藏）。
+      visibility: NotificationVisibility.public,
       playSound: spec.soundResource != null,
       sound: spec.soundResource == null
           ? null

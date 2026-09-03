@@ -64,7 +64,7 @@ accept API 成功后的本地编排（`FriendAcceptanceCoordinator`）：
 
 ## 4. Canonical Direct Conversation（Phase E）
 
-**后端**（`backend/app/modules/friendship`，迁移 `0035_direct_conversations`）：
+**后端**（`services/business-api/app/modules/friendship`，迁移 `0035_direct_conversations`；**已于 2026-09-03 部署生产**：alembic 0034→0035、容器 healthy、`/users/lookup` 与 `/direct-conversations` 在位，真机验证 canonical 已落库 `!vvlRlCSNwHGuHHJtPY` 并复用修复后的原房间——双方不再各建各房）：
 
 - 表 `direct_conversations(id, user_low_id, user_high_id, matrix_room_id, created_at)`，
   `UNIQUE(user_low_id, user_high_id)`（expand-only，可回滚）。

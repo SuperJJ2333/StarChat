@@ -141,10 +141,39 @@ NotificationCoordinator（唯一入口）
   account-data `com.liuhetong.conversation.settings.v2` 新增 `attention` 字段
   （默认 false，向后兼容；与 muted 互斥）。
 
-## 8. 已知限制（后续阶段）
+## 8. 后台/锁屏保活（2026-09-03 BUG 修复）
+
+后台/锁屏收不到通知的根因：Android 后台进程数分钟内被冻结/查杀，Matrix
+同步长连接随之中断——消息通知、来电铃声全部无法触达（通知管线本身完整：
+策略引擎后台发系统通知、渠道带声、来电走 full-screen intent + 应用内铃声
+循环）。修复（`lib/core/notification/sync_keepalive_service.dart`）：
+
+- 登录会话期间常驻 **dataSync 类型前台服务**（`chatflow_sync` 渠道低优先级
+  无声常驻通知"畅聊消息服务运行中"，通知 id 41003），维持同步长连接存活：
+  消息通知（渠道声+震动）、来电铃声（应用内循环）与全屏来电在后台/锁屏
+  正常触发。AppHome initState 启动、dispose（退出登录）停止、回前台幂等
+  补启（应对系统配额回收）。
+- Manifest：`FOREGROUND_SERVICE_DATA_SYNC` 权限 + ForegroundService 声明
+  `dataSync|microphone|camera`。
+- 消息通知锁屏可见性设为 `public`（内容已按 previewPrivacy 分级裁剪）。
+- Mi 6（Android 9）真机验证：息屏状态下注入对方消息，锁屏显示"畅聊·这个
+  小鸿：后台锁屏通知验证消息"，渠道 `chatflow_messages`（带
+  `res/raw/chatflow_message.ogg` 提示音与震动）。
+  证据：`docs/verification/artifacts/2026-09-03/bug2-lockscreen-notification.png`。
+
+**边界与前置条件**：
+- Android 14+ 对 dataSync 前台服务有每日约 6 小时配额，超时系统停服并
+  退回"进程存活期"通知；回前台自动补启。
+- 厂商 ROM（MIUI 等）需用户开启 **自启动** + **省电策略=无限制**，否则
+  息屏数分钟后进程仍可能被杀（此为系统级限制，代码无法绕过）。
+- 用户从最近任务划掉 App / 系统深度清理后，前台服务一并停止——该场景
+  属推送通道（FCM/厂商推送）缺失的已知边界。
+
+## 9. 已知限制（后续阶段）
 
 1. **无推送通道**：未接入 FCM/APNs（服务端推送基础设施缺失）。APP 被杀后
-   消息/来电不可达；后台通知仅在 isolate 存活期间（含通话前台服务期间）可达。
+   消息/来电不可达；后台通知依赖 dataSync 前台服务保活（见 §8），前台
+   服务被停/被杀即不可达。
 2. **iOS 自定义通知音**：需要把 CAF/WAV 注册进 Xcode bundle（无法在 Windows
    构建验证），本期 iOS 系统通知使用系统默认音；前台音效不受影响。
 3. **Android 12+ CallStyle**：来电仍使用 full-screen-intent 方案。
