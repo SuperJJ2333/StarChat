@@ -1,0 +1,2784 @@
+{
+ "codegraph": {
+  "db_files": 914,
+  "generated_indexed": 2,
+  "file_import_edges": 1933,
+  "scc_count": 3,
+  "sccs": [
+   [
+    "apps/mobile_flutter/lib/core/business_api_client.dart",
+    "apps/mobile_flutter/lib/features/auth/invitation_validation.dart",
+    "apps/mobile_flutter/lib/features/auth/login_controller.dart",
+    "apps/mobile_flutter/lib/features/auth/registration_controller.dart"
+   ],
+   [
+    "apps/mobile_flutter/lib/features/matrix/device_gallery_source.dart",
+    "apps/mobile_flutter/lib/features/matrix/gallery_video_preview.dart",
+    "apps/mobile_flutter/lib/features/matrix/image_picker_page.dart"
+   ],
+   [
+    "backend/app/modules/audit/__init__.py",
+    "services/business-api/app/modules/audit/__init__.py"
+   ]
+  ],
+  "cross_area_imports": [
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/core/local_notification_scheduler.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/core/local_notification_scheduler.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/contacts/contact_models.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/contacts/contact_models.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/chat_history_search.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/chat_history_search.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/chat_red_packet_adapters.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/chat_red_packet_adapters.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_preferences.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_preferences.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_presentation.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_presentation.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_read_state.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/conversation_read_state.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/group_chat_info_controller.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/local_hidden_events.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/local_hidden_events.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_control_rooms.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_control_rooms.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_emoji_vault.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_message_reminder_backend.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_message_reminder_backend.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/matrix_user_avatar.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/media_message_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/media_message_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/message_interaction_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/message_reminder_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/message_reminder_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/nudge_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/nudge_service.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/room_timeline_controller.dart"
+   ],
+   [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "apps/mobile_flutter/lib/features/matrix/room_timeline_controller.dart"
+   ]
+  ],
+  "top_fanin": [
+   [
+    "backend/app/core/database.py",
+    116
+   ],
+   [
+    "apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart",
+    99
+   ],
+   [
+    "backend/app/core/config.py",
+    94
+   ],
+   [
+    "backend/app/core/errors.py",
+    87
+   ],
+   [
+    "backend/app/modules/identity/models.py",
+    62
+   ],
+   [
+    "backend/app/modules/identity/enums.py",
+    58
+   ],
+   [
+    "apps/mobile_flutter/lib/core/business_api_client.dart",
+    52
+   ],
+   [
+    "apps/mobile_flutter/lib/ui/components/wechat_scaffold.dart",
+    40
+   ],
+   [
+    "backend/app/modules/identity/tokens.py",
+    37
+   ],
+   [
+    "backend/app/modules/ledger/service.py",
+    37
+   ],
+   [
+    "apps/mobile_flutter/lib/features/contacts/contact_models.dart",
+    34
+   ],
+   [
+    "backend/app/main.py",
+    27
+   ],
+   [
+    "apps/mobile_flutter/lib/ui/foundation/changliao_icons.dart",
+    26
+   ],
+   [
+    "backend/app/core/outbox.py",
+    25
+   ],
+   [
+    "apps/mobile_flutter/lib/ui/components/user_avatar.dart",
+    24
+   ]
+  ]
+ },
+ "counts": {
+  "walked_files": 3515,
+  "tracked": 3519,
+  "assets": 1863,
+  "test_files": 218
+ },
+ "dup_basename_groups": {
+  "backend": {
+   "__init__.py": [
+    "backend/app/__init__.py",
+    "backend/app/api/__init__.py",
+    "backend/app/cli/__init__.py",
+    "backend/app/core/__init__.py",
+    "backend/app/integrations/__init__.py",
+    "backend/app/modules/__init__.py",
+    "backend/app/modules/admin/__init__.py",
+    "backend/app/modules/audit/__init__.py",
+    "backend/app/modules/friendship/__init__.py",
+    "backend/app/modules/identity/__init__.py",
+    "backend/app/modules/ledger/__init__.py",
+    "backend/app/modules/media/__init__.py",
+    "backend/app/modules/moments/__init__.py",
+    "backend/app/modules/redpacket/__init__.py",
+    "backend/app/modules/settings/__init__.py",
+    "backend/app/modules/support/__init__.py",
+    "backend/app/modules/transfer/__init__.py",
+    "backend/app/modules/wallet/__init__.py"
+   ],
+   "media.py": [
+    "backend/app/api/media.py",
+    "backend/app/modules/moments/media.py"
+   ],
+   "profile.py": [
+    "backend/app/api/profile.py",
+    "backend/app/modules/identity/profile.py"
+   ],
+   "models.py": [
+    "backend/app/modules/admin/models.py",
+    "backend/app/modules/audit/models.py",
+    "backend/app/modules/friendship/models.py",
+    "backend/app/modules/identity/models.py",
+    "backend/app/modules/ledger/models.py",
+    "backend/app/modules/moments/models.py",
+    "backend/app/modules/redpacket/models.py",
+    "backend/app/modules/settings/models.py",
+    "backend/app/modules/transfer/models.py",
+    "backend/app/modules/wallet/models.py"
+   ],
+   "service.py": [
+    "backend/app/modules/admin/service.py",
+    "backend/app/modules/friendship/service.py",
+    "backend/app/modules/ledger/service.py",
+    "backend/app/modules/moments/service.py",
+    "backend/app/modules/redpacket/service.py",
+    "backend/app/modules/settings/service.py",
+    "backend/app/modules/support/service.py",
+    "backend/app/modules/transfer/service.py",
+    "backend/app/modules/wallet/service.py"
+   ],
+   "enums.py": [
+    "backend/app/modules/identity/enums.py",
+    "backend/app/modules/support/enums.py"
+   ]
+  },
+  "design-demo": {
+   "admin-presenters.js": [
+    "design-demo/design-demo/src/admin-presenters.js",
+    "design-demo/src/admin-presenters.js"
+   ],
+   "feedback.js": [
+    "design-demo/src/components/feedback.js",
+    "design-demo/src/screens/feedback.js"
+   ],
+   "finance.js": [
+    "design-demo/src/components/finance.js",
+    "design-demo/src/screens/finance.js"
+   ],
+   "moments.js": [
+    "design-demo/src/components/moments.js",
+    "design-demo/src/screens/moments.js"
+   ]
+  },
+  "docs": {
+   "admin-presenters.js": [
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/design-demo/src/admin-presenters.js",
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/admin-presenters.js"
+   ],
+   "feedback.js": [
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components/feedback.js",
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens/feedback.js"
+   ],
+   "finance.js": [
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components/finance.js",
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens/finance.js"
+   ],
+   "moments.js": [
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components/moments.js",
+    "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens/moments.js"
+   ],
+   "chat_red_packet_controller.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/chat_red_packet_controller.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/chat_red_packet_controller.dart"
+   ],
+   "chat_red_packet_sheet.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/chat_red_packet_sheet.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/chat_red_packet_sheet.dart"
+   ],
+   "matrix_home_page.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart"
+   ],
+   "redpacket_page.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/redpacket/redpacket_page.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/redpacket/redpacket_page.dart"
+   ],
+   "wechat_red_packet_card.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart"
+   ],
+   "chat_red_packet_controller_test.dart": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart"
+   ],
+   "redpacket.py": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/api/redpacket.py",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/api/redpacket.py"
+   ],
+   "config.py": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/core/config.py",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/core/config.py"
+   ],
+   "service.py": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/modules/redpacket/service.py",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/modules/redpacket/service.py"
+   ],
+   "test_redpacket.py": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket/test_redpacket.py",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/tests/business_api/redpacket/test_redpacket.py"
+   ],
+   "test_redpacket_api.py": [
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket/test_redpacket_api.py",
+    "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/tests/business_api/redpacket/test_redpacket_api.py"
+   ]
+  },
+  "frontend": {
+   "admin-presenters.js": [
+    "frontend/design-demo/src/admin-presenters.js",
+    "frontend/src/admin-presenters.js"
+   ],
+   "feedback.js": [
+    "frontend/src/components/feedback.js",
+    "frontend/src/screens/feedback.js"
+   ],
+   "finance.js": [
+    "frontend/src/components/finance.js",
+    "frontend/src/screens/finance.js"
+   ],
+   "moments.js": [
+    "frontend/src/components/moments.js",
+    "frontend/src/screens/moments.js"
+   ]
+  },
+  "services": {
+   "main.py": [
+    "services/business-api/app/main.py",
+    "services/business-worker/app/main.py",
+    "services/matrix-bot/app/main.py"
+   ],
+   "__init__.py": [
+    "services/business-api/app/__init__.py",
+    "services/business-api/app/api/__init__.py",
+    "services/business-api/app/cli/__init__.py",
+    "services/business-api/app/core/__init__.py",
+    "services/business-api/app/integrations/__init__.py",
+    "services/business-api/app/modules/__init__.py",
+    "services/business-api/app/modules/admin/__init__.py",
+    "services/business-api/app/modules/audit/__init__.py",
+    "services/business-api/app/modules/friendship/__init__.py",
+    "services/business-api/app/modules/identity/__init__.py",
+    "services/business-api/app/modules/ledger/__init__.py",
+    "services/business-api/app/modules/media/__init__.py",
+    "services/business-api/app/modules/moments/__init__.py",
+    "services/business-api/app/modules/redpacket/__init__.py",
+    "services/business-api/app/modules/settings/__init__.py",
+    "services/business-api/app/modules/support/__init__.py",
+    "services/business-api/app/modules/transfer/__init__.py",
+    "services/business-api/app/modules/wallet/__init__.py",
+    "services/business-worker/app/integrations/__init__.py",
+    "services/business-worker/app/tasks/__init__.py",
+    "services/matrix-bot/app/__init__.py"
+   ],
+   "identity.py": [
+    "services/business-api/app/api/identity.py",
+    "services/business-worker/app/tasks/identity.py"
+   ],
+   "media.py": [
+    "services/business-api/app/api/media.py",
+    "services/business-api/app/modules/moments/media.py"
+   ],
+   "moments.py": [
+    "services/business-api/app/api/moments.py",
+    "services/business-worker/app/tasks/moments.py"
+   ],
+   "profile.py": [
+    "services/business-api/app/api/profile.py",
+    "services/business-api/app/modules/identity/profile.py"
+   ],
+   "wallet.py": [
+    "services/business-api/app/api/wallet.py",
+    "services/business-worker/app/tasks/wallet.py"
+   ],
+   "idempotency.py": [
+    "services/business-api/app/core/idempotency.py",
+    "services/matrix-bot/app/idempotency.py"
+   ],
+   "models.py": [
+    "services/business-api/app/modules/admin/models.py",
+    "services/business-api/app/modules/audit/models.py",
+    "services/business-api/app/modules/friendship/models.py",
+    "services/business-api/app/modules/identity/models.py",
+    "services/business-api/app/modules/ledger/models.py",
+    "services/business-api/app/modules/moments/models.py",
+    "services/business-api/app/modules/redpacket/models.py",
+    "services/business-api/app/modules/settings/models.py",
+    "services/business-api/app/modules/transfer/models.py",
+    "services/business-api/app/modules/wallet/models.py",
+    "services/matrix-bot/app/models.py"
+   ],
+   "service.py": [
+    "services/business-api/app/modules/admin/service.py",
+    "services/business-api/app/modules/friendship/service.py",
+    "services/business-api/app/modules/ledger/service.py",
+    "services/business-api/app/modules/moments/service.py",
+    "services/business-api/app/modules/redpacket/service.py",
+    "services/business-api/app/modules/settings/service.py",
+    "services/business-api/app/modules/support/service.py",
+    "services/business-api/app/modules/transfer/service.py",
+    "services/business-api/app/modules/wallet/service.py"
+   ],
+   "enums.py": [
+    "services/business-api/app/modules/identity/enums.py",
+    "services/business-api/app/modules/support/enums.py"
+   ]
+  }
+ },
+ "dup_dir_names": {
+  "2026-08-29": [
+   "docs/verification/2026-08-29",
+   "docs/verification/artifacts/2026-08-29"
+  ],
+  "admin": [
+   "backend/app/modules/admin",
+   "services/business-api/app/modules/admin",
+   "tests/business_api/admin"
+  ],
+  "annotation": [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/META-INF/androidx/annotation/annotation",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/kotlin/annotation"
+  ],
+  "api": [
+   "backend/app/api",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/api",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/api",
+   "services/business-api/app/api"
+  ],
+  "app": [
+   "apps/mobile_flutter/android/app",
+   "backend/app",
+   "services/business-api/app",
+   "services/business-worker/app",
+   "services/matrix-bot/app"
+  ],
+  "artifacts": [
+   "design-demo/artifacts",
+   "docs/verification/artifacts",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts",
+   "frontend/artifacts"
+  ],
+  "assets": [
+   "apps/mobile_flutter/assets",
+   "design-demo/assets",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/assets",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/packages/cupertino_icons/assets",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/assets",
+   "frontend/assets"
+  ],
+  "audit": [
+   "backend/app/modules/audit",
+   "services/business-api/app/modules/audit",
+   "tests/business_api/audit"
+  ],
+  "auth": [
+   "apps/mobile_flutter/lib/features/auth",
+   "apps/mobile_flutter/test/features/auth"
+  ],
+  "branding": [
+   "apps/mobile_flutter/assets/branding",
+   "design-demo/assets/branding",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/assets/branding",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/assets/branding",
+   "frontend/assets/branding"
+  ],
+  "catalog": [
+   "design-demo/src/catalog",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/catalog",
+   "frontend/src/catalog"
+  ],
+  "chat": [
+   "apps/mobile_flutter/lib/ui/chat",
+   "apps/mobile_flutter/test/ui/chat"
+  ],
+  "chatflow-ui-refinement": [
+   "design-demo/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement",
+   "frontend/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement"
+  ],
+  "cli": [
+   "backend/app/cli",
+   "services/business-api/app/cli"
+  ],
+  "components": [
+   "apps/mobile_flutter/lib/ui/components",
+   "design-demo/src/components",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components",
+   "frontend/src/components"
+  ],
+  "contacts": [
+   "apps/mobile_flutter/lib/features/contacts",
+   "apps/mobile_flutter/test/features/contacts"
+  ],
+  "core": [
+   "apps/mobile_flutter/lib/core",
+   "apps/mobile_flutter/test/core",
+   "backend/app/core",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/core",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/core",
+   "services/business-api/app/core"
+  ],
+  "custody": [
+   "backend/app/integrations/custody",
+   "services/business-api/app/integrations/custody"
+  ],
+  "discovery": [
+   "apps/mobile_flutter/lib/features/discovery",
+   "apps/mobile_flutter/test/features/discovery"
+  ],
+  "docs": [
+   "apps/mobile_flutter/docs",
+   "docs"
+  ],
+  "drawable": [
+   "apps/mobile_flutter/android/app/src/main/res/drawable",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable"
+  ],
+  "drawable-v21": [
+   "apps/mobile_flutter/android/app/src/main/res/drawable-v21",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-v21"
+  ],
+  "emoji": [
+   "apps/mobile_flutter/assets/emoji",
+   "apps/mobile_flutter/lib/features/emoji",
+   "apps/mobile_flutter/test/features/emoji",
+   "build/resources-manifest/5/emoji"
+  ],
+  "figma-qa": [
+   "design-demo/artifacts/figma-qa",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/figma-qa",
+   "frontend/artifacts/figma-qa"
+  ],
+  "finance": [
+   "apps/mobile_flutter/lib/ui/finance",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/ui/finance",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/ui/finance"
+  ],
+  "friendship": [
+   "apps/mobile_flutter/lib/features/friendship",
+   "apps/mobile_flutter/test/features/friendship",
+   "backend/app/modules/friendship",
+   "services/business-api/app/modules/friendship",
+   "tests/business_api/friendship"
+  ],
+  "icons": [
+   "design-demo/src/icons",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/icons",
+   "frontend/src/icons"
+  ],
+  "identity": [
+   "backend/app/modules/identity",
+   "services/business-api/app/modules/identity",
+   "tests/business_api/identity"
+  ],
+  "integrations": [
+   "backend/app/integrations",
+   "services/business-api/app/integrations",
+   "services/business-worker/app/integrations"
+  ],
+  "ledger": [
+   "backend/app/modules/ledger",
+   "services/business-api/app/modules/ledger",
+   "tests/business_api/ledger"
+  ],
+  "lib": [
+   "apps/mobile_flutter/lib",
+   "scripts/lib"
+  ],
+  "liuhetong_business_api.egg-info": [
+   "backend/liuhetong_business_api.egg-info",
+   "services/business-api/liuhetong_business_api.egg-info"
+  ],
+  "matrix": [
+   "apps/mobile_flutter/lib/features/matrix",
+   "apps/mobile_flutter/test/features/matrix",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/test/features/matrix",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/test/features/matrix"
+  ],
+  "media": [
+   "backend/app/modules/media",
+   "services/business-api/app/modules/media",
+   "tests/business_api/media"
+  ],
+  "migrations": [
+   "backend/migrations",
+   "services/business-api/migrations"
+  ],
+  "mipmap-anydpi-v26": [
+   "apps/mobile_flutter/android/app/src/main/res/mipmap-anydpi-v26",
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/mipmap-anydpi-v26"
+  ],
+  "mobile": [
+   "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile",
+   "tests/mobile"
+  ],
+  "modules": [
+   "backend/app/modules",
+   "services/business-api/app/modules"
+  ],
+  "moments": [
+   "apps/mobile_flutter/lib/features/moments",
+   "apps/mobile_flutter/lib/ui/moments",
+   "apps/mobile_flutter/test/features/moments",
+   "backend/app/modules/moments",
+   "services/business-api/app/modules/moments",
+   "tests/business_api/moments"
+  ],
+  "moments-release": [
+   "docs/verification/artifacts/2026-08-24/moments-release",
+   "docs/verification/artifacts/2026-08-27/moments-release"
+  ],
+  "notification": [
+   "apps/mobile_flutter/lib/core/notification",
+   "apps/mobile_flutter/lib/features/settings/notification",
+   "apps/mobile_flutter/lib/ui/notification",
+   "apps/mobile_flutter/test/core/notification"
+  ],
+  "openapi": [
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/packages/api-contracts/openapi",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/packages/api-contracts/openapi",
+   "packages/api-contracts/openapi"
+  ],
+  "profile": [
+   "apps/mobile_flutter/android/app/src/profile",
+   "apps/mobile_flutter/lib/features/profile",
+   "apps/mobile_flutter/test/features/profile"
+  ],
+  "redpacket": [
+   "apps/mobile_flutter/lib/features/redpacket",
+   "apps/mobile_flutter/test/features/redpacket",
+   "backend/app/modules/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/modules/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/modules/redpacket",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/tests/business_api/redpacket",
+   "services/business-api/app/modules/redpacket",
+   "tests/business_api/redpacket"
+  ],
+  "screens": [
+   "design-demo/src/screens",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens",
+   "frontend/src/screens"
+  ],
+  "screenshots": [
+   "design-demo/artifacts/screenshots",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/screenshots",
+   "docs/verification/screenshots",
+   "frontend/artifacts/screenshots"
+  ],
+  "scripts": [
+   "design-demo/scripts",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/scripts",
+   "frontend/scripts",
+   "scripts"
+  ],
+  "search": [
+   "apps/mobile_flutter/lib/features/search",
+   "apps/mobile_flutter/test/features/search"
+  ],
+  "settings": [
+   "backend/app/modules/settings",
+   "services/business-api/app/modules/settings"
+  ],
+  "src": [
+   "design-demo/design-demo/src",
+   "design-demo/src",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/design-demo/src",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src",
+   "frontend/design-demo/src",
+   "frontend/src"
+  ],
+  "styles": [
+   "design-demo/src/styles",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/styles",
+   "frontend/src/styles"
+  ],
+  "support": [
+   "backend/app/modules/support",
+   "services/business-api/app/modules/support",
+   "tests/business_api/support"
+  ],
+  "tests": [
+   "design-demo/tests",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests",
+   "frontend/tests"
+  ],
+  "transfer": [
+   "apps/mobile_flutter/lib/features/transfer",
+   "apps/mobile_flutter/test/features/transfer",
+   "backend/app/modules/transfer",
+   "services/business-api/app/modules/transfer",
+   "tests/business_api/transfer"
+  ],
+  "update": [
+   "apps/mobile_flutter/lib/features/update",
+   "apps/mobile_flutter/test/features/update"
+  ],
+  "verification": [
+   "design-demo/docs/verification",
+   "docs/verification",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/docs/verification",
+   "frontend/docs/verification"
+  ],
+  "versions": [
+   "backend/migrations/versions",
+   "services/business-api/migrations/versions"
+  ],
+  "wallet": [
+   "apps/mobile_flutter/lib/features/wallet",
+   "backend/app/modules/wallet",
+   "services/business-api/app/modules/wallet",
+   "tests/business_api/wallet"
+  ],
+  "xcshareddata": [
+   "apps/mobile_flutter/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata",
+   "apps/mobile_flutter/ios/Runner.xcworkspace/xcshareddata"
+  ]
+ },
+ "bad_py_dart_names": [
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.10.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.11.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.12.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.6.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.7.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.8.py",
+  "docs/verification/artifacts/2026-08-30/publish_app_update_0.3.9.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.13.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.14.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.15.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.16.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.17.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.18.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.19.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.20.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.21.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.22.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.23.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.24.py",
+  "docs/verification/artifacts/2026-08-31/publish_app_update_0.3.25.py",
+  "docs/verification/artifacts/2026-09-02/publish_app_update_0.3.26.py",
+  "docs/verification/artifacts/2026-09-03/publish_app_update_0.3.27.py",
+  "docs/verification/artifacts/2026-09-03/publish_app_update_0.3.28.py",
+  "migration-artifacts/2026-08-18/app-email-self-test.py",
+  "migration-artifacts/2026-08-18/configure-production.py",
+  "migration-artifacts/2026-08-18/configure-qq-smtp.py",
+  "migration-artifacts/2026-08-18/disable-production-email.py",
+  "migration-artifacts/2026-08-18/matrix-token-diagnostic.py",
+  "migration-artifacts/2026-08-18/remediate-matrix-admin.py",
+  "migration-artifacts/2026-08-18/reset-test-passwords.py",
+  "migration-artifacts/2026-08-18/rotate-production-db.py",
+  "migration-artifacts/2026-08-18/smtp-self-test.py"
+ ],
+ "bad_dirs": [],
+ "asset_classes": {
+  "platform-resources(OK)": 38,
+  "mobile-assets(OK)": 307,
+  "build-output(FLAG)": 54,
+  "demo-other": 382,
+  "demo-assets(OK)": 3,
+  "docs-evidence(OK)": 691,
+  "frontend-other": 385,
+  "test-fixtures(OK)": 3
+ },
+ "asset_flagged": {
+  "build-output(FLAG)": [
+   "build/resources-manifest/5/emoji/angry.gif",
+   "build/resources-manifest/5/emoji/beer.gif",
+   "build/resources-manifest/5/emoji/broken-heart.gif",
+   "build/resources-manifest/5/emoji/cake.gif",
+   "build/resources-manifest/5/emoji/cat.gif",
+   "build/resources-manifest/5/emoji/clap.gif",
+   "build/resources-manifest/5/emoji/coffee.gif",
+   "build/resources-manifest/5/emoji/cool.gif",
+   "build/resources-manifest/5/emoji/cry.gif",
+   "build/resources-manifest/5/emoji/dog.gif",
+   "build/resources-manifest/5/emoji/fire.gif",
+   "build/resources-manifest/5/emoji/gift.gif",
+   "build/resources-manifest/5/emoji/grinning.gif",
+   "build/resources-manifest/5/emoji/halo.gif",
+   "build/resources-manifest/5/emoji/heart-eyes.gif",
+   "build/resources-manifest/5/emoji/heart.gif",
+   "build/resources-manifest/5/emoji/hearts-face.gif",
+   "build/resources-manifest/5/emoji/holding-back-tears.gif",
+   "build/resources-manifest/5/emoji/joy.gif",
+   "build/resources-manifest/5/emoji/kiss.gif",
+   "build/resources-manifest/5/emoji/mask.gif",
+   "build/resources-manifest/5/emoji/medal.gif",
+   "build/resources-manifest/5/emoji/muscle.gif",
+   "build/resources-manifest/5/emoji/nerd.gif",
+   "build/resources-manifest/5/emoji/neutral.gif",
+   "build/resources-manifest/5/emoji/ok-hand.gif",
+   "build/resources-manifest/5/emoji/party-popper.gif",
+   "build/resources-manifest/5/emoji/partying.gif",
+   "build/resources-manifest/5/emoji/pig.gif",
+   "build/resources-manifest/5/emoji/pleading.gif",
+   "build/resources-manifest/5/emoji/pray.gif",
+   "build/resources-manifest/5/emoji/relieved.gif",
+   "build/resources-manifest/5/emoji/rocket.gif",
+   "build/resources-manifest/5/emoji/rofl.gif",
+   "build/resources-manifest/5/emoji/savoring.gif",
+   "build/resources-manifest/5/emoji/scream.gif",
+   "build/resources-manifest/5/emoji/shocked.gif",
+   "build/resources-manifest/5/emoji/shushing.gif",
+   "build/resources-manifest/5/emoji/sleeping.gif",
+   "build/resources-manifest/5/emoji/sleepy.gif",
+   "build/resources-manifest/5/emoji/smile.gif",
+   "build/resources-manifest/5/emoji/sob.gif",
+   "build/resources-manifest/5/emoji/sparkles.gif",
+   "build/resources-manifest/5/emoji/strawberry.gif",
+   "build/resources-manifest/5/emoji/sweat-smile.gif",
+   "build/resources-manifest/5/emoji/thinking.gif",
+   "build/resources-manifest/5/emoji/thumbs-down.gif",
+   "build/resources-manifest/5/emoji/thumbs-up.gif",
+   "build/resources-manifest/5/emoji/unamused.gif",
+   "build/resources-manifest/5/emoji/upside-down.gif",
+   "build/resources-manifest/5/emoji/watermelon.gif",
+   "build/resources-manifest/5/emoji/wave.gif",
+   "build/resources-manifest/5/emoji/wink.gif",
+   "build/resources-manifest/5/emoji/zany.gif"
+  ]
+ },
+ "asset_locations": [
+  [
+   "design-demo/artifacts/screenshots",
+   328
+  ],
+  [
+   "frontend/artifacts/screenshots",
+   328
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/screenshots",
+   326
+  ],
+  [
+   "apps/mobile_flutter/assets/emoji_vector",
+   225
+  ],
+  [
+   "apps/mobile_flutter/assets/emoji",
+   56
+  ],
+  [
+   "build/resources-manifest/5/emoji",
+   54
+  ],
+  [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-hdpi-v4",
+   42
+  ],
+  [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-mdpi-v4",
+   41
+  ],
+  [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xhdpi-v4",
+   41
+  ],
+  [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xxhdpi-v4",
+   36
+  ],
+  [
+   "docs/verification/screenshots/2026-08-14-auth-profile-contact-ui-modernization",
+   33
+  ],
+  [
+   "apps/mobile_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset",
+   21
+  ],
+  [
+   "docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xxxhdpi-v4",
+   16
+  ],
+  [
+   "apps/mobile_flutter/assets/sounds",
+   15
+  ],
+  [
+   "docs/verification/artifacts/group-chat-v2",
+   11
+  ],
+  [
+   "docs/verification/artifacts",
+   10
+  ],
+  [
+   "design-demo/src/components",
+   9
+  ],
+  [
+   "design-demo/src/screens",
+   9
+  ],
+  [
+   "design-demo/tests",
+   9
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components",
+   9
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens",
+   9
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests",
+   9
+  ],
+  [
+   "docs/verification/artifacts/group-info",
+   9
+  ],
+  [
+   "docs/verification/screenshots",
+   9
+  ],
+  [
+   "frontend/src/components",
+   9
+  ],
+  [
+   "frontend/src/screens",
+   9
+  ],
+  [
+   "frontend/tests",
+   9
+  ],
+  [
+   "design-demo/artifacts/figma-qa",
+   8
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/figma-qa",
+   8
+  ],
+  [
+   "frontend/artifacts/figma-qa",
+   8
+  ],
+  [
+   "apps/mobile_flutter/assets/SE",
+   7
+  ],
+  [
+   "design-demo/src/styles",
+   6
+  ],
+  [
+   "docs/verification/artifacts/2026-08-29",
+   6
+  ],
+  [
+   "docs/verification/artifacts/2026-09-03",
+   6
+  ],
+  [
+   "frontend/src/styles",
+   6
+  ],
+  [
+   "docs/verification/artifacts/2026-08-25/identity-conversation-moments-composer",
+   5
+  ],
+  [
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/styles",
+   5
+  ],
+  [
+   "docs/verification/artifacts/2026-08-31/picker-voice-redpacket",
+   5
+  ],
+  [
+   "apps/mobile_flutter/android/app/src/main/res/raw",
+   4
+  ],
+  [
+   "design-demo/scripts",
+   4
+  ]
+ ],
+ "tests": {
+  "all": [
+   "apps/mobile_flutter/test/core/amount_rules_test.dart",
+   "apps/mobile_flutter/test/core/app_config_test.dart",
+   "apps/mobile_flutter/test/core/business_api_presence_test.dart",
+   "apps/mobile_flutter/test/core/business_api_session_test.dart",
+   "apps/mobile_flutter/test/core/cache_repository_test.dart",
+   "apps/mobile_flutter/test/core/local_notification_scheduler_test.dart",
+   "apps/mobile_flutter/test/core/notification/badge_service_test.dart",
+   "apps/mobile_flutter/test/core/notification/in_app_banner_controller_test.dart",
+   "apps/mobile_flutter/test/core/notification/notification_coordinator_test.dart",
+   "apps/mobile_flutter/test/core/notification/notification_deduplicator_test.dart",
+   "apps/mobile_flutter/test/core/notification/notification_policy_engine_test.dart",
+   "apps/mobile_flutter/test/core/notification/notification_preferences_test.dart",
+   "apps/mobile_flutter/test/core/notification/sound_cooldown_gate_test.dart",
+   "apps/mobile_flutter/test/core/notification/sound_type_assets_test.dart",
+   "apps/mobile_flutter/test/core/session_bootstrap_controller_test.dart",
+   "apps/mobile_flutter/test/core/session_store_test.dart",
+   "apps/mobile_flutter/test/features/auth/auth_pages_test.dart",
+   "apps/mobile_flutter/test/features/auth/invitation_validation_test.dart",
+   "apps/mobile_flutter/test/features/auth/login_controller_test.dart",
+   "apps/mobile_flutter/test/features/auth/registration_controller_test.dart",
+   "apps/mobile_flutter/test/features/contacts/add_friend_search_test.dart",
+   "apps/mobile_flutter/test/features/contacts/contact_flow_test.dart",
+   "apps/mobile_flutter/test/features/contacts/friend_request_review_page_test.dart",
+   "apps/mobile_flutter/test/features/contacts/request_friend_page_test.dart",
+   "apps/mobile_flutter/test/features/discovery/discovery_page_test.dart",
+   "apps/mobile_flutter/test/features/emoji/fluent_emoji_message_test.dart",
+   "apps/mobile_flutter/test/features/emoji/fluent_vector_emoji_catalog_test.dart",
+   "apps/mobile_flutter/test/features/friendship/friend_acceptance_coordinator_test.dart",
+   "apps/mobile_flutter/test/features/matrix/attachment_upload_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/avatar_url_resolver_test.dart",
+   "apps/mobile_flutter/test/features/matrix/call_alerts_test.dart",
+   "apps/mobile_flutter/test/features/matrix/call_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/call_page_test.dart",
+   "apps/mobile_flutter/test/features/matrix/canonical_direct_chat_test.dart",
+   "apps/mobile_flutter/test/features/matrix/chat_display_name_and_video_send_test.dart",
+   "apps/mobile_flutter/test/features/matrix/chat_history_search_test.dart",
+   "apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/chat_red_packet_sheet_test.dart",
+   "apps/mobile_flutter/test/features/matrix/conversation_actions_test.dart",
+   "apps/mobile_flutter/test/features/matrix/conversation_preferences_test.dart",
+   "apps/mobile_flutter/test/features/matrix/conversation_presentation_test.dart",
+   "apps/mobile_flutter/test/features/matrix/conversation_read_state_test.dart",
+   "apps/mobile_flutter/test/features/matrix/direct_chat_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/direct_chat_info_test.dart",
+   "apps/mobile_flutter/test/features/matrix/emoji_vault_test.dart",
+   "apps/mobile_flutter/test/features/matrix/group_chat_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/group_chat_info_test.dart",
+   "apps/mobile_flutter/test/features/matrix/group_invitation_auto_join_test.dart",
+   "apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart",
+   "apps/mobile_flutter/test/features/matrix/local_hidden_events_test.dart",
+   "apps/mobile_flutter/test/features/matrix/matrix_call_security_test.dart",
+   "apps/mobile_flutter/test/features/matrix/matrix_client_factory_test.dart",
+   "apps/mobile_flutter/test/features/matrix/matrix_control_rooms_test.dart",
+   "apps/mobile_flutter/test/features/matrix/matrix_emoji_vault_test.dart",
+   "apps/mobile_flutter/test/features/matrix/media_memory_cache_test.dart",
+   "apps/mobile_flutter/test/features/matrix/media_thumbnail_test.dart",
+   "apps/mobile_flutter/test/features/matrix/message_interaction_service_test.dart",
+   "apps/mobile_flutter/test/features/matrix/message_reminder_service_test.dart",
+   "apps/mobile_flutter/test/features/matrix/mute_exception_policy_test.dart",
+   "apps/mobile_flutter/test/features/matrix/nudge_notice_format_test.dart",
+   "apps/mobile_flutter/test/features/matrix/nudge_service_test.dart",
+   "apps/mobile_flutter/test/features/matrix/profile_repository_test.dart",
+   "apps/mobile_flutter/test/features/matrix/room_page_presentation_test.dart",
+   "apps/mobile_flutter/test/features/matrix/room_timeline_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/video_rendition_strategy_test.dart",
+   "apps/mobile_flutter/test/features/matrix/voice_playback_controller_test.dart",
+   "apps/mobile_flutter/test/features/matrix/voice_recording_controller_test.dart",
+   "apps/mobile_flutter/test/features/moments/moment_composer_page_test.dart",
+   "apps/mobile_flutter/test/features/moments/moment_image_filter_test.dart",
+   "apps/mobile_flutter/test/features/moments/moment_image_preprocessor_test.dart",
+   "apps/mobile_flutter/test/features/moments/moment_visibility_page_test.dart",
+   "apps/mobile_flutter/test/features/moments/moment_visibility_people_page_test.dart",
+   "apps/mobile_flutter/test/features/moments/moments_flow_test.dart",
+   "apps/mobile_flutter/test/features/profile/invite_code_page_test.dart",
+   "apps/mobile_flutter/test/features/profile/profile_controller_test.dart",
+   "apps/mobile_flutter/test/features/profile/qr_and_tools_test.dart",
+   "apps/mobile_flutter/test/features/redpacket/red_packet_claim_detail_page_test.dart",
+   "apps/mobile_flutter/test/features/redpacket/red_packet_claim_dialog_test.dart",
+   "apps/mobile_flutter/test/features/search/global_search_page_test.dart",
+   "apps/mobile_flutter/test/features/transfer/chat_transfer_controller_test.dart",
+   "apps/mobile_flutter/test/features/transfer/chat_transfer_sheet_test.dart",
+   "apps/mobile_flutter/test/features/update/app_update_dialog_test.dart",
+   "apps/mobile_flutter/test/features/update/app_update_test.dart",
+   "apps/mobile_flutter/test/features/update/update_integrity_test.dart",
+   "apps/mobile_flutter/test/session_gate_test.dart",
+   "apps/mobile_flutter/test/statistics_tool_test.dart",
+   "apps/mobile_flutter/test/ui/auth_surface_card_test.dart",
+   "apps/mobile_flutter/test/ui/chat/image_viewer_test.dart",
+   "apps/mobile_flutter/test/ui/chat/wechat_voice_bubble_test.dart",
+   "apps/mobile_flutter/test/ui/chat_composer_bar_test.dart",
+   "apps/mobile_flutter/test/ui/chat_emoji_panel_test.dart",
+   "apps/mobile_flutter/test/ui/chat_forward_picker_page_test.dart",
+   "apps/mobile_flutter/test/ui/chat_more_panel_test.dart",
+   "apps/mobile_flutter/test/ui/chat_tools_test.dart",
+   "apps/mobile_flutter/test/ui/conversation_action_sheet_test.dart",
+   "apps/mobile_flutter/test/ui/emoji_text_test.dart",
+   "apps/mobile_flutter/test/ui/encrypted_image_message_test.dart",
+   "apps/mobile_flutter/test/ui/group_avatar_mosaic_test.dart",
+   "apps/mobile_flutter/test/ui/launcher_icon_asset_test.dart",
+   "apps/mobile_flutter/test/ui/message_action_policy_test.dart",
+   "apps/mobile_flutter/test/ui/message_action_sheet_test.dart",
+   "apps/mobile_flutter/test/ui/message_bubble_menu_test.dart",
+   "apps/mobile_flutter/test/ui/message_selection_controller_test.dart",
+   "apps/mobile_flutter/test/ui/messaging_surfaces_test.dart",
+   "apps/mobile_flutter/test/ui/nav_bar_hero_transition_test.dart",
+   "apps/mobile_flutter/test/ui/super_emoji_message_test.dart",
+   "apps/mobile_flutter/test/ui/theme_controller_test.dart",
+   "apps/mobile_flutter/test/ui/theme_follow_test.dart",
+   "apps/mobile_flutter/test/ui/voice_recording_overlay_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_components_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_date_picker_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_feedback_components_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_message_bubble_sender_name_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_moment_interactions_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_nudge_notice_test.dart",
+   "apps/mobile_flutter/test/ui/wechat_theme_test.dart",
+   "apps/mobile_flutter/test/widget_test.dart",
+   "apps/mobile_flutter/tool/generate_brand_assets_test.dart",
+   "design-demo/tests/admin-api.test.mjs",
+   "design-demo/tests/admin-presenters.test.mjs",
+   "design-demo/tests/brand-contract.test.mjs",
+   "design-demo/tests/component-contracts.test.mjs",
+   "design-demo/tests/icon-contract.test.mjs",
+   "design-demo/tests/screen-registry.test.mjs",
+   "design-demo/tests/source-contract.test.mjs",
+   "design-demo/tests/token-contract.test.mjs",
+   "design-demo/tests/ui-component-registry.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/admin-api.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/admin-presenters.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/brand-contract.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/component-contracts.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/icon-contract.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/screen-registry.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/source-contract.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/token-contract.test.mjs",
+   "docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests/ui-component-registry.test.mjs",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket/test_redpacket.py",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket/test_redpacket_api.py",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/test/features/matrix/chat_red_packet_controller_test.dart",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/tests/business_api/redpacket/test_redpacket.py",
+   "docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/tests/business_api/redpacket/test_redpacket_api.py",
+   "frontend/tests/admin-api.test.mjs",
+   "frontend/tests/admin-presenters.test.mjs",
+   "frontend/tests/brand-contract.test.mjs",
+   "frontend/tests/component-contracts.test.mjs",
+   "frontend/tests/icon-contract.test.mjs",
+   "frontend/tests/screen-registry.test.mjs",
+   "frontend/tests/source-contract.test.mjs",
+   "frontend/tests/token-contract.test.mjs",
+   "frontend/tests/ui-component-registry.test.mjs",
+   "tests/business_api/admin/test_admin_api.py",
+   "tests/business_api/audit/test_audit.py",
+   "tests/business_api/friendship/test_friend_refactor.py",
+   "tests/business_api/friendship/test_friend_request_flow.py",
+   "tests/business_api/friendship/test_friendship_api.py",
+   "tests/business_api/friendship/test_member_lookup.py",
+   "tests/business_api/identity/test_email_verification.py",
+   "tests/business_api/identity/test_identity_api.py",
+   "tests/business_api/identity/test_invitation_generation_script.py",
+   "tests/business_api/identity/test_invitation_validate_reasons.py",
+   "tests/business_api/identity/test_matrix_login_token.py",
+   "tests/business_api/identity/test_matrix_provisioning.py",
+   "tests/business_api/identity/test_models.py",
+   "tests/business_api/identity/test_personal_invitation.py",
+   "tests/business_api/identity/test_profile_api.py",
+   "tests/business_api/identity/test_rate_limits.py",
+   "tests/business_api/identity/test_rbac_totp.py",
+   "tests/business_api/identity/test_referral_api.py",
+   "tests/business_api/identity/test_registration.py",
+   "tests/business_api/identity/test_tokens_and_recovery.py",
+   "tests/business_api/ledger/test_adjustments.py",
+   "tests/business_api/ledger/test_ledger.py",
+   "tests/business_api/ledger/test_supply_invariant.py",
+   "tests/business_api/media/test_media_images.py",
+   "tests/business_api/moments/test_moments_api.py",
+   "tests/business_api/moments/test_moments_media.py",
+   "tests/business_api/redpacket/test_red_packet_settings_and_limits.py",
+   "tests/business_api/redpacket/test_redpacket.py",
+   "tests/business_api/redpacket/test_redpacket_api.py",
+   "tests/business_api/support/test_support_api.py",
+   "tests/business_api/support/test_support_service.py",
+   "tests/business_api/test_app_update_settings.py",
+   "tests/business_api/test_branding.py",
+   "tests/business_api/test_complaints.py",
+   "tests/business_api/test_database.py",
+   "tests/business_api/test_errors.py",
+   "tests/business_api/test_group_auto_join_api.py",
+   "tests/business_api/test_health.py",
+   "tests/business_api/test_idempotency.py",
+   "tests/business_api/test_matrix_postgres_config.py",
+   "tests/business_api/test_migrations.py",
+   "tests/business_api/test_openapi_contract.py",
+   "tests/business_api/test_outbox.py",
+   "tests/business_api/test_user_search.py",
+   "tests/business_api/transfer/test_chat_transfer.py",
+   "tests/business_api/transfer/test_chat_transfer_api.py",
+   "tests/business_api/wallet/test_custody_contract.py",
+   "tests/business_api/wallet/test_wallet_remaining.py",
+   "tests/business_api/wallet/test_wallet_service.py",
+   "tests/business_worker/test_chat_transfer_expiry.py",
+   "tests/business_worker/test_email_sender.py",
+   "tests/business_worker/test_identity_tasks.py",
+   "tests/business_worker/test_moments_task.py",
+   "tests/business_worker/test_redpacket_expiry.py",
+   "tests/business_worker/test_wallet_task.py",
+   "tests/business_worker/test_worker.py",
+   "tests/matrix_bot/test_api_room_policy.py",
+   "tests/matrix_bot/test_room_policy.py",
+   "tests/matrix_bot/test_settings.py",
+   "tests/mobile/test_android_release_network.py",
+   "tests/mobile/test_app_build_contract.py",
+   "tests/mobile/test_figma_ui_contract.py",
+   "tests/mobile/test_flutter_boundaries.py",
+   "tests/mobile/test_ios_simulator_ci.py",
+   "tests/mobile/test_search_entry_uniformity.py",
+   "tests/mobile/test_ui_component_registry.py"
+  ],
+  "misplaced": [],
+  "py_unmatched": [
+   "tests/business_api/test_app_update_settings.py",
+   "tests/business_api/test_complaints.py",
+   "tests/business_api/test_group_auto_join_api.py",
+   "tests/business_api/test_matrix_postgres_config.py",
+   "tests/business_api/test_openapi_contract.py",
+   "tests/business_api/test_user_search.py"
+  ],
+  "flutter": {
+   "matched": 65,
+   "unmatched": [
+    "test/statistics_tool_test.dart",
+    "test/widget_test.dart",
+    "test/core/business_api_presence_test.dart",
+    "test/core/business_api_session_test.dart",
+    "test/core/cache_repository_test.dart",
+    "test/core/notification/sound_type_assets_test.dart",
+    "test/features/auth/auth_pages_test.dart",
+    "test/features/contacts/add_friend_search_test.dart",
+    "test/features/contacts/contact_flow_test.dart",
+    "test/features/emoji/fluent_emoji_message_test.dart",
+    "test/features/matrix/canonical_direct_chat_test.dart",
+    "test/features/matrix/chat_display_name_and_video_send_test.dart",
+    "test/features/matrix/conversation_actions_test.dart",
+    "test/features/matrix/direct_chat_info_test.dart",
+    "test/features/matrix/group_chat_info_test.dart",
+    "test/features/matrix/matrix_call_security_test.dart",
+    "test/features/matrix/media_memory_cache_test.dart",
+    "test/features/matrix/nudge_notice_format_test.dart",
+    "test/features/matrix/room_page_presentation_test.dart",
+    "test/features/matrix/video_rendition_strategy_test.dart",
+    "test/features/moments/moments_flow_test.dart",
+    "test/features/moments/moment_image_filter_test.dart",
+    "test/features/profile/qr_and_tools_test.dart",
+    "test/ui/auth_surface_card_test.dart",
+    "test/ui/chat_composer_bar_test.dart",
+    "test/ui/chat_emoji_panel_test.dart",
+    "test/ui/chat_forward_picker_page_test.dart",
+    "test/ui/chat_more_panel_test.dart",
+    "test/ui/chat_tools_test.dart",
+    "test/ui/conversation_action_sheet_test.dart"
+   ]
+  },
+  "lib_untested": {
+   "(lib root)": 2,
+   "core/business_api_client.dart": 1,
+   "core/cache": 1,
+   "core/notification": 9,
+   "features/auth": 4,
+   "features/caibi": 1,
+   "features/contacts": 8,
+   "features/emoji": 1,
+   "features/friendship": 1,
+   "features/matrix": 27,
+   "features/moments": 3,
+   "features/profile": 9,
+   "features/redpacket": 1,
+   "features/settings": 1,
+   "features/statistics": 4,
+   "features/transfer": 2,
+   "features/wallet": 1,
+   "ui/chat": 25,
+   "ui/components": 17,
+   "ui/finance": 3,
+   "ui/foundation": 3,
+   "ui/moments": 4,
+   "ui/notification": 2,
+   "ui/theme": 3
+  },
+  "lib_total": {
+   "(lib root)": 3,
+   "core/amount_rules.dart": 1,
+   "core/app_config.dart": 1,
+   "core/business_api_client.dart": 1,
+   "core/local_notification_scheduler.dart": 1,
+   "core/session_bootstrap_controller.dart": 1,
+   "core/session_store.dart": 1,
+   "core/cache": 1,
+   "core/notification": 16,
+   "features/auth": 7,
+   "features/caibi": 1,
+   "features/contacts": 10,
+   "features/discovery": 1,
+   "features/emoji": 2,
+   "features/friendship": 2,
+   "features/matrix": 56,
+   "features/moments": 7,
+   "features/profile": 11,
+   "features/redpacket": 3,
+   "features/search": 1,
+   "features/settings": 1,
+   "features/statistics": 4,
+   "features/transfer": 4,
+   "features/update": 3,
+   "features/wallet": 1,
+   "ui/chat": 26,
+   "ui/components": 17,
+   "ui/finance": 3,
+   "ui/foundation": 3,
+   "ui/moments": 4,
+   "ui/notification": 2,
+   "ui/theme": 3
+  }
+ },
+ "dir_inventory": {
+  ".github": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  ".github/workflows": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 4,
+   "top_exts": [
+    [
+     ".yml",
+     1
+    ]
+   ]
+  },
+  "apps": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "apps/mobile_flutter": {
+   "files": 10,
+   "tracked": 7,
+   "size_kb": 97,
+   "top_exts": [
+    [
+     "(none)",
+     3
+    ],
+    [
+     ".md",
+     2
+    ],
+    [
+     ".yaml",
+     2
+    ],
+    [
+     ".log",
+     1
+    ]
+   ]
+  },
+  "apps/mobile_flutter/android": {
+   "files": 10,
+   "tracked": 5,
+   "size_kb": 12,
+   "top_exts": [
+    [
+     ".properties",
+     3
+    ],
+    [
+     "(none)",
+     2
+    ],
+    [
+     ".kts",
+     2
+    ],
+    [
+     ".bat",
+     1
+    ]
+   ]
+  },
+  "apps/mobile_flutter/assets": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 995,
+   "top_exts": [
+    [
+     ".png",
+     1
+    ]
+   ]
+  },
+  "apps/mobile_flutter/build": {
+   "files": 8,
+   "tracked": 0,
+   "size_kb": 23,
+   "top_exts": [
+    [
+     ".log",
+     8
+    ]
+   ]
+  },
+  "apps/mobile_flutter/docs": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "apps/mobile_flutter/ios": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "apps/mobile_flutter/lib": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 55,
+   "top_exts": [
+    [
+     ".dart",
+     3
+    ]
+   ]
+  },
+  "apps/mobile_flutter/test": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 9,
+   "top_exts": [
+    [
+     ".dart",
+     3
+    ]
+   ]
+  },
+  "apps/mobile_flutter/tool": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".dart",
+     1
+    ]
+   ]
+  },
+  "backend": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".ini",
+     1
+    ],
+    [
+     "(none)",
+     1
+    ],
+    [
+     ".toml",
+     1
+    ],
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "backend/app": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 5,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "backend/app/api": {
+   "files": 15,
+   "tracked": 15,
+   "size_kb": 107,
+   "top_exts": [
+    [
+     ".py",
+     15
+    ]
+   ]
+  },
+  "backend/app/cli": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "backend/app/core": {
+   "files": 10,
+   "tracked": 10,
+   "size_kb": 22,
+   "top_exts": [
+    [
+     ".py",
+     10
+    ]
+   ]
+  },
+  "backend/app/integrations": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 14,
+   "top_exts": [
+    [
+     ".py",
+     3
+    ]
+   ]
+  },
+  "backend/app/modules": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 0,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ]
+   ]
+  },
+  "backend/liuhetong_business_api.egg-info": {
+   "files": 5,
+   "tracked": 0,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".txt",
+     4
+    ],
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "backend/migrations": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ],
+    [
+     ".mako",
+     1
+    ]
+   ]
+  },
+  "backend/migrations/versions": {
+   "files": 35,
+   "tracked": 34,
+   "size_kb": 57,
+   "top_exts": [
+    [
+     ".py",
+     35
+    ]
+   ]
+  },
+  "build": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "build/nginx-domain-test": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "build/nginx-domain-test/certs": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "build/resources-manifest": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "build/resources-manifest/5": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 7,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ]
+   ]
+  },
+  "design-demo": {
+   "files": 6,
+   "tracked": 6,
+   "size_kb": 5,
+   "top_exts": [
+    [
+     ".html",
+     4
+    ],
+    [
+     ".json",
+     1
+    ],
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "design-demo/artifacts": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 20,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ]
+   ]
+  },
+  "design-demo/artifacts/figma-qa": {
+   "files": 8,
+   "tracked": 8,
+   "size_kb": 516,
+   "top_exts": [
+    [
+     ".png",
+     8
+    ]
+   ]
+  },
+  "design-demo/artifacts/screenshots": {
+   "files": 329,
+   "tracked": 329,
+   "size_kb": 8188,
+   "top_exts": [
+    [
+     ".png",
+     328
+    ],
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "design-demo/assets": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 2464,
+   "top_exts": [
+    [
+     ".png",
+     2
+    ]
+   ]
+  },
+  "design-demo/assets/branding": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 314,
+   "top_exts": [
+    [
+     ".png",
+     1
+    ]
+   ]
+  },
+  "design-demo/design-demo": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "design-demo/design-demo/src": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".js",
+     1
+    ]
+   ]
+  },
+  "design-demo/docs": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "design-demo/docs/verification": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 0,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "design-demo/scripts": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 10,
+   "top_exts": [
+    [
+     ".mjs",
+     4
+    ]
+   ]
+  },
+  "design-demo/src": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 36,
+   "top_exts": [
+    [
+     ".js",
+     4
+    ]
+   ]
+  },
+  "design-demo/src/catalog": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 30,
+   "top_exts": [
+    [
+     ".js",
+     3
+    ]
+   ]
+  },
+  "design-demo/src/components": {
+   "files": 9,
+   "tracked": 9,
+   "size_kb": 27,
+   "top_exts": [
+    [
+     ".js",
+     9
+    ]
+   ]
+  },
+  "design-demo/src/icons": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 8,
+   "top_exts": [
+    [
+     ".js",
+     1
+    ]
+   ]
+  },
+  "design-demo/src/screens": {
+   "files": 9,
+   "tracked": 9,
+   "size_kb": 55,
+   "top_exts": [
+    [
+     ".js",
+     9
+    ]
+   ]
+  },
+  "design-demo/src/styles": {
+   "files": 6,
+   "tracked": 6,
+   "size_kb": 82,
+   "top_exts": [
+    [
+     ".css",
+     6
+    ]
+   ]
+  },
+  "design-demo/tests": {
+   "files": 11,
+   "tracked": 11,
+   "size_kb": 27,
+   "top_exts": [
+    [
+     ".mjs",
+     9
+    ],
+    [
+     ".html",
+     2
+    ]
+   ]
+  },
+  "docs": {
+   "files": 9,
+   "tracked": 7,
+   "size_kb": 68,
+   "top_exts": [
+    [
+     ".md",
+     9
+    ]
+   ]
+  },
+  "docs/adr": {
+   "files": 8,
+   "tracked": 8,
+   "size_kb": 19,
+   "top_exts": [
+    [
+     ".md",
+     8
+    ]
+   ]
+  },
+  "docs/figma": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 4,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ],
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "docs/runbooks": {
+   "files": 6,
+   "tracked": 6,
+   "size_kb": 17,
+   "top_exts": [
+    [
+     ".md",
+     6
+    ]
+   ]
+  },
+  "docs/superpowers": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "docs/superpowers/plans": {
+   "files": 58,
+   "tracked": 57,
+   "size_kb": 477,
+   "top_exts": [
+    [
+     ".md",
+     58
+    ]
+   ]
+  },
+  "docs/superpowers/reviews": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "docs/superpowers/specs": {
+   "files": 25,
+   "tracked": 25,
+   "size_kb": 199,
+   "top_exts": [
+    [
+     ".md",
+     25
+    ]
+   ]
+  },
+  "docs/verification": {
+   "files": 94,
+   "tracked": 94,
+   "size_kb": 684,
+   "top_exts": [
+    [
+     ".md",
+     89
+    ],
+    [
+     ".png",
+     4
+    ],
+    [
+     ".csv",
+     1
+    ]
+   ]
+  },
+  "docs/verification/2026-08-29": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 6,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "docs/verification/artifacts": {
+   "files": 10,
+   "tracked": 10,
+   "size_kb": 864,
+   "top_exts": [
+    [
+     ".png",
+     10
+    ]
+   ]
+  },
+  "docs/verification/phase-0": {
+   "files": 5,
+   "tracked": 5,
+   "size_kb": 6,
+   "top_exts": [
+    [
+     ".md",
+     5
+    ]
+   ]
+  },
+  "docs/verification/phase-1": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "docs/verification/screenshots": {
+   "files": 17,
+   "tracked": 17,
+   "size_kb": 1135,
+   "top_exts": [
+    [
+     ".png",
+     9
+    ],
+    [
+     ".xml",
+     8
+    ]
+   ]
+  },
+  "frontend": {
+   "files": 6,
+   "tracked": 6,
+   "size_kb": 5,
+   "top_exts": [
+    [
+     ".html",
+     4
+    ],
+    [
+     ".json",
+     1
+    ],
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "frontend/artifacts": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 20,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ]
+   ]
+  },
+  "frontend/artifacts/figma-qa": {
+   "files": 8,
+   "tracked": 8,
+   "size_kb": 516,
+   "top_exts": [
+    [
+     ".png",
+     8
+    ]
+   ]
+  },
+  "frontend/artifacts/screenshots": {
+   "files": 329,
+   "tracked": 329,
+   "size_kb": 8188,
+   "top_exts": [
+    [
+     ".png",
+     328
+    ],
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "frontend/assets": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 2464,
+   "top_exts": [
+    [
+     ".png",
+     2
+    ]
+   ]
+  },
+  "frontend/assets/branding": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 314,
+   "top_exts": [
+    [
+     ".png",
+     1
+    ]
+   ]
+  },
+  "frontend/design-demo": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "frontend/design-demo/src": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".js",
+     1
+    ]
+   ]
+  },
+  "frontend/docs": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "frontend/docs/verification": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 0,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "frontend/scripts": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 10,
+   "top_exts": [
+    [
+     ".mjs",
+     4
+    ]
+   ]
+  },
+  "frontend/src": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 36,
+   "top_exts": [
+    [
+     ".js",
+     4
+    ]
+   ]
+  },
+  "frontend/src/catalog": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 30,
+   "top_exts": [
+    [
+     ".js",
+     3
+    ]
+   ]
+  },
+  "frontend/src/components": {
+   "files": 9,
+   "tracked": 9,
+   "size_kb": 27,
+   "top_exts": [
+    [
+     ".js",
+     9
+    ]
+   ]
+  },
+  "frontend/src/icons": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 8,
+   "top_exts": [
+    [
+     ".js",
+     1
+    ]
+   ]
+  },
+  "frontend/src/screens": {
+   "files": 9,
+   "tracked": 9,
+   "size_kb": 55,
+   "top_exts": [
+    [
+     ".js",
+     9
+    ]
+   ]
+  },
+  "frontend/src/styles": {
+   "files": 6,
+   "tracked": 6,
+   "size_kb": 82,
+   "top_exts": [
+    [
+     ".css",
+     6
+    ]
+   ]
+  },
+  "frontend/tests": {
+   "files": 11,
+   "tracked": 11,
+   "size_kb": 27,
+   "top_exts": [
+    [
+     ".mjs",
+     9
+    ],
+    [
+     ".html",
+     2
+    ]
+   ]
+  },
+  "infra": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "infra/element": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".template",
+     1
+    ]
+   ]
+  },
+  "infra/nginx": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 4,
+   "top_exts": [
+    [
+     ".conf",
+     1
+    ],
+    [
+     ".example",
+     1
+    ]
+   ]
+  },
+  "infra/synapse": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".sh",
+     2
+    ],
+    [
+     ".template",
+     1
+    ],
+    [
+     ".config",
+     1
+    ]
+   ]
+  },
+  "migration-artifacts": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "migration-artifacts/2026-08-18": {
+   "files": 38,
+   "tracked": 0,
+   "size_kb": 20400,
+   "top_exts": [
+    [
+     ".py",
+     9
+    ],
+    [
+     ".txt",
+     8
+    ],
+    [
+     ".gz",
+     5
+    ],
+    [
+     ".sql",
+     5
+    ]
+   ]
+  },
+  "packages": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "packages/api-contracts": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "packages/api-contracts/openapi": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 278,
+   "top_exts": [
+    [
+     ".yaml",
+     1
+    ]
+   ]
+  },
+  "packages/event-schemas": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 0,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ]
+   ]
+  },
+  "packages/ui-contracts": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 16,
+   "top_exts": [
+    [
+     ".json",
+     1
+    ]
+   ]
+  },
+  "scripts": {
+   "files": 9,
+   "tracked": 9,
+   "size_kb": 60,
+   "top_exts": [
+    [
+     ".ps1",
+     5
+    ],
+    [
+     ".py",
+     4
+    ]
+   ]
+  },
+  "scripts/lib": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 1,
+   "top_exts": [
+    [
+     ".psm1",
+     1
+    ]
+   ]
+  },
+  "services": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "services/business-api": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".ini",
+     1
+    ],
+    [
+     "(none)",
+     1
+    ],
+    [
+     ".toml",
+     1
+    ],
+    [
+     ".md",
+     1
+    ]
+   ]
+  },
+  "services/business-api/app": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 5,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "services/business-api/liuhetong_business_api.egg-info": {
+   "files": 5,
+   "tracked": 0,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".txt",
+     4
+    ],
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "services/business-api/migrations": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ],
+    [
+     ".mako",
+     1
+    ]
+   ]
+  },
+  "services/business-worker": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 0,
+   "top_exts": [
+    [
+     "(none)",
+     1
+    ],
+    [
+     ".txt",
+     1
+    ]
+   ]
+  },
+  "services/business-worker/app": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 9,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "services/matrix-bot": {
+   "files": 4,
+   "tracked": 4,
+   "size_kb": 2,
+   "top_exts": [
+    [
+     ".txt",
+     2
+    ],
+    [
+     ".md",
+     1
+    ],
+    [
+     "(none)",
+     1
+    ]
+   ]
+  },
+  "services/matrix-bot/app": {
+   "files": 10,
+   "tracked": 10,
+   "size_kb": 23,
+   "top_exts": [
+    [
+     ".py",
+     10
+    ]
+   ]
+  },
+  "tests": {
+   "files": 0,
+   "tracked": 0,
+   "size_kb": 0,
+   "top_exts": []
+  },
+  "tests/business_api": {
+   "files": 13,
+   "tracked": 13,
+   "size_kb": 42,
+   "top_exts": [
+    [
+     ".py",
+     13
+    ]
+   ]
+  },
+  "tests/business_api/admin": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 13,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ]
+   ]
+  },
+  "tests/business_api/audit": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ]
+   ]
+  },
+  "tests/business_api/friendship": {
+   "files": 4,
+   "tracked": 2,
+   "size_kb": 35,
+   "top_exts": [
+    [
+     ".py",
+     4
+    ]
+   ]
+  },
+  "tests/business_api/identity": {
+   "files": 14,
+   "tracked": 14,
+   "size_kb": 128,
+   "top_exts": [
+    [
+     ".py",
+     14
+    ]
+   ]
+  },
+  "tests/business_api/ledger": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 13,
+   "top_exts": [
+    [
+     ".py",
+     3
+    ]
+   ]
+  },
+  "tests/business_api/media": {
+   "files": 1,
+   "tracked": 1,
+   "size_kb": 9,
+   "top_exts": [
+    [
+     ".py",
+     1
+    ]
+   ]
+  },
+  "tests/business_api/moments": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 24,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "tests/business_api/redpacket": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 14,
+   "top_exts": [
+    [
+     ".py",
+     3
+    ]
+   ]
+  },
+  "tests/business_api/support": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 4,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "tests/business_api/transfer": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 11,
+   "top_exts": [
+    [
+     ".py",
+     2
+    ]
+   ]
+  },
+  "tests/business_api/wallet": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 6,
+   "top_exts": [
+    [
+     ".py",
+     3
+    ]
+   ]
+  },
+  "tests/business_worker": {
+   "files": 7,
+   "tracked": 7,
+   "size_kb": 26,
+   "top_exts": [
+    [
+     ".py",
+     7
+    ]
+   ]
+  },
+  "tests/matrix_bot": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 5,
+   "top_exts": [
+    [
+     ".py",
+     3
+    ]
+   ]
+  },
+  "tests/mobile": {
+   "files": 7,
+   "tracked": 7,
+   "size_kb": 17,
+   "top_exts": [
+    [
+     ".py",
+     7
+    ]
+   ]
+  },
+  "tests/powershell": {
+   "files": 3,
+   "tracked": 3,
+   "size_kb": 3,
+   "top_exts": [
+    [
+     ".ps1",
+     3
+    ]
+   ]
+  },
+  "tests/repository": {
+   "files": 2,
+   "tracked": 2,
+   "size_kb": 7,
+   "top_exts": [
+    [
+     ".ps1",
+     2
+    ]
+   ]
+  }
+ },
+ "root_files": [
+  ".dockerignore",
+  ".env",
+  ".env.example",
+  ".gitattributes",
+  ".gitignore",
+  "AGENTS.md",
+  "CONTEXT.md",
+  "README.md",
+  "UI_DESIGN.md",
+  "analysis_options.yaml",
+  "design-demo - 快捷方式.lnk",
+  "docker-compose.production.yml",
+  "docker-compose.yml",
+  "skills-lock.json"
+ ],
+ "pubspec_assets": [
+  "assets/branding/",
+  "assets/landing.png",
+  "assets/emoji/",
+  "assets/emoji_vector/",
+  "assets/html/",
+  "assets/sounds/"
+ ]
+}

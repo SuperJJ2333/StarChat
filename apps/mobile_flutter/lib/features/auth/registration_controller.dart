@@ -4,44 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../../core/business_api_client.dart';
-import 'invitation_validation.dart';
-
-final class RegistrationReceipt {
-  const RegistrationReceipt(
-      {required this.registrationSession,
-      required this.status,
-      required this.resendAfterSeconds});
-  final String registrationSession;
-  final String status;
-  final int resendAfterSeconds;
-}
-
-final class RegistrationStatusReceipt {
-  const RegistrationStatusReceipt(
-      {required this.status, required this.resendAfterSeconds});
-  final String status;
-  final int resendAfterSeconds;
-}
-
-abstract interface class RegistrationGateway {
-  /// 校验注册邀请码（统一邀请码体系）：200 → 结果对象
-  /// （READY/INVALID/EXPIRED/EXHAUSTED）；网络/服务端故障抛异常，
-  /// 由调用方映射为可重试状态。
-  Future<InvitationValidationResult> validateInvitation(String invitationCode);
-
-  Future<RegistrationReceipt> register(
-      {required String username,
-      String? nickname,
-      required String email,
-      required String password,
-      required String invitationCode});
-  Future<void> verifyEmail(
-      {required String registrationSession, String? code, String? token});
-  Future<int> resendVerification(String registrationSession);
-  Future<RegistrationStatusReceipt> registrationStatus(
-      String registrationSession);
-}
+import '../../core/business_api_error.dart';
+import '../../core/business_auth_contracts.dart';
 
 enum RegistrationFlowStatus {
   idle,

@@ -1,0 +1,241 @@
+== codegraph ==
+indexed files: 914 | generated: 2
+file->file import edges: 1933
+SCCs (cycles): 3
+  cycle size 4 -> apps/mobile_flutter/lib/core/business_api_client.dart; apps/mobile_flutter/lib/features/auth/invitation_validation.dart; apps/mobile_flutter/lib/features/auth/login_controller.dart; apps/mobile_flutter/lib/features/auth/registration_controller.dart 
+  cycle size 3 -> apps/mobile_flutter/lib/features/matrix/device_gallery_source.dart; apps/mobile_flutter/lib/features/matrix/gallery_video_preview.dart; apps/mobile_flutter/lib/features/matrix/image_picker_page.dart 
+  cycle size 2 -> backend/app/modules/audit/__init__.py; services/business-api/app/modules/audit/__init__.py 
+cross-area imports: 760
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/core/local_notification_scheduler.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/core/local_notification_scheduler.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/contacts/contact_models.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/contacts/contact_models.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/chat_history_search.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/chat_history_search.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/chat_red_packet_adapters.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/chat_red_packet_adapters.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_preferences.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_preferences.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_presentation.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_presentation.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_read_state.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/conversation_read_state.dart
+    docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix/matrix_home_page.dart -> apps/mobile_flutter/lib/features/matrix/direct_chat_info_page.dart
+top fan-in: [('backend/app/core/database.py', 116), ('apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart', 99), ('backend/app/core/config.py', 94), ('backend/app/core/errors.py', 87), ('backend/app/modules/identity/models.py', 62), ('backend/app/modules/identity/enums.py', 58), ('apps/mobile_flutter/lib/core/business_api_client.dart', 52), ('apps/mobile_flutter/lib/ui/components/wechat_scaffold.dart', 40), ('backend/app/modules/identity/tokens.py', 37), ('backend/app/modules/ledger/service.py', 37)]
+
+== duplicate basenames ==
+backend -> 6 dup names; 5 excl __init__
+    media.py x 2
+    profile.py x 2
+    models.py x 10
+    service.py x 9
+    enums.py x 2
+design-demo -> 4 dup names; 4 excl __init__
+    admin-presenters.js x 2
+    feedback.js x 2
+    finance.js x 2
+    moments.js x 2
+docs -> 15 dup names; 15 excl __init__
+    admin-presenters.js x 2
+    feedback.js x 2
+    finance.js x 2
+    moments.js x 2
+    chat_red_packet_controller.dart x 2
+    chat_red_packet_sheet.dart x 2
+    matrix_home_page.dart x 2
+    redpacket_page.dart x 2
+frontend -> 4 dup names; 4 excl __init__
+    admin-presenters.js x 2
+    feedback.js x 2
+    finance.js x 2
+    moments.js x 2
+services -> 11 dup names; 10 excl __init__
+    main.py x 3
+    identity.py x 2
+    media.py x 2
+    moments.py x 2
+    profile.py x 2
+    wallet.py x 2
+    idempotency.py x 2
+    models.py x 11
+
+== dup dir names (>=2 places) ==
+2026-08-29: 2 -> docs/verification/2026-08-29; docs/verification/artifacts/2026-08-29
+admin: 3 -> backend/app/modules/admin; services/business-api/app/modules/admin; tests/business_api/admin
+annotation: 2 -> docs/verification/artifacts/2026-08-24/public-apk-audit-1/META-INF/androidx/annotation/annotation; docs/verification/artifacts/2026-08-24/public-apk-audit-1/kotlin/annotation
+api: 4 -> backend/app/api; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/api; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/api; services/business-api/app/api
+app: 5 -> apps/mobile_flutter/android/app; backend/app; services/business-api/app; services/business-worker/app; services/matrix-bot/app
+artifacts: 4 -> design-demo/artifacts; docs/verification/artifacts; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts; frontend/artifacts
+assets: 6 -> apps/mobile_flutter/assets; design-demo/assets; docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/assets; docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/packages/cupertino_icons/assets; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/assets; frontend/assets
+audit: 3 -> backend/app/modules/audit; services/business-api/app/modules/audit; tests/business_api/audit
+auth: 2 -> apps/mobile_flutter/lib/features/auth; apps/mobile_flutter/test/features/auth
+branding: 5 -> apps/mobile_flutter/assets/branding; design-demo/assets/branding; docs/verification/artifacts/2026-08-24/public-apk-audit-1/assets/flutter_assets/assets/branding; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/assets/branding; frontend/assets/branding
+catalog: 3 -> design-demo/src/catalog; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/catalog; frontend/src/catalog
+chat: 2 -> apps/mobile_flutter/lib/ui/chat; apps/mobile_flutter/test/ui/chat
+chatflow-ui-refinement: 3 -> design-demo/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement; frontend/docs/verification/artifacts/2026-08-27/chatflow-ui-refinement
+cli: 2 -> backend/app/cli; services/business-api/app/cli
+components: 4 -> apps/mobile_flutter/lib/ui/components; design-demo/src/components; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components; frontend/src/components
+contacts: 2 -> apps/mobile_flutter/lib/features/contacts; apps/mobile_flutter/test/features/contacts
+core: 6 -> apps/mobile_flutter/lib/core; apps/mobile_flutter/test/core; backend/app/core; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/core; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/backend/app/core; services/business-api/app/core
+custody: 2 -> backend/app/integrations/custody; services/business-api/app/integrations/custody
+discovery: 2 -> apps/mobile_flutter/lib/features/discovery; apps/mobile_flutter/test/features/discovery
+docs: 2 -> apps/mobile_flutter/docs; docs
+drawable: 2 -> apps/mobile_flutter/android/app/src/main/res/drawable; docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable
+drawable-v21: 2 -> apps/mobile_flutter/android/app/src/main/res/drawable-v21; docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-v21
+emoji: 4 -> apps/mobile_flutter/assets/emoji; apps/mobile_flutter/lib/features/emoji; apps/mobile_flutter/test/features/emoji; build/resources-manifest/5/emoji
+figma-qa: 3 -> design-demo/artifacts/figma-qa; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/figma-qa; frontend/artifacts/figma-qa
+finance: 3 -> apps/mobile_flutter/lib/ui/finance; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/ui/finance; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/ui/finance
+friendship: 5 -> apps/mobile_flutter/lib/features/friendship; apps/mobile_flutter/test/features/friendship; backend/app/modules/friendship; services/business-api/app/modules/friendship; tests/business_api/friendship
+icons: 3 -> design-demo/src/icons; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/icons; frontend/src/icons
+identity: 3 -> backend/app/modules/identity; services/business-api/app/modules/identity; tests/business_api/identity
+integrations: 3 -> backend/app/integrations; services/business-api/app/integrations; services/business-worker/app/integrations
+ledger: 3 -> backend/app/modules/ledger; services/business-api/app/modules/ledger; tests/business_api/ledger
+lib: 2 -> apps/mobile_flutter/lib; scripts/lib
+liuhetong_business_api.egg-info: 2 -> backend/liuhetong_business_api.egg-info; services/business-api/liuhetong_business_api.egg-info
+matrix: 6 -> apps/mobile_flutter/lib/features/matrix; apps/mobile_flutter/test/features/matrix; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/matrix; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/test/features/matrix; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/lib/features/matrix; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/apps/mobile_flutter/test/features/matrix
+media: 3 -> backend/app/modules/media; services/business-api/app/modules/media; tests/business_api/media
+migrations: 2 -> backend/migrations; services/business-api/migrations
+mipmap-anydpi-v26: 2 -> apps/mobile_flutter/android/app/src/main/res/mipmap-anydpi-v26; docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/mipmap-anydpi-v26
+mobile: 2 -> apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile; tests/mobile
+modules: 2 -> backend/app/modules; services/business-api/app/modules
+moments: 6 -> apps/mobile_flutter/lib/features/moments; apps/mobile_flutter/lib/ui/moments; apps/mobile_flutter/test/features/moments; backend/app/modules/moments; services/business-api/app/modules/moments; tests/business_api/moments
+moments-release: 2 -> docs/verification/artifacts/2026-08-24/moments-release; docs/verification/artifacts/2026-08-27/moments-release
+notification: 4 -> apps/mobile_flutter/lib/core/notification; apps/mobile_flutter/lib/features/settings/notification; apps/mobile_flutter/lib/ui/notification; apps/mobile_flutter/test/core/notification
+openapi: 3 -> docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/packages/api-contracts/openapi; docs/verification/artifacts/2026-08-29/red-packet-optimization/rollback-copy/packages/api-contracts/openapi; packages/api-contracts/openapi
+profile: 3 -> apps/mobile_flutter/android/app/src/profile; apps/mobile_flutter/lib/features/profile; apps/mobile_flutter/test/features/profile
+redpacket: 11 -> apps/mobile_flutter/lib/features/redpacket; apps/mobile_flutter/test/features/redpacket; backend/app/modules/redpacket; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/apps/mobile_flutter/lib/features/redpacket; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/backend/app/modules/redpacket; docs/verification/artifacts/2026-08-29/red-packet-optimization/baseline/tests/business_api/redpacket
+screens: 3 -> design-demo/src/screens; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens; frontend/src/screens
+screenshots: 4 -> design-demo/artifacts/screenshots; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/screenshots; docs/verification/screenshots; frontend/artifacts/screenshots
+scripts: 4 -> design-demo/scripts; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/scripts; frontend/scripts; scripts
+search: 2 -> apps/mobile_flutter/lib/features/search; apps/mobile_flutter/test/features/search
+settings: 2 -> backend/app/modules/settings; services/business-api/app/modules/settings
+src: 6 -> design-demo/design-demo/src; design-demo/src; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/design-demo/src; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src; frontend/design-demo/src; frontend/src
+styles: 3 -> design-demo/src/styles; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/styles; frontend/src/styles
+support: 3 -> backend/app/modules/support; services/business-api/app/modules/support; tests/business_api/support
+tests: 3 -> design-demo/tests; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests; frontend/tests
+transfer: 5 -> apps/mobile_flutter/lib/features/transfer; apps/mobile_flutter/test/features/transfer; backend/app/modules/transfer; services/business-api/app/modules/transfer; tests/business_api/transfer
+update: 2 -> apps/mobile_flutter/lib/features/update; apps/mobile_flutter/test/features/update
+verification: 4 -> design-demo/docs/verification; docs/verification; docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/docs/verification; frontend/docs/verification
+versions: 2 -> backend/migrations/versions; services/business-api/migrations/versions
+wallet: 4 -> apps/mobile_flutter/lib/features/wallet; backend/app/modules/wallet; services/business-api/app/modules/wallet; tests/business_api/wallet
+xcshareddata: 2 -> apps/mobile_flutter/ios/Runner.xcodeproj/project.xcworkspace/xcshareddata; apps/mobile_flutter/ios/Runner.xcworkspace/xcshareddata
+
+== bad py/dart file names == ['docs/verification/artifacts/2026-08-30/publish_app_update_0.3.10.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.11.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.12.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.6.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.7.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.8.py', 'docs/verification/artifacts/2026-08-30/publish_app_update_0.3.9.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.13.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.14.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.15.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.16.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.17.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.18.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.19.py', 'docs/verification/artifacts/2026-08-31/publish_app_update_0.3.20.py']
+== bad dir names == []
+
+== asset classes ==
+  docs-evidence(OK): 691
+  frontend-other: 385
+  demo-other: 382
+  mobile-assets(OK): 307
+  build-output(FLAG): 54
+  platform-resources(OK): 38
+  demo-assets(OK): 3
+  test-fixtures(OK): 3
+== flagged asset samples ==
+  build-output(FLAG) 54
+     build/resources-manifest/5/emoji/angry.gif
+     build/resources-manifest/5/emoji/beer.gif
+     build/resources-manifest/5/emoji/broken-heart.gif
+     build/resources-manifest/5/emoji/cake.gif
+     build/resources-manifest/5/emoji/cat.gif
+     build/resources-manifest/5/emoji/clap.gif
+     build/resources-manifest/5/emoji/coffee.gif
+     build/resources-manifest/5/emoji/cool.gif
+     build/resources-manifest/5/emoji/cry.gif
+     build/resources-manifest/5/emoji/dog.gif
+     build/resources-manifest/5/emoji/fire.gif
+     build/resources-manifest/5/emoji/gift.gif
+
+== asset locations (top) ==
+   328  design-demo/artifacts/screenshots
+   328  frontend/artifacts/screenshots
+   326  docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/artifacts/screenshots
+   225  apps/mobile_flutter/assets/emoji_vector
+    56  apps/mobile_flutter/assets/emoji
+    54  build/resources-manifest/5/emoji
+    42  docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-hdpi-v4
+    41  docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-mdpi-v4
+    41  docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xhdpi-v4
+    36  docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xxhdpi-v4
+    33  docs/verification/screenshots/2026-08-14-auth-profile-contact-ui-modernization
+    21  apps/mobile_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset
+    16  docs/verification/artifacts/2026-08-24/public-apk-audit-1/res/drawable-xxxhdpi-v4
+    15  apps/mobile_flutter/assets/sounds
+    11  docs/verification/artifacts/group-chat-v2
+    10  docs/verification/artifacts
+     9  design-demo/src/components
+     9  design-demo/src/screens
+     9  design-demo/tests
+     9  docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/components
+     9  docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/src/screens
+     9  docs/verification/artifacts/2026-08-28/admin-modernization/MODIFIED_FILE/tests
+     9  docs/verification/artifacts/group-info
+     9  docs/verification/screenshots
+     9  frontend/src/components
+
+== tests == 218 files; misplaced: []
+flutter mirror matched: 65 unmatched: 53
+    test/statistics_tool_test.dart
+    test/widget_test.dart
+    test/core/business_api_presence_test.dart
+    test/core/business_api_session_test.dart
+    test/core/cache_repository_test.dart
+    test/core/notification/sound_type_assets_test.dart
+    test/features/auth/auth_pages_test.dart
+    test/features/contacts/add_friend_search_test.dart
+    test/features/contacts/contact_flow_test.dart
+    test/features/emoji/fluent_emoji_message_test.dart
+    test/features/matrix/canonical_direct_chat_test.dart
+    test/features/matrix/chat_display_name_and_video_send_test.dart
+py tests w/o source match: 6
+    tests/business_api/test_app_update_settings.py
+    tests/business_api/test_complaints.py
+    tests/business_api/test_group_auto_join_api.py
+    tests/business_api/test_matrix_postgres_config.py
+    tests/business_api/test_openapi_contract.py
+    tests/business_api/test_user_search.py
+lib files w/o test (by dir):
+   (lib root): 2/3
+   core/business_api_client.dart: 1/1
+   core/cache: 1/1
+   core/notification: 9/16
+   features/auth: 4/7
+   features/caibi: 1/1
+   features/contacts: 8/10
+   features/emoji: 1/2
+   features/friendship: 1/2
+   features/matrix: 27/56
+   features/moments: 3/7
+   features/profile: 9/11
+   features/redpacket: 1/3
+   features/settings: 1/1
+   features/statistics: 4/4
+   features/transfer: 2/4
+   features/wallet: 1/1
+   ui/chat: 25/26
+   ui/components: 17/17
+   ui/finance: 3/3
+   ui/foundation: 3/3
+   ui/moments: 4/4
+   ui/notification: 2/2
+   ui/theme: 3/3
+
+== root files ==
+  [T] .dockerignore
+  [-] .env
+  [T] .env.example
+  [T] .gitattributes
+  [T] .gitignore
+  [T] AGENTS.md
+  [T] CONTEXT.md
+  [T] README.md
+  [T] UI_DESIGN.md
+  [T] analysis_options.yaml
+  [-] design-demo - 快捷方式.lnk
+  [T] docker-compose.production.yml
+  [T] docker-compose.yml
+  [T] skills-lock.json
+
+== pubspec assets ==
+['assets/branding/', 'assets/landing.png', 'assets/emoji/', 'assets/emoji_vector/', 'assets/html/', 'assets/sounds/']

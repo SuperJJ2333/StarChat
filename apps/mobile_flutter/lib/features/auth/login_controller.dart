@@ -2,33 +2,11 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import '../../core/business_api_client.dart';
+import '../../core/business_api_error.dart';
+import '../../core/business_auth_contracts.dart';
 
 typedef LoginOperation = Future<void> Function(
     String username, String password);
-
-final class MatrixLoginGrant {
-  const MatrixLoginGrant(
-      {required this.loginToken,
-      required this.homeserver,
-      required this.expiresIn,
-      required this.matrixUserId});
-  final String loginToken;
-  final String homeserver;
-  final int expiresIn;
-  final String matrixUserId;
-}
-
-abstract interface class DualDomainBusinessGateway {
-  Future<void> loginBusiness(
-      {required String username,
-      required String password,
-      required String deviceKey,
-      required String deviceName});
-  Future<MatrixLoginGrant> issueMatrixLoginToken();
-  Future<void> bindMatrixUserId(String matrixUserId);
-  Future<void> logoutBusiness();
-}
 
 abstract interface class MatrixTokenLoginGateway {
   bool get isLoggedIn;

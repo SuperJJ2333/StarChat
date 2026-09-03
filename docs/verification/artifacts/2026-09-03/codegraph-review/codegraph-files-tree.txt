@@ -1,0 +1,44 @@
+
+Project Structure (914 files):
+
+├── .agents
+│   └── skills
+├── .github
+│   └── workflows
+├── apps
+│   └── mobile_flutter
+├── backend
+│   ├── app
+│   └── migrations
+├── design-demo
+│   ├── design-demo
+│   ├── scripts
+│   ├── src
+│   └── tests
+├── docs
+│   └── verification
+├── frontend
+│   ├── design-demo
+│   ├── scripts
+│   ├── src
+│   └── tests
+├── packages
+│   └── api-contracts
+├── scripts
+│   ├── export_openapi.py
+│   ├── prepare_fluent_emojis.py
+│   ├── prepare_fluent_vector_emojis.py
+│   └── verify_ui_contract.py
+├── services
+│   ├── business-api
+│   ├── business-worker
+│   └── matrix-bot
+├── tests
+│   ├── business_api
+│   ├── business_worker
+│   ├── matrix_bot
+│   └── mobile
+├── analysis_options.yaml
+├── docker-compose.production.yml
+└── docker-compose.yml
+

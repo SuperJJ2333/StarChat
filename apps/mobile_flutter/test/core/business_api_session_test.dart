@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
-import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 
 final class MemoryStore implements SecureKeyValueStore {
   final values = <String, String>{};

@@ -5,28 +5,15 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'session_store.dart';
 import 'package:uuid/uuid.dart';
-import '../features/auth/login_controller.dart';
-import '../features/auth/registration_controller.dart';
+import 'business_api_error.dart';
+import 'business_auth_contracts.dart';
 import '../features/profile/profile_controller.dart';
 import '../features/profile/invite_controller.dart';
-import '../features/auth/invitation_validation.dart';
 import '../features/contacts/contact_models.dart';
 import '../features/profile/complaint_models.dart';
 import '../features/redpacket/red_packet_controller.dart';
 
-final class BusinessApiException implements Exception {
-  const BusinessApiException(
-      {required this.statusCode,
-      required this.code,
-      required this.message,
-      this.fieldErrors = const {}});
-  final int statusCode;
-  final String code;
-  final String message;
-  final Map<String, String> fieldErrors;
-  @override
-  String toString() => message;
-}
+export 'business_api_error.dart';
 
 enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 
@@ -605,6 +592,13 @@ final class BusinessApiClient
   @override
   Future<Map<String, dynamic>> searchUsers(String query) =>
       getJson('/users/search?q=${Uri.encodeQueryComponent(query)}');
+
+  /// BUG 2 群成员非好友：按 Matrix ID 反查公开资料与关系状态。
+  /// 不存在/拉黑/自己时服务端返回 404（抛 BusinessApiException）。
+  Future<Map<String, dynamic>> lookupUserByMatrixId(String matrixUserId) =>
+      getJson(
+          '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}');
+
   @override
   Future<Map<String, dynamic>> requestFriend(String userId,
           {String message = '',
@@ -627,6 +621,32 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> rejectFriendRequest(String id) =>
       postJson('/friends/requests/$id/reject', {},
           idempotencyKey: newIdempotencyKey());
+
+  /// Canonical Direct Conversation（好友系统重构 Phase E）：
+  /// 创建私聊前先查询规范房间，存在即复用。
+  Future<String?> canonicalDirectRoomId(String peerUserId) async {
+    final body =
+        await getJson('/direct-conversations?peer_user_id=$peerUserId');
+    return body['matrix_room_id']?.toString();
+  }
+
+  /// 客户端创建 Matrix Direct Chat 后注册；并发冲突时服务端返回既有行。
+  Future<String> registerDirectConversation(
+      String peerUserId, String matrixRoomId) async {
+    final body = await postJson('/direct-conversations',
+        {'peer_user_id': peerUserId, 'matrix_room_id': matrixRoomId},
+        idempotencyKey: newIdempotencyKey());
+    return body['matrix_room_id']?.toString() ?? matrixRoomId;
+  }
+
+  /// BUG 2 状态机：申请人撤销待处理申请（PENDING → CANCELLED）。
+  Future<Map<String, dynamic>> cancelFriendRequest(String id) async {
+    final response = await _authorized((headers) => _client.delete(
+        _uri('/friends/requests/$id'),
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> momentsFeed({String mode = 'recommended'}) =>
       getJson('/moments/feed?mode=$mode');
   Future<Map<String, dynamic>> searchMoments(String query) =>

@@ -7,6 +7,8 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import 'device_gallery_source.dart';
 import 'gallery_video_preview.dart';
+
+export 'device_gallery_source.dart' show GalleryPhoto;
 import '../../ui/foundation/wechat_tokens.dart';
 
 /// 选择逻辑（纯逻辑，可测）：有序多选、上限 9 张、可取消勾选。
@@ -53,43 +55,6 @@ final class GallerySelection extends ChangeNotifier {
 
   /// 勾选顺序即发送顺序（第几张）。
   int orderOf(String id) => _orderedIds.indexOf(id) + 1;
-}
-
-final class GalleryPhoto {
-  const GalleryPhoto({
-    required this.id,
-    required this.thumbnail,
-    required this.compressedBytes,
-    required this.originalBytes,
-    this.mimeType = 'image/jpeg',
-    this.isVideo = false,
-    this.duration,
-    this.originalSizeBytes,
-    this.compressedPreviewFile,
-    this.posterBytes,
-  });
-
-  final String id;
-  final Uint8List thumbnail;
-  final Future<Uint8List> Function() compressedBytes;
-  final Future<Uint8List> Function() originalBytes;
-  final String mimeType;
-
-  /// 视频条目：网格带时长角标；发送默认压缩，
-  /// 勾选“原图”时受 [maxOriginalVideoBytes] 上限拦截。
-  final bool isVideo;
-  final Duration? duration;
-
-  /// 原始文件大小（惰性读取），用于“原图”模式下 20MB 视频拦截。
-  final Future<int> Function()? originalSizeBytes;
-
-  /// 视频预览/发送共用的压缩产物及回退信息（预览页播放与发送复用同一份）。
-  /// 仅视频条目提供。
-  final Future<VideoRendition> Function()? compressedPreviewFile;
-
-  /// 视频封面帧（约 480px，保持画面比例）：聊天消息发送时随事件附带，
-  /// 接收端无需下载整个视频即可渲染海报。
-  final Future<Uint8List?> Function()? posterBytes;
 }
 
 /// 全屏图片预览页：点击缩略图进入，展示高清图（1280px 按需解码）；

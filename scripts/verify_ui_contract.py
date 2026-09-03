@@ -49,8 +49,8 @@ def verify() -> list[str]:
         ROOT / "apps/mobile_flutter/lib",
         ROOT / "frontend/src",
         ROOT / "services/business-worker/app/integrations/email_sender.py",
-        ROOT / "backend/app/api/identity.py",
-        ROOT / "backend/app/modules/support/service.py",
+        ROOT / "services/business-api/app/api/identity.py",
+        ROOT / "services/business-api/app/modules/support/service.py",
         ROOT / "UI_DESIGN.md",
     ]
     user_visible_text = "\n".join(

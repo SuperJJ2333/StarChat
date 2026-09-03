@@ -15,7 +15,7 @@ Every UI change **must use Figma** before code is finalized:
 2. For a component library change, also load `figma:figma-generate-library`; for a page/flow change, also load `figma:figma-generate-design`.
 3. Inspect the existing file and reuse its variables, component keys, auto-layout, naming and variants. Do not create an unrelated duplicate.
 4. Update the affected Figma component, screen, state, or prototype; inspect metadata and a screenshot after the change.
-5. Update `design-demo/artifacts/figma-state.json` and `packages/ui-contracts/changliao-component-registry.json` in the same change.
+5. Update `frontend/artifacts/figma-state.json` and `packages/ui-contracts/changliao-component-registry.json` in the same change.
 
 The canonical file is:
 

@@ -7,7 +7,7 @@ import '../../ui/components/immersive_auth_scaffold.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
-import 'invitation_validation.dart';
+import '../../core/business_auth_contracts.dart';
 import 'registration_controller.dart';
 
 final class RegistrationPage extends StatefulWidget {

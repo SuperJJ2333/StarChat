@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liuhetong_mobile/core/business_api_client.dart';
-import 'package:liuhetong_mobile/features/auth/invitation_validation.dart';
+import 'package:liuhetong_mobile/core/business_api_error.dart';
+import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 import 'package:liuhetong_mobile/features/auth/registration_controller.dart';
 
 final class FakeRegistrationGateway implements RegistrationGateway {

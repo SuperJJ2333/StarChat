@@ -61,7 +61,7 @@ try {
     Assert-LastExitCode 'Matrix Bot tests'
 
     Write-Output '== Business API and Worker tests =='
-    $env:PYTHONPATH = "backend;services/business-worker/app;$projectRoot"
+    $env:PYTHONPATH = "services/business-api;services/business-worker/app;$projectRoot"
     & py -3.12 -m pytest tests/business_api tests/business_worker -q
     Assert-LastExitCode 'Business API and Worker tests'
 
@@ -83,7 +83,7 @@ import ast
 from pathlib import Path
 
 files = sorted(Path("services/matrix-bot/app").glob("*.py"))
-files += sorted(Path("backend/app").rglob("*.py"))
+files += sorted(Path("services/business-api/app").rglob("*.py"))
 files += sorted(Path("services/business-worker/app").rglob("*.py"))
 for path in files:
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -92,7 +92,7 @@ print(f"AST parse: PASS ({len(files)} files)")
     Assert-LastExitCode 'Python AST parse'
 
     Write-Output '== Business database migrations =='
-    Push-Location -LiteralPath 'backend'
+    Push-Location -LiteralPath 'services/business-api'
     try {
         $env:PYTHONPATH = '.'
         $heads = @(& py -3.12 -m alembic heads)
@@ -110,7 +110,7 @@ print(f"AST parse: PASS ({len(files)} files)")
     }
 
     Write-Output '== OpenAPI drift check =='
-    $env:PYTHONPATH = "backend;$projectRoot"
+    $env:PYTHONPATH = "services/business-api;$projectRoot"
     & py -3.12 scripts/export_openapi.py --check
     Assert-LastExitCode 'OpenAPI drift check'
 

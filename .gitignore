@@ -12,7 +12,10 @@ migration-artifacts/
 .worktrees/
 .venv/
 *.egg-info/
+/build/
+*.lnk
 coverage.xml
 htmlcov/
 docs/verification/**/*.tmp
 frontend/downloads/
+.codegraph/

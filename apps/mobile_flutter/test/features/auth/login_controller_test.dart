@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'package:http/http.dart' as http;
 import 'package:liuhetong_mobile/core/business_api_client.dart';
+import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 
 void main() {
   test('network failures are retried up to three attempts', () async {

@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:photo_manager/photo_manager.dart';
 
-import 'image_picker_page.dart';
 import 'video_transcode.dart';
 
 export 'video_transcode.dart'
@@ -14,6 +13,43 @@ export 'video_transcode.dart'
         videoCompressionTargetRatio,
         videoCompressionRetryThresholdBytes,
         transcodeForChat;
+
+final class GalleryPhoto {
+  const GalleryPhoto({
+    required this.id,
+    required this.thumbnail,
+    required this.compressedBytes,
+    required this.originalBytes,
+    this.mimeType = 'image/jpeg',
+    this.isVideo = false,
+    this.duration,
+    this.originalSizeBytes,
+    this.compressedPreviewFile,
+    this.posterBytes,
+  });
+
+  final String id;
+  final Uint8List thumbnail;
+  final Future<Uint8List> Function() compressedBytes;
+  final Future<Uint8List> Function() originalBytes;
+  final String mimeType;
+
+  /// 视频条目：网格带时长角标；发送默认压缩，
+  /// 勾选“原图”时受 [maxOriginalVideoBytes] 上限拦截。
+  final bool isVideo;
+  final Duration? duration;
+
+  /// 原始文件大小（惰性读取），用于“原图”模式下 20MB 视频拦截。
+  final Future<int> Function()? originalSizeBytes;
+
+  /// 视频预览/发送共用的压缩产物及回退信息（预览页播放与发送复用同一份）。
+  /// 仅视频条目提供。
+  final Future<VideoRendition> Function()? compressedPreviewFile;
+
+  /// 视频封面帧（约 480px，保持画面比例）：聊天消息发送时随事件附带，
+  /// 接收端无需下载整个视频即可渲染海报。
+  final Future<Uint8List?> Function()? posterBytes;
+}
 
 /// 相册数据源异常分类：用于向用户呈现可操作的引导。
 sealed class GallerySourceError implements Exception {

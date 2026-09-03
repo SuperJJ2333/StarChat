@@ -1,5 +1,5 @@
-# 从 assets/SE/ 母带生成规范命名的通知音效（assets/sounds/ + Android res/raw）。
-# 正式素材到位后：覆盖 SE/ 中对应母带并重跑本脚本，无需改代码。
+# 从 assets/se/ 母带生成规范命名的通知音效（assets/sounds/ + Android res/raw）。
+# 正式素材到位后：覆盖 se/ 中对应母带并重跑本脚本，无需改代码。
 $ErrorActionPreference = 'Stop'
 
 $utf8 = [System.Text.UTF8Encoding]::new($false)
@@ -8,7 +8,7 @@ $OutputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
 
 $root = Split-Path -Parent $PSScriptRoot
-$seDir = Join-Path $root 'apps/mobile_flutter/assets/SE'
+$seDir = Join-Path $root 'apps/mobile_flutter/assets/se'
 $outDir = Join-Path $root 'apps/mobile_flutter/assets/sounds'
 $rawDir = Join-Path $root 'apps/mobile_flutter/android/app/src/main/res/raw'
 
