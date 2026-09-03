@@ -176,6 +176,19 @@ NotificationCoordinator（唯一入口）
    由系统通知发声，应用内循环经 `SoundServiceCallAlertDriver.audible`
    门控静音（回前台自动恢复），杜绝双声。
 
+**0.3.31 同步看门狗**（第四次修复，针对"后台一段时间后停收"）：
+用户复测表明进程保活/唤醒锁均生效（常驻通知在、白名单已开），但退后台
+一段时间后同步停摆、回前台立即恢复——SDK 同步循环存在悬挂路径（长轮询
+连接黑洞、续环断裂、事务卡死）且无自愈。新增 `MatrixSyncWatchdog`
+（`lib/features/matrix/matrix_sync_watchdog.dart`）：
+
+- 心跳 = SDK `onSyncStatus` 的 waitingForResponse/processing/finished
+  （健康长轮询 ≤40s 一跳）；
+- 停跳 >2.5min → 踢 `oneShotSync`；>5min → `abortSync`（15s 超时兜底）
+  + 重开 `backgroundSync` 强制重建循环 + 立即补一次同步拉回漏掉的消息；
+- 全部行动打 `chatflow/syncwatchdog` 标签（release logcat 可见）：
+  `adb logcat -s flutter | grep syncwatchdog` 可现场定位悬挂形态。
+
 **边界与前置条件**：
 - Android 14+ 对 dataSync 前台服务有每日约 6 小时配额，超时系统停服并
   退回"进程存活期"通知；回前台自动补启。

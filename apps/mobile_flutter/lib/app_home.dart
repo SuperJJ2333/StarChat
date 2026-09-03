@@ -26,6 +26,7 @@ import 'features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart' show Membership, Room;
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/matrix_direct_chat_adapter.dart';
+import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'features/matrix/room_page.dart';
 import 'features/matrix/profile_repository.dart';
@@ -167,6 +168,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// BUG 2 后台/锁屏通知保活：dataSync 前台服务维持 Matrix 同步长连接，
   /// 登录会话期间常驻（AppHome 即登录后的根页面，dispose 即退出登录）。
   final SyncKeepAliveService syncKeepAlive = SyncKeepAliveService();
+
+  /// BUG（后台通知第四次修复）：SDK 同步循环后台悬挂无自愈——看门狗
+  /// 以循环心跳为准，停跳先踢 oneShotSync，仍停跳强制重建循环。
+  late final MatrixSyncWatchdog syncWatchdog = MatrixSyncWatchdog(
+    target: ClientSyncWatchdogTarget(widget.matrix.sdkClient),
+  );
   MatrixNotificationEventSource? _notificationEventSource;
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
@@ -191,6 +198,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
     unawaited(_startNotificationSystem().then((_) async {
       await syncKeepAlive.ensureStarted();
+      syncWatchdog.start();
       await _primeBatteryOptimization();
     }));
     WidgetsBinding.instance.addObserver(this);
@@ -759,6 +767,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     directChats.dispose();
     // 退出登录/会话结束：停止消息同步保活前台服务。
     unawaited(syncKeepAlive.stop());
+    syncWatchdog.dispose();
     unawaited(reminderBootstrap.dispose());
     NotificationFeedback.uninstall();
     NotificationSystemHandle.uninstall();
