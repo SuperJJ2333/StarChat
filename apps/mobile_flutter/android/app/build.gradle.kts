@@ -68,7 +68,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            val storeFilePath = signingProperties.getProperty("storeFile")
+            // KEYSTORE_FILE 环境变量可覆盖 storeFile 路径（CI 用仓库内
+            // 相对路径；本地缺省保持 key.properties 的绝对路径行为）。
+            val storeFilePath = System.getenv("KEYSTORE_FILE")
+                ?.takeIf { it.isNotBlank() }
+                ?: signingProperties.getProperty("storeFile")
             if (!storeFilePath.isNullOrBlank()) {
                 signingConfigs.create("release") {
                     keyAlias = signingProperties.getProperty("keyAlias")

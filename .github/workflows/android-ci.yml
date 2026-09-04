@@ -1,0 +1,116 @@
+name: android-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'apps/mobile_flutter/**'
+      - 'services/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'infra/**'
+      - '.github/workflows/android-ci.yml'
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend & infra gates (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # business-worker 的运行依赖由 business-api 安装提供（其
+          # requirements.txt 注释明示）；matrix-bot 独立安装。
+          pip install -e services/business-api
+          pip install -r services/matrix-bot/requirements.txt
+
+      - name: Infra render tests
+        run: python -m pytest tests/infra -q
+
+      - name: Getui bridge tests
+        env:
+          PYTHONPATH: services/getui-bridge
+        run: python -m pytest tests/getui_bridge -q
+
+      - name: Business API & Worker tests
+        env:
+          PYTHONPATH: services/business-api:services/business-worker/app:${{ github.workspace }}
+        run: python -m pytest tests/business_api tests/business_worker -q
+
+      - name: Flutter boundary tests (python)
+        run: python -m pytest tests/mobile -q
+
+      - name: UI contract drift
+        run: python scripts/verify_ui_contract.py
+
+      - name: OpenAPI drift check
+        env:
+          PYTHONPATH: services/business-api:${{ github.workspace }}
+        run: python scripts/export_openapi.py --check
+
+      - name: Alembic single head + offline SQL
+        working-directory: services/business-api
+        run: |
+          python -m alembic heads
+          python -m alembic upgrade head --sql >/dev/null
+
+      - name: Docker Compose config render
+        run: docker compose --env-file .env.example config --quiet
+
+  flutter:
+    name: Flutter analyze & test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile_flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test (full suite)
+        run: flutter test
+
+  android-debug-build:
+    name: Android debug build (no signing required)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile_flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Debug APK (standard flavor)
+        run: flutter build apk --debug --flavor standard --target-platform android-arm64

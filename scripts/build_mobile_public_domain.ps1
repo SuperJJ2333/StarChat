@@ -4,6 +4,9 @@ param(
     # （AppConfig.sygnalPushGatewayUrl）。留空 = 不编译网关地址，
     # 客户端不注册 pusher（docs/PUSH_SETUP.md）。
     [string]$SygnalUrl = '',
+    # 个推桥接网关根地址：编译为个推通道 Matrix Pusher 的 data.url
+    # （AppConfig.getuiPushGatewayUrl）。留空 = 不注册个推 pusher。
+    [string]$GetuiUrl = '',
     [ValidateSet('Release', 'Debug')]
     [string]$BuildMode = 'Release',
     [switch]$ValidateOnly,
@@ -94,7 +97,7 @@ if ($BuildMode -eq 'Release') {
         # Dart 代码混淆 + 符号分离：去除 libapp.so 内明文字符串/符号，
         # 降低安全厂商灰度启发式误报；符号表存档用于崩溃还原。
         "--obfuscate",
-        "--split-debug-info=$mobileRoot\build\symbols"
+        ('--split-debug-info=' + (Join-Path $mobileRoot 'build/symbols'))
     )
 }
 else {
@@ -121,16 +124,27 @@ if ($BuildMode -eq 'Release') {
 function Assert-ApkManifestVersion {
     param([string]$ApkPath, [string]$ExpectedVersionName, [int]$ExpectedVersionCode, [string]$Label)
     $aaptPath = $null
-    $sdkBuildTools = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
-    if (Test-Path -LiteralPath $sdkBuildTools) {
-        $aaptPath = (Get-ChildItem -LiteralPath $sdkBuildTools -Filter 'aapt.exe' -Recurse -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1).FullName
+    if ($IsWindows -or $env:LOCALAPPDATA) {
+        $sdkBuildTools = Join-Path $env:LOCALAPPDATA 'Android\Sdk\build-tools'
+        if (Test-Path -LiteralPath $sdkBuildTools) {
+            $aaptPath = (Get-ChildItem -LiteralPath $sdkBuildTools -Filter 'aapt.exe' -Recurse -ErrorAction SilentlyContinue |
+                Sort-Object FullName -Descending | Select-Object -First 1).FullName
+        }
+    }
+    if (-not $aaptPath -and $env:ANDROID_HOME) {
+        # Linux CI：ANDROID_HOME/build-tools/<ver>/aapt
+        $linuxBuildTools = Get-ChildItem -LiteralPath (Join-Path $env:ANDROID_HOME 'build-tools') -Directory -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending
+        foreach ($dir in $linuxBuildTools) {
+            $candidate = Join-Path $dir.FullName 'aapt'
+            if (Test-Path -LiteralPath $candidate) { $aaptPath = $candidate; break }
+        }
     }
     if (-not $aaptPath) {
         $aaptCommand = Get-Command aapt -ErrorAction SilentlyContinue
         if ($aaptCommand) { $aaptPath = $aaptCommand.Source }
     }
-    if (-not $aaptPath) { throw "aapt.exe not found under $sdkBuildTools; cannot verify APK manifest version" }
+    if (-not $aaptPath) { throw "aapt not found (Windows: %LOCALAPPDATA%\\Android\\Sdk\\build-tools; Linux: ANDROID_HOME/build-tools); cannot verify APK manifest version" }
     $badging = (& $aaptPath dump badging $ApkPath 2>$null | Select-Object -First 1)
     if (-not $badging -or $badging -notmatch "versionCode='(\d+)' versionName='([^']+)'") {
         throw "aapt could not parse manifest of $ApkPath"

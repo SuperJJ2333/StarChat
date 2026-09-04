@@ -1,0 +1,99 @@
+name: android-release
+
+# 签名 Release 构建（tag 或手动触发）。需要仓库 Secrets：
+#   ANDROID_KEYSTORE_BASE64  — keystore 文件的 base64
+#   ANDROID_KEY_PROPERTIES   — key.properties 全文（4 行）
+#   PROD_SSH_KEY             — 部署私钥（对应服务器 authorized_keys）
+# 配置步骤见 docs/RUNBOOK_RELEASE.md。Secrets 未配置时 fail-fast 并提示，
+# 绝不静默跳过或伪装成功。
+# 本工作流止步于"构建+上传+别名"；正式 publish（更新弹窗）由人工执行
+# scripts/release.ps1 -SkipBuild 或服务器侧确认——发布是业务决策。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload_to_server:
+        description: '构建后上传到生产服务器（默认仅存 workflow artifact）'
+        type: boolean
+        default: false
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  signed-build:
+    name: Signed release APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPS: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEY_PROPS" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_PROPERTIES Secrets。"
+            echo "::error::配置步骤见 docs/RUNBOOK_RELEASE.md §Secrets（含从现有 key.properties 提取 base64 的命令）。"
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+
+      - name: Restore signing configuration
+        working-directory: apps/mobile_flutter/android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEY_PROPS: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          printf '%s' "$KEYSTORE_B64" | base64 -d > app/liuhetong-release.jks
+          printf '%s\n' "$KEY_PROPS" > key.properties
+          # storeFile 指向仓库内相对路径（gradle 侧 KEYSTORE_FILE 支持已加）
+          sed -i "s|^storeFile=.*|storeFile=app/liuhetong-release.jks|" key.properties
+          echo "key.properties fields:"; cut -d= -f1 key.properties
+
+      - name: Build (guards: origin probe + aapt version + libapp origin)
+        env:
+          # gradle 侧 KEYSTORE_FILE 覆盖 storeFile（指向仓库内还原的 keystore）
+          KEYSTORE_FILE: ${{ github.workspace }}/apps/mobile_flutter/android/app/liuhetong-release.jks
+        run: >
+          pwsh -NoProfile -File scripts/build_mobile_public_domain.ps1
+          -SygnalUrl https://liuhetong888.com -GetuiUrl https://liuhetong888.com
+
+      - name: Upload APKs as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apks
+          path: apps/mobile_flutter/build/app/outputs/flutter-apk/ChatFlow-*.apk
+          if-no-files-found: error
+
+      - name: Upload to production server (optional)
+        if: ${{ github.event_name == 'push' || inputs.upload_to_server }}
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          if [ -z "$PROD_SSH_KEY" ]; then
+            echo "::error::选择了上传但缺少 PROD_SSH_KEY Secret（见 docs/RUNBOOK_RELEASE.md）。"
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/prod_key && chmod 600 ~/.ssh/prod_key
+          ssh-keyscan -p 23421 207.56.8.8 >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/prod_key -p 23421 -o BatchMode=yes root@207.56.8.8"
+          scp -i ~/.ssh/prod_key -P 23421 -o BatchMode=yes \
+            apps/mobile_flutter/build/app/outputs/flutter-apk/ChatFlow-*.apk \
+            root@207.56.8.8:/opt/starchat/frontend/downloads/
+          VER=$(grep -oP '^version:\s*\K[0-9.]+' apps/mobile_flutter/pubspec.yaml)
+          $SSH "cd /opt/starchat/frontend/downloads && \
+            ln -sfn ChatFlow-$VER-arm64.apk latest-arm64.apk && \
+            ln -sfn ChatFlow-$VER-arm32.apk latest-arm32.apk && \
+            ln -sfn ChatFlow-$VER-x86_64.apk latest-x86_64.apk && ls -l latest-*.apk"
+          echo "::notice::上传+别名完成。正式 publish（更新弹窗）请运行 scripts/release.ps1 -SkipBuild -Version $VER -Notes '...'（业务决策不自动化）。"
