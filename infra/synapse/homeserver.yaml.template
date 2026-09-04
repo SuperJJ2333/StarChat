@@ -40,6 +40,7 @@ login_via_existing_session:
 turn_uris:
   - "{{TURN_URI_UDP}}"
   - "{{TURN_URI_TCP}}"
+  - "{{TURN_URI_TLS}}"
 turn_shared_secret: "{{TURN_SHARED_SECRET}}"
 turn_user_lifetime: 1h
 turn_allow_guests: false

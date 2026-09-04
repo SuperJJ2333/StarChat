@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/call_diagnostics.dart';
 
 final class FakeCallPermissions implements CallPermissionGateway {
   bool allowed = true;
@@ -56,6 +57,8 @@ final class _NoopDriver implements CallAlertDriver {
 final class FakeCallBackend implements CallBackend {
   final events = StreamController<CallBackendEvent>.broadcast();
   bool safeRoom = true;
+  bool activeSession = true;
+  bool failAccept = false;
   int starts = 0;
   int accepts = 0;
   int rejects = 0;
@@ -67,6 +70,8 @@ final class FakeCallBackend implements CallBackend {
   @override
   Stream<CallBackendEvent> get callEvents => events.stream;
   @override
+  bool get hasActiveSession => activeSession;
+  @override
   Future<bool> isEncryptedDirectRoom(
           String roomId, String matrixUserId) async =>
       safeRoom;
@@ -77,7 +82,11 @@ final class FakeCallBackend implements CallBackend {
   }
 
   @override
-  Future<void> accept() async => accepts++;
+  Future<void> accept() async {
+    if (failAccept) throw StateError('answer negotiation failed');
+    accepts++;
+  }
+
   @override
   Future<void> reject() async => rejects++;
   @override
@@ -278,5 +287,130 @@ void main() {
     expect(formatCallDuration(const Duration(seconds: 65)), '01:05');
     expect(formatCallDuration(const Duration(hours: 1, minutes: 2, seconds: 3)),
         '1:02:03');
+  });
+
+  Future<CallController> ringingIncomingCall(
+    FakeCallBackend backend, {
+    RecordingCallAlerts? alerts,
+    CallDiagnostics? diagnostics,
+    Duration connectTimeout = const Duration(seconds: 45),
+  }) async {
+    final controller = CallController(
+      backend: backend,
+      permissions: FakeCallPermissions(),
+      alerts: alerts ?? RecordingCallAlerts(),
+      diagnostics: diagnostics,
+      connectTimeout: connectTimeout,
+    );
+    backend.events.add(const CallBackendEvent.incoming(
+      roomId: '!dm:example.test',
+      matrixUserId: '@alice:example.test',
+      type: CallMediaType.audio,
+    ));
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.state.phase, CallPhase.ringing);
+    return controller;
+  }
+
+  test('accept signaling failure enters failed state instead of hanging',
+      () async {
+    final backend = FakeCallBackend()..failAccept = true;
+    final alerts = RecordingCallAlerts();
+    final controller = await ringingIncomingCall(backend, alerts: alerts);
+
+    await controller.accept();
+    expect(controller.state.phase, CallPhase.failed, reason: '接听信令异常不得裸抛或卡在响铃');
+    expect(controller.state.message, '接听失败，请重试');
+    expect(alerts.stopped, greaterThanOrEqualTo(1), reason: '失败即停铃');
+    expect(backend.hangups, 0, reason: '失败态不自动挂断，交给重试/关闭');
+    controller.dispose();
+  });
+
+  test('accept transitions to connecting and times out when ICE never lands',
+      () async {
+    final backend = FakeCallBackend();
+    final controller = await ringingIncomingCall(
+      backend,
+      connectTimeout: const Duration(milliseconds: 60),
+    );
+
+    await controller.accept();
+    expect(controller.state.phase, CallPhase.connecting,
+        reason: '接听后等待 ICE 期间应显示连接中，而非继续响铃');
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(controller.state.phase, CallPhase.failed, reason: 'ICE 超时进入失败态');
+    expect(controller.state.message, '接通超时，请重试');
+    expect(backend.hangups, 1, reason: '超时后挂断死会话以便重试回拨');
+    controller.dispose();
+  });
+
+  test('connecting to connected cancels the connect timeout', () async {
+    final backend = FakeCallBackend();
+    final controller = await ringingIncomingCall(
+      backend,
+      connectTimeout: const Duration(milliseconds: 60),
+    );
+    await controller.accept();
+    backend.events.add(const CallBackendEvent.connected());
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(controller.state.phase, CallPhase.connected,
+        reason: '接通后连接超时定时器必须失效');
+    expect(backend.hangups, 0);
+    controller.dispose();
+  });
+
+  test('retry after failure re-accepts while the session is still alive',
+      () async {
+    final backend = FakeCallBackend()..failAccept = true;
+    final controller = await ringingIncomingCall(backend);
+    await controller.accept();
+    expect(controller.state.phase, CallPhase.failed);
+
+    backend.failAccept = false;
+    backend.activeSession = true;
+    await controller.retryAfterFailure();
+    expect(backend.accepts, 1, reason: '会话存活时重试=再次接听');
+    expect(controller.state.phase, CallPhase.connecting);
+    controller.dispose();
+  });
+
+  test('retry after failure calls back when the session is gone', () async {
+    final backend = FakeCallBackend()..failAccept = true;
+    final controller = await ringingIncomingCall(
+      backend,
+      connectTimeout: const Duration(milliseconds: 60),
+    );
+    await controller.accept(); // 失败（信令）
+    backend.activeSession = false; // 会话已被清理/超时挂断
+    await controller.retryAfterFailure();
+    expect(backend.starts, 1, reason: '会话已死时重试=对同一用户回拨');
+    expect(controller.state.phase, CallPhase.ringing, reason: '回拨进入主叫等待');
+    controller.dispose();
+  });
+
+  test('key-path diagnostics record ui/answer/ice stages', () async {
+    final backend = FakeCallBackend();
+    final diagnostics = CallDiagnostics(
+      now: () => DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    final controller =
+        await ringingIncomingCall(backend, diagnostics: diagnostics);
+
+    expect(diagnostics.has(CallDiagStage.incomingUiShown), isTrue,
+        reason: '来电 UI 展示必须埋点');
+
+    await controller.accept();
+    expect(diagnostics.has(CallDiagStage.answerTapped), isTrue);
+
+    backend.events.add(const CallBackendEvent.connected());
+    await Future<void>.delayed(Duration.zero);
+    expect(diagnostics.has(CallDiagStage.iceConnected), isTrue);
+
+    final summary = diagnostics.summary();
+    expect(summary, contains('ui→tap='));
+    expect(summary, contains('tap→sent='));
+    expect(summary, contains('sent→ice='));
+    controller.dispose();
   });
 }

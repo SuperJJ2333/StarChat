@@ -15,6 +15,9 @@ final class _FakeCallBackend implements CallBackend {
   final events = StreamController<CallBackendEvent>.broadcast();
   int accepts = 0;
   int rejects = 0;
+
+  @override
+  bool get hasActiveSession => true;
   int hangups = 0;
   bool? muted;
   bool? speaker;

@@ -60,6 +60,18 @@ services:
       - "${TURN_PORT:-3478}:3478/udp"
       - "${TURN_PORT:-3478}:3478/tcp"
       - "49160-49200:49160-49200/udp"
+      # TURN TLS 兜底（生产 2026-09-04 已启用；见 docs/TURN.md）：
+      # 取消注释并同时在上面的 command 追加
+      #   - "--tls-listening-port=5349"
+      #   - "--cert=/etc/coturn/certs/fullchain.pem"
+      #   - "--pkey=/etc/coturn/certs/privkey.pem"
+      # 并挂载证书卷。443 不能用作 TURN TLS：宿主 443/tcp 由 nginx 网关、
+      # 443/udp 由 QUIC 服务占用（TCP-443 TURN 需 SNI 分流 + 独立域名证书，
+      # 见 docs/TURN.md §443）。
+      # - "5349:5349/tcp"
+      # - "5349:5349/udp"
+    # volumes:
+    #   - ./data/nginx/certs:/etc/coturn/certs:ro
 
   element-web:
     image: "${ELEMENT_WEB_IMAGE:?ELEMENT_WEB_IMAGE is required}"

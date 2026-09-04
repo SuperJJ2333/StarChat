@@ -3,10 +3,15 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'call_alerts.dart';
+import 'call_diagnostics.dart';
 import '../../core/notification/sound_type.dart';
 
 /// 主叫无人接听的自动取消时长（微信语义：约 60 秒后提示无应答）。
 const callRingTimeout = Duration(seconds: 60);
+
+/// 被叫接听后的连接超时：到点 ICE 未接通 → 失败态（可重试）。
+/// 此前 ICE 不通会永远停留在响铃界面（SDK 无 kConnecting 超时）。
+const callConnectTimeout = Duration(seconds: 45);
 
 /// 通话时长展示格式：mm:ss（超 1 小时 h:mm:ss）。
 String formatCallDuration(Duration duration) {
@@ -26,6 +31,9 @@ enum CallPhase {
   idle,
   requestingPermission,
   ringing,
+
+  /// 已接听/已拨出，等待 ICE 接通（超时进 failed 可重试）。
+  connecting,
   connected,
   permissionDenied,
   ended,
@@ -76,6 +84,9 @@ abstract interface class CallBackend {
   Future<void> setMuted(bool value);
   Future<void> setSpeaker(bool value);
   Future<void> switchCamera();
+
+  /// 会话是否仍存活（接听失败重试时：存活→再接听，已死→回拨）。
+  bool get hasActiveSession;
 }
 
 final class CallViewState {
@@ -127,9 +138,12 @@ final class CallController extends ChangeNotifier {
     required this.permissions,
     CallAlerts? alerts,
     CallSoundCues? soundCues,
+    CallDiagnostics? diagnostics,
     this.ringTimeout = callRingTimeout,
+    this.connectTimeout = callConnectTimeout,
   })  : alerts = alerts ?? CallAlerts(),
-        soundCues = soundCues ?? const NotificationSystemCallSoundCues() {
+        soundCues = soundCues ?? const NotificationSystemCallSoundCues(),
+        diagnostics = diagnostics ?? CallDiagnostics() {
     _events = backend.callEvents.listen(_handleEvent);
   }
 
@@ -140,11 +154,18 @@ final class CallController extends ChangeNotifier {
   /// 接通/结束提示音（PRD §5）。
   final CallSoundCues soundCues;
 
+  /// 关键路径耗时诊断（与 backend 共享同一实例/时间线）。
+  final CallDiagnostics diagnostics;
+
   /// 主叫等待超时：到点未接通自动挂断并提示。
   final Duration ringTimeout;
 
+  /// 被叫接听后的连接超时：到点 ICE 未接通 → failed（可重试）。
+  final Duration connectTimeout;
+
   late final StreamSubscription<CallBackendEvent> _events;
   Timer? _ringTimeoutTimer;
+  Timer? _connectTimeoutTimer;
   CallViewState state = const CallViewState(CallPhase.idle);
   bool _incomingRinging = false;
 
@@ -207,29 +228,79 @@ final class CallController extends ChangeNotifier {
     }
   }
 
+  /// P0（接听加固）：权限失败拒接；信令异常不再裸抛（此前无 try/catch，
+  /// ICE 不通则永远停在响铃界面）——进入 failed 可重试；
+  /// 接听后进入 connecting 并布防连接超时。
   Future<void> accept() async {
     final type = state.type ?? CallMediaType.audio;
+    diagnostics.mark(CallDiagStage.answerTapped);
     _set(state.copyWith(phase: CallPhase.requestingPermission));
     if (!await permissions.request(video: type == CallMediaType.video)) {
-      await backend.reject();
+      await _safeReject();
       _set(state.copyWith(
           phase: CallPhase.permissionDenied, message: '权限被拒绝，已拒接来电'));
       return;
     }
-    await backend.accept();
-    _set(state.copyWith(phase: CallPhase.ringing));
+    try {
+      await backend.accept();
+      diagnostics.mark(CallDiagStage.answerSent);
+      _incomingRinging = false; // 已接听：停止来电铃（等待音语义不适用）。
+      _set(state.copyWith(phase: CallPhase.connecting));
+      _armConnectTimeout();
+    } catch (_) {
+      _acceptFailed('接听失败，请重试');
+    }
+  }
+
+  /// 接听失败/连接超时后的重试：会话仍存活 → 守卫再接听；
+  /// 会话已死（超时挂断/信令终止）→ 对同一用户回拨（等价新呼叫）。
+  Future<void> retryAfterFailure() async {
+    if (state.phase != CallPhase.failed) return;
+    final roomId = state.roomId;
+    final matrixUserId = state.matrixUserId;
+    final type = state.type ?? CallMediaType.audio;
+    if (roomId == null || matrixUserId == null) return;
+    if (backend.hasActiveSession) {
+      await accept();
+      return;
+    }
+    await start(roomId: roomId, matrixUserId: matrixUserId, type: type);
+  }
+
+  void _acceptFailed(String message) {
+    alerts.stop();
+    _connectTimeoutTimer?.cancel();
+    _set(state.copyWith(phase: CallPhase.failed, message: message));
+  }
+
+  void _armConnectTimeout() {
+    _connectTimeoutTimer?.cancel();
+    _connectTimeoutTimer = Timer(connectTimeout, () async {
+      if (state.phase != CallPhase.connecting) return;
+      await _safeHangup();
+      _set(state.copyWith(phase: CallPhase.failed, message: '接通超时，请重试'));
+    });
+  }
+
+  Future<void> _safeReject() async {
+    try {
+      await backend.reject();
+    } catch (_) {
+      // 拒绝失败也按已拒接处理，避免界面卡死。
+    }
   }
 
   Future<void> reject() async {
     alerts.stop();
     _ringTimeoutTimer?.cancel();
-    await backend.reject();
+    await _safeReject();
     _set(state.copyWith(phase: CallPhase.ended, message: '已拒接'));
   }
 
   Future<void> hangup() async {
     alerts.stop();
     _ringTimeoutTimer?.cancel();
+    _connectTimeoutTimer?.cancel();
     await _safeHangup();
     _set(state.copyWith(phase: CallPhase.ended, message: '通话已结束'));
   }
@@ -252,6 +323,7 @@ final class CallController extends ChangeNotifier {
     switch (event.kind) {
       case CallBackendEventKind.incoming:
         _incomingRinging = true;
+        diagnostics.mark(CallDiagStage.incomingUiShown);
         _set(CallViewState(
           CallPhase.ringing,
           roomId: event.roomId,
@@ -260,9 +332,11 @@ final class CallController extends ChangeNotifier {
         ));
       case CallBackendEventKind.connected:
         _incomingRinging = false;
+        diagnostics.mark(CallDiagStage.iceConnected);
         // 接通即停铃；视频通话默认打开免提（微信语义），语音保持听筒。
         alerts.stop();
         _ringTimeoutTimer?.cancel();
+        _connectTimeoutTimer?.cancel();
         final isVideo = state.type == CallMediaType.video;
         if (isVideo && !state.speaker) {
           try {
@@ -307,6 +381,7 @@ final class CallController extends ChangeNotifier {
   @override
   void dispose() {
     _ringTimeoutTimer?.cancel();
+    _connectTimeoutTimer?.cancel();
     alerts.stop();
     _events.cancel();
     super.dispose();

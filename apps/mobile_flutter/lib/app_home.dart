@@ -40,6 +40,8 @@ import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_alerts.dart';
 import 'features/matrix/call_controller.dart';
+import 'features/matrix/call_diagnostics.dart';
+import 'features/matrix/call_permissions.dart';
 import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
@@ -137,13 +139,20 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     return service.openExisting(snapshot.roomId, target);
   }
 
-  late final MatrixCallBackend callBackend =
-      MatrixCallBackend(widget.matrix.sdkClient);
+  /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
+  /// （UI 展示/点击接听）共享同一时间线。
+  late final CallDiagnostics callDiagnostics = CallDiagnostics();
+  late final MatrixCallBackend callBackend = MatrixCallBackend(
+    widget.matrix.sdkClient,
+    diagnostics: callDiagnostics,
+  );
   late final ForegroundSoundService notificationSounds =
       ForegroundSoundService();
   late final CallController calls = CallController(
     backend: callBackend,
-    permissions: const WebRtcPermissionGateway(),
+    // 系统权限 API（permission_handler）——不再用 getUserMedia 探测流。
+    permissions: const SystemCallPermissionGateway(),
+    diagnostics: callDiagnostics,
     // SE 来电铃声（PRD §9/§10）：语音/视频各自循环铃声，
     // 受"语音/视频通话通知"设置开关约束。
     alerts: CallAlerts(

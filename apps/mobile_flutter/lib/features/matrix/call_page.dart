@@ -147,7 +147,9 @@ final class _CallPageState extends State<CallPage> {
         CallPhase.requestingPermission => '正在请求通话权限',
         CallPhase.ringing =>
           widget.incoming ? _incomingInviteText : '正在等待对方接听…',
-        CallPhase.connected => widget.controller.state.muted ? '麦克风已关闭' : '端到端加密',
+        CallPhase.connecting => '正在建立加密连接…',
+        CallPhase.connected =>
+          widget.controller.state.muted ? '麦克风已关闭' : '端到端加密',
         CallPhase.permissionDenied =>
           widget.controller.state.message ?? '权限被拒绝',
         CallPhase.ended => widget.controller.state.message ?? '通话已结束',
@@ -169,7 +171,8 @@ final class _CallPageState extends State<CallPage> {
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     final connected = state.phase == CallPhase.connected;
-    final outgoingRinging = state.phase == CallPhase.ringing && !widget.incoming;
+    final outgoingRinging =
+        state.phase == CallPhase.ringing && !widget.incoming;
     final videoCall = state.type == CallMediaType.video;
 
     final Widget body;
@@ -254,12 +257,7 @@ final class _CallPageState extends State<CallPage> {
             else if (connected || outgoingRinging)
               _activeControls(state, connected)
             else
-              CallControlButton(
-                key: const Key('call-control-close'),
-                icon: ChangliaoIcons.close,
-                label: '关闭',
-                onPressed: () => Navigator.maybePop(context),
-              ),
+              _endedControls(),
             const SizedBox(height: WeChatSpacing.xxl),
           ],
         ),
@@ -280,8 +278,7 @@ final class _CallPageState extends State<CallPage> {
         SafeArea(
           child: Column(children: [
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: WeChatSpacing.lg),
+              padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.lg),
               child: Row(children: [
                 Expanded(
                   child: Column(
@@ -336,15 +333,45 @@ final class _CallPageState extends State<CallPage> {
                     ? (widget.incoming && state.phase == CallPhase.ringing
                         ? _incomingControls()
                         : _videoControls(state, connected))
-                    : CallControlButton(
-                        key: const Key('call-control-close'),
-                        icon: ChangliaoIcons.close,
-                        label: '关闭',
-                        onPressed: () => Navigator.maybePop(context),
-                      ),
+                    : _endedControls(),
               ),
             ),
           ]),
+        ),
+      ],
+    );
+  }
+
+  /// 结束/失败态控制：失败且可回拨时提供「重试」（会话仍在→再接听，
+  /// 已终止→回拨），其余仅关闭。
+  Widget _endedControls() {
+    final state = widget.controller.state;
+    final canRetry = state.phase == CallPhase.failed &&
+        state.roomId != null &&
+        state.matrixUserId != null;
+    if (!canRetry) {
+      return CallControlButton(
+        key: const Key('call-control-close'),
+        icon: ChangliaoIcons.close,
+        label: '关闭',
+        onPressed: () => Navigator.maybePop(context),
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        CallControlButton(
+          key: const Key('call-control-retry'),
+          icon: ChangliaoIcons.voiceCallFilled,
+          label: '重试',
+          kind: CallControlKind.accept,
+          onPressed: () => widget.controller.retryAfterFailure(),
+        ),
+        CallControlButton(
+          key: const Key('call-control-close'),
+          icon: ChangliaoIcons.close,
+          label: '关闭',
+          onPressed: () => Navigator.maybePop(context),
         ),
       ],
     );
@@ -399,8 +426,9 @@ final class _CallPageState extends State<CallPage> {
           label: '免提',
           selected: state.speaker,
           onPressed: widget.controller.toggleSpeaker,
-          icon:
-              state.speaker ? ChangliaoIcons.speakerFilled : ChangliaoIcons.speaker,
+          icon: state.speaker
+              ? ChangliaoIcons.speakerFilled
+              : ChangliaoIcons.speaker,
         ),
         if (state.type == CallMediaType.video)
           CallControlButton(
@@ -445,8 +473,9 @@ final class _CallPageState extends State<CallPage> {
           label: '免提',
           selected: state.speaker,
           onPressed: widget.controller.toggleSpeaker,
-          icon:
-              state.speaker ? ChangliaoIcons.speakerFilled : ChangliaoIcons.speaker,
+          icon: state.speaker
+              ? ChangliaoIcons.speakerFilled
+              : ChangliaoIcons.speaker,
         ),
       ],
     );

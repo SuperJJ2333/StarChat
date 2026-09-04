@@ -1,0 +1,16 @@
+√ Built build\app\outputs\flutter-apk\app-x86_64-standard-release.apk (66.8MB)
+APK_MANIFEST_OK arm64-v8a 0.3.33/2036
+APK_ORIGIN_OK ChatFlow-0.3.33-arm64.apk https://liuhetong888.com
+APK_MANIFEST_OK armeabi-v7a 0.3.33/1036
+APK_ORIGIN_OK ChatFlow-0.3.33-arm32.apk https://liuhetong888.com
+APK_MANIFEST_OK x86_64 0.3.33/4036
+APK_ORIGIN_OK ChatFlow-0.3.33-x86_64.apk https://liuhetong888.com
+APK=D:\pythonProject\outsource\StarChat\apps\mobile_flutter\build\app\outputs\flutter-apk\ChatFlow-0.3.33-arm64.apk
+APK_BYTES=64836564
+APK_SHA256=8EC0BADD5C874D048D268E9ABF8323178A6C060BC93D757C3AC930C1854B8AAD
+PUBLISHED_ABI=arm64-v8a -> ChatFlow-0.3.33-arm64.apk
+PUBLISHED_ABI=armeabi-v7a -> ChatFlow-0.3.33-arm32.apk
+PUBLISHED_ABI=x86_64 -> ChatFlow-0.3.33-x86_64.apk
+APK_VERSION=0.3.33+36
+PUBLIC_ORIGIN=https://liuhetong888.com
+BUILD_MODE=Release

@@ -14,12 +14,16 @@ final class WeChatMomentTile extends StatelessWidget {
     this.onComment,
     this.onAdTap,
     this.likedOverride,
+    this.onDelete,
   });
   final MomentItem item;
   final VoidCallback? onAuthorTap;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
   final VoidCallback? onAdTap;
+
+  /// 删除入口：仅当当前用户是作者时由页面传入（非 null 才渲染按钮）。
+  final VoidCallback? onDelete;
   final bool? likedOverride;
 
   @override
@@ -98,6 +102,14 @@ final class WeChatMomentTile extends StatelessWidget {
                   onPressed: onComment,
                   child: const Icon(CupertinoIcons.chat_bubble, size: 20),
                 ),
+                // 删除入口（仅作者可见——页面按作者身份传入 onDelete）。
+                if (onDelete != null)
+                  CupertinoButton(
+                    key: const Key('moment-delete-button'),
+                    padding: EdgeInsets.zero,
+                    onPressed: onDelete,
+                    child: const Icon(CupertinoIcons.delete, size: 20),
+                  ),
               ],
             ]),
             if (!isAd && item.likeUsers.isNotEmpty)

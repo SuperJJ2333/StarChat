@@ -30,6 +30,9 @@ final class MomentsPage extends StatefulWidget {
 final class _MomentsPageState extends State<MomentsPage> {
   final _itemOverrides = <String, MomentItem>{};
   final _pendingLikeIds = <String>{};
+
+  /// 乐观删除：pending 期间从 Feed 剔除，失败回滚恢复。
+  final _deletedIds = <String>{};
   late Future<Map<String, dynamic>> _feed;
   String? _coverUrl;
   String? _interactionError;
@@ -148,6 +151,71 @@ final class _MomentsPageState extends State<MomentsPage> {
       });
     } finally {
       if (mounted) setState(() => _pendingLikeIds.remove(item.id));
+    }
+  }
+
+  /// 删除入口仅对作者可见（PRD 隐私边界：非作者不可删除他人朋友圈）。
+  bool _canDelete(MomentItem item) {
+    if (item.kind == 'AD') return false;
+    final username = _identityCache.profile?.username.trim();
+    return username != null &&
+        username.isNotEmpty &&
+        item.author.username.trim() == username;
+  }
+
+  Future<void> _confirmDelete(MomentItem item) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('删除这条朋友圈？'),
+        content: const Text('删除后不可恢复。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            key: const Key('moment-delete-confirm'),
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _deleteMoment(item);
+  }
+
+  /// 乐观删除 + 失败回滚（复用点赞的乐观更新模式）：
+  /// 确认后立即从 Feed 剔除 → 调用删除 API → 失败恢复条目并提示；
+  /// 成功则同步内存 Feed 与磁盘缓存（避免缓存首绘把已删条目又画回来）。
+  Future<void> _deleteMoment(MomentItem item) async {
+    if (_deletedIds.contains(item.id)) return;
+    setState(() {
+      _deletedIds.add(item.id);
+      _interactionError = null;
+    });
+    try {
+      await widget.api.deleteMoment(item.id);
+      final snapshot = await _feed;
+      final items = List<Object?>.from((snapshot['items'] as List?) ?? const []);
+      items.removeWhere(
+          (m) => m is Map && m['id']?.toString() == item.id);
+      final updated = Map<String, dynamic>.from(snapshot)..['items'] = items;
+      await _saveFeedCache(updated);
+      if (mounted) {
+        setState(() {
+          _feed = Future.value(updated);
+          _itemOverrides.remove(item.id);
+        });
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _deletedIds.remove(item.id);
+        _interactionError =
+            error is BusinessApiException ? error.message : '删除失败，请重试';
+      });
     }
   }
 
@@ -303,6 +371,9 @@ final class _MomentsPageState extends State<MomentsPage> {
                       Builder(builder: (_) {
                         final parsed = MomentItem.fromJson(
                             Map<String, dynamic>.from(m as Map));
+                        if (_deletedIds.contains(parsed.id)) {
+                          return const SizedBox.shrink();
+                        }
                         final item = _itemOverrides[parsed.id] ?? parsed;
                         return WeChatMomentTile(
                           item: item,
@@ -310,6 +381,9 @@ final class _MomentsPageState extends State<MomentsPage> {
                               ? null
                               : () => _toggleLike(item),
                           onComment: () => _showComment(context, item),
+                          onDelete: _canDelete(item)
+                              ? () => _confirmDelete(item)
+                              : null,
                         );
                       }),
                   ]);

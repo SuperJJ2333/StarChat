@@ -7,6 +7,7 @@ import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contacts_page.dart';
+import '../contacts/scan_qr_page.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
 import '../../ui/components/conversation_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
@@ -43,7 +44,6 @@ List<User> orderedJoinedMembers(Room room) {
       if (byId[id] != null) byId[id]!
   ];
 }
-
 
 String directRoomNavigationTitle({
   required String? peerMatrixUserId,
@@ -323,7 +323,19 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                   builder: (_) => AddFriendPage(api: widget.api)),
             ),
           ),
-          _action(sheetContext, CupertinoIcons.qrcode_viewfinder, '扫一扫'),
+          _action(
+            sheetContext,
+            CupertinoIcons.qrcode_viewfinder,
+            '扫一扫',
+            // 与发现页同款入口：扫好友二维码 → 搜索 → 发好友申请页。
+            () => Navigator.push(
+              context,
+              CupertinoPageRoute(
+                fullscreenDialog: true,
+                builder: (_) => ScanQrPage(api: widget.api),
+              ),
+            ),
+          ),
           CupertinoActionSheetAction(
             key: const Key('messages-appearance'),
             onPressed: () {
@@ -540,9 +552,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                 context,
                 CupertinoPageRoute(
                     builder: (_) => GlobalSearchPage(
-                        api: widget.api,
-                        matrix: widget.matrix,
-                      ))),
+                          api: widget.api,
+                          matrix: widget.matrix,
+                        ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),
           CupertinoButton(

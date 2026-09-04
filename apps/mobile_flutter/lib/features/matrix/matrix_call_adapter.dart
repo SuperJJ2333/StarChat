@@ -7,6 +7,9 @@ import 'package:matrix/matrix.dart' hide CallBackend;
 import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
 
 import 'call_controller.dart';
+import 'call_diagnostics.dart';
+import 'call_quality_monitor.dart';
+import 'incoming_call_gate.dart';
 
 /// 通话结束摘要消息的自定义 msgtype（同红包/转账的自定义消息模式）。
 const changliaoCallMessageType = 'com.changliao.call';
@@ -32,27 +35,6 @@ String? resolveIncomingRemoteParticipant(
     return null;
   }
   return remote.single;
-}
-
-final class WebRtcPermissionGateway implements CallPermissionGateway {
-  const WebRtcPermissionGateway();
-
-  @override
-  Future<bool> request({required bool video}) async {
-    try {
-      final stream = await webrtc.navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': video ? {'facingMode': 'user'} : false,
-      });
-      for (final track in stream.getTracks()) {
-        await track.stop();
-      }
-      await stream.dispose();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
 }
 
 final class FlutterWebRtcDelegate implements WebRTCDelegate {
@@ -110,24 +92,36 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
 }
 
 final class MatrixCallBackend implements CallBackend {
-  MatrixCallBackend._(this.client, this.voip, this.delegate);
+  MatrixCallBackend._(this.client, this.voip, this.delegate, this.diagnostics);
 
-  factory MatrixCallBackend(Client client) {
+  factory MatrixCallBackend(
+    Client client, {
+    CallDiagnostics? diagnostics,
+  }) {
     late MatrixCallBackend backend;
     final delegate = FlutterWebRtcDelegate(
       onNewCall: (call) => backend._attach(call),
       onCallEnded: (call) => backend._ended(call),
     );
-    backend = MatrixCallBackend._(client, VoIP(client, delegate), delegate);
+    backend = MatrixCallBackend._(
+      client,
+      VoIP(client, delegate),
+      delegate,
+      diagnostics ?? CallDiagnostics(),
+    );
     return backend;
   }
 
   final Client client;
   final VoIP voip;
   final FlutterWebRtcDelegate delegate;
+
+  /// 关键路径耗时诊断（与 CallController 共享同一实例/时间线）。
+  final CallDiagnostics diagnostics;
   final _events = StreamController<CallBackendEvent>.broadcast();
   StreamSubscription<CallState>? _callStates;
   CallSession? _call;
+  CallQualityMonitor? _quality;
 
   webrtc.MediaStream? get localMediaStream =>
       _call?.localUserMediaStream?.stream;
@@ -136,6 +130,10 @@ final class MatrixCallBackend implements CallBackend {
 
   @override
   Stream<CallBackendEvent> get callEvents => _events.stream;
+
+  /// 会话是否仍存活（controller 据此决定重试=再接听还是回拨）。
+  @override
+  bool get hasActiveSession => _call != null;
 
   @override
   Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async {
@@ -173,10 +171,13 @@ final class MatrixCallBackend implements CallBackend {
   Future<void> _attach(CallSession call) async {
     if (identical(_call, call)) return;
     _call = call;
+    diagnostics.reset();
+    diagnostics.mark(CallDiagStage.inviteReceived);
     delegate.markActive(true);
     await _callStates?.cancel();
     _callStates = call.onCallStateChanged.stream.listen((state) {
       if (state == CallState.kConnected) {
+        _startQualityMonitor();
         _events.add(const CallBackendEvent.connected());
       } else if (state == CallState.kEnded) {
         _ended(call);
@@ -184,39 +185,49 @@ final class MatrixCallBackend implements CallBackend {
     });
     if (!call.isOutgoing) {
       // The delegate is awaited by the SDK's sync event handler. Complete that
-      // handler before a server-backed membership request, otherwise the
-      // incoming-call UI can deadlock behind the sync that delivered it.
+      // handler before any further work so the incoming-call UI is never
+      // blocked behind the sync that delivered it.
       unawaited(_validateIncoming(call));
     }
   }
 
+  /// P0（来电不被服务器阻塞）：本地已同步成员优先——零网络请求放行
+  /// 来电 UI；本地成员为空才回退服务器 /members（4s 超时，失败拒接，
+  /// 与旧实现安全语义一致）。
   Future<void> _validateIncoming(CallSession call) async {
     await Future<void>.delayed(Duration.zero);
     final localUserId = client.userID;
-    final memberEvents = await client.getMembersByRoom(
-          call.room.id,
-          membership: Membership.join,
-        ) ??
-        const <MatrixEvent>[];
-    if (!identical(_call, call)) return;
-    final participantIds =
-        memberEvents.map((event) => event.stateKey).whereType<String>().toSet();
-    final remoteUserId = localUserId == null
-        ? null
-        : resolveIncomingRemoteParticipant(
-            participantIds,
-            localUserId: localUserId,
-            advertisedRemoteUserId: call.remoteUserId,
+    final gate = IncomingCallGate(
+      localMembers: () => call.room
+          .getParticipants([Membership.join])
+          .map((member) => member.id)
+          .toSet(),
+      remoteMembers: () async {
+        try {
+          final memberEvents = await client.getMembersByRoom(
+            call.room.id,
+            membership: Membership.join,
           );
-    if (localUserId == null ||
-        call.room.membership != Membership.join ||
-        !call.room.encrypted ||
-        remoteUserId == null ||
-        !isVerifiedDirectParticipantSet(
-          participantIds,
-          localUserId: localUserId,
-          remoteUserId: remoteUserId,
-        )) {
+          return memberEvents
+              ?.map((event) => event.stateKey)
+              .whereType<String>()
+              .toSet();
+        } catch (_) {
+          return null;
+        }
+      },
+    );
+    final remoteUserId = await gate.validate(
+      localUserId: localUserId,
+      advertisedRemoteUserId: call.remoteUserId,
+      roomJoined: call.room.membership == Membership.join,
+      roomEncrypted: call.room.encrypted,
+    );
+    if (!identical(_call, call)) return;
+    // Gate 内部已完整校验（成员恰好双方、含本地用户、与信令声明一致、
+    // 房间已 join 且加密）——与旧 resolveIncomingRemoteParticipant +
+    // isVerifiedDirectParticipantSet 组合等价，本地/服务器成员来源同权。
+    if (localUserId == null || remoteUserId == null) {
       await call.reject(reason: CallErrorCode.userHangup);
       return;
     }
@@ -229,9 +240,23 @@ final class MatrixCallBackend implements CallBackend {
     ));
   }
 
+  void _startQualityMonitor() {
+    _quality?.stop();
+    final pc = _call?.pc;
+    if (pc == null) return;
+    _quality = CallQualityMonitor(
+      getStats: () => pc.getStats(),
+    )..start();
+  }
+
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
     delegate.markActive(false);
+    await _quality?.stop();
+    final qualitySummary = _quality?.summary();
+    if (qualitySummary != null) debugPrint(qualitySummary);
+    diagnostics.mark(CallDiagStage.ended);
+    debugPrint(diagnostics.summary());
     final interrupted = call.hangupReason == CallErrorCode.iceFailed;
     _events.add(interrupted
         ? const CallBackendEvent.networkInterrupted()

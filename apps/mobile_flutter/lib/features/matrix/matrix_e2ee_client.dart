@@ -34,10 +34,10 @@ abstract interface class MatrixE2eeClient
   /// 一并加密上传并写入事件的 info.thumbnail_file，接收端无需下载完整
   /// 附件即可渲染预览——服务端始终只接触密文。
   Future<String> sendEncryptedMedia(
-      String roomId, List<int> plaintext, String mimeType,
+      String roomId, Uint8List plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
       String? filename,
-      List<int>? thumbnailBytes,
+      Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight});
 }
@@ -187,11 +187,17 @@ final class MatrixSdkE2eeClient
   }
 
   @override
+
+  /// 发送加密媒体。
+  ///
+  /// 参数为 `Uint8List` 且**直接透传**给 SDK——此前这里对正文与缩略图
+  /// 各做一次 `Uint8List.fromList` 全量拷贝，视频路径上凭空多出两份
+  /// 完整内存副本（SDK 加密内部还会再做一次原生拷贝，无法避免）。
   Future<String> sendEncryptedMedia(
-      String roomId, List<int> plaintext, String mimeType,
+      String roomId, Uint8List plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
       String? filename,
-      List<int>? thumbnailBytes,
+      Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
     final room = client.getRoomById(roomId);
@@ -199,16 +205,15 @@ final class MatrixSdkE2eeClient
     MatrixImageFile? thumbnail;
     if (thumbnailBytes != null) {
       thumbnail = MatrixImageFile(
-          bytes: Uint8List.fromList(thumbnailBytes),
+          bytes: thumbnailBytes,
           name: 'thumb.jpg',
           mimeType: 'image/jpeg',
           width: thumbnailWidth,
           height: thumbnailHeight);
     }
-    final eventId = await room.sendFileEvent(MatrixFile(
-        bytes: Uint8List.fromList(plaintext),
-        name: filename ?? '畅聊附件',
-        mimeType: mimeType),
+    final eventId = await room.sendFileEvent(
+        MatrixFile(
+            bytes: plaintext, name: filename ?? '畅聊附件', mimeType: mimeType),
         thumbnail: thumbnail,
         extraContent: extraContent);
     if (eventId == null) {

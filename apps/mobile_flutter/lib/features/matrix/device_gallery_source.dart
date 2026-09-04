@@ -70,6 +70,85 @@ final class GalleryUnavailable extends GallerySourceError {
 /// 相册分页大小：首屏与每次追加各加载一页，避免一次性解码全量缩略图。
 const galleryPageSize = 20;
 
+/// 首屏页大小：先返回可见网格（约 3~4 列 × 3~4 行）的 12 张，
+/// 用户立即可以交互，剩余按 20/页追加。
+const galleryFirstPageSize = 12;
+
+/// 缩略图有界并发解码上限：防止一次性把整页解码任务塞满解码线程
+/// 与内存（顺序解码太慢、无上限并发会瞬时峰值）。
+const galleryDecodeConcurrency = 3;
+
+/// 有界并发执行缩略图解码任务：保持输入顺序；单张失败回退空占位
+/// （与旧的 `thumbnail ?? const []` 语义一致）。
+Future<List<Uint8List>> decodeThumbnailsBounded(
+  List<Future<Uint8List?> Function()> tasks, {
+  int maxConcurrent = galleryDecodeConcurrency,
+}) async {
+  final results = List<Uint8List?>.filled(tasks.length, null);
+  var next = 0;
+  Future<void> worker() async {
+    while (true) {
+      final index = next++;
+      if (index >= tasks.length) return;
+      try {
+        results[index] = await tasks[index]();
+      } catch (_) {
+        results[index] = null;
+      }
+    }
+  }
+
+  final workers = [
+    for (var i = 0; i < maxConcurrent && i < tasks.length; i++) worker(),
+  ];
+  await Future.wait(workers);
+  return [
+    for (final result in results) result ?? Uint8List.fromList(const []),
+  ];
+}
+
+/// 会话级相册访问缓存：权限（仅缓存"已授权"）与相册索引在同一会话内
+/// 复用——重进选图页不再重复请求权限、不再重复扫描相册索引。
+/// 用户在系统设置改权限/相册变化后可调 [invalidate]；会话结束自动丢弃。
+final class GalleryAccessCache {
+  GalleryAccessCache._();
+
+  static final GalleryAccessCache shared = GalleryAccessCache._();
+
+  bool? _permissionGranted;
+  List<GalleryAlbum>? _albums;
+  AssetPathEntity? _recentAlbum;
+
+  void invalidate() {
+    _permissionGranted = null;
+    _albums = null;
+    _recentAlbum = null;
+  }
+
+  /// 只缓存已授权结果：被拒绝不缓存（用户从设置页返回后应重新请求）。
+  Future<bool> ensurePermission(Future<bool> Function() request) async {
+    if (_permissionGranted == true) return true;
+    final granted = await request();
+    if (granted) _permissionGranted = true;
+    return granted;
+  }
+
+  Future<List<GalleryAlbum>> loadAlbums(
+    Future<List<GalleryAlbum>> Function() load,
+  ) async {
+    final cached = _albums;
+    if (cached != null) return cached;
+    return _albums = await load();
+  }
+
+  Future<AssetPathEntity?> recentAlbum(
+    Future<AssetPathEntity?> Function() load,
+  ) async {
+    final cached = _recentAlbum;
+    if (cached != null) return cached;
+    return _recentAlbum = await load();
+  }
+}
 
 /// 顶部“最近图片(↓)”子列表的相册分类。
 final class GalleryAlbum {
@@ -104,9 +183,14 @@ final FilterOptionGroup _sortedByCreateDateDesc = FilterOptionGroup(
 
 class DeviceGallerySource {
   /// 顶部子列表：最近图片（默认）+ 本地视频 + 其余本地图库分类
-  /// （Camera、Screenshots、Download…）。
+  /// （Camera、Screenshots、Download…）。权限与索引结果经会话级缓存
+  /// 复用（GalleryAccessCache.shared）。
   static Future<List<GalleryAlbum>> loadAlbums() async {
     if (!await _ensurePermission()) throw GalleryPermissionDenied();
+    return GalleryAccessCache.shared.loadAlbums(_scanAlbums);
+  }
+
+  static Future<List<GalleryAlbum>> _scanAlbums() async {
     final List<AssetPathEntity> recent;
     final List<AssetPathEntity> videos;
     final List<AssetPathEntity> folders;
@@ -131,14 +215,20 @@ class DeviceGallerySource {
     }
     return [
       if (recent.isNotEmpty)
-        const GalleryAlbum(id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false),
+        const GalleryAlbum(
+            id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false),
       if (videos.isNotEmpty)
-        const GalleryAlbum(id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true),
+        const GalleryAlbum(
+            id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true),
       ...[
         for (final folder in folders)
           if (!folder.isAll)
             GalleryAlbum(
-                id: folder.id, name: folder.name, isRecent: false, isVideoOnly: false, entity: folder),
+                id: folder.id,
+                name: folder.name,
+                isRecent: false,
+                isVideoOnly: false,
+                entity: folder),
       ],
     ];
   }
@@ -147,7 +237,7 @@ class DeviceGallerySource {
   static DeviceGalleryPager pagerFor(GalleryAlbum? album) =>
       DeviceGalleryPager(album: album?.entity);
 
-  static Future<bool> _ensurePermission() async {
+  static Future<bool> _requestPermission() async {
     final permission = await PhotoManager.requestPermissionExtend(
       requestOption: PermissionRequestOption(
         androidPermission: AndroidPermission(
@@ -159,11 +249,15 @@ class DeviceGallerySource {
     );
     return permission.hasAccess;
   }
+
+  static Future<bool> _ensurePermission() =>
+      GalleryAccessCache.shared.ensurePermission(_requestPermission);
 }
 
 /// 生产相册分页器：按时间倒序逐页读取（最新创建的在前）。
 class DeviceGalleryPager {
-  DeviceGalleryPager({AssetPathEntity? album, RequestType type = RequestType.common})
+  DeviceGalleryPager(
+      {AssetPathEntity? album, RequestType type = RequestType.common})
       : _fixedAlbum = album,
         _type = type;
 
@@ -177,6 +271,7 @@ class DeviceGalleryPager {
   bool get hasMore => !_exhausted;
 
   /// 请求相册权限并定位目标相册（时间倒序：最新创建的显示在最上方）。
+  /// 权限与"最近"相册定位结果经会话级缓存复用。
   Future<void> ensureAccess() async {
     if (!await DeviceGallerySource._ensurePermission()) {
       throw GalleryPermissionDenied();
@@ -186,24 +281,29 @@ class DeviceGalleryPager {
       _album = _fixedAlbum;
       return;
     }
-    List<AssetPathEntity> albums;
-    try {
-      albums = await PhotoManager.getAssetPathList(
-        type: _type,
-        onlyAll: true,
-        filterOption: _sortedByCreateDateDesc,
-      );
-    } catch (_) {
-      throw GalleryUnavailable('(相册索引读取失败)');
-    }
-    if (albums.isEmpty) {
+    final album = await GalleryAccessCache.shared.recentAlbum(() async {
+      try {
+        final albums = await PhotoManager.getAssetPathList(
+          type: _type,
+          onlyAll: true,
+          filterOption: _sortedByCreateDateDesc,
+        );
+        return albums.isEmpty ? null : albums.first;
+      } catch (_) {
+        throw GalleryUnavailable('(相册索引读取失败)');
+      }
+    });
+    if (album == null) {
       _exhausted = true;
       return;
     }
-    _album = albums.first;
+    _album = album;
   }
 
   /// 加载下一页（时间倒序）；相册耗尽后返回空列表。
+  ///
+  /// 首屏默认只取 [galleryFirstPageSize]（12）张（覆盖可见网格），
+  /// 后续页默认 20；缩略图按 [galleryDecodeConcurrency] 有界并发解码。
   Future<List<GalleryPhoto>> loadNextPage(
       {int pageSize = galleryPageSize}) async {
     if (_exhausted) return const [];
@@ -213,26 +313,32 @@ class DeviceGalleryPager {
     }
     final target = _album;
     if (target == null || _exhausted) return const [];
+    final isFirstPage = _loaded == 0;
+    final count = isFirstPage && pageSize == galleryPageSize
+        ? galleryFirstPageSize
+        : pageSize;
     final assets = await target.getAssetListRange(
       start: _loaded,
-      end: _loaded + pageSize,
+      end: _loaded + count,
     );
-    if (assets.length < pageSize) _exhausted = true;
+    if (assets.length < count) _exhausted = true;
     _loaded += assets.length;
+    // 有界并发解码整页缩略图（保持顺序；失败→空占位，不丢条目）。
+    final thumbnails = await decodeThumbnailsBounded([
+      for (final asset in assets)
+        () => asset.thumbnailDataWithSize(const ThumbnailSize.square(200)),
+    ]);
     final photos = <GalleryPhoto>[];
-    for (final asset in assets) {
+    for (var i = 0; i < assets.length; i++) {
+      final asset = assets[i];
       final isVideo = asset.type == AssetType.video;
       // GIF 走原图字节才能保持动画（压缩重编码会退化成静态图）。
       final isGif = asset.mimeType == 'image/gif';
-      final thumbnail = await asset.thumbnailDataWithSize(
-        const ThumbnailSize.square(200),
-      );
       // 缩略图解码失败不丢弃条目（MKV/AVI 等冷门容器也要可选可发）：
       // 网格以占位底色渲染，选择与发送仍走原始字节。
-      final thumbBytes = Uint8List.fromList(thumbnail ?? const []);
+      final thumbBytes = thumbnails[i];
       // MIME 按系统媒体库真实值透传（MP4/MOV/MKV/AVI…），不再一律 mp4。
-      final mimeType = asset.mimeType ??
-          (isVideo ? 'video/mp4' : 'image/jpeg');
+      final mimeType = asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg');
       photos.add(
         GalleryPhoto(
           id: asset.id,
@@ -262,7 +368,9 @@ class DeviceGalleryPager {
           originalBytes: () async {
             final data = await asset.originBytes;
             if (data == null) {
-              throw StateError(isVideo ? 'original video unavailable' : 'original image unavailable');
+              throw StateError(isVideo
+                  ? 'original video unavailable'
+                  : 'original image unavailable');
             }
             return Uint8List.fromList(data);
           },

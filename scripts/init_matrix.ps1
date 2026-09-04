@@ -157,6 +157,10 @@ $variables = @{
     SYNAPSE_FORM_SECRET = $env:SYNAPSE_FORM_SECRET
     TURN_URI_UDP = Get-EnvOrDefault -Name "TURN_URI_UDP" -DefaultValue "turn:10.0.2.2:3478?transport=udp"
     TURN_URI_TCP = Get-EnvOrDefault -Name "TURN_URI_TCP" -DefaultValue "turn:10.0.2.2:3478?transport=tcp"
+    # TLS 兜底（turns）：生产为 turns:<域名>:5349?transport=tcp（coturn 需
+    # 挂载证书并开 --tls-listening-port，见 docker-compose.yml 注释与
+    # docs/TURN.md）；dev 为占位（dev coturn 未配 TLS，客户端会跳过）。
+    TURN_URI_TLS = Get-EnvOrDefault -Name "TURN_URI_TLS" -DefaultValue "turns:matrix.localhost:5349?transport=tcp"
     TURN_SHARED_SECRET = Get-EnvOrDefault -Name "TURN_SHARED_SECRET" -DefaultValue "development-turn-shared-secret"
 }
 

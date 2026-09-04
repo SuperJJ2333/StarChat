@@ -458,6 +458,169 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('moment-cover-local-preview')), findsNothing);
   });
+
+  Future<(BusinessApiClient, ProfileRepository)> pumpMomentsWithViewer(
+    WidgetTester tester,
+    String viewerUsername, {
+    required Future<http.Response> Function(http.Request) handler,
+  }) async {
+    final api = await momentsApi(handler);
+    final identityStore = MomentsIdentityStore();
+    await identityStore.write(
+      'matrix:@me:test',
+      ProfileSnapshot(
+        profile: ProfileData(
+          username: viewerUsername,
+          nickname: viewerUsername,
+          maskedEmail: '',
+          fallbackSeed: 'seed',
+          avatarUrl: null,
+        ),
+        contacts: [],
+      ),
+    );
+    final identityCache = ProfileRepository.forTesting(
+      accountKey: 'matrix:@me:test',
+      store: identityStore,
+    );
+    await identityCache.hydrate();
+    await tester.pumpWidget(CupertinoApp(
+      home: MomentsPage(api: api, identityCache: identityCache),
+    ));
+    await tester.pumpAndSettle();
+    return (api, identityCache);
+  }
+
+  http.Response jsonResponse(Object body, [int status = 200]) => http.Response(
+        jsonEncode(body),
+        status,
+        headers: {'content-type': 'application/json'},
+      );
+
+  testWidgets('delete entry is visible only to the moment author',
+      (tester) async {
+    await pumpMomentsWithViewer(
+      tester,
+      'someone-else',
+      handler: (request) async {
+        if (request.url.path == '/api/v1/moments/feed') {
+          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+        }
+        if (request.url.path == '/api/v1/moments/preferences') {
+          return jsonResponse({'cover_url': null});
+        }
+        throw StateError('Unexpected: ${request.method} ${request.url}');
+      },
+    );
+    // 非作者（作者 username 是 alice_id）看不到删除入口。
+    expect(find.byKey(const Key('moment-delete-button')), findsNothing);
+  });
+
+  testWidgets('author sees delete entry; cancel keeps the moment',
+      (tester) async {
+    await pumpMomentsWithViewer(
+      tester,
+      'alice_id',
+      handler: (request) async {
+        if (request.url.path == '/api/v1/moments/feed') {
+          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+        }
+        if (request.url.path == '/api/v1/moments/preferences') {
+          return jsonResponse({'cover_url': null});
+        }
+        throw StateError('Unexpected: ${request.method} ${request.url}');
+      },
+    );
+    expect(find.byKey(const Key('moment-delete-button')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('moment-delete-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('删除这条朋友圈？'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('朋友圈正文'), findsOneWidget);
+  });
+
+  testWidgets('delete removes the moment optimistically and syncs the cache',
+      (tester) async {
+    final deleted = Completer<void>();
+    await pumpMomentsWithViewer(
+      tester,
+      'alice_id',
+      handler: (request) async {
+        if (request.url.path == '/api/v1/moments/feed') {
+          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+        }
+        if (request.url.path == '/api/v1/moments/preferences') {
+          return jsonResponse({'cover_url': null});
+        }
+        if (request.method == 'DELETE' && request.url.path == '/api/v1/moments/m1') {
+          await deleted.future;
+          return jsonResponse({});
+        }
+        throw StateError('Unexpected: ${request.method} ${request.url}');
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('moment-delete-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-delete-confirm')));
+    await tester.pump();
+    // 乐观删除：API 未返回前条目已消失。
+    expect(find.text('朋友圈正文'), findsNothing);
+
+    deleted.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('朋友圈正文'), findsNothing);
+    // 成功后缓存同步：不再把已删条目画回来。
+    final cached = await (await CacheRepository.instance()).moments.load();
+    expect(
+      (cached?['items'] as List?)
+              ?.any((m) => (m as Map)['id']?.toString() == 'm1') ??
+          false,
+      isFalse,
+      reason: '删除成功后必须同步磁盘缓存',
+    );
+  });
+
+  testWidgets('failed delete rolls the moment back with the server error',
+      (tester) async {
+    final failed = Completer<void>();
+    await pumpMomentsWithViewer(
+      tester,
+      'alice_id',
+      handler: (request) async {
+        if (request.url.path == '/api/v1/moments/feed') {
+          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+        }
+        if (request.url.path == '/api/v1/moments/preferences') {
+          return jsonResponse({'cover_url': null});
+        }
+        if (request.method == 'DELETE' && request.url.path == '/api/v1/moments/m1') {
+          await failed.future;
+          return jsonResponse(
+            {'error': {'code': 'X', 'message': '服务繁忙'}},
+            503,
+          );
+        }
+        throw StateError('Unexpected: ${request.method} ${request.url}');
+      },
+    );
+
+    await tester.tap(find.byKey(const Key('moment-delete-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-delete-confirm')));
+    await tester.pump();
+    expect(find.text('朋友圈正文'), findsNothing);
+
+    failed.complete();
+    await tester.pumpAndSettle();
+    // 失败回滚：条目恢复 + 服务端错误文案。
+    expect(find.text('朋友圈正文'), findsOneWidget);
+    expect(find.byKey(const Key('moment-interaction-error')), findsOneWidget);
+    expect(find.text('服务繁忙'), findsOneWidget);
+  });
 }
 
 final class MomentsIdentityStore implements ProfileStore {

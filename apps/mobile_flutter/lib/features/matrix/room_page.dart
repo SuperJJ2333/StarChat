@@ -15,8 +15,7 @@ import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
 import '../redpacket/red_packet_claim_dialog.dart';
 import '../../ui/chat/chat_composer_bar.dart';
-import '../../ui/chat/wechat_composer.dart'
-    show chatComposerPanelGroupId;
+import '../../ui/chat/wechat_composer.dart' show chatComposerPanelGroupId;
 import '../../ui/chat/chat_composer_state.dart';
 import '../../ui/chat/chat_emoji_panel.dart';
 import '../../ui/chat/chat_more_panel.dart';
@@ -28,9 +27,9 @@ import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
 import 'media_thumbnail.dart';
 import 'package:video_compress/video_compress.dart';
+import 'video_send_stage.dart';
 import 'video_transcode.dart';
-import '../../ui/chat/message_action_sheet.dart'
-    show MessageSelectionBar;
+import '../../ui/chat/message_action_sheet.dart' show MessageSelectionBar;
 import '../../ui/chat/wechat_attachment_tile.dart';
 import '../../ui/chat/wechat_mention_panel.dart';
 import '../../ui/chat/wechat_message_bubble.dart';
@@ -85,10 +84,6 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
-
-
-
-
 
 class RoomPage extends StatefulWidget {
   const RoomPage({
@@ -149,10 +144,9 @@ Future<void> openGroupMemberProfile(
           api: api,
           userId: profile['user_id']?.toString() ?? '',
           username: profile['username']?.toString() ?? member.matrixUserId,
-          nickname:
-              (profile['nickname']?.toString() ?? '').isNotEmpty
-                  ? profile['nickname'].toString()
-                  : member.displayName,
+          nickname: (profile['nickname']?.toString() ?? '').isNotEmpty
+              ? profile['nickname'].toString()
+              : member.displayName,
           relationshipState:
               profile['relationship_state']?.toString() ?? 'NONE',
         ),
@@ -226,8 +220,10 @@ class _RoomPageState extends State<RoomPage> {
 
   // 「拍摄」长按录像（需求 2）：待确认发送的视频与其压缩进度。
   ({String path, int originalBytes})? pendingVideoSend;
-  bool videoSendPreparing = false;
-  double? videoSendProgress;
+
+  /// 视频发送阶段（转码→加密→上传→发送事件；转码有真实进度，
+  /// 其余阶段按 SDK 上传伪事件状态显示）。
+  VideoSendState videoSend = const VideoSendState();
   ComposerPanel composerPanel = ComposerPanel.none;
   String? errorMessage;
   String? mediaMessage;
@@ -268,11 +264,9 @@ class _RoomPageState extends State<RoomPage> {
   /// freshly typed "@" and closes it again as soon as the text moves on.
   void _handleComposerChanged() {
     final shouldShow = isGroup && input.text.endsWith('@');
-    if (mounted &&
-        shouldShow != (composerPanel == ComposerPanel.mention)) {
+    if (mounted && shouldShow != (composerPanel == ComposerPanel.mention)) {
       setState(() {
-        composerPanel =
-            shouldShow ? ComposerPanel.mention : ComposerPanel.none;
+        composerPanel = shouldShow ? ComposerPanel.mention : ComposerPanel.none;
       });
     }
   }
@@ -426,9 +420,8 @@ class _RoomPageState extends State<RoomPage> {
       await controller!.markRead();
       ConversationReadState.shared().markCleared(
         widget.room.id,
-        eventId: controller!.messages.isEmpty
-            ? null
-            : controller!.messages.first.id,
+        eventId:
+            controller!.messages.isEmpty ? null : controller!.messages.first.id,
       );
       await _loadEmojiVault();
       await _loadReminderService();
@@ -880,13 +873,12 @@ class _RoomPageState extends State<RoomPage> {
       for (final photo in result.photos) {
         sent++;
         if (mounted) {
-          setState(() =>
-              mediaMessage = result.photos.length > 1
-                  ? '正在加密发送 $sent/$total…'
-                  : '正在加密发送…');
+          setState(() => mediaMessage =
+              result.photos.length > 1 ? '正在加密发送 $sent/$total…' : '正在加密发送…');
         }
-        final bytes =
-            await (result.original ? photo.originalBytes() : photo.compressedBytes());
+        final bytes = await (result.original
+            ? photo.originalBytes()
+            : photo.compressedBytes());
         // 视频附带时长（毫秒），接收端显示角标。
         final extra = photo.duration == null
             ? null
@@ -896,7 +888,7 @@ class _RoomPageState extends State<RoomPage> {
         // 附带本地生成的压缩演绎版（E2EE 同样保护）：
         // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
         // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
-        ({List<int> bytes, int? width, int? height})? rendition;
+        ({Uint8List bytes, int? width, int? height})? rendition;
         if (photo.isVideo) {
           final poster = await photo.posterBytes?.call();
           if (poster != null && poster.isNotEmpty) {
@@ -983,21 +975,19 @@ class _RoomPageState extends State<RoomPage> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 14)),
               const SizedBox(height: 4),
-              if (videoSendPreparing)
+              if (videoSend.busy)
                 Row(children: [
                   const CupertinoActivityIndicator(radius: 7),
                   const SizedBox(width: 6),
                   Text(
-                    videoSendProgress == null
-                        ? '压缩中…'
-                        : '压缩中 \${(videoSendProgress! * 100).round()}%',
+                    videoSend.label,
                     key: const Key('pending-video-progress'),
                     style: const TextStyle(
                         fontSize: 12, color: WeChatColors.textSecondary),
                   ),
                 ])
               else
-                Text('发送前将自动压缩（480p）',
+                Text(VideoSendState().label,
                     style: const TextStyle(
                         fontSize: 12, color: WeChatColors.textSecondary)),
             ],
@@ -1005,21 +995,18 @@ class _RoomPageState extends State<RoomPage> {
         ),
         CupertinoButton(
           key: const Key('pending-video-cancel'),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          onPressed: videoSendPreparing ? null : _cancelPendingVideo,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          onPressed: videoSend.busy ? null : _cancelPendingVideo,
           child: const Text('取消', style: TextStyle(fontSize: 14)),
         ),
         CupertinoButton(
           key: const Key('pending-video-send'),
           color: WeChatColors.brandPrimary,
           borderRadius: BorderRadius.circular(WeChatRadius.control),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          onPressed: videoSendPreparing ? null : _sendPendingVideo,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          onPressed: videoSend.busy ? null : _sendPendingVideo,
           child: const Text('发送',
-              style: TextStyle(
-                  fontSize: 14, color: CupertinoColors.white)),
+              style: TextStyle(fontSize: 14, color: CupertinoColors.white)),
         ),
       ]),
     );
@@ -1040,8 +1027,7 @@ class _RoomPageState extends State<RoomPage> {
       _dismissComposerExtensions();
       setState(() {
         pendingVideoSend = (path: path, originalBytes: size);
-        videoSendPreparing = false;
-        videoSendProgress = null;
+        videoSend = const VideoSendState();
       });
     } catch (_) {
       if (mounted) _showMediaMessage('录像启动失败，请重试');
@@ -1051,7 +1037,10 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _cancelPendingVideo() {
-    if (videoSendPreparing) return; // 压缩/发送中不允许取消，避免状态撕裂
+    if (videoSend.busy) {
+      // 可取消边界=转码开始前与发送结束（见 docs/VIDEO_SEND_PIPELINE.md）。
+      return;
+    }
     setState(() => pendingVideoSend = null);
   }
 
@@ -1059,20 +1048,21 @@ class _RoomPageState extends State<RoomPage> {
   /// 再加密上传并附带封面帧与时长。
   Future<void> _sendPendingVideo() async {
     final pending = pendingVideoSend;
-    if (pending == null || videoSendPreparing) return;
+    if (pending == null || videoSend.busy) return;
     final matrix = MatrixSdkE2eeClient(
       widget.room.client,
       homeserver: widget.room.client.homeserver!,
     );
-    setState(() {
-      videoSendPreparing = true;
-      videoSendProgress = null;
-    });
+    setState(() => videoSend = const VideoSendState(
+          phase: VideoSendPhase.transcoding,
+        ));
     try {
       final rendition = await transcodeForChat(
         File(pending.path),
         onProgress: (progress) {
-          if (mounted) setState(() => videoSendProgress = progress);
+          if (mounted) {
+            setState(() => videoSend = videoSend.copyWith(progress: progress));
+          }
         },
       );
       if (!rendition.usedCompressed &&
@@ -1085,7 +1075,7 @@ class _RoomPageState extends State<RoomPage> {
       }
       final bytes = await rendition.file.readAsBytes();
       // 封面帧（发送端压缩演绎版，接收端免下载整段视频即可渲染）。
-      ({List<int> bytes, int? width, int? height})? poster;
+      ({Uint8List bytes, int? width, int? height})? poster;
       try {
         final frame = await VideoCompress.getByteThumbnail(
           rendition.file.path,
@@ -1100,34 +1090,51 @@ class _RoomPageState extends State<RoomPage> {
         poster = null; // 封面生成失败不阻断发送
       }
       final durationMs = rendition.durationMs ?? 0;
-      await matrix.sendEncryptedMedia(
-        widget.room.id,
-        bytes,
-        'video/mp4',
-        extraContent: durationMs <= 0
-            ? null
-            : {
-                'info': {'duration': durationMs},
-              },
-        thumbnailBytes: poster?.bytes,
-        thumbnailWidth: poster?.width,
-        thumbnailHeight: poster?.height,
-      );
+      // 加密/上传/发送事件阶段：SDK 把细分状态写在上传伪事件
+      // （fileSendingStatusKey），轮询驱动 UI（此前整体折叠成"发送中"）。
+      setState(() => videoSend = const VideoSendState(
+            phase: VideoSendPhase.encrypting,
+          ));
+      final timeline = controller?.adapter is MatrixRoomTimelineAdapter
+          ? (controller!.adapter as MatrixRoomTimelineAdapter).timeline
+          : null;
+      Timer? phasePoller;
+      if (timeline != null) {
+        phasePoller = Timer.periodic(const Duration(milliseconds: 300), (_) {
+          final phase = videoUploadPhaseFromTimeline(timeline.events);
+          if (phase != null && mounted && videoSend.phase != phase) {
+            setState(() => videoSend = VideoSendState(phase: phase));
+          }
+        });
+      }
+      try {
+        await matrix.sendEncryptedMedia(
+          widget.room.id,
+          bytes,
+          'video/mp4',
+          extraContent: durationMs <= 0
+              ? null
+              : {
+                  'info': {'duration': durationMs},
+                },
+          thumbnailBytes: poster?.bytes,
+          thumbnailWidth: poster?.width,
+          thumbnailHeight: poster?.height,
+        );
+      } finally {
+        phasePoller?.cancel();
+      }
       if (mounted) _showMediaMessage('视频已发送');
       if (mounted) {
         setState(() {
           pendingVideoSend = null;
-          videoSendPreparing = false;
-          videoSendProgress = null;
+          videoSend = const VideoSendState();
         });
       }
     } catch (_) {
       // 失败保留待发条目，用户可直接重试。
       if (mounted) {
-        setState(() {
-          videoSendPreparing = false;
-          videoSendProgress = null;
-        });
+        setState(() => videoSend = const VideoSendState());
         _showMediaMessage('视频发送失败，请重试');
       }
     } finally {
@@ -1189,10 +1196,9 @@ class _RoomPageState extends State<RoomPage> {
   void _toggleVoice() {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
-      composerPanel =
-          composerPanel == ComposerPanel.voice
-              ? ComposerPanel.none
-              : ComposerPanel.voice;
+      composerPanel = composerPanel == ComposerPanel.voice
+          ? ComposerPanel.none
+          : ComposerPanel.voice;
     });
   }
 
@@ -1217,8 +1223,7 @@ class _RoomPageState extends State<RoomPage> {
           context: context,
           builder: (dialogContext) => CupertinoAlertDialog(
             title: const Text('无法访问麦克风'),
-            content: const Text(
-                '请在系统设置中允许畅聊使用麦克风，然后重新按住说话。'),
+            content: const Text('请在系统设置中允许畅聊使用麦克风，然后重新按住说话。'),
             actions: [
               CupertinoDialogAction(
                 onPressed: () => Navigator.pop(dialogContext),
@@ -1263,7 +1268,8 @@ class _RoomPageState extends State<RoomPage> {
     final service = voiceService;
     voiceService = null;
     if (service == null) return;
-    final elapsed = DateTime.now().difference(_voiceStartedAt ?? DateTime.now());
+    final elapsed =
+        DateTime.now().difference(_voiceStartedAt ?? DateTime.now());
     String? path;
     try {
       path = await service.stopVoiceRecordingForPreview();
@@ -1794,7 +1800,8 @@ class _RoomPageState extends State<RoomPage> {
       targetUserId: nudge.targetUserId,
       targetName: nudge.targetName,
       suffix: nudge.suffix,
-      viewerRemarkForTarget: contactsByMatrixId[nudge.targetUserId]?.displayName,
+      viewerRemarkForTarget:
+          contactsByMatrixId[nudge.targetUserId]?.displayName,
       targetLiveName: member(nudge.targetUserId)?.calcDisplayname(),
       senderLiveName: member(nudge.senderId)?.calcDisplayname(),
     );
@@ -1871,7 +1878,9 @@ class _RoomPageState extends State<RoomPage> {
     // 即时反馈语义：发送中的消息视觉上等同已发出（无转圈/半透明），
     // 仅在真正失败时展示红色重试标识。
     final deliveryState = switch (message.deliveryState) {
-      RoomDeliveryState.sending || RoomDeliveryState.sent => MessageDeliveryState.sent,
+      RoomDeliveryState.sending ||
+      RoomDeliveryState.sent =>
+        MessageDeliveryState.sent,
       RoomDeliveryState.failed => MessageDeliveryState.failed,
     };
     final body = Column(
@@ -1905,7 +1914,8 @@ class _RoomPageState extends State<RoomPage> {
             onAvatarTap: contact == null ? null : () => _openContact(contact),
             onAvatarDoubleTap: () => _sendNudge(message, displayName),
             onAvatarLongPress: appendMentionDraft,
-            onLongPress: () => unawaited(_showMessageActions(message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+            onLongPress: () => unawaited(_showMessageActions(
+                message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
           )
         else if (message.kind == RoomMessageKind.video)
           // 微信式视频消息：无气泡媒体卡（缩略图+播放按钮+时长），
@@ -1924,7 +1934,8 @@ class _RoomPageState extends State<RoomPage> {
             onAvatarTap: contact == null ? null : () => _openContact(contact),
             onAvatarDoubleTap: () => _sendNudge(message, displayName),
             onAvatarLongPress: appendMentionDraft,
-            onLongPress: () => unawaited(_showMessageActions(message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+            onLongPress: () => unawaited(_showMessageActions(
+                message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
             direction: message.isOwn
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
@@ -1939,9 +1950,8 @@ class _RoomPageState extends State<RoomPage> {
             key: Key('image-message-${message.id}'),
             decorateContent: false,
             content: EncryptedImageMessage(
-              initialBytes:
-                  thumbnailMemoryCache.get('thumb:${message.id}') ??
-                      imageMemoryCache.get(message.id),
+              initialBytes: thumbnailMemoryCache.get('thumb:${message.id}') ??
+                  imageMemoryCache.get(message.id),
               loadThumbnail: () => thumbnailMemoryCache.putIfAbsent(
                 'thumb:${message.id}',
                 () async {
@@ -1950,8 +1960,7 @@ class _RoomPageState extends State<RoomPage> {
                   // 旧消息无缩略图：回退全量并计入缩略图缓存，
                   // 避免滚动往复时重复下载完整附件。
                   return loadMediaWithCache(
-                    MediaCacheKey(
-                        roomId: widget.room.id, eventId: message.id),
+                    MediaCacheKey(roomId: widget.room.id, eventId: message.id),
                     () => controller!.loadAttachment(message.id),
                   );
                 },
@@ -1959,8 +1968,7 @@ class _RoomPageState extends State<RoomPage> {
               load: () => imageMemoryCache.putIfAbsent(
                 message.id,
                 () => loadMediaWithCache(
-                  MediaCacheKey(
-                      roomId: widget.room.id, eventId: message.id),
+                  MediaCacheKey(roomId: widget.room.id, eventId: message.id),
                   () => controller!.loadAttachment(message.id),
                 ),
               ),
@@ -1980,7 +1988,8 @@ class _RoomPageState extends State<RoomPage> {
             onAvatarTap: contact == null ? null : () => _openContact(contact),
             onAvatarDoubleTap: () => _sendNudge(message, displayName),
             onAvatarLongPress: appendMentionDraft,
-            onLongPress: () => unawaited(_showMessageActions(message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+            onLongPress: () => unawaited(_showMessageActions(
+                message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
             direction: message.isOwn
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
@@ -1997,7 +2006,8 @@ class _RoomPageState extends State<RoomPage> {
             onAvatarTap: contact == null ? null : () => _openContact(contact),
             onAvatarDoubleTap: () => _sendNudge(message, displayName),
             onAvatarLongPress: appendMentionDraft,
-            onLongPress: () => unawaited(_showMessageActions(message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+            onLongPress: () => unawaited(_showMessageActions(
+                message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
             direction: message.isOwn
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
@@ -2320,8 +2330,7 @@ class _RoomPageState extends State<RoomPage> {
       padding: EdgeInsets.symmetric(vertical: WeChatSpacing.md),
       child: Center(
         child: Text('没有更多了',
-            style: TextStyle(
-                fontSize: 12, color: WeChatColors.textTertiary)),
+            style: TextStyle(fontSize: 12, color: WeChatColors.textTertiary)),
       ),
     );
   }
@@ -2336,9 +2345,9 @@ class _RoomPageState extends State<RoomPage> {
     ConversationReadState.shared()
         .markCleared(widget.room.id, eventId: messages.first.id);
     _readReceiptDebounce?.cancel();
-    _readReceiptDebounce =
-        Timer(const Duration(milliseconds: 800), () {
-      if (!mounted || !ConversationReadState.shared().isRoomOpen(widget.room.id)) {
+    _readReceiptDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (!mounted ||
+          !ConversationReadState.shared().isRoomOpen(widget.room.id)) {
         return;
       }
       unawaited(controller?.markRead());
@@ -2394,230 +2403,232 @@ class _RoomPageState extends State<RoomPage> {
         child: Stack(
           children: [
             Column(
-          children: [
-            if (showAnnouncement)
-              CupertinoButton(
-                key: const Key('group-announcement-bar'),
-                padding: EdgeInsets.zero,
-                onPressed: _openAnnouncement,
-                child: Container(
-                  height: 40,
-                  color: WeChatColors.chatNavigationBackground,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(children: [
-                    const Icon(CupertinoIcons.volume_up, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _announcement,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            const TextStyle(color: WeChatColors.textSecondary),
-                      ),
-                    ),
-                    const CupertinoListTileChevron(),
-                  ]),
-                ),
-              ),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _dismissComposerExtensions,
-                child: loading
-                    ? const Center(child: CupertinoActivityIndicator())
-                    : errorMessage != null
-                        ? Center(child: Text(errorMessage!))
-                        : messages.isEmpty
-                            ? const SizedBox.expand()
-                            : ListView.builder(
-                                controller: messageScrollController,
-                                reverse: true,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: WeChatSpacing.md,
-                                  vertical: WeChatSpacing.sm,
-                                ),
-                                // 顶部状态行（视觉上的最上方）：加载历史中
-                                // 显示 loading，历史取尽显示"没有更多了"。
-                                itemCount: messages.length +
-                                    ((controller?.historyLoading ?? false) ||
-                                            (controller?.historyExhausted ??
-                                                false)
-                                        ? 1
-                                        : 0),
-                                itemBuilder: (_, reverseIndex) {
-                                  if (reverseIndex == messages.length) {
-                                    return _historyStatusRow();
-                                  }
-                                  final index =
-                                      messages.length - reverseIndex - 1;
-                                  final message = messages[index];
-                                  final previous = index == 0
-                                      ? null
-                                      : messages[index - 1].timestamp;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(
-                                      bottom: WeChatSpacing.sm,
-                                    ),
-                                    child: KeyedSubtree(
-                                      key: messageKeys.putIfAbsent(
-                                        message.id,
-                                        GlobalKey.new,
-                                      ),
-                                      child: AnimatedContainer(
-                                        duration:
-                                            const Duration(milliseconds: 180),
-                                        color:
-                                            highlightedMessageId == message.id
-                                                ? WeChatColors.divider
-                                                : const Color(0x00000000),
-                                        child: _messageRow(message, previous),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-              ),
-            ),
-            if (mediaMessage != null)
-              AnimatedOpacity(
-                opacity: mediaMessageVisible ? 1 : 0,
-                duration: const Duration(milliseconds: 500),
-                child: Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  color: WeChatColors.chatNavigationBackground,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (mediaThumbBytes != null) ...[
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: Image.memory(
-                            mediaThumbBytes!,
-                            key: const Key('media-thumb-preview'),
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
+              children: [
+                if (showAnnouncement)
+                  CupertinoButton(
+                    key: const Key('group-announcement-bar'),
+                    padding: EdgeInsets.zero,
+                    onPressed: _openAnnouncement,
+                    child: Container(
+                      height: 40,
+                      color: WeChatColors.chatNavigationBackground,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(children: [
+                        const Icon(CupertinoIcons.volume_up, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _announcement,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: WeChatColors.textSecondary),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                      ],
-                      Flexible(
-                        child: Text(mediaMessage!,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 12)),
-                      ),
-                    ],
+                        const CupertinoListTileChevron(),
+                      ]),
+                    ),
+                  ),
+                Expanded(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _dismissComposerExtensions,
+                    child: loading
+                        ? const Center(child: CupertinoActivityIndicator())
+                        : errorMessage != null
+                            ? Center(child: Text(errorMessage!))
+                            : messages.isEmpty
+                                ? const SizedBox.expand()
+                                : ListView.builder(
+                                    controller: messageScrollController,
+                                    reverse: true,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: WeChatSpacing.md,
+                                      vertical: WeChatSpacing.sm,
+                                    ),
+                                    // 顶部状态行（视觉上的最上方）：加载历史中
+                                    // 显示 loading，历史取尽显示"没有更多了"。
+                                    itemCount: messages.length +
+                                        ((controller?.historyLoading ??
+                                                    false) ||
+                                                (controller?.historyExhausted ??
+                                                    false)
+                                            ? 1
+                                            : 0),
+                                    itemBuilder: (_, reverseIndex) {
+                                      if (reverseIndex == messages.length) {
+                                        return _historyStatusRow();
+                                      }
+                                      final index =
+                                          messages.length - reverseIndex - 1;
+                                      final message = messages[index];
+                                      final previous = index == 0
+                                          ? null
+                                          : messages[index - 1].timestamp;
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: WeChatSpacing.sm,
+                                        ),
+                                        child: KeyedSubtree(
+                                          key: messageKeys.putIfAbsent(
+                                            message.id,
+                                            GlobalKey.new,
+                                          ),
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 180),
+                                            color: highlightedMessageId ==
+                                                    message.id
+                                                ? WeChatColors.divider
+                                                : const Color(0x00000000),
+                                            child:
+                                                _messageRow(message, previous),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                   ),
                 ),
-              ),
-            if (replyingTo != null && !selection.active)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                color: CupertinoTheme.of(context).barBackgroundColor,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '引用：${replyingTo!.text}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: WeChatColors.textSecondary,
+                if (mediaMessage != null)
+                  AnimatedOpacity(
+                    opacity: mediaMessageVisible ? 1 : 0,
+                    duration: const Duration(milliseconds: 500),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      color: WeChatColors.chatNavigationBackground,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (mediaThumbBytes != null) ...[
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: Image.memory(
+                                mediaThumbBytes!,
+                                key: const Key('media-thumb-preview'),
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                gaplessPlayback: true,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          Flexible(
+                            child: Text(mediaMessage!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (replyingTo != null && !selection.active)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                    color: CupertinoTheme.of(context).barBackgroundColor,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '引用：${replyingTo!.text}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: WeChatColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        CupertinoButton(
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size.square(36),
+                          onPressed: () => setState(() => replyingTo = null),
+                          child: const Icon(CupertinoIcons.xmark, size: 18),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (selection.active)
+                  MessageSelectionBar(
+                    count: selection.selectedIds.length,
+                    canForward: selection.canForward(
+                      (eventId) => _isForwardable(eventId, messages),
+                    ),
+                    onForward: () => _forwardMessages([
+                      for (final message in messages)
+                        if (selection.selectedIds.contains(message.id)) message,
+                    ]),
+                    onDelete: _deleteSelection,
+                    onCancel: () => setState(selection.exit),
+                  )
+                else ...[
+                  // 「拍摄」长按录像带回的待发视频：确认后压缩发送（需求 2）。
+                  if (pendingVideoSend != null) _pendingVideoSendBar(),
+                  ChatComposerBar(
+                    controller: input,
+                    focusNode: inputFocusNode,
+                    panel: composerPanel,
+                    onMore: () => _togglePanel(ComposerPanel.more),
+                    onVoice: _toggleVoice,
+                    onEmoji: () => _togglePanel(ComposerPanel.emoji),
+                    onSend: _send,
+                    onSubmitted: (_) => _send(),
+                    voiceField: WeChatHoldToTalk(
+                      controller: voiceRecording,
+                      onStart: _onVoiceStart,
+                      onStop: _onVoiceStop,
+                      onCancel: _onVoiceCancel,
+                    ),
+                    onInputTap: _dismissEmojiPanelForInput,
+                  ),
+                  if (composerPanel == ComposerPanel.more)
+                    TapRegion(
+                      // 点击面板内不收起；面板外（输入框/消息列表等）任何
+                      // 按下即收起，且不拦截该次点击的原有交互（TapRegion
+                      // 不消费事件：输入框仍聚焦、列表仍可滚动/选择）。
+                      groupId: chatComposerPanelGroupId,
+                      onTapOutside: (_) => _dismissComposerExtensions(),
+                      child: ChatMorePanel(
+                        onSelected: _handleMoreAction,
+                        onCameraLongPress: _startVideoCapture,
+                        onTools: () => _togglePanel(ComposerPanel.tools),
+                      ),
+                    ),
+                  if (composerPanel == ComposerPanel.tools)
+                    TapRegion(
+                      groupId: chatComposerPanelGroupId,
+                      onTapOutside: (_) => _dismissComposerExtensions(),
+                      child: ChatToolsPanel(
+                        onToolSelected: (tool) {
+                          _dismissComposerExtensions();
+                          tool.onTap();
+                        },
+                      ),
+                    ),
+                  if (composerPanel == ComposerPanel.emoji)
+                    TapRegion(
+                      groupId: chatComposerPanelGroupId,
+                      onTapOutside: (_) => _dismissComposerExtensions(),
+                      child: SizedBox(
+                        height: 280,
+                        child: ChatEmojiPanel(
+                          onEmojiSelected: _insertEmoji,
+                          customItems: customEmojiItems,
+                          onCustomSelected: _sendCustomEmoji,
                         ),
                       ),
                     ),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size.square(36),
-                      onPressed: () => setState(() => replyingTo = null),
-                      child: const Icon(CupertinoIcons.xmark, size: 18),
+                  if (composerPanel == ComposerPanel.mention)
+                    WeChatMentionPanel(
+                      options: _mentionMembers(),
+                      canMentionAll: _canMentionAll,
+                      onSelect: _insertMention,
                     ),
-                  ],
-                ),
-              ),
-            if (selection.active)
-              MessageSelectionBar(
-                count: selection.selectedIds.length,
-                canForward: selection.canForward(
-                  (eventId) => _isForwardable(eventId, messages),
-                ),
-                onForward: () => _forwardMessages([
-                  for (final message in messages)
-                    if (selection.selectedIds.contains(message.id)) message,
-                ]),
-                onDelete: _deleteSelection,
-                onCancel: () => setState(selection.exit),
-              )
-            else ...[
-              // 「拍摄」长按录像带回的待发视频：确认后压缩发送（需求 2）。
-              if (pendingVideoSend != null) _pendingVideoSendBar(),
-              ChatComposerBar(
-                controller: input,
-                focusNode: inputFocusNode,
-                panel: composerPanel,
-                onMore: () => _togglePanel(ComposerPanel.more),
-                onVoice: _toggleVoice,
-                onEmoji: () => _togglePanel(ComposerPanel.emoji),
-                onSend: _send,
-                onSubmitted: (_) => _send(),
-                voiceField: WeChatHoldToTalk(
-                  controller: voiceRecording,
-                  onStart: _onVoiceStart,
-                  onStop: _onVoiceStop,
-                  onCancel: _onVoiceCancel,
-                ),
-                onInputTap: _dismissEmojiPanelForInput,
-              ),
-              if (composerPanel == ComposerPanel.more)
-                TapRegion(
-                  // 点击面板内不收起；面板外（输入框/消息列表等）任何
-                  // 按下即收起，且不拦截该次点击的原有交互（TapRegion
-                  // 不消费事件：输入框仍聚焦、列表仍可滚动/选择）。
-                  groupId: chatComposerPanelGroupId,
-                  onTapOutside: (_) => _dismissComposerExtensions(),
-                  child: ChatMorePanel(
-                    onSelected: _handleMoreAction,
-                    onCameraLongPress: _startVideoCapture,
-                    onTools: () => _togglePanel(ComposerPanel.tools),
-                  ),
-                ),
-              if (composerPanel == ComposerPanel.tools)
-                TapRegion(
-                  groupId: chatComposerPanelGroupId,
-                  onTapOutside: (_) => _dismissComposerExtensions(),
-                  child: ChatToolsPanel(
-                    onToolSelected: (tool) {
-                      _dismissComposerExtensions();
-                      tool.onTap();
-                    },
-                  ),
-                ),
-              if (composerPanel == ComposerPanel.emoji)
-                TapRegion(
-                  groupId: chatComposerPanelGroupId,
-                  onTapOutside: (_) => _dismissComposerExtensions(),
-                  child: SizedBox(
-                    height: 280,
-                    child: ChatEmojiPanel(
-                      onEmojiSelected: _insertEmoji,
-                      customItems: customEmojiItems,
-                      onCustomSelected: _sendCustomEmoji,
-                    ),
-                  ),
-                ),
-              if (composerPanel == ComposerPanel.mention)
-                WeChatMentionPanel(
-                  options: _mentionMembers(),
-                  canMentionAll: _canMentionAll,
-                  onSelect: _insertMention,
-                ),
-            ],
-          ],
+                ],
+              ],
             ),
             // 覆盖层常驻挂载、由控制器监听驱动显隐：
             // 按下瞬间 start() 通知监听器，同帧渲染，不等录音启动回调，
@@ -2627,8 +2638,7 @@ class _RoomPageState extends State<RoomPage> {
                 listenable: voiceRecording,
                 builder: (context, _) {
                   final state = voiceRecording.state;
-                  final visible = state ==
-                          VoiceRecordingState.recording ||
+                  final visible = state == VoiceRecordingState.recording ||
                       state == VoiceRecordingState.cancelArmed ||
                       state == VoiceRecordingState.textArmed ||
                       state == VoiceRecordingState.sendArmed;
@@ -2771,4 +2781,3 @@ String _truncateQuoteText(String value) {
       ? '${characters.take(10).toString()}...'
       : value;
 }
-
