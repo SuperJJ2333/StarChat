@@ -71,6 +71,7 @@ import 'chat_red_packet_sheet.dart';
 import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import 'conversation_preferences.dart';
+import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
 import 'conversation_read_state.dart';
 import 'direct_chat_info_page.dart';
@@ -413,6 +414,12 @@ class _RoomPageState extends State<RoomPage> {
         return;
       }
       controller = RoomTimelineController(
+      // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
+      // 发送必失败，消息进入本地 failed 状态）。
+      canSendNow: () => InteractionPermission.resolve(
+        isFriend: _peerIsFriend(),
+        isBlocked: false, // 拉黑名单接口接入前保守值（服务侧已隔离）
+      ).canSendMessage(),
         MatrixRoomTimelineAdapter(widget.room, timeline),
       )..addListener(_changed);
       roomTimeline = timeline;
@@ -825,6 +832,65 @@ class _RoomPageState extends State<RoomPage> {
 
   /// 全屏播放视频消息：磁盘缓存优先（二次打开零下载），
   /// 在途去重防双击双载；播放器直接使用缓存文件。
+  /// 对端是否仍是好友（身份缓存权威；群聊不适用此门）。
+  bool _peerIsFriend() {
+    final selfId = widget.room.client.userID;
+    final peers = widget.room
+        .getParticipants()
+        .where((m) => m.id != selfId)
+        .toList(growable: false);
+    if (peers.length != 1) return true; // 群聊/异常：放行（群权限另有体系）
+    // 曾打开的会话但已删除好友：身份缓存查无此人 → 非好友。
+    return _identityCache.contactsByMatrixId[peers.first.id] != null;
+  }
+
+  /// 规格§八：聊天详情页头像 → APP 自己的好友/用户资料页（禁止打开
+  /// Matrix Profile）。好友直开；非好友走业务检索（同一 APP 页面）。
+  Future<void> _openPeerProfile(String matrixUserId) async {
+    final contact = _identityCache.contactsByMatrixId[matrixUserId];
+    if (contact != null) {
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => AddFriendProfilePage(
+            api: widget.api,
+            userId: contact.userId,
+            username: contact.username,
+            nickname: (contact.nickname?.isNotEmpty == true)
+                ? contact.nickname!
+                : contact.username,
+            relationshipState: 'FRIEND',
+            avatarUrl: contact.avatarUrl,
+          ),
+        ),
+      );
+      return;
+    }
+    // 非好友（已删除/陌生人）：按 Matrix ID 业务检索（同一 APP 资料页，
+    // 带"添加到通讯录"入口）——绝不打开 Matrix Profile。
+    try {
+      final profile = await widget.api.lookupUserByMatrixId(matrixUserId);
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => AddFriendProfilePage(
+            api: widget.api,
+            userId: profile['user_id']?.toString() ?? '',
+            username: profile['username']?.toString() ?? matrixUserId,
+            nickname: (profile['nickname']?.toString() ?? '')
+                    .isNotEmpty
+                ? profile['nickname'].toString()
+                : matrixUserId,
+            relationshipState:
+                profile['relationship_state']?.toString() ?? 'NONE',
+          ),
+        ),
+      );
+    } catch (_) {
+      // 反查失败：静默返回（详情页仍可用）。
+    }
+  }
+
   Future<void> _openVideoViewer(RoomMessageViewModel message) async {
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
@@ -1552,6 +1618,10 @@ class _RoomPageState extends State<RoomPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => DirectChatInfoPage(
+          // 规格§八：头像点击 → APP 好友资料页（非 Matrix Profile）。
+          onTapPerson: (matrixUserId) =>
+              unawaited(_openPeerProfile(matrixUserId)),
+
           peerName: peerName,
           peerId: peerId,
           matrixClient: widget.room.client,

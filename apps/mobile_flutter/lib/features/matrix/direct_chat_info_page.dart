@@ -10,8 +10,12 @@ import 'conversation_preferences.dart';
 import '../../ui/notification/conversation_notification_mode_tile.dart';
 
 final class DirectChatInfoPage extends StatefulWidget {
+  /// 规格§八：好友头像点击（参数 userId）→ 好友资料页。
+  final void Function(String userId)? onTapPerson;
+
   const DirectChatInfoPage({
     super.key,
+    this.onTapPerson,
     required this.peerName,
     required this.peerId,
     required this.matrixClient,
@@ -116,14 +120,8 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
               onTap: widget.onSearchHistory,
             ),
             // PRD §44：会话通知三态（默认 / 静音 / 特别关注）。
-            ConversationNotificationModeTile(
-              muted: preference.muted,
-              attention: preference.attention,
-              onChanged: (mode) => _update(preference.copyWith(
-                muted: mode == ConversationNotificationMode.muted,
-                attention: mode == ConversationNotificationMode.attention,
-              )),
-            ),
+            // 规格§四：一级菜单"消息通知 >"默认收起，点开再选三态。
+            _notificationSection(),
             _switch('置顶聊天', preference.pinned, (value) {
               _update(preference.copyWith(
                 pinned: value,
@@ -131,21 +129,73 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
                 clearPinnedAt: !value,
               ));
             }),
-            _switch('保存到通讯录', preference.saved,
-                (value) => _update(preference.copyWith(saved: value))),
             const SizedBox(height: 12),
-            WeChatListTile(
-              title: const Text(
-                '清空聊天记录',
-                style: TextStyle(color: WeChatColors.danger),
+            Center(
+              child: WeChatListTile(
+                title: const Text(
+                  '清空聊天记录',
+                  style: TextStyle(color: WeChatColors.danger),
+                ),
+                onTap: _clear,
               ),
-              onTap: _clear,
             ),
           ]),
         ),
       );
 
+  bool _notificationExpanded = false;
+
+  Widget _notificationSection() {
+    final mode = preference.muted
+        ? ConversationNotificationMode.muted
+        : preference.attention
+            ? ConversationNotificationMode.attention
+            : ConversationNotificationMode.normal;
+    final modeLabel = switch (mode) {
+      ConversationNotificationMode.muted => '静音',
+      ConversationNotificationMode.attention => '特别关注',
+      _ => '默认',
+    };
+    return Column(children: [
+      WeChatListTile(
+        title: const Text('消息通知'),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(modeLabel,
+              style: const TextStyle(
+                  fontSize: 14, color: WeChatColors.textSecondary)),
+          const CupertinoListTileChevron(),
+        ]),
+        onTap: () => setState(() => _notificationExpanded = !_notificationExpanded),
+      ),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        alignment: Alignment.topCenter,
+        child: _notificationExpanded
+            ? ConversationNotificationModeTile(
+                muted: preference.muted,
+                attention: preference.attention,
+                onChanged: (m) {
+                  setState(() => _notificationExpanded = false);
+                  _update(preference.copyWith(
+                    muted: m == ConversationNotificationMode.muted,
+                    attention: m == ConversationNotificationMode.attention,
+                  ));
+                },
+              )
+            : const SizedBox(width: double.infinity),
+      ),
+    ]);
+  }
+
   Widget _person(String name, String id, String? avatarUrl) =>
+      GestureDetector(
+        // 规格§八：点击头像进入 APP 自己的好友资料页（onTapPerson 由
+        // RoomPage 注入，携带 userId；禁止打开 Matrix Profile）。
+        onTap: () => widget.onTapPerson?.call(id),
+        child: _personColumn(name, id, avatarUrl),
+      );
+
+  Widget _personColumn(String name, String id, String? avatarUrl) =>
       Column(mainAxisSize: MainAxisSize.min, children: [
         MatrixUserAvatar(
           client: widget.matrixClient,

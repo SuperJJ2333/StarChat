@@ -43,7 +43,11 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
         .toList(growable: false);
     // BUG3：入群系统通知——以真实 Matrix 成员事件为唯一权威，本地推导
     // （invite 配对 join 转变），绝不插入本地临时文本；历史重载一致。
-    final notices = deriveGroupJoinNotices(
+    // 规格§一4：私聊（m.direct）房间绝不推导群聊系统通知——DM 的
+    // invite/join 成员事件属建房信令，不是"邀请加入群聊"。
+    final notices = room.isDirectChat
+        ? const <GroupJoinNotice>[]
+        : deriveGroupJoinNotices(
       [for (final event in timeline.events) projectMemberEvent(event)],
       resolveName: (matrixUserId) =>
           room.unsafeGetUserFromMemoryOrFallback(matrixUserId).calcDisplayname(),

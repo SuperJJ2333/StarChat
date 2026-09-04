@@ -499,8 +499,22 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
+  /// 聊天页后台预热（身份快照 + 头像解码；失败不影响已打开的会话）。
+  Future<void> _warmChatIdentity() async {
+    try {
+      await _identityCache.preload();
+      if (!mounted) return;
+      if (!mounted) return;
+      await _identityCache.precacheAvatarImages(context);
+    } catch (_) {
+      // 保留上一次成功快照；页面内自身会重试资料刷新。
+    }
+  }
+
   Future<void> _openRoom(Room room) async {
     if (_openingRoom) return;
+    // Navigator 先行捕获：后续任何 await 之后都不再触碰 context。
+    final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
     try {
       final preference = preferenceForRoom(room);
@@ -517,22 +531,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         }
       }
 
-      try {
-        await _identityCache.preload();
-      } catch (_) {
-        // Preserve the last successful identity snapshot and keep the
-        // encrypted room route available when business identity refresh fails.
-      }
-      if (!mounted) return;
-      await _identityCache.precacheAvatarImages(context);
-      if (!mounted) return;
+      // 规格§七（P0）：打开聊天页绝不等待身份预载/头像预解码——
+      // 先用本地已有数据渲染，资料与头像在后台补齐（原实现在此处
+      // 串行 await preload + precache，正是"点开聊天等 5 秒"的根因）。
+      unawaited(_warmChatIdentity());
       final roomName = room.isDirectChat
           ? _conversationTitle(room)
           : groupRoomNavigationTitle(
               room.name,
               orderedJoinedMembers(room).length,
             );
-      await Navigator.of(context, rootNavigator: true).push(
+      await navigator.push(
         CupertinoPageRoute(
           builder: (_) => RoomPage(
             api: widget.api,

@@ -142,9 +142,14 @@ abstract interface class RoomTimelineAdapter {
 }
 
 final class RoomTimelineController extends ChangeNotifier {
-  RoomTimelineController(this.adapter) : messages = adapter.snapshot();
+  RoomTimelineController(this.adapter, {this.canSendNow})
+      : messages = adapter.snapshot();
 
   final RoomTimelineAdapter adapter;
+
+  /// 规格§二/§三：互动权限门（非好友/拉黑 → 消息进入本地 failed，
+  /// 绝不触达发送服务；UI 与服务层同一守卫）。
+  final bool Function()? canSendNow;
   List<RoomMessageViewModel> messages;
 
   /// 历史消息加载状态（上滑到顶自动加载的 UI 反馈）：
@@ -204,6 +209,23 @@ final class RoomTimelineController extends ChangeNotifier {
 
   Future<void> sendText(String text) async {
     final transactionId = 'local-${DateTime.now().microsecondsSinceEpoch}';
+    // 规格§三：无互动权限 → 本地 failed（发送失败感叹号），不丢弃
+    // 不假成功，也绝不触达发送服务。
+    if (!(canSendNow?.call() ?? true)) {
+      messages = [
+        ...messages,
+        RoomMessageViewModel(
+          id: transactionId,
+          senderId: '',
+          text: text,
+          isOwn: true,
+          deliveryState: RoomDeliveryState.failed,
+          timestamp: DateTime.now(),
+        ),
+      ];
+      notifyListeners();
+      return;
+    }
     messages = [
       ...messages,
       RoomMessageViewModel(
