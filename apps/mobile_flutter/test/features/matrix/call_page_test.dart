@@ -184,4 +184,129 @@ void main() {
     controller.dispose();
     await backend.events.close();
   });
+
+  testWidgets('hasConnectedOnce：接通后短暂 ended 不立即退出，抖动恢复取消退出',
+      (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+
+    await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
+    tester.state<NavigatorState>(find.byType(Navigator)).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          autoCloseOnEnd: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+
+    // 短暂 ended（网络抖动）：3 秒缓冲内不 pop。
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 2500));
+    expect(find.text('通话已结束'), findsOneWidget,
+        reason: '接通过一次的 ended 有缓冲期，页面不立即退出');
+
+    // 抖动恢复 connected：退出取消，页面回到通话态。
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+    expect(find.byKey(const Key('call-status')), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('autoCloseOnEnd：缓冲期过后真的退出（挂断关页）', (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+    await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
+    tester.state<NavigatorState>(find.byType(Navigator)).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          autoCloseOnEnd: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _emit(tester, backend, const CallBackendEvent.connected());
+    await tester.pump();
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+    expect(find.text('通话已结束'), findsOneWidget);
+    // 缓冲期（3s）过后退出。
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('通话已结束'), findsNothing, reason: '挂断后页面最终关闭');
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('未接通的 ended 立即退出（不拖失败页）', (tester) async {
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    await _emit(
+      tester,
+      backend,
+      const CallBackendEvent.incoming(
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: CallMediaType.audio,
+      ),
+    );
+    await tester.pumpWidget(const CupertinoApp(home: Placeholder()));
+    tester.state<NavigatorState>(find.byType(Navigator)).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => CallPage(
+          controller: controller,
+          displayName: '周然',
+          fallbackSeed: 'alice',
+          autoCloseOnEnd: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _emit(tester, backend, const CallBackendEvent.ended());
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text('通话已结束'), findsNothing,
+        reason: '从未接通（拒接/取消）时立即退出，不保留结束页');
+    controller.dispose();
+    await backend.events.close();
+  });
 }

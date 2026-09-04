@@ -89,28 +89,72 @@ final class _CallPageState extends State<CallPage> {
 
   bool _endPopHandled = false;
 
+  /// 规格§四：接通过至少一次（此后终态有抖动缓冲，短暂 ended 不立即退出）。
+  bool _hasConnectedOnce = false;
+  Timer? _endGraceTimer;
+
+  /// 接通过一次后的终态→退出缓冲窗口。
+  static const _endGrace = Duration(seconds: 3);
+
   void _changed() {
+    if (widget.controller.state.phase == CallPhase.connected) {
+      _hasConnectedOnce = true;
+    }
     _updateStreams();
     _syncDurationTicker();
     if (mounted) setState(() {});
     _autoCloseIfEnded();
   }
 
-  /// 通话结束（挂断/失败/权限拒绝）即刻自动关闭通话页：
-  /// 不保留“通话已结束”独立页面，直接回到消息会话页。
+  /// 通话结束（挂断/失败/权限拒绝）自动关闭本页：
+  /// - 从未接通（拒接/取消/失败）：立即关闭，不拖失败页；
+  /// - 接通过一次（hasConnectedOnce）：留 [_endGrace] 缓冲——短暂
+  ///   网络抖动（ended 后又恢复 connected/connecting/ringing）会取消
+  ///   关闭；缓冲期后仍为终态才退出。
   void _autoCloseIfEnded() {
     if (!widget.autoCloseOnEnd || _endPopHandled) return;
     final phase = widget.controller.state.phase;
     final ended = phase == CallPhase.ended ||
         phase == CallPhase.failed ||
         phase == CallPhase.permissionDenied;
-    if (!ended) return;
-    _endPopHandled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
+    if (!ended) {
+      // 抖动恢复：取消挂起的关闭。
+      _endGraceTimer?.cancel();
+      _endGraceTimer = null;
+      return;
+    }
+    if (!_hasConnectedOnce) {
+      _popOnce();
+      return;
+    }
+    _endGraceTimer ??= Timer(_endGrace, () {
+      _endGraceTimer = null;
+      final now = widget.controller.state.phase;
+      final stillEnded = now == CallPhase.ended ||
+          now == CallPhase.failed ||
+          now == CallPhase.permissionDenied;
+      // Timer 回调不在 build 期：直接 pop（postFrame 推迟在此场景可能
+      // 因无后续帧而不执行）。
+      if (stillEnded) _popOnce(defer: false);
     });
+  }
+
+  void _popOnce({bool defer = true}) {
+    if (_endPopHandled) return;
+    _endPopHandled = true;
+    if (!mounted) return;
+    if (!defer) {
+      _popRoute();
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _popRoute();
+    });
+  }
+
+  void _popRoute() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   void _syncDurationTicker() {
@@ -129,13 +173,16 @@ final class _CallPageState extends State<CallPage> {
   String get _durationText {
     final connectedAt = _connectedAt;
     if (connectedAt == null) return '00:00';
-    return formatCallDuration(DateTime.now().difference(connectedAt));
+    // 时钟取自控制器（可注入 fake clock；与 connectedAt 同源）。
+    return formatCallDuration(
+        widget.controller.now().difference(connectedAt));
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_changed);
     _durationTicker?.cancel();
+    _endGraceTimer?.cancel();
     unawaited(_setScreenOn(false));
     _localRenderer.dispose();
     _remoteRenderer.dispose();

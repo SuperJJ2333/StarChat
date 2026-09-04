@@ -37,7 +37,7 @@ import 'features/matrix/matrix_home_page.dart';
 import 'features/matrix/room_page.dart';
 import 'features/matrix/profile_repository.dart';
 import 'features/matrix/group_chat_controller.dart';
-import 'features/matrix/incoming_call_overlay_state.dart';
+import 'features/matrix/call_ui_manager.dart';
 import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_alerts.dart';
@@ -169,15 +169,21 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             true,
         // BUG2 双声去重：后台来电由 calls_ring 渠道系统发声，
         // 应用内循环静音；回前台（或前台来电）恢复应用内铃声。
-        audible: () => appResumed || !incomingCallOverlay.ringing,
+        audible: () => appResumed || !callUi.ringing,
       ),
     ),
   );
   bool callPageVisible = false;
 
-  /// 来电覆盖层状态机：ringing（通知语义）与 pageVisible（挂载语义）
-  /// 分离——被叫接通后通话页保持挂载，只有终态卸载（BUG 修复）。
-  final incomingCallOverlay = IncomingCallOverlayState();
+  /// 全局通话 UI 管理器（规格 §一/§三）：唯一有权推/关来电页面的组件
+  /// （根 Navigator 之上，任意页面/子路由都盖不住）。AppHome 只保留
+  /// 业务钩子（消息提醒抑制/通话摘要），不再自呈通话 UI。
+  late final CallUiManager callUi = CallUiManager(
+    navigatorKey: callNavigatorKey,
+    notifications: callNotifications,
+    isAppResumed: () => appResumed,
+    onPhaseChanged: _onCallPhaseChangedForBusiness,
+  );
   bool appResumed = true;
 
   /// 本次通话摘要是否已发送：ended 分支可能随 notifyListeners 多次进入，
@@ -234,7 +240,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    calls.addListener(_callChanged);
+    // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
+    // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
+    callUi.attach(
+      calls,
+      mediaBackend: callBackend,
+      outgoingCallPageVisible: () => callPageVisible,
+    );
+    calls.addListener(_handleCallState);
     reminderBootstrap = MessageReminderSyncBootstrapper(
       retries: widget.matrix.sdkClient.onSync.stream.map<void>((_) {}),
       create: _createReminderSync,
@@ -558,8 +571,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(syncKeepAlive.ensureStarted());
     }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
-    if (appResumed && incomingCallOverlay.ringing) {
-      unawaited(callNotifications.hideIncoming());
+    if (appResumed) {
+      callUi.handleAppResumed();
     }
     // 用户从后台回到前台时补一次更新检查（30 分钟节流）：
     // 仅靠冷启动会让长期驻留的会话长时间收不到更新提醒。
@@ -786,36 +799,21 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     return cache;
   }
 
-  void _callChanged() {
+  /// 通话状态变化的业务钩子（UI 呈现全部在 CallUiManager）：
+  /// 消息提醒抑制 + 主叫通话摘要。
+  void _onCallPhaseChangedForBusiness(CallPhase previous, CallPhase next) {
+    notificationAppState.setCallActive(
+      next == CallPhase.ringing || next == CallPhase.connected,
+    );
+  }
+
+  /// 规格§三：来电委托管理器呈现；摘要落消息；登出经 dispose 清理。
+  void _handleCallState() {
     if (!mounted) return;
     final phase = calls.state.phase;
-    final wasRinging = incomingCallOverlay.ringing;
-    final hadCallUi =
-        incomingCallOverlay.pageVisible || callPageVisible;
-    incomingCallOverlay.update(phase, outgoingCallPageVisible: callPageVisible);
-    // 通话占用维度（PRD §40）：响铃与通话中抑制普通消息提醒。
-    notificationAppState.setCallActive(
-      phase == CallPhase.ringing || phase == CallPhase.connected,
-    );
-    if (phase == CallPhase.ringing && !callPageVisible) {
-      // 来电：前台直接呈现接听页；后台/锁屏/其他应用之上
-      // 以全屏意图通知覆盖提醒，点击拉起接听页。
-      if (!appResumed) {
-        unawaited(callNotifications.showIncoming(
-          callerName: calls.state.matrixUserId ?? '加密来电',
-          video: calls.state.type == CallMediaType.video,
-          ring: true,
-        ));
-      }
-      setState(() {});
-    } else if (phase == CallPhase.connected) {
-      if (wasRinging) {
-        unawaited(callNotifications.hideIncoming());
-      }
-      // 通话中前台服务：按 Home 键/切换应用后通话继续、麦克风摄像头不回收。
-      // BUG 修复：接通只结束"响铃"语义，来电接听页保持挂载。
-      unawaited(callNotifications.showOngoing(title: '端到端加密通话进行中'));
-      setState(() {});
+    if (phase == CallPhase.ringing) {
+      // 前台：任意页面之上弹出来电页；后台：系统全屏来电通知。
+      callUi.showIncomingCall(calls);
     } else if (phase == CallPhase.ended ||
         phase == CallPhase.failed ||
         phase == CallPhase.permissionDenied) {
@@ -837,9 +835,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           ));
         }
       }
-      unawaited(callNotifications.hideIncoming());
-      unawaited(callNotifications.hideOngoing());
-      if (hadCallUi) setState(() {});
     }
   }
 
@@ -993,7 +988,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _friendRequestPollTimer?.cancel();
     pendingFriendRequests.dispose();
-    calls.removeListener(_callChanged);
+    calls.removeListener(_handleCallState);
+    unawaited(callUi.detach());
     calls.dispose();
     callBackend.dispose();
     directChats.dispose();
@@ -1019,9 +1015,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(pusher.dispose());
     }
     _pusherServices.clear();
-    // 诊断页不留旧账号通道；登出不遗留旧账号的来电覆盖层。
+    // 诊断页不留旧账号通道；登出不遗留旧账号的通话 UI（管理器内部清理）。
     PushStatusRegistry.shared.clear();
-    incomingCallOverlay.reset();
     for (final provider in _pushTokenProviders) {
       unawaited(provider.dispose());
     }
@@ -1163,17 +1158,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               },
             ),
           ),
-          if (incomingCallOverlay.pageVisible)
-            Positioned.fill(
-              child: CallPage(
-                controller: calls,
-                displayName: calls.state.matrixUserId ?? '加密来电',
-                fallbackSeed: calls.state.matrixUserId ?? 'incoming-call',
-                incoming: true,
-                mediaBackend: callBackend,
-              ),
-            ),
-          // 应用内通知横幅：覆盖在 Tab 内容之上、来电页之下（PRD §7/§40）。
+          // 来电页不再作为 Stack 覆盖层：CallUiManager 经根 Navigator
+          // （callNavigatorKey）推送，任意推入路由/子页面也盖不住。
+          // 应用内通知横幅：覆盖在 Tab 内容之上（PRD §7/§40）。
           InAppBannerOverlay(
             controller: notificationBanners,
             onOpenConversation: (conversationId) =>

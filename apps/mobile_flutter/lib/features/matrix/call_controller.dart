@@ -141,11 +141,19 @@ final class CallController extends ChangeNotifier {
     CallDiagnostics? diagnostics,
     this.ringTimeout = callRingTimeout,
     this.connectTimeout = callConnectTimeout,
+    DateTime Function()? now,
   })  : alerts = alerts ?? CallAlerts(),
         soundCues = soundCues ?? const NotificationSystemCallSoundCues(),
-        diagnostics = diagnostics ?? CallDiagnostics() {
+        diagnostics = diagnostics ?? CallDiagnostics(),
+        _now = now ?? DateTime.now {
     _events = backend.callEvents.listen(_handleEvent);
   }
+
+  /// 接通时刻时钟（测试注入 fake clock；协议与信令不使用）。
+  final DateTime Function() _now;
+
+  /// 当前时刻（与 connectedAt 同源；UI 计时展示用）。
+  DateTime now() => _now();
 
   final CallBackend backend;
   final CallPermissionGateway permissions;
@@ -348,7 +356,7 @@ final class CallController extends ChangeNotifier {
         _set(state.copyWith(
           phase: CallPhase.connected,
           speaker: isVideo ? true : null,
-          connectedAt: DateTime.now(),
+          connectedAt: _now(),
         ));
       case CallBackendEventKind.ended:
         _set(state.copyWith(phase: CallPhase.ended, message: '通话已结束'));

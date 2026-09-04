@@ -1,13 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 
+import '../matrix/call_ui_manager.dart' show callNavigatorKey;
 import '../../ui/chat/chat_tools.dart';
 import 'statistics_assistant_page.dart';
 import 'statistics_room_scope.dart';
 
-/// 统计助手模块自持的根导航键；由 main.dart 挂到 `CupertinoApp.navigatorKey`，
-/// 使工具的 onTap 可以脱离任何页面上下文做全屏跳转。
-final GlobalKey<NavigatorState> statisticsNavigatorKey = GlobalKey<NavigatorState>();
+/// 根导航键已统一为 callNavigatorKey（规格 §二：全局唯一根 Navigator，
+/// 来电页/统计助手共用）；旧名保留兼容引用。
+final GlobalKey<NavigatorState> statisticsNavigatorKey = callNavigatorKey;
 
 /// 幂等注册「统计助手」聊天工具（同 id 覆盖，不侵入 registry 其他逻辑）。
 void ensureStatisticsToolRegistered() => ChatToolRegistry.register(

@@ -6,6 +6,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:matrix/matrix.dart' hide CallBackend;
 import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
 
+import 'call_connected_fallback.dart';
 import 'call_controller.dart';
 import 'call_diagnostics.dart';
 import 'call_quality_monitor.dart';
@@ -120,6 +121,14 @@ final class MatrixCallBackend implements CallBackend {
   final CallDiagnostics diagnostics;
   final _events = StreamController<CallBackendEvent>.broadcast();
   StreamSubscription<CallState>? _callStates;
+
+  /// kConnected 丢失兜底（accept 后 10s 内 peer 已连则补发）。
+  ConnectedFallbackWatcher _fallback = ConnectedFallbackWatcher(
+    pollInterval: const Duration(milliseconds: 500),
+    timeout: const Duration(seconds: 10),
+    isPeerConnected: () async => false,
+    emitConnected: () {},
+  );
   CallSession? _call;
   CallQualityMonitor? _quality;
 
@@ -173,12 +182,23 @@ final class MatrixCallBackend implements CallBackend {
     _call = call;
     diagnostics.reset();
     diagnostics.mark(CallDiagStage.inviteReceived);
+    debugPrint('[matrix-call] inviteReceived room=${call.room.id} '
+        'outgoing=${call.isOutgoing} type=${call.type.name}');
     delegate.markActive(true);
     await _callStates?.cancel();
     _callStates = call.onCallStateChanged.stream.listen((state) {
+      debugPrint('[matrix-call] state=${state.name}'); // 全状态关键路径日志（规格§五）
       if (state == CallState.kConnected) {
+        // 兜底已补发过 connected → SDK 事件迟到，去重不重发。
+        final alreadyEmitted = _fallback.didEmit;
+        _fallback.markConnected();
+        if (alreadyEmitted) {
+          debugPrint('[matrix-call] connected dedup (fallback already emitted)');
+          return;
+        }
         _startQualityMonitor();
         _events.add(const CallBackendEvent.connected());
+        debugPrint('[matrix-call] connected (sdk event)');
       } else if (state == CallState.kEnded) {
         _ended(call);
       }
@@ -251,6 +271,8 @@ final class MatrixCallBackend implements CallBackend {
 
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
+    debugPrint('[matrix-call] ended reason=${call.hangupReason}');
+    await _fallback.stop();
     delegate.markActive(false);
     await _quality?.stop();
     final qualitySummary = _quality?.summary();
@@ -270,7 +292,24 @@ final class MatrixCallBackend implements CallBackend {
       _call ?? (throw StateError('No active Matrix call'));
 
   @override
-  Future<void> accept() => _active.answer();
+  Future<void> accept() async {
+    debugPrint('[matrix-call] answerSent (accept)');
+    await _active.answer();
+    // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
+    // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。
+    await _fallback.stop();
+    _fallback = ConnectedFallbackWatcher(
+      pollInterval: const Duration(milliseconds: 500),
+      timeout: const Duration(seconds: 10),
+      isPeerConnected: () async =>
+          _call?.pc?.connectionState ==
+          webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      emitConnected: () {
+        _startQualityMonitor();
+        _events.add(const CallBackendEvent.connected());
+      },
+    )..start();
+  }
   @override
   Future<void> reject() => _active.reject(reason: CallErrorCode.userHangup);
   @override
@@ -309,6 +348,7 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   Future<void> dispose() async {
+    await _fallback.stop();
     await _callStates?.cancel();
     await _events.close();
   }

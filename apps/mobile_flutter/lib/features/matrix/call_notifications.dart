@@ -2,6 +2,21 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../../core/notification/foreground_service_arbiter.dart';
 
+/// 通话通知网关（CallUiManager 依赖此抽象；测试注入替身）。
+abstract interface class CallNotificationGateway {
+  Future<void> showIncoming({
+    required String callerName,
+    required bool video,
+    bool ring,
+  });
+
+  Future<void> hideIncoming();
+
+  Future<void> showOngoing({required String title});
+
+  Future<void> hideOngoing();
+}
+
 /// 通话系统通知：
 /// - **来电**：全屏意图（full-screen intent）通知，App 在后台/锁屏/其他
 ///   应用界面之上弹出来电，点击拉起通话接听页；进程存活期间 Matrix
@@ -12,7 +27,7 @@ import '../../core/notification/foreground_service_arbiter.dart';
 /// 通话中前台服务与消息保活共用插件唯一的 OS 服务，必须经共享
 /// [ForegroundServiceArbiter] 仲裁：通话结束释放所有权时仲裁器会
 /// 重申保活通知，而不是把消息同步一起停掉。
-final class CallNotifications {
+final class CallNotifications implements CallNotificationGateway {
   factory CallNotifications({
     FlutterLocalNotificationsPlugin? plugin,
     ForegroundServiceArbiter? arbiter,
@@ -127,6 +142,8 @@ final class CallNotifications {
   /// 来电覆盖提醒：后台/锁屏/其他应用之上弹出，点击回到接听页。
   /// [ring]：App 退后台时置 true——经 calls_ring 渠道由系统播放来电
   /// 铃声（应用内循环同步静音，见 SoundServiceCallAlertDriver.audible）。
+  @override
+  @override
   Future<void> showIncoming({
     required String callerName,
     required bool video,
@@ -151,12 +168,14 @@ final class CallNotifications {
     );
   }
 
+  @override
   Future<void> hideIncoming() async {
     await _ensureInit();
     await plugin.cancel(incomingCallId);
   }
 
   /// 通话中前台服务：切后台/Home 键后通话继续，麦克风摄像头不被回收。
+  @override
   Future<void> showOngoing({required String title}) async {
     await _ensureInit();
     await arbiter.acquire(
@@ -167,6 +186,7 @@ final class CallNotifications {
 
   /// 通话结束：只释放通话所有权——消息保活若仍在运行会被仲裁器重申，
   /// 不再出现"挂断电话把消息同步一起停掉"的回归。
+  @override
   Future<void> hideOngoing() async {
     await arbiter.release(ForegroundServiceOwner.ongoingCall);
   }

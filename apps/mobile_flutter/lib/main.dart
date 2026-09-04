@@ -11,7 +11,7 @@ import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
 import 'features/auth/authentication_flow.dart';
-import 'features/statistics/statistics_tool.dart';
+import 'features/matrix/call_ui_manager.dart' show callNavigatorKey;
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'session_gate.dart';
@@ -108,7 +108,7 @@ final class _LiuhetongAppState extends State<LiuhetongApp>
   Widget build(BuildContext context) => AnimatedBuilder(
         animation: widget.themeController,
         builder: (context, _) => CupertinoApp(
-          navigatorKey: statisticsNavigatorKey,
+          navigatorKey: callNavigatorKey,
           title: '畅聊 ChatFlow',
           locale: const Locale('zh', 'CN'),
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
