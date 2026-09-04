@@ -60,11 +60,41 @@ final class MatrixPusherService {
   StreamSubscription<String?>? _tokenSub;
   bool _unregistering = false;
 
+  // ── 可恢复状态机 ──
+  // 注册失败后有限指数退避自动重试；resume/网络恢复/CID 变化可手动触发。
+  int _retryCount = 0;
+  Timer? _retryTimer;
+  bool _registering = false;
+  DateTime? _lastSuccessAt;
+  DateTime? _lastFailureAt;
+  String _lastFailureKind = '';
+
+  static const _retryDelays = <Duration>[
+    Duration(seconds: 10),
+    Duration(seconds: 30),
+    Duration(minutes: 2),
+    Duration(minutes: 10),
+  ];
+
   bool get isRegistered => _registeredToken != null;
+  DateTime? get lastSuccessAt => _lastSuccessAt;
+  DateTime? get lastFailureAt => _lastFailureAt;
+  String get lastFailureKind => _lastFailureKind;
 
   /// 登录后调用：网关未配置或 token 不可得 → 不注册（安全降级）。
   /// token 与已注册值一致 → 幂等跳过；变化 → 重注册。
+  /// 失败后有限指数退避自动重试；并发守卫防重复注册。
   Future<bool> ensureRegistered() async {
+    if (_registering) return false;
+    _registering = true;
+    try {
+      return await _doRegister();
+    } finally {
+      _registering = false;
+    }
+  }
+
+  Future<bool> _doRegister() async {
     final url = gatewayUrl;
     if (url == null) {
       diagnostics.record(
@@ -73,8 +103,11 @@ final class MatrixPusherService {
     }
     final token = await tokenProvider.token();
     if (token == null || token.isEmpty) {
+      _lastFailureKind = 'no-token';
+      _lastFailureAt = DateTime.now();
       diagnostics.record(
           NotificationDiagStage.push, 'no device token; pusher off');
+      _scheduleRetry();
       return false;
     }
     if (token == _registeredToken) return true;
@@ -91,14 +124,55 @@ final class MatrixPusherService {
         ),
       );
       _registeredToken = token;
+      _lastSuccessAt = DateTime.now();
+      _lastFailureKind = '';
+      _retryCount = 0;
+      _cancelRetry();
       diagnostics.record(NotificationDiagStage.push,
           'pusher registered (format=$_pushFormat)');
       return true;
     } catch (error) {
+      _lastFailureKind = error.runtimeType.toString();
+      _lastFailureAt = DateTime.now();
       diagnostics.record(
           NotificationDiagStage.push, 'register failed: ${error.runtimeType}');
+      _scheduleRetry();
       return false;
     }
+  }
+
+  void _scheduleRetry() {
+    if (_retryCount >= _retryDelays.length) {
+      diagnostics.record(NotificationDiagStage.push,
+          'pusher retry: exhausted ${_retryDelays.length} attempts; waiting for external trigger');
+      return;
+    }
+    _retryTimer?.cancel();
+    final delay = _retryDelays[_retryCount++];
+    diagnostics.record(NotificationDiagStage.push,
+        'pusher retry scheduled in ${delay.inSeconds}s (attempt $_retryCount/${_retryDelays.length})');
+    _retryTimer = Timer(delay, () {
+      if (!_unregistering) unawaited(ensureRegistered());
+    });
+  }
+
+  void _cancelRetry() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retryCount = 0;
+  }
+
+  /// 外部触发重检查（resume/网络恢复/登录恢复）：不重置退避计数，
+  /// 但立即尝试一次；若已在注册中则跳过。
+  Future<void> recheck() async {
+    if (isRegistered) {
+      // 已注册：仅在有 CID 变化时重注册（token() 有等待逻辑会返回
+      // 当前 CID，如果与已注册一致则幂等跳过）。
+      await ensureRegistered();
+      return;
+    }
+    _cancelRetry();
+    await ensureRegistered();
   }
 
   /// Token 轮换监听：FCM 刷新 token 后自动重注册。
@@ -111,9 +185,11 @@ final class MatrixPusherService {
   }
 
   /// 登出/账号切换：注销 pusher（服务端停止向该设备推送）。
+  /// 同时停止重试（不允许登出后继续注册旧账号的 pusher）。
   Future<void> unregister() async {
     if (_unregistering) return;
     _unregistering = true;
+    _cancelRetry();
     try {
       final token = _registeredToken ?? await tokenProvider.token();
       if (token == null || token.isEmpty) {
@@ -134,6 +210,7 @@ final class MatrixPusherService {
   }
 
   Future<void> dispose() async {
+    _cancelRetry();
     await _tokenSub?.cancel();
     _tokenSub = null;
   }

@@ -52,6 +52,35 @@ def build_push_body(cid: str, kind: str, ttl_ms: int) -> dict[str, Any]:
 class GetuiPushError(Exception):
     """推送失败（含不可恢复的业务错误码）。"""
 
+    # 个推明确表示该 CID 永久失效的业务码（可安全进 Matrix rejected；
+    # Synapse 会删除 pusher，客户端下次登录重新注册）。
+    PERMANENT_CODES = frozenset({
+        10009,  # token 无效
+        20101,  # cid 为空
+        20102,  # cid 不存在/格式非法
+        20103,  # cid 已注销
+        20104,  # cid 已失效
+        20105,  # cid 与 AppID 不匹配
+    })
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def is_permanent(self) -> bool:
+        """个推明确表示 CID 永久不可用（进 rejected 让 Synapse 删 pusher）。
+
+        其他码（鉴权失败/限流/参数/服务繁忙）和运输层异常是临时的：
+        绝不能进 rejected，否则一次服务端故障让用户永远收不到推送。
+        """
+        return self.code is not None and self.code in self.PERMANENT_CODES
+
+
+class GetuiTransientError(Exception):
+    """临时错误（网络/超时/5xx/DNS/鉴权失败）：不进 rejected，
+    Synapse 会重试，pusher 不受影响。"""
+
 
 class GetuiRestClient:
     def __init__(
@@ -114,15 +143,22 @@ class GetuiRestClient:
         """单 CID 推送；返回个推 status（successed_online/offline/…）。
 
         token 失效（code=10001）自动刷新重试一次。
+        永久 CID 失效 → GetuiPushError(is_permanent=True)；
+        网络/5xx/超时 → GetuiTransientError（绝不进 Matrix rejected）。
         """
         body = build_push_body(cid, kind, ttl_ms)
         for attempt in (1, 2):
             token = self._current_token(int(time.time() * 1000))
-            response = self._http.post(
-                f"{self._base}/v2/{self._app_id}/push/single/cid",
-                json=body,
-                headers={"token": token},
-            )
+            try:
+                response = self._http.post(
+                    f"{self._base}/v2/{self._app_id}/push/single/cid",
+                    json=body,
+                    headers={"token": token},
+                )
+            except httpx.HTTPError as error:
+                raise GetuiTransientError(
+                    f"transport error: {type(error).__name__}"
+                ) from error
             if response.status_code != 200:
                 # 优先解析个推业务错误码（CID 无效等也是非 200 + code）。
                 try:
@@ -130,12 +166,14 @@ class GetuiRestClient:
                     code = error_payload.get("code")
                     if code is not None:
                         raise GetuiPushError(
-                            f"getui push failed code={code}"
+                            f"getui push failed code={code}", code=int(code)
                         )
                 except GetuiPushError:
                     raise
                 except Exception:
-                    response.raise_for_status()
+                    raise GetuiTransientError(
+                        f"http {response.status_code}"
+                    ) from None
             payload = response.json()
             code = payload.get("code")
             if code == 0:
@@ -144,5 +182,5 @@ class GetuiRestClient:
             if code == 10001 and attempt == 1:
                 self._token = None  # token 失效，刷新后重试
                 continue
-            raise GetuiPushError(f"getui push failed code={code}")
+            raise GetuiPushError(f"getui push failed code={code}", code=int(code))
         raise GetuiPushError("getui push retry exhausted")

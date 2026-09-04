@@ -48,11 +48,13 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/getui/events")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    // CID 竞态修复：onListen 时立即回放当前 CID（若有）。
+                    // 此前回放代码在 onEvent lambda 内部——CID 已存在但无新
+                    // 事件时 Dart 永远收不到，pusher 整个会话不注册。
+                    GetuiBridgeState.currentCid()?.let { cid ->
+                        events.success(mapOf("type" to "cid", "cid" to cid))
+                    }
                     GetuiBridgeState.onEvent = { event ->
-                        // 立即回放当前 CID（若有），再接后续变更。
-                        GetuiBridgeState.currentCid()?.let {
-                            events.success(mapOf("type" to "cid", "cid" to it))
-                        }
                         events.success(event)
                     }
                 }

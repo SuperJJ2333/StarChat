@@ -6,6 +6,7 @@ import 'group_chat_controller.dart';
 import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'group_invitation_auto_join.dart';
+import 'matrix_media_file.dart';
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -212,10 +213,16 @@ final class MatrixSdkE2eeClient
           height: thumbnailHeight);
     }
     final eventId = await room.sendFileEvent(
-        MatrixFile(
-            bytes: plaintext, name: filename ?? '畅聊附件', mimeType: mimeType),
-        thumbnail: thumbnail,
-        extraContent: extraContent);
+        // BUG 修复（视频封面丢失）：extraContent 里的 info（duration 等）
+        // 必须内联进文件对象——SDK 以 ...extraContent 浅合并收尾，info 键
+        // 会整体覆盖已构建的 info（含 thumbnail_file）。
+        buildMediaFileForSend(
+          bytes: plaintext,
+          name: filename ?? '畅聊附件',
+          mimeType: mimeType,
+          extraContent: extraContent,
+        ).file,
+        thumbnail: thumbnail);
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');
     }

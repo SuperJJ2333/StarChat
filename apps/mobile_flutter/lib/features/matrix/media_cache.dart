@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -10,17 +11,26 @@ import 'package:path_provider/path_provider.dart';
 final class MediaCache {
   MediaCache._();
 
+  /// 文件系统安全段：Matrix ID 含 `!` `:` `$/` 等非法路径字符
+  /// （Windows 全平台禁止），清洗后追加短散列防不同 ID 清洗碰撞。
+  static String _safeSegment(String id) {
+    final safe = id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    final digest = md5.convert(id.codeUnits).toString().substring(0, 8);
+    return '${safe}_$digest';
+  }
+
   static Future<Directory> _dirFor(String roomId) async {
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory('${docs.path}${Platform.pathSeparator}chat-media'
-        '${Platform.pathSeparator}$roomId');
+        '${Platform.pathSeparator}${_safeSegment(roomId)}');
     await dir.create(recursive: true);
     return dir;
   }
 
   static Future<File> _fileFor(String roomId, String eventId) async {
     final dir = await _dirFor(roomId);
-    return File('${dir.path}${Platform.pathSeparator}$eventId');
+    return File(
+        '${dir.path}${Platform.pathSeparator}${_safeSegment(eventId)}');
   }
 
   /// 已缓存则返回本地文件，否则返回 null。
@@ -94,6 +104,27 @@ Future<Uint8List> loadMediaWithCache(
   final bytes = await decrypt();
   await MediaCache.store(key.roomId, key.eventId, bytes);
   return bytes;
+}
+
+/// 视频播放的页级共享内存缓存（在途去重 + LRU）；视频字节大，
+/// 条目上限远小于图片缓存。
+final videoMemoryCache = MediaMemoryCache(maxEntries: 3);
+
+/// 解析视频播放文件（E2E 修复：重复打开全量下载 + 临时文件泄漏）。
+///
+/// 顺序：磁盘缓存直读（零下载零解密）→ 内存在途去重下载解密 →
+/// 落盘返回。播放器直接使用该缓存文件，不再复制到系统临时目录。
+Future<File> resolveCachedVideoFile({
+  required MediaCacheKey key,
+  required Future<Uint8List> Function() decrypt,
+  MediaMemoryCache? memoryCache,
+}) async {
+  final disk = await MediaCache.cached(key.roomId, key.eventId);
+  if (disk != null) return disk;
+  final bytes = await (memoryCache ?? videoMemoryCache)
+      .putIfAbsent(key.eventId, () => loadMediaWithCache(key, decrypt));
+  return (await MediaCache.cached(key.roomId, key.eventId)) ??
+      await MediaCache.store(key.roomId, key.eventId, bytes);
 }
 
 final class MediaCacheKey {

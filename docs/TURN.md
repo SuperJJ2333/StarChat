@@ -30,6 +30,25 @@
 - 通话质量日志（0.3.33 起）：`chatflow/callquality` 汇总含
   `turn=used/not-used`（getStats 候选类型判定 relay）——真机验证 TURN
   是否实际启用看这一行。
+- **2026-09-04 诊断扩展**（远距离通话卡顿排查）：summary 追加
+  - `codec=`：收流编解码器（如 `audio/opus`、`video/VP8`；VP8/H264
+    互操作问题、音频 OPUS 降级可见）；
+  - `availOut=<kbps>`：candidate-pair `availableOutgoingBitrate` 均值
+    （可用出站带宽估算；中继带宽上限问题直接可见）；
+  - `conceal=<n>`：音频隐藏事件峰值（`concealmentEvents`，丢包补偿
+    触发次数——"听得见但断续/机器人声"的量化指标）；
+  - ICE 状态进入抽样（`iceState`，pair `state`）。
+  实现：`apps/mobile_flutter/lib/features/matrix/call_quality_monitor.dart`
+  （解析为纯函数，测试 `test/features/matrix/call_quality_and_gate_test.dart`）。
+
+### 3.1 服务器核验（2026-09-04，本次五联修）
+
+- coturn 容器 `starchat-coturn-1` Up，主机 3478/5349 tcp+udp 均在监听；
+- homeserver `turn_uris` 三条与 §1 一致（render_config `--check`：
+  NO DRIFT）；
+- **公网实测**：3478/tcp 可达 ✅；**5349/tcp 仍不可达** ❌——托管商
+  安全组仍未放行（§2.1 待人工），公网 `turns:` 兜底当前不可用，
+  3478/udp（非 TLS）中继可用。
 
 ## 4. 双机真机测试矩阵（人工执行，覆盖 Wi-Fi/4G/5G/跨运营商）
 

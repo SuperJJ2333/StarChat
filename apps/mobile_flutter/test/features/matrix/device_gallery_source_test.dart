@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
@@ -151,6 +152,34 @@ void main() {
       cache.invalidate();
       expect(await cache.loadAlbums(load), same(albums));
       expect(loads, 2, reason: 'invalidate 后允许重新扫描');
+    });
+  });
+
+  group('RequestType 透传（MIUI 本地视频修复）', () {
+    test('isVideoOnly 相册 → RequestType.video；其余 → common', () {
+      expect(requestTypeForAlbum(null), RequestType.common);
+      expect(
+        requestTypeForAlbum(const GalleryAlbum(
+            id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true)),
+        RequestType.video,
+        reason: '本地视频相册 entity 为 null，必须靠 RequestType.video 定位',
+      );
+      expect(
+        requestTypeForAlbum(const GalleryAlbum(
+            id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false)),
+        RequestType.common,
+      );
+    });
+
+    test('pagerFor 按相册类型透传 RequestType（源码防回归）', () {
+      final source = File('lib/features/matrix/device_gallery_source.dart')
+          .readAsStringSync(encoding: utf8);
+      final start = source.indexOf('static DeviceGalleryPager pagerFor');
+      final end = source.indexOf(';', start);
+      final body = source.substring(start, end);
+      expect(body, contains('requestTypeForAlbum(album)'),
+          reason: 'pagerFor 必须把 isVideoOnly 映射进 RequestType，'
+              '否则"本地视频"退化为混合列表（MIUI 无视频）');
     });
   });
 }

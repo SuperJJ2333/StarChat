@@ -114,16 +114,16 @@ final class VideoMessageCard extends StatelessWidget {
       );
 }
 
-/// 全屏视频播放页：加载解密字节 → 临时文件 → 播放器；
-/// 播放/暂停、进度与时长、屏幕常亮；退出即停止。
+/// 全屏视频播放页：播放文件由外部解析（磁盘缓存优先，见
+/// resolveCachedVideoFile）；播放/暂停、进度与时长、屏幕常亮；退出即停止。
 final class VideoViewerPage extends StatefulWidget {
   const VideoViewerPage({
     super.key,
-    required this.loadBytes,
+    required this.loadFile,
     this.initialDuration,
   });
 
-  final Future<Uint8List> Function() loadBytes;
+  final Future<File> Function() loadFile;
   final Duration? initialDuration;
 
   @override
@@ -139,15 +139,10 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
   bool loadFailed = false;
 
   Future<bool> _initialize() async {
-    File? temp;
     loadFailed = false;
     try {
-      final bytes = await widget.loadBytes();
-      temp = File(
-          '${Directory.systemTemp.path}/changliao-video-'
-          '${DateTime.now().microsecondsSinceEpoch}.mp4');
-      await temp.writeAsBytes(bytes, flush: true);
-      final controller = VideoPlayerController.file(temp);
+      final videoFile = await widget.loadFile();
+      final controller = VideoPlayerController.file(videoFile);
       await controller.initialize();
       if (!mounted) {
         await controller.dispose();

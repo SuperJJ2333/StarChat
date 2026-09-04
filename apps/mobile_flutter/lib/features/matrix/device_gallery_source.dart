@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:photo_manager/photo_manager.dart';
 
+import 'video_poster_extractor.dart';
 import 'video_transcode.dart';
 
 export 'video_transcode.dart'
@@ -181,6 +182,12 @@ final FilterOptionGroup _sortedByCreateDateDesc = FilterOptionGroup(
   orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
 );
 
+/// 相册 → 资源查询类型映射（MIUI 修复）："本地视频"是虚拟相册
+/// （entity 为 null），必须用 [RequestType.video] 才能定位到视频
+/// 媒体库；此前漏传 type 退化为 common 混合列表。
+RequestType requestTypeForAlbum(GalleryAlbum? album) =>
+    album != null && album.isVideoOnly ? RequestType.video : RequestType.common;
+
 class DeviceGallerySource {
   /// 顶部子列表：最近图片（默认）+ 本地视频 + 其余本地图库分类
   /// （Camera、Screenshots、Download…）。权限与索引结果经会话级缓存
@@ -235,7 +242,7 @@ class DeviceGallerySource {
 
   /// 按相册构造分页器（null = 最近图片）。
   static DeviceGalleryPager pagerFor(GalleryAlbum? album) =>
-      DeviceGalleryPager(album: album?.entity);
+      DeviceGalleryPager(album: album?.entity, type: requestTypeForAlbum(album));
 
   static Future<bool> _requestPermission() async {
     final permission = await PhotoManager.requestPermissionExtend(
@@ -389,9 +396,19 @@ class DeviceGalleryPager {
     return photos;
   }
 
-  /// 视频封面帧：约 480px、保持画面比例（非方形裁剪）。
-  /// 生成失败返回 null（消息可不附带封面，接收端回退占位图）。
+  /// 视频封面帧：多时间点抽取（200/500/1000/2000ms）+ 近黑帧跳过，
+  /// 兜底回退 photo_manager 原始封面（≈480px、保持比例）。
+  /// 全部失败返回 null（消息可不附带封面，接收端回退占位图）。
   Future<Uint8List?> _videoPosterBytes(AssetEntity asset) async {
+    try {
+      final origin = await asset.originFile;
+      if (origin != null) {
+        final poster = await extractVideoPoster(origin.path);
+        if (poster != null && poster.isNotEmpty) return poster;
+      }
+    } catch (_) {
+      // 抽帧失败走回退。
+    }
     try {
       final poster = await asset.thumbnailDataWithSize(
         const ThumbnailSize(480, 480),

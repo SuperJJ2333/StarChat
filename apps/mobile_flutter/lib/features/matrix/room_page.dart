@@ -823,13 +823,17 @@ class _RoomPageState extends State<RoomPage> {
     }
   }
 
-  /// 全屏播放视频消息：下载解密后写临时文件交给播放器。
+  /// 全屏播放视频消息：磁盘缓存优先（二次打开零下载），
+  /// 在途去重防双击双载；播放器直接使用缓存文件。
   Future<void> _openVideoViewer(RoomMessageViewModel message) async {
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
         builder: (_) => VideoViewerPage(
-          loadBytes: () => controller!.loadAttachment(message.id),
+          loadFile: () => resolveCachedVideoFile(
+            key: MediaCacheKey(roomId: widget.room.id, eventId: message.id),
+            decrypt: () => controller!.loadAttachment(message.id),
+          ),
           initialDuration: message.videoDuration,
         ),
       ),

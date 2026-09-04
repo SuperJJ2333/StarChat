@@ -41,6 +41,44 @@
 - 激活客户端构建：`build_mobile_public_domain.ps1 -GetuiUrl https://<域名>`。
 - 证据与验收：`docs/verification/2026-09-04-getui-push-0.3.34.md`。
 
+### 0.1 五联修链路修复（2026-09-04，bridge 0.3.35）
+
+生产后台无提醒的系统性根因与修复（全部测试先行）：
+
+| # | 根因 | 修复 |
+| --- | --- | --- |
+| 1 | Kotlin EventChannel 回放代码在 lambda 内——监听前已有 CID 永不送达 | `MainActivity.onListen` 立即回放当前 CID |
+| 2 | `initialize→ensureRegistered` 时 CID 未返回，token() 拿 null 且无重试 | `token()` 轮询 ≤8s；initialize 失败可重试 |
+| 3 | 老用户升级无 `privacy.agreement_accepted.v1` → 永不初始化 | AppHome 挂载即补写同意（已有登录会话=曾勾选） |
+| 4 | 注册失败无重试、无 resume/网络恢复重检 | `MatrixPusherService` 指数退避（10s/30s/2m/10m×4）+ resume `recheck()` + 登出取消 |
+| 5 | bridge 把一切错误进 `rejected` → Synapse 删 pusher（一次网络抖动永久失推） | 仅个推永久 CID 失效码（20101-20105/10009）进 rejected；网络/5xx/限流 200 空回让 Synapse 重试 |
+| 6 | 单一 1.5s 限频窗把来电吞掉 | 按 kind 分窗：message 1.5s / call 500ms 互不影响 |
+| 7 | event_id_only 可能不传 type | 缺失时降级 message 通用文案（不伪造来电识别；来电全屏由客户端 m.call.* 同步触发） |
+
+- 服务器：`starchat-getui-bridge:0.3.35` 已部署生产（备份
+  `backups/getui-bridge-20260904-145617`；healthz 200 / 公网空载 400 验证）。
+- 诊断页（设置→新消息通知→通知诊断）顶部新增推送状态摘要：
+  隐私同意/SDK 初始化/CID 存在性（只显示有/无）/网关/注册状态/
+  最近成功失败/通知权限/电池优化——全部脱敏。
+- 测试：`tests/getui_bridge/test_error_semantics.py`（11）+
+  `test/features/push/`（22）。
+
+### 0.2 厂商通道凭据缺口清单（人工，不得伪造）
+
+个推在线通道与厂商离线通道（ups）已走通"通知到达"；**厂商离线
+通道的厂家凭据仍未配置**——App 被杀后的送达依赖个推自通道，部分
+机型（华为/荣耀纯血鸿蒙等）可能受限。如需补齐，在个推控制台
+「厂商通道」逐家申请（全部**只存服务器 .env**，键名待部署时定）：
+
+| 厂商 | 需申请 | 状态 |
+| --- | --- | --- |
+| 小米 | 小米推送 AppId/AppKey（MiPush） | ❌ 未配置 |
+| 华为 | 华为推送 AppId（AGC，需审核） | ❌ 未配置 |
+| 荣耀 | 荣耀推送 AppId/ClientId | ❌ 未配置 |
+| OPPO | OPPO 推送 AppKey/Secret（MasterSecret） | ❌ 未配置 |
+| vivo | vivo 推送 AppId/AppKey/AppSecret | ❌ 未配置 |
+| 魅族 | 魅族推送 AppId/AppKey/Secret | ❌ 未配置（可选） |
+
 ## 1. 架构与 E2EE 边界
 
 ```text

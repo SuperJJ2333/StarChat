@@ -12,6 +12,10 @@ final class CallQualitySample {
     this.jitterMs,
     this.packetsReceived,
     this.packetsLost,
+    this.iceState,
+    this.availableOutgoingBitrateBps,
+    this.concealmentEvents,
+    this.codecs = const [],
   });
 
   /// host=本机网卡；srflx/prflx=STUN 打洞；relay=TURN 中继。
@@ -26,6 +30,18 @@ final class CallQualitySample {
   final double? jitterMs;
   final int? packetsReceived;
   final int? packetsLost;
+
+  /// 选中 candidate-pair 的 ICE 状态（succeeded/in-progress/failed…）。
+  final String? iceState;
+
+  /// 估算可用出站带宽（bps，ESTIMATE 型统计；缺失为 null）。
+  final int? availableOutgoingBitrateBps;
+
+  /// 音频隐藏事件累计数（丢包补偿触发次数，弱网劣化信号）。
+  final int? concealmentEvents;
+
+  /// 收流编解码器（如 audio/opus、video/VP8），按 inbound-rtp 去重。
+  final List<String> codecs;
 }
 
 /// 解析 getStats 报告（纯函数，测试注入 fake StatsReport）。
@@ -73,6 +89,8 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
   double? jitterMs;
   int? packetsReceived;
   int? packetsLost;
+  int? concealmentEvents;
+  final codecs = <String>[];
   for (final report in reports) {
     if (report.type != 'inbound-rtp') continue;
     jitterMs ??= secondsToMs(report.values['jitter']);
@@ -80,6 +98,17 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
         (packetsReceived ?? 0) + (asInt(report.values['packetsReceived']) ?? 0);
     packetsLost =
         (packetsLost ?? 0) + (asInt(report.values['packetsLost']) ?? 0);
+    final concealNow = asInt(report.values['concealmentEvents']);
+    if (concealNow != null) {
+      concealmentEvents = (concealmentEvents ?? 0) + concealNow;
+    }
+    final codecId = report.values['codecId'];
+    if (codecId is String) {
+      final mimeType = byId[codecId]?.values['mimeType']?.toString();
+      if (mimeType != null && mimeType.isNotEmpty && !codecs.contains(mimeType)) {
+        codecs.add(mimeType);
+      }
+    }
   }
 
   return CallQualitySample(
@@ -89,6 +118,11 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     jitterMs: jitterMs,
     packetsReceived: packetsReceived,
     packetsLost: packetsLost,
+    iceState: pair.values['state']?.toString(),
+    availableOutgoingBitrateBps:
+        asInt(pair.values['availableOutgoingBitrate']),
+    concealmentEvents: concealmentEvents,
+    codecs: codecs,
   );
 }
 
@@ -163,9 +197,28 @@ final class CallQualityMonitor {
         .fold<int>(0, (a, b) => a + b);
     final lossPercent =
         received + lost == 0 ? null : lost * 100.0 / (received + lost);
+    final availOut = samples
+        .map((s) => s.availableOutgoingBitrateBps)
+        .whereType<int>()
+        .toList(growable: false);
+    final availOutKbps = availOut.isEmpty
+        ? null
+        : (availOut.reduce((a, b) => a + b) / availOut.length / 1000);
+    // concealmentEvents 是累计计数器：取抽样峰值（不跨抽样累加）。
+    final concealPeak = samples
+        .map((s) => s.concealmentEvents)
+        .whereType<int>()
+        .fold<int>(0, (a, b) => a > b ? a : b);
+    final codecText = samples
+        .map((s) => s.codecs)
+        .lastWhere((c) => c.isNotEmpty, orElse: () => const [])
+        .join('/');
     String fmt(double? value) => value == null ? '-' : value.toStringAsFixed(1);
     return '[chatflow/callquality] summary samples=${samples.length} '
         'turn=${turnUsed ? 'used' : 'not-used'} '
+        'codec=${codecText.isEmpty ? '-' : codecText} '
+        'availOut=${fmt(availOutKbps)}kbps '
+        'conceal=$concealPeak '
         'rttAvg=${fmt(rtts.isEmpty ? null : rtts.reduce((a, b) => a + b) / rtts.length)}ms '
         'jitterMax=${fmt(jitters.isEmpty ? null : jitters.reduce((a, b) => a > b ? a : b))}ms '
         'lost=$lost/${received + lost}'

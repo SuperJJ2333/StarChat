@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:video_compress/video_compress.dart';
 
@@ -63,12 +62,9 @@ final class VideoRendition {
   final int? durationMs;
 }
 
-/// 待发视频封面帧提取（系统相机录像产物无 AssetEntity，走插件抽帧）。
-/// 失败返回 null（消息可不附带封面，接收端回退占位图）。
-Future<Uint8List?> extractVideoPoster(String path,
-        {int quality = 55, int positionMs = 200}) async =>
-    await VideoCompress.getByteThumbnail(path,
-        quality: quality, position: positionMs);
+// 视频封面帧提取已迁移至 video_poster_extractor.dart：
+// 多时间点（200/500/1000/2000ms）+ 近黑帧跳过，替代旧单点 200ms
+// 抽帧（片头黑帧导致接收端整卡黑块）。
 
 /// 聊天视频压缩（相册发送与"拍摄"录像共用的同一策略，需求 2）：
 ///
@@ -144,8 +140,7 @@ Future<VideoRendition> transcodeForChat(
     return VideoRendition(
       file: origin,
       usedCompressed: false,
-      fallbackNotice:
-          '压缩版不可用，将发送原始视频（${formatBytes(originSize)}）',
+      fallbackNotice: '压缩版不可用，将发送原始视频（${formatBytes(originSize)}）',
       durationMs: durationMs?.round(),
     );
   } finally {

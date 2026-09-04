@@ -1,3 +1,4 @@
+import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -36,6 +37,7 @@ import 'features/matrix/matrix_home_page.dart';
 import 'features/matrix/room_page.dart';
 import 'features/matrix/profile_repository.dart';
 import 'features/matrix/group_chat_controller.dart';
+import 'features/matrix/incoming_call_overlay_state.dart';
 import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_alerts.dart';
@@ -55,6 +57,7 @@ import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
 import 'features/push/getui_push_token_provider.dart';
 import 'features/push/matrix_pusher_service.dart';
+import 'features/push/push_status_registry.dart';
 import 'features/push/push_tap_router.dart';
 import 'features/push/push_token_provider.dart';
 import 'features/wallet/wallet_page.dart';
@@ -166,12 +169,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             true,
         // BUG2 双声去重：后台来电由 calls_ring 渠道系统发声，
         // 应用内循环静音；回前台（或前台来电）恢复应用内铃声。
-        audible: () => appResumed || !incomingCallActive,
+        audible: () => appResumed || !incomingCallOverlay.ringing,
       ),
     ),
   );
   bool callPageVisible = false;
-  bool incomingCallActive = false;
+
+  /// 来电覆盖层状态机：ringing（通知语义）与 pageVisible（挂载语义）
+  /// 分离——被叫接通后通话页保持挂载，只有终态卸载（BUG 修复）。
+  final incomingCallOverlay = IncomingCallOverlayState();
   bool appResumed = true;
 
   /// 本次通话摘要是否已发送：ended 分支可能随 notifyListeners 多次进入，
@@ -291,6 +297,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// - FCM/Sygnal 通道（凭据缺失时 Noop 降级，Matrix 同步通道照常）。
   Future<void> _startPushIntegration() async {
     final client = widget.matrix.sdkClient;
+    // 老用户升级迁移：privacy.agreement_accepted.v1 引入（0.3.34）之前的
+    // 已登录用户从未记录过同意——AppHome 挂载即证明用户已通过登录流程
+    // 勾选《用户协议和隐私政策》（登录按钮在勾选前禁用），补写同意，
+    // 否则升级后个推永远不初始化、pusher 永远不注册。
+    final consentStore = SharedPreferencesPrivacyConsentStore();
+    if (!await consentStore.accepted()) {
+      await consentStore.accept();
+      NotificationDiagnostics.shared.record(
+          NotificationDiagStage.push, 'consent migrated for existing session');
+    }
     final store = _sharedDedupStore ??=
         await SharedPreferencesNotificationDedupStore.create();
     final deduplicator = _sharedDeduplicator ??= NotificationDeduplicator(
@@ -348,6 +364,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(configureFirebasePushHandlers(tapRouter: router));
     }
     _pusherServices.addAll(pushers);
+    // 诊断页读取：登记全部通道（登出统一 clear）。
+    for (final pusher in pushers) {
+      PushStatusRegistry.shared.register(pusher);
+    }
 
     for (final pusher in pushers) {
       await pusher.ensureRegistered();
@@ -518,6 +538,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       if (_notificationBootstrapper?.needsRetry ?? false) {
         unawaited(_startNotificationSystem());
       }
+      // 回前台：推送注册重检（CID 可能已到、网络已恢复、上次失败可
+      // 重试——指数退避状态机防重复注册）。
+      for (final pusher in _pusherServices) {
+        unawaited(pusher.recheck());
+      }
       // 回前台：重新检查通知权限（用户可能刚在系统设置中开启/关闭），
       // 记入诊断；设置页打开时亦会自行刷新。
       unawaited(_refreshNotificationPermissionState());
@@ -533,7 +558,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(syncKeepAlive.ensureStarted());
     }
     // 回到前台且仍在响铃：收起全屏来电通知，改由应用内接听页呈现。
-    if (appResumed && incomingCallActive) {
+    if (appResumed && incomingCallOverlay.ringing) {
       unawaited(callNotifications.hideIncoming());
     }
     // 用户从后台回到前台时补一次更新检查（30 分钟节流）：
@@ -764,6 +789,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _callChanged() {
     if (!mounted) return;
     final phase = calls.state.phase;
+    final wasRinging = incomingCallOverlay.ringing;
+    final hadCallUi =
+        incomingCallOverlay.pageVisible || callPageVisible;
+    incomingCallOverlay.update(phase, outgoingCallPageVisible: callPageVisible);
     // 通话占用维度（PRD §40）：响铃与通话中抑制普通消息提醒。
     notificationAppState.setCallActive(
       phase == CallPhase.ringing || phase == CallPhase.connected,
@@ -771,7 +800,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (phase == CallPhase.ringing && !callPageVisible) {
       // 来电：前台直接呈现接听页；后台/锁屏/其他应用之上
       // 以全屏意图通知覆盖提醒，点击拉起接听页。
-      incomingCallActive = true;
       if (!appResumed) {
         unawaited(callNotifications.showIncoming(
           callerName: calls.state.matrixUserId ?? '加密来电',
@@ -781,17 +809,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
       setState(() {});
     } else if (phase == CallPhase.connected) {
-      if (incomingCallActive) {
-        incomingCallActive = false;
+      if (wasRinging) {
         unawaited(callNotifications.hideIncoming());
       }
       // 通话中前台服务：按 Home 键/切换应用后通话继续、麦克风摄像头不回收。
+      // BUG 修复：接通只结束"响铃"语义，来电接听页保持挂载。
       unawaited(callNotifications.showOngoing(title: '端到端加密通话进行中'));
       setState(() {});
     } else if (phase == CallPhase.ended ||
         phase == CallPhase.failed ||
         phase == CallPhase.permissionDenied) {
-      final hadCallUi = incomingCallActive || callPageVisible;
       // 主叫在结束时落一条通话摘要消息（接通=时长，未接通=已取消），
       // 被叫端经同步收到同一消息，双端会话各显示一条。
       if (callPageVisible && !callSummarySent) {
@@ -810,7 +837,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           ));
         }
       }
-      incomingCallActive = false;
       unawaited(callNotifications.hideIncoming());
       unawaited(callNotifications.hideOngoing());
       if (hadCallUi) setState(() {});
@@ -870,6 +896,42 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
       callPageVisible = false;
     }
+  }
+
+  /// BUG4：通讯录 → 群聊 → 群聊通讯录列表（已 join + saved=true）。
+  Future<void> _openGroupAddressList() async {
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => GroupAddressListPage(
+          client: widget.matrix.sdkClient,
+          onOpen: (room) {
+            Navigator.pop(context);
+            unawaited(_openRoomFromAddressList(room));
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoomFromAddressList(Room room) async {
+    final cache = await _identityCache();
+    if (!mounted) return;
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => RoomPage(
+          api: widget.api,
+          room: room,
+          roomName: room.getLocalizedDisplayname(),
+          onCreateGroup: _createGroupChat,
+          onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+          onVideo: (contact) => _openCall(contact, CallMediaType.video),
+          reminderService: reminderService,
+          initialIdentityCache: cache,
+        ),
+      ),
+    );
   }
 
   Future<void> _createGroupChat() async {
@@ -957,6 +1019,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(pusher.dispose());
     }
     _pusherServices.clear();
+    // 诊断页不留旧账号通道；登出不遗留旧账号的来电覆盖层。
+    PushStatusRegistry.shared.clear();
+    incomingCallOverlay.reset();
     for (final provider in _pushTokenProviders) {
       unawaited(provider.dispose());
     }
@@ -1081,6 +1146,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                         onVideo: (contact) =>
                             _openCall(contact, CallMediaType.video),
                         onGroupChat: _createGroupChat,
+                        onGroupAddressList: _openGroupAddressList,
                         reminderService: reminderService,
                         identityCache: _chatIdentityCache,
                       ),
@@ -1097,7 +1163,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               },
             ),
           ),
-          if (incomingCallActive)
+          if (incomingCallOverlay.pageVisible)
             Positioned.fill(
               child: CallPage(
                 controller: calls,
@@ -1146,6 +1212,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
+    this.onGroupAddressList,
     required this.pendingFriendRequests,
     this.reminderService,
     this.identityCache,
@@ -1156,6 +1223,9 @@ final class ContactsTabPage extends StatefulWidget {
   final ContactAction onVoice;
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
+
+  /// BUG4：通讯录"群聊"入口 → 群聊通讯录列表。
+  final VoidCallback? onGroupAddressList;
   final ValueNotifier<int> pendingFriendRequests;
   final MessageReminderService? reminderService;
   final ProfileRepository? identityCache;

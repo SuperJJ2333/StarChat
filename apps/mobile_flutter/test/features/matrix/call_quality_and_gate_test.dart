@@ -63,6 +63,91 @@ void main() {
       expect(sample!.localCandidateType, isNull);
       expect(sample.usesTurn, isFalse);
     });
+
+    test('F 扩展：编解码器/可用出站带宽/隐藏事件数/ICE 状态', () {
+      final sample = parseCallQualityReports([
+        report('pair-1', 'candidate-pair', {
+          'state': 'succeeded',
+          'nominated': 'true',
+          'localCandidateId': 'L1',
+          'remoteCandidateId': 'R1',
+          'currentRoundTripTime': '0.030',
+          'state2': 'ignored',
+          'availableOutgoingBitrate': '312000',
+        }),
+        report('L1', 'local-candidate', {'candidateType': 'host'}),
+        report('R1', 'remote-candidate', {'candidateType': 'srflx'}),
+        report('codec-1', 'codec', {
+          'mimeType': 'audio/opus',
+          'payloadType': '111',
+        }),
+        report('inbound-1', 'inbound-rtp', {
+          'jitter': '0.006',
+          'packetsReceived': '500',
+          'packetsLost': '2',
+          'codecId': 'codec-1',
+          'concealmentEvents': '37',
+        }),
+      ]);
+      expect(sample!.iceState, 'succeeded', reason: '选中 pair 的 ICE 状态');
+      expect(sample.availableOutgoingBitrateBps, 312000);
+      expect(sample.concealmentEvents, 37, reason: '音频隐藏事件（弱网劣化信号）');
+      final codecs = sample.codecs;
+      expect(codecs, contains('audio/opus'));
+    });
+
+    test('F 扩展：缺新字段时安全为空（老浏览器/音频无 concealment）', () {
+      final sample = parseCallQualityReports([
+        report('pair-1', 'candidate-pair', {
+          'state': 'succeeded',
+          'nominated': 'true',
+          'localCandidateId': 'L1',
+          'remoteCandidateId': 'R1',
+        }),
+        report('L1', 'local-candidate', {'candidateType': 'host'}),
+        report('R1', 'remote-candidate', {'candidateType': 'host'}),
+        report('inbound-1', 'inbound-rtp', {'packetsReceived': '10'}),
+      ]);
+      expect(sample!.availableOutgoingBitrateBps, isNull);
+      expect(sample.concealmentEvents, isNull);
+      expect(sample.codecs, isEmpty);
+    });
+
+    test('F 扩展：summary 汇编包含编解码与带宽结论', () async {
+      final monitor = CallQualityMonitor(
+        getStats: () async => [
+          StatsReport('p', 'candidate-pair', 0, {
+            'state': 'succeeded',
+            'nominated': 'true',
+            'localCandidateId': 'L',
+            'remoteCandidateId': 'R',
+            'currentRoundTripTime': '0.025',
+            'availableOutgoingBitrate': '250000',
+          }),
+          StatsReport('L', 'local-candidate', 0, {'candidateType': 'host'}),
+          StatsReport('R', 'remote-candidate', 0, {'candidateType': 'host'}),
+          StatsReport('c1', 'codec', 0, {'mimeType': 'video/VP8'}),
+          StatsReport('i', 'inbound-rtp', 0, {
+            'jitter': '0.004',
+            'packetsReceived': '100',
+            'packetsLost': '0',
+            'codecId': 'c1',
+            'concealmentEvents': '5',
+          }),
+        ],
+        interval: const Duration(milliseconds: 5),
+      );
+      monitor.start();
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (monitor.samples.isEmpty && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await monitor.stop();
+      final text = monitor.summary() ?? '';
+      expect(text, contains('codec=video/VP8'));
+      expect(text, contains('availOut='));
+      expect(text, contains('conceal='));
+    });
   });
 
   group('CallQualityMonitor（轮询与汇总）', () {

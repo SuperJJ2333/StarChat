@@ -12,7 +12,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .config import BridgeSettings
-from .getui_client import GetuiPushError, GetuiRestClient
+from .getui_client import (
+    GetuiPushError,
+    GetuiRestClient,
+    GetuiTransientError,
+)
 from .notify import sanitize_notification
 from .rate_limit import CidRateLimiter
 
@@ -56,26 +60,50 @@ def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client
             return JSONResponse({})
 
         rejected: list[str] = []
+        transient_failures = 0
         for cid in sanitized.cids:
-            if not limiter.allow(cid):
+            if not limiter.allow(cid, sanitized.kind):
                 # 窗口内重复风暴：静默收敛（不视为设备失效）。
                 continue
             try:
                 client.push_cid(cid, sanitized.kind, config.notify_ttl_ms)
             except GetuiPushError as error:
-                # 设备不可达/鉴权失败等：回 rejected 让 homeserver 记账。
-                # 只记错误类别与文案（个推返回的 msg 不含业务内容）。
-                logger.info("push rejected kind=%s err=%s", sanitized.kind, error)
-                rejected.append(cid)
-            except Exception as error:
-                # 上游网络/HTTP 异常同样收敛为 rejected：网关绝不因
-                # 个推侧故障向 homeserver 抛 5xx（会触发其重试风暴）。
+                # 仅当个推明确表示该 CID 永久失效（is_permanent）才进
+                # rejected——Synapse 据此删除 pusher，客户端下次登录重新
+                # 注册。鉴权失败/限流/参数错误等临时码绝不进 rejected。
+                if error.is_permanent:
+                    logger.info(
+                        "push permanently rejected kind=%s code=%s",
+                        sanitized.kind,
+                        error.code,
+                    )
+                    rejected.append(cid)
+                else:
+                    # 临时业务错误（非永久码）：按网关协议 200 空回，
+                    # Synapse 会重试；pusher 不受影响。
+                    transient_failures += 1
+                    logger.warning(
+                        "push transient (non-permanent) kind=%s code=%s",
+                        sanitized.kind,
+                        error.code,
+                    )
+            except GetuiTransientError as error:
+                # 网络/超时/5xx：绝不进 rejected（一次服务器故障不能
+                # 让用户永远收不到推送）；200 空回让 Synapse 重试。
+                transient_failures += 1
                 logger.warning(
-                    "push transport error kind=%s err_type=%s",
+                    "push transport error kind=%s err=%s",
+                    sanitized.kind,
+                    error,
+                )
+            except Exception as error:
+                # 未预期异常同临时处理（保护 pusher 不被误删）。
+                transient_failures += 1
+                logger.warning(
+                    "push unexpected error kind=%s err_type=%s",
                     sanitized.kind,
                     type(error).__name__,
                 )
-                rejected.append(cid)
         return JSONResponse({"rejected": rejected} if rejected else {})
 
     return app
