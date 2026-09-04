@@ -266,6 +266,21 @@ final class NotificationCoordinator {
     await soundService.play(type);
   }
 
+  /// 推送唤醒兜底通知（NativePushBridge pushMessage 事件）：
+  /// 通用文案、无业务内容（详细通知由 Matrix 同步路径产出）；
+  /// 点击仅回应用（payload 空）。
+  Future<void> showPushWakeNotification() async {
+    debugPrint('[PUSH] show notification id=$pushWakeNotificationId '
+        'channel=wake (push wakeup fallback)');
+    await systemNotifications.showConversationMessage(
+      notificationId: pushWakeNotificationId,
+      title: '畅聊',
+      body: '您有一条新消息',
+      channel: SystemNotificationChannel.silent,
+      roomIdPayload: '',
+    );
+  }
+
   Future<void> dispose() async {
     await _subscription?.cancel();
     _subscription = null;
@@ -279,6 +294,9 @@ int notificationIdForConversation(String conversationId) {
   return ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) &
       0x7fffffff;
 }
+
+/// 推送唤醒兜底通知固定 ID（与按会话的聚合通知互不冲突）。
+const pushWakeNotificationId = 42001;
 
 /// 组合根安装的全局访问点：供设置页等无构造注入路径获取协调器
 /// （与 ConversationReadState.shared 同一模式；仅主会话安装一次）。

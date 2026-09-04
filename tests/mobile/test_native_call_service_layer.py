@@ -51,8 +51,10 @@ def test_manifest_registers_native_call_components():
 def test_getui_transmission_entry_starts_service():
     entry = (ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/"
              "com/liuhetong/mobile/ChatFlowGetuiIntentService.kt").read_text(encoding="utf-8")
-    assert "CallForegroundService.start" in entry
-    assert '"call"' in entry
+    # 透传统一经 GetuiReceiver → PushEventDispatcher 分发
+    assert "GetuiReceiver.onTransmit" in entry
+    receiver = (KOTLIN.parent / "push/GetuiReceiver.kt").read_text(encoding="utf-8")
+    assert "PushEventDispatcher.dispatch" in receiver
 
 
 def test_flutter_handles_native_call_actions():
@@ -72,3 +74,20 @@ def test_flutter_handles_native_call_actions():
         refs = [line for line in source.splitlines()
                 if _re.search(r'(import\s+\S*webrtc|webrtc\s*\.)', line, _re.I)]
         assert not refs, f"{f.name} 不得引用 webrtc（媒体留在 Flutter）：{refs}"
+
+
+def test_push_event_dispatcher_routes_three_types():
+    base = ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile/push"
+    receiver = (base / "GetuiReceiver.kt").read_text(encoding="utf-8")
+    dispatcher = (base / "GetuiReceiver.kt").read_text(encoding="utf-8")
+    for t in ("message", "friend_request", "call"):
+        assert f'"{t}"' in receiver, f"缺少事件类型 {t}"
+    # call → CallForegroundService（绝不用普通通知展示来电）
+    assert "CallForegroundService.start" in dispatcher
+    assert "notifyFlutter" in dispatcher
+    # Flutter 桥通道一致
+    kotlin_bridge = (base / "NativePushBridge.kt").read_text(encoding="utf-8")
+    assert 'chatflow/push' in kotlin_bridge
+    dart_bridge = (ROOT / "apps/mobile_flutter/lib/features/push/native_push_bridge.dart").read_text(encoding="utf-8")
+    assert "chatflow/push" in dart_bridge
+    assert "pushMessage" in dart_bridge and "friendRequest" in dart_bridge

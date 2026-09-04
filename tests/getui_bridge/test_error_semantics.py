@@ -173,16 +173,29 @@ def test_mixed_permanent_and_transient(client, getui_mock):
 
 
 def test_call_kind_uses_transmission_wakeup_native_calservice():
-    """规格（原生 CallService）：kind=call 走透传唤醒指令（type/video），
-    绝不携带任何业务内容；message 保持通知通道。"""
+    """规格（原生 CallService/分发层）：call/message 均走透传唤醒（仅
+    type 类别，无业务内容）；push_channel.ups 仅作离线厂商兜底展示。"""
     from app.getui_client import build_push_body
     import json as _json
+
     call_body = build_push_body("cid-call", "call", 300_000)
-    assert "transmission" in call_body["push_message"]
-    payload = _json.loads(call_body["push_message"]["transmission"])
-    assert payload == {"type": "call", "video": False}
+    assert _json.loads(call_body["push_message"]["transmission"]) == {"type": "call"}
     assert "notification" not in call_body["push_message"]
-    assert "push_channel" not in call_body
+    assert "ups" in call_body["push_channel"]["android"]
+
     msg_body = build_push_body("cid-msg", "message", 300_000)
-    assert "notification" in msg_body["push_message"]
-    assert "transmission" not in msg_body["push_message"]
+    assert _json.loads(msg_body["push_message"]["transmission"]) == {"type": "message"}
+    assert "notification" not in msg_body["push_message"]
+    assert "ups" in msg_body["push_channel"]["android"]
+
+
+def test_message_kind_uses_transmission_for_dispatcher():
+    """Push 架构：message 也走透传（GetuiReceiver→PushEventDispatcher 分发），
+    离线厂商通道兜底；载荷仅 type，无业务内容。"""
+    from app.getui_client import build_push_body
+    import json as _json
+    body = build_push_body("cid-m", "message", 300_000)
+    payload = _json.loads(body["push_message"]["transmission"])
+    assert payload == {"type": "message"}
+    assert "notification" not in body["push_message"]
+    assert "ups" in body.get("push_channel", {}).get("android", {})

@@ -127,8 +127,13 @@ class TestNotifyEndpoint:
             "push_message",
             "push_channel",
         }
-        # 个推通道通知：仅通用文案 + startapp + 随机 notify_id。
-        note = body["push_message"]["notification"]
+        # 在线通道：透传唤醒指令（仅 type，无业务内容）。
+        assert set(body["push_message"].keys()) == {"transmission"}
+        import json as _json
+
+        assert _json.loads(body["push_message"]["transmission"]) == {"type": "message"}
+        # 离线厂商通道兜底：仅通用文案 + startapp + 随机 notify_id。
+        note = body["push_channel"]["android"]["ups"]["notification"]
         assert set(note.keys()) == {"title", "body", "click_type", "notify_id"}
         assert note["title"] == "畅聊"
         assert note["body"] == "您有一条新消息"

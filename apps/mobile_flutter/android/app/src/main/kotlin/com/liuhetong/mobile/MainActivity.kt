@@ -22,6 +22,9 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 原生通话层桥：通知[接听/拒绝]→Flutter；Flutter 接管后停原生前台服务。
+        com.liuhetong.mobile.push.NativePushBridge.setUp(
+            flutterEngine.dartExecutor.binaryMessenger,
+        )
         com.liuhetong.mobile.call.CallBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
         ) {

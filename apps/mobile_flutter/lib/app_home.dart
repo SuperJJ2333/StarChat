@@ -59,6 +59,7 @@ import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
 import 'features/push/getui_push_token_provider.dart';
 import 'features/push/matrix_pusher_service.dart';
+import 'features/push/native_push_bridge.dart';
 import 'features/push/push_status_registry.dart';
 import 'features/push/push_tap_router.dart';
 import 'features/push/push_token_provider.dart';
@@ -246,6 +247,24 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     super.initState();
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
+_nativePushBridge = NativePushBridge(
+      onPushMessage: () async {
+        // 推送唤醒兜底通知（通用文案，无业务内容）；详细通知由
+        // Matrix 同步路径的 NotificationCoordinator 产出。
+        final coordinator = NotificationSystemHandle.coordinator;
+        if (coordinator != null) {
+          await coordinator.showPushWakeNotification();
+        }
+      },
+      onFriendRequest: () async {
+        // 好友申请：桌面角标 + 通讯录红点（登录会话内）。
+        await NotificationSystemHandle.coordinator?.refreshLauncherBadge();
+        if (mounted) {
+          pendingFriendRequests.value = pendingFriendRequests.value + 1;
+        }
+      },
+    );
+    unawaited(_nativePushBridge!.install());
     _nativeCallChannel = const MethodChannel('chatflow/call');
     _nativeCallChannel?.setMethodCallHandler((call) async {
       // 原生 CallStyle 通知动作（规格§4/§5/§6）：接听=开页+accept；
@@ -846,6 +865,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
   }
 
+  NativePushBridge? _nativePushBridge;
   MethodChannel? _nativeCallChannel;
 
   /// 推送先于 Matrix 同步到达：等待响铃事件后自动接听（≤8s）。
@@ -1059,6 +1079,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _friendRequestPollTimer?.cancel();
     pendingFriendRequests.dispose();
+    unawaited(_nativePushBridge?.uninstall());
     calls.removeListener(_handleCallState);
     unawaited(callUi.detach());
     calls.dispose();

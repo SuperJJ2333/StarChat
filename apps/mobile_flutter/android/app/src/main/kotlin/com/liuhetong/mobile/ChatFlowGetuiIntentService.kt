@@ -32,12 +32,11 @@ class ChatFlowGetuiIntentService : GTIntentService() {
     // 透传消息：仅来电唤醒指令（{"type":"call","video":bool}，服务端
     // getui-bridge 不携带任何业务内容）。其余透传一律忽略。
     override fun onReceiveMessageData(context: Context, msg: GTTransmitMessage) {
+        // 透传事件统一经 GetuiReceiver → PushEventDispatcher 分发
+        // （message/friend_request/call），本服务不做业务判断。
         try {
             val payload = msg.payload?.toString(Charsets.UTF_8) ?: return
-            val obj = org.json.JSONObject(payload)
-            if (obj.optString("type") != "call") return
-            val video = obj.optBoolean("video", false)
-            com.liuhetong.mobile.call.CallForegroundService.start(context, video)
+            com.liuhetong.mobile.push.GetuiReceiver.onTransmit(context, payload)
         } catch (_: Exception) {
             // 非法载荷忽略（不打印内容）。
         }
