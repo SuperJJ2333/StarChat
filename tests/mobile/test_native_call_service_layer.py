@@ -45,7 +45,7 @@ def test_manifest_registers_native_call_components():
     assert ".call.CallForegroundService" in raw
     assert 'foregroundServiceType="phoneCall"' in raw
     assert ".call.IncomingCallReceiver" in raw
-    assert ".call.ChatFlowConnectionService" in raw
+    assert ".call.CallConnectionService" in raw
 
 
 def test_getui_transmission_entry_starts_service():
@@ -91,3 +91,56 @@ def test_push_event_dispatcher_routes_three_types():
     dart_bridge = (ROOT / "apps/mobile_flutter/lib/features/push/native_push_bridge.dart").read_text(encoding="utf-8")
     assert "chatflow/push" in dart_bridge
     assert "pushMessage" in dart_bridge and "friendRequest" in dart_bridge
+
+
+def test_telecom_incoming_call_architecture():
+    """规格§二/三/四/五/七：Telecom 接管来电（系统电话架构）。"""
+    base = ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile/call"
+    cs = (base / "CallConnectionService.kt").read_text(encoding="utf-8")
+    assert "addNewIncomingCall" in cs, "必须经 TelecomManager 上报系统来电"
+    assert "PROPERTY_SELF_MANAGED" in cs
+    assert "setRinging" in cs
+    assert "onAnswer" in cs and "onReject" in cs
+
+    cm = (base / "CallManager.kt").read_text(encoding="utf-8")
+    assert "State.ringing" in cm and "State.active" in cm
+    assert "hasActiveCall" in cm
+
+    activity = (base / "CallActivity.kt").read_text(encoding="utf-8")
+    assert "setShowWhenLocked" in activity, "锁屏之上显示（§测试3）"
+    assert "setTurnScreenOn" in activity, "息屏点亮"
+    assert "android.app.Activity" in activity, "纯 Native Activity（不依赖 Flutter）"
+
+    bridge = (base / "CallBridge.kt").read_text(encoding="utf-8")
+    assert 'channelName = "native_call"' in bridge, "规格§三通道"
+    for m in ("answerCall", "rejectCall", "endCall", "getActiveCall"):
+        assert m in bridge
+    for e in ("incomingCall", "callAccepted", "callEnded"):
+        assert e in bridge
+
+    overlay = (base / "CallOverlayService.kt").read_text(encoding="utf-8")
+    assert "TYPE_APPLICATION_OVERLAY" in overlay, "规格§五悬浮窗"
+    assert "launchCallActivity" in overlay, "点击悬浮球回到通话"
+
+    manifest = MANIFEST.read_text(encoding="utf-8")
+    for perm in ("USE_FULL_SCREEN_INTENT", "SYSTEM_ALERT_WINDOW",
+                 "POST_NOTIFICATIONS", "MANAGE_OWN_CALLS",
+                 "FOREGROUND_SERVICE_PHONE_CALL"):
+        assert perm in manifest, f"缺权限 {perm}"
+    assert ".call.CallActivity" in manifest
+    assert ".call.CallConnectionService" in manifest
+    assert ".call.CallOverlayService" in manifest
+
+    home = APP_HOME.read_text(encoding="utf-8")
+    assert "MethodChannel('native_call')" in home, "Flutter 侧 native_call 装配"
+    assert "callEnded" in home and "callAccepted" in home
+    resume_idx = home.find("state == AppLifecycleState.resumed")
+    assert home.find("callUi.showIncomingCall(calls)", resume_idx) > 0, \
+        "§四：回前台必须自动进入通话页"
+
+
+def test_old_noop_connection_service_removed():
+    """旧空壳 ConnectionService 已由真实 Telecom 实现取代。"""
+    old = (ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/"
+           "com/liuhetong/mobile/call/ChatFlowConnectionService.kt")
+    assert not old.exists(), "空壳必须删除（CallConnectionService 取代）"

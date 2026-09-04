@@ -71,7 +71,7 @@ object CallNotificationManager {
 
     private fun phoneAccountHandle(context: Context): PhoneAccountHandle =
         PhoneAccountHandle(
-            android.content.ComponentName(context, ChatFlowConnectionService::class.java),
+            android.content.ComponentName(context, CallConnectionService::class.java),
             "chatflow_calls",
         )
 

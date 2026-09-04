@@ -245,9 +245,33 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。
+    _nativeCallControl = const MethodChannel('native_call');
+    _nativeCallControl?.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'incomingCall':
+        case 'callAccepted':
+          // 来电/已接听：呈现通话页并走接听链路（含同步竞态窗口）。
+          callUi.showIncomingCall(calls);
+          if (calls.state.phase == CallPhase.ringing) {
+            unawaited(calls.accept());
+          } else {
+            unawaited(_autoAcceptWhenRinging());
+          }
+          _dismissNativeCallLayer();
+        case 'callEnded':
+          if (calls.state.phase == CallPhase.connected ||
+              calls.state.phase == CallPhase.connecting) {
+            unawaited(calls.hangup());
+          } else if (calls.state.phase == CallPhase.ringing) {
+            unawaited(calls.reject());
+          }
+      }
+      return true;
+    });
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
-_nativePushBridge = NativePushBridge(
+    _nativePushBridge = NativePushBridge(
       onPushMessage: () async {
         // 推送唤醒兜底通知（通用文案，无业务内容）；详细通知由
         // Matrix 同步路径的 NotificationCoordinator 产出。
@@ -596,6 +620,16 @@ _nativePushBridge = NativePushBridge(
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     appResumed = state == AppLifecycleState.resumed;
+    if (state == AppLifecycleState.resumed) {
+      // 规格§四（后台恢复）：收到电话后回前台（点图标/切回）→ 立即
+      // 进入通话页——不再"只响铃无页面"。
+      final phase = calls.state.phase;
+      if (phase == CallPhase.ringing ||
+          phase == CallPhase.connecting ||
+          phase == CallPhase.connected) {
+        callUi.showIncomingCall(calls);
+      }
+    }
     // 通知决策的前后台维度（PRD §21）。
     notificationAppState.updateLifecycle(
       switch (state) {
@@ -867,6 +901,7 @@ _nativePushBridge = NativePushBridge(
 
   NativePushBridge? _nativePushBridge;
   MethodChannel? _nativeCallChannel;
+  MethodChannel? _nativeCallControl;
 
   /// 推送先于 Matrix 同步到达：等待响铃事件后自动接听（≤8s）。
   Future<void> _autoAcceptWhenRinging() async {

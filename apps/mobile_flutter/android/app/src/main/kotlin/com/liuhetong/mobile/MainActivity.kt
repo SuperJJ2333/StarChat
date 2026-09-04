@@ -25,6 +25,22 @@ class MainActivity : FlutterActivity() {
         com.liuhetong.mobile.push.NativePushBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
         )
+        com.liuhetong.mobile.call.NativeCallBridge.setCallHandler(
+            onAnswer = {
+                com.liuhetong.mobile.call.CallManager.onAnswered()
+                com.liuhetong.mobile.call.CallManager
+                    .launchCallActivity(applicationContext)
+            },
+            onReject = {
+                com.liuhetong.mobile.call.CallManager.onEnded()
+                com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
+            },
+            onEnd = {
+                com.liuhetong.mobile.call.CallManager.onEnded()
+                com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
+                com.liuhetong.mobile.call.CallOverlayService.hide(applicationContext)
+            },
+        )
         com.liuhetong.mobile.call.CallBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
         ) {

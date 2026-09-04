@@ -23,4 +23,9 @@
         <item name="android:statusBarColor">#F7F7F7</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+    <!-- 原生全屏来电页（CallActivity）：深色无标题栏 -->
+    <style name="ChatFlow.CallActivity" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#1B1B1B</item>
+        <item name="android:windowIsTranslucent">false</item>
+    </style>
 </resources>

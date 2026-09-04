@@ -14,9 +14,12 @@ class IncomingCallReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            CallNotificationManager.actionAnswer ->
+            CallNotificationManager.actionAnswer -> {
+                CallManager.onAnswered()
                 CallBridge.notifyOpenIncomingCall(context)
+            }
             CallNotificationManager.actionReject -> {
+                CallManager.onEnded()
                 CallBridge.notifyRejectIncomingCall(context)
                 CallForegroundService.stop(context)
             }

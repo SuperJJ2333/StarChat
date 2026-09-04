@@ -43,6 +43,10 @@
     <!-- 原生通话层（微信级后台来电）：phoneCall 前台服务 + CallStyle -->
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:label="畅聊 ChatFlow"
@@ -96,7 +100,7 @@
             android:exported="false"
             android:foregroundServiceType="phoneCall" />
         <service
-            android:name=".call.ChatFlowConnectionService"
+            android:name=".call.CallConnectionService"
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
             android:exported="false">
             <intent-filter>
@@ -105,6 +109,18 @@
         </service>
         <receiver
             android:name=".call.IncomingCallReceiver"
+            android:exported="false" />
+
+        <activity
+            android:name=".call.CallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/ChatFlow.CallActivity" />
+        <service
+            android:name=".call.CallOverlayService"
             android:exported="false" />
         <!-- 个推：消息回调服务（CID/点击）与推送服务（官方要求空实现）。 -->
         <service

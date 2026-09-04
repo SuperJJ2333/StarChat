@@ -32,6 +32,7 @@ object CallBridge {
         }
         ch.setMethodCallHandler(handler)
         channel = ch
+        NativeCallBridge.setUp(messenger)
     }
 
     fun notifyOpenIncomingCall(context: Context) {
@@ -40,6 +41,10 @@ object CallBridge {
 
     fun notifyRejectIncomingCall(context: Context) {
         invoke(context, methodRejectIncomingCall)
+    }
+
+    fun notifyCallEnded(context: Context) {
+        NativeCallBridge.emitToFlutter("callEnded")
     }
 
     private fun invoke(context: Context, method: String) {
@@ -65,5 +70,78 @@ object CallBridge {
         channel?.setMethodCallHandler(null)
         channel = null
         handler = null
+        NativeCallBridge.teardown()
     }
 }
+
+/**
+ * 规格§三：native_call 通道。
+ * Flutter→Native：answerCall / rejectCall / endCall；
+ * Native→Flutter：incomingCall / callAccepted / callEnded（由 CallManager
+ * 状态广播驱动）；另支持 getActiveCall 查询（§四恢复逻辑）。
+ */
+object NativeCallBridge {
+    const val channelName = "native_call"
+    const val methodAnswer = "answerCall"
+    const val methodReject = "rejectCall"
+    const val methodEnd = "endCall"
+    const val methodGetActive = "getActiveCall"
+
+    const val eventIncoming = "incomingCall"
+    const val eventAccepted = "callAccepted"
+    const val eventEnded = "callEnded"
+
+    @Volatile private var channel: MethodChannel? = null
+
+    fun setUp(messenger: BinaryMessenger) {
+        channel = MethodChannel(messenger, channelName)
+        // CallManager 状态事件 → Flutter。
+        CallManager.addListener { event ->
+            when (event) {
+                CallManagerEventIncoming -> emitToFlutter(eventIncoming)
+                CallManagerEventAccepted -> emitToFlutter(eventAccepted)
+                CallManagerEventEnded -> emitToFlutter(eventEnded)
+            }
+        }
+    }
+
+    fun emitToFlutter(method: String) {
+        channel?.let { ch ->
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ch.invokeMethod(method, mapOf("callId" to CallManager.callId))
+            }
+        }
+    }
+
+    /** Flutter 查询/控制入口（MainActivity 注册）。 */
+    fun setCallHandler(
+        onAnswer: () -> Unit,
+        onReject: () -> Unit,
+        onEnd: () -> Unit,
+    ) {
+        channel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                methodAnswer -> { onAnswer(); result.success(true) }
+                methodReject -> { onReject(); result.success(true) }
+                methodEnd -> { onEnd(); result.success(true) }
+                methodGetActive -> result.success(mapOf(
+                    "state" to CallManager.state.name,
+                    "callId" to CallManager.callId,
+                    "callerName" to CallManager.callerName,
+                    "video" to CallManager.video,
+                ))
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    fun teardown() {
+        channel?.setMethodCallHandler(null)
+        channel = null
+    }
+}
+
+// CallManager 事件名常量（避免字符串散落）。
+const val CallManagerEventIncoming = "incomingCall"
+const val CallManagerEventAccepted = "callAccepted"
+const val CallManagerEventEnded = "callEnded"

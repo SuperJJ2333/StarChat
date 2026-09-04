@@ -36,9 +36,22 @@ object PushEventDispatcher {
 
     fun dispatch(context: Context, type: String) {
         when (type) {
-            GetuiReceiver.typeCall ->
-                // 来电：原生 CallStyle 全屏链路（锁屏/息屏/后台/接听拒绝）。
+            GetuiReceiver.typeCall -> {
+                // 规格§六：个推只负责唤醒；来电 UI/接听/拒绝归 Telecom。
+                val cm = com.liuhetong.mobile.call.CallManager
+                cm.appContext = context.applicationContext
+                val callId = "call-" + System.currentTimeMillis()
+                cm.onIncoming(callId, "畅聊来电", false)
+                // 系统电话框架接管（RINGING 连接 + 系统级接听语义）。
+                runCatching {
+                    com.liuhetong.mobile.call.CallConnectionService.reportIncoming(
+                        context, callId, "畅聊来电")
+                }
+                // 铃声前台服务（CallStyle 通知 + 全屏意图兜底）。
                 com.liuhetong.mobile.call.CallForegroundService.start(context, video = false)
+                // 后台/锁屏直接尝试原生全屏来电页（受限时由全屏意图兜底）。
+                cm.launchCallActivity(context)
+            }
 
             GetuiReceiver.typeMessage ->
                 // 消息：交 Flutter（NotificationCoordinator 落系统通知）。
