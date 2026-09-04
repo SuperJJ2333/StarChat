@@ -1,0 +1,5 @@
+RELEASE-CI 0.3.36+39 (2026-09-05)
+Path: tag v0.3.36 -> GitHub Actions build -> GH Release -> server pull
+GitHub Release arm64 SHA256: d78e8c9ade0f024284fa2f972b8a01d3f48e929e5fb933f3d387ac64706407d3
+Publish: PASS
+Pull-back: SHA256(vs GH Release) + aapt 2039/0.3.36 VERIFIED
