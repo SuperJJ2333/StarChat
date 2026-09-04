@@ -1,7 +1,7 @@
 name: liuhetong_mobile
 publish_to: none
 description: 畅聊 ChatFlow Android/iOS Flutter client
-version: 0.3.35+38
+version: 0.3.36+39
 environment:
   sdk: ">=3.4.0 <4.0.0"
 dependencies:
