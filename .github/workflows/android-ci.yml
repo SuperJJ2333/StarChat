@@ -32,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           # 测试框架与被测服务依赖：business-worker 的运行依赖由
           # business-api 安装提供（其 requirements.txt 注释明示）。
-          pip install pytest
+          pip install pytest pytest-asyncio
           pip install -e services/business-api
           pip install -r services/matrix-bot/requirements.txt
           pip install -r services/getui-bridge/requirements.txt

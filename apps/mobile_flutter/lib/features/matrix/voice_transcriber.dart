@@ -65,8 +65,11 @@ final class SpeechToTextVoiceTranscriber implements VoiceTranscriber {
     if (!_available || _listening) return;
     await _stt.listen(
       onResult: _onResult,
-      localeId: localeId,
-      listenFor: const Duration(minutes: 2),
+      // 7.4.0：超时与语言迁移入 SpeechListenOptions（旧参数已废弃）。
+      listenOptions: SpeechListenOptions(
+        localeId: localeId,
+        listenFor: const Duration(minutes: 2),
+      ),
     );
     _listening = true;
   }
