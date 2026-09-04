@@ -479,6 +479,26 @@ final class BusinessApiClient
     return _decode(response)['auto_allow_group_join'] == true;
   }
 
+  /// BUG2 群二维码：签发入群令牌（群主/管理员；返回 `changliao://g/<token>`）。
+  Future<Map<String, dynamic>> issueGroupJoinToken({required String roomId}) =>
+      postJson('/groups/$roomId/join-tokens', const {},
+          idempotencyKey: newIdempotencyKey());
+
+  /// 扫码后的安全群摘要（不返回 room_id/令牌明文）。
+  Future<Map<String, dynamic>> groupJoinInfo({required String token}) =>
+      getJson('/groups/join-info?token=${Uri.encodeQueryComponent(token)}');
+
+  /// 兑换令牌入群（直加或转审批，服务端校验）。
+  Future<Map<String, dynamic>> redeemGroupJoinToken({required String token}) =>
+      postJson('/groups/join-tokens/redeem', {'token': token},
+          idempotencyKey: newIdempotencyKey());
+
+  /// 撤销令牌（轮换 = 新签发 + 撤销旧）。
+  Future<Map<String, dynamic>> revokeGroupJoinToken({required String token}) =>
+      postJson('/groups/join-tokens/${Uri.encodeQueryComponent(token)}/revoke',
+          const {},
+          idempotencyKey: newIdempotencyKey());
+
   Future<Map<String, dynamic>> requestServerGroupAutoJoin({
     required String roomId,
     required List<String> inviteeUserIds,
