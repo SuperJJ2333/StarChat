@@ -76,6 +76,8 @@ final class GroupChatInfoSnapshot {
   const GroupChatInfoSnapshot({
     required this.name,
     required this.members,
+    this.invitedMembers = const [],
+    this.roomId,
     this.announcement = '',
     this.remark = '',
     this.muted = false,
@@ -98,7 +100,13 @@ final class GroupChatInfoSnapshot {
   final String name;
   final String announcement;
   final String remark;
+
+  /// 已真正 join 的成员（群人数唯一口径；Matrix 为权威来源）。
   final List<GroupChatMember> members;
+
+  /// 待确认邀请（Membership.invite）：不计入群人数，不伪装成员。
+  final List<GroupChatMember> invitedMembers;
+  int get joinedCount => members.length;
   final bool muted;
   final bool attention;
   final bool pinned;
@@ -114,6 +122,9 @@ final class GroupChatInfoSnapshot {
   final bool joinApprovalRequired;
   final bool onlyManagersCanRename;
   final String? currentUserId;
+
+  /// 群二维码签发/服务端协调所需的房间 ID（只读 opaque 标识）。
+  final String? roomId;
   bool get isOwner => ownerId.isNotEmpty && ownerId == currentUserId;
   bool get isAdmin => adminIds.contains(currentUserId);
   bool get canManage => isOwner || isAdmin;
@@ -123,6 +134,7 @@ final class GroupChatInfoSnapshot {
     String? announcement,
     String? remark,
     List<GroupChatMember>? members,
+    List<GroupChatMember>? invitedMembers,
     bool? muted,
     bool? attention,
     bool? pinned,
@@ -138,12 +150,14 @@ final class GroupChatInfoSnapshot {
     bool? joinApprovalRequired,
     bool? onlyManagersCanRename,
     String? currentUserId,
+    String? roomId,
   }) =>
       GroupChatInfoSnapshot(
         name: name ?? this.name,
         announcement: announcement ?? this.announcement,
         remark: remark ?? this.remark,
         members: members ?? this.members,
+        invitedMembers: invitedMembers ?? this.invitedMembers,
         muted: muted ?? this.muted,
         attention: attention ?? this.attention,
         pinned: pinned ?? this.pinned,
@@ -160,10 +174,12 @@ final class GroupChatInfoSnapshot {
         onlyManagersCanRename:
             onlyManagersCanRename ?? this.onlyManagersCanRename,
         currentUserId: currentUserId ?? this.currentUserId,
+        roomId: roomId ?? this.roomId,
       );
 }
 
 abstract interface class GroupChatInfoGateway {
+  String? get roomId;
   Future<GroupChatInfoSnapshot> load();
   Future<void> rename(String name);
   Future<void> setAnnouncement(String announcement);
@@ -181,6 +197,9 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
   MatrixGroupChatInfoGateway(this.room);
 
   final Room room;
+
+  @override
+  String? get roomId => room.id;
   Map<String, Object?>? _cachedSettings;
 
   Map<String, Object?> get _settings =>
@@ -203,16 +222,20 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
     _cachedSettings = settings;
     final followed = settings['followed_member_ids'];
     final storedOrder = settings['member_order_ids'];
-    final allMembers = [...users, ...invited];
+    // BUG1：人数与成员列表只认真正 join；invite 是待确认邀请，绝不合并
+    // 进 members（不再出现"人数增加了但对方没有真正进群"的假象）。
     final order = reconcileMemberOrder(
       storedOrder is List
           ? storedOrder.map((value) => value.toString())
           : const <String>[],
-      allMembers.map((user) => user.id),
+      users.map((user) => user.id),
     );
-    // State events can arrive before the membership endpoint's pagination.
-    // Keep every joined/invited participant once, preserving the stored order.
-    final userById = {for (final user in allMembers) user.id: user};
+    final userById = {for (final user in users) user.id: user};
+    final invitedOrder = reconcileMemberOrder(
+      const <String>[],
+      invited.map((user) => user.id),
+    );
+    final invitedById = {for (final user in invited) user.id: user};
     final ownerId = settings['owner_id']?.toString().isNotEmpty == true
         ? settings['owner_id'].toString()
         : room.getState(EventTypes.RoomCreate)?.senderId ?? '';
@@ -249,9 +272,14 @@ final class MatrixGroupChatInfoGateway implements GroupChatInfoGateway {
       joinApprovalRequired: settings['join_approval_required'] == true,
       onlyManagersCanRename: settings['only_managers_can_rename'] == true,
       currentUserId: room.client.userID,
+      roomId: room.id,
       members: orderGroupMembers(members: [
         for (final user in orderedUsers) await _member(user),
       ], ownerId: ownerId, adminIds: adminIds.toSet()),
+      invitedMembers: [
+        for (final id in invitedOrder)
+          if (invitedById[id] != null) await _member(invitedById[id]!),
+      ],
     );
   }
 
@@ -369,13 +397,47 @@ final class GroupChatInfoState {
   final GroupChatInfoSnapshot? snapshot;
   final String? message;
 
-  String get title => '聊天信息(${snapshot?.members.length ?? 0})';
+  String get title => '聊天信息(${snapshot?.joinedCount ?? 0})';
+}
+
+/// 服务端自动入群结果（/groups/auto-join 响应分桶）。
+final class GroupAutoJoinOutcome {
+  const GroupAutoJoinOutcome({
+    this.joinedUserIds = const [],
+    this.pendingUserIds = const [],
+    this.failed = const [],
+  });
+
+  factory GroupAutoJoinOutcome.fromJson(Map<String, dynamic> json) =>
+      GroupAutoJoinOutcome(
+        joinedUserIds: (json['joined_user_ids'] as List? ?? const [])
+            .map((value) => value.toString())
+            .toList(growable: false),
+        pendingUserIds: (json['pending_user_ids'] as List? ?? const [])
+            .map((value) => value.toString())
+            .toList(growable: false),
+        failed: (json['failed'] as List? ?? const [])
+            .whereType<Map>()
+            .map((entry) => entry['user_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList(growable: false),
+      );
+
+  final List<String> joinedUserIds;
+  final List<String> pendingUserIds;
+  final List<String> failed;
+  bool get hasFailures => failed.isNotEmpty;
 }
 
 final class GroupChatInfoController extends ChangeNotifier {
-  GroupChatInfoController(this.gateway);
+  GroupChatInfoController(this.gateway, {this.serverAutoJoin});
 
   final GroupChatInfoGateway gateway;
+
+  /// 服务端自动入群（业务 id 列表 → /groups/auto-join）。null = 未接线
+  /// （仅本地 Matrix invite，与旧行为兼容）。
+  final Future<GroupAutoJoinOutcome?> Function(String roomId, List<String> inviteeUserIds)?
+      serverAutoJoin;
   GroupChatInfoState state = const GroupChatInfoState();
   StreamSubscription<SyncUpdate>? _membershipSubscription;
 
@@ -506,16 +568,48 @@ final class GroupChatInfoController extends ChangeNotifier {
     ));
   }
 
-  Future<void> invite(String matrixUserId) async {
+  Future<void> invite(String matrixUserId, {String? businessUserId}) async {
     try {
+      // 第一步：Matrix invite（成员关系权威来源，Matrix 鉴权邀请权限）。
       await gateway.invite(matrixUserId);
-      await load();
     } catch (_) {
       _set(GroupChatInfoState(
         status: GroupChatInfoStatus.failed,
         snapshot: state.snapshot,
         message: '添加群成员失败，请检查权限和网络',
       ));
+      return;
+    }
+    // 第二步：服务端对开启"自动允许加入群聊"的好友执行授权代加入；
+    // 失败不影响 invite 本身（邀请仍然成立，等待对方确认）。
+    var joinMessage = '已发送邀请';
+    final autoJoin = serverAutoJoin;
+    if (businessUserId != null && autoJoin != null) {
+      try {
+        final outcome =
+            await autoJoin(gateway.roomId ?? '', [businessUserId]);
+        if (outcome == null) {
+          joinMessage = '已发送邀请，等待对方确认';
+        } else if (outcome.hasFailures) {
+          joinMessage = '邀请已发送；部分成员需等待对方确认加入';
+        } else if (outcome.joinedUserIds.isNotEmpty) {
+          joinMessage = '对方已加入群聊';
+        } else {
+          joinMessage = '已发送邀请，等待对方确认';
+        }
+      } catch (_) {
+        joinMessage = '邀请已发送；自动加入暂不可用，等待对方确认';
+      }
+    }
+    try {
+      await load();
+      _set(GroupChatInfoState(
+        status: GroupChatInfoStatus.ready,
+        snapshot: state.snapshot,
+        message: joinMessage,
+      ));
+    } catch (_) {
+      // 刷新失败不回滚邀请；下次进入/成员事件会重新加载。
     }
   }
 

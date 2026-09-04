@@ -31,6 +31,7 @@ import 'matrix_message_reminder_backend.dart';
 import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
 import 'nudge_service.dart';
+import 'group_invitation_auto_join.dart';
 
 List<User> orderedJoinedMembers(Room room) {
   final joined = room.getParticipants([Membership.join]);
@@ -97,8 +98,97 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   final ConversationReadState _readState = ConversationReadState.shared();
   final Map<String, List<User>> _groupMembersByRoom = {};
   final Set<String> _groupMemberLoadsInFlight = {};
+
+  /// BUG1（被邀端）：auto_allow_group_join 设置（null=未知，按开处理并
+  /// 惰性校正）；实时 onSync 收到新群邀请时按设置分流。
+  bool? _autoAllowGroupJoin;
+  final Set<String> _autoJoinInFlight = {};
   late final ProfileRepository _identityCache =
       widget.identityCache ?? ProfileRepository(widget.api);
+
+  Future<void> _loadAutoAllowPreference() async {
+    if (_autoAllowGroupJoin != null) return;
+    try {
+      _autoAllowGroupJoin = await widget.api.autoAllowGroupJoin();
+    } catch (_) {
+      _autoAllowGroupJoin = true; // 查询失败按默认开处理（与历史行为一致）。
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// BUG1（被邀端）：按设置分流处理待处理群邀请。
+  /// 开启自动入群 → 立即 join（实时/冷启动/断网恢复一致）；
+  /// 关闭 → 保留为待处理邀请（会话列表顶部可接受/拒绝，不自动加入）。
+  Future<void> _processPendingGroupInvites() async {
+    await _loadAutoAllowPreference();
+    if (_autoAllowGroupJoin != true) return;
+    final client = widget.matrix.sdkClient;
+    final pending = client.rooms
+        .where((room) =>
+            room.membership == Membership.invite &&
+            !room.isDirectChat &&
+            !_autoJoinInFlight.contains(room.id))
+        .map((room) => room.id)
+        .toList(growable: false);
+    if (pending.isEmpty) return;
+    _autoJoinInFlight.addAll(pending);
+    try {
+      final result = await autoJoinInvitedRoomIds(
+        invitedRoomIds: pending,
+        joinRoom: client.joinRoom,
+      );
+      _autoJoinInFlight.removeAll(pending);
+      if (result.joinedRoomIds.isNotEmpty) {
+        await client.oneShotSync();
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      _autoJoinInFlight.removeAll(pending);
+      // 下一次 sync 重试。
+    }
+  }
+
+  /// 待处理群邀请（设置关闭自动入群时展示接受/拒绝入口）。
+  List<Room> get _pendingInviteRooms => _autoAllowGroupJoin == false
+      ? widget.matrix.sdkClient.rooms
+          .where((room) =>
+              room.membership == Membership.invite && !room.isDirectChat)
+          .toList(growable: false)
+      : const <Room>[];
+
+  Future<void> _acceptGroupInvite(Room room) async {
+    try {
+      await widget.matrix.sdkClient.joinRoom(room.id);
+      await widget.matrix.sdkClient.oneShotSync();
+    } catch (_) {
+      if (mounted) {
+        showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('加入失败'),
+            content: const Text('请稍后重试。'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('好的'),
+              ),
+            ],
+          ),
+        );
+      }
+      return;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _declineGroupInvite(Room room) async {
+    try {
+      await room.leave();
+    } catch (_) {
+      // 拒绝失败保留邀请；下次可再拒绝。
+    }
+    if (mounted) setState(() {});
+  }
 
   Future<void> sync() async {
     if (syncing) return;
@@ -167,8 +257,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     _identityCache.addListener(_identityChanged);
     syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
       unawaited(_restoreHiddenConversations());
+      unawaited(_processPendingGroupInvites());
       if (mounted) setState(() {});
     });
+    unawaited(_loadAutoAllowPreference());
+    unawaited(_processPendingGroupInvites());
     unawaited(_identityCache.preload().catchError((_) {}));
     _sendPresenceHeartbeat();
     _presenceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -327,12 +420,16 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             sheetContext,
             CupertinoIcons.qrcode_viewfinder,
             '扫一扫',
-            // 与发现页同款入口：扫好友二维码 → 搜索 → 发好友申请页。
+            // 扫码统一入口：好友码 → 申请页；群码 → 群确认页（BUG2）。
             () => Navigator.push(
               context,
               CupertinoPageRoute(
                 fullscreenDialog: true,
-                builder: (_) => ScanQrPage(api: widget.api),
+                builder: (_) => ScanQrPage(
+                  api: widget.api,
+                  groupJoinApi: widget.api,
+                  onGroupJoined: (roomId) => unawaited(_openRoomById(roomId)),
+                ),
               ),
             ),
           ),
@@ -380,6 +477,26 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         ],
       ),
     );
+  }
+
+  /// BUG2：扫码入群成功后按 roomId 打开会话（等待首次同步带回房间）。
+  Future<void> _openRoomById(String roomId) async {
+    if (roomId.isEmpty) return;
+    var room = widget.matrix.sdkClient.getRoomById(roomId);
+    if (room == null || room.membership != Membership.join) {
+      try {
+        await widget.matrix.sdkClient
+            .waitForRoomInSync(roomId)
+            .timeout(const Duration(seconds: 10));
+        room = widget.matrix.sdkClient.getRoomById(roomId);
+      } catch (_) {
+        // 下次同步后用户可从会话列表进入。
+      }
+    }
+    final joined = room;
+    if (joined != null && joined.membership == Membership.join && mounted) {
+      await _openRoom(joined);
+    }
   }
 
   Future<void> _openRoom(Room room) async {
@@ -566,11 +683,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         ]),
       ),
       child: SafeArea(
-        child: rooms.isEmpty && foldedRooms.isEmpty
-            ? const _MessagesEmptyState()
-            : ListView.separated(
+        child: Builder(builder: (context) {
+          final invites = _pendingInviteRooms;
+          final body = rooms.isEmpty && foldedRooms.isEmpty && invites.isEmpty
+              ? const _MessagesEmptyState()
+              : ListView.separated(
                 padding: EdgeInsets.zero,
-                itemCount: rooms.length + (foldedRooms.isEmpty ? 0 : 1),
+                itemCount: invites.length +
+                    rooms.length +
+                    (foldedRooms.isEmpty ? 0 : 1),
                 separatorBuilder: (_, __) => const Padding(
                   padding: EdgeInsets.only(
                     left: WeChatSpacing.lg +
@@ -583,7 +704,21 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                   ),
                 ),
                 itemBuilder: (context, index) {
-                  if (foldedRooms.isNotEmpty && index == pinnedCount) {
+                  if (index < invites.length) {
+                    final invite = invites[index];
+                    return KeyedSubtree(
+                      key: ValueKey<String>('pending-invite-${invite.id}'),
+                      child: PendingGroupInviteTile(
+                      roomId: invite.id,
+                      roomName: invite.name.trim(),
+                      onAccept: () => _acceptGroupInvite(invite),
+                      onDecline: () => _declineGroupInvite(invite),
+                      ),
+                    );
+                  }
+                  final adjustedIndex = index - invites.length;
+                  if (foldedRooms.isNotEmpty &&
+                      adjustedIndex == pinnedCount) {
                     return ConversationListTile(
                       key: const Key('folded-group-chats'),
                       title: '折叠的群聊',
@@ -609,10 +744,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                       ),
                     );
                   }
-                  final roomIndex =
-                      foldedRooms.isNotEmpty && index > pinnedCount
-                          ? index - 1
-                          : index;
+                  var roomIndex = adjustedIndex;
+                  if (foldedRooms.isNotEmpty && adjustedIndex > pinnedCount) {
+                    roomIndex = adjustedIndex - 1;
+                  }
                   final room = rooms[roomIndex];
                   _ensureGroupMembersLoaded([room]);
                   final roomName = _conversationTitle(room);
@@ -652,10 +787,106 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     onLongPress: () => _conversationActions(room),
                   );
                 },
-              ),
+              );
+          return Column(
+            children: [
+              // BUG1（被邀端，关闭自动入群）：会话列表顶部可接受/拒绝的
+              // 待处理群邀请——绝不静默停留在隐藏 invite 状态。
+              if (invites.isNotEmpty)
+                Container(
+                  key: const Key('pending-group-invites'),
+                  color: CupertinoColors.systemBackground,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: WeChatSpacing.md, vertical: WeChatSpacing.xs),
+                  child: Row(
+                    children: [
+                      const Icon(CupertinoIcons.person_3_fill,
+                          size: 18, color: WeChatColors.textSecondary),
+                      const SizedBox(width: WeChatSpacing.sm),
+                      Expanded(
+                        child: Text(
+                          '群聊邀请（${invites.length}）',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: WeChatColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(child: body),
+            ],
+          );
+        }),
       ),
     );
   }
+}
+
+/// 单条待处理群邀请 tile：群名 + 邀请文案 + 接受/拒绝（公开、数据
+/// 驱动，便于 widget 测试）。
+final class PendingGroupInviteTile extends StatelessWidget {
+  const PendingGroupInviteTile({
+    super.key,
+    required this.roomId,
+    required this.roomName,
+    required this.onAccept,
+    required this.onDecline,
+  });
+
+  final String roomId;
+  final String roomName;
+  final VoidCallback? onAccept;
+  final VoidCallback? onDecline;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(
+            horizontal: WeChatSpacing.md, vertical: WeChatSpacing.xs),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.person_3_fill,
+                size: 40, color: WeChatColors.textSecondary),
+            const SizedBox(width: WeChatSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    roomName.trim().isEmpty ? '群聊邀请' : roomName.trim(),
+                    style: const TextStyle(fontSize: 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    '邀请你加入群聊',
+                    style: TextStyle(
+                        fontSize: 12, color: WeChatColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            CupertinoButton(
+              key: ValueKey<String>('accept-invite-$roomId'),
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(44, 32),
+              onPressed: onAccept,
+              child: const Text('接受',
+                  style: TextStyle(color: WeChatColors.socialLink)),
+            ),
+            CupertinoButton(
+              key: ValueKey<String>('decline-invite-$roomId'),
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(44, 32),
+              onPressed: onDecline,
+              child: const Text('拒绝',
+                  style: TextStyle(color: WeChatColors.textSecondary)),
+            ),
+          ],
+        ),
+      );
 }
 
 final class _MessagesEmptyState extends StatelessWidget {

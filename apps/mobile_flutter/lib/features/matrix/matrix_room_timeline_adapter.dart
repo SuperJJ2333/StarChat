@@ -4,6 +4,7 @@ import 'package:matrix/matrix.dart';
 
 import 'room_timeline_controller.dart';
 import 'nudge_service.dart';
+import 'group_join_notices.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 
@@ -28,17 +29,28 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   final Timeline timeline;
 
   @override
-  List<RoomMessageViewModel> snapshot() => timeline.events
-      .where(
-        (event) =>
-            event.type == EventTypes.Message ||
-            event.type == changliaoNudgeEventType ||
-            event.type == changliaoFriendAcceptedEventType,
-      )
-      .toList(growable: false)
-      .reversed
-      .map(_message)
-      .toList(growable: false);
+  List<RoomMessageViewModel> snapshot() {
+    final viewModels = timeline.events
+        .where(
+          (event) =>
+              event.type == EventTypes.Message ||
+              event.type == changliaoNudgeEventType ||
+              event.type == changliaoFriendAcceptedEventType,
+        )
+        .toList(growable: false)
+        .reversed
+        .map(_message)
+        .toList(growable: false);
+    // BUG3：入群系统通知——以真实 Matrix 成员事件为唯一权威，本地推导
+    // （invite 配对 join 转变），绝不插入本地临时文本；历史重载一致。
+    final notices = deriveGroupJoinNotices(
+      [for (final event in timeline.events) projectMemberEvent(event)],
+      resolveName: (matrixUserId) =>
+          room.unsafeGetUserFromMemoryOrFallback(matrixUserId).calcDisplayname(),
+    );
+    if (notices.isEmpty) return viewModels;
+    return mergeNoticesIntoTimeline(viewModels, notices);
+  }
 
   RoomMessageViewModel _message(Event event) {
     final status = event.status.isError
@@ -200,3 +212,5 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   @override
   void dispose() => timeline.cancelSubscriptions();
 }
+
+

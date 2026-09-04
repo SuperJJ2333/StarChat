@@ -96,7 +96,12 @@ final class DiscoveryPage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                     fullscreenDialog: true,
-                    builder: (_) => ScanQrPage(api: api),
+                    builder: (_) => ScanQrPage(
+                      api: api,
+                      groupJoinApi: api,
+                      // 发现页扫码入群：加入后返回消息列表可见新会话，
+                      // 不做自动跳转（保持发现页轻量）。
+                    ),
                   ),
                 ),
               ),

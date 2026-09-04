@@ -68,6 +68,7 @@ final class ContactsPage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.onGroupChat,
+    this.onGroupAddressList,
     this.identityCache,
   });
 
@@ -80,6 +81,10 @@ final class ContactsPage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final VoidCallback? onGroupChat;
+
+  /// BUG4：通讯录首页"群聊"→ 群聊通讯录列表（不再误入发起群聊）；
+  /// "+"菜单的"发起群聊"继续走 [onGroupChat]。
+  final VoidCallback? onGroupAddressList;
   final ProfileRepository? identityCache;
 
   @override
@@ -292,9 +297,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                         },
                       ),
                       WeChatListTile(
+                        key: const Key('contacts-group-address-entry'),
                         leading: const Icon(CupertinoIcons.person_3_fill),
                         title: const Text('群聊'),
-                        onTap: widget.onGroupChat,
+                        onTap: widget.onGroupAddressList ?? widget.onGroupChat,
                       ),
                       WeChatListTile(
                         leading: const Icon(CupertinoIcons.tag_fill),

@@ -1479,6 +1479,19 @@ class _RoomPageState extends State<RoomPage> {
     if (isGroup) {
       final infoController = GroupChatInfoController(
         MatrixGroupChatInfoGateway(widget.room),
+        // BUG1：添加成员与建群共用服务端授权自动入群（操作者校验 +
+        // invite 配对 + auto_allow 分流在服务端完成）。
+        serverAutoJoin: (roomId, inviteeUserIds) async {
+          try {
+            final response = await widget.api.requestServerGroupAutoJoin(
+              roomId: roomId,
+              inviteeUserIds: inviteeUserIds,
+            );
+            return GroupAutoJoinOutcome.fromJson(response);
+          } catch (_) {
+            return null; // 邀请已成立；自动加入失败留给对方确认。
+          }
+        },
       )..bindMembershipChanges(
           widget.room.client.onSync.stream,
           roomId: widget.room.id,
@@ -1493,6 +1506,7 @@ class _RoomPageState extends State<RoomPage> {
         context,
         CupertinoPageRoute(
           builder: (_) => GroupChatInfoPage(
+            api: widget.api,
             controller: infoController,
             identityCache: _identityCache,
             onAddMember: () => _openGroupMemberPicker(infoController),
@@ -1565,7 +1579,8 @@ class _RoomPageState extends State<RoomPage> {
           builder: (_) => GroupMemberPickerPage(
             contacts: contacts,
             existingMemberIds: existing,
-            onInvite: infoController.invite,
+            onInvite: (matrixUserId, businessUserId) =>
+                infoController.invite(matrixUserId, businessUserId: businessUserId),
           ),
         ),
       );

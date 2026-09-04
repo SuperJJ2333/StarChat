@@ -13,24 +13,17 @@ from app.core.errors import AppError
 class MatrixAdminGateway(Protocol):
     def ensure_user(self, localpart: str, password: str) -> str: ...
 
-    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None:
-        path_user_id = quote(matrix_user_id, safe="")
-        token_response = self._client.post(
-            f"{self._homeserver_url}/_synapse/admin/v1/users/{path_user_id}/login",
-            headers={"Authorization": f"Bearer {self._admin_access_token}"},
-            json={"valid_until_ms": int(self._now_factory().timestamp() * 1000) + 60_000},
-        )
-        if token_response.status_code != 200:
-            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
-        token = token_response.json().get("access_token")
-        response = self._client.post(
-            f"{self._homeserver_url}/_matrix/client/v3/join/{quote(room_id, safe='')}",
-            headers={"Authorization": f"Bearer {token}"}, json={},
-        )
-        if response.status_code not in (200, 201):
-            raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
+    def join_room_as_user(
+        self,
+        matrix_user_id: str,
+        room_id: str,
+        *,
+        join_content: dict | None = None,
+    ) -> None: ...
+
+    def get_room_state(self, room_id: str) -> list[dict]: ...
+
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
-    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None: ...
 
     def upload_profile_media(self, content: bytes, mime_type: str) -> str: ...
 
@@ -123,7 +116,13 @@ class SynapseMatrixAdminGateway:
             )
         return matrix_user_id
 
-    def join_room_as_user(self, matrix_user_id: str, room_id: str) -> None:
+    def join_room_as_user(
+        self,
+        matrix_user_id: str,
+        room_id: str,
+        *,
+        join_content: dict | None = None,
+    ) -> None:
         path_user_id = quote(matrix_user_id, safe="")
         token_response = self._client.post(
             f"{self._homeserver_url}/_synapse/admin/v1/users/{path_user_id}/login",
@@ -133,12 +132,37 @@ class SynapseMatrixAdminGateway:
         if token_response.status_code != 200:
             raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
         token = token_response.json().get("access_token")
+        # join_content 会成为 m.room.member 事件内容的一部分（如扫码加入
+        # 标记 com.changliao.join_source）；仅允许白名单键，绝不放凭据。
         response = self._client.post(
             f"{self._homeserver_url}/_matrix/client/v3/join/{quote(room_id, safe='')}",
-            headers={"Authorization": f"Bearer {token}"}, json={},
+            headers={"Authorization": f"Bearer {token}"}, json=join_content or {},
         )
         if response.status_code not in (200, 201):
             raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
+
+    def get_room_state(self, room_id: str) -> list[dict]:
+        """读取房间全量状态（Synapse admin API）。
+
+        返回原始 state 事件列表（type/state_key/content/sender）。用于
+        服务端校验：操作者是否在房间、被邀者 invite 事件、群公开设置
+        （com.changliao.group.settings）。房间不存在返回 []。
+        """
+        response = self._client.get(
+            f"{self._homeserver_url}/_synapse/admin/v1/rooms/{quote(room_id, safe='')}/state",
+            headers={"Authorization": f"Bearer {self._admin_access_token}"},
+        )
+        if response.status_code == 404:
+            return []
+        if response.status_code != 200:
+            raise AppError(
+                code="MATRIX_ROOM_STATE_UNAVAILABLE",
+                message="群聊状态暂时不可用",
+                status_code=502,
+            )
+        body = response.json()
+        events = body.get("state", body) if isinstance(body, dict) else body
+        return [event for event in events if isinstance(event, dict)]
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str:
         path_user_id = quote(matrix_user_id, safe="")
         url = (

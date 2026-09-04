@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_admin_controls_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0035_direct_conversations (head)"
+    assert _alembic("heads").strip() == "0036_group_join_tokens (head)"
 
 
 def test_chat_transfer_migration_chains_after_notice_receipts() -> None:

@@ -3,10 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/group_qr_code_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
+  @override
+  String? get roomId => '!group:example.test';
+
   GroupChatInfoSnapshot snapshot = GroupChatInfoSnapshot(
     name: '项目讨论组',
     announcement: '今天 18:00 开会',
@@ -202,7 +206,7 @@ void main() {
     expect(find.text('未命名'), findsOneWidget);
 
     await tester.pumpWidget(
-      CupertinoApp(home: GroupQrCodePage(snapshot: gateway.snapshot)),
+      CupertinoApp(home: GroupQrCodePage(snapshot: gateway.snapshot, api: null)),
     );
     await tester.pump();
     expect(find.text('未命名'), findsOneWidget);
@@ -248,7 +252,7 @@ void main() {
             ),
           ],
           existingMemberIds: const {'@existing:example.test'},
-          onInvite: (matrixUserId) async => invited.add(matrixUserId),
+          onInvite: (matrixUserId, businessUserId) async => invited.add(matrixUserId),
         ),
       ),
     );

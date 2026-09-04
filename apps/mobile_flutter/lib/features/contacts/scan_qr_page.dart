@@ -6,7 +6,10 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'friend_qr.dart';
+import 'group_qr.dart';
+import 'group_join_confirm_page.dart';
 import 'request_friend_page.dart';
+import '../../core/business_api_client.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 
@@ -15,9 +18,20 @@ import '../../core/notification/sound_type.dart';
 /// 安全与交互约定（需求）：扫码**只做识别与跳转**，绝不会自动发送好友
 /// 请求；只有用户在申请页内手动点「发送」才发起 request。
 final class ScanQrPage extends StatefulWidget {
-  const ScanQrPage({super.key, required this.api});
+  const ScanQrPage({
+    super.key,
+    required this.api,
+    this.groupJoinApi,
+    this.onGroupJoined,
+  });
 
   final AddFriendGateway api;
+
+  /// 群码兑换所需的完整业务客户端（null = 群码不可用，提示并忽略）。
+  final BusinessApiClient? groupJoinApi;
+
+  /// 群码加入成功回调（roomId）：组合根同步并打开会话。
+  final void Function(String roomId)? onGroupJoined;
 
   @override
   State<ScanQrPage> createState() => _ScanQrPageState();
@@ -41,9 +55,16 @@ final class _ScanQrPageState extends State<ScanQrPage> {
     if (raw == null || raw.isEmpty) return;
     // 扫码识别音：纯前台 UI 反馈。
     NotificationFeedback.shared.play(SoundType.scan);
+    // BUG2 分流：群码优先（changliao://g/）→ 群资料确认页；
+    // 好友码（changliao://u/）→ 申请添加朋友页（原有行为不变）。
+    final groupToken = parseGroupQrPayload(raw);
+    if (groupToken != null) {
+      await _openGroupJoin(groupToken);
+      return;
+    }
     final username = parseFriendQrPayload(raw);
     if (username == null) {
-      setState(() => hint = '这不是畅聊好友二维码');
+      setState(() => hint = '这不是畅聊二维码');
       return;
     }
     _handling = true;
@@ -87,6 +108,28 @@ final class _ScanQrPageState extends State<ScanQrPage> {
           _handling = false;
         });
       }
+    }
+  }
+
+  Future<void> _openGroupJoin(String token) async {
+    final api = widget.groupJoinApi;
+    if (api == null) {
+      setState(() => hint = '当前环境暂不支持扫码入群');
+      return;
+    }
+    _handling = true;
+    await Navigator.of(context, rootNavigator: true).push(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => GroupJoinConfirmPage(
+          api: api,
+          token: token,
+          onJoined: widget.onGroupJoined,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() => _handling = false);
     }
   }
 
@@ -144,7 +187,7 @@ final class _ScanQrPageState extends State<ScanQrPage> {
               child: Column(
                 children: [
                   Text(
-                    '对准好友的二维码，即可加为朋友',
+                    '对准二维码，可加好友或加入群聊',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 13,

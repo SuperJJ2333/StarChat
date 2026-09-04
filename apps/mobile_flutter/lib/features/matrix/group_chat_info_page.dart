@@ -1,3 +1,4 @@
+import '../../core/business_api_client.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -7,6 +8,7 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
+import 'group_qr_code_page.dart';
 import 'profile_repository.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
@@ -25,6 +27,7 @@ final class GroupChatInfoPage extends StatefulWidget {
   const GroupChatInfoPage({
     super.key,
     required this.controller,
+    this.api,
     required this.onAddMember,
     required this.onSearchHistory,
     required this.onClearLocalHistory,
@@ -34,6 +37,9 @@ final class GroupChatInfoPage extends StatefulWidget {
   });
 
   final GroupChatInfoController controller;
+
+  /// 业务 API（群二维码签发等；组合根注入）。
+  final BusinessApiClient? api;
   final VoidCallback onAddMember;
   final VoidCallback onSearchHistory;
   final Future<void> Function() onClearLocalHistory;
@@ -203,6 +209,19 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                       title: const Center(child: Text('查看更多群成员')),
                       onTap: () => setState(() => expanded = !expanded),
                     ),
+                  if (snapshot.invitedMembers.isNotEmpty)
+                    Padding(
+                      key: const Key('group-invited-pending'),
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: Text(
+                        '等待加入（${snapshot.invitedMembers.length}）：'
+                        '${snapshot.invitedMembers.map((member) => member.displayName).join('、')}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: WeChatColors.textSecondary,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   _detailTile(
                     '群聊名称',
@@ -243,7 +262,10 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     () => Navigator.push(
                       context,
                       CupertinoPageRoute(
-                        builder: (_) => GroupQrCodePage(snapshot: snapshot),
+                        builder: (_) => GroupQrCodePage(
+                          snapshot: snapshot,
+                          api: widget.api,
+                        ) as Widget,
                       ),
                     ),
                   ),
@@ -618,34 +640,6 @@ final class _RemoveMemberCell extends StatelessWidget {
       );
 }
 
-final class GroupQrCodePage extends StatelessWidget {
-  const GroupQrCodePage({super.key, required this.snapshot});
-  final GroupChatInfoSnapshot snapshot;
-
-  @override
-  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
-            automaticBackgroundVisibility: false,
-            enableBackgroundFilterBlur: false,
-            middle: Text('群二维码')),
-        child: SafeArea(
-          child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(CupertinoIcons.qrcode, size: 176),
-              const SizedBox(height: 16),
-              Text(groupInfoDisplayName(snapshot.name)),
-              const SizedBox(height: 8),
-              Text(
-                snapshot.qrJoinEnabled ? '扫描二维码加入群聊' : '群二维码已关闭',
-                style: const TextStyle(color: WeChatColors.textSecondary),
-              ),
-            ]),
-          ),
-        ),
-      );
-}
-
 final class GroupManagementPage extends StatelessWidget {
   const GroupManagementPage({super.key, required this.controller});
   final GroupChatInfoController controller;
@@ -972,7 +966,10 @@ final class GroupMemberPickerPage extends StatefulWidget {
 
   final List<ContactSummary> contacts;
   final Set<String> existingMemberIds;
-  final Future<void> Function(String matrixUserId) onInvite;
+
+  /// matrixUserId（Matrix invite）+ userId（业务 id，服务端自动入群）。
+  final Future<void> Function(String matrixUserId, String businessUserId)
+      onInvite;
 
   @override
   State<GroupMemberPickerPage> createState() => _GroupMemberPickerPageState();
@@ -985,8 +982,12 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
   Future<void> _complete() async {
     if (saving || selected.isEmpty) return;
     setState(() => saving = true);
+    final byMatrixId = {
+      for (final contact in widget.contacts) contact.matrixUserId: contact
+    };
     for (final matrixUserId in selected) {
-      await widget.onInvite(matrixUserId);
+      final contact = byMatrixId[matrixUserId];
+      await widget.onInvite(matrixUserId, contact?.userId ?? '');
     }
     if (mounted) Navigator.maybePop(context);
   }
