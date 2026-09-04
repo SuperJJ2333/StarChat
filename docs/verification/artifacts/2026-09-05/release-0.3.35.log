@@ -1,0 +1,8 @@
+RELEASE 0.3.35+38 (2026-09-05)
+arm64 SHA256: 8ece95cbe6a2612ea30e1ee9a16dc933910a83ea6c027a6a8c321fef808a964a
+arm32 SHA256: 0cc776ca4ae31b5df463785f4209e3bf50d2992975809c1b49576bfeef5e1701
+x86_64 SHA256: 28385e1a806df6cc761da3ba035441cc047a79e0d28df1ea3bbb74aaf9d2f45c
+Idempotency-Key: app-update-publish-0.3.35-20260905
+Publish: PASS
+Pull-back: SHA256 + aapt 2038/0.3.35 VERIFIED
+Rollback: 上一版保留于 /opt/starchat/frontend/downloads（PUT 回上一版 + ln -sfn 指回即可回滚）
