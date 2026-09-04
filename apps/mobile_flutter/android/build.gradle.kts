@@ -1,7 +1,10 @@
 allprojects {
     buildscript {
         repositories {
+            // 阿里云镜像优先（国内构建环境），官方源回退（海外 CI：
+            // 镜像偶发 502 时 gradle 依序回落，2026-09-04 Actions 首跑教训）。
             maven { url = uri("https://maven.aliyun.com/repository/google") }
+            google()
             mavenCentral()
             gradlePluginPortal()
         }
@@ -10,9 +13,9 @@ allprojects {
         }
     }
     repositories {
-        // Google Maven is not directly reachable in every supported build
-        // environment. This mirror serves the same immutable coordinates.
+        // 阿里云镜像优先（国内），google()/mavenCentral() 回退（海外 CI）。
         maven { url = uri("https://maven.aliyun.com/repository/google") }
+        google()
         mavenCentral()
         // 个推推送 SDK（固定版本；仅 Android 客户端离线唤醒通道）。
         maven { url = uri("https://mvn.getui.com/nexus/content/repositories/releases/") }
