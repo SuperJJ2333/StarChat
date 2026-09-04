@@ -17,6 +17,7 @@ ANDROID = "{http://schemas.android.com/apk/res/android}"
 FORBIDDEN_SECRET_LITERALS = [
     "b6K8gE404r6c" + "BhjG87lTB4",  # App Key
     "9KNVygxd" + "Oz76GkdmZRqiF8",  # App Secret
+    "jYisy3SZ7K8BwSH" + "KgbjNY6",  # 用户提供的候选 MasterSecret 值
 ]
 
 # 允许出现在客户端的唯一个推凭据（公开 AppID）。
