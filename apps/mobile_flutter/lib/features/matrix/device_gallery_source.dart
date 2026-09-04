@@ -1,6 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:video_compress/video_compress.dart';
 
 import 'video_poster_extractor.dart';
 import 'video_transcode.dart';
@@ -26,6 +32,7 @@ final class GalleryPhoto {
     this.duration,
     this.originalSizeBytes,
     this.compressedPreviewFile,
+    this.firstFrame,
     this.posterBytes,
   });
 
@@ -46,6 +53,10 @@ final class GalleryPhoto {
   /// 视频预览/发送共用的压缩产物及回退信息（预览页播放与发送复用同一份）。
   /// 仅视频条目提供。
   final Future<VideoRendition> Function()? compressedPreviewFile;
+
+  /// 规格#4：视频首帧懒加载（磁盘缓存命中即回，未命中抽第一帧并落盘；
+  /// 构造时 memoize——网格重复 build 不重复抽帧）。仅视频条目提供。
+  final Future<Uint8List?> Function()? firstFrame;
 
   /// 视频封面帧（约 480px，保持画面比例）：聊天消息发送时随事件附带，
   /// 接收端无需下载整个视频即可渲染海报。
@@ -330,10 +341,14 @@ class DeviceGalleryPager {
     );
     if (assets.length < count) _exhausted = true;
     _loaded += assets.length;
-    // 有界并发解码整页缩略图（保持顺序；失败→空占位，不丢条目）。
+    // 规格#4：图片有界解码整页缩略图；**视频不等待系统缩略图**
+    // （部分 ROM 上视频缩略图极慢，导致整页等待）——立即返回空占位，
+    // 首帧由 firstFrame 闭包按 cell 懒加载（缓存命中秒回）。
     final thumbnails = await decodeThumbnailsBounded([
       for (final asset in assets)
-        () => asset.thumbnailDataWithSize(const ThumbnailSize.square(200)),
+        () => asset.type == AssetType.video
+            ? Future<Uint8List?>.value(Uint8List(0))
+            : asset.thumbnailDataWithSize(const ThumbnailSize.square(200)),
     ]);
     final photos = <GalleryPhoto>[];
     for (var i = 0; i < assets.length; i++) {
@@ -390,6 +405,7 @@ class DeviceGalleryPager {
           compressedPreviewFile:
               isVideo ? () async => _resolveVideoRendition(asset) : null,
           posterBytes: isVideo ? () async => _videoPosterBytes(asset) : null,
+          firstFrame: isVideo ? _memoizedFirstFrame(asset) : null,
         ),
       );
     }
@@ -445,6 +461,48 @@ class DeviceGalleryPager {
 
   Future<Uint8List> _readCompressedVideo(AssetEntity asset) async =>
       (await _resolveVideoRendition(asset)).file.readAsBytes();
+}
+
+/// 规格#4：视频首帧懒加载（磁盘缓存 video_first_frame_cache）。
+///
+/// key = sha256(path|id|durationMs|size)：对整文件做 sha256 比抽帧更贵，
+/// 以 路径+时长+大小 组合作内容寻址代理（相册刷新时间戳变化即失效）。
+/// [fetch] 注入抽帧实现（默认 video_compress 取 200ms 首帧），测试替身用。
+Future<Uint8List?> loadVideoFirstFrame(
+  AssetEntity asset, {
+  Future<Uint8List?> Function(String path, int positionMs)? fetch,
+  Future<Directory> Function()? cacheDir,
+}) async {
+  try {
+    final origin = await asset.originFile;
+    if (origin == null) return null;
+    final dirFactory = cacheDir ?? getApplicationDocumentsDirectory;
+    final dir = Directory(
+        '${(await dirFactory()).path}${Platform.pathSeparator}video_first_frame_cache');
+    await dir.create(recursive: true);
+    final key = sha256
+        .convert(utf8
+            .encode('${origin.path}|${asset.id}|${asset.videoDuration}|${await origin.length()}'))
+        .toString();
+    final cacheFile = File('${dir.path}${Platform.pathSeparator}$key.jpg');
+    if (await cacheFile.exists()) {
+      return await cacheFile.readAsBytes();
+    }
+    final frame = await (fetch ??
+            (path, positionMs) =>
+                VideoCompress.getByteThumbnail(path, quality: 70, position: positionMs))(
+        origin.path, 200);
+    if (frame == null || frame.isEmpty) return null;
+    await cacheFile.writeAsBytes(frame, flush: true);
+    return frame;
+  } catch (_) {
+    return null; // 首帧失败不阻塞网格（保持占位）。
+  }
+}
+
+Future<Uint8List?> Function() _memoizedFirstFrame(AssetEntity asset) {
+  Future<Uint8List?>? pending;
+  return () => pending ??= loadVideoFirstFrame(asset);
 }
 
 /// 兼容入口：一次性加载首页（供旧调用方过渡）；新代码请使用 [DeviceGalleryPager]。

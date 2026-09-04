@@ -2,8 +2,7 @@ import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'conversation_preferences.dart';
 import 'room_timeline_controller.dart';
-import 'matrix_room_timeline_adapter.dart'
-    show changliaoCallMessageType;
+import 'matrix_room_timeline_adapter.dart' show changliaoCallMessageType;
 
 final class ConversationIdentity {
   const ConversationIdentity({
@@ -73,9 +72,7 @@ String? conversationEventSummaryLabel({
     case 'm.file':
       return '[文件]';
     case changliaoCallMessageType:
-      return content?['call_type']?.toString() == 'video'
-          ? '[视频通话]'
-          : '[语音通话]';
+      return content?['call_type']?.toString() == 'video' ? '[视频通话]' : '[语音通话]';
     default:
       return null;
   }
@@ -138,6 +135,20 @@ List<User> orderedJoinedMembers(Room room) {
   ];
 }
 
+/// 规格#3：会话类型判定（两个人聊天 ≠ 群聊）。
+///
+/// DIRECT 必须 isDirectChat（m.direct）且成员恰为 2；**成员==2 但未写
+/// m.direct 的房间是 GROUP**（不能当私聊用——避免把历史群误判为单聊）。
+enum ConversationRoomType { direct, group }
+
+ConversationRoomType conversationRoomType({
+  required bool isDirectChat,
+  required int memberCount,
+}) =>
+    isDirectChat && memberCount == 2
+        ? ConversationRoomType.direct
+        : ConversationRoomType.group;
+
 /// 群聊导航标题：群主/管理员改过群名时显示“群名（N）”，
 /// 默认“群聊（N）”；长名称由调用方以省略号截断。
 String groupRoomNavigationTitle(String? groupName, int memberCount) {
@@ -182,8 +193,7 @@ String resolveChatSenderDisplayName({
   final cleanRemark = (remark ?? '').trim();
   final cleanNickname = (contactNickname ?? '').trim();
   if (!isDirectChat) {
-    final hasGroupNick =
-        cleanNickname.isEmpty || memberName != cleanNickname;
+    final hasGroupNick = cleanNickname.isEmpty || memberName != cleanNickname;
     if (hasGroupNick) return memberName;
   }
   return cleanRemark.isNotEmpty ? cleanRemark : memberName;

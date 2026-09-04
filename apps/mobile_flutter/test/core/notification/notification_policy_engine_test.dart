@@ -73,6 +73,16 @@ void main() {
       expect(decision.haptic, HapticFeedbackKind.none);
       expect(decision.updateBadge, isFalse);
     });
+
+    test('后台修复（规格#1）：后台时当前会话收到消息必须出系统通知', () {
+      final decision = decideNotification(_context(
+        appForeground: false,
+        isCurrentConversation: true,
+      ));
+      expect(decision.showSystemNotification, isTrue,
+          reason: '退后台后聊天页仍挂载、isRoomOpen 残留 true——'
+              '后台必须照常系统通知（微信语义）');
+    });
   });
 
   group('PRD §18 前台普通消息', () {

@@ -26,6 +26,7 @@ import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/contact_models.dart';
+import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
@@ -182,6 +183,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     navigatorKey: callNavigatorKey,
     notifications: callNotifications,
     isAppResumed: () => appResumed,
+    displayNameResolver: _sharedDisplayNameResolver,
     onPhaseChanged: _onCallPhaseChangedForBusiness,
   );
   bool appResumed = true;
@@ -236,6 +238,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
+  UserDisplayNameResolver? _sharedDisplayNameResolver;
 
   @override
   void initState() {
@@ -399,6 +402,21 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
     final eventSource = MatrixNotificationEventSource(
       client: widget.matrix.sdkClient,
+      // 规格#2：通知标题/头像统一经名称解析器（备注优先）。
+      displayNameResolver: _sharedDisplayNameResolver ??=
+          ContactBackedUserDisplayNameResolver(
+        contactFor: (matrixUserId) {
+          final cache = _chatIdentityCache;
+          if (cache == null) return null;
+          for (final contact in cache.contacts) {
+            if (contact.matrixUserId == matrixUserId) return contact;
+          }
+          return null;
+        },
+        warmContacts: () async {
+          await (_chatIdentityCacheLoad ??= _createIdentityCache());
+        },
+      ),
     );
     final coordinator = NotificationCoordinator(
       preferenceStore: const SharedPreferencesNotificationPreferenceStore(),

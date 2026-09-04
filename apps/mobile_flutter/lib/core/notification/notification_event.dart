@@ -33,6 +33,8 @@ final class NotificationEvent {
     this.messageKind = NotificationMessageKind.text,
     this.messagePreview = '',
     this.isMention = false,
+    this.avatarUrl,
+    this.unreadCount,
     this.isSystem = false,
   });
 
@@ -57,6 +59,12 @@ final class NotificationEvent {
 
   /// 是否 @我（PRD §28）。
   final bool isMention;
+
+  /// 发送者头像（业务头像 URL；系统通知大图标，缺省占位）。
+  final String? avatarUrl;
+
+  /// 该会话当前未读数（含本条；系统通知 number 角标）。
+  final int? unreadCount;
 
   /// 是否系统/业务通知（PRD §3 P3）。
   final bool isSystem;

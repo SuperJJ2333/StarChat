@@ -1,7 +1,7 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../ui/foundation/avatar_cache.dart';
 import 'notification_decision.dart';
 import 'notification_diagnostics.dart';
 
@@ -44,6 +44,8 @@ abstract interface class SystemNotificationPresenter {
     required String body,
     required SystemNotificationChannel channel,
     required String roomIdPayload,
+    String? avatarUrl,
+    int? unreadCount,
   });
   Future<void> cancelConversation(int notificationId);
 }
@@ -268,15 +270,33 @@ final class FlutterLocalSystemNotificationPresenter
     required String body,
     required SystemNotificationChannel channel,
     required String roomIdPayload,
+    String? avatarUrl,
+    int? unreadCount,
   }) async {
     await initialize();
+    debugPrint('[PUSH] show notification id=$notificationId '
+        'channel=${channel.name} unread=${unreadCount ?? '-'}');
     try {
+      // 头像：只用已缓存字节（通知路径不发起网络下载，避免延迟）。
+      Uint8List? avatarBytes;
+      if (avatarUrl != null && avatarUrl.isNotEmpty) {
+        try {
+          final file = await AvatarCache.manager.getFileFromCache(avatarUrl);
+          if (file != null) avatarBytes = await file.file.readAsBytes();
+        } catch (_) {
+          // 无缓存头像按默认图标。
+        }
+      }
       await plugin.show(
         notificationId,
         title,
         body,
         NotificationDetails(
-          android: _androidDetails(channel),
+          android: _androidDetails(
+            channel,
+            avatarBytes: avatarBytes,
+            unreadCount: unreadCount,
+          ),
           iOS: _iosDetails(channel),
         ),
         payload: roomIdPayload,
@@ -299,9 +319,14 @@ final class FlutterLocalSystemNotificationPresenter
   }
 
   AndroidNotificationDetails _androidDetails(
-    SystemNotificationChannel channel,
-  ) {
+    SystemNotificationChannel channel, {
+    Uint8List? avatarBytes,
+    int? unreadCount,
+  }) {
     final spec = channelSpecFor(channel);
+    final avatarIcon = avatarBytes == null
+        ? null
+        : ByteArrayAndroidIcon(avatarBytes) as AndroidBitmap<Object>;
     final priority = spec.importance == Importance.high
         ? Priority.high
         : spec.importance == Importance.low
@@ -322,6 +347,9 @@ final class FlutterLocalSystemNotificationPresenter
           ? null
           : RawResourceAndroidNotificationSound(spec.soundResource!),
       enableVibration: spec.soundResource != null,
+      // 规格#1：好友头像大图标 + 未读数角标（有缓存才带，不发起下载）。
+      largeIcon: avatarIcon,
+      number: unreadCount,
       styleInformation: const DefaultStyleInformation(true, true),
     );
   }

@@ -7,6 +7,7 @@ import '../../core/notification/badge_service.dart'
 import '../../core/notification/notification_coordinator.dart';
 import '../../core/notification/notification_diagnostics.dart';
 import '../../core/notification/notification_event.dart';
+import '../contacts/user_display_name_resolver.dart';
 import 'conversation_preferences.dart';
 import 'conversation_presentation.dart';
 import 'conversation_read_state.dart';
@@ -27,14 +28,20 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
   MatrixNotificationEventSource({
     required this.client,
     ConversationReadState? readState,
+    UserDisplayNameResolver? displayNameResolver,
     NotificationDiagnostics? diagnostics,
     DateTime Function()? now,
   })  : readState = readState ?? ConversationReadState.shared(),
+        displayNameResolver = displayNameResolver ??
+            ContactBackedUserDisplayNameResolver(contactFor: (_) => null),
         diagnostics = diagnostics ?? NotificationDiagnostics.shared,
         now = now ?? DateTime.now;
 
   final Client client;
   final ConversationReadState readState;
+
+  /// 规格#2：通知标题统一走 好友备注>昵称>Matrix名>username>MatrixID。
+  final UserDisplayNameResolver displayNameResolver;
   final NotificationDiagnostics diagnostics;
   final DateTime Function() now;
 
@@ -143,8 +150,15 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
       ),
     );
 
-    final senderName =
-        room.unsafeGetUserFromMemoryOrFallback(raw.senderId).calcDisplayname();
+    final user =
+        room.unsafeGetUserFromMemoryOrFallback(raw.senderId);
+    final matrixDisplayName = user.calcDisplayname();
+    // 规格#1/#2：标题=好友备注（解析器优先级链），绝不裸 Matrix ID。
+    final resolvedName = displayNameResolver.resolveSync(
+      raw.senderId,
+      matrixDisplayName: matrixDisplayName.isEmpty ? null : matrixDisplayName,
+    );
+    final senderName = resolvedName;
     final preview = _preview(room, decrypted, raw, senderName);
 
     return IncomingNotification(
@@ -153,10 +167,13 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
         conversationId: roomId,
         senderId: raw.senderId,
         senderName: senderName,
-        conversationName: room.getLocalizedDisplayname(),
+        conversationName: room.isDirectChat
+            ? senderName
+            : room.getLocalizedDisplayname(),
         messageKind: _messageKind(decrypted, raw),
         messagePreview: preview,
         isMention: isMention,
+        avatarUrl: displayNameResolver.avatarUrlFor(raw.senderId),
         timestamp: raw.originServerTs,
       ),
       isOwnMessage: false,

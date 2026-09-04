@@ -79,6 +79,8 @@ final class _FakeSystemPresenter implements SystemNotificationPresenter {
     required String body,
     required SystemNotificationChannel channel,
     required String roomIdPayload,
+    String? avatarUrl,
+    int? unreadCount,
   }) async {
     shows.add((
       id: notificationId,

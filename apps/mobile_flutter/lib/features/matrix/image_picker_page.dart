@@ -123,8 +123,7 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
                   ? WeChatColors.brandPrimary
                   : CupertinoColors.systemGrey5.withValues(alpha: .28),
               borderRadius: BorderRadius.circular(18),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               onPressed: () {
                 widget.onToggle();
                 setState(() => selected = !selected);
@@ -269,9 +268,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       if (!mounted) return;
       setState(() {
         loading = false;
-        loadError = failure is GallerySourceError
-            ? failure.message
-            : '相册加载失败，请重试';
+        loadError =
+            failure is GallerySourceError ? failure.message : '相册加载失败，请重试';
       });
     }
   }
@@ -343,8 +341,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
             builder: (dialogContext) => CupertinoAlertDialog(
               key: const Key('image-picker-video-limit-dialog'),
               title: const Text('视频过大'),
-              content: const Text(
-                  '单个视频超过20MB，无法以原图发送。请关闭“原图”后重试'
+              content: const Text('单个视频超过20MB，无法以原图发送。请关闭“原图”后重试'
                   '（将自动压缩后发送）。'),
               actions: [
                 CupertinoDialogAction(
@@ -365,7 +362,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    final barColor = dark ? WeChatColors.darkSurface : WeChatColors.lightSurface;
+    final barColor =
+        dark ? WeChatColors.darkSurface : WeChatColors.lightSurface;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
         transitionBetweenRoutes: false,
@@ -376,15 +374,16 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           onPressed: _showAlbumPicker,
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(_albumLabel,
-                style: const TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
             const SizedBox(width: 4),
             const Icon(CupertinoIcons.chevron_down, size: 14),
           ]),
         ),
       ),
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: Column(children: [
           Expanded(child: _grid(dark)),
@@ -459,7 +458,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
               const SizedBox(height: 8),
               Text(
                 '需要在系统设置中允许畅聊访问全部照片（或选择部分照片）后，'
-                    '返回本页即可自动加载。',
+                '返回本页即可自动加载。',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 13,
@@ -523,12 +522,26 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           // 点击预览区域=放大查看；选中只由左上角圆圈切换，二者严格分离。
           onTap: () => _openPreview(photo),
           child: Stack(fit: StackFit.expand, children: [
-            Image.memory(photo.thumbnail,
-                key: Key('image-picker-thumb-${photo.id}'),
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-                errorBuilder: (_, __, ___) => const ColoredBox(
-                    color: WeChatColors.textTertiary)),
+            // 规格#4：视频缩略图懒加载——立即渲染占位，首帧就绪只更新
+            // 本 cell（闭包已 memoize，重复 build 不重复抽帧）。
+            if (photo.isVideo && photo.firstFrame != null)
+              FutureBuilder<Uint8List?>(
+                future: photo.firstFrame!(),
+                builder: (context, snapshot) => snapshot.hasData &&
+                        snapshot.data!.isNotEmpty
+                    ? Image.memory(snapshot.data!,
+                        key: Key('image-picker-frame-${photo.id}'),
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true)
+                    : _videoPlaceholder(photo),
+              )
+            else
+              Image.memory(photo.thumbnail,
+                  key: Key('image-picker-thumb-${photo.id}'),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) =>
+                      const ColoredBox(color: WeChatColors.textTertiary)),
             if (photo.isVideo)
               Positioned(
                 left: 6,
@@ -571,13 +584,13 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         child: const Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(CupertinoIcons.refresh, size: 16,
-                color: WeChatColors.brandPrimary),
+            Icon(CupertinoIcons.refresh,
+                size: 16, color: WeChatColors.brandPrimary),
             SizedBox(height: 6),
             Text('加载失败，点击重试',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 11, color: WeChatColors.textSecondary)),
+                style:
+                    TextStyle(fontSize: 11, color: WeChatColors.textSecondary)),
           ],
         ),
       );
@@ -589,20 +602,19 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           CupertinoActivityIndicator(radius: 9),
           SizedBox(height: 6),
           Text('加载中…',
-              style: TextStyle(
-                  fontSize: 11, color: WeChatColors.textSecondary)),
+              style:
+                  TextStyle(fontSize: 11, color: WeChatColors.textSecondary)),
         ],
       );
     }
     return const Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(CupertinoIcons.chevron_down, size: 14,
-            color: WeChatColors.textTertiary),
+        Icon(CupertinoIcons.chevron_down,
+            size: 14, color: WeChatColors.textTertiary),
         SizedBox(height: 6),
         Text('上拉加载更多',
-            style: TextStyle(
-                fontSize: 11, color: WeChatColors.textTertiary)),
+            style: TextStyle(fontSize: 11, color: WeChatColors.textTertiary)),
       ],
     );
   }
@@ -646,6 +658,14 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     if (mounted) setState(() {});
   }
 
+  Widget _videoPlaceholder(GalleryPhoto photo) => const ColoredBox(
+      color: Color(0xFF3A3A3A),
+      child: Center(
+        child: Icon(CupertinoIcons.videocam_fill,
+            size: 22, color: Color(0x80FFFFFF)),
+      ),
+    );
+
   String _formatDuration(Duration? duration) {
     if (duration == null) return '0:00';
     final minutes = duration.inMinutes;
@@ -669,13 +689,11 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           alignment: Alignment.center,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: selected
-                ? WeChatColors.brandPrimary
-                : const Color(0x66000000),
+            color:
+                selected ? WeChatColors.brandPrimary : const Color(0x66000000),
             border: Border.all(
-              color: selected
-                  ? WeChatColors.brandPrimary
-                  : CupertinoColors.white,
+              color:
+                  selected ? WeChatColors.brandPrimary : CupertinoColors.white,
               width: 1.5,
             ),
           ),

@@ -69,8 +69,12 @@ NotificationDecision decideNotification(NotificationPolicyContext context) {
   // PRD §26/§52：自己发送的消息不产生任何通知、声音、震动与未读。
   if (context.isOwnMessage) return const NotificationDecision();
 
-  // PRD §18/§53：当前正在查看的会话不产生提醒（已读回执由聊天页推进）。
-  if (context.isCurrentConversation) return const NotificationDecision();
+  // PRD §18/§53：前台正在查看的会话不产生提醒（已读回执由聊天页推进）。
+  // 后台修复：退后台后聊天页仍挂载（未 dispose），isRoomOpen 残留 true——
+  // 后台必须照常系统通知（微信语义：后台一律提醒，仅静音例外）。
+  if (context.isCurrentConversation && context.appForeground) {
+    return const NotificationDecision();
+  }
 
   final prefs = context.prefs;
   final event = context.event;

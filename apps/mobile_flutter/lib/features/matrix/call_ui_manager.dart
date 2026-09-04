@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'call_controller.dart';
 import 'call_notifications.dart';
 import 'call_page.dart';
+import '../contacts/user_display_name_resolver.dart';
 import 'incoming_call_overlay_state.dart';
 import 'matrix_call_adapter.dart';
 
@@ -28,6 +29,7 @@ final class CallUiManager {
     required this.navigatorKey,
     required this.notifications,
     required this.isAppResumed,
+    this.displayNameResolver,
     this.closeDelay = const Duration(seconds: 2),
     this.onPhaseChanged,
   });
@@ -39,6 +41,16 @@ final class CallUiManager {
 
   /// 终态→关闭的缓冲（抖动容忍窗口）。
   final Duration closeDelay;
+
+  /// 规格#2：来电显示名（备注>昵称>Matrix名>username>MatrixID；
+  /// 禁止直接显示 remoteUserId）。null 时回退 Matrix ID。
+  final UserDisplayNameResolver? displayNameResolver;
+
+  String _callerDisplayName(String? matrixUserId) {
+    final id = matrixUserId ?? '加密来电';
+    if (matrixUserId == null) return id;
+    return displayNameResolver?.resolveSync(matrixUserId) ?? id;
+  }
 
   /// 业务侧钩子（消息提醒抑制/通话摘要），UI 决策留在本类。
   final void Function(CallPhase previous, CallPhase next)? onPhaseChanged;
@@ -109,8 +121,9 @@ final class CallUiManager {
           unawaited(notifications.hideIncoming());
           _pushIncomingPage(controller);
         } else if (!_incomingOpen()) {
+          final caller = controller.state.matrixUserId;
           unawaited(notifications.showIncoming(
-            callerName: controller.state.matrixUserId ?? '加密来电',
+            callerName: _callerDisplayName(caller),
             video: controller.state.type == CallMediaType.video,
             ring: true,
           ));
@@ -142,12 +155,14 @@ final class CallUiManager {
     final navigator = navigatorKey.currentState;
     if (navigator == null) return;
     final state = controller.state;
+    final callerId = state.matrixUserId;
+    final callerName = _callerDisplayName(callerId);
     _incomingRoute = CupertinoPageRoute<void>(
       fullscreenDialog: true,
       builder: (_) => CallPage(
         controller: controller,
-        displayName: state.matrixUserId ?? '加密来电',
-        fallbackSeed: state.matrixUserId ?? 'incoming-call',
+        displayName: callerName,
+        fallbackSeed: callerId ?? 'incoming-call',
         incoming: true,
         mediaBackend: _mediaBackend,
       ),

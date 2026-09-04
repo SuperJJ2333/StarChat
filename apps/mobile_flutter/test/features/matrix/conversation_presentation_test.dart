@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_presentation.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart'
@@ -167,23 +170,19 @@ void main() {
 
   test('media and call messages map to fixed summary labels', () {
     expect(
-      conversationEventSummaryLabel(
-          messageType: 'm.image', content: const {}),
+      conversationEventSummaryLabel(messageType: 'm.image', content: const {}),
       '[图片]',
     );
     expect(
-      conversationEventSummaryLabel(
-          messageType: 'm.video', content: const {}),
+      conversationEventSummaryLabel(messageType: 'm.video', content: const {}),
       '[视频]',
     );
     expect(
-      conversationEventSummaryLabel(
-          messageType: 'm.audio', content: const {}),
+      conversationEventSummaryLabel(messageType: 'm.audio', content: const {}),
       '[语音]',
     );
     expect(
-      conversationEventSummaryLabel(
-          messageType: 'm.file', content: const {}),
+      conversationEventSummaryLabel(messageType: 'm.file', content: const {}),
       '[文件]',
     );
     expect(
@@ -201,10 +200,40 @@ void main() {
       '[视频通话]',
     );
     expect(
-      conversationEventSummaryLabel(
-          messageType: 'm.text', content: const {}),
+      conversationEventSummaryLabel(messageType: 'm.text', content: const {}),
       isNull,
       reason: '普通文本消息仍展示原文',
     );
+  });
+
+  group("规格#3 会话类型判定（DM≠群聊）", () {
+    test("isDirect+2人 = DIRECT", () {
+      expect(conversationRoomType(isDirectChat: true, memberCount: 2),
+          ConversationRoomType.direct);
+    });
+    test("2人但无 m.direct = GROUP（不能当私聊）", () {
+      expect(conversationRoomType(isDirectChat: false, memberCount: 2),
+          ConversationRoomType.group);
+    });
+    test("m.direct 但成员!=2 = GROUP", () {
+      expect(conversationRoomType(isDirectChat: true, memberCount: 3),
+          ConversationRoomType.group);
+    });
+    test("创建路径守卫：startDirectChat 全链路（invite+isDirect+m.direct 校验）", () {
+      // 源码级防回归：MatrixDirectChatBackend 必须走 startDirectChat 且
+      // 校验 isDirect+directChatMatrixID（缺一即抛，绝不返回群聊）。
+      final source = File("lib/features/matrix/matrix_direct_chat_adapter.dart")
+          .readAsStringSync(encoding: utf8);
+      expect(source.contains("startDirectChat"), isTrue);
+      expect(source.contains("isDirect: true"), isTrue);
+      expect(source.contains("Direct chat m.direct metadata not synced"), isTrue,
+          reason: "m.direct 未同步必须抛错，不得把房间当私聊返回");
+    });
+    test("UI 分叉守卫：私聊=好友名 / 群聊=群名（N）", () {
+      final home = File("lib/features/matrix/matrix_home_page.dart")
+          .readAsStringSync(encoding: utf8);
+      expect(home.contains("room.isDirectChat"), isTrue);
+      expect(home.contains("groupRoomNavigationTitle"), isTrue);
+    });
   });
 }

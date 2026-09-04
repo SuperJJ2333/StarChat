@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 
 import 'app_state_manager.dart';
 import 'badge_service.dart';
@@ -115,6 +116,9 @@ final class NotificationCoordinator {
   }
 
   Future<void> handleEvent(IncomingNotification notification) async {
+    debugPrint('[PUSH] received event room='
+        '${notification.event.conversationId} kind='
+        '${notification.event.messageKind.name}');
     // PRD §25/§66：同一 eventId 双通道只处理一次。
     if (!deduplicator.tryProcess(notification.event.eventId)) {
       diagnostics.record(NotificationDiagStage.suppressed, 'duplicate',
@@ -216,13 +220,29 @@ final class NotificationCoordinator {
     }
     if (decision.showSystemNotification) {
       unawaited(usageRecorder.count(NotificationUsageEvents.displayed));
+      final unreadCount = await _unreadForRoom(event.conversationId);
       await systemNotifications.showConversationMessage(
         notificationId: notificationIdForConversation(event.conversationId),
         title: decision.previewTitle,
         body: decision.previewBody,
         channel: decision.systemChannel,
         roomIdPayload: event.conversationId,
+        avatarUrl: event.avatarUrl,
+        unreadCount: unreadCount,
       );
+    }
+  }
+
+  /// 该会话当前未读数（含本条，服务器计数+1；失败不阻塞通知）。
+  Future<int?> _unreadForRoom(String roomId) async {
+    try {
+      final snapshots = await unreadSource.load();
+      for (final snapshot in snapshots) {
+        if (snapshot.roomId == roomId && snapshot.unread > 0) return snapshot.unread;
+      }
+      return 1;
+    } catch (_) {
+      return null;
     }
   }
 
