@@ -29,8 +29,17 @@ class ChatFlowGetuiIntentService : GTIntentService() {
         GetuiBridgeState.notifyClicked(kind)
     }
 
-    // 透传消息（我们不用透传通道；即便收到也不处理任何内容）。
+    // 透传消息：仅来电唤醒指令（{"type":"call","video":bool}，服务端
+    // getui-bridge 不携带任何业务内容）。其余透传一律忽略。
     override fun onReceiveMessageData(context: Context, msg: GTTransmitMessage) {
-        // 有意忽略。
+        try {
+            val payload = msg.payload?.toString(Charsets.UTF_8) ?: return
+            val obj = org.json.JSONObject(payload)
+            if (obj.optString("type") != "call") return
+            val video = obj.optBoolean("video", false)
+            com.liuhetong.mobile.call.CallForegroundService.start(context, video)
+        } catch (_: Exception) {
+            // 非法载荷忽略（不打印内容）。
+        }
     }
 }

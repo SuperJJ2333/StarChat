@@ -7,6 +7,7 @@
   出站载荷白名单见 build_push_body —— 严禁携带任何 Matrix 业务字段。
 """
 import hashlib
+import json
 import secrets
 import time
 from typing import Any
@@ -36,17 +37,27 @@ def build_push_body(cid: str, kind: str, ttl_ms: int) -> dict[str, Any]:
         "click_type": "startapp",
         "notify_id": notify_id,
     }
-    return {
+    body: dict[str, Any] = {
         "request_id": f"cf{time.time_ns()}{secrets.token_hex(4)}"[:32],
         "settings": {"ttl": ttl_ms},
         "audience": {"cid": [cid]},
-        # 在线个推通道
-        "push_message": {"notification": notification},
-        # 离线厂商通道（App 被杀时的送达路径）——同样只有通用文案。
-        "push_channel": {
-            "android": {"ups": {"notification": dict(notification)}},
-        },
     }
+    if kind == "call":
+        # 来电：透传唤醒指令（原生 CallForegroundService → CallStyle 锁屏
+        # 来电）。载荷仅 type/video，无任何业务内容（E2EE 红线；video 细分
+        # 由实际信令定，通知一律语音样式）。
+        body["push_message"] = {
+            "transmission": json.dumps(
+                {"type": "call", "video": False}, ensure_ascii=False
+            )
+        }
+        return body
+    # 消息：通知通道（通用文案）+ 离线厂商通道——同样只有通用文案。
+    body["push_message"] = {"notification": notification}
+    body["push_channel"] = {
+        "android": {"ups": {"notification": dict(notification)}},
+    }
+    return body
 
 
 class GetuiPushError(Exception):

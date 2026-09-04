@@ -170,3 +170,19 @@ def test_mixed_permanent_and_transient(client, getui_mock):
     assert resp.status_code == 200
     # 两个 CID 都拿到永久码→都进 rejected：
     assert set(resp.json().get("rejected", [])) == {"cid-1", "dead"}
+
+
+def test_call_kind_uses_transmission_wakeup_native_calservice():
+    """规格（原生 CallService）：kind=call 走透传唤醒指令（type/video），
+    绝不携带任何业务内容；message 保持通知通道。"""
+    from app.getui_client import build_push_body
+    import json as _json
+    call_body = build_push_body("cid-call", "call", 300_000)
+    assert "transmission" in call_body["push_message"]
+    payload = _json.loads(call_body["push_message"]["transmission"])
+    assert payload == {"type": "call", "video": False}
+    assert "notification" not in call_body["push_message"]
+    assert "push_channel" not in call_body
+    msg_body = build_push_body("cid-msg", "message", 300_000)
+    assert "notification" in msg_body["push_message"]
+    assert "transmission" not in msg_body["push_message"]

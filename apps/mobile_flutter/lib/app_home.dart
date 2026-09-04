@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
@@ -245,6 +246,26 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     super.initState();
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
+    _nativeCallChannel = const MethodChannel('chatflow/call');
+    _nativeCallChannel?.setMethodCallHandler((call) async {
+      // 原生 CallStyle 通知动作（规格§4/§5/§6）：接听=开页+accept；
+      // 拒绝=reject。动作后通知原生停服务（Flutter 接管 UI/媒体）。
+      if (call.method == 'openIncomingCall') {
+        callUi.showIncomingCall(calls);
+        if (calls.state.phase == CallPhase.ringing) {
+          unawaited(calls.accept());
+        } else {
+          unawaited(_autoAcceptWhenRinging());
+        }
+        _dismissNativeCallLayer();
+      } else if (call.method == 'rejectIncomingCall') {
+        if (calls.state.phase == CallPhase.ringing) {
+          unawaited(calls.reject());
+        }
+        _dismissNativeCallLayer();
+      }
+      return true;
+    });
     callUi.attach(
       calls,
       mediaBackend: callBackend,
@@ -823,6 +844,38 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     notificationAppState.setCallActive(
       next == CallPhase.ringing || next == CallPhase.connected,
     );
+  }
+
+  MethodChannel? _nativeCallChannel;
+
+  /// 推送先于 Matrix 同步到达：等待响铃事件后自动接听（≤8s）。
+  Future<void> _autoAcceptWhenRinging() async {
+    var handled = false;
+    void listener() {
+      if (!handled && calls.state.phase == CallPhase.ringing) {
+        handled = true;
+        calls.removeListener(listener);
+        unawaited(calls.accept());
+      }
+    }
+
+    calls.addListener(listener);
+    final deadline = DateTime.now().add(const Duration(seconds: 8));
+    while (DateTime.now().isBefore(deadline) && !handled) {
+      final phase = calls.state.phase;
+      if (phase == CallPhase.ringing) break;
+      if (phase == CallPhase.ended || phase == CallPhase.failed) break;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    if (!handled && calls.state.phase == CallPhase.ringing) {
+      handled = true;
+      unawaited(calls.accept());
+    }
+    calls.removeListener(listener);
+  }
+
+  void _dismissNativeCallLayer() {
+    unawaited(_nativeCallChannel?.invokeMethod('dismiss'));
   }
 
   /// 规格§三：来电委托管理器呈现；摘要落消息；登出经 dispose 清理。

@@ -21,6 +21,12 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 原生通话层桥：通知[接听/拒绝]→Flutter；Flutter 接管后停原生前台服务。
+        com.liuhetong.mobile.call.CallBridge.setUp(
+            flutterEngine.dartExecutor.binaryMessenger,
+        ) {
+            com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
+        }
         // 个推桥（隐私红线：不打印 CID/载荷；initialize 仅在用户同意后由 Dart 触发）。
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/getui")
             .setMethodCallHandler { call, result ->

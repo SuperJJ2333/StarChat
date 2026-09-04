@@ -40,6 +40,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" tools:node="remove" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
     <uses-permission android:name="android.permission.DUMP" tools:node="remove" />
+    <!-- 原生通话层（微信级后台来电）：phoneCall 前台服务 + CallStyle -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
 
     <application
         android:label="畅聊 ChatFlow"
@@ -86,6 +89,23 @@
             android:name="com.dexterous.flutterlocalnotifications.ForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync|microphone|camera" />
+
+        <!-- 原生通话层组件：phoneCall 前台服务 + CallStyle 通知 -->
+        <service
+            android:name=".call.CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall" />
+        <service
+            android:name=".call.ChatFlowConnectionService"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name=".call.IncomingCallReceiver"
+            android:exported="false" />
         <!-- 个推：消息回调服务（CID/点击）与推送服务（官方要求空实现）。 -->
         <service
             android:name=".ChatFlowGetuiIntentService"
