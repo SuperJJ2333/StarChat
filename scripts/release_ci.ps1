@@ -98,8 +98,12 @@ Write-Step "等待 GitHub Actions 构建 + Release $tag 资产"
 $deadline = (Get-Date).AddMinutes(45)
 $assets = $null
 while ((Get-Date) -lt $deadline) {
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoSlug/releases/tags/$tag" `
-        -Headers @{ 'User-Agent' = 'starchat-release-ci' } -ErrorAction SilentlyContinue
+    # 404（Release 未建）会抛异常——必须 try/catch，SilentlyContinue 压不住。
+    $rel = $null
+    try {
+        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoSlug/releases/tags/$tag" `
+            -Headers @{ 'User-Agent' = 'starchat-release-ci' }
+    } catch { $rel = $null }
     if ($rel -and $rel.assets) {
         $names = @($rel.assets | ForEach-Object { $_.name })
         $need = @("ChatFlow-$Version-arm64.apk", "ChatFlow-$Version-arm32.apk",
@@ -109,9 +113,12 @@ while ((Get-Date) -lt $deadline) {
         Write-Host "  资产不全（缺：$($missing -join ', ')），继续等待…"
     } else {
         # 打印一次最近运行状态（公开仓库可匿名查询）
-        $runs = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoSlug/actions/runs?event=push&per_page=1" `
-            -Headers @{ 'User-Agent' = 'starchat-release-ci' } -ErrorAction SilentlyContinue
-        if ($runs.workflow_runs) {
+        $runs = $null
+        try {
+            $runs = Invoke-RestMethod -Uri "https://api.github.com/repos/$repoSlug/actions/runs?event=push&per_page=1" `
+                -Headers @{ 'User-Agent' = 'starchat-release-ci' }
+        } catch { $runs = $null }
+        if ($runs -and $runs.workflow_runs) {
             $r = $runs.workflow_runs[0]
             Write-Host "  最新运行：$($r.name) [$($r.status)/$($r.conclusion)] $($r.html_url)"
             if ($r.status -eq 'completed' -and $r.conclusion -ne 'success') {
