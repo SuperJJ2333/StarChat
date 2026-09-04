@@ -3,11 +3,14 @@ name: android-release
 # 签名 Release 构建（tag 或手动触发）。需要仓库 Secrets：
 #   ANDROID_KEYSTORE_BASE64  — keystore 文件的 base64
 #   ANDROID_KEY_PROPERTIES   — key.properties 全文（4 行）
-#   PROD_SSH_KEY             — 部署私钥（对应服务器 authorized_keys）
+#   PROD_SSH_KEY             — 部署私钥（仅可选直连上传用；主路径是服务器下行拉取）
 # 配置步骤见 docs/RUNBOOK_RELEASE.md。Secrets 未配置时 fail-fast 并提示，
 # 绝不静默跳过或伪装成功。
-# 本工作流止步于"构建+上传+别名"；正式 publish（更新弹窗）由人工执行
-# scripts/release.ps1 -SkipBuild 或服务器侧确认——发布是业务决策。
+# tag（vX.Y.Z）触发：构建 → 创建 GitHub Release（APK + SHA256SUMS）→
+#   服务器由 scripts/server_pull_release.sh 下行拉取部署（本地
+#   release_ci.ps1 触发）。publish（更新弹窗）永远人工决策，不在本工作流。
+# workflow_dispatch：只构建存 workflow artifact（不建 Release——发布产物
+#   必须挂在不可变 tag 上）。
 
 on:
   workflow_dispatch:
@@ -18,6 +21,9 @@ on:
         default: false
   push:
     tags: ['v*.*.*']
+
+permissions:
+  contents: write  # gh release create（tag 触发路径）
 
 jobs:
   signed-build:
@@ -36,6 +42,21 @@ jobs:
             echo "::error::配置步骤见 docs/RUNBOOK_RELEASE.md §Secrets（含从现有 key.properties 提取 base64 的命令）。"
             exit 1
           fi
+
+      - name: Version consistency (tag ↔ pubspec ↔ app_config)
+        run: |
+          VER=$(grep -oP '^version:\s*\K[0-9.]+' apps/mobile_flutter/pubspec.yaml)
+          BUILD=$(grep -oP '^version:\s*[0-9.]+\+\K[0-9]+' apps/mobile_flutter/pubspec.yaml)
+          grep -q "appVersionName = '$VER'" apps/mobile_flutter/lib/core/app_config.dart \
+            || { echo "::error::app_config.dart appVersionName 与 pubspec $VER 不一致"; exit 1; }
+          grep -q "appBuildNumber = $BUILD" apps/mobile_flutter/lib/core/app_config.dart \
+            || { echo "::error::app_config.dart appBuildNumber 与 pubspec +$BUILD 不一致"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$VER" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 pubspec 版本 v$VER 不一致（发布产物必须挂在自己的版本 tag 上）"
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VER" >> "$GITHUB_ENV"
+          echo "RELEASE_BUILD=$BUILD" >> "$GITHUB_ENV"
 
       - uses: actions/setup-java@v4
         with:
@@ -75,6 +96,24 @@ jobs:
           path: apps/mobile_flutter/build/app/outputs/flutter-apk/ChatFlow-*.apk
           if-no-files-found: error
 
+      - name: Create GitHub Release (tag builds only; APK + SHA256SUMS)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd apps/mobile_flutter/build/app/outputs/flutter-apk
+          sha256sum ChatFlow-*.apk > SHA256SUMS
+          cat SHA256SUMS
+          # 已存在（tag 重推）则幂等补充资产，不重复建 Release
+          if gh release view "v$RELEASE_VERSION" --json name >/dev/null 2>&1; then
+            gh release upload "v$RELEASE_VERSION" ChatFlow-*.apk SHA256SUMS --clobber
+          else
+            gh release create "v$RELEASE_VERSION" --title "ChatFlow $RELEASE_VERSION" \
+              --notes "Signed release build $RELEASE_VERSION+$RELEASE_BUILD.
+          SHA256SUMS 附内。服务器下行拉取部署：scripts/server_pull_release.sh（docs/RUNBOOK_RELEASE.md §5）。" \
+              ChatFlow-*.apk SHA256SUMS
+          fi
+
       - name: Upload to production server (optional)
         if: ${{ github.event_name == 'push' || inputs.upload_to_server }}
         env:
@@ -96,4 +135,4 @@ jobs:
             ln -sfn ChatFlow-$VER-arm64.apk latest-arm64.apk && \
             ln -sfn ChatFlow-$VER-arm32.apk latest-arm32.apk && \
             ln -sfn ChatFlow-$VER-x86_64.apk latest-x86_64.apk && ls -l latest-*.apk"
-          echo "::notice::上传+别名完成。正式 publish（更新弹窗）请运行 scripts/release.ps1 -SkipBuild -Version $VER -Notes '...'（业务决策不自动化）。"
+          echo "::notice::直连上传+别名完成（备用路径）。主路径：服务器下行拉取 GitHub Release。正式 publish（更新弹窗）由人工触发（release_ci.ps1 / release.ps1 -SkipBuild）——发布是业务决策。"

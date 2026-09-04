@@ -1,6 +1,43 @@
 # 发布流水线 Runbook（CI/CD + 一键发布脚本）
 
-## 1. 一条命令发布（本地）
+## 5. 主发布路径（CI 构建 + 服务器下行拉取）
+
+**为什么**：本地→服务器上行受本地出口带宽限制（代理绕行时 ~70-110KB/s，
+180MB 约 30 分钟；直连可能被上游重置）；GitHub Actions 云端构建 +
+服务器数据中心下行拉取（公开仓库 Release 匿名下载，无需凭据）。
+签名密钥只进 GitHub Secrets——分发服务器只持有已签名产物，不持有
+签名能力。
+
+```powershell
+# 前置：递增 pubspec.yaml + app_config.dart 到同一版本并 commit
+# （工作树必须干净——CI 只构建已提交内容）
+pwsh -NoProfile -File scripts/release_ci.ps1 -Version 0.3.36 -Notes "0.3.36 更新：……"
+```
+
+自动执行：
+
+1. **预检**：版本三方一致（pubspec ↔ app_config ↔ 参数）；工作树干净
+   （apps/mobile_flutter/.github/scripts/services 无未提交变更）。
+2. **tag 触发**：要求 `v<版本>` tag 已推送到 origin（android-release.yml
+   在 tag 上构建并创建 GitHub Release，附 APK×3 + SHA256SUMS；
+   tag↔pubspec 版本一致性由工作流强制）。
+3. **等待 Release 资产就绪**（匿名 API 轮询，构建约 15-25 分钟；
+   失败时附 Actions 运行链接直接中止）。
+4. **服务器下行拉取**（`scripts/server_pull_release.sh`）：GitHub
+   Release → 服务器 /tmp → **sha256sum -c SHA256SUMS 强制校验** →
+   部署到 downloads/ → 保留上一版回滚包、清理更旧 → `ln -sfn` 别名。
+5. **publish（更新弹窗）**：`scripts/publish_app_update.py`（release.ps1
+   内嵌脚本的参数化抽出）在 business-api 容器内执行，幂等键防重复。
+   `-SkipPublish` 可只部署不发布。
+6. **公网回拉验证**：本地下载 arm64 → SHA256 对照 **GitHub Release 的
+   SHA256SUMS**（而非本地构建产物——CI 构建哈希必然不同）→ aapt
+   versionCode/versionName 双验。
+
+**与本地构建的本质差异（红线）**：CI 构建的是 **git 已提交内容**。
+工作树脏时 `release_ci.ps1` 拒绝发布（"测过的=发出的"）；这与
+`release.ps1`（本地工作树直接构建）不同——后者保留为降级路径。
+
+## 1. 降级路径：一条命令本地发布（release.ps1）
 
 ```powershell
 # 前置：pubspec.yaml 与 app_config.dart 已递增到同一版本
@@ -43,12 +80,17 @@ pwsh -NoProfile -File scripts/release.ps1 -Version 0.3.35 -Notes "0.3.35 更新�
 守卫测试 `tests/mobile/test_android_ci_workflow.py` 防工作流被静默弱化
 （版本固定、全量测试在门禁、Linux PYTHONPATH 分隔符等）。
 
-## 3. 签名 Release 构建（tag 触发，需一次性 Secrets 配置）
+## 3. 签名 Release 构建（GitHub Actions，需一次性 Secrets 配置）
 
-`.github/workflows/android-release.yml`：tag `v*.*.*` 或手动触发 →
-从 Secrets 还原签名 → 同一构建脚本（含全部守卫）→ APK 存 workflow
-artifact →（可选）上传服务器+别名 → **止步**。正式 publish 永远人工
-（`release.ps1 -SkipBuild`）——发布是业务决策，不自动化。
+`.github/workflows/android-release.yml`：
+- **tag `v*.*.*` 触发（主路径）**：版本一致性校验（tag ↔ pubspec ↔
+  app_config）→ 从 Secrets 还原签名 → 同一构建脚本（含全部守卫）→
+  **创建 GitHub Release**（APK×3 + SHA256SUMS，`gh release create`，
+  tag 重推幂等 `--clobber` 补传）→ 服务器下行拉取部署（§5）。
+- **手动 dispatch**：只构建存 workflow artifact（不建 Release——发布
+  产物必须挂不可变 tag）；可选直连上传服务器（PROD_SSH_KEY，备用）。
+- **publish 永远不自动化**（工作流内无 app-update-settings 调用；
+  守卫测试 `tests/mobile/test_android_ci_workflow.py` 断言）。
 
 ### Secrets 配置（用户一次性操作）
 
