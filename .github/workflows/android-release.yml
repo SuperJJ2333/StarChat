@@ -60,7 +60,7 @@ jobs:
           sed -i "s|^storeFile=.*|storeFile=app/liuhetong-release.jks|" key.properties
           echo "key.properties fields:"; cut -d= -f1 key.properties
 
-      - name: Build (guards: origin probe + aapt version + libapp origin)
+      - name: "Build (guards: origin probe + aapt version + libapp origin)"
         env:
           # gradle 侧 KEYSTORE_FILE 覆盖 storeFile（指向仓库内还原的 keystore）
           KEYSTORE_FILE: ${{ github.workspace }}/apps/mobile_flutter/android/app/liuhetong-release.jks
