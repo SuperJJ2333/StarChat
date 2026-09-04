@@ -19,7 +19,7 @@ The approved privacy boundary requires E2EE for messages, attachments, support r
 - `synapse`: Matrix homeserver.
 - `element-web`: Browser chat client.
 - `matrix-bot`: FastAPI service for announcements, lottery notifications, auto-replies, and business event delivery.
-- `infra/nginx/nginx.conf`: Production reverse proxy example.
+- `infra/nginx/nginx.conf.template`: Production reverse proxy example.
 
 ## Project Layout
 
@@ -284,7 +284,7 @@ Run the following checks after startup:
 
 ## Production Reverse Proxy
 
-`infra/nginx/nginx.conf` is a starting point for production. Adjust TLS certificate paths, upstreams, and public hostnames before use.
+`infra/nginx/nginx.conf.template` is a starting point for production. Adjust TLS certificate paths, upstreams, and public hostnames before use.
 
 The production gateway uses one canonical application origin. For the
 `liuhetong888.com` deployment it routes Business API requests under

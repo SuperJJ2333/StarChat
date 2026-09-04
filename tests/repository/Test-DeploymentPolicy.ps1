@@ -6,6 +6,12 @@ function Assert-Match([string]$Content, [string]$Pattern, [string]$Message) {
     }
 }
 
+function Assert-NotMatch([string]$Content, [string]$Pattern, [string]$Message) {
+    if ($Content -match $Pattern) {
+        throw $Message
+    }
+}
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $files = @(
     (Join-Path $root 'docker-compose.yml'),
@@ -26,7 +32,7 @@ foreach ($file in $files) {
     }
 }
 
-$nginx = Get-Content -LiteralPath (Join-Path $root 'infra\nginx\nginx.conf') -Raw -Encoding UTF8
+$nginx = Get-Content -LiteralPath (Join-Path $root 'infra\nginx\nginx.conf.template') -Raw -Encoding UTF8
 Assert-Match $nginx 'resolver\s+127\.0\.0\.11' 'Docker DNS resolver is required for recreated upstream containers'
 if ([regex]::Matches($nginx, 'server\s+[a-z-]+:\d+\s+resolve;').Count -lt 3) {
     throw 'All gateway upstreams must dynamically resolve recreated containers'
@@ -68,8 +74,11 @@ Assert-Match $productionCompose '/etc/nginx/conf\.d/default\.conf:ro' 'Gateway c
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{SYNAPSE_HTTP_PORT' 'Synapse must bind only to loopback in production'
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{BUSINESS_API_HTTP_PORT' 'Business API must bind only to loopback in production'
 Assert-Match $productionCompose '127\.0\.0\.1:\$\{ELEMENT_HTTP_PORT' 'Element must bind only to loopback in production'
-Assert-Match $productionCompose '80:80' 'Gateway must publish HTTP for certificate renewal and redirect'
-Assert-Match $productionCompose '443:443' 'Gateway must publish HTTPS'
+# 网关端口策略（2026-09-04 与生产对齐）：公网 80/443 由宿主边缘层
+# （caddy，仓库外资产）终止 TLS 后回源；网关仅绑定回环 9443，
+# 绝不直接发布公网 80/443（会与边缘层冲突）。
+Assert-Match $productionCompose '127\.0\.0\.1:9443:443' 'Gateway must bind loopback-only behind the host edge proxy'
+Assert-NotMatch $productionCompose '(?m)^\s*-\s*"(80:80|443:443)"' 'Gateway must NOT publish public 80/443 (host edge proxy owns them)'
 
 $baseCompose = Get-Content -LiteralPath (Join-Path $root 'docker-compose.yml') -Raw -Encoding UTF8
 if ([regex]::Matches($baseCompose, 'BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL:\s+\$\{BUSINESS_MATRIX_PUBLIC_HOMESERVER_URL').Count -lt 2) {

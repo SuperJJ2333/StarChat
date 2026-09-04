@@ -6,10 +6,10 @@
     }
   },
   "default_theme": "light",
-  "disable_custom_urls": false,
+  "disable_custom_urls": true,
   "disable_guests": true,
   "show_labs_settings": false,
-  "brand": "六合通",
+  "brand": "畅聊",
   "integrations_ui_url": "",
   "integrations_rest_url": "",
   "integrations_widgets_urls": [],

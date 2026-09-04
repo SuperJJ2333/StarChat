@@ -15,6 +15,16 @@ upstream element_upstream {
     server element-web:80 resolve;
 }
 
+upstream getui_bridge_upstream {
+    zone getui_bridge_upstream 64k;
+    server getui-bridge:8088 resolve;
+}
+
+upstream sygnal_upstream {
+    zone sygnal_upstream 64k;
+    server sygnal:5000 resolve;
+}
+
 server {
     listen 80;
     server_name {{PUBLIC_HOSTNAME}} {{ADMIN_PUBLIC_HOSTNAME}};
@@ -55,6 +65,25 @@ server {
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Request-ID $request_id;
         proxy_read_timeout 120s;
+    }
+
+    # 个推桥接网关：自建 Matrix Push Gateway（业务内容在 bridge 内丢弃，
+    # 只按 CID 下发通用文案；密钥仅服务器 .env）。
+    location /_matrix/push/v1/getui/ {
+        proxy_pass http://getui_bridge_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+    }
+
+    # Sygnal（FCM/APNs 预留通道，休眠态）。更长前缀优先于 /_matrix/。
+    location /_matrix/push/v1/notify {
+        proxy_pass http://sygnal_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
     }
 
     location /_matrix/ {

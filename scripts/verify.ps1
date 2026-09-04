@@ -55,6 +55,10 @@ try {
         throw 'Rendered configuration contains unresolved template tokens.'
     }
 
+    Write-Output '== Infra render tests =='
+    & py -3.12 -m pytest tests/infra -q
+    Assert-LastExitCode 'Infra render tests'
+
     Write-Output '== Getui bridge tests =='
     $env:PYTHONPATH = 'services/getui-bridge'
     & py -3.12 -m pytest tests/getui_bridge -q

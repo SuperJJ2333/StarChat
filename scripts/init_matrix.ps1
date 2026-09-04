@@ -161,6 +161,9 @@ $variables = @{
     # 挂载证书并开 --tls-listening-port，见 docker-compose.yml 注释与
     # docs/TURN.md）；dev 为占位（dev coturn 未配 TLS，客户端会跳过）。
     TURN_URI_TLS = Get-EnvOrDefault -Name "TURN_URI_TLS" -DefaultValue "turns:matrix.localhost:5349?transport=tcp"
+    PUBLIC_HOSTNAME = Get-EnvOrDefault -Name "PUBLIC_HOSTNAME" -DefaultValue "localhost"
+    WWW_PUBLIC_HOSTNAME = Get-EnvOrDefault -Name "WWW_PUBLIC_HOSTNAME" -DefaultValue "www.localhost"
+    ADMIN_PUBLIC_HOSTNAME = Get-EnvOrDefault -Name "ADMIN_PUBLIC_HOSTNAME" -DefaultValue "admin.localhost"
     TURN_SHARED_SECRET = Get-EnvOrDefault -Name "TURN_SHARED_SECRET" -DefaultValue "development-turn-shared-secret"
 }
 
@@ -206,6 +209,13 @@ Copy-Item `
     (Join-Path $projectRoot "infra/sygnal/nooppushkin.py") `
     (Join-Path $sygnalData "nooppushkin.py") `
     -Force
+
+# nginx 网关模板（生产真源同款；dev 无 gateway 服务，渲染仅供
+# verify.ps1 的未解析 token 冒烟与本地预览）。
+Write-RenderedTemplate `
+    -TemplatePath (Join-Path $projectRoot "infra/nginx/nginx.conf.template") `
+    -DestinationPath (Join-Path $dataRoot "nginx/nginx.conf") `
+    -Variables $variables
 
 if ($RenderOnly) {
     Write-Host "Configuration rendering complete."
