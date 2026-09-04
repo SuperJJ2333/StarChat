@@ -1,8 +1,10 @@
 # 推送通道配置手册（Matrix Pusher + Sygnal + FCM/APNs）
 
-**状态：** 客户端与服务端**代码/模板已就绪，凭据未配置，通道未激活。**
-本文档列出全部缺失凭据与人工配置步骤。在凭据配置并验证前，
-不得宣称"推送已接入"；**任何情况下不得把真实凭据提交进仓库**。
+**状态（2026-09-04 更新）：** 客户端代码就绪；**Sygnal 网关已部署生产并
+公网验证**（`https://liuhetong888.com/_matrix/push/v1/notify`，休眠态——
+占位 pushkin 只记日志并拒绝投递）。**凭据仍未配置，推送投递未激活**：
+在凭据配置并验证前，不得宣称"推送已接入"；**任何情况下不得把真实凭据
+提交进仓库**。
 
 - 实施计划：`docs/superpowers/plans/2026-09-04-background-notification-reliability.md`
 - 客户端代码：`apps/mobile_flutter/lib/features/push/`
@@ -36,8 +38,8 @@ Synapse ──(/_matrix/push/v1/notify)──▶ Sygnal 网关 ──▶ FCM（A
 | 2 | FCM v1 服务账号 JSON | Sygnal 向 FCM 发送 | 服务器 `data/sygnal/fcm-service-account.json` |
 | 3 | Apple Developer 账号 + APNs Auth Key (.p8) + key_id + team_id | iOS 推送 | 服务器 `data/sygnal/apns/`；`.p8` 同时不入客户端仓库 |
 | 4 | iOS 推送 entitlement 激活 | 客户端签名 | `apps/mobile_flutter/ios/Runner/Runner.entitlements`（由 `Runner.Push.entitlements.template` 复制；Xcode 勾选 Push Notifications capability） |
-| 5 | 生产推送网关域名（如 `push.<域名>`）+ TLS 证书 | 客户端可达 Sygnal | 服务器 nginx（`data/nginx/nginx.conf` 增加 location 反代） |
-| 6 | 生产部署授权 | 上线 Sygnal | 人工审批（本仓库规则：未经授权不得部署生产） |
+| 5 | ~~生产推送网关域名 + TLS~~ | **已解决**：复用主域名路径 `https://liuhetong888.com/_matrix/push/v1/notify`（nginx 更长前缀 location 覆盖 `/_matrix/`，2026-09-04 已部署生效） | — |
+| 6 | ~~生产部署授权~~ | **已完成**（2026-09-04 用户授权；见 `docs/verification/2026-09-04-release-0.3.32.md`） | — |
 
 ## 3. Android（FCM）配置步骤
 
@@ -50,9 +52,10 @@ Synapse ──(/_matrix/push/v1/notify)──▶ Sygnal 网关 ──▶ FCM（A
    `data/sygnal/fcm-service-account.json`。
 4. 服务器 `data/sygnal/sygnal.yaml` 取消 `com.liuhetong.mobile.android`
    段注释并填 `fcm_service_account_file`。
-5. 客户端构建注入网关地址：
-   `--dart-define=LIUHETONG_SYGNAL_URL=https://push.<域名>`
-   （`AppConfig.sygnalPushGatewayUrl`；未注入时不注册 pusher）。
+5. 客户端构建注入网关地址（0.3.32 起发布构建已带）：
+   `pwsh -File scripts/build_mobile_public_domain.ps1 -SygnalUrl https://liuhetong888.com`
+   （编译进 `AppConfig.sygnalPushGatewayUrl`，运行时解析为
+   `<url>/_matrix/push/v1/notify`；未注入的构建不注册 pusher）。
 6. 验证：登录后 `adb logcat -s flutter | grep notif-diag` 应出现
    `pusher registered (format=event_id_only)`；杀进程后由另一账号发消息，
    系统通知应出现（通用文案），点击冷启动进入会话且不重复提醒。
@@ -79,28 +82,43 @@ Synapse ──(/_matrix/push/v1/notify)──▶ Sygnal 网关 ──▶ FCM（A
 > 版本镜像，禁用 latest）；它仍是 Matrix 参考推送网关。若未来更换实现，
 > 必须保持 `/_matrix/push/v1/notify` 协议兼容并重做安全评审。
 
-开发环境：
+### 已完成（2026-09-04 生产部署记录）
 
-1. `pwsh -NoProfile -File scripts/init_matrix.ps1` 会渲染
-   `data/sygnal/sygnal.yaml`（apps 为空，无凭据可启动；仅日志报
-   "no app found"）。
+- 镜像：`matrixdotorg/sygnal:v0.15.1`（Docker Hub；**ghcr.io 在生产服务器
+  拉取被拒 "denied"**，故 .env.example 用 Docker Hub 源）。
+- 容器：`starchat-sygnal-1`（compose 服务 `sygnal`，`restart: unless-stopped`）。
+- nginx：`upstream sygnal_upstream`（`server sygnal:5000 resolve;`）+
+  `location /_matrix/push/v1/notify`（更长前缀优先于 `/_matrix/`）。
+  ⚠ 运维教训：**单文件 bind-mount 在 inode 替换（mv/sed -i）后仍指向旧
+  内容**——改 nginx.conf 后必须 `docker restart starchat-gateway-1`
+  （仅 `nginx -s reload` 不够）。
+- 配置 schema：sygnal **v0.15.x** 为顶层 `log.setup`/`apps`/`http`（无
+  数据库）；`http.bind_addresses` 必须显式 `["0.0.0.0"]`（默认只绑
+  127.0.0.1，nginx 容器无法访问）；旧版 `sygnal: logging:` 嵌套写法会
+  崩溃（"dictionary doesn't specify a version"）。
+- 休眠态占位：v0.15.x 拒绝零 apps 启动，凭据到位前用
+  `infra/sygnal/nooppushkin.py`（挂载进容器 sygnal 包路径）——收到 notify
+  只记日志并拒绝 pushkey，不伪造投递。
+- 公网验证：`POST https://liuhetong888.com/_matrix/push/v1/notify`（占位
+  app_id）→ `200 {"rejected":["..."]}`；synapse/element/business-api/admin
+  回归全部 200。
+
+### 激活推送（凭据到位后）
+
+1. 服务器编辑 `/opt/starchat/data/sygnal/sygnal.yaml`：删除
+   `com.liuhetong.placeholder` 占位段，取消 `com.liuhetong.mobile.android`
+   注释并填 `fcm_service_account_file: /data/fcm-service-account.json`
+   （iOS 同理）。
+2. `docker compose restart sygnal`（注意：若改动 compose 文件本身，
+   用完整 `-f docker-compose.yml -f docker-compose.production.yml`）。
+3. 验证：真实设备登录后 `adb logcat -s flutter | grep notif-diag` 出现
+   `pusher registered (format=event_id_only)`；杀进程收消息出现系统通知。
+
+### 开发环境
+
+1. `pwsh -NoProfile -File scripts/init_matrix.ps1` 渲染
+   `data/sygnal/sygnal.yaml` + `nooppushkin.py`（休眠态可启动）。
 2. `docker compose up -d sygnal`。
-
-生产环境（需部署授权）：
-
-1. 服务器上编辑 `data/sygnal/sygnal.yaml`：取消 apps 注释并填入真实凭据
-   （文件已被 .gitignore 的 `data/` 规则排除）。
-2. `data/nginx/nginx.conf` 增加反代（示例）：
-   ```nginx
-   location /_matrix/push/v1/notify {
-       proxy_pass http://sygnal:5000;
-       proxy_set_header Host $host;
-   }
-   ```
-3. `docker compose -f docker-compose.yml -f docker-compose.production.yml up -d sygnal`
-   并 reload nginx。
-4. 验证：`curl https://push.<域名>/_matrix/push/v1/notify -d '{}'`
-   返回 Sygnal 的 4xx JSON（证明网关可达），而非 502。
 
 ## 6. 客户端行为摘要（已实现，无需凭据）
 

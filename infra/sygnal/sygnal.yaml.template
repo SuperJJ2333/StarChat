@@ -3,21 +3,29 @@
 # 渲染位置：data/sygnal/sygnal.yaml（scripts/init_matrix.ps1 首次渲染，
 # 已存在时不覆盖——生产环境填入真实凭据后的文件绝不能被提交）。
 #
-# 部署与凭据获取步骤见 docs/PUSH_SETUP.md。开发环境默认 apps 为空
-# （网关可启动，收到 notify 请求只会记录 "no app found"）。
+# ⚠ 配置结构为 sygnal v0.15.x schema（顶层 log.setup/apps/http）。
+#   旧文档中的 `sygnal: logging:` 嵌套写法会导致
+#   "dictionary doesn't specify a version" 崩溃；v0.15 已移除数据库。
+#   http.bind_addresses 必须显式 ["0.0.0.0"]（默认只绑 127.0.0.1，
+#   nginx 网关容器无法访问）。
 #
-# 注意：matrix-org/sygnal 于 2025 年归档（最后版本 v0.15.1），仍是
-# Matrix 生态的参考推送网关；如需替代实现，需保持
-# /_matrix/push/v1/notify 协议兼容。
+# 占位说明：sygnal v0.15.x 拒绝零 apps 启动
+#   （"No app IDs are configured"）。凭据到位前使用 NoopPushkin 占位
+#   （infra/sygnal/nooppushkin.py，随 init_matrix 一并渲染到
+#   data/sygnal/）——收到 notify 只记日志并拒绝 pushkey，绝不伪造投递。
+#   激活真实推送：取消下方 FCM 段注释并替换占位段，然后
+#   docker compose restart sygnal。步骤见 docs/PUSH_SETUP.md。
 
-sygnal:
-  db:
-    file: /data/sygnal.db
-  logging:
+http:
+  port: 5000
+  bind_addresses: ["0.0.0.0"]
+
+log:
+  setup:
     version: 1
     formatters:
       journal_fmt:
-        format: '%(name)s: %(levelname)s %(message)s'
+        format: "%(name)s: %(levelname)s %(message)s"
     handlers:
       console:
         class: logging.StreamHandler
@@ -33,20 +41,19 @@ sygnal:
 # （apps/mobile_flutter/lib/features/push/matrix_pusher_service.dart）。
 # 载荷规范：客户端 pusher format=event_id_only——通知只携带 eventId/
 # roomId/类型/未读数等不透明字段与通用文案，绝不含 E2EE 明文。
-apps: {}
-#  # Android（FCM）：使用 FCM v1 时配置 service account 文件；
-#  # 旧版 server key 已被 Google 废弃。凭据文件只放服务器，不入仓库。
+apps:
+  com.liuhetong.placeholder:
+    type: sygnal.nooppushkin.NoopPushkin
+#  # Android（FCM v1）：服务账号 JSON（Firebase 控制台 → 项目设置 →
+#  # 服务账号），只放服务器 data/sygnal/fcm-service-account.json，不入仓库。
 #  com.liuhetong.mobile.android:
 #    type: fcm
-#    # v1 服务账号 JSON（Firebase 控制台 → 项目设置 → 服务账号）：
-#    fcm_service_account_file: /data/sygnal/fcm-service-account.json
+#    fcm_service_account_file: /data/fcm-service-account.json
 #
-#  # iOS（APNs）：Token-based (.p8) 认证。
+#  # iOS（APNs，Token-based .p8 认证）：
 #  com.liuhetong.mobile.ios:
 #    type: apns
 #    keyfile: /data/sygnal/apns/AuthKey_XXXXXXXXXX.p8
 #    key_id: XXXXXXXXXX
 #    team_id: YYYYYYYYYY
 #    platform: production   # 开发构建用 development（沙盒 APNs）
-#    # topic 默认取 bundle id；如需显式指定：
-#    # topic: com.liuhetong.mobile

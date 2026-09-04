@@ -1,5 +1,9 @@
 param(
     [string]$BaseUrl = 'https://liuhetong888.com',
+    # 推送网关根地址：编译为 Matrix Pusher 的 data.url
+    # （AppConfig.sygnalPushGatewayUrl）。留空 = 不编译网关地址，
+    # 客户端不注册 pusher（docs/PUSH_SETUP.md）。
+    [string]$SygnalUrl = '',
     [ValidateSet('Release', 'Debug')]
     [string]$BuildMode = 'Release',
     [switch]$ValidateOnly,
@@ -68,13 +72,20 @@ else {
 }
 
 $modeArgument = "--$($BuildMode.ToLowerInvariant())"
+# 推送网关 dart-define（可选）：仅在显式传入时编译进产物。
+$sygnalDefine = @()
+if (-not [string]::IsNullOrWhiteSpace($SygnalUrl)) {
+    Assert-PublicBaseUrl $SygnalUrl
+    $sygnalDefine = @("--dart-define=LIUHETONG_SYGNAL_URL=$SygnalUrl")
+}
 # Release builds are split per ABI so the public download ships one CPU
 # architecture instead of a 3x-heavy fat APK.
 if ($BuildMode -eq 'Release') {
     $arguments = @(
         'build', 'apk', $modeArgument, '--flavor', 'standard', '--split-per-abi',
         "--dart-define=LIUHETONG_BUSINESS_API_URL=$origin",
-        "--dart-define=LIUHETONG_MATRIX_HOMESERVER=$origin",
+        "--dart-define=LIUHETONG_MATRIX_HOMESERVER=$origin"
+    ) + $sygnalDefine + @(
         # Dart 代码混淆 + 符号分离：去除 libapp.so 内明文字符串/符号，
         # 降低安全厂商灰度启发式误报；符号表存档用于崩溃还原。
         "--obfuscate",
@@ -86,7 +97,7 @@ else {
         'build', 'apk', $modeArgument,
         "--dart-define=LIUHETONG_BUSINESS_API_URL=$origin",
         "--dart-define=LIUHETONG_MATRIX_HOMESERVER=$origin"
-    )
+    ) + $sygnalDefine
 }
 
 if ($BuildMode -eq 'Release') {

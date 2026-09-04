@@ -196,6 +196,13 @@ if (-not (Test-Path $sygnalConfig)) {
         $sygnalConfig
 }
 
+# 占位 pushkin：sygnal v0.15.x 拒绝零 apps 启动，凭据到位前用它占位
+# （激活真实 FCM/APNs 应用后可保留或删除，见 docs/PUSH_SETUP.md）。
+Copy-Item `
+    (Join-Path $projectRoot "infra/sygnal/nooppushkin.py") `
+    (Join-Path $sygnalData "nooppushkin.py") `
+    -Force
+
 if ($RenderOnly) {
     Write-Host "Configuration rendering complete."
     return

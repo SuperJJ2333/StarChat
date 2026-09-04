@@ -32,13 +32,15 @@ services:
   # Matrix 推送网关（Push Gateway）：Synapse 收到 notify 请求转发至此，
   # 由 Sygnal 对接 FCM/APNs。客户端 pusher 的 data.url 指向
   # https://<网关域名>/_matrix/push/v1/notify（生产经 gateway/nginx 暴露）。
-  # 开发环境 data/sygnal/sygnal.yaml 的 apps 默认为空（无凭据可启动）；
-  # 凭据配置步骤见 docs/PUSH_SETUP.md 与 infra/sygnal/sygnal.yaml.template。
+  # 凭据到位前 apps 使用 NoopPushkin 占位（v0.15.x 拒绝零 apps 启动）；
+  # 配置步骤见 docs/PUSH_SETUP.md 与 infra/sygnal/sygnal.yaml.template。
   sygnal:
     image: "${SYGNAL_IMAGE:?SYGNAL_IMAGE is required}"
     restart: unless-stopped
     volumes:
       - ./data/sygnal/sygnal.yaml:/sygnal.yaml:ro
+      # 镜像内 sygnal 包路径（v0.15.1 = python3.11）；换镜像版本需同步调整。
+      - ./data/sygnal/nooppushkin.py:/usr/local/lib/python3.11/site-packages/sygnal/nooppushkin.py:ro
       - ./data/sygnal:/data
 
   coturn:
