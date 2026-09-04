@@ -17,6 +17,7 @@ from .notify import sanitize_notification
 from .rate_limit import CidRateLimiter
 
 logger = logging.getLogger("getui-bridge")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
 
 def create_app(settings: BridgeSettings | None = None, http_client: httpx.Client | None = None) -> FastAPI:

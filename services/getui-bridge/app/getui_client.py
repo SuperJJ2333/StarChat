@@ -123,7 +123,19 @@ class GetuiRestClient:
                 json=body,
                 headers={"token": token},
             )
-            response.raise_for_status()
+            if response.status_code != 200:
+                # 优先解析个推业务错误码（CID 无效等也是非 200 + code）。
+                try:
+                    error_payload = response.json()
+                    code = error_payload.get("code")
+                    if code is not None:
+                        raise GetuiPushError(
+                            f"getui push failed code={code}"
+                        )
+                except GetuiPushError:
+                    raise
+                except Exception:
+                    response.raise_for_status()
             payload = response.json()
             code = payload.get("code")
             if code == 0:

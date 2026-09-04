@@ -34,9 +34,10 @@
 - 客户端只含**公开 AppID**（gradle 占位符 bL4tz01WK57ym4PVBGCUS1）；
   **AppKey/AppSecret(MasterSecret) 仅存服务器 .env**（chmod 600，
   绝不入仓库——tests/mobile/test_getui_privacy.py 全仓库扫描断言）。
-- ⚠️ **v2 鉴权需要 MasterSecret**（sign=sha256(appkey+ts+MasterSecret)；
-  AppSecret 实测返回 sign is invalid/20001）。控制台取 MasterSecret 写入
-  服务器 .env 的 `GETUI_SIGN_SECRET` 后 `docker compose restart getui-bridge`。
+- v2 鉴权：`sign=sha256(appkey+ts+MasterSecret)`（**已打通**，2026-09-04
+  生产实测 code=0）。⚠️ 运维教训：改服务器 .env 后必须
+  `docker compose up -d --force-recreate getui-bridge` 重建容器——
+  `restart` **不重载环境变量**（曾因此误判密钥错误）。
 - 激活客户端构建：`build_mobile_public_domain.ps1 -GetuiUrl https://<域名>`。
 - 证据与验收：`docs/verification/2026-09-04-getui-push-0.3.34.md`。
 
