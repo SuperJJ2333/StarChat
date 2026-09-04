@@ -1,3 +1,4 @@
+import '../../core/privacy_consent.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
@@ -89,6 +90,11 @@ final class _LoginPageState extends State<LoginPage>
     try {
       final success = await controller.submit(username, password);
       if (success && mounted) {
+        // 勾选《用户协议和隐私政策》是登录前置条件；成功后持久化，
+        // 作为个推等第三方 SDK 初始化的同意依据（docs/PUSH_SETUP.md）。
+        if (_agreementAccepted) {
+          await const SharedPreferencesPrivacyConsentStore().accept();
+        }
         await widget.onAuthenticated?.call();
         if (widget.destination != null && mounted) {
           Navigator.of(

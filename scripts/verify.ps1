@@ -55,6 +55,11 @@ try {
         throw 'Rendered configuration contains unresolved template tokens.'
     }
 
+    Write-Output '== Getui bridge tests =='
+    $env:PYTHONPATH = 'services/getui-bridge'
+    & py -3.12 -m pytest tests/getui_bridge -q
+    Assert-LastExitCode 'Getui bridge tests'
+
     Write-Output '== Matrix Bot tests =='
     $env:PYTHONPATH = 'services/matrix-bot'
     & python -m pytest tests/matrix_bot -q

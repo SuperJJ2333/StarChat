@@ -43,6 +43,10 @@ final class MatrixPusherService {
 
   static const appIdAndroid = 'com.liuhetong.mobile.android';
   static const appIdIOS = 'com.liuhetong.mobile.ios';
+
+  /// 个推通道（自建 getui-bridge 桥接；推送载荷仅通用文案，见
+  /// services/getui-bridge 与 docs/PUSH_SETUP.md）。
+  static const appIdGetui = 'com.liuhetong.mobile.getui';
   static const _pushFormat = 'event_id_only';
 
   final MatrixPusherGateway gateway;

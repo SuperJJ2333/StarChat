@@ -51,7 +51,9 @@ import 'features/matrix/matrix_room_timeline_adapter.dart'
     show changliaoFriendAcceptedEventType, friendAcceptedSystemMessage;
 import 'features/matrix/message_reminder_service.dart';
 import 'features/push/firebase_push_token_provider.dart';
+import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
+import 'features/push/getui_push_token_provider.dart';
 import 'features/push/matrix_pusher_service.dart';
 import 'features/push/push_tap_router.dart';
 import 'features/push/push_token_provider.dart';
@@ -214,10 +216,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   NotificationDeduplicator? _sharedDeduplicator;
   NotificationDedupStore? _sharedDedupStore;
 
-  /// 推送（Matrix Pusher + Sygnal/FCM）：注册/注销与点击冷启动路由。
+  /// 推送（Matrix Pusher，多通道：个推桥接 + Sygnal/FCM）：注册/注销
+  /// 与点击冷启动路由。每通道一个 pusher 服务与 token 提供方。
   PushTapRouter? _pushTapRouter;
-  MatrixPusherService? _pusherService;
-  PushTokenProvider? _pushTokenProvider;
+  final _pusherServices = <MatrixPusherService>[];
+  final _pushTokenProviders = <PushTokenProvider>[];
 
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
@@ -277,9 +280,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_startPushIntegration());
   }
 
-  /// 推送集成（长期后台/被杀可达性）：Matrix Pusher 注册 + FCM 接线 +
-  /// 冷启动点击路由。FCM 凭据缺失或网关未配置时逐级安全降级为
-  /// Noop（不注册 pusher，Matrix 同步通道照常工作），诊断留痕。
+  /// 推送集成（长期后台/被杀可达性）：多通道 pusher 注册。
+  ///
+  /// 通道优先级与隐私门槛：
+  /// - Android 个推通道（getui-bridge，自建网关丢弃一切业务内容，通知只
+  ///   显示"您有一条新消息/您有一个来电"）：要求①Android ②用户已持久化
+  ///   同意隐私政策（同意前 SDK 仅 preInit，无采集无联网）③网关地址已
+  ///   编译注入；CID 即 pushkey（Matrix 设备级绑定，登出=删 pusher，
+  ///   绝不做手机号/用户名 alias）。
+  /// - FCM/Sygnal 通道（凭据缺失时 Noop 降级，Matrix 同步通道照常）。
   Future<void> _startPushIntegration() async {
     final client = widget.matrix.sdkClient;
     final store = _sharedDedupStore ??=
@@ -296,28 +305,54 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 冷启动由通知点击拉起（含常规消息通知与推送兜底通知）。
     unawaited(routeNotificationLaunch(tapRouter: router));
 
+    final pushers = <MatrixPusherService>[];
+
+    // ① Android 个推通道（隐私同意前置；未同意只影响推送，不影响聊天）。
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        AppConfig.getuiPushGatewayUrl.isNotEmpty &&
+        await SharedPreferencesPrivacyConsentStore().accepted()) {
+      final getuiGateway =
+          Uri.tryParse(AppConfig.getuiPushGatewayUrl);
+      if (getuiGateway != null) {
+        final getui = GetuiPushTokenProvider();
+        await getui.initialize();
+        _pushTokenProviders.add(getui);
+        pushers.add(MatrixPusherService(
+          gateway: ClientMatrixPusherGateway(client),
+          tokenProvider: getui,
+          appId: MatrixPusherService.appIdGetui,
+          gatewayUrl: getuiGateway.resolve('_matrix/push/v1/getui/notify'),
+          deviceDisplayName: 'ChatFlow Android',
+        ));
+      }
+    }
+
+    // ② FCM/Sygnal 通道（原有行为不变）。
     final gatewayUrl = AppConfig.sygnalPushGatewayUrl.isEmpty
         ? null
         : Uri.tryParse(AppConfig.sygnalPushGatewayUrl);
     final firebase = await FirebasePushTokenProvider.tryCreate();
-    final tokenProvider =
-        _pushTokenProvider = firebase ?? NoopPushTokenProvider();
-    final pusher = _pusherService = MatrixPusherService(
-      gateway: ClientMatrixPusherGateway(client),
-      tokenProvider: tokenProvider,
-      appId: defaultTargetPlatform == TargetPlatform.iOS
-          ? MatrixPusherService.appIdIOS
-          : MatrixPusherService.appIdAndroid,
-      gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
-      deviceDisplayName: defaultTargetPlatform == TargetPlatform.iOS
-          ? 'ChatFlow iOS'
-          : 'ChatFlow Android',
-    );
     if (firebase != null) {
+      _pushTokenProviders.add(firebase);
+      pushers.add(MatrixPusherService(
+        gateway: ClientMatrixPusherGateway(client),
+        tokenProvider: firebase,
+        appId: defaultTargetPlatform == TargetPlatform.iOS
+            ? MatrixPusherService.appIdIOS
+            : MatrixPusherService.appIdAndroid,
+        gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
+        deviceDisplayName: defaultTargetPlatform == TargetPlatform.iOS
+            ? 'ChatFlow iOS'
+            : 'ChatFlow Android',
+      ));
       unawaited(configureFirebasePushHandlers(tapRouter: router));
     }
-    await pusher.ensureRegistered();
-    await pusher.watchTokenRefresh();
+    _pusherServices.addAll(pushers);
+
+    for (final pusher in pushers) {
+      await pusher.ensureRegistered();
+      await pusher.watchTokenRefresh();
+    }
     // 推送点击路由就绪：通知系统已装配、主页面已挂载。
     router.markReady();
   }
@@ -914,12 +949,18 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       unawaited(_notificationEventSource?.stop());
       unawaited(_notificationCoordinator?.dispose());
     }
-    // 推送清理：登出/账号切换注销 pusher（服务端停止向本设备推送），
-    // 丢弃挂起的点击路由（不跨账号串会话），释放 Token 提供方。
+    // 推送清理：登出/账号切换注销全部通道的 pusher（服务端停止向本
+    // 设备推送），丢弃挂起的点击路由（不跨账号串会话），释放提供方。
     _pushTapRouter?.reset();
-    unawaited(_pusherService?.unregister());
-    unawaited(_pusherService?.dispose());
-    unawaited(_pushTokenProvider?.dispose());
+    for (final pusher in _pusherServices) {
+      unawaited(pusher.unregister());
+      unawaited(pusher.dispose());
+    }
+    _pusherServices.clear();
+    for (final provider in _pushTokenProviders) {
+      unawaited(provider.dispose());
+    }
+    _pushTokenProviders.clear();
     unawaited(notificationSounds.dispose());
     super.dispose();
   }

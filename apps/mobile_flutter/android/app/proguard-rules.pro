@@ -27,3 +27,9 @@
 # 保留源码行号与源文件名（崩溃堆栈可读，也向厂商证明非加固壳）
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# 个推 SDK（demo 官方混淆规则；release R8 生效）
+-dontwarn com.igexin.**
+-keep class com.igexin.** { *; }
+-dontwarn com.getui.**
+-keep class com.getui.** { *; }

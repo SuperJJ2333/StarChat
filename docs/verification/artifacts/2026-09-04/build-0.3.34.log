@@ -1,0 +1,14 @@
+APK_ORIGIN_OK ChatFlow-0.3.34-arm64.apk https://liuhetong888.com
+APK_MANIFEST_OK armeabi-v7a 0.3.34/1037
+APK_ORIGIN_OK ChatFlow-0.3.34-arm32.apk https://liuhetong888.com
+APK_MANIFEST_OK x86_64 0.3.34/4037
+APK_ORIGIN_OK ChatFlow-0.3.34-x86_64.apk https://liuhetong888.com
+APK=D:\pythonProject\outsource\StarChat\apps\mobile_flutter\build\app\outputs\flutter-apk\ChatFlow-0.3.34-arm64.apk
+APK_BYTES=65808291
+APK_SHA256=051CDC03BCE6359182D3D0A3DE0B731228660B8BCE7E623E56B920A13678122D
+PUBLISHED_ABI=arm64-v8a -> ChatFlow-0.3.34-arm64.apk
+PUBLISHED_ABI=armeabi-v7a -> ChatFlow-0.3.34-arm32.apk
+PUBLISHED_ABI=x86_64 -> ChatFlow-0.3.34-x86_64.apk
+APK_VERSION=0.3.34+37
+PUBLIC_ORIGIN=https://liuhetong888.com
+BUILD_MODE=Release

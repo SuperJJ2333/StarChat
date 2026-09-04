@@ -6,8 +6,10 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import com.igexin.sdk.PushManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import me.leolin.shortcutbadger.ShortcutBadger
 
@@ -19,6 +21,46 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // 个推桥（隐私红线：不打印 CID/载荷；initialize 仅在用户同意后由 Dart 触发）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/getui")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "initialize" -> {
+                        // 第二段初始化：preInit 已在 Application.onCreate（同意前安全）完成。
+                        try {
+                            PushManager.getInstance().initialize(this)
+                            result.success(true)
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "getCid" -> result.success(GetuiBridgeState.currentCid())
+                    "isPushEnabled" -> {
+                        try {
+                            result.success(PushManager.getInstance().isPushTurnedOn(this))
+                        } catch (_: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/getui/events")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    GetuiBridgeState.onEvent = { event ->
+                        // 立即回放当前 CID（若有），再接后续变更。
+                        GetuiBridgeState.currentCid()?.let {
+                            events.success(mapOf("type" to "cid", "cid" to it))
+                        }
+                        events.success(event)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    GetuiBridgeState.onEvent = null
+                }
+            })
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/badge")
             .setMethodCallHandler { call, result ->
                 when (call.method) {

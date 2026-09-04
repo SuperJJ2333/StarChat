@@ -46,6 +46,11 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.liuhetong.mobile"
+        // 个推公开 AppID（个推控制台公开标识，允许随客户端分发；
+        // AppKey/AppSecret 绝不入客户端，见 docs/PUSH_SETUP.md）。
+        manifestPlaceholders["GETUI_APPID"] = "bL4tz01WK57ym4PVBGCUS1"
+        // 个推安装渠道占位（SDK manifest 合并需要；值自报即可）。
+        manifestPlaceholders["GT_INSTALL_CHANNEL"] = "chatflow"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -81,6 +86,12 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // 桌面角标（PRD §35）：纯 Java 库，厂商启动器适配。
     implementation("me.leolin:ShortcutBadger:1.1.22")
+    // 个推推送（scripts/GETUI_ANDROID_SDK_3.3.15.0 对应 Maven 坐标，固定版本）。
+    // 隐私红线：客户端 manifest 仅含公开 AppID；AppKey/签名密钥只在
+    // 服务端 getui-bridge 环境变量（docs/PUSH_SETUP.md）。
+    implementation("com.getui:gtsdk:3.3.15.0")
+    implementation("com.getui:gtc:3.3.3.0")
+    implementation("com.getui:gsido:1.4.14.0")
 }
 
 kotlin {

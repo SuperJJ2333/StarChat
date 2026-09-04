@@ -14,6 +14,8 @@ allprojects {
         // environment. This mirror serves the same immutable coordinates.
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         mavenCentral()
+        // 个推推送 SDK（固定版本；仅 Android 客户端离线唤醒通道）。
+        maven { url = uri("https://mvn.getui.com/nexus/content/repositories/releases/") }
     }
 }
 

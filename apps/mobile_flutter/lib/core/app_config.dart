@@ -27,11 +27,19 @@ final class AppConfig {
     'LIUHETONG_SYGNAL_URL',
   );
 
+  /// 个推桥接网关（自建 Matrix Push Gateway → 个推）根地址；构建时注入，
+  /// 如 `--dart-define=LIUHETONG_GETUI_URL=https://<域名>`。运行时解析为
+  /// `<url>/_matrix/push/v1/getui/notify`。为空（默认）时客户端不注册
+  /// 个推 pusher；服务端 getui-bridge 的密钥与部署见 docs/PUSH_SETUP.md。
+  static const getuiPushGatewayUrl = String.fromEnvironment(
+    'LIUHETONG_GETUI_URL',
+  );
+
   /// Release identity of this build. Keep in sync with `version:` in
   /// pubspec.yaml; tests/mobile/test_app_build_contract.py asserts the match.
   /// 运行时由 [loadRuntimeVersion] 用安装包真实版本覆盖（见 main）。
-  static String appVersionName = '0.3.33';
-  static int appBuildNumber = 36;
+  static String appVersionName = '0.3.34';
+  static int appBuildNumber = 37;
 
   /// 从安装包清单读取真实版本，保证「关于畅聊」与更新判断使用实际值。
   static Future<void> loadRuntimeVersion() async {

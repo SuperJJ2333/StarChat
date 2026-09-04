@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -62,6 +63,11 @@ void useIPhone15Viewport(WidgetTester tester) {
 }
 
 void main() {
+  setUp(() {
+    // 登录成功路径会写入隐私同意持久化（privacy.agreement_accepted.v1）。
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets(
     'login registration and verification share the immersive background',
     (tester) async {

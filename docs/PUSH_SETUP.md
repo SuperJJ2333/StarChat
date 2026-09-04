@@ -13,6 +13,33 @@
 
 ---
 
+## 0. 个推通道（0.3.34 新增，Android 主推送通道）
+
+自建 **getui-bridge**（`services/getui-bridge/`，生产容器
+`starchat-getui-bridge-1`）：实现 Matrix Push Gateway `/notify` 协议，
+**入站即丢弃全部业务内容**（event_id/room_id/正文/发送者/房间名），
+出站到个推 v2 REST 仅含：CID（audience）、随机 notify_id、消息类型
+（通用文案二选一：您有一条新消息/您有一个来电）、TTL（300s）；
+在线 push_message 与离线厂商通道 ups 同样只有通用文案，click=startapp。
+
+- 客户端：`app_id=com.liuhetong.mobile.getui`，
+  `data.url=<LIUHETONG_GETUI_URL>/_matrix/push/v1/getui/notify`，
+  pushkey=CID（**Matrix 设备级绑定**；登出/切号即删 pusher；
+  **从不** bindAlias/setTag）。隐私门槛：Application 仅 preInit（同意前
+  安全态），initialize 仅在登录勾选《隐私政策》成功后（持久化键
+  `privacy.agreement_accepted.v1`）由 Dart 触发；未同意不影响聊天。
+- 权限红线：个推 SDK 合并的位置/READ_PHONE_STATE/QUERY_ALL_PACKAGES/
+  GET_TASKS/WIFI/蓝牙/存储等采集类权限已在 manifest 以 tools:node=remove
+  全部剥离；`usesCleartextTraffic=false` 以 tools:replace 压制 SDK 的 true。
+- 客户端只含**公开 AppID**（gradle 占位符 bL4tz01WK57ym4PVBGCUS1）；
+  **AppKey/AppSecret(MasterSecret) 仅存服务器 .env**（chmod 600，
+  绝不入仓库——tests/mobile/test_getui_privacy.py 全仓库扫描断言）。
+- ⚠️ **v2 鉴权需要 MasterSecret**（sign=sha256(appkey+ts+MasterSecret)；
+  AppSecret 实测返回 sign is invalid/20001）。控制台取 MasterSecret 写入
+  服务器 .env 的 `GETUI_SIGN_SECRET` 后 `docker compose restart getui-bridge`。
+- 激活客户端构建：`build_mobile_public_domain.ps1 -GetuiUrl https://<域名>`。
+- 证据与验收：`docs/verification/2026-09-04-getui-push-0.3.34.md`。
+
 ## 1. 架构与 E2EE 边界
 
 ```text
