@@ -94,7 +94,10 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
     assert platform_balance(factory, "PLATFORM_CLEARING") == -ISSUED_TOTAL
 
     # 红包：alice 发 10.00 拼手气红包（无手续费），bravo 领取一份。
-    packets = RedPacketService(factory, ledger, max_total=Decimal("20000.00"))
+    from app.modules.redpacket.membership import StaticRoomMembershipAuthority
+    _membership = StaticRoomMembershipAuthority()
+    _membership.set_members("!room:test", {"bravo"})
+    packets = RedPacketService(factory, ledger, max_total=Decimal("20000.00"), room_membership=_membership)
     packet = packets.create_random(
         sender_id="alice",
         total=Decimal("10.00"),

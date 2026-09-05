@@ -37,9 +37,13 @@ class CreateRedPacketRequest(StrictModel):
 class CancelRequest(StrictModel):
     reason_code: str = Field(min_length=1, max_length=100)
 
-def create_redpacket_router(settings: Settings, session_factory, *, avatar_storage=None) -> APIRouter:
+def create_redpacket_router(settings: Settings, session_factory, *, avatar_storage=None, matrix_gateway=None) -> APIRouter:
     router = APIRouter(prefix="/red-packets", tags=["red-packets"])
-    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total)
+    from app.modules.redpacket.membership import MatrixRoomMembershipAuthority
+    # F06：群红包房间成员授权权威（Matrix join 成员；gateway 可用时启用，
+    # 不可用时 fail closed——群红包仅发起人本人可见/可领）。
+    room_membership = MatrixRoomMembershipAuthority(session_factory, matrix_gateway) if matrix_gateway is not None else None
+    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total, room_membership=room_membership)
     if avatar_storage is not None:
         from app.modules.identity.profile import ProfileService
 
@@ -84,6 +88,8 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
             message = str(error)
             if message == "recipient mismatch":
                 raise AppError(code="RED_PACKET_RECIPIENT_MISMATCH", message="只有指定成员可以领取该红包", status_code=403) from error
+            if message == "room membership required":
+                raise AppError(code="RED_PACKET_ROOM_FORBIDDEN", message="只有群成员可以领取该红包", status_code=403) from error
             if message in ("user already claimed",):
                 raise AppError(code="RED_PACKET_ALREADY_CLAIMED", message="已领取过该红包", status_code=409) from error
             raise AppError(code="RED_PACKET_UNAVAILABLE", message="红包当前不可领取", status_code=409) from error
@@ -96,6 +102,8 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
         except ValueError as error:
             if str(error) == "recipient mismatch":
                 raise AppError(code="RED_PACKET_FORBIDDEN", message="无权查看该红包", status_code=403) from error
+            if str(error) == "room membership required":
+                raise AppError(code="RED_PACKET_ROOM_FORBIDDEN", message="只有群成员可以查看该红包", status_code=403) from error
             raise AppError(code="RED_PACKET_NOT_FOUND", message="红包不存在", status_code=404) from error
 
     @router.post("/{packet_id}/cancel")

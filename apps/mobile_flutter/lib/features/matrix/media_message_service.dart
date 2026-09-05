@@ -1,12 +1,57 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
 import 'matrix_e2ee_client.dart';
+
+/// 普通文件发送的大小上限（M01）：Matrix 文件走 homeserver 上传，
+/// 客户端在 readAsBytes **之前**拒绝超限文件，避免整文件载入内存。
+const maxFileSendBytes = 100 * 1024 * 1024;
+
+/// 附件发送并发预算（M01）：同时在途的加密上传任务上限。
+const mediaSendConcurrency = 3;
+
+/// 附件超限异常（UI 呈现明确文案，不静默失败）。
+final class MediaTooLargeException implements Exception {
+  const MediaTooLargeException(this.limitBytes);
+  final int limitBytes;
+
+  @override
+  String toString() => '文件超过发送上限 ${limitBytes ~/ (1024 * 1024)}MB';
+}
+
+/// 有界并发槽：超出上限的发送任务排队等待（不并发堆积内存）。
+final class _BoundedSendSlots {
+  _BoundedSendSlots(this.capacity) : _available = capacity;
+
+  final int capacity;
+  int _available;
+  final _waiters = <Completer<void>>[];
+
+  Future<void> acquire() async {
+    if (_available > 0) {
+      _available--;
+      return;
+    }
+    final waiter = Completer<void>();
+    _waiters.add(waiter);
+    await waiter.future;
+  }
+
+  void release() {
+    final waiter = _waiters.isEmpty ? null : _waiters.removeAt(0);
+    if (waiter != null) {
+      waiter.complete();
+      return; // 槽直接移交给等待者。
+    }
+    _available++;
+  }
+}
 
 /// 按文件扩展名推断 MIME（file_selector 在部分安卓机型上返回 null），
 /// 覆盖常见音视频/图片/文档类型；未识别回退 application/octet-stream。
@@ -51,6 +96,21 @@ final class MediaMessageService {
   final MatrixE2eeClient matrix;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
+  final _sendSlots = _BoundedSendSlots(mediaSendConcurrency);
+
+  /// M01：读取前统一预检——存在、可读、未超限。
+  /// 超限在 readAsBytes **之前**拒绝（低内存设备不被大文件撑爆）。
+  @visibleForTesting
+  static Future<void> ensureWithinSendLimit(File file,
+      {int limitBytes = maxFileSendBytes}) async {
+    final stat = await file.stat();
+    if (stat.type == FileSystemEntityType.notFound) {
+      throw StateError('文件不存在或已被移除');
+    }
+    if (stat.size > limitBytes) {
+      throw MediaTooLargeException(limitBytes);
+    }
+  }
 
   /// 「拍摄」入口：拍摄到临时文件并返回路径（取消返回 null），
   /// 由调用方立即自动加密发送。
@@ -96,10 +156,18 @@ final class MediaMessageService {
   Future<String> sendFile(String roomId) async {
     final file = await openFile();
     if (file == null) throw StateError('File selection cancelled');
-    final bytes = await file.readAsBytes();
-    return matrix.sendEncryptedMedia(
-        roomId, bytes, file.mimeType ?? mimeFromFileName(file.name),
-        filename: file.name);
+    final local = File(file.path);
+    // 读取前预检（大小/存在性），再进入有界并发槽上传。
+    await ensureWithinSendLimit(local);
+    final bytes = await local.readAsBytes();
+    await _sendSlots.acquire();
+    try {
+      return await matrix.sendEncryptedMedia(
+          roomId, bytes, file.mimeType ?? mimeFromFileName(file.name),
+          filename: file.name);
+    } finally {
+      _sendSlots.release();
+    }
   }
 
   Future<void> startVoiceRecording(String path) async {
@@ -139,13 +207,21 @@ final class MediaMessageService {
 
   Future<String> _send(String roomId, String path, String mimeType,
       {Duration? duration}) async {
-    final bytes = await File(path).readAsBytes();
-    return matrix.sendEncryptedMedia(roomId, bytes, mimeType,
-        extraContent: duration == null
-            ? null
-            : {
-                'info': {'duration': duration.inMilliseconds},
-              });
+    final local = File(path);
+    // 语音消息同样走读取前预检（防异常大录音）+ 有界并发。
+    await ensureWithinSendLimit(local);
+    final bytes = await local.readAsBytes();
+    await _sendSlots.acquire();
+    try {
+      return await matrix.sendEncryptedMedia(roomId, bytes, mimeType,
+          extraContent: duration == null
+              ? null
+              : {
+                  'info': {'duration': duration.inMilliseconds},
+                });
+    } finally {
+      _sendSlots.release();
+    }
   }
 
   Future<void> dispose() => _recorder.dispose();

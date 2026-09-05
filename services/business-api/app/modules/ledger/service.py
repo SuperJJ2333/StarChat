@@ -65,11 +65,11 @@ class LedgerService:
         _ = tx.entries
         return tx
 
-    def adjust(self, *, user_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str) -> LedgerTransaction:
+    def adjust(self, *, user_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str, session=None) -> LedgerTransaction:
         amount = money(amount)
         if amount == 0:
             raise ValueError("adjustment amount must be non-zero")
-        return self.post(entries={user_id: amount, "PLATFORM_CLEARING": -amount}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="ledger.adjustment")
+        return self.post(entries={user_id: amount, "PLATFORM_CLEARING": -amount}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="ledger.adjustment", session=session)
 
     def reverse(self, original_id: str, reason_code: str, actor_id: str, idempotency_key: str) -> LedgerTransaction:
         with self.session_factory() as session:

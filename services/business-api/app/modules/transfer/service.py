@@ -26,27 +26,30 @@ class ChatTransferService:
         note = (note or "").strip() or None
         if note and len(note) > 64:
             raise ValueError("transfer note too long")
-        with self.session_factory() as session:
+        transfer_id = str(uuid4())
+        fee = transfer_fee(amount)
+        escrow = f"PLATFORM_TRANSFER_ESCROW:{transfer_id}"
+        now = datetime.now(timezone.utc)
+        # F01：幂等检查、账本（扣款+手续费+入托管）、业务单据在同一
+        # 事务提交——记账后、单据插入前崩溃即整体回滚。
+        with self.session_factory.begin() as session:
             existing = session.scalar(select(ChatTransfer).where(ChatTransfer.sender_id == sender_id, ChatTransfer.idempotency_key == idempotency_key))
             if existing:
                 if existing.amount != amount or existing.receiver_id != receiver_id or (existing.note or None) != note:
                     raise ValueError("idempotency key reused with different payload")
                 return existing
-        transfer_id = str(uuid4())
-        fee = transfer_fee(amount)
-        escrow = f"PLATFORM_TRANSFER_ESCROW:{transfer_id}"
-        self.ledger.post(
-            entries={sender_id: -(amount + fee), escrow: amount, "PLATFORM_FEE": fee},
-            actor_id=sender_id,
-            reason_code="CHAT_TRANSFER_CREATE",
-            idempotency_key=idempotency_key,
-            scope="chat_transfer.create",
-        )
-        now = datetime.now(timezone.utc)
-        transfer = ChatTransfer(id=transfer_id, sender_id=sender_id, receiver_id=receiver_id, amount=amount, fee=fee, note=note, room_id=room_id, status="PENDING", idempotency_key=idempotency_key, expires_at=expires_at, created_at=now, updated_at=now)
-        with self.session_factory.begin() as session:
+            self.ledger.post(
+                entries={sender_id: -(amount + fee), escrow: amount, "PLATFORM_FEE": fee},
+                actor_id=sender_id,
+                reason_code="CHAT_TRANSFER_CREATE",
+                idempotency_key=idempotency_key,
+                scope="chat_transfer.create",
+                session=session,
+            )
+            transfer = ChatTransfer(id=transfer_id, sender_id=sender_id, receiver_id=receiver_id, amount=amount, fee=fee, note=note, room_id=room_id, status="PENDING", idempotency_key=idempotency_key, expires_at=expires_at, created_at=now, updated_at=now)
             session.add(transfer)
-        return transfer
+            session.flush()
+            return transfer
 
     def detail(self, transfer_id: str, *, user_id: str) -> dict:
         with self.session_factory() as session:
@@ -72,7 +75,7 @@ class ChatTransferService:
         with self.session_factory.begin() as session:
             transfer = session.scalar(select(ChatTransfer).where(ChatTransfer.id == transfer_id).with_for_update())
             self._ensure_pending(transfer, user_id=user_id, require_recipient=True)
-            self._refund(transfer, actor_id=user_id, reason_code=reason_code, idempotency_key=idempotency_key)
+            self._refund(transfer, actor_id=user_id, reason_code=reason_code, idempotency_key=idempotency_key, session=session)
             transfer.status = "DECLINED"
             transfer.updated_at = datetime.now(timezone.utc)
             session.flush()
@@ -87,7 +90,7 @@ class ChatTransferService:
                 return transfer
             if self._aware(transfer.expires_at) > now:
                 raise ValueError("transfer has not expired")
-            self._refund(transfer, actor_id=actor_id, reason_code="CHAT_TRANSFER_EXPIRED", idempotency_key=idempotency_key)
+            self._refund(transfer, actor_id=actor_id, reason_code="CHAT_TRANSFER_EXPIRED", idempotency_key=idempotency_key, session=session)
             transfer.status = "EXPIRED"
             transfer.updated_at = now
             session.flush()
@@ -108,10 +111,22 @@ class ChatTransferService:
             raise ValueError("only the recipient can operate this transfer")
         return transfer
 
-    def _refund(self, transfer: ChatTransfer, *, actor_id: str, reason_code: str, idempotency_key: str) -> None:
+    def _refund(self, transfer: ChatTransfer, *, actor_id: str, reason_code: str, idempotency_key: str, session=None) -> None:
+        """F01：本金与手续费在**一次**平衡分录内完成退款，且与业务状态
+        变更同一事务（session 由 decline/expire 注入）。
+
+        旧实现拆成两笔独立记账（本金 `key`、手续费 `key:fee`）且各自
+        提交——中间崩溃会留下半退款。合并后单事务原子完成。
+        """
         escrow = f"PLATFORM_TRANSFER_ESCROW:{transfer.id}"
-        self.ledger.post(entries={escrow: -transfer.amount, transfer.sender_id: transfer.amount}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="chat_transfer.refund")
-        self.ledger.post(entries={"PLATFORM_FEE": -transfer.fee, transfer.sender_id: transfer.fee}, actor_id=actor_id, reason_code="CHAT_TRANSFER_FEE_REFUND", idempotency_key=f"{idempotency_key}:fee", scope="chat_transfer.refund")
+        self.ledger.post(
+            entries={escrow: -transfer.amount, "PLATFORM_FEE": -transfer.fee, transfer.sender_id: transfer.amount + transfer.fee},
+            actor_id=actor_id,
+            reason_code=reason_code,
+            idempotency_key=idempotency_key,
+            scope="chat_transfer.refund",
+            session=session,
+        )
 
     def snapshot(self, transfer: ChatTransfer) -> dict:
         return {

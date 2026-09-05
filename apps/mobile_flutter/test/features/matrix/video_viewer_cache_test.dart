@@ -128,4 +128,59 @@ void main() {
     expect(body.contains('loadFile'), isTrue,
         reason: '播放文件由外部解析（磁盘缓存优先）');
   });
+// ── M03：原子写 + 损坏检测 + 写入合并 ──────────────────────────
+
+test('M03：半写入（截断）文件被判定损坏 → 删除后未命中并重新解密', () async {
+  final docs = _scratch('m03-corrupt');
+  PathProviderPlatform.instance = _FakePathProvider(docs);
+  final payload = Uint8List.fromList(List.filled(500, 3));
+  var decryptions = 0;
+  Future<Uint8List> decrypt() async {
+    decryptions++;
+    return payload;
+  }
+
+  const key = MediaCacheKey(roomId: '!m03:x', eventId: '\$m03-e1');
+  // 正常写入一次。
+  final first = await MediaCache.store(key.roomId, key.eventId, payload);
+  expect(await first.length(), 500);
+  // 半写入模拟：截断数据文件（元数据仍声明 500）。
+  await first.writeAsBytes(payload.sublist(0, 120), flush: true);
+  // cached() 必须判损坏 → 删除 → 未命中。
+  expect(await MediaCache.cached(key.roomId, key.eventId), isNull,
+      reason: '长度与元数据不符 = 损坏，不得当作命中');
+  // 重新走 loadMediaWithCache：再解密一次并修复缓存。
+  final repaired = await loadMediaWithCache(key, decrypt);
+  expect(repaired.length, 500);
+  expect(decryptions, 1, reason: '损坏后仅重新解密一次（修复闭环）');
+  final cachedAgain = await MediaCache.cached(key.roomId, key.eventId);
+  expect(cachedAgain, isNotNull);
+  expect(await cachedAgain!.length(), 500);
+});
+
+test('M03：进程中止留下空文件 + 孤儿元数据 → 未命中可恢复', () async {
+  final docs = _scratch('m03-empty');
+  PathProviderPlatform.instance = _FakePathProvider(docs);
+  // 直接构造"空数据 + 声明 10 字节"的残留（写一半进程被杀）。
+  final file = await MediaCache.store(
+      '!m03b:x', '\$e-empty', Uint8List.fromList(List.filled(10, 1)));
+  await file.writeAsBytes(const [], flush: true); // 截断为 0 字节。
+  expect(await MediaCache.cached('!m03b:x', '\$e-empty'), isNull,
+      reason: '空文件判损坏（长度不符）');
+});
+
+test('M03：同键并发写共享一次落盘（写入合并）', () async {
+  final docs = _scratch('m03-merge');
+  PathProviderPlatform.instance = _FakePathProvider(docs);
+  final payloadA = Uint8List.fromList(List.filled(64, 9));
+  final payloadB = Uint8List.fromList(List.filled(64, 9));
+  final files = await Future.wait([
+    MediaCache.store('!m03c:x', '\$e-merge', payloadA),
+    MediaCache.store('!m03c:x', '\$e-merge', payloadB),
+  ]);
+  // 合并写入：两个调用者拿到同一文件对象语义（同一路径），内容完整。
+  expect(files[0].path, files[1].path);
+  expect(await files[0].length(), 64);
+  expect(await MediaCache.cached('!m03c:x', '\$e-merge'), isNotNull);
+});
 }

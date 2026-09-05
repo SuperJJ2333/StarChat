@@ -75,19 +75,31 @@ class AdjustmentWorkflow:
             return request
 
     def execute(self, request_id: str, *, actor_id: str, idempotency_key: str) -> AdjustmentRequest:
-        with self.session_factory() as session:
-            request = session.get(AdjustmentRequest, request_id)
+        """F02：同一审批单只执行一次。
+
+        - 执行幂等键由服务端从 adjustment_request_id 派生（与 HTTP 请求
+          幂等键无关——不同请求键重放同一审批单不得产生第二笔记账）；
+        - 审批单行 FOR UPDATE 锁定串行化并发执行；
+        - 账本记账与 EXECUTED 终态在**同一事务**提交：记账后崩溃整体
+          回滚；崩溃后重试经账本幂等键返回同一交易并补齐终态。
+        """
+        execution_key = f"adjustment-execute:{request_id}"
+        with self.session_factory.begin() as session:
+            request = session.get(AdjustmentRequest, request_id, with_for_update=True)
             if not request:
                 raise ValueError("request not found")
             if request.status == "EXECUTED":
                 return request
-            if request.status != "FINANCE_APPROVED":
-                if request.status != "ADMIN_APPROVED":
-                    raise ValueError("request is not approved")
-            user_id, amount, reason = request.user_id, request.amount, request.reason_code
-        tx = self.ledger.adjust(user_id=user_id, amount=amount, actor_id=actor_id, reason_code=reason, idempotency_key=idempotency_key)
-        with self.session_factory.begin() as session:
-            request = session.get(AdjustmentRequest, request_id)
+            if request.status not in ("FINANCE_APPROVED", "ADMIN_APPROVED"):
+                raise ValueError("request is not approved")
+            tx = self.ledger.adjust(
+                user_id=request.user_id,
+                amount=request.amount,
+                actor_id=actor_id,
+                reason_code=request.reason_code,
+                idempotency_key=execution_key,
+                session=session,
+            )
             request.status, request.ledger_transaction_id, request.updated_at = "EXECUTED", tx.id, datetime.now(timezone.utc)
             session.flush()
             return request

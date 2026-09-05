@@ -32,10 +32,13 @@ class PendingCallActionsTest {
         // 超过 30s 未被消费：清除丢弃（冷启动耗时过长动作不再可信）。
         val drained = PendingCallActions.drainAt(t0 + 31_000)
         assertTrue(drained.isEmpty(), "过期动作必须丢弃，不得应用到之后的通话")
-        // 之后的新通话不受影响。
+        // 之后的新动作（以新时间为准）不受影响。
+        val t1 = System.currentTimeMillis()
         PendingCallActions.store("call-c", PendingCallActions.ACTION_ANSWER)
-        val fresh = PendingCallActions.drainAt(t0 + 32_000)
-        assertEquals(listOf("call-c"), fresh.map { it.callId })
+        assertEquals(
+            listOf("call-c"),
+            PendingCallActions.drainAt(t1 + 1_000).map { it.callId },
+        )
     }
 
     @Test

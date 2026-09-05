@@ -574,7 +574,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('朋友圈正文'), findsNothing);
     // 成功后缓存同步：不再把已删条目画回来。
-    final cached = await (await CacheRepository.instance()).moments.load();
+    final cached = await (await CacheRepository.instance()).momentsFor("matrix:@u:test").load();
     expect(
       (cached?['items'] as List?)
               ?.any((m) => (m as Map)['id']?.toString() == 'm1') ??

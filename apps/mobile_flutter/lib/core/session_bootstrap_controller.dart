@@ -7,6 +7,7 @@ import 'package:matrix/matrix.dart';
 
 import '../features/matrix/matrix_e2ee_client.dart';
 import 'business_api_client.dart';
+import 'cache/cache_repository.dart';
 
 enum SessionBootstrapStatus {
   loading,
@@ -104,9 +105,25 @@ final class SessionBootstrapController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // U04：登出即清除**当前账号**的朋友圈快照（账号命名空间键）——
+    // 下一个账号首绘绝不能看到上一个账号的 feed；不触碰 Matrix 聊天
+    // 历史与其他账号数据。
+    await _clearAccountMomentsCache();
     await _bestEffortBusinessLogout();
     await _bestEffortMatrixSuspend();
     _set(const SessionBootstrapState(SessionBootstrapStatus.unauthenticated));
+  }
+
+  Future<void> _clearAccountMomentsCache() async {
+    try {
+      // 与 MomentsPage 同一命名空间（matrix:<userId>）：登出清当前账号。
+      final matrixUserId = await business.currentMatrixUserId();
+      if (matrixUserId == null || matrixUserId.isEmpty) return;
+      final repository = await CacheRepository.instance();
+      await repository.momentsFor('matrix:$matrixUserId').clear();
+    } catch (_) {
+      // 缓存清理尽力而为，不阻断登出。
+    }
   }
 
   void _offlineIfPossible() {

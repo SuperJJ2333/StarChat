@@ -29,10 +29,22 @@ class Deposit(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     event_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # 链上稳定身份（F03）：按 txid 聚合确认状态；USDT-TRC20 单转账
+    # 单 txid，作为链上唯一键。
     txid: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(30,6), nullable=False)
     confirmations: Mapped[int] = mapped_column(nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+class DepositAddress(Base):
+    """A01：充值地址归属持久化——每用户每资产唯一地址，分配后复用。"""
+    __tablename__ = "wallet_deposit_addresses"
+    __table_args__ = (UniqueConstraint("user_id", "asset", name="uq_wallet_deposit_address_user_asset"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    asset: Mapped[str] = mapped_column(String(20), nullable=False)
+    address: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 class Withdrawal(Base):

@@ -103,6 +103,52 @@ void main() {
     gateway.failCreate = false;
     expect(await pusher.ensureRegistered(), isTrue);
   });
+
+  test('C04：create 在途时注销 → 等待收敛+补偿删除，无旧账号 pusher', () async {
+    var createEntered = false;
+    final entered = Completer<void>();
+    final gateway = _GatedPusherGateway()
+      ..gateCreate = Completer<void>()
+      ..onCreateEntered = () {
+        createEntered = true;
+        if (!entered.isCompleted) entered.complete();
+      };
+    final pusher = MatrixPusherService(
+      gateway: gateway,
+      tokenProvider: _FakeTokenProvider('cid-A'),
+      appId: MatrixPusherService.appIdGetui,
+      gatewayUrl: Uri.parse('https://push.example.test/notify'),
+    );
+    final registering = pusher.ensureRegistered();
+    // 等 create 已发出（在途）后再注销——覆盖"注销与在途注册竞态"。
+    await entered.future;
+    expect(createEntered, isTrue);
+    final unregistering = pusher.unregister();
+    // 放行迟到的 create：注册完成后发现代数已失效 → 补偿删除。
+    gateway.gateCreate!.complete();
+    await unregistering;
+    expect(await registering, isFalse, reason: '注销后代数失效：注册结果被丢弃');
+    expect(pusher.isRegistered, isFalse, reason: '迟到 create 不得把旧 pusher 写回本地状态');
+    // 服务端净效果：create 之后必须跟随删除（补偿删除/注销删除），
+    // 最终不残留旧账号 pusher。
+    expect(gateway.created.length, 1);
+    expect(gateway.deleted.isNotEmpty, isTrue, reason: '迟到 create 的 pusher 已被清理');
+  });
+
+  test('C04：dispose 后失败回调不能再排队重试', () async {
+    final failing = _RecordingPusherGateway()..failCreate = true;
+    final pusher = MatrixPusherService(
+      gateway: failing,
+      tokenProvider: _FakeTokenProvider('cid-B'),
+      appId: MatrixPusherService.appIdGetui,
+      gatewayUrl: Uri.parse('https://push.example.test/notify'),
+    );
+    expect(await pusher.ensureRegistered(), isFalse);
+    await pusher.dispose();
+    final createsBefore = failing.created.length;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(failing.created.length, createsBefore, reason: 'dispose 后不得再尝试注册');
+  });
 }
 
 final class _RecordingPusherGateway implements MatrixPusherGateway {
@@ -150,3 +196,25 @@ final class _MemoryDiagStore implements NotificationDiagStore {
   @override
   Future<void> write(String encoded) async => _encoded = encoded;
 }
+
+
+// ── C04：推送注册与退出注销的异步竞态 ──────────────────────────
+
+final class _GatedPusherGateway implements MatrixPusherGateway {
+  final created = <Pusher>[];
+  final deleted = <PusherId>[];
+  Completer<void>? gateCreate;
+  void Function()? onCreateEntered;
+
+  @override
+  Future<void> create(Pusher pusher) async {
+    onCreateEntered?.call();
+    final gate = gateCreate;
+    if (gate != null) await gate.future;
+    created.add(pusher);
+  }
+
+  @override
+  Future<void> delete(PusherId id) async => deleted.add(id);
+}
+

@@ -9,6 +9,7 @@
 import hashlib
 import json
 import secrets
+import threading
 import time
 from typing import Any
 
@@ -109,7 +110,9 @@ class GetuiRestClient:
         self._http = http_client
         self._token_ttl_safety_ms = token_ttl_safety_ms
         self._token: str | None = None
-        self._token_expire_ms: int = 0
+        self._token_expire_ms = 0
+        # P02：并发请求的令牌刷新合并（锁内双检），避免刷新风暴。
+        self._token_lock = threading.Lock()
 
     def _fetch_token(self) -> str:
         timestamp = str(int(time.time() * 1000))
@@ -129,7 +132,6 @@ class GetuiRestClient:
         token = data.get("token")
         if not isinstance(token, str) or not token:
             raise GetuiPushError("getui auth returned no token")
-        self._token = token
         expire = data.get("expire_time")
         self._token_expire_ms = (
             int(expire) if isinstance(expire, int) else int(time.time() * 1000) + 86_400_000
@@ -142,7 +144,23 @@ class GetuiRestClient:
             and now_ms + self._token_ttl_safety_ms < self._token_expire_ms
         ):
             return self._token
-        return self._fetch_token()
+        with self._token_lock:
+            if (
+                self._token is not None
+                and now_ms + self._token_ttl_safety_ms < self._token_expire_ms
+            ):
+                return self._token
+            self._token = self._fetch_token()
+            return self._token
+
+    def _invalidate_token(self, token: str) -> None:
+        """P02：令牌被判失效（如 HTTP 401 + code 10001）时清缓存。
+
+        只清除仍是当前值的令牌——其他线程刚刷新出的新令牌不被回退。
+        """
+        with self._token_lock:
+            if self._token == token:
+                self._token = None
 
     def auth_token(self, now_ms: int) -> str:
         """带缓存的 token 获取（未过期复用；供测试注入当前时间）。"""
@@ -151,8 +169,9 @@ class GetuiRestClient:
     def push_cid(self, cid: str, kind: str, ttl_ms: int) -> str:
         """单 CID 推送；返回个推 status（successed_online/offline/…）。
 
-        token 失效（code=10001）自动刷新重试一次。
-        永久 CID 失效 → GetuiPushError(is_permanent=True)；
+        P02：统一解析 HTTP 状态与业务码——token 失效（code 10001，可能
+        以 HTTP 401 携带）清缓存后**仅刷新重试一次**，复用同一请求身份
+        （request_id/body 不变）；鉴权类失败绝不判为 CID 永久失效。
         网络/5xx/超时 → GetuiTransientError（绝不进 Matrix rejected）。
         """
         body = build_push_body(cid, kind, ttl_ms)
@@ -168,28 +187,19 @@ class GetuiRestClient:
                 raise GetuiTransientError(
                     f"transport error: {type(error).__name__}"
                 ) from error
-            if response.status_code != 200:
-                # 优先解析个推业务错误码（CID 无效等也是非 200 + code）。
-                try:
-                    error_payload = response.json()
-                    code = error_payload.get("code")
-                    if code is not None:
-                        raise GetuiPushError(
-                            f"getui push failed code={code}", code=int(code)
-                        )
-                except GetuiPushError:
-                    raise
-                except Exception:
-                    raise GetuiTransientError(
-                        f"http {response.status_code}"
-                    ) from None
-            payload = response.json()
-            code = payload.get("code")
-            if code == 0:
+            try:
+                payload = response.json()
+            except Exception:
+                payload = None
+            code = payload.get("code") if isinstance(payload, dict) else None
+            if response.status_code == 200 and code == 0:
                 status = (payload.get("data") or {}).get("status", "")
                 return str(status)
             if code == 10001 and attempt == 1:
-                self._token = None  # token 失效，刷新后重试
+                # token 失效（原实现该分支不可达：非 200 先抛业务错）。
+                self._invalidate_token(token)
                 continue
-            raise GetuiPushError(f"getui push failed code={code}", code=int(code))
+            if code is not None:
+                raise GetuiPushError(f"getui push failed code={code}", code=int(code))
+            raise GetuiTransientError(f"http {response.status_code}")
         raise GetuiPushError("getui push retry exhausted")

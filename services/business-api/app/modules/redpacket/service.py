@@ -12,13 +12,17 @@ from app.modules.redpacket.models import RedPacket, RedPacketShare
 from app.modules.redpacket.claims import RedPacketClaim
 
 class RedPacketService:
-    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None):
+    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None):
         self.session_factory = session_factory
         self.ledger = ledger
         self.max_total = money(max_total)
         # 可选的公开资料服务（ProfileService）：为领取详情补充
         # 领取人/发送人的用户名、昵称与自定义头像。
         self.profiles = profiles
+        # F06：房间成员授权权威（Matrix join 成员，业务库不复制成员
+        # 关系）。None = 未配置（worker 过期退款等非用户请求路径），
+        # 此时群红包的成员校验退化为仅允许发起人本人。
+        self.room_membership = room_membership
 
     def create_equal(self, **kwargs) -> RedPacket:
         total, count = self._validate(kwargs["total"], kwargs["share_count"])
@@ -40,6 +44,9 @@ class RedPacketService:
                 raise ValueError("red packet not found")
             if packet.recipient_id and user_id not in (packet.sender_id, packet.recipient_id):
                 raise ValueError("recipient mismatch")
+            # F06：普通群红包——发起人本人或当前房间成员才可见；
+            # 退群/被踢后不可见。
+            self._authorize_room_access(packet, user_id=user_id)
             claims = [
                 {"user_id": share.claimed_by, "amount": str(share.amount), "claimed_at": share.claimed_at}
                 for share in packet.shares if share.claimed_by is not None
@@ -108,21 +115,25 @@ class RedPacketService:
                 raise ValueError("exclusive red packet requires room and recipient")
         elif bool(room_id) == bool(recipient_id):
             raise ValueError("exactly one destination is required")
-        with self.session_factory() as session:
+        now = datetime.now(timezone.utc)
+        packet_id = str(uuid4())
+        escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
+        # F01：幂等检查、账本扣款/入托管、业务单据在同一事务提交——
+        # 记账后、单据插入前崩溃即整体回滚，不再留下"钱进了托管但没有
+        # 红包"的中间态。并发同键：账本与单据唯一约束互证，败者回滚后
+        # 由幂等路径返回同一单据。
+        with self.session_factory.begin() as session:
             existing = session.scalar(select(RedPacket).options(selectinload(RedPacket.shares)).where(RedPacket.sender_id == sender_id, RedPacket.idempotency_key == idempotency_key))
             if existing:
                 if existing.total != total or existing.mode != mode or existing.room_id != room_id or existing.recipient_id != recipient_id:
                     raise ValueError("idempotency key reused with different payload")
                 return existing
-        packet_id = str(uuid4())
-        escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
-        self.ledger.post(entries={sender_id: -total, escrow: total}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create")
-        now = datetime.now(timezone.utc)
-        packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
-        packet.shares = [RedPacketShare(id=str(uuid4()), ordinal=i, amount=money(amount)) for i, amount in enumerate(amounts)]
-        with self.session_factory.begin() as session:
+            self.ledger.post(entries={sender_id: -total, escrow: total}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)
+            packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
+            packet.shares = [RedPacketShare(id=str(uuid4()), ordinal=i, amount=money(amount)) for i, amount in enumerate(amounts)]
             session.add(packet)
-        return packet
+            session.flush()
+            return packet
 
     def claim(self, packet_id: str, *, user_id: str, idempotency_key: str) -> RedPacketShare:
         now = datetime.now(timezone.utc)
@@ -132,6 +143,10 @@ class RedPacketService:
                 raise ValueError("red packet unavailable")
             if packet.recipient_id and packet.recipient_id != user_id:
                 raise ValueError("recipient mismatch")
+            # F06：普通群红包——发起人本人或当前房间成员才可领取；
+            # 退群/被踢后不可领取（授权失败在写任何领取记录/账本分录
+            # 之前完成）。
+            self._authorize_room_access(packet, user_id=user_id)
             existing_claim = session.scalar(select(RedPacketClaim).where(RedPacketClaim.packet_id == packet_id, RedPacketClaim.user_id == user_id))
             if existing_claim:
                 if existing_claim.idempotency_key == idempotency_key:
@@ -169,10 +184,29 @@ class RedPacketService:
             refund = money(sum((share.amount for share in unclaimed), Decimal("0.00")))
             if refund:
                 escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
-                self.ledger.post(entries={escrow: -refund, packet.sender_id: refund}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund")
+                # F01：退款分录与终态变更同一事务（session 注入，不再
+                # 各自独立提交）。
+                self.ledger.post(entries={escrow: -refund, packet.sender_id: refund}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session)
             packet.status = final_status
             session.flush()
             return packet
+
+    def _authorize_room_access(self, packet: RedPacket, *, user_id: str) -> None:
+        """F06：群红包房间成员授权。
+
+        - 专属红包（有 recipient_id）：既有 recipient 判定已覆盖，跳过；
+        - 发起人本人：可见/可领自己的红包；
+        - 其他人：必须通过权威成员检查（Matrix 当前 join 成员）；
+        - 退群/被踢成员：不再是 join 成员 → 拒绝；
+        - 权威不可配置/不可达：fail closed（无法证明成员身份即拒绝）。
+        """
+        if packet.recipient_id or not packet.room_id:
+            return
+        if user_id == packet.sender_id:
+            return
+        authority = self.room_membership
+        if authority is None or not authority.is_member(packet.room_id, user_id):
+            raise ValueError("room membership required")
 
     @staticmethod
     def _aware(value):

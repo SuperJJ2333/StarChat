@@ -3,6 +3,8 @@ from typing import Annotated
 from datetime import datetime, timezone
 from urllib.parse import quote
 
+import anyio.to_thread
+
 from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -417,36 +419,44 @@ def create_identity_router(
     @router.post("/auth/login", response_model=TokenResponse)
     async def login(body: LoginRequest, request: Request) -> TokenResponse:
         identifier = body.username.strip()
-        rate_limiter.hit(
-            public_rate_limit_key("auth:login", request.client.host if request.client else "unknown", identifier), limit=10, window_seconds=900
-        )
-        normalized = identifier.casefold()
-        with session_factory() as session:
-            if "@" in normalized:
-                user = session.scalar(select(User).where(User.email_normalized == normalized))
-            else:
-                user = session.scalar(select(User).where(User.username_normalized == normalized))
-            if (
-                user is None
-                or user.status != AccountStatus.ACTIVE
-                or not password_hasher.verify(user.password_hash, body.password)
-            ):
-                raise AppError(
-                    code="CREDENTIALS_INVALID", message="账号或密码错误", status_code=401
-                )
-            pair = tokens.issue_pair(
-                user_id=user.id,
-                device_key=body.device_key,
-                display_name=body.device_name,
+
+        def _authenticate_sync() -> tuple[str, str, str]:
+            # C01：同步限频、数据库查询、Argon2 校验与令牌签发整体卸载到
+            # 线程池——事件循环不再被密码计算/磁盘 IO 阻塞，轻量接口在
+            # 登录负载下仍及时响应（哈希安全强度不变）。
+            rate_limiter.hit(
+                public_rate_limit_key("auth:login", request.client.host if request.client else "unknown", identifier), limit=10, window_seconds=900
             )
+            normalized = identifier.casefold()
+            with session_factory() as session:
+                if "@" in normalized:
+                    user = session.scalar(select(User).where(User.email_normalized == normalized))
+                else:
+                    user = session.scalar(select(User).where(User.username_normalized == normalized))
+                if (
+                    user is None
+                    or user.status != AccountStatus.ACTIVE
+                    or not password_hasher.verify(user.password_hash, body.password)
+                ):
+                    raise AppError(
+                        code="CREDENTIALS_INVALID", message="账号或密码错误", status_code=401
+                    )
+                pair = tokens.issue_pair(
+                    user_id=user.id,
+                    device_key=body.device_key,
+                    display_name=body.device_name,
+                )
+                return user.id, pair.access_token, pair.refresh_token
+
+        actor_id, access_token, refresh_token = await anyio.to_thread.run_sync(_authenticate_sync)
         record_audit(
             request,
-            actor_id=user.id,
-            subject_id=user.id,
+            actor_id=actor_id,
+            subject_id=actor_id,
             action="identity.session.created",
             reason_code="PASSWORD_LOGIN",
         )
-        return TokenResponse(access_token=pair.access_token, refresh_token=pair.refresh_token)
+        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
     @router.post("/auth/refresh", response_model=TokenResponse)
     async def refresh(body: RefreshRequest, request: Request) -> TokenResponse:

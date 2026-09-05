@@ -4,6 +4,11 @@
 
 **基线：** 提交 `35cd07e`（feat(calls): Telecom-based system incoming call architecture）之上的本地工作区（含用户 WIP 改动，全部保留未动）。
 
+> **仓库状态说明（如实记录）：** 会话进行中的 2026-09-05 10:41，同一 git 用户的另一终端将整个工作区（含本任务当时已完成的修复、用户 WIP、未跟踪文件与本文件早期版本）提交为 `e7bd02e` 并推送至 `origin/main`——**该提交/推送非本会话执行**（本会话未执行任何 git 提交/推送）。因此 `e7bd02e` 已包含本任务绝大部分改动；其上仍保留的未提交差异（均为 10:41 之后本会话的收尾改动）：
+> - `call/CallOverlayService.kt`（Kotlin 类型推断修复）、`call/PendingCallActionsTest.kt`（测试时间基准修正）——两者已通过最终 Kotlin 编译/单测/APK 构建（10:44–10:50）；
+> - 本文件的最终修订；
+> - `apps/mobile_flutter/pubspec.lock`：`flutter build apk` 隐式 `pub get` 带来的传递依赖补丁级升级（最终 827/827 全过的测试与 APK 均基于该 lock）。
+
 ---
 
 ## 一、问题根因与修复明细
@@ -183,19 +188,22 @@ Synapse push gateway → `services/getui-bridge`（载荷白名单：仅 CID/not
 | 4 | `flutter test test/features/matrix/image_picker_page_test.dart` | **10/10 通过**（含验证 11 快速切换旧请求不覆盖、验证 12 失败占位+重试+选择不受阻） |
 | 5 | `flutter test test/features/matrix/call_ui_manager_test.dart` | **7/7 通过**（含验证 8 后台接听→回前台补开页面且不重复压入） |
 | 6 | `flutter test test/features/matrix/video_first_frame_cache_test.dart` | **3/3 通过**（既有测试更新至新架构：落盘命中/失败不落盘/成功 memoize 行为级验证） |
-| 7 | `flutter test`（全量） | 首轮 825 过 / 2 挂（均为 `video_first_frame_cache_test` 旧断言，已更新）；**修复后全量重跑见下** |
-| 8 | `gradlew.bat :app:compileStandardDebugKotlin :app:testStandardDebugUnitTest` | 见下（构建节） |
-| 9 | `flutter build apk --debug --flavor standard` | 见下（构建节） |
-| 10 | `PYTHONPATH=services/getui-bridge .venv/Scripts/python.exe -m pytest tests/getui_bridge -q` | **24 passed**（出站载荷白名单/离线通道断言） |
+| 7 | `flutter test`（全量，最终轮） | **827/827 全部通过**（首轮 825 过/2 挂为下述过时断言，修复后复跑） |
+| 8 | `gradlew.bat :app:compileStandardDebugKotlin` | **BUILD SUCCESSFUL**（全部通话层 Kotlin 重构编译通过） |
+| 9 | `gradlew.bat :app:testStandardDebugUnitTest --rerun-tasks` | **BUILD SUCCESSFUL**（`PendingCallActionsTest` 3/3 通过：暂存/一次消费/过期丢弃/同通话去重） |
+| 10 | `flutter build apk --debug --flavor standard` | **成功**：`build/app/outputs/flutter-apk/app-standard-debug.apk`（262 MB debug 包，本地构建未发布） |
+| 11 | `PYTHONPATH=services/getui-bridge .venv/Scripts/python.exe -m pytest tests/getui_bridge -q` | **24 passed**（出站载荷白名单/离线通道断言） |
 
-> 说明 #7：全量首轮的 2 个失败为既有 `video_first_frame_cache_test.dart` 对旧实现（单点抽帧、`_memoizedFirstFrame` 源码断言）的过时断言；按新架构更新后单文件通过。行为意图（首次落盘/二次命中零抽帧/重复调用一次抽帧）全部保留且新增行为级断言。
+> 说明 #7：全量首轮的 2 个失败为既有 `video_first_frame_cache_test.dart` 对旧实现（单点抽帧、`_memoizedFirstFrame` 源码断言）的过时断言；按新架构更新后全量复跑 827/827 通过。行为意图（首次落盘/二次命中零抽帧/重复调用一次抽帧）全部保留且新增行为级断言。
+> 环境备注：本机 `FLUTTER_STORAGE_BASE_URL` 曾带引号导致 gradle 的 flutter 子任务 `FormatException`——以无引号值重启 gradle daemon 后恢复；与代码无关，仅作构建环境记录。
 
 ## 六、构建结果
 
-- **Kotlin 编译 + JVM 单测**：`gradlew.bat :app:compileStandardDebugKotlin :app:testStandardDebugUnitTest --console=plain`
-  - `PendingCallActionsTest`：**3/3 通过**（暂存/一次消费/过期丢弃/同通话去重）
-  - Kotlin 编译通过（含全部通话层重构文件）
-- **APK**：`flutter build apk --debug --flavor standard` ——结果见下方"构建产物"（本地 debug 构建，未发布）。
+- **Kotlin 编译**：`gradlew.bat :app:compileStandardDebugKotlin` → **BUILD SUCCESSFUL**（过程修复了 `CallOverlayService` 一处 Kotlin 类型推断问题：lambda 经 `.also` 链丢失参数类型，改为显式 `(String) -> Unit` 声明）。
+- **Kotlin JVM 单测**：`gradlew.bat :app:testStandardDebugUnitTest --rerun-tasks` → **BUILD SUCCESSFUL**，`PendingCallActionsTest` 3/3 通过（过程修正了测试的时间基准——`drainAt` 只伪造 drain 时钟，入队时间仍为真实时钟）。
+- **APK**：`flutter build apk --debug --flavor standard` → **成功**
+  - 产物：`apps/mobile_flutter/build/app/outputs/flutter-apk/app-standard-debug.apk`（约 262 MB，debug 含符号）
+  - 构建来源：本地工作区（含本次全部修复），**未发布、未上传**；真机安装验证由用户执行。
 
 ## 七、尚未解决 / 环境限制 / 需真机验证
 

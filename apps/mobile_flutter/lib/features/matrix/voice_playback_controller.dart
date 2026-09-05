@@ -86,6 +86,12 @@ final class VoicePlaybackController extends ChangeNotifier {
   final Map<String, Duration> _positions = <String, Duration>{};
   bool earpiece = false;
 
+  /// M02：每次新的播放意图递增代数；下载/播放的每个 await 之后校验，
+  /// stopAll/dispose/新任务使旧任务失效——B 后完成时 A 的迟到加载
+  /// 不得触发 play 或 notifyListeners。
+  int _generation = 0;
+  bool _disposed = false;
+
   Set<String> get playingIds => Set.unmodifiable(_playingIds);
   bool isPlaying(String eventId) => _playingIds.contains(eventId);
 
@@ -133,6 +139,7 @@ final class VoicePlaybackController extends ChangeNotifier {
   }
 
   Future<void> _start(RoomMessageViewModel message) async {
+    final generation = ++_generation;
     _playingIds
       ..clear()
       ..add(message.id);
@@ -141,15 +148,25 @@ final class VoicePlaybackController extends ChangeNotifier {
     try {
       // 首次播放下载解密并记录；再次播放直接交给引擎重播。
       final bytes = await _loadAttachment(message.id);
+      if (_disposed || generation != _generation) return;
       _cachedIds.add(message.id);
       await engine.play(bytes, earpiece: earpiece);
+      if (_disposed || generation != _generation) {
+        // play 返回前播放归属已变更（新任务已接管引擎）——极小窗口的
+        // 迟到播放立即停掉，不与新任务争抢引擎。
+        await engine.stop();
+        return;
+      }
     } catch (_) {
+      if (_disposed || generation != _generation) return;
       _playingIds.remove(message.id);
     }
-    notifyListeners();
+    if (!_disposed && generation == _generation) notifyListeners();
   }
 
   Future<void> stopAll() async {
+    // 代数递增：在途下载/播放任务完成后不得触发 play 或状态更新。
+    _generation++;
     await engine.stop();
     _playingIds.clear();
     _pausedIds.clear();
@@ -158,6 +175,9 @@ final class VoicePlaybackController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _generation++;
+    unawaited(engine.stop());
     unawaited(_completedSubscription?.cancel());
     unawaited(_positionSubscription?.cancel());
     super.dispose();

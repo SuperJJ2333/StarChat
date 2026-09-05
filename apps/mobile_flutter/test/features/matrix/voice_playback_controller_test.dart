@@ -195,4 +195,101 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(controller.isPlaying('voice-1'), isFalse, reason: '播放自然结束后气泡应复位为空闲');
   });
+
+  test('M02：A 慢 B 快——B 完成后 A 的迟到加载不得触发播放', () async {
+    final loads = <String, Completer<Uint8List>>{};
+    var playCalls = 0;
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+      loadAttachment: (eventId) =>
+          (loads[eventId] ??= Completer<Uint8List>()).future,
+      engine: engine,
+    );
+    // A 先点（下载挂起）。
+    unawaited(controller.toggle(_voice('voice-a')));
+    // stopAll 后点 B（B 的下载先完成）。
+    await controller.stopAll();
+    unawaited(controller.toggle(_voice('voice-b')));
+    await Future<void>.delayed(Duration.zero);
+    loads['voice-b']!.complete(Uint8List.fromList([2]));
+    await Future<void>.delayed(Duration.zero);
+    // A 的下载此时才完成：不得触发 play。
+    loads['voice-a']!.complete(Uint8List.fromList([1]));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.isPlaying('voice-a'), isFalse, reason: '迟到的 A 不得回到播放态');
+    expect(controller.isPlaying('voice-b'), isTrue, reason: 'B 保持播放');
+  });
+
+  test('M02：stopAll 后完成的下载不调用 play；dispose 后不更新状态', () async {
+    final gate = Completer<Uint8List>();
+    var playCalls = 0;
+    final played = <String>[];
+    final engine = _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
+    final controller = VoicePlaybackController(
+      loadAttachment: (_) => gate.future,
+      engine: engine,
+    );
+    unawaited(controller.toggle(_voice('voice-x')));
+    await Future<void>.delayed(Duration.zero);
+    await controller.stopAll();
+    gate.complete(Uint8List.fromList([9]));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(playCalls, 0, reason: 'stopAll 使在途任务失效，不得调用 play');
+    expect(controller.isPlaying('voice-x'), isFalse);
+
+    // dispose 后完成的新下载同样不得触发 play 或通知。
+    var notified = false;
+    controller.addListener(() => notified = true);
+    controller.dispose();
+    final gate2 = Completer<Uint8List>();
+    final engine2 = _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
+    final controller2 = VoicePlaybackController(
+      loadAttachment: (_) => gate2.future,
+      engine: engine2,
+    );
+    unawaited(controller2.toggle(_voice('voice-y')));
+    await Future<void>.delayed(Duration.zero);
+    controller2.dispose();
+    gate2.complete(Uint8List.fromList([8]));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(playCalls, 0, reason: 'dispose 后完成不得触发 play');
+    expect(notified, isFalse);
+  });
+}
+
+final class _TaggingVoiceEngine implements VoiceAudioEngine {
+  _TaggingVoiceEngine({required this.playCalls, required this.played});
+
+  final void Function() playCalls;
+  final List<String> played;
+
+  @override
+  Future<void> play(Uint8List bytes, {required bool earpiece}) async {
+    playCalls();
+    played.add('play');
+  }
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  Future<void> resume() async {}
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  final completedController = StreamController<void>.broadcast();
+
+  @override
+  final positionController = StreamController<Duration>.broadcast();
+
+  @override
+  Stream<void> get completed => completedController.stream;
+
+  @override
+  Stream<Duration> get position => positionController.stream;
 }

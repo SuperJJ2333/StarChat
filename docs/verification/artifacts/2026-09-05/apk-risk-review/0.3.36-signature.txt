@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Liuhetong, OU=Mobile, O=Liuhetong, L=Hong Kong, ST=HK, C=HK
+Signer #1 certificate SHA-256 digest: b4784ac301d54add4157427713b136cb22cefd626e9c7a6092882e145c0b22f6
+Signer #1 certificate SHA-1 digest: da99eeef04d31c43e5c6a7766bdf62aabe83e351
+Signer #1 certificate MD5 digest: 1b730b9a5b0cea8e732863c71556ace2
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: 5ffd5c4bcfa181acac0985c35ecbab93935a3295adc6b512961e023f82ae911b
+Signer #1 public key SHA-1 digest: 58b1a0843a2c813da492d48501d41840ffbf9f3e
+Signer #1 public key MD5 digest: 746abb19f196a7e0be8951d44a1de86d

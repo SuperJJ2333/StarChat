@@ -237,7 +237,9 @@ class MainActivity : FlutterActivity() {
             val pm = getSystemService(PowerManager::class.java)
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "chatflow:sync").apply {
                 setReferenceCounted(false)
-                acquire()
+                // C05：带超时持有（20 分钟）——泄漏时自释放；Dart 看门狗
+                // 每 10 分钟重申，正常运行不会到期。
+                acquire(20 * 60 * 1000L)
             }
         }
         if (wifiLock?.isHeld != true) {

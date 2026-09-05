@@ -89,7 +89,13 @@ class OutboxConsumer:
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
         self._lease_timeout = lease_timeout
 
-    def claim_batch(self, *, worker_id: str, limit: int) -> list[OutboxMessage]:
+    def claim_batch(self, *, worker_id: str, limit: int, topics: list[str] | None = None) -> list[OutboxMessage]:
+        """领取待处理事件。
+
+        C02：`topics` 为该消费者声明的处理契约——只领取已注册 handler 的
+        主题，未知主题不占用热队列（由 reap_undeliverable 进入可审计
+        死信流程）。
+        """
         if limit < 1:
             return []
         now = self._now_factory()
@@ -113,6 +119,8 @@ class OutboxConsumer:
                 .limit(limit)
                 .with_for_update(skip_locked=True)
             )
+            if topics is not None:
+                statement = statement.where(OutboxEvent.topic.in_(topics))
             events = list(session.scalars(statement))
             for event in events:
                 event.status = "PROCESSING"
@@ -146,6 +154,43 @@ class OutboxConsumer:
             event.locked_at = None
             event.locked_by = None
             event.last_error = error[:4000]
+
+    def mark_dead(self, event_id: str, *, worker_id: str, error: str) -> None:
+        """C02：死信终态（超过最大尝试次数）——保留事件供人工重放。"""
+        with self._session_factory.begin() as session:
+            event = self._locked_event(session, event_id, worker_id)
+            event.status = "DEAD"
+            event.locked_at = None
+            event.locked_by = None
+            event.last_error = error[:4000]
+
+    def reap_undeliverable(self, handled_topics: list[str], *, max_age: timedelta | None = None) -> int:
+        """C02：把无消费者的主题移入可审计死信（DEAD）。
+
+        只处理超过 max_age 的事件——给"新代码已发布、新消费者尚未上线"
+        的部署错位留出宽限窗口。返回本次收割数量（调用方据此告警）。
+        人工重放：将 status 重置 PENDING 即可（事件本体未删除）。
+        """
+        now = self._now_factory()
+        cutoff = now - (max_age if max_age is not None else timedelta(minutes=10))
+        with self._session_factory.begin() as session:
+            events = list(
+                session.scalars(
+                    select(OutboxEvent)
+                    .where(
+                        OutboxEvent.status.in_(("PENDING", "FAILED")),
+                        OutboxEvent.topic.not_in(handled_topics),
+                        OutboxEvent.created_at <= cutoff,
+                    )
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            for event in events:
+                event.status = "DEAD"
+                event.last_error = f"no registered consumer for topic {event.topic}"
+                event.locked_at = None
+                event.locked_by = None
+            return len(events)
 
     @staticmethod
     def _locked_event(session: Session, event_id: str, worker_id: str) -> OutboxEvent:

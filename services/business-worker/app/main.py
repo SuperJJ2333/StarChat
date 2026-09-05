@@ -11,7 +11,7 @@ from app.core.outbox import OutboxConsumer
 from app.modules.ledger.service import LedgerService
 from app.modules.redpacket.service import RedPacketService
 from app.modules.transfer.service import ChatTransferService
-from app.integrations.custody.sandbox import SandboxCustodyProvider
+from app.integrations.custody.factory import create_custody_provider
 from app.modules.wallet.service import WalletService
 from app.modules.identity.registration import VerificationTokenCodec
 from app.modules.identity.recovery import PasswordResetTokenCodec
@@ -74,8 +74,17 @@ def main() -> None:
     consumer = OutboxConsumer(session_factory)
     redpacket_expiry = RedPacketExpiryTask(session_factory, RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total))
     chat_transfer_expiry = ChatTransferExpiryTask(session_factory, ChatTransferService(session_factory, LedgerService(session_factory)))
-    wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(settings.adjustment_admin_threshold))
-    wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service)
+    # A04：托管 provider 统一工厂注入——生产未接真实托管时资金维护
+    # 明确跳过（可观测），绝不静默用沙箱顶替生产资金操作。
+    custody_provider, custody_mode = create_custody_provider(settings)
+    if custody_provider is None:
+        logging.getLogger("business-worker").warning(
+            "wallet custody not configured (mode=%s); wallet maintenance skipped", custody_mode
+        )
+        wallet_maintenance = lambda: {"skipped": "custody-not-configured"}  # noqa: E731
+    else:
+        wallet_service = WalletService(session_factory, custody_provider, withdrawal_admin_threshold=Decimal(settings.adjustment_admin_threshold), confirmation_threshold=settings.wallet_confirmation_threshold)
+        wallet_maintenance = WalletMaintenanceTask(session_factory, wallet_service).run_once
     moments_moderation = MomentsModerationTask(session_factory)
     email_sender = email_sender_from_environment()
     matrix_gateway = SynapseMatrixAdminGateway(

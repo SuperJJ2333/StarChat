@@ -319,6 +319,7 @@ final class BusinessApiClient
   }
 
   Future<StoredBusinessSession> _refreshSession() async {
+    final epoch = _sessionEpoch;
     final stored = await sessionStore.session();
     if (stored == null) {
       throw const BusinessApiException(
@@ -328,8 +329,13 @@ final class BusinessApiClient
       _uri('/auth/refresh'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'refresh_token': stored.refreshToken}),
-    );
+    ).timeout(_httpTimeout);
     final body = _decode(response);
+    if (epoch != _sessionEpoch) {
+      // A03：登出已发生——迟到的刷新结果不得恢复已清除的会话。
+      throw const BusinessApiException(
+          statusCode: 401, code: 'AUTH_SESSION_ENDED', message: '会话已结束');
+    }
     final replacement = StoredBusinessSession(
       version: 1,
       accessToken: body['access_token'] as String,
@@ -374,6 +380,9 @@ final class BusinessApiClient
 
   @override
   Future<void> logout() async {
+    // A03：登出先使会话代数失效（在途刷新的迟到结果不得恢复会话），
+    // 且退出请求有确定完成时限——本地清理不因网络悬挂而拖延。
+    _sessionEpoch++;
     final stored = await sessionStore.session();
     try {
       if (stored != null) {
@@ -381,8 +390,10 @@ final class BusinessApiClient
           _uri('/auth/logout'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'refresh_token': stored.refreshToken}),
-        );
+        ).timeout(_httpTimeout);
       }
+    } catch (_) {
+      // 退出请求失败/超时：本地会话仍必须清除（finally 兜底）。
     } finally {
       await sessionStore.clearBusinessSession();
     }
@@ -462,6 +473,8 @@ final class BusinessApiClient
       getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() =>
       getJson('/wallet/deposit-address');
+  /// U03：服务端有效网络/确认阈值/最小金额（客户端展示的统一来源）。
+  Future<Map<String, dynamic>> walletConfig() => getJson('/wallet/config');
   Future<Map<String, dynamic>> walletHistory({String? kind}) =>
       getJson('/wallet/transactions${kind == null ? '' : '?kind=$kind'}');
   Future<Map<String, dynamic>> withdrawalStatus(String id) =>
@@ -839,6 +852,12 @@ final class BusinessApiClient
 
   static const _httpTimeout = Duration(seconds: 8);
 
+  /// A03：单次授权操作（初次+刷新+重试）的总预算。
+  static const _authorizedTotalTimeout = Duration(seconds: 20);
+
+  /// A03：会话代数——登出递增；在途刷新的迟到结果据此失效。
+  int _sessionEpoch = 0;
+
   /// debug 模式请求观测：只记录 method/URL/HTTP 状态/错误类型，
   /// 绝不输出 header、body、token、密码或完整邀请码。
   void _logRequest(String method, Uri? url, Object outcome) {
@@ -850,6 +869,10 @@ final class BusinessApiClient
     Future<http.Response> Function(Map<String, String>) operation, {
     Duration timeout = _httpTimeout,
   }) async {
+    // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
+    // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
+    final deadline = DateTime.now().add(_authorizedTotalTimeout);
+    Future<Duration> remaining() async => deadline.difference(DateTime.now());
     final initial = await sessionStore.session();
     final requestUrl = _lastRequestUrl;
     http.Response response;
@@ -866,7 +889,12 @@ final class BusinessApiClient
     }
     if (response.statusCode != 401 || initial == null) return response;
     final replacement = await refreshSession();
-    return operation({'Authorization': 'Bearer ${replacement.accessToken}'});
+    final budget = await remaining();
+    if (budget.isNegative) {
+      throw TimeoutException('authorized request budget exhausted');
+    }
+    return operation({'Authorization': 'Bearer ${replacement.accessToken}'})
+        .timeout(budget < timeout ? budget : timeout);
   }
 
   Uri? _lastRequestUrl;

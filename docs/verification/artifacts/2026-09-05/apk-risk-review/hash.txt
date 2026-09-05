@@ -1,0 +1,6 @@
+
+Algorithm : SHA256
+Hash      : 8ECE95CBE6A2612EA30E1EE9A16DC933910A83EA6C027A6A8C321FEF808A964A
+Path      : D:\pythonProject\outsource\StarChat\apps\mobile_flutter\build\app\outputs\flutter-apk\ChatFlow-0.3.35-arm64.apk
+
+

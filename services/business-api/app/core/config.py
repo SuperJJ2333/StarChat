@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     adjustment_admin_threshold: str = "10000.00"
     red_packet_max_total: str = "20000.00"
     wallet_webhook_secret: str | None = None
+    # A04：托管模式门禁——生产启用资金功能必须显式 production provider
+    # （真实实现未接入前生产资金入口关闭，绝不回退沙箱）。
+    wallet_custody_provider: Literal["sandbox", "production"] = "sandbox"
+    # U03：充值确认阈值（客户端展示与服务端判定同一来源）。
+    wallet_confirmation_threshold: int = 12
     email_verification_secret: str | None = None
     password_reset_secret: str | None = None
     matrix_homeserver_url: str = "http://synapse:8008"
@@ -82,6 +87,17 @@ class Settings(BaseSettings):
             )
         if not self.matrix_public_homeserver_url.startswith("https://") or not self.avatar_public_base_url.startswith("https://"):
             raise ValueError("production public Matrix and avatar URLs must use HTTPS")
+        # A04：生产启用钱包资金功能时，回调签名密钥为必填且不得是占位值。
+        if self.wallet_custody_provider == "production":
+            wallet_secret = self.wallet_webhook_secret
+            if (
+                not wallet_secret
+                or wallet_secret.strip().casefold().startswith(unsafe_prefixes)
+            ):
+                raise ValueError(
+                    "production wallet provider requires a non-placeholder "
+                    "BUSINESS_WALLET_WEBHOOK_SECRET"
+                )
         return self
 
 

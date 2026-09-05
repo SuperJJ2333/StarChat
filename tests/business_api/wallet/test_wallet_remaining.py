@@ -35,7 +35,7 @@ def test_unknown_withdrawal_result_is_queried_by_original_order(wallet):
     row = service.request_withdrawal(user_id="u2", amount=Decimal("2.000000"), address="T2", client_order_id="order-2", reason_code="USER_WITHDRAWAL")
     service.finance_approve(row.id, "finance")
     service.submit_to_custody(row.id, "finance")
-    provider.withdrawals["order-2"]["status"] = "CHAIN_CONFIRMED"
+    provider.withdrawals[row.id]["status"] = "CHAIN_CONFIRMED"
     assert service.resolve_unknown_withdrawal(row.id, actor_id="worker").status == "CHAIN_CONFIRMED"
 
 def test_incremental_reconciliation_pauses_on_mismatch(wallet):

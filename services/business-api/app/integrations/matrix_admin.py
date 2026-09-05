@@ -23,6 +23,8 @@ class MatrixAdminGateway(Protocol):
 
     def get_room_state(self, room_id: str) -> list[dict]: ...
 
+    def get_room_members(self, room_id: str) -> set[str]: ...
+
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
 
     def upload_profile_media(self, content: bytes, mime_type: str) -> str: ...
@@ -163,6 +165,22 @@ class SynapseMatrixAdminGateway:
         body = response.json()
         events = body.get("state", body) if isinstance(body, dict) else body
         return [event for event in events if isinstance(event, dict)]
+
+    def get_room_members(self, room_id: str) -> set[str]:
+        """当前 join 成员的 Matrix 用户 ID 集合（权威成员关系）。
+
+        F06：红包查看/领取的房间授权数据源。只读成员状态事件（元数据），
+        不触碰消息内容——E2EE 边界不受影响。房间不存在/不可达返回空集
+        （调用方按"无法证明成员身份"拒绝，fail closed）。
+        """
+        return {
+            event["state_key"]
+            for event in self.get_room_state(room_id)
+            if event.get("type") == "m.room.member"
+            and isinstance(event.get("state_key"), str)
+            and isinstance(event.get("content"), dict)
+            and event["content"].get("membership") == "join"
+        }
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str:
         path_user_id = quote(matrix_user_id, safe="")
         url = (

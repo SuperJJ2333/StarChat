@@ -81,36 +81,58 @@ final class _MomentsPageState extends State<MomentsPage> {
     });
   }
 
-  /// 朋友圈 Feed 加载（优化 3）：存在缓存时**立即用缓存首绘**，
+  /// 朋友圈 Feed 加载（优化 3 + U04）：存在缓存时**立即用缓存首绘**，
   /// 同时后台刷新最新数据并落盘覆盖；无缓存时等待网络。
+  ///
+  /// U04：缓存按账号命名空间——A 的快照绝不能作为 B 的首绘；请求期间
+  /// 账号切换（页面重建）后，迟到的刷新只写入发起时的账号键。
   Future<Map<String, dynamic>> _loadFeedWithCache() async {
+    final repository = await CacheRepository.instance();
+    final accountKey = await _accountCacheKey();
+    final moments = repository.momentsFor(accountKey);
     Map<String, dynamic>? cached;
     try {
-      cached = await (await CacheRepository.instance()).moments.load();
+      cached = await moments.load();
     } catch (_) {
       cached = null; // 缓存不可用（如测试环境无插件通道）绝不阻塞加载
     }
     if (cached != null) {
-      unawaited(_refreshFeedInBackground());
+      unawaited(_refreshFeedInBackground(moments, accountKey));
       return cached;
     }
     final fresh = await widget.api.momentsFeed(mode: 'latest');
-    unawaited(_saveFeedCache(fresh));
+    unawaited(_saveFeedCache(moments, fresh, accountKey));
     return fresh;
   }
 
-  Future<void> _saveFeedCache(Map<String, dynamic> feed) async {
+  /// 当前账号的缓存命名空间键（Matrix 账号稳定标识；与登出清理同一
+  /// 命名空间：`matrix:<userId>`）。
+  Future<String> _accountCacheKey() async {
     try {
-      await (await CacheRepository.instance()).moments.save(feed);
+      final matrixUserId = await widget.api.currentMatrixUserId();
+      if (matrixUserId != null && matrixUserId.isNotEmpty) {
+        return 'matrix:$matrixUserId';
+      }
+    } catch (_) {}
+    return 'anonymous';
+  }
+
+  Future<void> _saveFeedCache(
+      MomentsCache moments, Map<String, dynamic> feed, String accountKey) async {
+    try {
+      // 迟到保护：写回前确认页面仍属于同一账号。
+      if (await _accountCacheKey() != accountKey) return;
+      await moments.save(feed);
     } catch (_) {
       // 落盘失败不影响本次展示。
     }
   }
 
-  Future<void> _refreshFeedInBackground() async {
+  Future<void> _refreshFeedInBackground(MomentsCache moments, String accountKey) async {
     try {
       final fresh = await widget.api.momentsFeed(mode: 'latest');
-      await _saveFeedCache(fresh);
+      await _saveFeedCache(moments, fresh, accountKey);
+      if (await _accountCacheKey() != accountKey) return; // 账号已切换：不更新 UI
       if (mounted) setState(() => _feed = Future.value(fresh));
     } catch (_) {
       // 后台刷新失败保持缓存首绘内容，不打断浏览。
@@ -202,7 +224,11 @@ final class _MomentsPageState extends State<MomentsPage> {
       items.removeWhere(
           (m) => m is Map && m['id']?.toString() == item.id);
       final updated = Map<String, dynamic>.from(snapshot)..['items'] = items;
-      await _saveFeedCache(updated);
+      final accountKey = await _accountCacheKey();
+      await _saveFeedCache(
+          (await CacheRepository.instance()).momentsFor(accountKey),
+          updated,
+          accountKey);
       if (mounted) {
         setState(() {
           _feed = Future.value(updated);

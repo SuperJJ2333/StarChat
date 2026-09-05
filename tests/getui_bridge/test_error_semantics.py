@@ -52,6 +52,8 @@ class _GetuiMock:
                 return httpx.Response(200, json={"code": 0, "data": {"status": "successed_online"}})
             if isinstance(result, Exception):
                 raise result
+            if callable(result):
+                return result(request)
             return httpx.Response(result[0], json=result[1])
         raise AssertionError(f"unexpected: {url}")
 
@@ -81,27 +83,28 @@ def test_permanent_cid_error_goes_to_rejected(client, getui_mock):
 
 
 def test_transient_network_error_does_not_reject(client, getui_mock):
-    """网络超时（httpx.HTTPError）→ 绝不进 rejected（Synapse 会重试）。"""
+    """网络超时（httpx.HTTPError）→ 503 触发 Synapse 协议重试；绝不进
+    rejected（P01：临时失败不得伪装成功吞掉重试机会，也不删 pusher）。"""
     getui_mock.route["push"] = httpx.ConnectTimeout("timeout")
     resp = client.post("/_matrix/push/v1/notify", json=matrix_notify(cid="c1"))
-    assert resp.status_code == 200
-    assert resp.json() == {}, "临时错误不得进 rejected"
+    assert resp.status_code == 503, "临时失败必须返回可重试错误"
+    assert not resp.json().get("rejected"), "临时错误不得进 rejected"
 
 
 def test_transient_5xx_does_not_reject(client, getui_mock):
-    """个推返回 500 → 临时错误，不进 rejected。"""
+    """个推返回 500 → 503 重试，不进 rejected。"""
     getui_mock.route["push"] = (500, {"error": "internal"})
     resp = client.post("/_matrix/push/v1/notify", json=matrix_notify(cid="c1"))
-    assert resp.status_code == 200
-    assert resp.json() == {}
+    assert resp.status_code == 503
+    assert not resp.json().get("rejected")
 
 
 def test_non_permanent_business_code_does_not_reject(client, getui_mock):
-    """个推限流码（code 30005 等）→ 临时，不进 rejected。"""
+    """个推限流码（code 30005 等）→ 503 重试，不进 rejected。"""
     getui_mock.route["push"] = (429, {"code": 30005, "msg": "rate limited"})
     resp = client.post("/_matrix/push/v1/notify", json=matrix_notify(cid="c1"))
-    assert resp.status_code == 200
-    assert resp.json() == {}
+    assert resp.status_code == 503
+    assert not resp.json().get("rejected")
 
 
 def test_push_error_is_permanent_property():
@@ -199,3 +202,67 @@ def test_message_kind_uses_transmission_for_dispatcher():
     assert payload == {"type": "message"}
     assert "notification" not in body["push_message"]
     assert "ups" in body.get("push_channel", {}).get("android", {})
+
+
+# ── P02：HTTP 401 + code 10001 的令牌刷新分支（原实现不可达） ────
+
+def test_p02_http_401_token_invalid_refreshes_once_and_succeeds(client, getui_mock):
+    """401 + code=10001 → 清缓存刷新一次重试成功；auth 恰好两次；推送成功。"""
+    # push 侧第一次得 401/10001（token 失效），第二次（刷新后）成功。
+    seen = {"n": 0}
+    def push_handler(request):
+        seen["n"] += 1
+        import httpx as _x
+        if seen["n"] == 1:
+            return _x.Response(401, json={"code": 10001, "msg": "token invalid"})
+        return _x.Response(200, json={"code": 0, "data": {"status": "successed_online"}})
+    getui_mock.route["push"] = push_handler
+    resp = client.post("/_matrix/push/v1/notify", json=matrix_notify(cid="c1"))
+    assert resp.status_code == 200
+    assert seen["n"] == 2, "仅刷新重试一次（同一请求身份）"
+
+
+def test_p02_second_401_does_not_loop(client, getui_mock):
+    """刷新后仍 401 → 判定失败（不无限循环），且不进 rejected。"""
+    def push_handler(request):
+        import httpx as _x
+        return _x.Response(401, json={"code": 10001, "msg": "token invalid"})
+    getui_mock.route["push"] = push_handler
+    resp = client.post("/_matrix/push/v1/notify", json=matrix_notify(cid="c1"))
+    assert resp.status_code == 503, "鉴权失败按临时错误（绝不删 pusher/进 rejected）"
+    assert not resp.json().get("rejected")
+
+
+def test_p02_auth_error_code_not_treated_as_permanent_cid():
+    """鉴权类错误码（10001）绝不能被判为 CID 永久失效。"""
+    assert GetuiPushError("auth fail", code=10001).is_permanent is False
+
+
+# ── C01：有界并发——慢供应商不串行阻塞事件循环 ────────────────
+
+def test_c01_concurrent_pushes_are_not_serialized(settings):
+    """4 个 CID、每个供应商延迟 0.2s：并发（≤4）总耗时应明显小于串行。"""
+    import time as _time
+    import httpx
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    delay = {"seconds": 0.2}
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/auth"):
+            return httpx.Response(200, json={"code": 0, "data": {"token": "tok-1", "expire_time": 9999999999999}})
+        _time.sleep(delay["seconds"])
+        return httpx.Response(200, json={"code": 0, "data": {"status": "successed_online"}})
+
+    app = create_app(settings, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    body = matrix_notify(cid="c1")
+    for index in range(3):
+        body["notification"]["devices"].append({"app_id": body["notification"]["devices"][0]["app_id"], "pushkey": f"c{index + 2}"})
+    client = TestClient(app)
+    started = _time.perf_counter()
+    resp = client.post("/_matrix/push/v1/notify", json=body)
+    elapsed = _time.perf_counter() - started
+    assert resp.status_code == 200
+    assert elapsed < delay["seconds"] * 4 * 0.75, (
+        f"并发分发下耗时 {elapsed:.2f}s 不应接近串行 {delay['seconds'] * 4:.2f}s"
+    )

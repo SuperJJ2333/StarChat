@@ -65,9 +65,11 @@ class CallOverlayService : android.app.Service() {
             stopSelf()
         }
         // 通话结束自动移除（引用持有，onDestroy 时注销防泄漏）。
-        overlayListener = { event ->
+        val listener: (String) -> Unit = { event ->
             if (event == CallManager.eventEnded) stopSelf()
-        }.also { CallManager.addListener(it) }
+        }
+        overlayListener = listener
+        CallManager.addListener(listener)
         return START_STICKY
     }
 

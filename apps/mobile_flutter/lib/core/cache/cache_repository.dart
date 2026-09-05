@@ -27,6 +27,12 @@ final class CacheRepository {
 
   static const String momentsFeedKey = 'cache.moments.feed.latest';
 
+  /// U04：朋友圈快照按账号命名空间——`<基键>.<accountKey>`。
+  /// 账号切换/登出只清除对应账号的键，绝不让 B 首绘 A 的 feed，
+  /// 也不全量删除其他账号数据或 Matrix 聊天历史。
+  static String momentsFeedKeyFor(String accountKey) =>
+      '$momentsFeedKey.$accountKey';
+
   static CacheRepository? _instance;
 
   /// 进程级单例；测试可用 [inject] 注入 mock preferences。
@@ -43,7 +49,10 @@ final class CacheRepository {
 
   final SharedPreferences _preferences;
 
-  MomentsCache get moments => MomentsCache(_preferences);
+  /// U04：按账号取朋友圈缓存（accountKey = 业务账号稳定标识）。
+  MomentsCache momentsFor(String accountKey) =>
+      MomentsCache(_preferences, momentsFeedKeyFor(accountKey));
+
   ProfileCache get profile => const ProfileCache();
   AvatarCache get avatar => const AvatarCache();
 }
@@ -51,13 +60,16 @@ final class CacheRepository {
 /// 朋友圈 Feed 快照：最近一次 `GET /moments/feed?mode=latest` 的原始
 /// 响应 JSON。朋友圈页用它完成**首绘**（存在缓存时首屏无需等待网络），
 /// 随后后台刷新并覆盖写入。
+///
+/// U04：快照键含账号命名空间；损坏视为未命中。
 final class MomentsCache {
-  MomentsCache(this._preferences);
+  MomentsCache(this._preferences, this._storageKey);
 
   final SharedPreferences _preferences;
+  final String _storageKey;
 
   Future<Map<String, dynamic>?> load() async {
-    final raw = _preferences.getString(CacheRepository.momentsFeedKey);
+    final raw = _preferences.getString(_storageKey);
     if (raw == null || raw.isEmpty) return null;
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
@@ -67,12 +79,10 @@ final class MomentsCache {
   }
 
   Future<void> save(Map<String, dynamic> feed) async {
-    await _preferences.setString(
-        CacheRepository.momentsFeedKey, jsonEncode(feed));
+    await _preferences.setString(_storageKey, jsonEncode(feed));
   }
 
-  Future<void> clear() =>
-      _preferences.remove(CacheRepository.momentsFeedKey);
+  Future<void> clear() => _preferences.remove(_storageKey);
 }
 
 /// ProfileCache 门面：实际持久化在 ProfileRepository 的 identity.* 键。

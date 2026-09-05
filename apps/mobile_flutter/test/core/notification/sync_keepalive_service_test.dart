@@ -95,6 +95,49 @@ void main() {
     await service.ensureStarted();
     expect(service.isRunning, isTrue);
   });
+
+  test('C05：start 失败后 stop 仍释放锁并停止看门狗（资源计数归零）', () async {
+    final hooks = _RecordingKeepAliveHooks();
+    final service = SyncKeepAliveService(
+      backend: _RecordingKeepAliveBackend()..failStart = true,
+      hooks: hooks,
+    );
+    await service.ensureStarted();
+    expect(service.isRunning, isFalse);
+    expect(service.locksAcquired, isTrue, reason: '降级弱保活仍持锁（被跟踪）');
+    await service.stop();
+    // 关键断言：清理不依赖 _running——锁必释放、看门狗必取消。
+    expect(hooks.releases, 1, reason: 'start 失败后 stop 必须释放已持有锁');
+    expect(service.locksAcquired, isFalse);
+    // 停止后看门狗不再重申任何资源。
+    await service.runWatchdogTick();
+    expect(hooks.acquires, 1, reason: '看门狗已取消，不再取锁');
+  });
+
+  test('C05：反复 start/stop 交错后锁计数平衡（无泄漏）', () async {
+    final hooks = _RecordingKeepAliveHooks();
+    final backend = _RecordingKeepAliveBackend();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    for (var i = 0; i < 3; i++) {
+      await service.ensureStarted();
+      await service.stop();
+      if (i == 0) backend.failStart = true; // 中途注入失败路径交错。
+      if (i == 1) backend.failStart = false;
+    }
+    expect(hooks.acquires, greaterThanOrEqualTo(hooks.releases));
+    expect(service.locksAcquired, isFalse, reason: '交错后无残留持有');
+    expect(service.isRunning, isFalse);
+  });
+
+  test('C05：从未启动时 stop 不取锁不触达后端（兼容既有契约）', () async {
+    final hooks = _RecordingKeepAliveHooks();
+    final backend = _RecordingKeepAliveBackend();
+    final service = SyncKeepAliveService(backend: backend, hooks: hooks);
+    await service.stop();
+    expect(hooks.acquires, 0);
+    expect(hooks.releases, 0);
+    expect(backend.stops, 0);
+  });
 }
 
 final class _RecordingKeepAliveHooks implements KeepAliveHooks {

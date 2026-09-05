@@ -2,12 +2,72 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+
+/// 单一可取消提现轮询控制器（U02）：
+/// - 固定订单 ID（回调不共享可变字段）；
+/// - 串行轮询（上一轮完成后再调度下一轮，慢请求不并发堆积）；
+/// - 轮询异常转为明确可恢复状态（不中断后续轮询）；
+/// - 终态自动停止；`stop()` 取消全部资源。
+final class WithdrawalOrderPoller {
+  WithdrawalOrderPoller({
+    required this.fetch,
+    this.interval = const Duration(seconds: 10),
+    this.terminalStatuses = const {'CHAIN_CONFIRMED', 'FAILED', 'FAILED_COMPENSATED'},
+    this.onStatus,
+    this.onError,
+  });
+
+  final Future<Map<String, dynamic>?> Function(String orderId) fetch;
+  final Duration interval;
+  final Set<String> terminalStatuses;
+  final void Function(String status)? onStatus;
+  final void Function(String message)? onError;
+
+  String? _orderId;
+  Timer? _timer;
+  bool _inFlight = false;
+
+  bool get isActive => _orderId != null;
+
+  void start(String orderId) {
+    stop();
+    _orderId = orderId;
+    _timer = Timer.periodic(interval, (_) => _tick());
+    unawaited(_tick());
+  }
+
+  Future<void> _tick() async {
+    final orderId = _orderId;
+    if (orderId == null || _inFlight) return;
+    _inFlight = true;
+    try {
+      final latest = await fetch(orderId);
+      final status = latest?['status']?.toString();
+      if (status != null && _orderId == orderId) onStatus?.call(status);
+      if (status != null && terminalStatuses.contains(status)) stop();
+    } catch (error) {
+      if (_orderId == orderId) {
+        // 轮询失败转明确可恢复状态；下一轮继续（不抛出不中断）。
+        onError?.call(error is BusinessApiException ? error.message : '状态查询失败，将继续重试');
+      }
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+    _orderId = null;
+  }
+}
 
 final class WalletPage extends StatefulWidget {
   const WalletPage({super.key, this.api});
@@ -22,8 +82,19 @@ final class _WalletPageState extends State<WalletPage> {
   Future<Map<String, dynamic>>? balance;
   String? depositAddress;
   String? status;
-  Timer? poller;
-  String? withdrawalId;
+  WithdrawalOrderPoller? _poller;
+
+  /// U01：一次明确提现意图 = 一个持久化订单键（重试复用；服务端仍执行
+  /// 全链路幂等，防抖不替代服务端）。
+  static const _pendingOrderKeyPref = 'wallet.pending_withdrawal_order_key';
+  String? _pendingOrderKey;
+
+  /// U01：提交中互斥 + 按钮加载态。
+  bool _submitting = false;
+
+  /// U03：服务端有效确认阈值（0/未取到时隐藏具体数字文案）。
+  int? _confirmationThreshold;
+  String? _minDepositText;
 
   static final RegExp _trc20Pattern = RegExp(r'^T[1-9A-HJ-NP-Za-km-z]{33}$');
   static final RegExp _amountPattern = RegExp(r'^(0|[1-9]\d*)(\.\d{1,6})?$');
@@ -32,12 +103,55 @@ final class _WalletPageState extends State<WalletPage> {
   void initState() {
     super.initState();
     final api = widget.api;
-    if (api != null) balance = api.walletBalance();
+    if (api != null) {
+      balance = api.walletBalance();
+      _loadWalletConfig();
+      _loadPendingOrderKey();
+    }
+  }
+
+  Future<void> _loadWalletConfig() async {
+    try {
+      final config = await widget.api?.walletConfig();
+      final threshold = config?['confirmation_threshold'];
+      if (!mounted) return;
+      setState(() {
+        _confirmationThreshold = threshold is int ? threshold : null;
+        final min = config?['min_deposit']?.toString();
+        _minDepositText = (min == null || min.isEmpty) ? null : min;
+      });
+    } catch (_) {
+      // 配置不可得：保持通用文案（不显示可能错误的具体数字）。
+    }
+  }
+
+  Future<void> _loadPendingOrderKey() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = prefs.getString(_pendingOrderKeyPref);
+      if (key != null && mounted) setState(() => _pendingOrderKey = key);
+    } catch (_) {}
+  }
+
+  Future<void> _rememberOrderKey(String key) async {
+    _pendingOrderKey = key;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_pendingOrderKeyPref, key);
+    } catch (_) {}
+  }
+
+  Future<void> _clearOrderKey() async {
+    _pendingOrderKey = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_pendingOrderKeyPref);
+    } catch (_) {}
   }
 
   @override
   void dispose() {
-    poller?.cancel();
+    _poller?.stop();
     amount.dispose();
     address.dispose();
     super.dispose();
@@ -79,26 +193,46 @@ final class _WalletPageState extends State<WalletPage> {
       setState(() => status = error);
       return;
     }
+    // U01：提交中互斥——快速双击只创建一单；新订单键仅在明确的新意图
+    // （上次提交已结束且无保留键）时生成。
+    if (_submitting) return;
+    _submitting = true;
+    setState(() {}); // 按钮 loading。
     try {
+      final orderKey =
+          _pendingOrderKey ?? 'mobile-${DateTime.now().millisecondsSinceEpoch}';
+      await _rememberOrderKey(orderKey);
       final r = await widget.api?.requestWithdrawal(
           amount: amount.text.trim(),
           address: address.text.trim(),
-          clientOrderId: 'mobile-${DateTime.now().millisecondsSinceEpoch}',
+          clientOrderId: orderKey,
           reasonCode: 'USER_WITHDRAWAL');
-      withdrawalId = r?['id']?.toString();
+      final orderId = r?['id']?.toString();
+      if (!mounted) return;
       setState(() => status = '提现申请已提交：${r?['status'] ?? '审核中'}');
-      if (withdrawalId != null) {
-        poller = Timer.periodic(const Duration(seconds: 10), (_) async {
-          final latest = await widget.api?.withdrawalStatus(withdrawalId!);
-          if (mounted) setState(() => status = '提现状态：${latest?['status']}');
-          if ({'CHAIN_CONFIRMED', 'FAILED'}.contains(latest?['status'])) {
-            poller?.cancel();
-          }
-        });
+      if (orderId != null) {
+        // 提交成功：本次意图已落单，清除保留键（下一次点击=新意图新键）。
+        await _clearOrderKey();
+        _poller?.stop();
+        _poller = WithdrawalOrderPoller(
+          fetch: (id) async => await widget.api?.withdrawalStatus(id),
+          onStatus: (latest) {
+            if (mounted) setState(() => status = '提现状态：$latest');
+          },
+          onError: (message) {
+            if (mounted) setState(() => status = message);
+          },
+        )..start(orderId);
       }
     } catch (e) {
-      setState(
-          () => status = e is BusinessApiException ? e.message : '提现提交失败，请稍后重试');
+      // 失败/超时：保留订单键——重试复用同一键，服务端幂等返回原单。
+      if (mounted) {
+        setState(
+            () => status = e is BusinessApiException ? e.message : '提现提交失败，请稍后重试');
+      }
+    } finally {
+      _submitting = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -162,8 +296,12 @@ final class _WalletPageState extends State<WalletPage> {
                 style: TextStyle(
                     fontSize: 16,
                     color: WeChatColors.resolveTextPrimary(context))),
+            // U03：确认数文案来自服务端 /wallet/config（阈值后端可配，
+            // 客户端不再硬编码"20 个确认"）。
             subtitle: Text(depositAddress == null
-                ? '最低充值 1 USDT，20 个确认后到账'
+                ? (_confirmationThreshold == null
+                    ? '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，确认到账以钱包说明为准'
+                    : '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，$_confirmationThreshold 个确认后到账')
                 : '已生成专属充值地址',
                 style: const TextStyle(
                     color: WeChatColors.textSecondary, fontSize: 13)),
@@ -229,8 +367,11 @@ final class _WalletPageState extends State<WalletPage> {
             style: TextStyle(color: WeChatColors.textSecondary, fontSize: 12)),
         const SizedBox(height: 16),
         ModernActionButton(
+          key: const Key('wallet-withdraw-submit'),
           icon: ChangliaoIcons.transfer,
-          label: '提交提现申请',
+          label: _submitting ? '提交中…' : '提交提现申请',
+          // U01：提交中互斥（loading 禁用）——快速双击只创建一单。
+          loading: _submitting,
           onPressed: widget.api == null ? null : withdraw,
         ),
         if (status != null) ...[

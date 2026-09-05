@@ -236,9 +236,10 @@ final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
   }
 }
 
-/// 状态机：幂等启动/停止；后端失败不抛出（保活是尽力而为，绝不阻断
-/// 会话主流程），且失败后不进入运行态、可随时重试；运行期间看门狗
-/// 周期性重申前台服务与唤醒锁（系统静默回收后自愈）。
+/// 状态机（C05 加固）：幂等启动/停止；后端失败不抛出（保活是尽力而为，
+/// 绝不阻断会话主流程）。资源清理不依赖 `_running` 单一布尔——服务、
+/// 唤醒锁、看门狗各自跟踪，失败路径与 stop 的 finally 语义中幂等释放；
+/// stop 使在途启动失效（epoch），迟到的启动结果不重新持有资源。
 final class SyncKeepAliveService {
   SyncKeepAliveService({
     SyncKeepAliveBackend? backend,
@@ -254,56 +255,108 @@ final class SyncKeepAliveService {
   @visibleForTesting
   final Duration watchdogInterval;
 
-  bool _running = false;
-  bool get isRunning => _running;
+  bool _serviceRunning = false;
+  bool _locksAcquired = false;
+  bool _stopping = false;
+  bool _startAttempted = false;
+
+  /// 启动代数：stop 递增，使在途 start 的迟到完成失效并回滚。
+  int _startEpoch = 0;
+
+  bool get isRunning => _serviceRunning;
+  bool get locksAcquired => _locksAcquired;
 
   Timer? _watchdog;
 
+  bool _accepts(int epoch) => epoch == _startEpoch && !_stopping;
+
   Future<void> ensureStarted() async {
+    if (_stopping) return;
+    final epoch = _startEpoch;
     _watchdog ??= Timer.periodic(watchdogInterval, (_) => runWatchdogTick());
-    if (_running) return;
-    try {
-      await backend.start(
-        notificationId: FlutterSyncKeepAliveBackend.notificationId,
-        channelTitle: FlutterSyncKeepAliveBackend.channelName,
-        title: '畅聊消息服务运行中',
-        body: '保持消息与来电实时到达',
-      );
-      _running = true;
-    } catch (_) {
-      // 启动失败（权限/ROM 限制）静默降级；回前台生命周期可重试。
+    if (!_serviceRunning) {
+      _startAttempted = true;
+      try {
+        await backend.start(
+          notificationId: FlutterSyncKeepAliveBackend.notificationId,
+          channelTitle: FlutterSyncKeepAliveBackend.channelName,
+          title: '畅聊消息服务运行中',
+          body: '保持消息与来电实时到达',
+        );
+        if (!_accepts(epoch)) {
+          // stop 已发生：回滚这次迟到的启动，不重新持有资源。
+          try {
+            await backend.stop();
+          } catch (_) {}
+          return;
+        }
+        _serviceRunning = true;
+      } catch (_) {
+        // 启动失败（权限/ROM 限制）静默降级；回前台生命周期可重试。
+        // 注意：服务未运行时仍降级持有唤醒锁（弱保活）——但会被跟踪，
+        // stop() 必定释放。
+      }
     }
+    await _acquireLocks(epoch);
+  }
+
+  Future<void> _acquireLocks(int epoch) async {
+    if (_locksAcquired) return;
     await hooks.acquire().catchError((_) {});
+    if (!_accepts(epoch)) {
+      await hooks.release().catchError((_) {});
+      return;
+    }
+    _locksAcquired = true;
   }
 
   /// 看门狗拍：运行中无条件重申前台服务与唤醒锁（幂等），系统静默
   /// 回收后自愈；停止后为空操作。测试可直接驱动。
   @visibleForTesting
   Future<void> runWatchdogTick() async {
-    if (!_running) return;
-    try {
-      await backend.start(
-        notificationId: FlutterSyncKeepAliveBackend.notificationId,
-        channelTitle: FlutterSyncKeepAliveBackend.channelName,
-        title: '畅聊消息服务运行中',
-        body: '保持消息与来电实时到达',
-      );
-    } catch (_) {
-      // 重申失败保留运行态，下一拍再试。
+    if (_stopping) return;
+    if (_serviceRunning) {
+      try {
+        await backend.start(
+          notificationId: FlutterSyncKeepAliveBackend.notificationId,
+          channelTitle: FlutterSyncKeepAliveBackend.channelName,
+          title: '畅聊消息服务运行中',
+          body: '保持消息与来电实时到达',
+        );
+      } catch (_) {
+        // 重申失败保留运行态，下一拍再试。
+      }
     }
-    await hooks.acquire().catchError((_) {});
+    if (_locksAcquired) {
+      // 重申锁（部分系统静默释放后自愈）。
+      await hooks.acquire().catchError((_) {});
+    }
   }
 
   Future<void> stop() async {
-    if (!_running) return;
-    _watchdog?.cancel();
-    _watchdog = null;
-    _running = false;
-    await hooks.release().catchError((_) {});
+    _stopping = true;
     try {
-      await backend.stop();
-    } catch (_) {
-      // 服务本就未运行时停止失败无害。
+      _startEpoch++; // 在途启动失效。
+      _watchdog?.cancel();
+      _watchdog = null;
+      _serviceRunning = false;
+      // 与 _running 无关：已持有的锁必释放（C05：stop 不得因"服务未
+      // 启动成功"提前返回而漏掉清理）。从未尝试启动时不触达后端（保持
+      // 既有契约）；启动过（即使失败）则尽力停止。
+      if (_locksAcquired) {
+        _locksAcquired = false;
+        await hooks.release().catchError((_) {});
+      }
+      if (_startAttempted) {
+        try {
+          await backend.stop();
+        } catch (_) {
+          // 服务本就未运行时停止失败无害。
+        }
+      }
+      _startAttempted = false;
+    } finally {
+      _stopping = false;
     }
   }
 }

@@ -60,6 +60,13 @@ final class MatrixPusherService {
   StreamSubscription<String?>? _tokenSub;
   bool _unregistering = false;
 
+  // ── C04：推送绑定归属到会话（generation） ──
+  // 每次 unregister/dispose 递增；在途注册完成后发现代数变化即丢弃
+  // 结果并补偿删除，迟到回调不能再排队重试——注销与注册竞态不会再
+  // 把旧账号的 pusher 写回服务端。
+  int _generation = 0;
+  Future<bool>? _registrationInFlight;
+
   // ── 可恢复状态机 ──
   // 注册失败后有限指数退避自动重试；resume/网络恢复/CID 变化可手动触发。
   int _retryCount = 0;
@@ -87,14 +94,19 @@ final class MatrixPusherService {
   Future<bool> ensureRegistered() async {
     if (_registering) return false;
     _registering = true;
+    final generation = _generation;
+    final future = _doRegister(generation);
+    _registrationInFlight = future;
     try {
-      return await _doRegister();
+      return await future;
     } finally {
       _registering = false;
+      if (identical(_registrationInFlight, future)) _registrationInFlight = null;
     }
   }
 
-  Future<bool> _doRegister() async {
+  Future<bool> _doRegister(int generation) async {
+    if (generation != _generation) return false;
     final url = gatewayUrl;
     if (url == null) {
       diagnostics.record(
@@ -102,12 +114,13 @@ final class MatrixPusherService {
       return false;
     }
     final token = await tokenProvider.token();
+    if (generation != _generation) return false;
     if (token == null || token.isEmpty) {
       _lastFailureKind = 'no-token';
       _lastFailureAt = DateTime.now();
       diagnostics.record(
           NotificationDiagStage.push, 'no device token; pusher off');
-      _scheduleRetry();
+      if (generation == _generation) _scheduleRetry();
       return false;
     }
     if (token == _registeredToken) return true;
@@ -123,6 +136,14 @@ final class MatrixPusherService {
           data: PusherData(format: _pushFormat, url: url),
         ),
       );
+      if (generation != _generation) {
+        // 注册完成时会话已注销/切换：服务端已存在该 pusher → 立即补偿
+        // 删除，不把旧账号推送绑定留下来。
+        try {
+          await gateway.delete(PusherId(appId: appId, pushkey: token));
+        } catch (_) {}
+        return false;
+      }
       _registeredToken = token;
       _lastSuccessAt = DateTime.now();
       _lastFailureKind = '';
@@ -132,6 +153,7 @@ final class MatrixPusherService {
           'pusher registered (format=$_pushFormat)');
       return true;
     } catch (error) {
+      if (generation != _generation) return false;
       _lastFailureKind = error.runtimeType.toString();
       _lastFailureAt = DateTime.now();
       diagnostics.record(
@@ -152,7 +174,8 @@ final class MatrixPusherService {
     diagnostics.record(NotificationDiagStage.push,
         'pusher retry scheduled in ${delay.inSeconds}s (attempt $_retryCount/${_retryDelays.length})');
     _retryTimer = Timer(delay, () {
-      if (!_unregistering) unawaited(ensureRegistered());
+      if (_unregistering) return;
+      unawaited(ensureRegistered());
     });
   }
 
@@ -185,12 +208,21 @@ final class MatrixPusherService {
   }
 
   /// 登出/账号切换：注销 pusher（服务端停止向该设备推送）。
-  /// 同时停止重试（不允许登出后继续注册旧账号的 pusher）。
+  ///
+  /// C04：先递增会话代数使在途注册失效，**等待在途注册结束**后再删除；
+  /// 若在途 create 在注销后才完成（迟到写入服务端），由 _doRegister 的
+  /// 补偿删除清掉；迟到失败回调因代数不符不能再排队重试。
   Future<void> unregister() async {
     if (_unregistering) return;
     _unregistering = true;
+    _generation++;
     _cancelRetry();
     try {
+      // 等待在途注册收敛（注销不与注册竞态）。
+      final inFlight = _registrationInFlight;
+      if (inFlight != null) {
+        await inFlight.catchError((_) => false);
+      }
       final token = _registeredToken ?? await tokenProvider.token();
       if (token == null || token.isEmpty) {
         _registeredToken = null;
@@ -210,6 +242,7 @@ final class MatrixPusherService {
   }
 
   Future<void> dispose() async {
+    _generation++;
     _cancelRetry();
     await _tokenSub?.cancel();
     _tokenSub = null;
