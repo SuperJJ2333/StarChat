@@ -31,3 +31,7 @@ apps/mobile_flutter/android/app/google-services.json
 docs/verification/artifacts/**/*.apk
 # 第三方审计工作副本（完整源码快照，不入库；其结论文档另行提交）
 docs/verification/nomin36/
+# 无混淆构建源码快照与 APK（同 nomin36：结论文档保留，二进制/快照不入库）
+docs/verification/plain36/src/
+docs/verification/plain36/*.apk
+docs/verification/plain36/source.zip
