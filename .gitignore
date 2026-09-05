@@ -10,6 +10,9 @@ data/
 migration-artifacts/
 .superpowers/
 .worktrees/
+.github/
+.claude/
+.agents/
 .venv/
 *.egg-info/
 /build/

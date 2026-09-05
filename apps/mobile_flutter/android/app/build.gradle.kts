@@ -96,6 +96,8 @@ dependencies {
     implementation("com.getui:gtsdk:3.3.15.0")
     implementation("com.getui:gtc:3.3.3.0")
     implementation("com.getui:gsido:1.4.14.0")
+    // 原生通话层 JVM 单测（PendingCallActions 冷启动动作暂存）。
+    testImplementation(kotlin("test"))
 }
 
 kotlin {

@@ -134,6 +134,14 @@ final class CallUiManager {
         if (previous == CallPhase.ringing) {
           unawaited(notifications.hideIncoming());
         }
+        // 回前台恢复通话页（覆盖 ringing/connecting/connected）：页面
+        // 不存在则补开（后台经原生通知接听后回 App 必须能看到通话页），
+        // 已在栈中则不重复压入；主叫页面在栈时不盖（outgoing 守卫）。
+        if (isAppResumed() &&
+            !_outgoingCallPageVisible() &&
+            !_incomingOpen()) {
+          _pushIncomingPage(controller);
+        }
         // 通话中前台服务：切后台后麦克风/摄像头不回收。
         unawaited(notifications.showOngoing(title: '端到端加密通话进行中'));
       case CallPhase.ended:

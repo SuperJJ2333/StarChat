@@ -7,17 +7,21 @@ import android.os.Bundle
 import android.telecom.Connection
 import android.telecom.ConnectionRequest
 import android.telecom.ConnectionService
+import android.telecom.DisconnectCause
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
-import android.telecom.VideoProfile
 
 /**
- * 规格§二1：Telecom ConnectionService——系统电话框架接管来电。
+ * 规格§二1：Telecom 自管理 ConnectionService——系统电话框架接管来电呈现。
  *
  * 个推唤醒 → [reportIncoming]（TelecomManager.addNewIncomingCall）→
- * 系统创建 [CallConnection]（STATE_RINGING，系统级来电语义）；
- * 用户经系统 UI/我们的 CallActivity 接听/拒绝 → onAnswer/onReject。
- * 真实媒体/信令仍在 Flutter（Matrix/WebRTC）——本层只管来电生命周期。
+ * 系统创建 [CallConnection]（STATE_RINGING，系统级来电语义）。
+ * 真实媒体/信令在 Flutter（Matrix/WebRTC）——本层只管系统呈现：
+ * - onAnswer：Telecom 层确认接听，连接转 ACTIVE；**应用层连接成功
+ *   仍以 Flutter reportCallState(connected) 为准**（CallManager 保持
+ *   answering 直到回报到达）；
+ * - onReject / onDisconnect：呈现结束 + 按通话维度清理；
+ * - onCreateIncomingConnectionFailed：系统拒绝接入时清理，不留残留。
  */
 class CallConnectionService : ConnectionService() {
 
@@ -29,7 +33,18 @@ class CallConnectionService : ConnectionService() {
         connection.connectionProperties =
             Connection.PROPERTY_SELF_MANAGED
         connection.setRinging()
+        CallManager.appContext = applicationContext
+        CallManager.attachConnection(connection)
         return connection
+    }
+
+    /** 系统拒绝创建来电连接（权限/账号问题）：清理呈现，不吞异常痕迹。 */
+    override fun onCreateIncomingConnectionFailed(
+        connectionManagerPhoneAccount: PhoneAccountHandle?,
+        request: ConnectionRequest,
+    ) {
+        super.onCreateIncomingConnectionFailed(connectionManagerPhoneAccount, request)
+        CallManager.onEnded()
     }
 
     companion object {
@@ -60,36 +75,40 @@ class CallConnectionService : ConnectionService() {
 }
 
 /**
- * 自管来电连接：RINGING →（onAnswer）ACTIVE /（onReject）DISCONNECTED。
- * 事件全部转 [CallManager]，由它统一驱动 CallActivity / Flutter / 通知。
+ * 自管来电连接：RINGING →（onAnswer）ACTIVE /（onReject|onDisconnect）
+ * DISCONNECTED。事件全部转 [CallManager] 统一驱动 CallActivity / Flutter /
+ * 通知；媒体连接事实以 Flutter 状态回报为准。
  */
 class CallConnection(private val context: Context) : Connection() {
+
+    private var finished = false
+
     override fun onAnswer(videoState: Int) {
-        if (videoState != VideoProfile.STATE_AUDIO_ONLY &&
-            videoState and VideoProfile.STATE_TX_ENABLED != 0
-        ) {
-            // 视频接听（当前信令不区分，按语音处理）。
-        }
+        // Telecom 层确认接听请求；视频类型以 Matrix 同步结果为准
+        // （CallManager.video 由 reportCallState 更新）。
         setActive()
-        CallManager.onAnswered()
+        CallManager.onAnswerRequested()
         CallManager.launchCallActivity(context)
     }
 
     override fun onReject() {
-        setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REJECTED))
-        CallManager.onEnded()
-        CallForegroundService.stop(context)
-        destroy()
+        finish(DisconnectCause(DisconnectCause.REJECTED))
     }
 
     override fun onDisconnect() {
-        setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.LOCAL))
-        CallManager.onEnded()
-        CallForegroundService.stop(context)
-        destroy()
+        finish(DisconnectCause(DisconnectCause.LOCAL))
     }
 
-    fun end() {
-        onDisconnect()
+    /** 由 CallManager 清理时调用（finished 防递归）。 */
+    fun hangup() {
+        finish(DisconnectCause(DisconnectCause.LOCAL))
+    }
+
+    private fun finish(cause: DisconnectCause) {
+        if (finished) return
+        finished = true
+        setDisconnected(cause)
+        CallManager.onEnded()
+        destroy()
     }
 }

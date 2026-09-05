@@ -18,6 +18,10 @@ final class _FakeVideoAsset extends AssetEntity {
   Duration get videoDuration => const Duration(seconds: 12);
 }
 
+// 2×2 白色 PNG（亮度≈255，可通过多点位抽取的近黑帧检测）。
+final Uint8List whitePng = Uint8List.fromList(base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII='));
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -29,12 +33,12 @@ void main() {
 
     Future<Uint8List?> fetch(String path, int positionMs) async {
       fetches++;
-      return Uint8List.fromList([9, 9, 9]);
+      return whitePng;
     }
 
     final first =
         await loadVideoFirstFrame(asset, fetch: fetch, cacheDir: () async => dir);
-    expect(first, [9, 9, 9]);
+    expect(first, whitePng);
     expect(fetches, 1);
     // 缓存文件已写入 video_first_frame_cache。
     final cacheDir = Directory('${dir.path}${Platform.pathSeparator}video_first_frame_cache');
@@ -44,9 +48,9 @@ void main() {
     final second =
         await loadVideoFirstFrame(asset, fetch: (p, ms) async {
       fetches += 100;
-      return Uint8List.fromList([0]);
+      return whitePng;
     }, cacheDir: () async => dir);
-    expect(second, [9, 9, 9], reason: '命中缓存返回首次字节');
+    expect(second, whitePng, reason: '命中缓存返回首次字节');
     expect(fetches, 1, reason: '缓存命中不得再抽帧');
   });
 
@@ -63,7 +67,7 @@ void main() {
     expect(cacheDir.listSync(), isEmpty);
   });
 
-  test('memoize：同一闭包重复调用只抽一次帧', () async {
+  test('memoize：同一视频条目重复请求只抽一次帧（成功缓存）', () async {
     // 源码级守卫：loadNextPage 视频不等待系统缩略图（立即占位渲染）。
     final source = File('lib/features/matrix/device_gallery_source.dart')
         .readAsStringSync(encoding: utf8);
@@ -75,7 +79,26 @@ void main() {
     );
     expect(source.contains('video_first_frame_cache'), isTrue,
         reason: '必须有磁盘缓存目录');
-    expect(source.contains('firstFrame: isVideo ? _memoizedFirstFrame(asset) : null'),
-        isTrue);
+    // 成功结果的 memoize 职责移入全局协调器（失败不缓存、可重试）：
+    // 网格闭包统一走 videoFirstFrameStore.load。
+    expect(
+      source.contains(
+          'firstFrame: isVideo ? () => videoFirstFrameStore.load(asset) : null'),
+      isTrue,
+      reason: '首帧请求必须经全局协调器（成功缓存/失败退避/有界并发）',
+    );
+    // 行为级验证：同一资源重复 load 只抽一次（见 VideoFirstFrameStore 测试）。
+    var extractions = 0;
+    final store = VideoFirstFrameStore(
+      loader: (asset) async {
+        extractions++;
+        return whitePng;
+      },
+    );
+    final asset = _FakeVideoAsset();
+    expect(await store.load(asset), whitePng);
+    expect(await store.load(asset), whitePng);
+    expect(await store.load(asset), whitePng);
+    expect(extractions, 1, reason: '成功结果 memoize：重复调用零抽帧');
   });
 }

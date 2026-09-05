@@ -25,5 +25,4 @@ final class RecentForwardStore {
     }
     await _prefs.setStringList(_key, next.take(maxEntries).toList());
   }
-
 }

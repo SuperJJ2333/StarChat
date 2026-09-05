@@ -29,7 +29,8 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
   Future<RedPacketLimits> limits() async {
     final body = await api.redPacketLimits();
     return RedPacketLimits(
-        maxTotal: double.tryParse(body['max_total']?.toString() ?? '') ?? 20000);
+        maxTotal:
+            double.tryParse(body['max_total']?.toString() ?? '') ?? 20000);
   }
 }
 
@@ -144,8 +145,7 @@ final class _State extends State<ChatRedPacketSheet> {
     }
     await widget.controller.submit(
       total: total.text.trim(),
-      greeting:
-          greeting.text.trim().isEmpty ? '恭喜发财' : greeting.text.trim(),
+      greeting: greeting.text.trim().isEmpty ? '恭喜发财' : greeting.text.trim(),
       mode: widget.isGroup ? mode : 'EQUAL',
       shareCount: mode == 'EXCLUSIVE' ? 1 : shareCount,
       exclusiveRecipientId: mode == 'EXCLUSIVE' ? recipientId : null,
@@ -162,8 +162,7 @@ final class _State extends State<ChatRedPacketSheet> {
     }
   }
 
-  Future<void> _alert(String message, {Key? key}) =>
-      showCupertinoDialog<void>(
+  Future<void> _alert(String message, {Key? key}) => showCupertinoDialog<void>(
         context: context,
         barrierDismissible: true,
         builder: (dialogContext) => CupertinoAlertDialog(
@@ -327,8 +326,8 @@ final class _State extends State<ChatRedPacketSheet> {
               Center(
                 child: CupertinoButton(
                   key: const Key('chat-red-packet-type'),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   minimumSize: Size.zero,
                   color: WeChatColors.redPacketCreateTint,
                   borderRadius: BorderRadius.circular(16),
@@ -430,8 +429,7 @@ final class _State extends State<ChatRedPacketSheet> {
                 child: Center(
                     child: Text('红包已发送',
                         style: TextStyle(
-                            color: WeChatColors.brandPrimary,
-                            fontSize: 14))),
+                            color: WeChatColors.brandPrimary, fontSize: 14))),
               ),
             if (state.status == ChatRedPacketStatus.shareFailed)
               Padding(
@@ -497,8 +495,8 @@ final class _State extends State<ChatRedPacketSheet> {
           if (suffix != null) ...[
             const SizedBox(width: 6),
             Text(suffix,
-                style:
-                    const TextStyle(fontSize: 15, color: WeChatColors.textSecondary)),
+                style: const TextStyle(
+                    fontSize: 15, color: WeChatColors.textSecondary)),
           ],
         ]),
       );

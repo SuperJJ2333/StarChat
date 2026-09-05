@@ -52,8 +52,7 @@ RoomMessageViewModel _voice(String id) => RoomMessageViewModel(
     );
 
 void main() {
-  test('first tap downloads, plays and marks the message as playing',
-      () async {
+  test('first tap downloads, plays and marks the message as playing', () async {
     final engine = FakeVoiceAudioEngine();
     final downloads = <String>[];
     final controller = VoicePlaybackController(
@@ -143,8 +142,7 @@ void main() {
     expect(engine.played.single, isTrue);
   });
 
-  test('pause freezes and resume continues from the paused position',
-      () async {
+  test('pause freezes and resume continues from the paused position', () async {
     final engine = FakeVoiceAudioEngine();
     final controller = VoicePlaybackController(
       loadAttachment: (eventId) async => Uint8List.fromList([1]),
@@ -195,7 +193,6 @@ void main() {
 
     engine.finishNaturally();
     await Future<void>.delayed(Duration.zero);
-    expect(controller.isPlaying('voice-1'), isFalse,
-        reason: '播放自然结束后气泡应复位为空闲');
+    expect(controller.isPlaying('voice-1'), isFalse, reason: '播放自然结束后气泡应复位为空闲');
   });
 }

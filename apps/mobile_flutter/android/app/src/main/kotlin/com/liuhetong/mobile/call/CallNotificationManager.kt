@@ -75,6 +75,44 @@ object CallNotificationManager {
             "chatflow_calls",
         )
 
+    /**
+     * 全屏/正文展示意图：指向 CallActivity（仅展示来电页）。
+     * 修复：此前 fullScreenIntent/contentIntent 复用[接听]广播——
+     * 点通知正文或系统全屏展示即等于接听（规格§六1/§六2 禁止）。
+     */
+    private fun showPendingIntent(context: Context): PendingIntent =
+        PendingIntent.getActivity(
+            context, 3,
+            Intent(context, CallActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+    /**
+     * Android 14+ 全屏通知授权检查：未授权时系统自动降级为横幅通知，
+     * 应用不得伪称必定全屏；提供设置入口（见 [openFullScreenIntentSettings]）。
+     */
+    fun canUseFullScreenIntent(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        return nm.canUseFullScreenIntent()
+    }
+
+    /** Android 14+ 全屏通知授权设置页（CallActivity 的"去授权"入口）。 */
+    fun openFullScreenIntentSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return false
+        return try {
+            context.startActivity(
+                Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+                    .setData(Uri.parse("package:${context.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun buildIncoming(context: Context, video: Boolean): Notification {
         ensureChannel(context)
         val person = android.app.Person.Builder()
@@ -91,25 +129,25 @@ object CallNotificationManager {
             Intent(context, IncomingCallReceiver::class.java).setAction(actionReject),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val contentPi = PendingIntent.getBroadcast(
-            context, 2,
-            Intent(context, IncomingCallReceiver::class.java).setAction(actionAnswer),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        // 正文点击 = 打开来电展示页（不接听）。
+        val showPi = showPendingIntent(context)
         val base = Notification.Builder(context, channelId)
             .setSmallIcon(context.applicationInfo.icon)
             .setContentTitle(if (video) "畅聊视频来电" else "畅聊语音来电")
             .setContentText("加密来电")
             .setCategory(Notification.CATEGORY_CALL)
-            .setContentIntent(answerPi)
+            .setContentIntent(showPi)
             .setOngoing(true)
             .setAutoCancel(false)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
         if (Build.VERSION.SDK_INT >= 31 && ensurePhoneAccount(context)) {
+            // CallStyle 分支：系统级来电样式（自带全屏/横幅呈现能力），
+            // hangup=拒绝、answer=接听（参数顺序：person, hangup, answer）。
             base.setStyle(Notification.CallStyle.forIncomingCall(person, rejectPi, answerPi))
         } else {
-            // 回退：全屏意图（锁屏/息屏点亮）+ 显式接听/拒绝按钮。
-            base.setFullScreenIntent(answerPi, true)
+            // 回退分支：全屏意图指向展示 Activity（非接听广播）+
+            // 显式接听/拒绝按钮。
+            base.setFullScreenIntent(showPi, true)
                 .addAction(0, "接听", answerPi)
                 .addAction(0, "拒绝", rejectPi)
         }

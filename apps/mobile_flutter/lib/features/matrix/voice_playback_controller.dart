@@ -69,7 +69,8 @@ final class VoicePlaybackController extends ChangeNotifier {
   })  : _loadAttachment = loadAttachment,
         engine = engine ?? AudioplayersVoiceEngine() {
     // 播放自然结束时复位气泡（QQ 式播放体验）。
-    _completedSubscription = this.engine.completed.listen((_) => _handleCompleted());
+    _completedSubscription =
+        this.engine.completed.listen((_) => _handleCompleted());
     _positionSubscription = this.engine.position.listen(_handlePosition);
   }
 

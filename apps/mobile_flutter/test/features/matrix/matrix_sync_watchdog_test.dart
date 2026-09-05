@@ -12,7 +12,8 @@ void main() {
 
   test('健康循环（心跳持续）不采取任何行动', () async {
     final target = _FakeWatchdogTarget();
-    final watchdog = MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
     watchdog.start();
     target.emit(status(SyncStatus.waitingForResponse));
     target.clock.elapse(const Duration(minutes: 1));
@@ -28,7 +29,8 @@ void main() {
 
   test('停跳超过软阈值 → 踢一次 oneShotSync，不重启', () async {
     final target = _FakeWatchdogTarget();
-    final watchdog = MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
     watchdog.start();
     target.emit(status(SyncStatus.waitingForResponse));
     target.clock.elapse(const Duration(minutes: 3));
@@ -41,7 +43,8 @@ void main() {
 
   test('停跳超过硬阈值 → abortSync + 重启后台同步循环', () async {
     final target = _FakeWatchdogTarget();
-    final watchdog = MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
     watchdog.start();
     target.emit(status(SyncStatus.waitingForResponse));
     target.clock.elapse(const Duration(minutes: 6));
@@ -54,7 +57,8 @@ void main() {
 
   test('心跳恢复后阈值重新计时（不会连环重启）', () async {
     final target = _FakeWatchdogTarget();
-    final watchdog = MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
     watchdog.start();
     target.emit(status(SyncStatus.waitingForResponse));
     target.clock.elapse(const Duration(minutes: 3));
@@ -72,7 +76,8 @@ void main() {
 
   test('abortSync 卡死（超时）不阻断重启', () async {
     final target = _FakeWatchdogTarget()..hangAbort = true;
-    final watchdog = MatrixSyncWatchdog(target: target, clock: target.clock.now);
+    final watchdog =
+        MatrixSyncWatchdog(target: target, clock: target.clock.now);
     watchdog.start();
     target.emit(status(SyncStatus.waitingForResponse));
     target.clock.elapse(const Duration(minutes: 6));

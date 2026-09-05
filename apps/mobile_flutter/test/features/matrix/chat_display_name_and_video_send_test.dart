@@ -87,8 +87,7 @@ void main() {
     test('平台转码不可用时回退原始视频并给出明确提示', () async {
       // flutter test 环境无平台通道：VideoCompress 调用必然失败，
       // 策略必须回退原文件且携带 fallbackNotice（不静默）。
-      final temp = File(
-          '${Directory.systemTemp.path}/chat-video-test-'
+      final temp = File('${Directory.systemTemp.path}/chat-video-test-'
           '${DateTime.now().microsecondsSinceEpoch}.mp4');
       await temp.writeAsBytes(List<int>.filled(1024, 7), flush: true);
       try {

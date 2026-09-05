@@ -63,7 +63,7 @@ final class DirectChatService implements DirectChatGateway {
 
   /// 打开既有规范房间（Canonical Direct Conversation 复用路径）。
   Future<DirectChatRoom> openExisting(
-    String roomId, String matrixUserId) async {
+      String roomId, String matrixUserId) async {
     return _requireSafe(await backend.waitForRoom(roomId), matrixUserId);
   }
 

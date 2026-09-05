@@ -100,25 +100,34 @@ final class MatrixSyncWatchdog {
     if (idle <= hardStallThreshold) {
       debugPrint('[chatflow/syncwatchdog] sync stalled ${idle.inSeconds}s, '
           'kicking oneShotSync');
-      unawaited(target.oneShotSync().timeout(
-        const Duration(seconds: 45),
-        onTimeout: () => debugPrint('[chatflow/syncwatchdog] oneShotSync '
-            'kick timed out; escalating on next tick'),
-      ).catchError((_) {}));
+      unawaited(target
+          .oneShotSync()
+          .timeout(
+            const Duration(seconds: 45),
+            onTimeout: () => debugPrint('[chatflow/syncwatchdog] oneShotSync '
+                'kick timed out; escalating on next tick'),
+          )
+          .catchError((_) {}));
       return;
     }
     debugPrint('[chatflow/syncwatchdog] sync stalled ${idle.inSeconds}s, '
         'forcing loop restart (abortSync + backgroundSync)');
     _lastProgress = _clock(); // 重置阈值，避免连环重启。
-    unawaited(target.abortSync().timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => debugPrint('[chatflow/syncwatchdog] abortSync timed '
-          'out (hung transaction?); restarting anyway'),
-    ).catchError((_) {}));
+    unawaited(target
+        .abortSync()
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => debugPrint('[chatflow/syncwatchdog] abortSync timed '
+              'out (hung transaction?); restarting anyway'),
+        )
+        .catchError((_) {}));
     target.backgroundSync = true;
-    unawaited(target.oneShotSync().timeout(
-      const Duration(seconds: 45),
-    ).catchError((_) {}));
+    unawaited(target
+        .oneShotSync()
+        .timeout(
+          const Duration(seconds: 45),
+        )
+        .catchError((_) {}));
   }
 
   void dispose() {

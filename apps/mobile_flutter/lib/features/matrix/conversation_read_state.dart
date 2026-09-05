@@ -17,7 +17,8 @@
 final class ConversationReadState {
   ConversationReadState._internal();
 
-  static final ConversationReadState _shared = ConversationReadState._internal();
+  static final ConversationReadState _shared =
+      ConversationReadState._internal();
   factory ConversationReadState.shared() => _shared;
 
   /// 测试隔离用：重置共享实例的本地状态。

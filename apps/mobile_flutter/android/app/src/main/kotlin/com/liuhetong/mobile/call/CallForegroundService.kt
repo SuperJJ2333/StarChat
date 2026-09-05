@@ -31,7 +31,15 @@ class CallForegroundService : Service() {
         } else {
             startForeground(CallNotificationManager.notificationId, notification)
         }
-        Handler(mainLooper).postDelayed({ stopSelfSafely() }, RING_TIMEOUT_MS)
+        // 无应答超时：结束整通呈现（通知/铃声/CallManager 状态联动清理），
+        // 不再只停服务留下悬挂的 ringing 状态。
+        Handler(mainLooper).postDelayed({
+            if (CallManager.state == CallManager.State.ringing) {
+                CallManager.onEnded()
+            } else {
+                stopSelfSafely()
+            }
+        }, RING_TIMEOUT_MS)
         return START_NOT_STICKY
     }
 

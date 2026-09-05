@@ -70,7 +70,8 @@ Future<void> _pump(
 }
 
 void main() {
-  testWidgets('send page shows wechat-style labeled rows with right aligned numeric input',
+  testWidgets(
+      'send page shows wechat-style labeled rows with right aligned numeric input',
       (tester) async {
     final controller = ChatRedPacketController(
       business: FakeRedPacketBusiness(),
@@ -94,7 +95,8 @@ void main() {
     );
   });
 
-  testWidgets('group page offers three red packet types and a share count field',
+  testWidgets(
+      'group page offers three red packet types and a share count field',
       (tester) async {
     final controller = ChatRedPacketController(
       business: FakeRedPacketBusiness(),
@@ -127,7 +129,8 @@ void main() {
       support: FakeSupport(100, 200),
     );
 
-    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '300');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '300');
     await tester.tap(find.byKey(const Key('chat-red-packet-send')));
     await tester.pumpAndSettle();
 
@@ -149,7 +152,8 @@ void main() {
       support: FakeSupport(1.00, 20000),
     );
 
-    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '5.00');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '5.00');
     await tester.tap(find.byKey(const Key('chat-red-packet-send')));
     await tester.pumpAndSettle();
 
@@ -184,7 +188,8 @@ void main() {
       support: FakeSupport(500, 20000),
     );
 
-    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '5.00');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '5.00');
     await tester.tap(find.byKey(const Key('chat-red-packet-send')));
     await tester.pumpAndSettle();
 
@@ -207,7 +212,8 @@ void main() {
       members: const [ChatRoomMember('user-alice', '爱丽丝')],
     );
 
-    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '8.88');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '8.88');
     await tester.tap(find.byKey(const Key('chat-red-packet-type')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('专属红包').last);
@@ -223,7 +229,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('chat-red-packet-recipient')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-red-packet-member-user-alice')));
+    await tester
+        .tap(find.byKey(const Key('chat-red-packet-member-user-alice')));
     await tester.pumpAndSettle();
     expect(find.text('爱丽丝'), findsOneWidget);
 
@@ -245,10 +252,12 @@ void main() {
     await _pump(tester, controller: controller);
 
     final gradientContainer = tester.widget<Container>(
-      find.ancestor(
-        of: find.text('塞钱进红包'),
-        matching: find.byType(Container),
-      ).first,
+      find
+          .ancestor(
+            of: find.text('塞钱进红包'),
+            matching: find.byType(Container),
+          )
+          .first,
     );
     final decoration = gradientContainer.decoration! as BoxDecoration;
     final gradient = decoration.gradient! as LinearGradient;

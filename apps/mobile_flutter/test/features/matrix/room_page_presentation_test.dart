@@ -11,8 +11,7 @@ void main() {
     expect(groupRoomNavigationTitle(null, 5), '群聊（5）');
   });
 
-  test('long custom names keep the full title and ellipsize at the widget',
-      () {
+  test('long custom names keep the full title and ellipsize at the widget', () {
     // 标题函数返回完整文本；一行内省略由 WeChatNavTitle 的
     // maxLines+ellipsis 处理。
     expect(

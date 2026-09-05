@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
@@ -26,10 +27,76 @@ final class FakePager extends DeviceGalleryPager {
 }
 
 final Uint8List tinyPng = Uint8List.fromList(<int>[
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
-  0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 19, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84,
-  120, 156, 99, 250, 207, 192, 80, 15, 0, 6, 5, 2, 1, 137, 197, 57, 218, 0,
-  0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+  137,
+  80,
+  78,
+  71,
+  13,
+  10,
+  26,
+  10,
+  0,
+  0,
+  0,
+  13,
+  73,
+  72,
+  68,
+  82,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  1,
+  8,
+  6,
+  0,
+  0,
+  0,
+  31,
+  19,
+  196,
+  137,
+  0,
+  0,
+  0,
+  13,
+  73,
+  68,
+  65,
+  84,
+  120,
+  156,
+  99,
+  250,
+  207,
+  192,
+  80,
+  15,
+  0,
+  6,
+  5,
+  2,
+  1,
+  137,
+  197,
+  57,
+  218,
+  0,
+  0,
+  0,
+  0,
+  73,
+  69,
+  78,
+  68,
+  174,
+  66,
+  96,
+  130,
 ]);
 
 final class FakePhoto {
@@ -110,9 +177,11 @@ void main() {
 
     // 原图开关：默认关闭 → 打开。
     expect(
-        tester.widget<CupertinoSwitch>(
-          find.byKey(const Key('image-picker-original-switch')),
-        ).value,
+        tester
+            .widget<CupertinoSwitch>(
+              find.byKey(const Key('image-picker-original-switch')),
+            )
+            .value,
         isFalse);
     await tester.tap(find.byKey(const Key('image-picker-original-switch')));
     await tester.pump();
@@ -124,9 +193,11 @@ void main() {
     final route = tester.element(find.text('发送(2)').first);
     expect(route, isNotNull);
     expect(
-        tester.widget<CupertinoSwitch>(
-          find.byKey(const Key('image-picker-original-switch')),
-        ).value,
+        tester
+            .widget<CupertinoSwitch>(
+              find.byKey(const Key('image-picker-original-switch')),
+            )
+            .value,
         isTrue);
   });
 
@@ -191,11 +262,11 @@ void main() {
     expect(find.byKey(const Key('image-picker-item-p-20')), findsNothing);
 
     // 向下滑动：接近末尾时按序追加一页。
-    await tester.drag(find.byKey(const Key('image-picker-grid')),
-        const Offset(0, -1400));
+    await tester.drag(
+        find.byKey(const Key('image-picker-grid')), const Offset(0, -1400));
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.drag(find.byKey(const Key('image-picker-grid')),
-        const Offset(0, -800));
+    await tester.drag(
+        find.byKey(const Key('image-picker-grid')), const Offset(0, -800));
     await tester.pumpAndSettle();
 
     expect(pager.served, 2, reason: '滚动到底追加第二页');
@@ -228,10 +299,17 @@ void main() {
       ],
     ]);
     final albums = const [
-      GalleryAlbum(id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false),
-      GalleryAlbum(id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true),
-      GalleryAlbum(id: 'camera', name: 'Camera', isRecent: false, isVideoOnly: false),
-      GalleryAlbum(id: 'screenshots', name: 'Screenshots', isRecent: false, isVideoOnly: false),
+      GalleryAlbum(
+          id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false),
+      GalleryAlbum(
+          id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true),
+      GalleryAlbum(
+          id: 'camera', name: 'Camera', isRecent: false, isVideoOnly: false),
+      GalleryAlbum(
+          id: 'screenshots',
+          name: 'Screenshots',
+          isRecent: false,
+          isVideoOnly: false),
     ];
     GalleryAlbum? factoryAlbum;
     await tester.pumpWidget(CupertinoApp(
@@ -256,8 +334,8 @@ void main() {
     expect(find.byKey(const Key('image-picker-album-sheet')), findsOneWidget);
     expect(find.byKey(const Key('image-picker-album-videos')), findsOneWidget);
     expect(find.byKey(const Key('image-picker-album-camera')), findsOneWidget);
-    expect(
-        find.byKey(const Key('image-picker-album-screenshots')), findsOneWidget);
+    expect(find.byKey(const Key('image-picker-album-screenshots')),
+        findsOneWidget);
 
     await tester.tap(find.byKey(const Key('image-picker-album-videos')));
     await tester.pumpAndSettle();
@@ -296,7 +374,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.byKey(const Key('image-picker-video-limit-dialog')),
-        findsOneWidget, reason: '原图模式下超 20MB 视频被拦截并提示');
+        findsOneWidget,
+        reason: '原图模式下超 20MB 视频被拦截并提示');
     expect(find.byKey(const Key('image-picker-send')), findsOneWidget,
         reason: '页面未关闭，发送被拦截');
   });
@@ -330,4 +409,120 @@ void main() {
     expect(find.byKey(const Key('image-picker-send')), findsNothing,
         reason: '压缩模式正常发送并关闭选择页');
   });
+
+  testWidgets('验证11：快速切换相册后，旧请求不覆盖新相册的列表/加载态',
+      (tester) async {
+    final gate1 = Completer<void>();
+    // 慢分页器（模拟弱网首屏加载），结果被门闩挂起。
+    final gatedPager = _GatedPager(gate1.future);
+    final fastVideoPager = FakePager([
+      [
+        GalleryPhoto(
+          id: 'video-fast-1',
+          thumbnail: tinyPng,
+          compressedBytes: () async => Uint8List.fromList([1]),
+          originalBytes: () async => Uint8List.fromList([1]),
+          isVideo: true,
+          duration: const Duration(seconds: 3),
+        ),
+      ],
+    ]);
+    final albums = const [
+      GalleryAlbum(
+          id: 'recent', name: '最近图片', isRecent: true, isVideoOnly: false),
+      GalleryAlbum(
+          id: 'videos', name: '本地视频', isRecent: false, isVideoOnly: true),
+    ];
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(
+        pagerBuilder: () => gatedPager,
+        albumsLoader: () async => albums,
+        pagerFactory: (album) => album == null ? gatedPager : fastVideoPager,
+      ),
+    ));
+    await tester.pump(); // 首屏（common）请求已发出，仍挂起。
+
+    // 切换到"本地视频"（新批次），其首页立即完成。
+    //（首个慢请求仍挂起：网格转圈动画持续，不能用 pumpAndSettle；
+    //  弹层路由在微任务内挂载，需先 pump 一帧再等动画完成。）
+    await tester.tap(find.byKey(const Key('image-picker-album-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('image-picker-album-videos')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
+        reason: '新相册列表已展示');
+
+    // 旧相册（common）的慢请求现在才返回：不得覆盖新相册结果。
+    gate1.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('image-picker-item-recent-stale-1')), findsNothing,
+        reason: '旧请求的结果必须被丢弃');
+    expect(find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
+        reason: '新相册列表保持不变');
+  });
+
+  testWidgets('验证12/UI：视频首帧失败显示占位与重试入口，选择不受影响',
+      (tester) async {
+    var loads = 0;
+    final video = GalleryPhoto(
+      id: 'fail-video',
+      thumbnail: Uint8List(0),
+      compressedBytes: () async => Uint8List.fromList([1]),
+      originalBytes: () async => Uint8List.fromList([1]),
+      isVideo: true,
+      duration: const Duration(seconds: 12),
+      firstFrame: () async {
+        loads++;
+        return null; // 首帧抽帧失败（不可解码/文件忙）。
+      },
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(
+        pagerBuilder: () => FakePager([
+          [video],
+        ]),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 占位（非黑卡）+ 重试入口可见；条目仍在且可勾选（封面失败不删条目）。
+    expect(find.byKey(const Key('image-picker-item-fail-video')), findsOneWidget);
+    expect(find.byKey(const Key('image-picker-frame-retry-fail-video')),
+        findsOneWidget,
+        reason: '失败后提供明确的重试入口');
+    await tester.tap(find.byKey(const Key('image-picker-check-fail-video')));
+    await tester.pump();
+    expect(find.text('发送(1)'), findsOneWidget, reason: '封面失败不阻断选择');
+
+    // 点重试：重新发起一次首帧加载（有限重试入口有效）。
+    await tester.tap(find.byKey(const Key('image-picker-frame-retry-fail-video')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(loads, 2, reason: '重试入口重新触发一次首帧加载');
+  });
+}
+
+/// 门闩分页器：首页结果挂起直至 gate 完成（模拟慢请求）。
+final class _GatedPager extends DeviceGalleryPager {
+  _GatedPager(this.gate);
+
+  final Future<void> gate;
+
+  @override
+  Future<List<GalleryPhoto>> loadNextPage({int pageSize = 20}) async {
+    await gate;
+    return [
+      GalleryPhoto(
+        id: 'recent-stale-1',
+        thumbnail: tinyPng,
+        compressedBytes: () async => Uint8List.fromList([1]),
+        originalBytes: () async => Uint8List.fromList([1]),
+      ),
+    ];
+  }
 }

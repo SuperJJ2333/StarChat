@@ -49,6 +49,7 @@ import 'features/matrix/call_permissions.dart';
 import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
+import 'features/matrix/native_call_coordinator.dart';
 import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/matrix_notification_event_source.dart';
 import 'features/matrix/matrix_room_timeline_adapter.dart'
@@ -246,29 +247,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。
+    // 事件语义严格区分（修复"来电事件即自动接听"）：incomingCall 只登记
+    // 呈现；只有 callAccepted/callRejected（用户明确动作）才驱动接听/拒接，
+    // 全部经 NativeCallCoordinator（含冷启动 ready 握手与待接听仲裁）。
     _nativeCallControl = const MethodChannel('native_call');
-    _nativeCallControl?.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'incomingCall':
-        case 'callAccepted':
-          // 来电/已接听：呈现通话页并走接听链路（含同步竞态窗口）。
-          callUi.showIncomingCall(calls);
-          if (calls.state.phase == CallPhase.ringing) {
-            unawaited(calls.accept());
-          } else {
-            unawaited(_autoAcceptWhenRinging());
-          }
-          _dismissNativeCallLayer();
-        case 'callEnded':
-          if (calls.state.phase == CallPhase.connected ||
-              calls.state.phase == CallPhase.connecting) {
-            unawaited(calls.hangup());
-          } else if (calls.state.phase == CallPhase.ringing) {
-            unawaited(calls.reject());
-          }
-      }
-      return true;
-    });
+    _nativeCallControl?.setMethodCallHandler((call) =>
+        nativeCalls.handleNativeMessage(call.method, call.arguments));
+    unawaited(nativeCalls.restorePendingState());
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
     _nativePushBridge = NativePushBridge(
@@ -289,26 +274,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     unawaited(_nativePushBridge!.install());
+    // chatflow/call 通道：仅保留 Flutter→原生 dismiss（收起原生前台服务/
+    // 通知层）。接听/拒绝动作统一走 native_call 事件（单一通道，避免
+    // 双通道重复触发接听）。
     _nativeCallChannel = const MethodChannel('chatflow/call');
-    _nativeCallChannel?.setMethodCallHandler((call) async {
-      // 原生 CallStyle 通知动作（规格§4/§5/§6）：接听=开页+accept；
-      // 拒绝=reject。动作后通知原生停服务（Flutter 接管 UI/媒体）。
-      if (call.method == 'openIncomingCall') {
-        callUi.showIncomingCall(calls);
-        if (calls.state.phase == CallPhase.ringing) {
-          unawaited(calls.accept());
-        } else {
-          unawaited(_autoAcceptWhenRinging());
-        }
-        _dismissNativeCallLayer();
-      } else if (call.method == 'rejectIncomingCall') {
-        if (calls.state.phase == CallPhase.ringing) {
-          unawaited(calls.reject());
-        }
-        _dismissNativeCallLayer();
-      }
-      return true;
-    });
     callUi.attach(
       calls,
       mediaBackend: callBackend,
@@ -903,31 +872,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   MethodChannel? _nativeCallChannel;
   MethodChannel? _nativeCallControl;
 
-  /// 推送先于 Matrix 同步到达：等待响铃事件后自动接听（≤8s）。
-  Future<void> _autoAcceptWhenRinging() async {
-    var handled = false;
-    void listener() {
-      if (!handled && calls.state.phase == CallPhase.ringing) {
-        handled = true;
-        calls.removeListener(listener);
-        unawaited(calls.accept());
-      }
-    }
-
-    calls.addListener(listener);
-    final deadline = DateTime.now().add(const Duration(seconds: 8));
-    while (DateTime.now().isBefore(deadline) && !handled) {
-      final phase = calls.state.phase;
-      if (phase == CallPhase.ringing) break;
-      if (phase == CallPhase.ended || phase == CallPhase.failed) break;
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    }
-    if (!handled && calls.state.phase == CallPhase.ringing) {
-      handled = true;
-      unawaited(calls.accept());
-    }
-    calls.removeListener(listener);
-  }
+  /// 原生通话协调器：来电呈现/用户接听/拒绝/冷启动恢复的唯一接线。
+  /// （原 _autoAcceptWhenRinging"未来 8 秒出现任何响铃即接听"的宽泛
+  /// 逻辑已删除——待接听现在绑定具体通话、有期限与取消条件。）
+  late final NativeCallCoordinator nativeCalls = NativeCallCoordinator(
+    calls: calls,
+    onPresentIncoming: () {
+      if (mounted) callUi.showIncomingCall(calls);
+    },
+    onDismissNativeLayer: _dismissNativeCallLayer,
+  );
 
   void _dismissNativeCallLayer() {
     unawaited(_nativeCallChannel?.invokeMethod('dismiss'));
@@ -936,6 +890,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 规格§三：来电委托管理器呈现；摘要落消息；登出经 dispose 清理。
   void _handleCallState() {
     if (!mounted) return;
+    // 待接听匹配（用户已在原生层点接听而 Matrix 响铃刚到）+ 状态回报。
+    nativeCalls.onCallPhaseChanged();
     final phase = calls.state.phase;
     if (phase == CallPhase.ringing) {
       // 前台：任意页面之上弹出来电页；后台：系统全屏来电通知。
@@ -1116,6 +1072,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     pendingFriendRequests.dispose();
     unawaited(_nativePushBridge?.uninstall());
     calls.removeListener(_handleCallState);
+    // 通话协调器清理：作废待接听 + 通知原生层收尾（登出不留旧通话呈现）。
+    unawaited(nativeCalls.dispose());
     unawaited(callUi.detach());
     calls.dispose();
     callBackend.dispose();

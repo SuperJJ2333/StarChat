@@ -281,4 +281,67 @@ void main() {
     expect(manager.isIncomingPageOpen, isFalse);
     expect(manager.ringing, isFalse);
   });
+
+  testWidgets('验证8：后台接听→connecting/connected，回前台补开通话页且不重复压入',
+      (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final notifications = _RecordingCallNotifications();
+    var resumed = false; // 用户返回应用后置 true。
+    final manager = CallUiManager(
+      navigatorKey: navigatorKey,
+      notifications: notifications,
+      isAppResumed: () => resumed,
+    );
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+      now: () => tester.binding.clock.now(),
+    );
+    manager.attach(controller);
+    await tester.pumpWidget(CupertinoApp(
+      navigatorKey: navigatorKey,
+      home: const Center(child: Text('主页占位')),
+    ));
+
+    // 后台来电：只发系统通知，不推页面。
+    await _emit(tester, backend.events, _incoming());
+    await tester.pump();
+    expect(notifications.calls.single, contains('showIncoming(ring=true'),
+        reason: '后台来电走系统通知');
+    expect(manager.isIncomingPageOpen, isFalse);
+
+    // 用户经原生通知接听（后台）：connecting 期间仍无页面。
+    await controller.accept();
+    await tester.pump();
+    expect(controller.state.phase, CallPhase.connecting);
+    expect(manager.isIncomingPageOpen, isFalse,
+        reason: '后台接听阶段页面尚未挂载（由原生层呈现）');
+
+    // 用户回到应用（app_home resume → showIncomingCall）：
+    // connecting 且页面缺失 → 补开通话页。
+    resumed = true;
+    manager.showIncomingCall(controller);
+    await tester.pumpAndSettle();
+    expect(find.text('正在建立加密连接…'), findsOneWidget,
+        reason: 'connecting 且页面缺失：恢复应用必须补开通话页');
+    expect(manager.isIncomingPageOpen, isTrue);
+
+    // connected 到达：页面保持，不重复压入第二页。
+    await _emit(tester, backend.events, const CallBackendEvent.connected());
+    await tester.pumpAndSettle();
+    expect(manager.isIncomingPageOpen, isTrue);
+    expect(find.text('正在建立加密连接…'), findsNothing,
+        reason: '已接通，connecting 文案消失');
+    expect(find.text('主页占位'), findsNothing, reason: '通话页仍在最上层');
+
+    // 再次触发 showIncomingCall（重复 resume/重复事件）：不得重复压入。
+    manager.showIncomingCall(controller);
+    await tester.pumpAndSettle();
+    expect(manager.isIncomingPageOpen, isTrue);
+    expect(find.byKey(const Key('call-control-hangup')), findsOneWidget,
+        reason: '通话页只压入一次（不重复压入页面）');
+
+    await _teardown(tester, backend.events, manager);
+  });
 }

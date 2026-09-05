@@ -1,27 +1,28 @@
 package com.liuhetong.mobile.call
 
 import android.content.Context
-import io.flutter.plugin.common.MethodChannel
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.BinaryMessenger
+import io.flutter.plugin.common.MethodChannel
 
 /**
- * Flutter ↔ Native 通话桥（规格§4/§5/§6）：
- * - Native→Flutter：来电通知点[接听]→ openIncomingCall；点[拒绝]→ rejectIncomingCall。
- * - Flutter→Native：dismiss（Flutter 已接管通话，停原生前台服务与通知）。
+ * Flutter ↔ Native 通话桥（chatflow/call，规格§4/§5/§6）：
+ * 仅承载 Flutter→原生 dismiss（Flutter 已接管通话，收起原生前台服务
+ * 与来电通知）。接听/拒绝动作统一走 [NativeCallBridge]（native_call）
+ * 单一通道，避免双通道重复触发接听。
  * 只传动作类型，不携带任何业务内容（隐私红线）。
  */
 object CallBridge {
     const val channelName = "chatflow/call"
-    const val methodOpenIncomingCall = "openIncomingCall"
-    const val methodRejectIncomingCall = "rejectIncomingCall"
     const val methodDismiss = "dismiss"
 
     @Volatile private var channel: MethodChannel? = null
-    @Volatile private var handler: MethodChannel.MethodCallHandler? = null
 
     fun setUp(messenger: BinaryMessenger, onDismiss: () -> Unit) {
         val ch = MethodChannel(messenger, channelName)
-        handler = MethodChannel.MethodCallHandler { call, result ->
+        ch.setMethodCallHandler { call, result ->
             when (call.method) {
                 methodDismiss -> {
                     onDismiss()
@@ -30,118 +31,161 @@ object CallBridge {
                 else -> result.notImplemented()
             }
         }
-        ch.setMethodCallHandler(handler)
         channel = ch
-        NativeCallBridge.setUp(messenger)
-    }
-
-    fun notifyOpenIncomingCall(context: Context) {
-        invoke(context, methodOpenIncomingCall)
-    }
-
-    fun notifyRejectIncomingCall(context: Context) {
-        invoke(context, methodRejectIncomingCall)
-    }
-
-    fun notifyCallEnded(context: Context) {
-        NativeCallBridge.emitToFlutter("callEnded")
-    }
-
-    private fun invoke(context: Context, method: String) {
-        val ch = channel
-        if (ch == null) {
-            // Flutter 引擎未起（进程被杀后仅 SDK 拉活）：点按即拉起应用，
-            // 由既有的全屏意图/启动路由接管，不在此伪造接听。
-            launchApp(context)
-            return
-        }
-        android.os.Handler(context.mainLooper).post {
-            ch.invokeMethod(method, null)
-        }
-    }
-
-    private fun launchApp(context: Context) {
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        intent?.let { context.startActivity(it) }
     }
 
     fun teardown() {
         channel?.setMethodCallHandler(null)
         channel = null
-        handler = null
-        NativeCallBridge.teardown()
     }
 }
 
 /**
  * 规格§三：native_call 通道。
- * Flutter→Native：answerCall / rejectCall / endCall；
- * Native→Flutter：incomingCall / callAccepted / callEnded（由 CallManager
- * 状态广播驱动）；另支持 getActiveCall 查询（§四恢复逻辑）。
+ *
+ * Native→Flutter 事件：incomingCall（推送唤醒呈现，仅登记）/
+ * callAccepted（用户明确请求接听）/ callRejected（用户明确请求拒绝）/
+ * callEnded（呈现结束：超时/远端取消/清理）。
+ *
+ * Flutter→Native 方法：ready（就绪握手，取回冷启动暂存动作与当前呈现）/
+ * reportCallState（Matrix/WebRTC 状态回报，只更新呈现不回发）/
+ * answerCall / rejectCall / endCall（应用内用户动作）/ getActiveCall。
+ *
+ * 就绪握手：通道对象存在 ≠ 业务处理器就绪。[methodReady] 之前到达的
+ * 用户动作经 [notifyUserAction] 暂存（PendingCallActions）并拉起应用，
+ * 不伪造接听、不丢失动作。
  */
 object NativeCallBridge {
     const val channelName = "native_call"
+    const val methodReady = "ready"
+    const val methodReportState = "reportCallState"
+    const val methodGetActive = "getActiveCall"
     const val methodAnswer = "answerCall"
     const val methodReject = "rejectCall"
     const val methodEnd = "endCall"
-    const val methodGetActive = "getActiveCall"
 
     const val eventIncoming = "incomingCall"
     const val eventAccepted = "callAccepted"
+    const val eventRejected = "callRejected"
     const val eventEnded = "callEnded"
 
+    class CallHandlers(
+        val onAnswer: () -> Unit,
+        val onReject: () -> Unit,
+        val onEnd: () -> Unit,
+    )
+
     @Volatile private var channel: MethodChannel? = null
+    @Volatile private var callListener: ((String) -> Unit)? = null
+    @Volatile private var handlers: CallHandlers? = null
 
-    fun setUp(messenger: BinaryMessenger) {
-        channel = MethodChannel(messenger, channelName)
-        // CallManager 状态事件 → Flutter。
-        CallManager.addListener { event ->
-            when (event) {
-                CallManagerEventIncoming -> emitToFlutter(eventIncoming)
-                CallManagerEventAccepted -> emitToFlutter(eventAccepted)
-                CallManagerEventEnded -> emitToFlutter(eventEnded)
-            }
-        }
-    }
+    /** Flutter 业务处理器就绪（AppHome 完成握手）。 */
+    @Volatile private var flutterReady = false
 
-    fun emitToFlutter(method: String) {
-        channel?.let { ch ->
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                ch.invokeMethod(method, mapOf("callId" to CallManager.callId))
-            }
-        }
-    }
-
-    /** Flutter 查询/控制入口（MainActivity 注册）。 */
-    fun setCallHandler(
-        onAnswer: () -> Unit,
-        onReject: () -> Unit,
-        onEnd: () -> Unit,
-    ) {
-        channel?.setMethodCallHandler { call, result ->
+    /**
+     * 创建通道 + 注册方法处理器 + 订阅 CallManager 事件。
+     * 幂等：重复调用先 teardown（Activity 重建/引擎重建不泄漏监听）。
+     */
+    fun setUp(messenger: BinaryMessenger, callHandlers: CallHandlers) {
+        teardown()
+        handlers = callHandlers
+        val ch = MethodChannel(messenger, channelName)
+        ch.setMethodCallHandler { call, result ->
             when (call.method) {
-                methodAnswer -> { onAnswer(); result.success(true) }
-                methodReject -> { onReject(); result.success(true) }
-                methodEnd -> { onEnd(); result.success(true) }
-                methodGetActive -> result.success(mapOf(
-                    "state" to CallManager.state.name,
-                    "callId" to CallManager.callId,
-                    "callerName" to CallManager.callerName,
-                    "video" to CallManager.video,
-                ))
+                methodReady -> {
+                    flutterReady = true
+                    result.success(
+                        mapOf(
+                            "actions" to PendingCallActions.drain().map {
+                                mapOf(
+                                    "callId" to it.callId,
+                                    "action" to it.action,
+                                    "at" to it.atMs,
+                                )
+                            },
+                            "activeCall" to activeCallSnapshot(),
+                        )
+                    )
+                }
+                methodReportState -> {
+                    CallManager.updateFromFlutter(
+                        call.argument<String>("phase"),
+                        call.argument<Boolean>("video"),
+                    )
+                    result.success(true)
+                }
+                methodGetActive -> result.success(activeCallSnapshot())
+                methodAnswer -> {
+                    handlers?.onAnswer()
+                    result.success(true)
+                }
+                methodReject -> {
+                    handlers?.onReject()
+                    result.success(true)
+                }
+                methodEnd -> {
+                    handlers?.onEnd()
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
+        channel = ch
+        val listener: (String) -> Unit = { event -> emitToFlutter(event) }
+        callListener = listener
+        CallManager.addListener(listener)
+    }
+
+    private fun activeCallSnapshot(): Map<String, Any?> = mapOf(
+        "state" to CallManager.state.name,
+        "callId" to CallManager.callId,
+        "callerName" to CallManager.callerName,
+        "video" to CallManager.video,
+        "confirmed" to CallManager.confirmed,
+    )
+
+    /**
+     * 原生用户动作 → Flutter。引擎未起或未完成 ready 握手时暂存动作
+     * 并拉起应用（冷启动经 ready 取回重放）；就绪则直发事件。
+     */
+    fun notifyUserAction(context: Context?, event: String, callId: String?) {
+        if (!flutterReady) {
+            when (event) {
+                eventAccepted -> PendingCallActions.store(
+                    callId, PendingCallActions.ACTION_ANSWER)
+                eventRejected -> PendingCallActions.store(
+                    callId, PendingCallActions.ACTION_REJECT)
+            }
+            context?.let { launchApp(it) }
+            return
+        }
+        emitToFlutter(event, callId ?: CallManager.callId)
+    }
+
+    private fun emitToFlutter(method: String) {
+        emitToFlutter(method, CallManager.callId)
+    }
+
+    private fun emitToFlutter(method: String, callId: String?) {
+        val ch = channel ?: return
+        if (!flutterReady) return
+        Handler(Looper.getMainLooper()).post {
+            ch.invokeMethod(method, mapOf("callId" to callId))
+        }
+    }
+
+    private fun launchApp(context: Context) {
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent?.let { runCatching { context.startActivity(it) } }
     }
 
     fun teardown() {
+        callListener?.let { CallManager.removeListener(it) }
+        callListener = null
         channel?.setMethodCallHandler(null)
         channel = null
+        handlers = null
+        flutterReady = false
     }
 }
-
-// CallManager 事件名常量（避免字符串散落）。
-const val CallManagerEventIncoming = "incomingCall"
-const val CallManagerEventAccepted = "callAccepted"
-const val CallManagerEventEnded = "callEnded"

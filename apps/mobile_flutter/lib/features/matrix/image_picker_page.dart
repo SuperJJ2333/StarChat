@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -190,9 +190,19 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   bool permissionDenied = false;
   String? loadError;
 
+  /// 请求批次：相册切换即递增。进行中的旧请求完成后发现批次已变，
+  /// 直接丢弃结果——旧相册的列表/加载态/错误态不得覆盖新相册。
+  int _loadEpoch = 0;
+
   /// 相册子列表与当前选中项（默认“最近图片”）。
   List<GalleryAlbum> albums = const [];
   GalleryAlbum? selectedAlbum;
+
+  /// 系统媒体库变化回调（挂载期间注册；变化即失效会话缓存并重载）。
+  void _onGalleryChanged(MethodCall call) {
+    GalleryAccessCache.shared.invalidate();
+    if (mounted) unawaited(_reloadAfterExternalChange());
+  }
 
   @override
   void initState() {
@@ -200,6 +210,23 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     WidgetsBinding.instance.addObserver(this);
     _load();
     unawaited(_loadAlbums());
+    unawaited(_observeGalleryChanges());
+  }
+
+  Future<void> _observeGalleryChanges() async {
+    try {
+      PhotoManager.addChangeCallback(_onGalleryChanged);
+      await PhotoManager.startChangeNotify();
+    } catch (_) {
+      // 变更监听不可用（权限/平台差异）：不影响浏览，仅失去自动刷新。
+    }
+  }
+
+  /// 媒体库变化/权限范围变化后的重载：清空勾选避免跨集合误发。
+  Future<void> _reloadAfterExternalChange() async {
+    selection.clear();
+    setState(() {}); // 仅刷勾选态；列表由 _load 重建
+    await _load();
   }
 
   Future<void> _loadAlbums() async {
@@ -226,20 +253,43 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    try {
+      PhotoManager.removeChangeCallback(_onGalleryChanged);
+      PhotoManager.stopChangeNotify();
+    } catch (_) {
+      // 未注册成功时移除无害。
+    }
     scrollController.dispose();
     super.dispose();
   }
 
-  // 用户从系统设置返回（授权/改选照片范围）后自动重新检查并加载。
+  // 用户从系统设置返回（授权/改选照片范围）后自动重新检查并加载：
+  // - 此前被拒/加载失败 → 直接重载；
+  // - 授权范围变化（部分照片 ↔ 全部照片 ↔ 撤销）→ 失效会话缓存后重载，
+  //   不得把有限授权的媒体集合当作完整媒体库继续展示。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed &&
-        (permissionDenied || loadError != null)) {
-      _load();
+    if (state != AppLifecycleState.resumed) return;
+    if (permissionDenied || loadError != null) {
+      unawaited(_load());
+      return;
+    }
+    unawaited(_reloadIfScopeChanged());
+  }
+
+  Future<void> _reloadIfScopeChanged() async {
+    try {
+      if (await DeviceGallerySource.permissionScopeChanged()) {
+        await _reloadAfterExternalChange();
+      }
+    } catch (_) {
+      // 探测失败不阻塞浏览。
     }
   }
 
   Future<void> _load() async {
+    final epoch = ++_loadEpoch;
+    final activePager = pager;
     setState(() {
       loading = true;
       loadError = null;
@@ -247,8 +297,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     });
     try {
       photos = const [];
-      final firstPage = <GalleryPhoto>[...await pager.loadNextPage()];
-      if (!mounted) return;
+      final firstPage = <GalleryPhoto>[...await activePager.loadNextPage()];
+      // 请求批次已变（用户切到其他相册）：旧结果直接丢弃。
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         photos = firstPage;
         loading = false;
@@ -258,14 +309,14 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       // 首屏若未填满一屏，立即预取下一页，保证滚动无缝。
       if (firstPage.length < 12) unawaited(_loadMore());
     } on GalleryPermissionDenied {
-      if (!mounted) return;
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         loading = false;
         permissionDenied = true;
         photos = const [];
       });
     } catch (failure) {
-      if (!mounted) return;
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         loading = false;
         loadError =
@@ -278,20 +329,25 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   /// 失败时置 [loadMoreFailed]，页脚提供“点击重试”（弱网可恢复）。
   Future<void> _loadMore() async {
     if (loadingMore || !hasMore || loading) return;
+    final epoch = _loadEpoch;
+    final activePager = pager;
     setState(() {
       loadingMore = true;
       loadMoreFailed = false;
     });
     try {
-      final next = await pager.loadNextPage();
-      if (!mounted) return;
+      final next = await activePager.loadNextPage();
+      // 请求批次或分页器已换（切相册/外部重载）：旧页不得混入新列表。
+      if (!mounted || epoch != _loadEpoch || !identical(activePager, pager)) {
+        return;
+      }
       setState(() {
         photos = [...photos, ...next];
         loadingMore = false;
-        hasMore = pager.hasMore;
+        hasMore = activePager.hasMore;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || epoch != _loadEpoch) return;
       setState(() {
         loadingMore = false;
         loadMoreFailed = true;
@@ -523,18 +579,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           onTap: () => _openPreview(photo),
           child: Stack(fit: StackFit.expand, children: [
             // 规格#4：视频缩略图懒加载——立即渲染占位，首帧就绪只更新
-            // 本 cell（闭包已 memoize，重复 build 不重复抽帧）。
-            if (photo.isVideo && photo.firstFrame != null)
-              FutureBuilder<Uint8List?>(
-                future: photo.firstFrame!(),
-                builder: (context, snapshot) => snapshot.hasData &&
-                        snapshot.data!.isNotEmpty
-                    ? Image.memory(snapshot.data!,
-                        key: Key('image-picker-frame-${photo.id}'),
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true)
-                    : _videoPlaceholder(photo),
-              )
+            // 本 cell（成功内存缓存、失败退避重试、预算耗尽显重试入口）。
+            if (photo.isVideo)
+              _VideoFirstFrameCell(photo: photo)
             else
               Image.memory(photo.thumbnail,
                   key: Key('image-picker-thumb-${photo.id}'),
@@ -658,14 +705,6 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     if (mounted) setState(() {});
   }
 
-  Widget _videoPlaceholder(GalleryPhoto photo) => const ColoredBox(
-      color: Color(0xFF3A3A3A),
-      child: Center(
-        child: Icon(CupertinoIcons.videocam_fill,
-            size: 22, color: Color(0x80FFFFFF)),
-      ),
-    );
-
   String _formatDuration(Duration? duration) {
     if (duration == null) return '0:00';
     final minutes = duration.inMinutes;
@@ -752,4 +791,78 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       ]),
     );
   }
+}
+
+/// 视频格首帧 cell（规格#4 加固）：
+/// - 立即渲染占位（抽帧不阻塞整页展示）；
+/// - 成功首帧直接显示（全局协调器内存缓存，重复 build 零成本）；
+/// - 失败由协调器按退避自动有限重试（退避窗口内快速返回占位）；
+/// - 预算耗尽时显示明确重试入口；封面失败不删条目、不阻断选择，
+///   预览/发送仍走原始文件路径。
+final class _VideoFirstFrameCell extends StatefulWidget {
+  const _VideoFirstFrameCell({required this.photo});
+
+  final GalleryPhoto photo;
+
+  @override
+  State<_VideoFirstFrameCell> createState() => _VideoFirstFrameCellState();
+}
+
+final class _VideoFirstFrameCellState extends State<_VideoFirstFrameCell> {
+  Future<Uint8List?>? _future;
+
+  @override
+  void didUpdateWidget(covariant _VideoFirstFrameCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 条目实例变化（翻页重建/相册切换）：重新走一次加载（命中缓存即回）。
+    if (!identical(oldWidget.photo, widget.photo)) _future = null;
+  }
+
+  void _retry() {
+    videoFirstFrameStore.resetById(widget.photo.id);
+    setState(() => _future = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final load = widget.photo.firstFrame;
+    if (load == null) return _placeholder(showRetry: false);
+    final future = _future ??= load();
+    return FutureBuilder<Uint8List?>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+          return Image.memory(
+            snapshot.data!,
+            key: Key('image-picker-frame-${widget.photo.id}'),
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            // 缓存字节损坏（写一半/位翻转）：按失败占位，不闪退不黑卡。
+            errorBuilder: (_, __, ___) => _placeholder(showRetry: false),
+          );
+        }
+        // 本次尝试已结束且无可用帧：显示重试入口。自动重试的节流由全局
+        // 协调器（退避窗口内快速返回，不解码）保证，不会"每次 build 都重试"。
+        final done = snapshot.connectionState == ConnectionState.done;
+        return _placeholder(showRetry: done);
+      },
+    );
+  }
+
+  Widget _placeholder({required bool showRetry}) => ColoredBox(
+        color: const Color(0xFF3A3A3A),
+        child: Center(
+          child: showRetry
+              ? CupertinoButton(
+                  key: Key('image-picker-frame-retry-${widget.photo.id}'),
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  onPressed: _retry,
+                  child: const Icon(CupertinoIcons.arrow_clockwise,
+                      size: 22, color: Color(0xCCFFFFFF)),
+                )
+              : const Icon(CupertinoIcons.videocam_fill,
+                  size: 22, color: Color(0x80FFFFFF)),
+        ),
+      );
 }

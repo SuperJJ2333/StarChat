@@ -64,12 +64,14 @@ class CallOverlayService : android.app.Service() {
         } catch (_: Exception) {
             stopSelf()
         }
-        // 通话结束自动移除。
-        CallManager.addListener { event ->
-            if (event == CallManagerEventEnded) stopSelf()
-        }
+        // 通话结束自动移除（引用持有，onDestroy 时注销防泄漏）。
+        overlayListener = { event ->
+            if (event == CallManager.eventEnded) stopSelf()
+        }.also { CallManager.addListener(it) }
         return START_STICKY
     }
+
+    private var overlayListener: ((String) -> Unit)? = null
 
     private fun layoutParamsOf(x: Int, y: Int, size: Int = (resources.displayMetrics.density * 52).toInt()) =
         WindowManager.LayoutParams(
@@ -86,6 +88,8 @@ class CallOverlayService : android.app.Service() {
         }
 
     override fun onDestroy() {
+        overlayListener?.let { CallManager.removeListener(it) }
+        overlayListener = null
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         ball?.let { runCatching { wm.removeView(it) } }
         ball = null

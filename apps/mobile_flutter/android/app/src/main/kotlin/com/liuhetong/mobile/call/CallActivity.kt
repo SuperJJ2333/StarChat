@@ -15,9 +15,25 @@ import android.widget.TextView
  *
  * - 后台启动（Telecom/CallManager 触发，FLAG_ACTIVITY_NEW_TASK）；
  * - 锁屏/息屏：setShowWhenLocked + setTurnScreenOn + 请求解除键盘锁；
- * - ringing：接听/拒绝；active：显示"回到通话"（点击拉起应用内 CallPage）。
+ * - 监听 CallManager 呈现状态实时刷新：ringing=接听/拒绝；
+ *   answering=正在接通（仅挂断）；active=回到通话；结束事件自动关闭
+ *   （远端取消/超时/挂断不再留下悬挂页面）；
+ * - [接听] 是唯一的接听入口（经 CallManager→Flutter 实际执行）；
+ *   全屏/正文展示意图打开本页不等于接听（规格§六2）。
  */
 class CallActivity : android.app.Activity() {
+
+    private val uiListener: (String) -> Unit = { event ->
+        runOnUiThread {
+            if (CallManager.state == CallManager.State.idle ||
+                CallManager.state == CallManager.State.ended
+            ) {
+                finish()
+            } else {
+                render()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -34,7 +50,13 @@ class CallActivity : android.app.Activity() {
                 WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
         )
+        CallManager.addUiListener(uiListener)
         render()
+    }
+
+    override fun onDestroy() {
+        CallManager.removeUiListener(uiListener)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -43,10 +65,16 @@ class CallActivity : android.app.Activity() {
     }
 
     private fun render() {
-        val ringing = CallManager.state == CallManager.State.ringing
+        val state = CallManager.state
+        val ringing = state == CallManager.State.ringing
+        val answering = state == CallManager.State.answering
         val name = CallManager.callerName ?: "畅聊来电"
         val title = TextView(this).apply {
-            text = if (ringing) name else "通话中 · $name"
+            text = when {
+                ringing -> name
+                answering -> "正在接通 · $name"
+                else -> "通话中 · $name"
+            }
             textSize = 28f
             setTextColor(android.graphics.Color.WHITE)
             gravity = Gravity.CENTER
@@ -57,24 +85,34 @@ class CallActivity : android.app.Activity() {
             setTextColor(0xB3FFFFFF.toInt())
             gravity = Gravity.CENTER
         }
-        val answer = button(if (ringing) "接听" else "回到通话") {
-            if (ringing) {
-                CallManager.onAnswered()
-                // 打开应用（Flutter 接管接听：app_home 监听 callAccepted）。
-                CallBridge.notifyOpenIncomingCall(applicationContext)
-            } else {
-                CallBridge.notifyOpenIncomingCall(applicationContext)
+        val answer = if (ringing) {
+            button("接听") {
+                // 用户明确接听：answering 呈现 + Flutter 执行实际接听。
+                CallManager.onAnswerRequested()
+                CallManager.launchMainActivity(applicationContext)
+                finish()
             }
-            finish()
+        } else if (answering) {
+            // 正在接通：接听已请求，等待 Matrix/ICE 确认（不提供重复接听）。
+            button("接听中…") { /* no-op */ }
+        } else {
+            button("回到通话") {
+                // 回到应用内通话页（仅展示，不触发接听/重复接听）。
+                CallManager.launchMainActivity(applicationContext)
+                finish()
+            }
         }
-        val reject = button(if (ringing) "拒绝" else "挂断") {
+        val reject = button(if (ringing || answering) "拒绝" else "挂断") {
             if (ringing) {
-                CallBridge.notifyRejectIncomingCall(applicationContext)
+                CallManager.onRejectRequested()
             } else {
-                CallBridge.notifyCallEnded(applicationContext)
+                CallManager.onEnded()
+                // 通话中挂断：通知 Flutter 结束实际通话。
+                NativeCallBridge.notifyUserAction(
+                    applicationContext, NativeCallBridge.eventEnded,
+                    CallManager.callId,
+                )
             }
-            CallManager.onEnded()
-            CallForegroundService.stop(applicationContext)
             finish()
         }
         val row = LinearLayout(this).apply {
@@ -95,6 +133,26 @@ class CallActivity : android.app.Activity() {
             addView(FrameLayout(this@CallActivity).apply { layoutParams = LinearLayout.LayoutParams(1, (resources.displayMetrics.density * 48).toInt()) })
             addView(row, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+            // Android 14+ 全屏通知权限缺失：系统降级为横幅（本次来电不受
+            // 影响）；提供一次性授权入口，下次来电起锁屏全屏可用。
+            if (Build.VERSION.SDK_INT >= 34 &&
+                !CallNotificationManager.canUseFullScreenIntent(this@CallActivity)
+            ) {
+                addView(TextView(this@CallActivity).apply {
+                    text = "未获得锁屏全屏来电授权，本次以横幅提醒"
+                    textSize = 12f
+                    setTextColor(0x80FFFFFF.toInt())
+                    gravity = Gravity.CENTER
+                    val top = (resources.displayMetrics.density * 16).toInt()
+                    setPadding(0, top, 0, 0)
+                })
+                addView(button("去授权锁屏全屏来电") {
+                    CallNotificationManager.openFullScreenIntentSettings(applicationContext)
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { gravity = Gravity.CENTER_HORIZONTAL })
+            }
         }
         setContentView(root)
     }
@@ -106,6 +164,7 @@ class CallActivity : android.app.Activity() {
         when (label) {
             "接听" -> setBackgroundColor(0xFF07C160.toInt())
             "拒绝", "挂断" -> setBackgroundColor(0xFFFA5151.toInt())
+            "接听中…" -> setBackgroundColor(0xFF3A3A3A.toInt())
             else -> setBackgroundColor(0xFF3A3A3A.toInt())
         }
         setOnClickListener { onTap() }

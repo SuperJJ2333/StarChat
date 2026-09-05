@@ -123,8 +123,7 @@ final class _GroupChatPageState extends State<GroupChatPage> {
                               : '创建后将以加密群聊运行',
                           key: const Key('group-chat-min-hint'),
                           style: const TextStyle(
-                              fontSize: 12,
-                              color: WeChatColors.textSecondary),
+                              fontSize: 12, color: WeChatColors.textSecondary),
                         ),
                       ),
                       Padding(

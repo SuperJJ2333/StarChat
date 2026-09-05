@@ -34,6 +34,7 @@ final class FakeTimelineAdapter implements RoomTimelineAdapter {
       );
     }
   }
+
   @override
   Future<void> markRead() async => marks++;
   int retryCalls = 0;
@@ -41,12 +42,14 @@ final class FakeTimelineAdapter implements RoomTimelineAdapter {
   Future<void> retry(String transactionId) async {
     retryCalls++;
   }
+
   @override
   Future<String> sendText(String text) async {
     final failure = sendFailure;
     if (failure != null) throw failure;
     return 'event-1';
   }
+
   @override
   Future<String> sendRedPacketReference(
     String packetId,
@@ -174,8 +177,7 @@ void main() {
     expect(controller.historyExhausted, isFalse);
 
     await controller.loadHistory();
-    expect(controller.historyLoading, isFalse,
-        reason: '加载完成后停用 loading 图标');
+    expect(controller.historyLoading, isFalse, reason: '加载完成后停用 loading 图标');
     expect(controller.historyExhausted, isFalse);
     expect(controller.messages.length, 2);
     expect(adapter.historyCalls, 1);
@@ -183,8 +185,7 @@ void main() {
     // 已无更多历史：加载后消息数不增长 → exhausted，重复调用为空操作。
     adapter.historyPages = 0;
     await controller.loadHistory();
-    expect(controller.historyExhausted, isTrue,
-        reason: '顶部显示“没有更多了”');
+    expect(controller.historyExhausted, isTrue, reason: '顶部显示“没有更多了”');
     expect(controller.messages.length, 2);
     await controller.loadHistory();
     expect(adapter.historyCalls, 2, reason: '耗尽后不再发起加载');

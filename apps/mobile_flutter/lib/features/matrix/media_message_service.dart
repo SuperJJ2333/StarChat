@@ -37,8 +37,7 @@ String mimeFromFileName(String fileName) {
     'docx':
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'xls': 'application/vnd.ms-excel',
-    'xlsx':
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'zip': 'application/zip',
   };
   return table[extension] ?? 'application/octet-stream';

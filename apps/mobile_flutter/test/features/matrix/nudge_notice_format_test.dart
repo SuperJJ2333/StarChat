@@ -45,8 +45,7 @@ void main() {
     expect(text.contains('项目小艾'), isFalse);
   });
 
-  test('event snapshot names are the fallback when live names are missing',
-      () {
+  test('event snapshot names are the fallback when live names are missing', () {
     final text = formatNudgeNotice(
       viewerId: '@me:test',
       senderId: '@bob:test',

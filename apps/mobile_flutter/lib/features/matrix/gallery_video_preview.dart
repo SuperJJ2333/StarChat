@@ -187,8 +187,8 @@ final class _GalleryVideoPreviewPageState
               child: Center(
                 child: Container(
                   key: const Key('gallery-video-fallback-notice'),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: CupertinoColors.black.withValues(alpha: .7),
                     borderRadius: BorderRadius.circular(18),
@@ -219,8 +219,7 @@ final class _GalleryVideoPreviewPageState
                   ? WeChatColors.brandPrimary
                   : CupertinoColors.systemGrey5.withValues(alpha: .28),
               borderRadius: BorderRadius.circular(18),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               onPressed: () {
                 widget.onToggle();
                 setState(() => selected = !selected);
@@ -250,8 +249,7 @@ final class _GalleryVideoPreviewPageState
             AspectRatio(
               aspectRatio: 4 / 3,
               child: Image.memory(widget.thumbnailBytes,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true),
+                  fit: BoxFit.cover, gaplessPlayback: true),
             )
           else
             const Icon(CupertinoIcons.videocam,
@@ -274,9 +272,8 @@ final class _GalleryVideoPreviewPageState
                             color: CupertinoColors.systemGrey
                                 .withValues(alpha: .35)),
                         FractionallySizedBox(
-                          widthFactor: _prepareProgress!
-                              .clamp(0.02, 1.0)
-                              .toDouble(),
+                          widthFactor:
+                              _prepareProgress!.clamp(0.02, 1.0).toDouble(),
                           child: const ColoredBox(
                               color: WeChatColors.brandPrimary),
                         ),
@@ -306,20 +303,17 @@ final class _GalleryVideoPreviewPageState
           Text(
             '视频准备失败（${_format(widget.duration)}），可重试；'
             '重试失败仍可选择发送',
-            style: TextStyle(
-                fontSize: 13, color: CupertinoColors.systemGrey),
+            style: TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
           ),
           const SizedBox(height: 10),
           CupertinoButton(
             key: const Key('gallery-video-retry'),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
             color: WeChatColors.brandPrimary,
             borderRadius: BorderRadius.circular(16),
             onPressed: _retry,
             child: const Text('重试',
-                style: TextStyle(
-                    fontSize: 14, color: CupertinoColors.white)),
+                style: TextStyle(fontSize: 14, color: CupertinoColors.white)),
           ),
         ],
       );

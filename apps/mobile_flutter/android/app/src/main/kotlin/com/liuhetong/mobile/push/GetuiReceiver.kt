@@ -37,9 +37,14 @@ object PushEventDispatcher {
     fun dispatch(context: Context, type: String) {
         when (type) {
             GetuiReceiver.typeCall -> {
-                // 规格§六：个推只负责唤醒；来电 UI/接听/拒绝归 Telecom。
+                // 规格§六/§七：个推只负责唤醒提示——callId 仅为原生呈现的
+                // 关联标识，不是"真实来电"事实；真实通话与语音/视频类型以
+                // 设备 Matrix 同步为准（Flutter reportCallState 确认）。
+                // 重复推送幂等：已在呈现（ringing/answering/active）时忽略，
+                // 不得制造第二通电话或重复页面。
                 val cm = com.liuhetong.mobile.call.CallManager
                 cm.appContext = context.applicationContext
+                if (cm.hasActiveCall()) return
                 val callId = "call-" + System.currentTimeMillis()
                 cm.onIncoming(callId, "畅聊来电", false)
                 // 系统电话框架接管（RINGING 连接 + 系统级接听语义）。

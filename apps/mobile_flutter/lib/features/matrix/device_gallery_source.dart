@@ -1,12 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:video_compress/video_compress.dart';
 
 import 'video_poster_extractor.dart';
 import 'video_transcode.dart';
@@ -54,8 +53,9 @@ final class GalleryPhoto {
   /// 仅视频条目提供。
   final Future<VideoRendition> Function()? compressedPreviewFile;
 
-  /// 规格#4：视频首帧懒加载（磁盘缓存命中即回，未命中抽第一帧并落盘；
-  /// 构造时 memoize——网格重复 build 不重复抽帧）。仅视频条目提供。
+  /// 规格#4：视频首帧懒加载（磁盘缓存命中即回，未命中经全局
+  /// [videoFirstFrameStore] 有界并发抽帧并落盘；成功结果内存缓存，
+  /// 失败按退避有限重试）。仅视频条目提供。
   final Future<Uint8List?> Function()? firstFrame;
 
   /// 视频封面帧（约 480px，保持画面比例）：聊天消息发送时随事件附带，
@@ -121,27 +121,62 @@ Future<List<Uint8List>> decodeThumbnailsBounded(
 
 /// 会话级相册访问缓存：权限（仅缓存"已授权"）与相册索引在同一会话内
 /// 复用——重进选图页不再重复请求权限、不再重复扫描相册索引。
-/// 用户在系统设置改权限/相册变化后可调 [invalidate]；会话结束自动丢弃。
+///
+/// 缓存失效时机（三处显式触发）：
+/// 1. 权限范围变化（部分授权 ↔ 全部照片 ↔ 撤销）：[DeviceGallerySource]
+///    在页面 resume 时用 `getPermissionState` 探测比对，变化即 [invalidate]；
+/// 2. 系统媒体库变化：选图页挂载期间注册 photo_manager 变更回调，
+///    变化即 [invalidate] 并重载当前相册；
+/// 3. 会话结束：缓存为进程内存态，应用退出即丢弃；登出换账号时
+///    [invalidate] 由调用方触发。
 final class GalleryAccessCache {
   GalleryAccessCache._();
 
   static final GalleryAccessCache shared = GalleryAccessCache._();
 
   bool? _permissionGranted;
+
+  /// 授权范围指纹（'full' / 'limited'）：部分授权与全部照片可见的
+  /// 媒体集合不同，范围变化必须失效索引缓存，不得把有限授权当作
+  /// 完整媒体库访问。
+  String? _permissionScope;
   List<GalleryAlbum>? _albums;
-  AssetPathEntity? _recentAlbum;
+
+  /// "最近图片"（common）与"本地视频"（video）都是 entity 为 null 的
+  /// 虚拟相册，定位结果必须按 RequestType 分桶缓存——共用一个桶时，
+  /// 先打开"最近图片"再切"本地视频"会复用 common 相册，绕过视频查询。
+  final Map<RequestType, AssetPathEntity?> _recentAlbumsByType = {};
 
   void invalidate() {
     _permissionGranted = null;
+    _permissionScope = null;
     _albums = null;
-    _recentAlbum = null;
+    _recentAlbumsByType.clear();
+  }
+
+  /// 当前缓存的授权范围是否与 [scope] 一致（探测用，不修改状态）。
+  bool matchesPermissionScope(String? scope) =>
+      _permissionGranted == true && _permissionScope == scope;
+
+  /// 探测到授权范围变化（resume 时调用）：整体失效缓存并返回 true。
+  bool invalidateIfScopeChanged(String? scope) {
+    if (matchesPermissionScope(scope)) return false;
+    invalidate();
+    return true;
   }
 
   /// 只缓存已授权结果：被拒绝不缓存（用户从设置页返回后应重新请求）。
-  Future<bool> ensurePermission(Future<bool> Function() request) async {
-    if (_permissionGranted == true) return true;
+  /// [scope] 为本次授权范围指纹；与上次不一致时授权需重新确认。
+  Future<bool> ensurePermission(
+    Future<bool> Function() request, {
+    String? scope,
+  }) async {
+    if (_permissionGranted == true && _permissionScope == scope) return true;
     final granted = await request();
-    if (granted) _permissionGranted = true;
+    if (granted) {
+      _permissionGranted = true;
+      _permissionScope = scope;
+    }
     return granted;
   }
 
@@ -153,12 +188,13 @@ final class GalleryAccessCache {
     return _albums = await load();
   }
 
+  /// 按 [type] 分桶缓存"最近/全部"相册定位结果。
   Future<AssetPathEntity?> recentAlbum(
+    RequestType type,
     Future<AssetPathEntity?> Function() load,
   ) async {
-    final cached = _recentAlbum;
-    if (cached != null) return cached;
-    return _recentAlbum = await load();
+    if (_recentAlbumsByType.containsKey(type)) return _recentAlbumsByType[type];
+    return _recentAlbumsByType[type] = await load();
   }
 }
 
@@ -265,11 +301,47 @@ class DeviceGallerySource {
         iosAccessLevel: IosAccessLevel.readWrite,
       ),
     );
+    _lastKnownScope = permissionScopeOf(permission);
     return permission.hasAccess;
   }
 
   static Future<bool> _ensurePermission() =>
-      GalleryAccessCache.shared.ensurePermission(_requestPermission);
+      GalleryAccessCache.shared.ensurePermission(
+        _requestPermission,
+        scope: _lastKnownScope,
+      );
+
+  /// 最近一次权限请求的授权范围（null = 尚未请求）。
+  static String? _lastKnownScope;
+
+  /// 授权范围指纹：部分授权（limited）与全部授权可见的媒体集合不同。
+  static String? permissionScopeOf(PermissionState state) =>
+      state.isAuth ? 'full' : (state.isLimited ? 'limited' : null);
+
+  /// 页面 resume 时探测权限范围是否变化（只查询，不弹窗）。
+  ///
+  /// 返回 true 表示范围已变化且缓存已失效（调用方应重新加载）；
+  /// 查询失败按未变化处理（不阻塞浏览）。
+  static Future<bool> permissionScopeChanged() async {
+    PermissionState state;
+    try {
+      state = await PhotoManager.getPermissionState(
+        requestOption: const PermissionRequestOption(
+          androidPermission: AndroidPermission(
+            type: RequestType.common,
+            mediaLocation: false,
+          ),
+          iosAccessLevel: IosAccessLevel.readWrite,
+        ),
+      );
+    } catch (_) {
+      return false;
+    }
+    final scope = permissionScopeOf(state);
+    if (GalleryAccessCache.shared.matchesPermissionScope(scope)) return false;
+    GalleryAccessCache.shared.invalidate();
+    return true;
+  }
 }
 
 /// 生产相册分页器：按时间倒序逐页读取（最新创建的在前）。
@@ -288,6 +360,10 @@ class DeviceGalleryPager {
 
   bool get hasMore => !_exhausted;
 
+  /// 已解析的目标相册（测试/诊断用）。
+  @visibleForTesting
+  AssetPathEntity? get resolvedAlbum => _album;
+
   /// 请求相册权限并定位目标相册（时间倒序：最新创建的显示在最上方）。
   /// 权限与"最近"相册定位结果经会话级缓存复用。
   Future<void> ensureAccess() async {
@@ -299,7 +375,7 @@ class DeviceGalleryPager {
       _album = _fixedAlbum;
       return;
     }
-    final album = await GalleryAccessCache.shared.recentAlbum(() async {
+    final album = await GalleryAccessCache.shared.recentAlbum(_type, () async {
       try {
         final albums = await PhotoManager.getAssetPathList(
           type: _type,
@@ -405,7 +481,7 @@ class DeviceGalleryPager {
           compressedPreviewFile:
               isVideo ? () async => _resolveVideoRendition(asset) : null,
           posterBytes: isVideo ? () async => _videoPosterBytes(asset) : null,
-          firstFrame: isVideo ? _memoizedFirstFrame(asset) : null,
+          firstFrame: isVideo ? () => videoFirstFrameStore.load(asset) : null,
         ),
       );
     }
@@ -463,15 +539,38 @@ class DeviceGalleryPager {
       (await _resolveVideoRendition(asset)).file.readAsBytes();
 }
 
+/// 视频首帧采样位置：按时长选取合法多时间点（片头 200ms 常为黑场，
+/// 多点位 + 近黑帧跳过可显著提高可用封面率）。
+///
+/// - 候选点必须落在时长内（留 50ms 余量防止越界取帧失败）；
+/// - 视频短于全部候选点时回退到时长中点（短视频没有选择的余地）；
+/// - 时长未知（null/0）按候选点原样尝试。
+List<int> samplePositionsFor(
+  Duration? duration, [
+  List<int> candidates = const [200, 500, 1000, 2000],
+]) {
+  final durationMs = duration?.inMilliseconds ?? 0;
+  if (durationMs <= 0) return candidates;
+  final legal = [for (final position in candidates) if (position < durationMs - 50) position];
+  if (legal.isNotEmpty) return legal;
+  final midpoint = (durationMs ~/ 2).clamp(0, durationMs - 1);
+  return [midpoint];
+}
+
 /// 规格#4：视频首帧懒加载（磁盘缓存 video_first_frame_cache）。
 ///
 /// key = sha256(path|id|durationMs|size)：对整文件做 sha256 比抽帧更贵，
-/// 以 路径+时长+大小 组合作内容寻址代理（相册刷新时间戳变化即失效）。
-/// [fetch] 注入抽帧实现（默认 video_compress 取 200ms 首帧），测试替身用。
+/// 以 路径+时长+大小 组合作内容寻址代理（文件被修改/替换后任一变化
+/// 即得新 key，旧缓存自然失效）。
+///
+/// 抽帧复用 [extractVideoPoster] 的多时间点 + 近黑帧跳过能力，采样
+/// 位置由 [samplePositionsFor] 按视频时长选取。
+/// [fetch] 注入抽帧实现（默认 video_compress），测试替身用。
 Future<Uint8List?> loadVideoFirstFrame(
   AssetEntity asset, {
   Future<Uint8List?> Function(String path, int positionMs)? fetch,
   Future<Directory> Function()? cacheDir,
+  List<int> Function(Duration?)? positionsFor,
 }) async {
   try {
     final origin = await asset.originFile;
@@ -486,24 +585,158 @@ Future<Uint8List?> loadVideoFirstFrame(
         .toString();
     final cacheFile = File('${dir.path}${Platform.pathSeparator}$key.jpg');
     if (await cacheFile.exists()) {
-      return await cacheFile.readAsBytes();
+      // 缓存损坏防御：空文件（写入中断/磁盘异常）删除后重新抽帧，
+      // 不得把空字节当命中永远占住。
+      final cached = await cacheFile.readAsBytes();
+      if (cached.isNotEmpty) return cached;
+      try {
+        await cacheFile.delete();
+      } catch (_) {
+        // 删除失败也继续抽帧（写回时覆盖）。
+      }
     }
-    final frame = await (fetch ??
-            (path, positionMs) =>
-                VideoCompress.getByteThumbnail(path, quality: 70, position: positionMs))(
-        origin.path, 200);
+    final positions =
+        (positionsFor ?? samplePositionsFor)(asset.videoDuration);
+    final frame = await extractVideoPoster(
+      origin.path,
+      fetch: fetch,
+      positionsMs: positions,
+    );
     if (frame == null || frame.isEmpty) return null;
     await cacheFile.writeAsBytes(frame, flush: true);
     return frame;
   } catch (_) {
-    return null; // 首帧失败不阻塞网格（保持占位）。
+    return null; // 首帧失败不阻塞网格（保持占位，由协调器有限重试）。
   }
 }
 
-Future<Uint8List?> Function() _memoizedFirstFrame(AssetEntity asset) {
-  Future<Uint8List?>? pending;
-  return () => pending ??= loadVideoFirstFrame(asset);
+/// 视频首帧加载协调器：把"每格直接抽帧"收敛为全局受控的任务流。
+///
+/// - **有界并发**：底层解码任务同时最多 [maxConcurrent] 个（快速滚动
+///   不会瞬时堆积大量解码任务，整页展示不被阻塞——网格先渲染占位）；
+/// - **并发合并**：同一资源的并发请求共享同一个 in-flight Future；
+/// - **成功缓存**：成功结果内存 memoize（磁盘缓存由
+///   [loadVideoFirstFrame] 负责），后续请求零成本；
+/// - **失败不占坑**：失败结果绝不缓存，按 [retryBackoff] 退避有限重试
+///   （[maxAttempts] 上限），退避窗口内的调用快速返回 null 而不排队
+///   解码——既不会"每次 build 都重试"，也不会把失败永久 memoize；
+/// - **超时按失败处理**：单任务超过 [timeout] 即记失败。底层原生任务
+///   可能仍在运行（video_compress 无取消接口），但 [maxAttempts] 上限
+///   约束每个资源最多提交这么多次原生任务，不会无限重复提交；
+/// - **手动重试**：预算耗尽后 [resetById] 清零，UI 提供重试入口。
+final class VideoFirstFrameStore {
+  VideoFirstFrameStore({
+    this.maxConcurrent = 2,
+    this.timeout = const Duration(seconds: 10),
+    this.maxAttempts = 3,
+    this.retryBackoff = const Duration(seconds: 2),
+    Future<Uint8List?> Function(AssetEntity asset)? loader,
+    DateTime Function()? clock,
+  })  : loader = loader ?? loadVideoFirstFrame,
+        _clock = clock ?? (() => DateTime.now());
+
+  static const maxConcurrentDefault = 2;
+
+  final int maxConcurrent;
+  final Duration timeout;
+  final int maxAttempts;
+  final Duration retryBackoff;
+
+  /// 实际抽帧实现（测试替身注入；生产走 [loadVideoFirstFrame] 磁盘缓存链路）。
+  final Future<Uint8List?> Function(AssetEntity asset) loader;
+  final DateTime Function() _clock;
+
+  final _successes = <String, Future<Uint8List?>>{};
+  final _inFlight = <String, Future<Uint8List?>>{};
+  final _attempts = <String, int>{};
+  final _nextAllowedAt = <String, DateTime>{};
+  final _queue = <_FirstFrameJob>[];
+  int _active = 0;
+
+  /// 读取（自动合并并发、遵守退避与预算）。
+  Future<Uint8List?> load(AssetEntity asset) {
+    final key = asset.id;
+    final success = _successes[key];
+    if (success != null) return success;
+    final pending = _inFlight[key];
+    if (pending != null) return pending;
+    if ((_attempts[key] ?? 0) >= maxAttempts) return Future.value(null);
+    final next = _nextAllowedAt[key];
+    if (next != null && _clock().isBefore(next)) return Future.value(null);
+
+    final completer = Completer<Uint8List?>();
+    final future = completer.future;
+    _inFlight[key] = future;
+    _queue.add(_FirstFrameJob(this, key, asset, completer));
+    _drain();
+    return future;
+  }
+
+  void _drain() {
+    while (_active < maxConcurrent && _queue.isNotEmpty) {
+      final job = _queue.removeAt(0);
+      _active++;
+      job.run().whenComplete(() {
+        _active--;
+        _drain();
+      });
+    }
+  }
+
+  void _recordFailure(String key) {
+    final attempts = (_attempts[key] ?? 0) + 1;
+    _attempts[key] = attempts;
+    _nextAllowedAt[key] = _clock().add(retryBackoff * attempts);
+  }
+
+  /// 重试预算是否已耗尽（UI 显示重试入口的依据）。
+  bool retriesExhaustedById(String assetId) =>
+      (_attempts[assetId] ?? 0) >= maxAttempts;
+
+  /// 手动重试入口：清零该资源的失败预算与退避。
+  void resetById(String assetId) {
+    _attempts.remove(assetId);
+    _nextAllowedAt.remove(assetId);
+  }
+
+  /// 正在执行的底层解码任务数（诊断/测试）。
+  int get activeExtractions => _active;
+
+  /// 排队中的任务数（诊断/测试）。
+  int get queuedExtractions => _queue.length;
 }
+
+final class _FirstFrameJob {
+  _FirstFrameJob(this.store, this.key, this.asset, this.completer);
+
+  final VideoFirstFrameStore store;
+  final String key;
+  final AssetEntity asset;
+  final Completer<Uint8List?> completer;
+
+  Future<void> run() async {
+    Uint8List? frame;
+    try {
+      frame = await store.loader(asset).timeout(store.timeout);
+    } catch (_) {
+      // 超时/加载异常一律按失败记账（预算上限约束原生任务提交次数）。
+    }
+    if (completer.isCompleted) return;
+    if (frame != null && frame.isNotEmpty) {
+      store._successes[key] = Future.value(frame);
+      store._attempts.remove(key);
+      store._nextAllowedAt.remove(key);
+      completer.complete(frame);
+    } else {
+      store._recordFailure(key);
+      completer.complete(null);
+    }
+    store._inFlight.remove(key);
+  }
+}
+
+/// 全局首帧协调器实例（进程内所有选图会话共享有界并发预算）。
+final videoFirstFrameStore = VideoFirstFrameStore();
 
 /// 兼容入口：一次性加载首页（供旧调用方过渡）；新代码请使用 [DeviceGalleryPager]。
 Future<List<GalleryPhoto>> loadDeviceGalleryPhotos({int limit = 600}) async {

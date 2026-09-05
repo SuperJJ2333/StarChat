@@ -21,30 +21,35 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        // 原生通话层桥：通知[接听/拒绝]→Flutter；Flutter 接管后停原生前台服务。
+        // 原生推送桥。
         com.liuhetong.mobile.push.NativePushBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
         )
-        com.liuhetong.mobile.call.NativeCallBridge.setCallHandler(
-            onAnswer = {
-                com.liuhetong.mobile.call.CallManager.onAnswered()
-                com.liuhetong.mobile.call.CallManager
-                    .launchCallActivity(applicationContext)
-            },
-            onReject = {
-                com.liuhetong.mobile.call.CallManager.onEnded()
-                com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
-            },
-            onEnd = {
-                com.liuhetong.mobile.call.CallManager.onEnded()
-                com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
-                com.liuhetong.mobile.call.CallOverlayService.hide(applicationContext)
-            },
+        // 原生通话桥（修复初始化顺序：先创建 native_call 通道再注册处理器
+        // ——此前 setCallHandler 先于通道创建执行，channel 为 null 时注册
+        // 是空操作，answerCall/rejectCall/endCall/getActiveCall 全部不可达；
+        // 且 CallManager 监听器在 setUp 内注册、teardown 内移除，重建不泄漏）。
+        com.liuhetong.mobile.call.NativeCallBridge.setUp(
+            flutterEngine.dartExecutor.binaryMessenger,
+            com.liuhetong.mobile.call.NativeCallBridge.CallHandlers(
+                onAnswer = {
+                    com.liuhetong.mobile.call.CallManager.onAnswerRequested()
+                    com.liuhetong.mobile.call.CallManager
+                        .launchCallActivity(applicationContext)
+                },
+                onReject = {
+                    com.liuhetong.mobile.call.CallManager.onRejectRequested()
+                },
+                onEnd = {
+                    com.liuhetong.mobile.call.CallManager.onEnded()
+                },
+            ),
         )
         com.liuhetong.mobile.call.CallBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
         ) {
-            com.liuhetong.mobile.call.CallForegroundService.stop(applicationContext)
+            // Flutter 已接管通话呈现：收起铃声服务与通知（保留状态）。
+            com.liuhetong.mobile.call.CallManager.dismissPresentation()
         }
         // 个推桥（隐私红线：不打印 CID/载荷；initialize 仅在用户同意后由 Dart 触发）。
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/getui")
@@ -264,5 +269,12 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         releaseWakeLocks()
         super.onDestroy()
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // 引擎销毁：移除通道处理器与 CallManager 监听（防泄漏/防重复注册）。
+        com.liuhetong.mobile.call.CallBridge.teardown()
+        com.liuhetong.mobile.call.NativeCallBridge.teardown()
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }

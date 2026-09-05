@@ -6,7 +6,8 @@ Map<DateTime, List<LocalChatSearchEntry>> groupChatSearchByDate(
     Iterable<LocalChatSearchEntry> entries) {
   final grouped = <DateTime, List<LocalChatSearchEntry>>{};
   for (final entry in entries) {
-    final day = DateTime(entry.timestamp.year, entry.timestamp.month, entry.timestamp.day);
+    final day = DateTime(
+        entry.timestamp.year, entry.timestamp.month, entry.timestamp.day);
     grouped.putIfAbsent(day, () => []).add(entry);
   }
   final keys = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
