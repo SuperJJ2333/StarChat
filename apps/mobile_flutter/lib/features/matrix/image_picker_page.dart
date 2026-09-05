@@ -442,6 +442,11 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: Column(children: [
+          // 审计注记（gallery-call-review）：Android 14+ 部分授权时给
+          // 用户明确的"管理可见照片/视频"入口——否则只见部分媒体且无
+          // 从得知原因。
+          if (DeviceGallerySource.lastKnownPermissionScope == 'limited')
+            _limitedAccessBanner(),
           Expanded(child: _grid(dark)),
           _bottomBar(barColor),
         ]),
@@ -487,6 +492,45 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     );
     if (picked == null || !mounted) return;
     await _selectAlbum(picked);
+  }
+
+  /// 部分授权横幅：说明仅可见已选媒体 + 重选入口（系统照片选择器）。
+  Widget _limitedAccessBanner() {
+    return Container(
+      key: const Key('image-picker-limited-banner'),
+      width: double.infinity,
+      color: const Color(0xFFFFF7E6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(children: [
+        const Icon(CupertinoIcons.exclamationmark_triangle_fill,
+            size: 15, color: Color(0xFFD48806)),
+        const SizedBox(width: 6),
+        const Expanded(
+          child: Text(
+            '仅可访问你选中的部分照片/视频',
+            style: TextStyle(fontSize: 12, color: Color(0xFF8C6A00)),
+          ),
+        ),
+        CupertinoButton(
+          key: const Key('image-picker-limited-manage'),
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          onPressed: _manageLimitedAccess,
+          child: const Text('管理',
+              style: TextStyle(fontSize: 12, color: WeChatColors.brandPrimary)),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _manageLimitedAccess() async {
+    try {
+      // 系统照片选择器重选（Android 14+ / iOS limited）。
+      await PhotoManager.presentLimited();
+    } catch (_) {
+      // 不支持/受限：退回系统应用设置页。
+      await _openSystemSettings();
+    }
   }
 
   Widget _grid(bool dark) {
@@ -819,7 +863,9 @@ final class _VideoFirstFrameCellState extends State<_VideoFirstFrameCell> {
   }
 
   void _retry() {
-    videoFirstFrameStore.resetById(widget.photo.id);
+    // invalidate（而非 reset）：清预算+退避，并标记下次 load 绕过磁盘
+    // 缓存强制重抽——覆盖"字节存在但不可解码"的损坏缓存。
+    videoFirstFrameStore.invalidateById(widget.photo.id);
     setState(() => _future = null);
   }
 
@@ -837,8 +883,9 @@ final class _VideoFirstFrameCellState extends State<_VideoFirstFrameCell> {
             key: Key('image-picker-frame-${widget.photo.id}'),
             fit: BoxFit.cover,
             gaplessPlayback: true,
-            // 缓存字节损坏（写一半/位翻转）：按失败占位，不闪退不黑卡。
-            errorBuilder: (_, __, ___) => _placeholder(showRetry: false),
+            // 缓存字节损坏（写一半/位翻转）：解码失败同样提供重试入口
+            // （审计 P2：损坏缓存必须能恢复，不能永远占位）。
+            errorBuilder: (_, __, ___) => _placeholder(showRetry: true),
           );
         }
         // 本次尝试已结束且无可用帧：显示重试入口。自动重试的节流由全局

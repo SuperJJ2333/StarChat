@@ -1,0 +1,6 @@
+
+Algorithm : SHA256
+Hash      : DDDD2D341BED39594D31D3ACE83BB5DACC2DB8F0656EEA6EBA9EDB6BA9FF4609
+Path      : D:\pythonProject\outsource\StarChat\docs\verification\plain36\ChatFlow-0.3.36-arm64-plain.apk
+
+

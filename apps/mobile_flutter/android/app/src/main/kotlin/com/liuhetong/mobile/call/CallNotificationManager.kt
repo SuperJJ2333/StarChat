@@ -140,15 +140,22 @@ object CallNotificationManager {
             .setOngoing(true)
             .setAutoCancel(false)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
+        // 审计 P1（gallery-call-review）：全屏意图在**共同路径**配置——
+        // CallStyle 只是样式/动作模板，不会自动生成打开 CallActivity 的
+        // fullScreenIntent；此前仅回退分支设置，API31+ 正常分支缺失锁屏
+        // 全屏入口。仍指向展示 Activity（绝不接听）；未授权（Android 14+）
+        // 时系统自动降级横幅（canUseFullScreenIntent 见 CallActivity 内
+        // 引导）。
+        if (canUseFullScreenIntent(context)) {
+            base.setFullScreenIntent(showPi, true)
+        }
         if (Build.VERSION.SDK_INT >= 31 && ensurePhoneAccount(context)) {
-            // CallStyle 分支：系统级来电样式（自带全屏/横幅呈现能力），
+            // CallStyle 分支：系统级来电样式，
             // hangup=拒绝、answer=接听（参数顺序：person, hangup, answer）。
             base.setStyle(Notification.CallStyle.forIncomingCall(person, rejectPi, answerPi))
         } else {
-            // 回退分支：全屏意图指向展示 Activity（非接听广播）+
-            // 显式接听/拒绝按钮。
-            base.setFullScreenIntent(showPi, true)
-                .addAction(0, "接听", answerPi)
+            // 回退分支：显式接听/拒绝按钮（CallStyle 之外的兼容路径）。
+            base.addAction(0, "接听", answerPi)
                 .addAction(0, "拒绝", rejectPi)
         }
         return base.build()

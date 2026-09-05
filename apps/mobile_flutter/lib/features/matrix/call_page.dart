@@ -11,13 +11,16 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import 'call_controller.dart';
 import 'matrix_call_adapter.dart';
+import 'media_renderer_binding.dart';
 
 /// 加密语音/视频通话页（微信式）：
 /// - **语音**：深色背景 + 对方头像/昵称 + 状态（等待接听/通话时长）；
 ///   底部 静音、挂断、免提 三枚圆形按钮；
-/// - **视频**：远端画面**全屏铺底**，本端画中画居右上；顶部对方昵称与
-///   通话时长；底部 切换镜头、免提、挂断、静音；
-/// - **来电**：全屏 + 震动铃声提醒，底部 拒绝（红）/ 接听（绿）；
+/// - **视频**：主叫等待期本地画面铺满（微信语义），接通后远端画面
+///   全屏铺底、本端画中画定位屏幕右上；顶部对方昵称与通话时长；
+///   底部 切换镜头、免提、挂断、静音；
+/// - **来电**（语音/视频一致）：头像 + 昵称 + 邀请类型 + 拒绝（红）/
+///   接听（绿），不渲染未就绪的远端画面；
 /// - 通话期间屏幕常亮，挂断自动恢复。
 final class CallPage extends StatefulWidget {
   const CallPage({
@@ -53,6 +56,22 @@ final class _CallPageState extends State<CallPage> {
   Timer? _durationTicker;
   DateTime? _connectedAt;
 
+  /// P1-3：渲染器就绪/页面销毁守卫——初始化与 dispose 竞争时不得再向
+  /// renderer 写 srcObject（初始化未完成写入会抛异常；销毁后写入泄漏）。
+  bool _renderersReady = false;
+  bool _disposed = false;
+  StreamSubscription<void>? _streamChangesSub;
+
+  /// P1-3：绑定单元（读 backend 流 → 写 renderer，幂等/可注入测试）。
+  late final MediaRendererBinding _localBinding = MediaRendererBinding(
+    readStream: () => widget.mediaBackend?.localMediaStream,
+    applyStream: (stream) => _localRenderer.srcObject = stream,
+  );
+  late final MediaRendererBinding _remoteBinding = MediaRendererBinding(
+    readStream: () => widget.mediaBackend?.remoteMediaStream,
+    applyStream: (stream) => _remoteRenderer.srcObject = stream,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -78,13 +97,24 @@ final class _CallPageState extends State<CallPage> {
   Future<void> _initializeRenderers() async {
     await Future.wait(
         [_localRenderer.initialize(), _remoteRenderer.initialize()]);
+    // 初始化期间页面可能已被销毁（快速退出/来电页被替换）。
+    if (_disposed || !mounted) return;
+    _renderersReady = true;
     _updateStreams();
+    // P1-3：流在初始化/状态通知之后到达或重建时，独立触发重绑——
+    // 不再依赖"恰好有下一次 controller 事件"。
+    _streamChangesSub?.cancel();
+    final changes = widget.mediaBackend?.mediaStreamChanges;
+    if (changes != null) {
+      _streamChangesSub = changes.listen((_) => _updateStreams());
+    }
   }
 
   void _updateStreams() {
-    if (widget.mediaBackend == null) return;
-    _localRenderer.srcObject = widget.mediaBackend?.localMediaStream;
-    _remoteRenderer.srcObject = widget.mediaBackend?.remoteMediaStream;
+    if (!_renderersReady || _disposed || widget.mediaBackend == null) return;
+    // 幂等绑定：仅流实例真正变化时写 renderer（计时器 setState 不重绑）。
+    _localBinding.update();
+    _remoteBinding.update();
   }
 
   bool _endPopHandled = false;
@@ -180,6 +210,10 @@ final class _CallPageState extends State<CallPage> {
 
   @override
   void dispose() {
+    _disposed = true;
+    unawaited(_streamChangesSub?.cancel());
+    _localBinding.dispose();
+    _remoteBinding.dispose();
     widget.controller.removeListener(_changed);
     _durationTicker?.cancel();
     _endGraceTimer?.cancel();
@@ -236,28 +270,11 @@ final class _CallPageState extends State<CallPage> {
     );
   }
 
-  /// 语音体顶部预览区（需求：紧凑设备弹性高度）：
-  /// - 视频预呼叫：远端画面弹性展示且不超过 360 高（Expanded+maxHeight）；
-  /// - 语音呼叫：弹性占位 + 大头像。
+  /// 语音体顶部预览区（审计 P2：等待态不渲染远端画面）：
+  /// - 视频主叫等待/接通：由 [_videoBody] 呈现（等待期本地画面）；
+  /// - 来电响铃/语音呼叫/建立中：头像呈现——远端画面尚未就绪，渲染
+  ///   _remoteRenderer 只会得到黑色区域（与语音来电观感不一致）。
   List<Widget> _voicePreviewWidgets(CallViewState state) {
-    if (state.type == CallMediaType.video && widget.mediaBackend != null) {
-      return [
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 360),
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(WeChatRadius.authControl),
-                  child: RTCVideoView(_remoteRenderer),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ];
-    }
     return [
       const Spacer(),
       UserAvatar(
@@ -312,16 +329,36 @@ final class _CallPageState extends State<CallPage> {
     );
   }
 
-  /// 视频通话：远端全屏铺底，顶部信息，本端画中画右上（微信样式）。
+  /// 视频通话（审计 P2：等待/接通分态呈现）：
+  /// - 主叫等待：本地画面铺满（微信语义：等待时看自己），接通切换远端；
+  /// - 接通：远端全屏铺底 + 本端画中画**屏幕右上角**（Positioned 定位，
+  ///   此前 Align 嵌在 Column 内无法到达屏幕角落）+ 顶部信息 + 底部控制。
   Widget _videoBody(CallViewState state, bool connected, bool outgoingRinging) {
+    final safeTop = MediaQuery.of(context).padding.top;
     return Stack(
       fit: StackFit.expand,
       children: [
         const ColoredBox(color: CupertinoColors.black),
         RTCVideoView(
-          _remoteRenderer,
+          // 等待期远端无画面：主叫等待显示本地镜像；接通后切远端。
+          connected ? _remoteRenderer : _localRenderer,
+          mirror: !connected,
           objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
         ),
+        // 本端画中画（仅接通后：微信位置=屏幕右上角，前置镜像）。
+        if (connected)
+          Positioned(
+            top: safeTop + 64,
+            right: WeChatSpacing.lg,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(WeChatRadius.dialog),
+              child: SizedBox(
+                width: 100,
+                height: 140,
+                child: RTCVideoView(_localRenderer, mirror: true),
+              ),
+            ),
+          ),
         SafeArea(
           child: Column(children: [
             Padding(
@@ -354,23 +391,6 @@ final class _CallPageState extends State<CallPage> {
                   ),
                 ),
               ]),
-            ),
-            const Spacer(),
-            // 本端画中画（微信位置：右上角，前置镜像）。
-            Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: const EdgeInsets.only(
-                    right: WeChatSpacing.lg, top: WeChatSpacing.xl),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(WeChatRadius.dialog),
-                  child: SizedBox(
-                    width: 100,
-                    height: 140,
-                    child: RTCVideoView(_localRenderer, mirror: true),
-                  ),
-                ),
-              ),
             ),
             const Spacer(),
             SafeArea(

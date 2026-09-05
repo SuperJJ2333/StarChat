@@ -97,8 +97,23 @@ final class CallUiManager {
     _handleCallState();
   }
 
-  /// 回到前台且仍在响铃：收起系统全屏通知，改由应用内接听页呈现。
+  /// 回到前台（审计 P1 修复）：按当前**非终态**重做呈现决策。
+  ///
+  /// 后台响铃期间未推过页面；用户回前台时 phase 不变，不会再触发
+  /// _handleCallState——此前只取消通知会留下"通知没了、接听页也缺失"
+  /// 的窗口。现在 ringing/connecting/connected 一律重跑呈现（推页幂等、
+  /// 尊重主叫页），页面恢复后由该路径收起系统通知。
   void handleAppResumed() {
+    final controller = _controller;
+    if (controller == null) return;
+    final phase = controller.state.phase;
+    if (phase == CallPhase.ringing ||
+        phase == CallPhase.connecting ||
+        phase == CallPhase.connected) {
+      _handleCallState();
+      return;
+    }
+    // 无活动通话时的防御性清理（残留通知）。
     if (_overlay.ringing) {
       unawaited(notifications.hideIncoming());
     }

@@ -62,7 +62,7 @@ void main() {
     await client.logout();
     expect(await store.session(), isNull, reason: '登出必清本地会话');
     // 迟到的刷新结果：不得把 late-* 写回会话存储。
-    final outcome = await restoring.catchError((_) => 'error');
+    final outcome = await restoring.then<BusinessSessionRestore?>((v) => v, onError: (_) => null);
     expect(outcome, anyOf(isA<BusinessSessionRestore>(), 'error'));
     expect(await store.session(), isNull,
         reason: '迟到刷新不得恢复已注销会话（A03 取消语义）');

@@ -505,8 +505,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(loads, 2, reason: '重试入口重新触发一次首帧加载');
   });
-}
+// ── 审计 P2（gallery-call-review）：部分授权横幅 ─────────────
 
+testWidgets('P2：limited 授权显示"管理可见照片"横幅；full 不显示', (tester) async {
+  DeviceGallerySource.lastKnownPermissionScopeForTest = 'limited';
+  addTearDown(
+      () => DeviceGallerySource.lastKnownPermissionScopeForTest = null);
+  await tester.pumpWidget(CupertinoApp(
+    home: ImagePickerPage(
+      pagerBuilder: () => FakePager([
+        [
+          GalleryPhoto(
+            id: 'p1',
+            thumbnail: tinyPng,
+            compressedBytes: () async => Uint8List.fromList([1]),
+            originalBytes: () async => Uint8List.fromList([1]),
+          ),
+        ],
+      ]),
+    ),
+  ));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+  expect(find.byKey(const Key('image-picker-limited-banner')), findsOneWidget,
+      reason: '部分授权时必须提供明确入口');
+  expect(find.byKey(const Key('image-picker-limited-manage')), findsOneWidget);
+
+  // full：不显示横幅。
+  DeviceGallerySource.lastKnownPermissionScopeForTest = 'full';
+  await tester.pumpWidget(CupertinoApp(
+    home: ImagePickerPage(
+      pagerBuilder: () => FakePager(const []),
+    ),
+  ));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
+  expect(find.byKey(const Key('image-picker-limited-banner')), findsNothing);
+});
+}
 /// 门闩分页器：首页结果挂起直至 gate 完成（模拟慢请求）。
 final class _GatedPager extends DeviceGalleryPager {
   _GatedPager(this.gate);

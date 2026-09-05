@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc;
 import 'package:matrix/matrix.dart' hide CallBackend;
 import 'package:webrtc_interface/webrtc_interface.dart' as rtc_interface;
+import 'package:webrtc_interface/webrtc_interface.dart' show MediaStream;
 
 import 'call_connected_fallback.dart';
 import 'call_controller.dart';
@@ -122,6 +123,17 @@ final class MatrixCallBackend implements CallBackend {
   final _events = StreamController<CallBackendEvent>.broadcast();
   StreamSubscription<CallState>? _callStates;
 
+  /// P1-3（gallery-call-review）：媒体流变化事件（本地/远端流新增、
+  /// 移除或重建）。渲染绑定不再只依赖通话状态通知——流在状态事件之后
+  /// 到达/重建时，UI 也能及时拿到新 srcObject。
+  final _mediaStreamEvents = StreamController<void>.broadcast();
+  StreamSubscription<WrappedMediaStream>? _streamAddSub;
+  StreamSubscription<WrappedMediaStream>? _streamRemovedSub;
+  final _streamChangedSubs = <StreamSubscription<MediaStream>>[];
+
+  /// 媒体流变化广播（UI 订阅后应在每次事件重取 local/remoteMediaStream）。
+  Stream<void> get mediaStreamChanges => _mediaStreamEvents.stream;
+
   /// kConnected 丢失兜底（accept 后 10s 内 peer 已连则补发）。
   ConnectedFallbackWatcher _fallback = ConnectedFallbackWatcher(
     pollInterval: const Duration(milliseconds: 500),
@@ -180,6 +192,7 @@ final class MatrixCallBackend implements CallBackend {
   Future<void> _attach(CallSession call) async {
     if (identical(_call, call)) return;
     _call = call;
+    _teardownStreamWatch();
     diagnostics.reset();
     diagnostics.mark(CallDiagStage.inviteReceived);
     debugPrint('[matrix-call] inviteReceived room=${call.room.id} '
@@ -203,12 +216,44 @@ final class MatrixCallBackend implements CallBackend {
         _ended(call);
       }
     });
+    // P1-3：订阅 SDK 流级事件——流新增/移除/重建都会通知 UI 重新绑定
+    // renderer（不再依赖状态事件恰好覆盖流变化时序）。
+    _streamAddSub = call.onStreamAdd.stream.listen((wrapped) {
+      _watchWrappedStream(wrapped);
+      _mediaStreamEvents.add(null);
+    });
+    _streamRemovedSub = call.onStreamRemoved.stream.listen((_) {
+      _mediaStreamEvents.add(null);
+    });
+    // 已存在的流（订阅早于 onStreamAdd 时）同样挂接 onStreamChanged。
+    for (final wrapped in [...call.getLocalStreams, ...call.getRemoteStreams]) {
+      _watchWrappedStream(wrapped);
+    }
     if (!call.isOutgoing) {
       // The delegate is awaited by the SDK's sync event handler. Complete that
       // handler before any further work so the incoming-call UI is never
       // blocked behind the sync that delivered it.
       unawaited(_validateIncoming(call));
     }
+  }
+
+  void _watchWrappedStream(WrappedMediaStream wrapped) {
+    // track 重挂会触发 WrappedMediaStream.onStreamChanged（新 MediaStream
+    // 实例）——据此通知 UI 换绑 renderer 的 srcObject。
+    _streamChangedSubs.add(wrapped.onStreamChanged.stream.listen((_) {
+      _mediaStreamEvents.add(null);
+    }));
+  }
+
+  void _teardownStreamWatch() {
+    unawaited(_streamAddSub?.cancel());
+    _streamAddSub = null;
+    unawaited(_streamRemovedSub?.cancel());
+    _streamRemovedSub = null;
+    for (final sub in _streamChangedSubs) {
+      unawaited(sub.cancel());
+    }
+    _streamChangedSubs.clear();
   }
 
   /// P0（来电不被服务器阻塞）：本地已同步成员优先——零网络请求放行
@@ -272,6 +317,7 @@ final class MatrixCallBackend implements CallBackend {
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
     debugPrint('[matrix-call] ended reason=${call.hangupReason}');
+    _teardownStreamWatch();
     await _fallback.stop();
     delegate.markActive(false);
     await _quality?.stop();
@@ -348,8 +394,10 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   Future<void> dispose() async {
+    _teardownStreamWatch();
     await _fallback.stop();
     await _callStates?.cancel();
     await _events.close();
+    await _mediaStreamEvents.close();
   }
 }

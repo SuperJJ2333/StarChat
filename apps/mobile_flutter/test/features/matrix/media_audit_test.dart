@@ -4,9 +4,11 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
+import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_message_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 /// 审计 M01/M03/M04/U04 的媒体与缓存治理回归测试。
 void main() {
@@ -124,6 +126,59 @@ void main() {
     expect(CacheRepository.momentsFeedKeyFor('matrix:@a:test'),
         contains('matrix:@a:test'));
   });
+
+// ── 审计 P2（gallery-call-review）：封面字节损坏可恢复 ────────
+
+test('P2：invalidateById 绕过成功缓存强制重抽（字节损坏恢复）', () async {
+  var normalLoads = 0;
+  var forcedLoads = 0;
+  final store = VideoFirstFrameStore(
+    loader: (asset) async {
+      normalLoads++;
+      return bytesOf(List.filled(10, 1));
+    },
+    forceLoader: (asset) async {
+      forcedLoads++;
+      return bytesOf(List.filled(10, 2));
+    },
+  );
+  final asset = _StubAsset('corrupt-recover');
+  final first = await store.load(asset);
+  expect(first, isNotNull);
+  await store.load(asset);
+  expect(normalLoads, 1, reason: '成功缓存复用');
+  store.invalidateById(asset.id);
+  final refreshed = await store.load(asset);
+  expect(forcedLoads, 1, reason: '强制重抽走 ignoreCache 路径');
+  expect(refreshed!.first, 2, reason: '拿到重抽后的新字节');
+  final again = await store.load(asset);
+  expect(again!.first, 2, reason: '重抽后的结果被缓存复用');
+  expect(forcedLoads, 1, reason: '成功后不再强制');
+  expect(normalLoads, 1, reason: '强制路径不消耗正常加载计数');
+});
+
+test('P2：invalidateById 同时清零失败预算（预算耗尽后仍可恢复）', () async {
+  var now = DateTime(2026, 9, 5, 12, 0, 0);
+  final store = VideoFirstFrameStore(
+    loader: (asset) async => null,
+    forceLoader: (asset) async => bytesOf(List.filled(5, 9)),
+    clock: () => now,
+  );
+  final asset = _StubAsset('hopeless-then-fixed');
+  for (var i = 0; i < 3; i++) {
+    await store.load(asset);
+    now = now.add(const Duration(seconds: 30)); // 越过退避窗口。
+  }
+  expect(store.retriesExhaustedById(asset.id), isTrue);
+  store.invalidateById(asset.id);
+  final recovered = await store.load(asset);
+  expect(recovered, isNotNull, reason: 'invalidate 后预算清零且走强制路径');
+  expect(store.retriesExhaustedById(asset.id), isFalse);
+});
+}
+
+final class _StubAsset extends AssetEntity {
+  _StubAsset(String id) : super(id: id, typeInt: 2, width: 100, height: 100, mimeType: 'video/mp4');
 }
 
 // ── 测试助手 ──────────────────────────────────────────────────

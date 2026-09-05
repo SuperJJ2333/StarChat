@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
@@ -36,7 +35,7 @@ Future<BusinessApiClient> walletApi(
     sessionStore: store,
     client: MockClient((request) async {
       if (latency != null) await Future<void>.delayed(latency);
-      return await handler(request);
+      return handler(request);
     }),
   );
 }
@@ -50,7 +49,7 @@ http.Response _json(Object body, {int status = 200}) => http.Response(
 Future<void> _fillForm(WidgetTester tester) async {
   await tester.enterText(find.byKey(const Key('wallet-withdraw-amount')), '5');
   await tester.enterText(find.byKey(const Key('wallet-withdraw-address')),
-      'T' + '2' * 33);
+      'T${'2' * 33}');
   await tester.pump();
 }
 

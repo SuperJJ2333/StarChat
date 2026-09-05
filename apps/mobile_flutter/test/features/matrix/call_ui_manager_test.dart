@@ -344,4 +344,45 @@ void main() {
 
     await _teardown(tester, backend.events, manager);
   });
+// ── 审计 P1（gallery-call-review）：回前台必须恢复来电页 ──────
+
+testWidgets('审计复现：后台响铃 → 回前台 handleAppResumed → 来电页必须恢复',
+    (tester) async {
+  final navigatorKey = GlobalKey<NavigatorState>();
+  final notifications = _RecordingCallNotifications();
+  var resumed = false;
+  final manager = CallUiManager(
+    navigatorKey: navigatorKey,
+    notifications: notifications,
+    isAppResumed: () => resumed,
+  );
+  final backend = _FakeCallBackend();
+  final controller = CallController(
+    backend: backend,
+    permissions: _AllowedPermissions(),
+    now: () => tester.binding.clock.now(),
+  );
+  manager.attach(controller);
+  await tester.pumpWidget(CupertinoApp(
+    navigatorKey: navigatorKey,
+    home: const Center(child: Text('主页占位')),
+  ));
+
+  // 后台来电：仅系统通知，未推页面。
+  await _emit(tester, backend.events, _incoming(type: CallMediaType.video));
+  await tester.pump();
+  expect(manager.isIncomingPageOpen, isFalse, reason: '后台来电不推页面（既有语义）');
+
+  // 用户回前台：真实生命周期入口只调 handleAppResumed（phase 无变化）。
+  resumed = true;
+  manager.handleAppResumed();
+  await tester.pumpAndSettle();
+
+  // 审计断言：来电页必须被恢复（此前仅取消通知，页面缺失）。
+  expect(manager.isIncomingPageOpen, isTrue,
+      reason: '回前台后必须补开来电页，而不是只把通知收掉');
+  expect(find.text('邀请你进行视频通话'), findsOneWidget, reason: '来电内容可见');
+
+  await _teardown(tester, backend.events, manager);
+});
 }

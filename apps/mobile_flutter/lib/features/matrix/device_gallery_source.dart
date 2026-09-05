@@ -314,6 +314,16 @@ class DeviceGallerySource {
   /// 最近一次权限请求的授权范围（null = 尚未请求）。
   static String? _lastKnownScope;
 
+  /// 最近一次权限请求/探测的授权范围（'full'/'limited'/null=未知）。
+  /// UI 据此在 limited 时提供"管理可见照片/视频"入口（审计注记：
+  /// Android 14+ 允许仅授权选定媒体，需要明确入口让用户重选）。
+  static String? get lastKnownPermissionScope => _lastKnownScope;
+
+  /// 测试注入。
+  @visibleForTesting
+  static set lastKnownPermissionScopeForTest(String? value) =>
+      _lastKnownScope = value;
+
   /// 授权范围指纹：部分授权（limited）与全部授权可见的媒体集合不同。
   static String? permissionScopeOf(PermissionState state) =>
       state.isAuth ? 'full' : (state.isLimited ? 'limited' : null);
@@ -338,6 +348,7 @@ class DeviceGallerySource {
       return false;
     }
     final scope = permissionScopeOf(state);
+    _lastKnownScope = scope;
     if (GalleryAccessCache.shared.matchesPermissionScope(scope)) return false;
     GalleryAccessCache.shared.invalidate();
     return true;
@@ -571,6 +582,7 @@ Future<Uint8List?> loadVideoFirstFrame(
   Future<Uint8List?> Function(String path, int positionMs)? fetch,
   Future<Directory> Function()? cacheDir,
   List<int> Function(Duration?)? positionsFor,
+  bool ignoreCache = false,
 }) async {
   try {
     final origin = await asset.originFile;
@@ -584,7 +596,9 @@ Future<Uint8List?> loadVideoFirstFrame(
             .encode('${origin.path}|${asset.id}|${asset.videoDuration}|${await origin.length()}'))
         .toString();
     final cacheFile = File('${dir.path}${Platform.pathSeparator}$key.jpg');
-    if (await cacheFile.exists()) {
+    // ignoreCache：字节级损坏恢复（存在但不可解码）——跳过磁盘读强制
+    // 重抽，成功后覆盖缓存文件。
+    if (!ignoreCache && await cacheFile.exists()) {
       // 缓存损坏防御：空文件（写入中断/磁盘异常）删除后重新抽帧，
       // 不得把空字节当命中永远占住。
       final cached = await cacheFile.readAsBytes();
@@ -631,8 +645,11 @@ final class VideoFirstFrameStore {
     this.maxAttempts = 3,
     this.retryBackoff = const Duration(seconds: 2),
     Future<Uint8List?> Function(AssetEntity asset)? loader,
+    Future<Uint8List?> Function(AssetEntity asset)? forceLoader,
     DateTime Function()? clock,
   })  : loader = loader ?? loadVideoFirstFrame,
+        forceLoader =
+            forceLoader ?? ((asset) => loadVideoFirstFrame(asset, ignoreCache: true)),
         _clock = clock ?? (() => DateTime.now());
 
   static const maxConcurrentDefault = 2;
@@ -642,8 +659,10 @@ final class VideoFirstFrameStore {
   final int maxAttempts;
   final Duration retryBackoff;
 
-  /// 实际抽帧实现（测试替身注入；生产走 [loadVideoFirstFrame] 磁盘缓存链路）。
+  /// 视频首帧实际抽帧实现（测试替身注入；生产走 [loadVideoFirstFrame]
+  /// 磁盘缓存链路）。命名参数 [ignoreDiskCache] 供损坏恢复重抽使用。
   final Future<Uint8List?> Function(AssetEntity asset) loader;
+  final Future<Uint8List?> Function(AssetEntity asset)? forceLoader;
   final DateTime Function() _clock;
 
   final _successes = <String, Future<Uint8List?>>{};
@@ -657,12 +676,17 @@ final class VideoFirstFrameStore {
   Future<Uint8List?> load(AssetEntity asset) {
     final key = asset.id;
     final success = _successes[key];
-    if (success != null) return success;
+    if (success != null && !_forceExtract.contains(key)) return success;
     final pending = _inFlight[key];
     if (pending != null) return pending;
-    if ((_attempts[key] ?? 0) >= maxAttempts) return Future.value(null);
-    final next = _nextAllowedAt[key];
-    if (next != null && _clock().isBefore(next)) return Future.value(null);
+    final forced = _forceExtract.contains(key);
+    if (!forced && (_attempts[key] ?? 0) >= maxAttempts) {
+      return Future.value(null);
+    }
+    if (!forced) {
+      final next = _nextAllowedAt[key];
+      if (next != null && _clock().isBefore(next)) return Future.value(null);
+    }
 
     final completer = Completer<Uint8List?>();
     final future = completer.future;
@@ -699,6 +723,18 @@ final class VideoFirstFrameStore {
     _nextAllowedAt.remove(assetId);
   }
 
+  /// 损坏恢复入口（审计 P2，gallery-call-review）：磁盘缓存字节存在
+  /// 但不可解码（Image.memory errorBuilder 触发）时，UI 调用本方法后
+  /// 重新 load——绕过磁盘缓存强制重抽并覆盖缓存文件，成功后恢复正常
+  /// 缓存路径。同时清零失败预算与退避。
+  void invalidateById(String assetId) {
+    resetById(assetId);
+    _forceExtract.add(assetId);
+  }
+
+  /// 强制重抽集合（损坏恢复；load 命中后清除）。
+  final _forceExtract = <String>{};
+
   /// 正在执行的底层解码任务数（诊断/测试）。
   int get activeExtractions => _active;
 
@@ -716,8 +752,11 @@ final class _FirstFrameJob {
 
   Future<void> run() async {
     Uint8List? frame;
+    // 损坏恢复：强制重抽走 ignoreCache 路径（跳过磁盘读，重抽后覆盖）。
+    final effectiveLoader =
+        store._forceExtract.contains(key) ? (store.forceLoader ?? store.loader) : store.loader;
     try {
-      frame = await store.loader(asset).timeout(store.timeout);
+      frame = await effectiveLoader(asset).timeout(store.timeout);
     } catch (_) {
       // 超时/加载异常一律按失败记账（预算上限约束原生任务提交次数）。
     }
@@ -726,6 +765,7 @@ final class _FirstFrameJob {
       store._successes[key] = Future.value(frame);
       store._attempts.remove(key);
       store._nextAllowedAt.remove(key);
+      store._forceExtract.remove(key);
       completer.complete(frame);
     } else {
       store._recordFailure(key);

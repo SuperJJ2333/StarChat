@@ -198,7 +198,6 @@ void main() {
 
   test('M02：A 慢 B 快——B 完成后 A 的迟到加载不得触发播放', () async {
     final loads = <String, Completer<Uint8List>>{};
-    var playCalls = 0;
     final engine = FakeVoiceAudioEngine();
     final controller = VoicePlaybackController(
       loadAttachment: (eventId) =>
@@ -281,10 +280,7 @@ final class _TaggingVoiceEngine implements VoiceAudioEngine {
   @override
   Future<void> stop() async {}
 
-  @override
   final completedController = StreamController<void>.broadcast();
-
-  @override
   final positionController = StreamController<Duration>.broadcast();
 
   @override

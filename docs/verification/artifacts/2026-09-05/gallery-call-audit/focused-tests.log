@@ -1,0 +1,207 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart
+00:00 +0: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: decodeThumbnailsBounded（有界并发解码） 并发峰值不超过上限，且保持输入顺序
+00:00 +1: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: decodeThumbnailsBounded（有界并发解码） 单张失败回退空占位，不中断整页
+00:00 +2: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: DeviceGalleryPager（首屏 12 张） 首页默认 12 张，后续页 20 张
+00:00 +3: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: DeviceGalleryPager（首屏 12 张） 显式传入 pageSize 时按传入值（调用方覆盖优先）
+00:00 +4: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: DeviceGalleryPager（首屏 12 张） 不足一页时标记耗尽
+00:00 +5: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: GalleryAccessCache（权限/索引复用） 授权结果只请求一次并被复用；拒绝不缓存（设置页返回后重试）
+00:00 +6: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: GalleryAccessCache（权限/索引复用） 相册索引加载一次后复用；invalidate 后重新加载
+00:00 +7: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: RequestType 透传（MIUI 本地视频修复） isVideoOnly 相册 → RequestType.video；其余 → common
+00:00 +8: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: RequestType 透传（MIUI 本地视频修复） pagerFor 按相册类型透传 RequestType（源码防回归）
+00:00 +9: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: recentAlbum 按 RequestType 分桶（缓存混用修复） 验证10：common → video → common 切换时缓存与实际查询各归各
+00:00 +10: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: recentAlbum 按 RequestType 分桶（缓存混用修复） 分页器按自身类型定位相册（调用链：pagerFor → ensureAccess）
+00:00 +11: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: recentAlbum 按 RequestType 分桶（缓存混用修复） 权限范围变化 → 缓存失效（部分授权不得当作完整访问）
+00:00 +12: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: samplePositionsFor（按时长选取合法采样位置） 长视频保留全部候选点；短视频截到时长内
+00:00 +13: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: samplePositionsFor（按时长选取合法采样位置） 极短视频回退到中点；未知时长按候选原样
+00:00 +14: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 验证13：抽帧实际并发受上限约束，排队任务按 FIFO 补位
+00:00 +15: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 验证12：失败不占坑——退避后可重试，成功后缓存复用
+00:00 +16: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 重试预算耗尽后快速失败；手动重试入口清零预算
+00:00 +17: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 并发请求合并：同一资源并发调用共享一次抽帧
+00:00 +18: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 超时按失败记账（不会无限提交仍在运行的原生任务）
+00:00 +19: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/device_gallery_source_test.dart: VideoFirstFrameStore（并发/重试/缓存策略） 超时按失败记账（不会无限提交仍在运行的原生任务）
+00:00 +20: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: picker page renders a 4-per-row grid with check circles
+00:00 +21: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: picker page renders a 4-per-row grid with check circles
+00:00 +22: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: picker page renders a 4-per-row grid with check circles
+00:00 +22: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: outgoing encrypted call transitions and controls media
+[chatflow/calldiag] ice_connected
+00:00 +23: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: picker page renders a 4-per-row grid with check circles
+00:00 +24: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:00 +25: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:00 +25: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: incoming call can be accepted or rejected
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[chatflow/calldiag] ice_connected (+0ms since answer_sent)
+00:00 +26: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:00 +27: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:01 +28: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+00:01 +28: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accepting before the ring timeout cancels the auto-hangup
+[chatflow/calldiag] ice_connected
+00:01 +29: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: incoming encrypted call exposes answer and reject actions
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] answer_tapped (+278ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+2ms since answer_tapped)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +30: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accepting before the ring timeout cancels the auto-hangup
+00:01 +31: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accepting before the ring timeout cancels the auto-hangup
+00:01 +31: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: connected call shows encrypted controls and toggled state
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] ice_connected
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +32: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accepting before the ring timeout cancels the auto-hangup
+00:01 +32: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: connected video call exposes camera switch with a real icon
+[chatflow/calldiag] incoming_ui_shown
+00:01 +33: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: gallery loads 20 per page with loading footer and prefetch
+00:01 +34: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: gallery loads 20 per page with loading footer and prefetch
+00:01 +34: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accept signaling failure enters failed state instead of hanging
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+00:01 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: gallery loads 20 per page with loading footer and prefetch
+00:01 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accept transitions to connecting and times out when ICE never lands
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+00:01 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: connected video call exposes camera switch with a real icon
+[chatflow/calldiag] ice_connected
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +36: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_picker_page_test.dart: gallery loads 20 per page with loading footer and prefetch
+00:01 +37: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accept transitions to connecting and times out when ICE never lands
+00:01 +37: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: hasConnectedOnce：接通后短暂 ended 不立即退出，抖动恢复取消退出
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +38: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: accept transitions to connecting and times out when ICE never lands
+00:01 +39: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +39: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: connecting to connected cancels the connect timeout
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[chatflow/calldiag] ice_connected (+0ms since answer_sent)
+00:01 +39: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: autoCloseOnEnd：缓冲期过后真的退出（挂断关页）
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +40: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +41: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +41: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_page_test.dart: 未接通的 ended 立即退出（不拖失败页）
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +42: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +43: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +43: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: retry after failure re-accepts while the session is still alive
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+00:01 +44: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +44: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: retry after failure calls back when the session is gone
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+00:01 +45: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +45: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_controller_test.dart: key-path diagnostics record ui/answer/ice stages
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[chatflow/calldiag] ice_connected (+0ms since answer_sent)
+00:01 +46: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +46: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证1：incomingCall 到达但用户未操作 → accept 调用次数为零
+[chatflow/calldiag] incoming_ui_shown
+00:01 +47: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +47: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证2：明确点击接听 → 只对对应通话执行一次（重复事件不重复接听）
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+1ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+00:01 +48: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +48: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证2b：用户接听早于 Matrix 响铃同步 → 响铃到达即接听一次
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+00:01 +49: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +49: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证4：待接听过期后，下一通电话不会被自动接听
+[chatflow/calldiag] incoming_ui_shown
+00:01 +50: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +50: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证4b：原生通话结束 → 待接听作废；新通话不被旧请求串扰
+[chatflow/calldiag] incoming_ui_shown
+00:01 +51: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +51: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证5：重复推送（incomingCall 重复事件）不产生接听/拒绝副作用
+[chatflow/calldiag] incoming_ui_shown
+00:01 +52: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +53: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +53: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证3：冷启动 ready 握手恢复暂存的接听动作（动作保留/恢复/一次消费）
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+00:01 +54: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +54: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证3b：冷启动动作超龄（>30s）直接丢弃，不应用到当前通话
+[chatflow/calldiag] incoming_ui_shown
+00:01 +55: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +55: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 验证7：通话结束 → 状态回报 ended 且待接听清理
+[chatflow/calldiag] incoming_ui_shown
+00:01 +56: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +56: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 原生通知[拒绝] → 对响铃通话执行一次 reject
+[chatflow/calldiag] incoming_ui_shown
+00:01 +57: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +57: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 原生呈现结束（callEnded）→ 响铃通话被拒接收尾
+[chatflow/calldiag] incoming_ui_shown
+00:01 +58: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +58: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/native_call_coordinator_test.dart: 会话结束（dispose）→ 清空待接听并通知原生清理
+[chatflow/calldiag] incoming_ui_shown
+00:01 +59: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +60: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +61: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+00:01 +62: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景1/2 前台来电：任意页面之上立即弹出来电页
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +63: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景3 后台来电：系统全屏通知（ring 渠道），不推页面
+[chatflow/calldiag] incoming_ui_shown
+00:01 +64: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景4 接听后页面保持：connecting→connected→计时 00:01/00:02/00:03
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] answer_tapped (+51ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+1ms since answer_tapped)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected (+5ms since answer_sent)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +65: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 状态抖动：connected 后短暂 ended 不立即关页，恢复即取消关闭
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] answer_tapped (+16ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected (+3ms since answer_sent)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:01 +66: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 场景5 挂断：延迟后页面关闭，回到原页面
+[chatflow/calldiag] incoming_ui_shown
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] answer_tapped (+18ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected (+3ms since answer_sent)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:02 +67: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 未挂载 navigator 时查询状态安全（不抛异常）
+00:02 +68: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/call_ui_manager_test.dart: 验证8：后台接听→connecting/connected，回前台补开通话页且不重复压入
+[chatflow/calldiag] incoming_ui_shown
+[chatflow/calldiag] answer_tapped (+0ms since incoming_ui_shown)
+[chatflow/calldiag] answer_sent (+0ms since answer_tapped)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[chatflow/calldiag] ice_connected (+11ms since answer_sent)
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:02 +69: All tests passed!
