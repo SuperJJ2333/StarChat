@@ -80,6 +80,19 @@ class RetryEvent extends Event {
 }
 
 void main() {
+  test('announcement documents are not ordinary chat bubbles', () {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.add(RetryEvent(room, timeline,
+        id: 'announcement',
+        minute: 1,
+        payload: {
+          'msgtype': 'com.changliao.group.announcement.document',
+          'body': '群公告'
+        }));
+    expect(MatrixRoomTimelineAdapter(room, timeline).snapshot(), isEmpty);
+  });
+
   test('upload failure reuses cached media and SDK send credentials', () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();

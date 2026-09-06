@@ -1,6 +1,7 @@
 import 'package:matrix/matrix.dart';
 
 import 'group_chat_controller.dart';
+import 'group_room_authority.dart';
 
 final class MatrixGroupChatBackend implements GroupChatBackend {
   const MatrixGroupChatBackend(this.client);
@@ -17,6 +18,17 @@ final class MatrixGroupChatBackend implements GroupChatBackend {
         invite: matrixUserIds,
         isDirect: false,
         preset: CreateRoomPreset.privateChat,
+        powerLevelContentOverride: {
+          'users': {client.userID!: 100},
+          'users_default': 0,
+          'state_default': 50,
+          'events': {
+            EventTypes.RoomPowerLevels: 100,
+            EventTypes.RoomName: 0,
+            groupSettingsStateType: 50,
+            groupAnnouncementStateType: 50,
+          },
+        },
         initialState: [
           StateEvent(
             type: EventTypes.Encryption,

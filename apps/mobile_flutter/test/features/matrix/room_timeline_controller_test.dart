@@ -4,7 +4,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
-final class FakeTimelineAdapter implements RoomTimelineAdapter {
+class FakeTimelineAdapter implements RoomTimelineAdapter {
   final items = <RoomMessageViewModel>[];
   int disposed = 0;
   int marks = 0;

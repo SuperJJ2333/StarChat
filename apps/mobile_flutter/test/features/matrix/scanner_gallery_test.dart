@@ -19,6 +19,18 @@ void main() {
 
   testWidgets('scanner picker uses single selection and recognition action',
       (tester) async {
+    const channel = MethodChannel('com.fluttercandies/photo_manager');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getPermissionState') {
+        return PermissionState.authorized.index;
+      }
+      if (call.method == 'notify') return true;
+      throw MissingPluginException();
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
     final photos = [
       for (final id in ['first', 'second'])
         GalleryPhoto(

@@ -215,6 +215,16 @@ final class MediaMemoryCache {
   /// 当前内存占用（字节；诊断/测试）。
   int get totalBytes => _totalBytes;
 
+  /// Seed an outgoing local preview before network work. This preserves any
+  /// existing source flight and enforces the same byte/entry budget as loads.
+  void put(String eventId, Uint8List bytes) {
+    final previous = _entries.remove(eventId);
+    if (previous != null) _totalBytes -= previous.length;
+    _entries[eventId] = bytes;
+    _totalBytes += bytes.length;
+    _evictToBudget();
+  }
+
   Uint8List? get(String eventId) {
     final bytes = _entries.remove(eventId);
     if (bytes == null) return null;

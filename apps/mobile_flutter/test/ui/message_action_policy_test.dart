@@ -2,6 +2,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/message_action.dart';
 
 void main() {
+  test('local pending or failed bubble cannot produce server references', () {
+    for (final kind in MessageContentKind.values) {
+      final actions = MessageActionPolicy.actionsFor(MessageCapabilities(
+          kind: kind,
+          isOwn: true,
+          sentAt: DateTime(2026),
+          serverNow: DateTime(2026),
+          isSent: false));
+      expect(
+          actions.intersection({
+            MessageAction.reply,
+            MessageAction.recall,
+            MessageAction.forward,
+            MessageAction.reminder,
+            MessageAction.addToEmoji
+          }),
+          isEmpty);
+      if (kind == MessageContentKind.text) {
+        expect(actions, contains(MessageAction.copy));
+      }
+    }
+  });
   final now = DateTime.utc(2026, 8, 17, 12);
 
   test('text message never exposes add-to-emoji', () {
@@ -136,9 +158,11 @@ void main() {
         serverNow: now,
       ),
     );
-    expect(callActions, unorderedEquals({
-      MessageAction.deleteLocal,
-      MessageAction.multiSelect,
-    }));
+    expect(
+        callActions,
+        unorderedEquals({
+          MessageAction.deleteLocal,
+          MessageAction.multiSelect,
+        }));
   });
 }

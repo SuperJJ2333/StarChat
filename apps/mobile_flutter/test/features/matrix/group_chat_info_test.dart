@@ -124,6 +124,9 @@ void main() {
     expect(controller.state.title, '聊天信息(12)');
 
     await controller.rename('新群名');
+    gateway.snapshot = gateway.snapshot.copyWith(
+        ownerId: '@owner:example.test', currentUserId: '@owner:example.test');
+    await controller.load();
     await controller.setAnnouncement('新公告');
     await controller.setRemark('新备注');
     await controller.setPreference(GroupChatPreference.muted, true);
@@ -206,7 +209,8 @@ void main() {
     expect(find.text('未命名'), findsOneWidget);
 
     await tester.pumpWidget(
-      CupertinoApp(home: GroupQrCodePage(snapshot: gateway.snapshot, api: null)),
+      CupertinoApp(
+          home: GroupQrCodePage(snapshot: gateway.snapshot, api: null)),
     );
     await tester.pump();
     expect(find.text('未命名'), findsOneWidget);
@@ -252,7 +256,8 @@ void main() {
             ),
           ],
           existingMemberIds: const {'@existing:example.test'},
-          onInvite: (matrixUserId, businessUserId) async => invited.add(matrixUserId),
+          onInvite: (matrixUserId, businessUserId) async =>
+              invited.add(matrixUserId),
         ),
       ),
     );

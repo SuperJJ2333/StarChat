@@ -1,6 +1,19 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-06-room-flow": {
+      "sending": "local bubble immediately; no sending indicator or attachment upload progress; failure retry retained",
+      "media": "bounded cache; stable layout; uncached loading after scroll settles",
+      "gallery": "refresh metadata on open/resume/media changes; preserve cached initial preview; newest first; permission scope isolated",
+      "groupManagement": "owner/admin guards; owner-only roles, transfer and dissolve; rename policy owner-only Matrix constraint",
+      "groupAnnouncement": "effective banner remains after viewing; empty hidden; text/image encrypted; member read-only",
+      "htmlScope": [
+        "app-message-bubble",
+        "app-attachment-tile"
+      ],
+      "figmaPageNode": "18:7",
+      "figmaSync": "remote nodes unchanged; tooling unavailable; local ledger only"
+    },
     "2026-09-06-cache-entry": {
       "favoritePanel": "160px static preview, GIF badge, long-press delete; loading/error/retry retained",
       "memberResults": "authoritative avatar, full body or media summary, unchanged message jump",

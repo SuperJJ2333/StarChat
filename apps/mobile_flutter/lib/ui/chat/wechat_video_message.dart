@@ -15,12 +15,13 @@ import '../foundation/wechat_tokens.dart';
 /// 海报帧来自发送端附带的加密缩略图（[posterLoader]，≤480px 小图），
 /// 无缩略图（旧消息/生成失败）时回退 videocam 占位底。
 /// 点击触发 [onOpen] 进入全屏播放。
-final class VideoMessageCard extends StatelessWidget {
+final class VideoMessageCard extends StatefulWidget {
   const VideoMessageCard({
     super.key,
     required this.duration,
     required this.onOpen,
     this.posterLoader,
+    this.posterIdentity,
   });
 
   final Duration? duration;
@@ -29,9 +30,39 @@ final class VideoMessageCard extends StatelessWidget {
   /// 加载封面帧字节（发送端压缩演绎版）；null/失败回退占位底。
   final Future<Uint8List?> Function()? posterLoader;
 
+  /// Changes only when the source event changes, not on every parent build.
+  final Object? posterIdentity;
+
+  @override
+  State<VideoMessageCard> createState() => _VideoMessageCardState();
+}
+
+final class _VideoMessageCardState extends State<VideoMessageCard> {
+  Future<Uint8List?>? _poster;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    final loader = widget.posterLoader;
+    _poster = loader == null ? null : Future<Uint8List?>.sync(loader);
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoMessageCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.posterIdentity != widget.posterIdentity ||
+        (oldWidget.posterLoader == null) != (widget.posterLoader == null)) {
+      _load();
+    }
+  }
+
   String get _durationText {
-    if (duration == null || duration! <= Duration.zero) return '--:--';
-    final total = duration?.inSeconds ?? 0;
+    final duration = widget.duration;
+    if (duration == null || duration <= Duration.zero) return '--:--';
+    final total = duration.inSeconds;
     final minutes = total ~/ 60;
     final seconds = (total % 60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
@@ -39,7 +70,7 @@ final class VideoMessageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-        onTap: onOpen,
+        onTap: widget.onOpen,
         child: SizedBox(
           width: 200,
           height: 150,
@@ -48,14 +79,14 @@ final class VideoMessageCard extends StatelessWidget {
             child: ColoredBox(
               color: CupertinoColors.black,
               child: Stack(fit: StackFit.expand, children: [
-                if (posterLoader == null)
+                if (_poster == null)
                   const Center(
                     child: Icon(CupertinoIcons.videocam_fill,
                         size: 34, color: CupertinoColors.systemGrey),
                   )
                 else
                   FutureBuilder<Uint8List?>(
-                    future: posterLoader!(),
+                    future: _poster,
                     builder: (context, snapshot) {
                       final poster = snapshot.data;
                       if (poster != null && poster.isNotEmpty) {
@@ -67,10 +98,6 @@ final class VideoMessageCard extends StatelessWidget {
                                       size: 34,
                                       color: CupertinoColors.systemGrey),
                                 ));
-                      }
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const Center(
-                            child: CupertinoActivityIndicator());
                       }
                       return const Center(
                         child: Icon(CupertinoIcons.videocam_fill,

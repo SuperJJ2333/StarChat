@@ -29,6 +29,10 @@ import 'media_thumbnail.dart';
 import 'gif_image_policy.dart';
 import 'chat_image_preview.dart';
 import '../../ui/chat/message_scroll_locator.dart';
+import '../../ui/chat/latest_message_anchor.dart';
+import 'room_image_preview_cache.dart';
+import 'group_announcement_page.dart';
+import 'group_announcement_service.dart';
 import 'package:video_compress/video_compress.dart';
 import 'video_send_stage.dart';
 import 'video_transcode.dart';
@@ -191,6 +195,13 @@ class _RoomPageState extends State<RoomPage> {
   final input = TextEditingController();
   final inputFocusNode = FocusNode();
   final messageScrollController = ScrollController();
+  late final latestMessageAnchor = LatestMessageAnchor(messageScrollController);
+  final messageListScrolling = ValueNotifier<bool>(false);
+  final _stableMessageKeys = <String, GlobalKey>{};
+  late final roomImagePreviewCache = RoomImagePreviewCache(
+    accountId: '${widget.room.client.homeserver}|${widget.room.client.userID}',
+    roomId: widget.room.id,
+  );
   bool _locatingMessage = false;
   late final VoicePlaybackController voicePlayback = VoicePlaybackController(
     // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
@@ -256,7 +267,6 @@ class _RoomPageState extends State<RoomPage> {
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
   ContactDetails? peer;
   bool loading = true;
-  bool mediaBusy = false;
 
   // 「拍摄」长按录像（需求 2）：待确认发送的视频与其压缩进度。
   ({String path, int originalBytes})? pendingVideoSend;
@@ -271,9 +281,8 @@ class _RoomPageState extends State<RoomPage> {
   bool mediaMessageVisible = false;
 
   /// 「拍摄」自动发送时的暂存缩略图（200px），随发送横幅一并展示。
-  Uint8List? mediaThumbBytes;
   late int joinedMemberCount;
-  int? readAnnouncementVersion;
+  late final announcementService = MatrixGroupAnnouncementService(widget.room);
   String? highlightedMessageId;
 
   bool get isGroup => !widget.room.isDirectChat;
@@ -293,7 +302,6 @@ class _RoomPageState extends State<RoomPage> {
     ConversationReadState.shared().setRoomOpen(widget.room.id, open: true);
     unawaited(_identityCache.preload().catchError((_) {}));
     unawaited(_refreshJoinedMemberCount());
-    unawaited(_loadAnnouncementReadState());
     // 聊天工具：幂等注册「统计助手」并登记本会话到作用域栈
     ensureStatisticsToolRegistered();
     StatisticsRoomScope.enter(widget.room.id);
@@ -452,40 +460,6 @@ class _RoomPageState extends State<RoomPage> {
       final peerId = widget.room.directChatMatrixID;
       if (peerId != null) peer = mapped[peerId] ?? peer;
     });
-  }
-
-  int get _announcementVersion =>
-      widget.room.roomAccountData[groupChatAccountDataType]
-          ?.content['announcement_version'] as int? ??
-      0;
-
-  String get _announcement => isGroup ? widget.room.topic.trim() : '';
-
-  bool get _showAnnouncement =>
-      _announcement.isNotEmpty &&
-      _announcementVersion > readAnnouncementVersion!;
-
-  Future<void> _loadAnnouncementReadState() async {
-    final preferences = await SharedPreferences.getInstance();
-    final version =
-        preferences.getInt('announcement-read:${widget.room.id}') ?? 0;
-    if (mounted) setState(() => readAnnouncementVersion = version);
-  }
-
-  Future<void> _openAnnouncement() async {
-    final version = _announcementVersion;
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => GroupAnnouncementPage(
-          title: _navigationTitle,
-          announcement: _announcement,
-        ),
-      ),
-    );
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setInt('announcement-read:${widget.room.id}', version);
-    if (mounted) setState(() => readAnnouncementVersion = version);
   }
 
   Future<void> _load() async {
@@ -664,26 +638,32 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
-    try {
-      final session = emojiVault;
-      if (session == null) throw StateError('Emoji vault unavailable');
-      final original =
-          session.vault.items.firstWhere((entry) => entry.id == item.id);
-      final bytes = await session.loadBytes(original);
-      validateGifForSend(bytes);
-      final sentEventId = await widget.room.sendFileEvent(
-        MatrixFile(
-          bytes: bytes,
-          name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
-          mimeType: item.mimeType,
-        ),
-      );
-      if (sentEventId == null) throw StateError('Emoji send failed');
-      unawaited(session.vault.markRecent(item.id).catchError((_) {}));
-      if (mounted) setState(() => composerPanel = ComposerPanel.none);
-    } catch (_) {
-      if (mounted) _showMediaMessage('表情发送失败，请重试');
-    }
+    final session = emojiVault;
+    final timeline = controller;
+    if (session == null || timeline == null) return;
+    setState(() => composerPanel = ComposerPanel.none);
+    final matrix = MatrixSdkE2eeClient(widget.room.client,
+        homeserver: widget.room.client.homeserver!);
+    await timeline.sendText(
+      '[表情消息]',
+      kind: RoomMessageKind.image,
+      mimeType: item.mimeType,
+      send: (txid) => _enqueueMedia(() async {
+        final original =
+            session.vault.items.firstWhere((entry) => entry.id == item.id);
+        final bytes = await session.loadBytes(original);
+        validateGifForSend(bytes);
+        roomImagePreviewCache.seed(txid, bytes);
+        final result = await _cacheSentImage(
+            bytes,
+            matrix.sendEncryptedMedia(widget.room.id, bytes,
+                isGifBytes(bytes) ? 'image/gif' : item.mimeType,
+                txid: txid,
+                filename: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png'));
+        unawaited(session.vault.markRecent(item.id).catchError((_) {}));
+        return result;
+      }),
+    );
   }
 
   Future<void> _removeCustomEmoji(CustomEmojiItem item) async {
@@ -802,6 +782,10 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _changed() {
+    final messages = controller?.messages;
+    final latest = messages == null || messages.isEmpty ? null : messages.last;
+    latestMessageAnchor.update(latest?.stableId,
+        outgoing: latest?.isOwn ?? false);
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
       if (message.isRecalled) {
         final key = _posterKeys.remove(message.id);
@@ -828,7 +812,6 @@ class _RoomPageState extends State<RoomPage> {
     // R2 修复：先取得正文/回复关系/收件人的**不可变快照**，再清空输入。
     // （input.clear() 同步触发监听器→applyEdit 移除全部 token→
     // recipientUserIds 已空——旧顺序丢失 m.mentions。）
-    final interaction = _interaction;
     final reply = replyingTo;
     final mentions = mentionComposer.recipientUserIds();
     _programmaticComposerEdit = true;
@@ -841,19 +824,25 @@ class _RoomPageState extends State<RoomPage> {
     } finally {
       _programmaticComposerEdit = false;
     }
-    if (interaction != null && reply != null) {
-      await interaction.reply(
-        reply.id,
-        text,
-        mentionedUserIds: mentions,
-      );
-      if (mounted) setState(() => replyingTo = null);
-    } else if (interaction != null && mentions.isNotEmpty) {
-      await interaction.sendMention(text, mentions);
-    } else {
-      await controller!.sendText(text);
-    }
+    if (mounted) setState(() => replyingTo = null);
     mentionDraft.clear();
+    await controller!.sendText(
+      text,
+      replyToEventId: reply?.id,
+      send: reply == null && mentions.isEmpty
+          ? null
+          : (transactionId) async =>
+              await widget.room.sendEvent({
+                'msgtype': 'm.text',
+                'body': text,
+                if (reply != null)
+                  'm.relates_to': {
+                    'm.in_reply_to': {'event_id': reply.id}
+                  },
+                if (mentions.isNotEmpty) 'm.mentions': {'user_ids': mentions},
+              }, txid: transactionId) ??
+              (throw StateError('消息发送失败')),
+    );
   }
 
   MessageInteractionService? get _interaction {
@@ -886,85 +875,67 @@ class _RoomPageState extends State<RoomPage> {
   /// 「拍摄」入口：拍摄成功即**自动加密发送**（不进入“查看照片”页）；
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
-    if (mediaBusy) return;
-    final matrix = MatrixSdkE2eeClient(
-      widget.room.client,
-      homeserver: widget.room.client.homeserver!,
-    );
+    final matrix = MatrixSdkE2eeClient(widget.room.client,
+        homeserver: widget.room.client.homeserver!);
     final service = MediaMessageService(matrix);
-    final captured = await service.captureToFile();
-    if (captured == null) return; // 用户取消拍摄
-    if (!mounted) return;
-    setState(() {
-      mediaBusy = true;
-      mediaMessageVisible = true;
-      mediaMessage = '正在加密发送图片…';
-      mediaThumbBytes = null;
-    });
-    // 缩略图优先：解码即展示为暂存内容，发送不等待缩略图。
-    unawaited(service.captureThumbnail(captured).then((thumb) {
-      if (thumb == null || !mounted || !mediaBusy) return;
-      setState(() => mediaThumbBytes = thumb);
-    }));
     try {
-      final bytes = await File(captured).readAsBytes();
-      // 发送附带 ≤800px/≤100KB 加密缩略图（E2EE 同样保护缩略图），
-      // 接收端可立即渲染预览；失败不阻断发送。
-      final thumbnail = await buildChatImageThumbnail(bytes);
-      await matrix.sendEncryptedMedia(widget.room.id, bytes, 'image/jpeg',
-          thumbnailBytes: thumbnail?.bytes,
-          thumbnailWidth: thumbnail?.width,
-          thumbnailHeight: thumbnail?.height);
-      if (mounted) _showMediaMessage('图片已发送');
+      final captured = await service.captureToFile();
+      final timeline = controller;
+      if (captured == null || timeline == null || !mounted) return;
+      await timeline.sendText('[图片消息]',
+          kind: RoomMessageKind.image,
+          mimeType: 'image/jpeg',
+          send: (txid) => _enqueueMedia(() async {
+                await MediaMessageService.ensureWithinSendLimit(File(captured));
+                final bytes = await File(captured).readAsBytes();
+                roomImagePreviewCache.seed(txid, bytes);
+                final thumbnail = await buildChatImageThumbnail(bytes);
+                return _cacheSentImage(
+                    bytes,
+                    matrix.sendEncryptedMedia(
+                        widget.room.id, bytes, 'image/jpeg',
+                        txid: txid,
+                        thumbnailBytes: thumbnail?.bytes,
+                        thumbnailWidth: thumbnail?.width,
+                        thumbnailHeight: thumbnail?.height));
+              }));
     } catch (_) {
-      if (mounted) setState(() => mediaMessage = '图片发送失败，请重试');
+      if (mounted) _showMediaMessage('拍摄失败，请重试');
     } finally {
       await service.dispose();
-      if (mounted) {
-        controller?.refresh();
-        setState(() {
-          mediaBusy = false;
-          mediaThumbBytes = null;
-        });
-      }
     }
   }
 
   Future<void> _sendMedia({required bool image}) async {
-    if (mediaBusy) return;
     if (image) {
       await _pickAndSendImages();
       return;
     }
-    final service = MediaMessageService(
-      MatrixSdkE2eeClient(
-        widget.room.client,
-        homeserver: widget.room.client.homeserver!,
-      ),
-    );
-    setState(() {
-      mediaBusy = true;
-      mediaMessage = '正在加密发送文件…';
-    });
+    final service = MediaMessageService(MatrixSdkE2eeClient(widget.room.client,
+        homeserver: widget.room.client.homeserver!));
     try {
-      // 大文件加密上传耗时较长：设置超时上限，避免无限停留在发送态。
-      await service
-          .sendFile(widget.room.id)
-          .timeout(const Duration(minutes: 5));
-      if (mounted) _showMediaMessage('文件已发送');
-    } on TimeoutException {
-      if (mounted) {
-        setState(() => mediaMessage = '文件发送超时，请检查网络后重试');
-      }
+      final file = await service.pickFileForSend();
+      final timeline = controller;
+      if (file == null || timeline == null || !mounted) return;
+      final mime =
+          file.mimeType == null || file.mimeType == 'application/octet-stream'
+              ? mimeFromFileName(file.name)
+              : file.mimeType!;
+      await timeline.sendText(
+        file.name,
+        kind: mime.startsWith('video/')
+            ? RoomMessageKind.video
+            : mime.startsWith('image/')
+                ? RoomMessageKind.image
+                : RoomMessageKind.file,
+        mimeType: mime,
+        send: (txid) => _enqueueMedia(
+            () => service.sendSelectedFile(widget.room.id, file, txid: txid)),
+      );
     } catch (_) {
-      if (mounted) {
-        setState(() => mediaMessage = '文件发送失败，请重试');
-      }
+      if (mounted) _showMediaMessage('文件选择失败，请重试');
     } finally {
       await service.dispose();
-      // 主动刷新时间线：让刚发出的事件即时落位，避免“一直在发送”观感。
-      if (mounted) controller?.refresh();
-      if (mounted) setState(() => mediaBusy = false);
     }
   }
 
@@ -1054,18 +1025,13 @@ class _RoomPageState extends State<RoomPage> {
       isGifBytes(imageMemoryCache.get(message.id) ?? Uint8List(0));
 
   Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) =>
-      thumbnailMemoryCache.putIfAbsent(
-          'preview:${message.id}',
+      roomImagePreviewCache.load(
+          message.stableId,
           () => loadChatImagePreview(
                 animated: _isAnimatedImage(message),
                 loadThumbnail: () => controller!.loadThumbnail(message.id),
                 loadOriginal: () => imageMemoryCache.putIfAbsent(
-                    message.id,
-                    () => loadMediaWithCache(
-                          MediaCacheKey(
-                              roomId: widget.room.id, eventId: message.id),
-                          () => controller!.loadAttachment(message.id),
-                        )),
+                    message.id, () => controller!.loadAttachment(message.id)),
               ));
 
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
@@ -1081,72 +1047,97 @@ class _RoomPageState extends State<RoomPage> {
       ),
     ) as ({List<GalleryPhoto> photos, bool original})?;
     if (result == null || result.photos.isEmpty) return;
+    final timeline = controller;
+    if (timeline == null || !mounted) return;
     setState(() {
-      mediaBusy = true;
-      mediaMessage = '正在加密发送…';
+      composerPanel = ComposerPanel.none;
+      mediaMessage = null;
     });
-    try {
-      final total = result.photos.length;
-      var sent = 0;
-      for (final photo in result.photos) {
-        sent++;
-        if (mounted) {
-          setState(() => mediaMessage =
-              result.photos.length > 1 ? '正在加密发送 $sent/$total…' : '正在加密发送…');
-        }
-        final bytes = await (result.original
-            ? photo.originalBytes()
-            : photo.compressedBytes());
-        validateGifForSend(bytes);
-        final mimeType = isGifBytes(bytes) ? 'image/gif' : photo.mimeType;
-        // 视频附带时长（毫秒），接收端显示角标。
-        final extra = photo.duration == null
-            ? null
-            : {
-                'info': {'duration': photo.duration!.inMilliseconds},
-              };
-        // 附带本地生成的压缩演绎版（E2EE 同样保护）：
-        // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
-        // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
-        ({Uint8List bytes, int? width, int? height})? rendition;
-        if (photo.isVideo) {
-          final poster = await photo.posterBytes?.call();
-          if (poster != null && poster.isNotEmpty) {
-            final dims = await decodeImageDimensions(poster);
-            rendition = (
-              bytes: poster,
-              width: dims?.$1,
-              height: dims?.$2,
-            );
+    final sends = <Future<void>>[];
+    for (final photo in result.photos) {
+      sends.add(timeline.sendText(
+        photo.isVideo ? '[视频消息]' : '[图片消息]',
+        kind: photo.isVideo ? RoomMessageKind.video : RoomMessageKind.image,
+        mimeType: photo.mimeType,
+        send: (transactionId) {
+          if (!photo.isVideo &&
+              photo.mimeType != 'image/gif' &&
+              photo.thumbnail.isNotEmpty) {
+            roomImagePreviewCache.seed(transactionId, photo.thumbnail);
           }
-        } else {
-          final thumbnail = await buildChatImageThumbnail(bytes);
-          if (thumbnail != null) {
-            rendition = (
-              bytes: thumbnail.bytes,
-              width: thumbnail.width,
-              height: thumbnail.height,
-            );
-          }
-        }
-        await matrix.sendEncryptedMedia(widget.room.id, bytes, mimeType,
-            extraContent: extra,
-            thumbnailBytes: rendition?.bytes,
-            thumbnailWidth: rendition?.width,
-            thumbnailHeight: rendition?.height);
-      }
-      if (mounted) _showMediaMessage('图片已发送');
-    } on FormatException catch (error) {
-      if (mounted) _showMediaMessage(error.message);
-    } catch (_) {
-      if (mounted) {
-        _showMediaMessage('图片发送失败，请重试');
-      }
-    } finally {
-      // 主动刷新时间线，让发出的事件即时落位。
-      if (mounted) controller?.refresh();
-      if (mounted) setState(() => mediaBusy = false);
+          return _enqueueMedia(() async {
+            final bytes = await (result.original
+                ? photo.originalBytes()
+                : photo.compressedBytes());
+            validateGifForSend(bytes);
+            final mimeType = isGifBytes(bytes) ? 'image/gif' : photo.mimeType;
+            if (!photo.isVideo) {
+              roomImagePreviewCache.seed(
+                  transactionId,
+                  isGifBytes(bytes)
+                      ? bytes
+                      : photo.thumbnail.isNotEmpty
+                          ? photo.thumbnail
+                          : bytes);
+            }
+            // 视频附带时长（毫秒），接收端显示角标。
+            final extra = photo.duration == null
+                ? null
+                : {
+                    'info': {'duration': photo.duration!.inMilliseconds},
+                  };
+            // 附带本地生成的压缩演绎版（E2EE 同样保护）：
+            // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
+            // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
+            ({Uint8List bytes, int? width, int? height})? rendition;
+            if (photo.isVideo) {
+              final poster = await photo.posterBytes?.call();
+              if (poster != null && poster.isNotEmpty) {
+                final dims = await decodeImageDimensions(poster);
+                rendition = (
+                  bytes: poster,
+                  width: dims?.$1,
+                  height: dims?.$2,
+                );
+              }
+            } else {
+              final thumbnail = await buildChatImageThumbnail(bytes);
+              if (thumbnail != null) {
+                rendition = (
+                  bytes: thumbnail.bytes,
+                  width: thumbnail.width,
+                  height: thumbnail.height,
+                );
+              }
+            }
+            return _cacheSentImage(
+                roomImagePreviewCache.get(transactionId),
+                matrix.sendEncryptedMedia(widget.room.id, bytes, mimeType,
+                    extraContent: extra,
+                    txid: transactionId,
+                    thumbnailBytes: rendition?.bytes,
+                    thumbnailWidth: rendition?.width,
+                    thumbnailHeight: rendition?.height));
+          });
+        },
+      ));
     }
+    await Future.wait(sends);
+  }
+
+  Future<String> _cacheSentImage(
+      Uint8List? preview, Future<String> sending) async {
+    final eventId = await sending;
+    if (preview != null) roomImagePreviewCache.seed(eventId, preview);
+    return eventId;
+  }
+
+  Future<void> _outgoingMediaQueue = Future<void>.value();
+  Future<String> _enqueueMedia(Future<String> Function() send) {
+    final task = _outgoingMediaQueue.then((_) => send());
+    _outgoingMediaQueue =
+        task.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return task;
   }
 
   /// 待发视频预览条（发送区域上方）：封面 + 体积 + 压缩进度 + 取消/发送。
@@ -1270,98 +1261,54 @@ class _RoomPageState extends State<RoomPage> {
   /// 再加密上传并附带封面帧与时长。
   Future<void> _sendPendingVideo() async {
     final pending = pendingVideoSend;
-    if (pending == null || videoSend.busy) return;
-    final matrix = MatrixSdkE2eeClient(
-      widget.room.client,
-      homeserver: widget.room.client.homeserver!,
-    );
-    setState(() => videoSend = const VideoSendState(
-          phase: VideoSendPhase.transcoding,
-        ));
-    try {
-      final rendition = await transcodeForChat(
-        File(pending.path),
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() => videoSend = videoSend.copyWith(progress: progress));
-          }
-        },
-      );
-      if (!rendition.usedCompressed &&
-          await rendition.file.length() > maxOriginalVideoBytes) {
-        if (mounted) _showMediaMessage('视频过大且压缩失败，无法发送');
-        return;
-      }
-      if (rendition.fallbackNotice != null && mounted) {
-        _showMediaMessage(rendition.fallbackNotice!);
-      }
-      final bytes = await rendition.file.readAsBytes();
-      // 封面帧（发送端压缩演绎版，接收端免下载整段视频即可渲染）。
-      ({Uint8List bytes, int? width, int? height})? poster;
-      try {
-        final frame = await VideoCompress.getByteThumbnail(
-          rendition.file.path,
-          quality: 60,
-          position: 0,
-        );
-        if (frame != null && frame.isNotEmpty) {
-          final dims = await decodeImageDimensions(frame);
-          poster = (bytes: frame, width: dims?.$1, height: dims?.$2);
+    final timeline = controller;
+    if (pending == null || timeline == null) return;
+    final matrix = MatrixSdkE2eeClient(widget.room.client,
+        homeserver: widget.room.client.homeserver!);
+    setState(() {
+      pendingVideoSend = null;
+      videoSend = const VideoSendState();
+    });
+    await timeline.sendText(
+      '[视频消息]',
+      kind: RoomMessageKind.video,
+      mimeType: 'video/mp4',
+      send: (txid) => _enqueueMedia(() async {
+        final rendition = await transcodeForChat(File(pending.path));
+        if (!rendition.usedCompressed &&
+            await rendition.file.length() > maxOriginalVideoBytes) {
+          throw StateError('视频过大且压缩失败，无法发送');
         }
-      } catch (_) {
-        poster = null; // 封面生成失败不阻断发送
-      }
-      final durationMs = rendition.durationMs ?? 0;
-      // 加密/上传/发送事件阶段：SDK 把细分状态写在上传伪事件
-      // （fileSendingStatusKey），轮询驱动 UI（此前整体折叠成"发送中"）。
-      setState(() => videoSend = const VideoSendState(
-            phase: VideoSendPhase.encrypting,
-          ));
-      final timeline = controller?.adapter is MatrixRoomTimelineAdapter
-          ? (controller!.adapter as MatrixRoomTimelineAdapter).timeline
-          : null;
-      Timer? phasePoller;
-      if (timeline != null) {
-        phasePoller = Timer.periodic(const Duration(milliseconds: 300), (_) {
-          final phase = videoUploadPhaseFromTimeline(timeline.events);
-          if (phase != null && mounted && videoSend.phase != phase) {
-            setState(() => videoSend = VideoSendState(phase: phase));
+        final bytes = await rendition.file.readAsBytes();
+        ({Uint8List bytes, int? width, int? height})? poster;
+        try {
+          final frame = await VideoCompress.getByteThumbnail(
+              rendition.file.path,
+              quality: 60,
+              position: 0);
+          if (frame != null && frame.isNotEmpty) {
+            final dims = await decodeImageDimensions(frame);
+            poster = (bytes: frame, width: dims?.$1, height: dims?.$2);
           }
-        });
-      }
-      try {
-        await matrix.sendEncryptedMedia(
-          widget.room.id,
-          bytes,
-          'video/mp4',
-          extraContent: durationMs <= 0
-              ? null
-              : {
-                  'info': {'duration': durationMs},
-                },
-          thumbnailBytes: poster?.bytes,
-          thumbnailWidth: poster?.width,
-          thumbnailHeight: poster?.height,
-        );
-      } finally {
-        phasePoller?.cancel();
-      }
-      if (mounted) _showMediaMessage('视频已发送');
-      if (mounted) {
-        setState(() {
-          pendingVideoSend = null;
-          videoSend = const VideoSendState();
-        });
-      }
-    } catch (_) {
-      // 失败保留待发条目，用户可直接重试。
-      if (mounted) {
-        setState(() => videoSend = const VideoSendState());
-        _showMediaMessage('视频发送失败，请重试');
-      }
-    } finally {
-      if (mounted) unawaited(controller?.refresh());
-    }
+        } catch (_) {/* Optional poster; preserve original encrypted video. */}
+        final duration = rendition.durationMs ?? 0;
+        return matrix.sendEncryptedMedia(
+            widget.room.id,
+            bytes,
+            rendition.usedCompressed
+                ? 'video/mp4'
+                : mimeFromFileName(pending.path),
+            txid: txid,
+            extraContent: duration <= 0
+                ? null
+                : {
+                    'info': {'duration': duration}
+                  },
+            thumbnailBytes: poster?.bytes,
+            thumbnailWidth: poster?.width,
+            thumbnailHeight: poster?.height);
+      }),
+    );
   }
 
   /// 待发视频封面帧（缓存于缩略图内存缓存，键前缀 vcap:）。
@@ -1482,46 +1429,55 @@ class _RoomPageState extends State<RoomPage> {
       await _finishVoice(send: false);
       return;
     }
-    // 转文字：等待识别结果落地（识别器内部有界等待），随后：
-    // 识别成功→发送文字；识别失败/为空→降级发送原语音。
-    // 任何情况下都不丢弃录音，也不再提示“未能识别…已取消/停止发送”。
-    final recognized = await voiceTranscriber.stop();
-    _cancelVoiceTimers();
     final service = voiceService;
     voiceService = null;
-    if (service == null) return;
     final elapsed =
         DateTime.now().difference(_voiceStartedAt ?? DateTime.now());
-    String? path;
+    _clearVoiceOverlay();
+    if (service == null) return;
+    final recognized = voiceTranscriber.stop();
     try {
-      path = await service.stopVoiceRecordingForPreview();
-    } catch (_) {
-      path = null;
-    }
-    final text = recognized.trim();
-    if (text.isNotEmpty) {
-      if (path != null) unawaited(service.deleteVoiceFile(path));
-      try {
+      final path = await service.stopVoiceRecordingForPreview();
+      final text = (await recognized).trim();
+      if (!mounted) return;
+      if (text.isNotEmpty) {
+        unawaited(service.deleteVoiceFile(path));
         await controller?.sendText(text);
-        if (mounted) _showMediaMessage('语音已转为文字发送');
-      } catch (_) {
-        _showMediaMessage('转文字发送失败，请重试');
+      } else if (elapsed >= const Duration(seconds: 1)) {
+        await _sendVoicePath(service, path, elapsed);
+      } else {
+        await service.deleteVoiceFile(path);
       }
-    } else if (path != null && elapsed >= const Duration(seconds: 1)) {
-      try {
-        await service.sendVoicePreview(widget.room.id, path, duration: elapsed);
-        if (mounted) _showMediaMessage('未识别到文字，已发送原语音');
-      } catch (_) {
-        _showMediaMessage('语音发送失败，请重试');
-      }
-    } else if (path != null) {
-      await service.deleteVoiceFile(path);
+    } catch (_) {
+      if (mounted) _showMediaMessage('语音处理失败，请重试');
+    } finally {
+      await service.dispose();
     }
+  }
+
+  void _clearVoiceOverlay() {
+    _cancelVoiceTimers();
     if (!mounted) return;
     setState(() {
       _voiceElapsed = Duration.zero;
       voiceRecording.discard();
     });
+  }
+
+  Future<void> _sendVoicePath(
+      MediaMessageService service, String path, Duration elapsed) async {
+    await controller?.sendText(
+      '[语音消息]',
+      kind: RoomMessageKind.voice,
+      mimeType: 'audio/aac',
+      voiceDuration: elapsed,
+      send: (txid) => _enqueueMedia(() async {
+        final eventId = await service.sendVoicePreview(widget.room.id, path,
+            duration: elapsed, txid: txid);
+        await service.deleteVoiceFile(path);
+        return eventId;
+      }),
+    );
   }
 
   void _cancelVoiceTimers() {
@@ -1532,32 +1488,29 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   Future<void> _finishVoice({required bool send}) async {
-    _cancelVoiceTimers();
     final service = voiceService;
     voiceService = null;
+    final elapsed = voiceRecording.duration ??
+        DateTime.now().difference(_voiceStartedAt ?? DateTime.now());
+    _clearVoiceOverlay();
+    unawaited(voiceTranscriber.stop());
     if (service == null) return;
-    if (send) {
-      try {
+    try {
+      if (send) {
         final path = await service.stopVoiceRecordingForPreview();
-        final elapsed = voiceRecording.duration ??
-            DateTime.now().difference(_voiceStartedAt ?? DateTime.now());
-        if (elapsed >= const Duration(seconds: 1)) {
-          await service.sendVoicePreview(widget.room.id, path,
-              duration: elapsed);
+        if (elapsed >= const Duration(seconds: 1) && mounted) {
+          await _sendVoicePath(service, path, elapsed);
         } else {
-          await service.cancelVoiceRecording();
+          await service.deleteVoiceFile(path);
         }
-      } catch (_) {
-        _showMediaMessage('语音发送失败，请重试');
+      } else {
+        await service.cancelVoiceRecording();
       }
-    } else {
-      await service.cancelVoiceRecording();
+    } catch (_) {
+      if (mounted) _showMediaMessage('语音处理失败，请重试');
+    } finally {
+      await service.dispose();
     }
-    if (!mounted) return;
-    setState(() {
-      _voiceElapsed = Duration.zero;
-      voiceRecording.discard();
-    });
   }
 
   Future<void> _handleMoreAction(ChatMoreAction action) async {
@@ -2153,7 +2106,16 @@ class _RoomPageState extends State<RoomPage> {
         // contain 适配（不再固定 200x150 cover 裁切）。
         RoomMessageKind.image => LayoutBuilder(
             builder: (context, constraints) => ContainImageBubble(
-              load: () => controller!.loadAttachment(message.id),
+              key: ValueKey('image-${message.stableId}'),
+              initialBytes: roomImagePreviewCache.get(message.stableId),
+              loadCached: () =>
+                  roomImagePreviewCache.readCached(message.stableId),
+              load: () => _loadImagePreview(message),
+              isScrolling: messageListScrolling,
+              deferLoading:
+                  message.deliveryState == RoomDeliveryState.sending &&
+                      message.id == message.stableId,
+              sourceSize: _imageSourceSize(message),
               availableWidth: constraints.maxWidth,
               availableHeight: MediaQuery.of(context).size.height,
               onTap: () => _openImageViewer(message),
@@ -2161,11 +2123,8 @@ class _RoomPageState extends State<RoomPage> {
           ),
         RoomMessageKind.file => WeChatAttachmentTile(
             name: message.text,
-            progress: switch (message.deliveryState) {
-              RoomDeliveryState.sending => .5,
-              RoomDeliveryState.sent => 1,
-              RoomDeliveryState.failed => 0,
-            },
+            progress: 1,
+            showProgress: false,
           ),
         RoomMessageKind.voice => WeChatVoiceBubble(
             duration: message.voiceDuration,
@@ -2368,12 +2327,13 @@ class _RoomPageState extends State<RoomPage> {
           // 纯动效表情（超级表情）：微信式无气泡大图渲染，但与普通消息
           // 同布局展示头像与昵称/备注，消息来源可识别，长按可操作。
           SuperEmojiMessage(
-            key: Key('animated-emoji-${message.id}'),
+            key: ValueKey('animated-emoji-${message.stableId}'),
             emojis: animatedEmojis,
             direction: message.isOwn
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
             state: deliveryState,
+            onRetry: () => _retryMessage(message),
             senderName: message.isOwn ? null : displayName,
             avatar: _avatar(message),
             onAvatarTap: () => _openMessageSender(message),
@@ -2386,9 +2346,10 @@ class _RoomPageState extends State<RoomPage> {
           // 微信式视频消息：无气泡媒体卡（缩略图+播放按钮+时长），
           // 点击全屏播放；头像/昵称与图片消息一致。
           WeChatMessageBubble(
-            key: Key('video-message-\${message.id}'),
+            key: ValueKey('video-message-${message.stableId}'),
             decorateContent: false,
             content: VideoMessageCard(
+              posterIdentity: message.id,
               duration: message.videoDuration,
               posterLoader: () => _loadVideoPoster(message.id),
               onOpen: () => unawaited(_openVideoViewer(message)),
@@ -2405,19 +2366,27 @@ class _RoomPageState extends State<RoomPage> {
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
             state: deliveryState,
+            onRetry: () => unawaited(_retryMessage(message)),
           )
         else if (isImageMessage)
           // 微信式图片消息（R7 修复：ContainImageBubble 替换
           // EncryptedImageMessage——按解码实际宽高 contain 完整适配，
           // 不再固定 200x150 cover 裁切）。缩略图优先逻辑保留。
           WeChatMessageBubble(
-            key: Key('image-message-${message.id}'),
+            key: ValueKey('image-message-${message.stableId}'),
             decorateContent: false,
             content: LayoutBuilder(
               builder: (context, constraints) {
                 return ContainImageBubble(
-                  initialBytes:
-                      thumbnailMemoryCache.get('preview:${message.id}'),
+                  key: ValueKey('image-${message.stableId}'),
+                  initialBytes: roomImagePreviewCache.get(message.stableId),
+                  loadCached: () =>
+                      roomImagePreviewCache.readCached(message.stableId),
+                  isScrolling: messageListScrolling,
+                  deferLoading:
+                      message.deliveryState == RoomDeliveryState.sending &&
+                          message.id == message.stableId,
+                  sourceSize: _imageSourceSize(message),
                   load: () => _loadImagePreview(message),
                   availableWidth: constraints.maxWidth,
                   availableHeight: MediaQuery.of(context).size.height,
@@ -2437,6 +2406,7 @@ class _RoomPageState extends State<RoomPage> {
                 ? MessageDirection.outgoing
                 : MessageDirection.incoming,
             state: deliveryState,
+            onRetry: () => unawaited(_retryMessage(message)),
           )
         else
           WeChatMessageBubble(
@@ -2525,6 +2495,7 @@ class _RoomPageState extends State<RoomPage> {
     final actions = MessageActionPolicy.actionsFor(
       MessageCapabilities(
         kind: _contentKind(message),
+        isSent: message.deliveryState == RoomDeliveryState.sent,
         isOwn: message.isOwn,
         sentAt: message.timestamp,
         serverNow: serverNow ?? message.timestamp.add(const Duration(days: 1)),
@@ -2570,6 +2541,10 @@ class _RoomPageState extends State<RoomPage> {
     RoomMessageViewModel message,
     MessageAction action,
   ) async {
+    if (message.deliveryState != RoomDeliveryState.sent &&
+        action != MessageAction.copy) {
+      return;
+    }
     switch (action) {
       case MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
@@ -2733,6 +2708,9 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   void dispose() {
+    latestMessageAnchor.dispose();
+    messageListScrolling.dispose();
+    roomImagePreviewCache.dispose();
     unawaited(videoPosterCache
         .clearAll()
         .whenComplete(_posterDisk.dispose)
@@ -2811,9 +2789,30 @@ class _RoomPageState extends State<RoomPage> {
     if (_locatingMessage || !messageScrollController.hasClients) return;
     final metrics = messageScrollController.position;
     if (!metrics.hasContentDimensions) return;
-    if (metrics.maxScrollExtent - metrics.pixels < 240) {
+    if (messageListScrolling.value &&
+        metrics.pixels > 0 &&
+        metrics.maxScrollExtent - metrics.pixels < 240) {
       unawaited(controller?.loadHistory());
     }
+  }
+
+  Size? _imageSourceSize(RoomMessageViewModel message) {
+    final width = message.imageWidth;
+    final height = message.imageHeight;
+    return width != null && height != null && width > 0 && height > 0
+        ? Size(width.toDouble(), height.toDouble())
+        : null;
+  }
+
+  bool _onTimelineScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification) {
+      messageListScrolling.value = true;
+    }
+    if (notification is ScrollEndNotification) {
+      messageListScrolling.value = false;
+    }
+    return false;
   }
 
   @override
@@ -2825,8 +2824,6 @@ class _RoomPageState extends State<RoomPage> {
           eventId: (message) => message.id,
         ) ??
         allMessages;
-    final showAnnouncement =
-        readAnnouncementVersion != null && _showAnnouncement;
     return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.chatPageBackground,
       navigationBar: CupertinoNavigationBar(
@@ -2855,31 +2852,8 @@ class _RoomPageState extends State<RoomPage> {
           children: [
             Column(
               children: [
-                if (showAnnouncement)
-                  CupertinoButton(
-                    key: const Key('group-announcement-bar'),
-                    padding: EdgeInsets.zero,
-                    onPressed: _openAnnouncement,
-                    child: Container(
-                      height: 40,
-                      color: WeChatColors.chatNavigationBackground,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(children: [
-                        const Icon(CupertinoIcons.volume_up, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _announcement,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: WeChatColors.textSecondary),
-                          ),
-                        ),
-                        const CupertinoListTileChevron(),
-                      ]),
-                    ),
-                  ),
+                if (isGroup)
+                  GroupAnnouncementBanner(service: announcementService),
                 Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
@@ -2890,54 +2864,70 @@ class _RoomPageState extends State<RoomPage> {
                             ? Center(child: Text(errorMessage!))
                             : messages.isEmpty
                                 ? const SizedBox.expand()
-                                : ListView.builder(
-                                    controller: messageScrollController,
-                                    reverse: true,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: WeChatSpacing.md,
-                                      vertical: WeChatSpacing.sm,
+                                : NotificationListener<ScrollNotification>(
+                                    onNotification:
+                                        _onTimelineScrollNotification,
+                                    child: ListView.builder(
+                                      controller: messageScrollController,
+                                      reverse: true,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: WeChatSpacing.md,
+                                        vertical: WeChatSpacing.sm,
+                                      ),
+                                      // 顶部状态行（视觉上的最上方）：加载历史中
+                                      // 显示 loading，历史取尽显示"没有更多了"。
+                                      itemCount: messages.length +
+                                          ((controller?.historyLoading ??
+                                                      false) ||
+                                                  (controller
+                                                          ?.historyExhausted ??
+                                                      false)
+                                              ? 1
+                                              : 0),
+                                      findChildIndexCallback: (key) {
+                                        if (key is! ValueKey<String>) {
+                                          return null;
+                                        }
+                                        final index = messages.indexWhere(
+                                            (m) => m.stableId == key.value);
+                                        return index < 0
+                                            ? null
+                                            : messages.length - index - 1;
+                                      },
+                                      itemBuilder: (_, reverseIndex) {
+                                        if (reverseIndex == messages.length) {
+                                          return _historyStatusRow();
+                                        }
+                                        final index =
+                                            messages.length - reverseIndex - 1;
+                                        final message = messages[index];
+                                        final previous = index == 0
+                                            ? null
+                                            : messages[index - 1].timestamp;
+                                        return Padding(
+                                          key: ValueKey(message.stableId),
+                                          padding: const EdgeInsets.only(
+                                            bottom: WeChatSpacing.sm,
+                                          ),
+                                          child: KeyedSubtree(
+                                            key: messageKeys[message.id] =
+                                                _stableMessageKeys.putIfAbsent(
+                                                    message.stableId,
+                                                    GlobalKey.new),
+                                            child: AnimatedContainer(
+                                              duration: const Duration(
+                                                  milliseconds: 180),
+                                              color: highlightedMessageId ==
+                                                      message.id
+                                                  ? WeChatColors.divider
+                                                  : const Color(0x00000000),
+                                              child: _messageRow(
+                                                  message, previous),
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                                    // 顶部状态行（视觉上的最上方）：加载历史中
-                                    // 显示 loading，历史取尽显示"没有更多了"。
-                                    itemCount: messages.length +
-                                        ((controller?.historyLoading ??
-                                                    false) ||
-                                                (controller?.historyExhausted ??
-                                                    false)
-                                            ? 1
-                                            : 0),
-                                    itemBuilder: (_, reverseIndex) {
-                                      if (reverseIndex == messages.length) {
-                                        return _historyStatusRow();
-                                      }
-                                      final index =
-                                          messages.length - reverseIndex - 1;
-                                      final message = messages[index];
-                                      final previous = index == 0
-                                          ? null
-                                          : messages[index - 1].timestamp;
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: WeChatSpacing.sm,
-                                        ),
-                                        child: KeyedSubtree(
-                                          key: messageKeys.putIfAbsent(
-                                            message.id,
-                                            GlobalKey.new,
-                                          ),
-                                          child: AnimatedContainer(
-                                            duration: const Duration(
-                                                milliseconds: 180),
-                                            color: highlightedMessageId ==
-                                                    message.id
-                                                ? WeChatColors.divider
-                                                : const Color(0x00000000),
-                                            child:
-                                                _messageRow(message, previous),
-                                          ),
-                                        ),
-                                      );
-                                    },
                                   ),
                   ),
                 ),
@@ -2953,20 +2943,6 @@ class _RoomPageState extends State<RoomPage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          if (mediaThumbBytes != null) ...[
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: Image.memory(
-                                mediaThumbBytes!,
-                                key: const Key('media-thumb-preview'),
-                                width: 40,
-                                height: 40,
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
                           Flexible(
                             child: Text(mediaMessage!,
                                 textAlign: TextAlign.center,
@@ -3017,7 +2993,8 @@ class _RoomPageState extends State<RoomPage> {
                   )
                 else ...[
                   // 「拍摄」长按录像带回的待发视频：确认后压缩发送（需求 2）。
-                  if (pendingVideoSend != null) _pendingVideoSendBar(),
+                  if (pendingVideoSend != null && !videoSend.busy)
+                    _pendingVideoSendBar(),
                   ChatComposerBar(
                     controller: input,
                     focusNode: inputFocusNode,
@@ -3148,37 +3125,6 @@ final class _RoleBadge extends StatelessWidget {
             fontSize: 10,
             height: 1.2,
             color: CupertinoColors.white,
-          ),
-        ),
-      );
-}
-
-final class GroupAnnouncementPage extends StatelessWidget {
-  const GroupAnnouncementPage({
-    super.key,
-    required this.title,
-    required this.announcement,
-  });
-  final String title;
-  final String announcement;
-  @override
-  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        navigationBar: CupertinoNavigationBar(
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: const Text('群公告'),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 16),
-              Text(announcement),
-            ]),
           ),
         ),
       );

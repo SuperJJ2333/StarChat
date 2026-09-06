@@ -5,6 +5,7 @@ import 'package:matrix/matrix.dart';
 import 'room_timeline_controller.dart';
 import 'nudge_service.dart';
 import 'group_join_notices.dart';
+import 'group_announcement_service.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 
@@ -22,7 +23,8 @@ const changliaoFriendAcceptedEventType = 'com.changliao.friend_accepted';
 String friendAcceptedSystemMessage(String friendDisplayName) =>
     '你已添加了 $friendDisplayName，现在可以开始聊天了。';
 
-final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
+final class MatrixRoomTimelineAdapter
+    implements RoomTimelineAdapter, RoomOptimisticTextAdapter {
   MatrixRoomTimelineAdapter(this.room, this.timeline);
 
   final Room room;
@@ -38,6 +40,7 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
               event.type == changliaoNudgeEventType ||
               event.type == changliaoFriendAcceptedEventType,
         )
+        .where((event) => event.messageType != groupAnnouncementMessageType)
         .toList(growable: false)
         .reversed
         .map(_message)
@@ -87,6 +90,9 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
         : null;
     return RoomMessageViewModel(
       id: event.eventId,
+      transactionId: event.unsigned?['transaction_id'] as String?,
+      imageWidth: info is Map ? int.tryParse('${info['w']}') : null,
+      imageHeight: info is Map ? int.tryParse('${info['h']}') : null,
       senderId: event.senderId,
       text: event.redacted
           ? ''
@@ -152,6 +158,13 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   @override
   Future<String> sendText(String text) async =>
       await room.sendTextEvent(text, parseCommands: false) ??
+      (throw StateError('消息发送失败'));
+
+  @override
+  Future<String> sendTextWithTransaction(
+          String text, String transactionId) async =>
+      await room.sendTextEvent(text,
+          txid: transactionId, parseCommands: false) ??
       (throw StateError('消息发送失败'));
 
   @override

@@ -37,6 +37,7 @@ abstract interface class MatrixE2eeClient
   Future<String> sendEncryptedMedia(
       String roomId, Uint8List plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
+      String? txid,
       String? filename,
       Uint8List? thumbnailBytes,
       int? thumbnailWidth,
@@ -198,6 +199,7 @@ final class MatrixSdkE2eeClient
       String roomId, Uint8List plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
       String? filename,
+      String? txid,
       Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
@@ -222,7 +224,8 @@ final class MatrixSdkE2eeClient
           mimeType: mimeType,
           extraContent: extraContent,
         ).file,
-        thumbnail: thumbnail);
+        thumbnail: thumbnail,
+        txid: txid);
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');
     }

@@ -3,10 +3,11 @@ import '../foundation/wechat_tokens.dart';
 
 final class WeChatAttachmentTile extends StatelessWidget {
   const WeChatAttachmentTile(
-      {super.key, required this.name, required this.progress, this.onRetry});
+      {super.key, required this.name, required this.progress, this.onRetry, this.showProgress = true});
   final String name;
   final double progress;
   final VoidCallback? onRetry;
+  final bool showProgress;
   @override
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.all(WeChatSpacing.md),
@@ -20,7 +21,7 @@ final class WeChatAttachmentTile extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(name),
-          CupertinoActivityIndicator.partiallyRevealed(
+          if (showProgress) CupertinoActivityIndicator.partiallyRevealed(
               progress: progress.clamp(0, 1))
         ])),
         if (onRetry != null)

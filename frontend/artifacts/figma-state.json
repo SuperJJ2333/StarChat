@@ -1,4 +1,23 @@
 {
+  "roomFlowFeedbackRevision": {
+    "date": "2026-09-06",
+    "plan": "docs/superpowers/plans/2026-09-06-room-flow.md",
+    "status": "local-implementation-recorded; remote-tool-unavailable",
+    "remoteNodesModified": false,
+    "existingPageNode": "18:7",
+    "existingPageUrl": "https://www.figma.com/design/zpzwTbnj1hqx80tyRygX78?node-id=18-7",
+    "htmlChanges": [
+      "message sending state has no pending indicator",
+      "attachment sending state has no upload progress; failure retry retained"
+    ],
+    "flutterChanges": [
+      "synchronous local bubble and post-layout scroll",
+      "cached media first and deferred uncached decoding",
+      "gallery open/resume/media-change refresh with cached preview",
+      "role-guarded group management and encrypted mixed announcement"
+    ],
+    "verification": "docs/verification/artifacts/2026-09-06/room-flow/html"
+  },
   "cacheEntryRevision": {
     "date": "2026-09-06",
     "remoteNodesModified": false,

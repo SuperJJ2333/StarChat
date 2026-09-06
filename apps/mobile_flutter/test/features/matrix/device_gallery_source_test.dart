@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -12,8 +12,78 @@ import 'package:photo_manager/photo_manager.dart';
 /// - 缩略图有界并发解码（峰值 ≤ galleryDecodeConcurrency，顺序保持）；
 /// - 权限（仅授权缓存）与相册索引会话级复用。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  test('visible image decoding is bounded and deduplicates concurrent requests',
+      () async {
+    final store = GalleryThumbnailStore();
+    final assets =
+        List.generate(8, (i) => _DeferredThumbnailAsset('bounded-$i'));
+    final pending = [for (final asset in assets) store.load(asset)];
+    final duplicate = store.load(assets.first);
+    expect(assets.where((a) => a.calls > 0).length, galleryDecodeConcurrency);
+    for (var i = 0; i < assets.length; i++) {
+      assets[i].bytes.complete(Uint8List.fromList([i + 1]));
+      await Future<void>.delayed(Duration.zero);
+    }
+    await Future.wait(pending);
+    await duplicate;
+    await store.load(assets.first);
+    expect(assets.every((a) => a.calls == 1), isTrue);
+  });
+
+  test('lazy decoded image becomes a synchronous cached preview', () async {
+    await GalleryAccessCache.shared.ensurePermission(() async => true);
+    final page =
+        await DeviceGalleryPager(album: _FakeAlbum([_StubAsset('preview')]))
+            .loadNextPage();
+    expect(page.single.thumbnail, isEmpty);
+    await page.single.loadThumbnail!();
+    expect(page.single.thumbnail, utf8.encode('preview'));
+  });
+
+  test('first authorization caches the actual permission scope', () async {
+    const channel = MethodChannel('com.fluttercandies/photo_manager');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            channel, (call) async => PermissionState.authorized.index);
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null));
+    DeviceGallerySource.lastKnownPermissionScopeForTest = null;
+    await DeviceGalleryPager(album: _FakeAlbum([])).ensureAccess();
+    expect(GalleryAccessCache.shared.matchesPermissionScope('full'), isTrue);
+    DeviceGallerySource.lastKnownPermissionScopeForTest = null;
+  });
+
+  test('invalidated album scans cannot repopulate the session index', () async {
+    final cache = GalleryAccessCache.shared;
+    final oldScan = Completer<List<GalleryAlbum>>();
+    final pending = cache.loadAlbums(() => oldScan.future);
+    cache.invalidateIndex();
+    const fresh = GalleryAlbum(
+        id: 'new', name: 'New', isRecent: false, isVideoOnly: false);
+    await cache.loadAlbums(() async => [fresh]);
+    oldScan.complete([]);
+    await pending;
+    expect(await cache.loadAlbums(() async => []), [fresh]);
+  });
+
+  test('page metadata returns before any image thumbnail decode', () async {
+    await GalleryAccessCache.shared.ensurePermission(() async => true);
+    final asset = _DeferredThumbnailAsset();
+    final page = DeviceGalleryPager(album: _FakeAlbum([asset])).loadNextPage();
+    var metadataReady = false;
+    page.then((_) => metadataReady = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(metadataReady, isTrue,
+        reason: 'Metadata must not wait for a slow native thumbnail');
+    expect(asset.calls, 0, reason: 'Decode only visible cells lazily');
+    asset.bytes.complete(Uint8List.fromList([1]));
+    await page;
+  });
   setUp(() {
     GalleryAccessCache.shared.invalidate();
+    DeviceGallerySource.lastKnownPermissionScopeForTest = null;
   });
 
   test(
@@ -34,7 +104,7 @@ void main() {
       'GIF file preflight rejects oversized bytes and canvas before origin bridge',
       () async {
     final dir = Directory(
-        '../../docs/verification/artifacts/2026-09-06/mi6-feedback/profile');
+        '../../docs/verification/artifacts/2026-09-06/room-flow/gallery');
     await dir.create(recursive: true);
     for (final dimensionsTooLarge in [false, true]) {
       final header = Uint8List.fromList([
@@ -74,7 +144,7 @@ void main() {
     final bytes =
         Uint8List.fromList([71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 0, 0, 0, 59]);
     final file = File(
-        '../../docs/verification/artifacts/2026-09-06/mi6-feedback/profile/direct.gif');
+        '../../docs/verification/artifacts/2026-09-06/room-flow/gallery/direct.gif');
     await file.parent.create(recursive: true);
     await file.writeAsBytes(bytes);
     addTearDown(() => file.delete());
@@ -493,7 +563,7 @@ void main() {
         'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAADklEQVR4nGP4DwYMEAoAU7oL9ZisIGcAAAAASUVORK5CYII='));
 
     Future<File> realVideoFile(String name) async {
-      final dir = await Directory.systemTemp.createTemp('vff-src');
+      final dir = await _galleryFixtureDirectory('vff-src');
       final file = File('${dir.path}${Platform.pathSeparator}$name.mp4');
       await file.writeAsBytes(List.filled(64, 1), flush: true);
       return file;
@@ -513,14 +583,14 @@ void main() {
           positions.add(positionMs);
           return whitePng;
         },
-        cacheDir: () async => Directory.systemTemp.createTemp('vff'),
+        cacheDir: () async => _galleryFixtureDirectory('vff'),
       );
       expect(frame, isNotNull);
       expect(positions.first, 200, reason: '600ms 视频：从 200ms 开始多点位尝试');
     });
 
     test('缓存命中不再抽帧；空缓存文件删除后重新抽帧（损坏失效）', () async {
-      final dir = await Directory.systemTemp.createTemp('vff-corrupt');
+      final dir = await _galleryFixtureDirectory('vff-corrupt');
       final file = await realVideoFile('corrupt');
       final asset = _StubVideoAsset('corrupt', path: file.path);
       var extractions = 0;
@@ -649,4 +719,33 @@ final class _GifAsset extends AssetEntity {
     if (size.width > 200) staticCompressions.add(size.width);
     return Uint8List.fromList([1, 2, 3]);
   }
+}
+
+final class _DeferredThumbnailAsset extends AssetEntity {
+  _DeferredThumbnailAsset([String id = 'slow'])
+      : super(id: id, typeInt: 1, width: 100, height: 100);
+  final bytes = Completer<Uint8List?>();
+  final List<void> _calls = [];
+  int get calls => _calls.length;
+  @override
+  Future<Uint8List?> thumbnailDataWithSize(ThumbnailSize size,
+      {ThumbnailFormat format = ThumbnailFormat.jpeg,
+      int quality = 100,
+      PMProgressHandler? progressHandler,
+      PMCancelToken? cancelToken,
+      int frame = 0}) {
+    _calls.add(null);
+    return bytes.future;
+  }
+}
+
+Future<Directory> _galleryFixtureDirectory(String prefix) async {
+  final root = Directory(
+      '../../docs/verification/artifacts/2026-09-06/room-flow/gallery');
+  await root.create(recursive: true);
+  final directory = await root.createTemp(prefix);
+  addTearDown(() async {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  });
+  return directory;
 }

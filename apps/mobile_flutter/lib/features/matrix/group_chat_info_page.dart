@@ -8,6 +8,8 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
+import 'group_announcement_service.dart';
+import 'group_announcement_page.dart';
 import 'group_qr_code_page.dart';
 import 'profile_repository.dart';
 import 'chat_history_search.dart';
@@ -239,12 +241,17 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     snapshot.announcement.isEmpty
                         ? '未设置'
                         : snapshot.announcement,
-                    () => _edit(
-                      title: '群公告',
-                      initialValue: snapshot.announcement,
-                      maxLength: 500,
-                      save: widget.controller.setAnnouncement,
-                    ),
+                    () {
+                      final gateway = widget.controller.gateway;
+                      if (gateway is MatrixGroupChatInfoGateway) {
+                        Navigator.push(
+                            context,
+                            CupertinoPageRoute<void>(
+                                builder: (_) => GroupAnnouncementPage(
+                                    service: MatrixGroupAnnouncementService(
+                                        gateway.room))));
+                      }
+                    },
                   ),
                   _detailTile(
                     '备注',
@@ -279,6 +286,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         CupertinoPageRoute(
                           builder: (_) => GroupManagementPage(
                             controller: widget.controller,
+                            onDissolved: widget.onLeft,
                           ),
                         ),
                       ),
@@ -642,71 +650,178 @@ final class _RemoveMemberCell extends StatelessWidget {
 }
 
 final class GroupManagementPage extends StatelessWidget {
-  const GroupManagementPage({super.key, required this.controller});
+  const GroupManagementPage(
+      {super.key, required this.controller, this.onDissolved});
   final GroupChatInfoController controller;
+  final VoidCallback? onDissolved;
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final snapshot = controller.state.snapshot!;
+        final busy = controller.state.status == GroupChatInfoStatus.saving;
+        return WeChatPageScaffold.navigation(
+          navigationBar: const CupertinoNavigationBar(middle: Text('群管理')),
+          child: SafeArea(
+              child: ListView(children: [
+            if (controller.state.message != null)
+              Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(controller.state.message!,
+                      style: const TextStyle(color: WeChatColors.danger))),
+            if (!snapshot.canManage)
+              const Padding(
+                  padding: EdgeInsets.all(16), child: Text('仅群主或管理员可管理群聊')),
+            if (snapshot.canManage) ...[
+              _setting(
+                  '二维码进群', snapshot.qrJoinEnabled, 'qr_join_enabled', !busy),
+              _setting('进群需要群主/群管理员确认', snapshot.joinApprovalRequired,
+                  'join_approval_required', !busy),
+              _setting('仅群主/群管理员可修改群聊名称', snapshot.onlyManagersCanRename,
+                  'only_managers_can_rename', !busy && snapshot.isOwner),
+              if (!snapshot.isOwner)
+                const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('群名修改权限仅群主可设置（服务器权限限制）',
+                        style: TextStyle(
+                            color: WeChatColors.textSecondary, fontSize: 12))),
+            ],
+            if (snapshot.isOwner) ...[
+              WeChatListTile(
+                  title: const Text('群主管理权转让'),
+                  trailing: const CupertinoListTileChevron(),
+                  onTap: busy ? null : () => _pick(context, transfer: true)),
+              WeChatListTile(
+                  title: const Text('群管理员'),
+                  subtitle: Text('最多3位（${snapshot.adminIds.length}/3）'),
+                  trailing: const CupertinoListTileChevron(),
+                  onTap: busy ? null : () => _pick(context, transfer: false)),
+              CupertinoButton(
+                  onPressed: busy ? null : () => _dissolve(context),
+                  child: const Center(
+                      child: Text('解散该群聊',
+                          style: TextStyle(color: WeChatColors.danger)))),
+            ],
+          ])),
+        );
+      });
+  Widget _setting(String label, bool value, String key, bool enabled) =>
+      WeChatListTile(
+          title: Text(label),
+          trailing: CupertinoSwitch(
+              value: value,
+              onChanged: enabled
+                  ? (next) => controller.setGroupSetting(key, next)
+                  : null));
+  Future<void> _dissolve(BuildContext context) async {
+    final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+                title: const Text('解散该群聊'),
+                content: const Text('将移除全部成员并退出群聊，解散后无法恢复。确定继续吗？'),
+                actions: [
+                  CupertinoDialogAction(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('取消')),
+                  CupertinoDialogAction(
+                      isDestructiveAction: true,
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('解散'))
+                ]));
+    if (confirmed == true && await controller.dissolve() && context.mounted) {
+      Navigator.pop(context);
+      onDissolved?.call();
+    }
+  }
+
+  Future<void> _pick(BuildContext context, {required bool transfer}) =>
+      Navigator.push(
+          context,
+          CupertinoPageRoute<void>(
+              builder: (_) => _GroupRolePicker(
+                  controller: controller, transfer: transfer)));
+}
+
+final class _GroupRolePicker extends StatefulWidget {
+  const _GroupRolePicker({required this.controller, required this.transfer});
+  final GroupChatInfoController controller;
+  final bool transfer;
+  @override
+  State<_GroupRolePicker> createState() => _GroupRolePickerState();
+}
+
+final class _GroupRolePickerState extends State<_GroupRolePicker> {
+  late final selected = widget.transfer
+      ? <String>{}
+      : widget.controller.state.snapshot!.adminIds.toSet();
+  bool busy = false;
+  Future<void> _save() async {
+    if (widget.transfer) {
+      final confirmed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+                  title: const Text('转让群主'),
+                  content: const Text('转让后你将成为普通成员，是否继续？'),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('取消')),
+                    CupertinoDialogAction(
+                        isDestructiveAction: true,
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('转让'))
+                  ]));
+      if (confirmed != true) return;
+    }
+    setState(() => busy = true);
+    if (widget.transfer) {
+      await widget.controller.transferOwnership(selected.single);
+    } else {
+      await widget.controller.setAdminIds(selected.toList());
+    }
+    if (!mounted) return;
+    setState(() => busy = false);
+    if (widget.controller.state.status != GroupChatInfoStatus.failed) {
+      Navigator.pop(context);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final snapshot = controller.state.snapshot!;
+    final snapshot = widget.controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
-      navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: Text('群管理')),
-      child: SafeArea(
-        child: ListView(children: [
-          _setting('二维码进群', snapshot.qrJoinEnabled, 'qr_join_enabled'),
-          _setting('进群需要群主/群管理员确认', snapshot.joinApprovalRequired,
-              'join_approval_required'),
-          _setting('仅群主/群管理员可修改群聊名称', snapshot.onlyManagersCanRename,
-              'only_managers_can_rename'),
-          if (snapshot.isOwner)
+        navigationBar: CupertinoNavigationBar(
+            middle: Text(widget.transfer ? '转让群主' : '群管理员'),
+            trailing: CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: busy || (widget.transfer && selected.isEmpty)
+                    ? null
+                    : _save,
+                child: const Text('完成'))),
+        child: SafeArea(
+            child: ListView(children: [
+          if (widget.controller.state.status == GroupChatInfoStatus.failed)
+            Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(widget.controller.state.message!,
+                    style: const TextStyle(color: WeChatColors.danger))),
+          for (final member in snapshot.members
+              .where((m) => m.matrixUserId != snapshot.ownerId))
             WeChatListTile(
-              title: const Text('群主管理权转让'),
-              trailing: const CupertinoListTileChevron(),
-            ),
-          if (snapshot.isOwner)
-            WeChatListTile(
-              title: const Text('群管理员'),
-              subtitle: Text('最多3位（${snapshot.adminIds.length}/3）'),
-              trailing: const CupertinoListTileChevron(),
-            ),
-          if (snapshot.isOwner)
-            WeChatListTile(
-              title: const Text('解散该群聊',
-                  style: TextStyle(color: WeChatColors.danger)),
-              onTap: () => showCupertinoDialog<void>(
-                context: context,
-                builder: (context) => CupertinoAlertDialog(
-                  title: const Text('解散该群聊'),
-                  content: const Text('解散后无法恢复，请谨慎操作。'),
-                  actions: [
-                    CupertinoDialogAction(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
-                    ),
-                    CupertinoDialogAction(
-                      isDestructiveAction: true,
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('解散'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ]),
-      ),
-    );
+                title: Text(member.displayName),
+                trailing: Icon(selected.contains(member.matrixUserId)
+                    ? CupertinoIcons.check_mark_circled_solid
+                    : CupertinoIcons.circle),
+                onTap: busy
+                    ? null
+                    : () => setState(() {
+                          final id = member.matrixUserId;
+                          if (selected.remove(id)) return;
+                          if (widget.transfer) selected.clear();
+                          if (selected.length < 3) selected.add(id);
+                        })),
+        ])));
   }
-
-  Widget _setting(String label, bool value, String key) => WeChatListTile(
-        title: Text(label),
-        trailing: CupertinoSwitch(
-          value: value,
-          onChanged: (next) => controller.setGroupSetting(key, next),
-        ),
-      );
 }
 
 final class GroupMemberSearchPage extends StatefulWidget {
@@ -752,7 +867,8 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
             child: sorted.isEmpty
                 ? const Center(
                     child: Text('未找到群成员',
-                        style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)))
+                        style: TextStyle(
+                            fontSize: 14, color: WeChatColors.textSecondary)))
                 : ListView(children: [
                     for (final entry in sorted)
                       WeChatListTile(
@@ -842,7 +958,21 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
         false;
     if (!confirmed) return;
     await widget.controller.removeMembers(selected.toList());
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    if (widget.controller.state.status != GroupChatInfoStatus.failed) {
+      Navigator.pop(context);
+    } else {
+      await showCupertinoDialog<void>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+                  title: const Text('移除失败'),
+                  content: Text(widget.controller.state.message ?? '请重试'),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('确定'))
+                  ]));
+    }
   }
 }
 

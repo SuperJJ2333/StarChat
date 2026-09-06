@@ -20,6 +20,7 @@ final class SuperEmojiMessage extends StatelessWidget {
     this.onAvatarTap,
     this.onAvatarDoubleTap,
     this.onAvatarLongPress,
+    this.onRetry,
   });
 
   /// 单枚表情的展示边长（逻辑像素），与微信大表情尺寸习惯一致。
@@ -37,6 +38,7 @@ final class SuperEmojiMessage extends StatelessWidget {
   final VoidCallback? onAvatarTap;
   final VoidCallback? onAvatarDoubleTap;
   final VoidCallback? onAvatarLongPress;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +54,7 @@ final class SuperEmojiMessage extends StatelessWidget {
       onAvatarDoubleTap: onAvatarDoubleTap,
       onAvatarLongPress: onAvatarLongPress,
       onLongPress: onLongPress,
+      onRetry: onRetry,
       content: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
