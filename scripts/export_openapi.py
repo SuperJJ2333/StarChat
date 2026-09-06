@@ -5,7 +5,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUSINESS_API = ROOT / "backend"
+BUSINESS_API = ROOT / "services" / "business-api"
 CONTRACT_PATH = ROOT / "packages" / "api-contracts" / "openapi" / "liuhetong-v1.yaml"
 
 if str(BUSINESS_API) not in sys.path:

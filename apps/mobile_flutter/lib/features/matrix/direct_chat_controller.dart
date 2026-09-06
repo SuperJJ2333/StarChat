@@ -111,6 +111,16 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
   final String? Function(String matrixUserId) _businessUserIdOf;
   final Future<DirectChatRoom> Function(String roomId) _openExistingRoom;
 
+  DirectChatRoom _forPeer(DirectChatRoom room, String peer) {
+    if (!room.encrypted ||
+        room.joinedMemberCount != 2 ||
+        room.participantIds.length != 2 ||
+        !room.participantIds.contains(peer)) {
+      throw StateError('Canonical room does not match requested peer');
+    }
+    return room;
+  }
+
   @override
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) async {
     final peerUserId = _businessUserIdOf(matrixUserId);
@@ -125,7 +135,7 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
     }
     if (canonical != null && canonical.isNotEmpty) {
       try {
-        return await _openExistingRoom(canonical);
+        return _forPeer(await _openExistingRoom(canonical), matrixUserId);
       } catch (_) {
         // 规范房间不可用（如对端重建）：回落新建并重新注册。
       }
@@ -137,7 +147,7 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
           effective.isNotEmpty &&
           effective != room.roomId) {
         // 并发双开：弃用本次房间，采用规范房间。
-        return await _openExistingRoom(effective);
+        return _forPeer(await _openExistingRoom(effective), matrixUserId);
       }
     } catch (_) {
       // 目录异常或规范房间已失效（如对端退出后被替换）：采用本次新建的

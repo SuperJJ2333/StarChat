@@ -576,7 +576,7 @@ class _RoomPageState extends State<RoomPage> {
         items.add(
           CustomEmojiItem(
             id: item.id,
-            bytes: await session.loadBytes(item),
+            loadPreview: () => session.loadPreview(item),
             isAnimated: item.isAnimated,
             mimeType: item.mimeType,
           ),
@@ -587,8 +587,26 @@ class _RoomPageState extends State<RoomPage> {
         emojiVault = session;
         customEmojiItems = items;
       });
+      unawaited(_refreshEmojiVault(session));
     } catch (_) {
       if (mounted) setState(() => mediaMessage = '我的表情同步失败，可稍后重试');
+    }
+  }
+
+  Future<void> _refreshEmojiVault(MatrixEmojiVault session) async {
+    try {
+      await session.refresh();
+      if (!mounted || !identical(emojiVault, session)) return;
+      setState(() => customEmojiItems = [
+            for (final item in session.vault.items)
+              CustomEmojiItem(
+                  id: item.id,
+                  isAnimated: item.isAnimated,
+                  mimeType: item.mimeType,
+                  loadPreview: () => session.loadPreview(item)),
+          ]);
+    } catch (_) {
+      // Keep the cached favorites usable when background metadata sync fails.
     }
   }
 
@@ -628,7 +646,7 @@ class _RoomPageState extends State<RoomPage> {
       );
       final custom = CustomEmojiItem(
         id: item.id,
-        bytes: bytes,
+        loadPreview: () => session.loadPreview(item),
         isAnimated: item.isAnimated,
         mimeType: item.mimeType,
       );
@@ -647,17 +665,36 @@ class _RoomPageState extends State<RoomPage> {
 
   Future<void> _sendCustomEmoji(CustomEmojiItem item) async {
     try {
-      await widget.room.sendFileEvent(
-        MatrixFile.fromMimeType(
-          bytes: item.bytes,
+      final session = emojiVault;
+      if (session == null) throw StateError('Emoji vault unavailable');
+      final original =
+          session.vault.items.firstWhere((entry) => entry.id == item.id);
+      final bytes = await session.loadBytes(original);
+      validateGifForSend(bytes);
+      final sentEventId = await widget.room.sendFileEvent(
+        MatrixFile(
+          bytes: bytes,
           name: item.isAnimated ? '畅聊表情.gif' : '畅聊表情.png',
           mimeType: item.mimeType,
         ),
       );
-      await emojiVault?.vault.markRecent(item.id);
+      if (sentEventId == null) throw StateError('Emoji send failed');
+      unawaited(session.vault.markRecent(item.id).catchError((_) {}));
       if (mounted) setState(() => composerPanel = ComposerPanel.none);
     } catch (_) {
-      if (mounted) setState(() => mediaMessage = '表情发送失败，请重试');
+      if (mounted) _showMediaMessage('表情发送失败，请重试');
+    }
+  }
+
+  Future<void> _removeCustomEmoji(CustomEmojiItem item) async {
+    final session = emojiVault;
+    if (session == null) throw StateError('Emoji vault unavailable');
+    await session.removeItem(item.id);
+    if (mounted) {
+      setState(() {
+        customEmojiItems =
+            customEmojiItems.where((entry) => entry.id != item.id).toList();
+      });
     }
   }
 
@@ -1827,6 +1864,19 @@ class _RoomPageState extends State<RoomPage> {
           timestamp: message.timestamp.toLocal(),
           timelineOrder: index,
           visibleText: message.text,
+          displayText: switch (message.kind) {
+            RoomMessageKind.image =>
+              message.mimeType?.startsWith('video/') == true
+                  ? '[视频消息]'
+                  : '[图片消息]',
+            RoomMessageKind.video => '[视频消息]',
+            RoomMessageKind.voice => '[语音消息]',
+            RoomMessageKind.file => '[文件消息]',
+            RoomMessageKind.call => '[通话消息]',
+            RoomMessageKind.redPacket => '[红包消息]',
+            RoomMessageKind.transfer => '[转账消息]',
+            _ => message.text,
+          },
           mediaCategory: switch (message.kind) {
             RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
             RoomMessageKind.image
@@ -3019,6 +3069,7 @@ class _RoomPageState extends State<RoomPage> {
                           onEmojiSelected: _insertEmoji,
                           customItems: customEmojiItems,
                           onCustomSelected: _sendCustomEmoji,
+                          onCustomRemoved: _removeCustomEmoji,
                         ),
                       ),
                     ),

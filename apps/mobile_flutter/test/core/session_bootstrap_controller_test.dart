@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
@@ -7,7 +8,8 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart';
 
 final class FakeBusiness implements BusinessSessionGateway {
-  FakeBusiness(this.result, {this.matrixUserId, this.error});
+  FakeBusiness(this.result, {this.matrixUserId, this.error, this.restoreGate});
+  final Completer<void>? restoreGate;
   final BusinessSessionRestore result;
   final String? matrixUserId;
   final Object? error;
@@ -18,6 +20,7 @@ final class FakeBusiness implements BusinessSessionGateway {
   Future<void> logout() async => logoutCalls++;
   @override
   Future<BusinessSessionRestore> restoreSession() async {
+    await restoreGate?.future;
     if (error != null) throw error!;
     return result;
   }
@@ -59,6 +62,30 @@ final class FakeMatrix implements MatrixSessionGateway {
 }
 
 void main() {
+  test('local matching identity exposes cached preview during slow refresh',
+      () async {
+    final gate = Completer<void>();
+    final controller = SessionBootstrapController(
+      business: FakeBusiness(BusinessSessionRestore.authenticated,
+          matrixUserId: '@alice:matrix.localhost', restoreGate: gate),
+      matrix: FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost'),
+    );
+    final pending = controller.bootstrap();
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.canShowCachedMessages, isTrue);
+    expect(controller.state.status, SessionBootstrapStatus.loading);
+    gate.complete();
+    await pending;
+  });
+  test('mismatched local identity never exposes cached messages', () async {
+    final controller = SessionBootstrapController(
+      business: FakeBusiness(BusinessSessionRestore.authenticated,
+          matrixUserId: '@bob:matrix.localhost'),
+      matrix: FakeMatrix(isLoggedIn: true, userId: '@alice:matrix.localhost'),
+    );
+    await controller.bootstrap();
+    expect(controller.canShowCachedMessages, isFalse);
+  });
   test('no persisted domains becomes unauthenticated', () async {
     final controller = SessionBootstrapController(
       business: FakeBusiness(BusinessSessionRestore.absent),
@@ -95,8 +122,7 @@ void main() {
     expect(matrix.logoutCalls, 0);
   });
 
-  test(
-      'invalid business session keeps the encrypted matrix database intact',
+  test('invalid business session keeps the encrypted matrix database intact',
       () async {
     // 同账号重新登录必须仍能解密历史消息：业务会话失效只回登录页，
     // 不清除本地加密库（Olm/Megolm 会话保留）。

@@ -78,6 +78,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.identityCache,
+    this.previewOnly = false,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -88,6 +89,7 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
+  final bool previewOnly;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -105,7 +107,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   /// 惰性校正）；实时 onSync 收到新群邀请时按设置分流。
   bool? _autoAllowGroupJoin;
   final Set<String> _autoJoinInFlight = {};
-  late final ProfileRepository _identityCache =
+  late ProfileRepository _identityCache =
       widget.identityCache ?? ProfileRepository(widget.api);
 
   Future<void> _loadAutoAllowPreference() async {
@@ -205,7 +207,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   void _ensureGroupMembersLoaded(Iterable<Room> rooms) {
+    if (widget.previewOnly) return;
     for (final room in rooms.where((room) => !room.isDirectChat)) {
+      if (_groupMembersByRoom.containsKey(room.id)) continue;
       if (_groupMemberLoadsInFlight.contains(room.id)) continue;
       _groupMemberLoadsInFlight.add(room.id);
       unawaited(() async {
@@ -256,8 +260,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   @override
   void initState() {
     super.initState();
+    if (widget.previewOnly) return;
     _identityCache.addListener(_identityChanged);
     syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
+      _groupMembersByRoom.clear();
       unawaited(_restoreHiddenConversations());
       unawaited(_processPendingGroupInvites());
       if (mounted) setState(() {});
@@ -310,6 +316,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   void _identityChanged() {
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant MatrixHomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.identityCache != null &&
+        widget.identityCache != oldWidget.identityCache) {
+      _identityCache.removeListener(_identityChanged);
+      _identityCache = widget.identityCache!;
+      if (!widget.previewOnly) _identityCache.addListener(_identityChanged);
+    }
   }
 
   String _roomTime(Room room) {
@@ -628,16 +645,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         ?.toString();
     final visibleRooms = widget.matrix.sdkClient.rooms
         .where(
-          (room) =>
-              // 会话最后一条消息尚未解密（如密钥尚未同步）时隐藏整个
-              // 会话；密钥就绪后消息可解密，会话自动重新出现（不删数据）。
-              room.lastEvent?.type != EventTypes.Encrypted &&
-              !isMatrixControlRoom(
-                roomId: room.id,
-                displayName: room.getLocalizedDisplayname(),
-                vaultRoomId: vaultRoomId,
-                reminderRoomId: reminderRoomId,
-              ),
+          (room) => !isMatrixControlRoom(
+            roomId: room.id,
+            displayName: room.getLocalizedDisplayname(),
+            vaultRoomId: vaultRoomId,
+            reminderRoomId: reminderRoomId,
+          ),
         )
         .toList(growable: false);
     final roomById = {for (final room in visibleRooms) room.id: room};

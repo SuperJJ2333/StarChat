@@ -30,9 +30,11 @@ import 'features/contacts/contact_models.dart';
 import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
+import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'package:matrix/matrix.dart' show Membership, Room;
 import 'features/matrix/direct_chat_controller.dart';
+import 'features/matrix/cached_direct_room_directory.dart';
 import 'features/matrix/matrix_direct_chat_adapter.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_home_page.dart';
@@ -109,7 +111,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 创建私聊前先查规范房间复用；不存在才 startDirectChat 新建并注册。
     CanonicalDirectChatGateway(
       inner: widget.matrix,
-      directory: _ApiCanonicalDirectRoomDirectory(widget.api),
+      directory: CachedDirectRoomDirectory(
+        accountId: widget.matrix.sdkClient.userID ?? '',
+        upstream: _ApiCanonicalDirectRoomDirectory(widget.api),
+      ),
       businessUserIdOf: (matrixUserId) =>
           _chatIdentityCache?.contactsByMatrixId[matrixUserId]?.userId,
       openExistingRoom: _openCanonicalDirectRoom,
@@ -247,6 +252,20 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   final _pushTokenProviders = <PushTokenProvider>[];
 
   ProfileRepository? _chatIdentityCache;
+  MomentsUnreadController? _momentsUnread;
+
+  Future<void> _initializeMomentsUnread() async {
+    final preferences = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final unread = MomentsUnreadController(
+      accountKey: widget.matrix.sdkClient.userID ?? '',
+      preferences: preferences,
+      load: widget.api.momentNewPosts,
+    );
+    setState(() => _momentsUnread = unread);
+    await unread.initialize();
+  }
+
   Future<ProfileRepository>? _chatIdentityCacheLoad;
   late final UserDisplayNameResolver _sharedDisplayNameResolver =
       ContactBackedUserDisplayNameResolver(
@@ -265,6 +284,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    unawaited(_initializeMomentsUnread().catchError((_) {}));
     // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。
     // 事件语义严格区分（修复"来电事件即自动接听"）：incomingCall 只登记
     // 呈现；只有 callAccepted/callRejected（用户明确动作）才驱动接听/拒接，
@@ -605,6 +625,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     appResumed = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
+      unawaited(_momentsUnread?.refresh());
       // 规格§四（后台恢复）：收到电话后回前台（点图标/切回）→ 立即
       // 进入通话页——不再"只响铃无页面"。
       final phase = calls.state.phase;
@@ -1072,7 +1093,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final reference = await directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
-      final cache = await _identityCache();
+      final cache = _chatIdentityCache;
+      unawaited(_identityCache());
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push<void>(
         CupertinoPageRoute(
@@ -1202,6 +1224,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _momentsUnread?.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _friendRequestPollTimer?.cancel();
     _backgroundCallPermissionTimer?.cancel();
@@ -1333,6 +1356,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         children: [
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
+              onTap: (index) {
+                if (index == 2) unawaited(_momentsUnread?.refresh());
+              },
               activeColor: const Color(0xff07c160),
               items: [
                 const BottomNavigationBarItem(
@@ -1360,21 +1386,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             ),
             tabBuilder: (_, index) => CupertinoTabView(
               builder: (_) => switch (index) {
-                0 => _chatIdentityCache == null
-                    ? const Center(child: CupertinoActivityIndicator())
-                    : MatrixHomePage(
-                        api: widget.api,
-                        matrix: widget.matrix,
-                        themeController: widget.themeController,
-                        onCreateGroup: _createGroupChat,
-                        onMessage: _openMessage,
-                        onVoice: (contact) =>
-                            _openCall(contact, CallMediaType.audio),
-                        onVideo: (contact) =>
-                            _openCall(contact, CallMediaType.video),
-                        reminderService: reminderService,
-                        identityCache: _chatIdentityCache,
-                      ),
+                0 => MatrixHomePage(
+                    api: widget.api,
+                    matrix: widget.matrix,
+                    themeController: widget.themeController,
+                    onCreateGroup: _createGroupChat,
+                    onMessage: _openMessage,
+                    onVoice: (contact) =>
+                        _openCall(contact, CallMediaType.audio),
+                    onVideo: (contact) =>
+                        _openCall(contact, CallMediaType.video),
+                    reminderService: reminderService,
+                    identityCache: _chatIdentityCache,
+                  ),
                 1 => _chatIdentityCache == null
                     ? const Center(child: CupertinoActivityIndicator())
                     : ContactsTabPage(
@@ -1393,6 +1417,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                         identityCache: _chatIdentityCache,
                       ),
                 2 => DiscoveryPage(
+                    unreadController: _momentsUnread,
                     matrix: widget.matrix,
                     api: widget.api,
                     identityCache: _chatIdentityCache,
@@ -1483,9 +1508,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
       if (room == null) throw StateError('Matrix room is unavailable');
       final identityCache =
           widget.identityCache ?? ProfileRepository(widget.api);
-      await identityCache.preload();
-      if (!mounted) return;
-      await identityCache.precacheAvatarImages(context);
+      unawaited(identityCache.preload().catchError((_) {}));
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(

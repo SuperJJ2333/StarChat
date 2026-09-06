@@ -28,13 +28,37 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
+  bool canShowCachedMessages = false;
+  int _generation = 0;
+  Future<void>? _bootstrapFlight;
   SessionBootstrapState state =
       const SessionBootstrapState(SessionBootstrapStatus.loading);
 
-  Future<void> bootstrap() async {
-    _set(const SessionBootstrapState(SessionBootstrapStatus.loading));
+  Future<void> bootstrap() {
+    final existing = _bootstrapFlight;
+    if (existing != null) return existing;
+    final flight = _bootstrap(++_generation);
+    _bootstrapFlight = flight;
+    return flight.whenComplete(() {
+      if (identical(_bootstrapFlight, flight)) _bootstrapFlight = null;
+    });
+  }
+
+  Future<void> _bootstrap(int generation) async {
+    if (state.status != SessionBootstrapStatus.authenticated &&
+        state.status != SessionBootstrapStatus.offlineAuthenticated) {
+      canShowCachedMessages = false;
+      _set(const SessionBootstrapState(SessionBootstrapStatus.loading));
+    }
     try {
+      final localIdentity = await business.currentMatrixUserId();
+      if (generation != _generation) return;
+      canShowCachedMessages = matrix.isLoggedIn &&
+          localIdentity != null &&
+          localIdentity == matrix.userId;
+      notifyListeners();
       final businessResult = await business.restoreSession();
+      if (generation != _generation) return;
       if (businessResult == BusinessSessionRestore.absent ||
           businessResult == BusinessSessionRestore.invalid) {
         // 业务会话失效（登出/令牌过期/瞬时刷新失败）时【不得】清除本地
@@ -46,11 +70,13 @@ final class SessionBootstrapController extends ChangeNotifier {
       }
       if (!matrix.isLoggedIn) {
         await _bestEffortBusinessLogout();
+        if (generation != _generation) return;
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated));
         return;
       }
       final expectedMatrixUser = await business.currentMatrixUserId();
+      if (generation != _generation) return;
       if (expectedMatrixUser == null || expectedMatrixUser != matrix.userId) {
         _set(const SessionBootstrapState(
           SessionBootstrapStatus.fatalError,
@@ -58,13 +84,24 @@ final class SessionBootstrapController extends ChangeNotifier {
         ));
         return;
       }
+      // Both identities and the business session are verified. Matrix history
+      // is already restored from disk; network sync must not block Messages.
+      _set(SessionBootstrapState(
+        businessResult == BusinessSessionRestore.offline
+            ? SessionBootstrapStatus.offlineAuthenticated
+            : SessionBootstrapStatus.authenticated,
+      ));
       try {
         await matrix.sync();
+        if (generation != _generation) return;
       } on MatrixException catch (error) {
+        if (generation != _generation) return;
         if (error.errcode == 'M_UNKNOWN_TOKEN' ||
             error.errcode == 'M_FORBIDDEN') {
           await _bestEffortBusinessLogout();
+          if (generation != _generation) return;
           await _bestEffortMatrixReset();
+          if (generation != _generation) return;
           _set(const SessionBootstrapState(
             SessionBootstrapStatus.unauthenticated,
             message: '登录状态已失效，请重新登录',
@@ -73,14 +110,17 @@ final class SessionBootstrapController extends ChangeNotifier {
         }
         rethrow;
       } on SocketException {
+        if (generation != _generation) return;
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.offlineAuthenticated));
         return;
       } on TimeoutException {
+        if (generation != _generation) return;
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.offlineAuthenticated));
         return;
       } on http.ClientException {
+        if (generation != _generation) return;
         _set(const SessionBootstrapState(
             SessionBootstrapStatus.offlineAuthenticated));
         return;
@@ -91,12 +131,16 @@ final class SessionBootstrapController extends ChangeNotifier {
             : SessionBootstrapStatus.authenticated,
       ));
     } on SocketException {
+      if (generation != _generation) return;
       _offlineIfPossible();
     } on TimeoutException {
+      if (generation != _generation) return;
       _offlineIfPossible();
     } on http.ClientException {
+      if (generation != _generation) return;
       _offlineIfPossible();
     } catch (_) {
+      if (generation != _generation) return;
       _set(const SessionBootstrapState(
         SessionBootstrapStatus.fatalError,
         message: '无法恢复本地登录状态',
@@ -105,6 +149,9 @@ final class SessionBootstrapController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    _generation++;
+    _bootstrapFlight = null;
+    canShowCachedMessages = false;
     // U04：登出即清除**当前账号**的朋友圈快照（账号命名空间键）——
     // 下一个账号首绘绝不能看到上一个账号的 feed；不触碰 Matrix 聊天
     // 历史与其他账号数据。
@@ -128,7 +175,7 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   void _offlineIfPossible() {
     _set(SessionBootstrapState(
-      matrix.isLoggedIn
+      canShowCachedMessages && matrix.isLoggedIn
           ? SessionBootstrapStatus.offlineAuthenticated
           : SessionBootstrapStatus.unauthenticated,
     ));

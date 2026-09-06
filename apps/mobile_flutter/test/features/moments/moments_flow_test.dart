@@ -62,6 +62,55 @@ Future<BusinessApiClient> momentsApi(
 }
 
 void main() {
+  testWidgets(
+      'only visible posts are consumed and older feed pages are reachable',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await CacheRepository.resetForTest();
+    final seen = <String>{};
+    final api = await momentsApi((request) async {
+      if (request.url.path.endsWith('/moments/feed')) {
+        final second = request.url.queryParameters['cursor'] != null;
+        return http.Response(
+            jsonEncode({
+              'items': second
+                  ? [
+                      {...momentJson(liked: false, likeCount: 0), 'id': 'older'}
+                    ]
+                  : List.generate(
+                      12,
+                      (i) => {
+                            ...momentJson(liked: false, likeCount: 0),
+                            'id': 'post-$i'
+                          }),
+              'next_cursor': second ? null : 'older-page',
+            }),
+            200,
+            headers: {'content-type': 'application/json'});
+      }
+      return http.Response('{}', 200,
+          headers: {'content-type': 'application/json'});
+    });
+    final identity = ProfileRepository.forTesting(
+        accountKey: 'matrix:@me:test', store: MomentsIdentityStore());
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentsPage(
+            api: api, identityCache: identity, onPostsDisplayed: seen.addAll)));
+    await tester.pumpAndSettle();
+    expect(seen, contains('post-0'));
+    expect(seen, isNot(contains('post-11')));
+    final list = find.byType(ListView).first;
+    await tester.scrollUntilVisible(
+        find.byKey(const Key('moments-load-more')), 400,
+        scrollable:
+            find.descendant(of: list, matching: find.byType(Scrollable)).first);
+    await tester.tap(find.byKey(const Key('moments-load-more')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('moments-load-more')), findsNothing);
+    await tester.drag(list, const Offset(0, -500));
+    await tester.pumpAndSettle();
+    expect(seen, contains('older'));
+  });
   setUp(() async {
     // CacheRepository 依赖 SharedPreferences；测试环境需注入 mock，
     // 否则平台通道永不返回导致 Feed 加载挂起。
@@ -504,7 +553,9 @@ void main() {
       'someone-else',
       handler: (request) async {
         if (request.url.path == '/api/v1/moments/feed') {
-          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+          return jsonResponse({
+            'items': [momentJson(liked: false, likeCount: 0)]
+          });
         }
         if (request.url.path == '/api/v1/moments/preferences') {
           return jsonResponse({'cover_url': null});
@@ -523,7 +574,9 @@ void main() {
       'alice_id',
       handler: (request) async {
         if (request.url.path == '/api/v1/moments/feed') {
-          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+          return jsonResponse({
+            'items': [momentJson(liked: false, likeCount: 0)]
+          });
         }
         if (request.url.path == '/api/v1/moments/preferences') {
           return jsonResponse({'cover_url': null});
@@ -550,12 +603,15 @@ void main() {
       'alice_id',
       handler: (request) async {
         if (request.url.path == '/api/v1/moments/feed') {
-          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+          return jsonResponse({
+            'items': [momentJson(liked: false, likeCount: 0)]
+          });
         }
         if (request.url.path == '/api/v1/moments/preferences') {
           return jsonResponse({'cover_url': null});
         }
-        if (request.method == 'DELETE' && request.url.path == '/api/v1/moments/m1') {
+        if (request.method == 'DELETE' &&
+            request.url.path == '/api/v1/moments/m1') {
           await deleted.future;
           return jsonResponse({});
         }
@@ -574,7 +630,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('朋友圈正文'), findsNothing);
     // 成功后缓存同步：不再把已删条目画回来。
-    final cached = await (await CacheRepository.instance()).momentsFor("matrix:@u:test").load();
+    final cached = await (await CacheRepository.instance())
+        .momentsFor("matrix:@u:test")
+        .load();
     expect(
       (cached?['items'] as List?)
               ?.any((m) => (m as Map)['id']?.toString() == 'm1') ??
@@ -592,15 +650,20 @@ void main() {
       'alice_id',
       handler: (request) async {
         if (request.url.path == '/api/v1/moments/feed') {
-          return jsonResponse({'items': [momentJson(liked: false, likeCount: 0)]});
+          return jsonResponse({
+            'items': [momentJson(liked: false, likeCount: 0)]
+          });
         }
         if (request.url.path == '/api/v1/moments/preferences') {
           return jsonResponse({'cover_url': null});
         }
-        if (request.method == 'DELETE' && request.url.path == '/api/v1/moments/m1') {
+        if (request.method == 'DELETE' &&
+            request.url.path == '/api/v1/moments/m1') {
           await failed.future;
           return jsonResponse(
-            {'error': {'code': 'X', 'message': '服务繁忙'}},
+            {
+              'error': {'code': 'X', 'message': '服务繁忙'}
+            },
             503,
           );
         }

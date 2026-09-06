@@ -14,6 +14,8 @@ import 'features/auth/authentication_flow.dart';
 import 'features/matrix/call_ui_manager.dart' show callNavigatorKey;
 import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
+import 'features/matrix/matrix_home_page.dart';
+import 'ui/foundation/changliao_icons.dart';
 import 'session_gate.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
@@ -46,6 +48,24 @@ Future<void> main() async {
   final session = SessionBootstrapController(business: api, matrix: matrix);
   final gate = SessionGate(
     controller: session,
+    cachedMessagesBuilder: (_) => CupertinoTabScaffold(
+      tabBar: CupertinoTabBar(items: const [
+        BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.messagesFilled), label: '消息'),
+        BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.contacts), label: '通讯录'),
+        BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.discover), label: '发现'),
+        BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
+      ]),
+      tabBuilder: (_, index) => MatrixHomePage(
+        api: api,
+        matrix: matrix,
+        themeController: themeController,
+        onCreateGroup: () {},
+        previewOnly: true,
+      ),
+    ),
     unauthenticatedBuilder: (_) => AuthenticationFlow(
       api: api,
       onLogin: (username, password) async {

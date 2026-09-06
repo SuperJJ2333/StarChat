@@ -20,9 +20,15 @@ import '../matrix/profile_repository.dart';
 final class MomentsPage extends StatefulWidget {
   /// BUG 1：朋友圈不再自建资料缓存——必须注入全局唯一 ProfileRepository。
   const MomentsPage(
-      {super.key, required this.api, required this.identityCache});
+      {super.key,
+      required this.api,
+      required this.identityCache,
+      this.onPostsDisplayed,
+      this.unreadChanges});
   final BusinessApiClient api;
   final ProfileRepository identityCache;
+  final void Function(Iterable<String> ids)? onPostsDisplayed;
+  final Listenable? unreadChanges;
   @override
   State<MomentsPage> createState() => _MomentsPageState();
 }
@@ -30,10 +36,56 @@ final class MomentsPage extends StatefulWidget {
 final class _MomentsPageState extends State<MomentsPage> {
   final _itemOverrides = <String, MomentItem>{};
   final _pendingLikeIds = <String>{};
+  final _postKeys = <String, GlobalKey>{};
+  final _feedScroll = ScrollController();
+
+  void _unreadChanged() => WidgetsBinding.instance
+      .addPostFrameCallback((_) => _reportVisiblePosts());
+
+  void _reportVisiblePosts() {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+    final size = MediaQuery.sizeOf(context);
+    final ids = <String>[];
+    for (final entry in _postKeys.entries) {
+      final box = entry.value.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final top = box.localToGlobal(Offset.zero).dy;
+      if (top < size.height && top + box.size.height > 100) ids.add(entry.key);
+    }
+    if (ids.isNotEmpty) widget.onPostsDisplayed?.call(ids);
+  }
 
   /// 乐观删除：pending 期间从 Feed 剔除，失败回滚恢复。
   final _deletedIds = <String>{};
   late Future<Map<String, dynamic>> _feed;
+  bool _loadingMore = false;
+
+  Future<void> _loadMorePosts() async {
+    if (_loadingMore) return;
+    final currentFuture = _feed;
+    final current = await currentFuture;
+    final cursor = current['next_cursor'] as String?;
+    if (!mounted || cursor == null || !identical(currentFuture, _feed)) return;
+    setState(() => _loadingMore = true);
+    try {
+      final next = await widget.api.momentsFeed(mode: 'latest', cursor: cursor);
+      if (!mounted || !identical(currentFuture, _feed)) return;
+      final merged = <String, dynamic>{
+        for (final item in [
+          ...(current['items'] as List? ?? []),
+          ...(next['items'] as List? ?? [])
+        ])
+          (item as Map)['id'].toString(): item,
+      };
+      setState(() =>
+          _feed = Future.value({...next, 'items': merged.values.toList()}));
+    } catch (_) {
+      if (mounted) setState(() => _interactionError = '加载更多失败，请重试');
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
   String? _coverUrl;
   String? _interactionError;
   String? _identityError;
@@ -42,6 +94,8 @@ final class _MomentsPageState extends State<MomentsPage> {
   @override
   void initState() {
     super.initState();
+    _feedScroll.addListener(_reportVisiblePosts);
+    widget.unreadChanges?.addListener(_unreadChanged);
     _identityCache.addListener(_identityChanged);
     _loadIdentity();
     _feed = _loadFeedWithCache();
@@ -117,8 +171,8 @@ final class _MomentsPageState extends State<MomentsPage> {
     return 'anonymous';
   }
 
-  Future<void> _saveFeedCache(
-      MomentsCache moments, Map<String, dynamic> feed, String accountKey) async {
+  Future<void> _saveFeedCache(MomentsCache moments, Map<String, dynamic> feed,
+      String accountKey) async {
     try {
       // 迟到保护：写回前确认页面仍属于同一账号。
       if (await _accountCacheKey() != accountKey) return;
@@ -128,7 +182,8 @@ final class _MomentsPageState extends State<MomentsPage> {
     }
   }
 
-  Future<void> _refreshFeedInBackground(MomentsCache moments, String accountKey) async {
+  Future<void> _refreshFeedInBackground(
+      MomentsCache moments, String accountKey) async {
     try {
       final fresh = await widget.api.momentsFeed(mode: 'latest');
       await _saveFeedCache(moments, fresh, accountKey);
@@ -141,6 +196,8 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   @override
   void dispose() {
+    _feedScroll.dispose();
+    widget.unreadChanges?.removeListener(_unreadChanged);
     _identityCache.removeListener(_identityChanged);
     super.dispose();
   }
@@ -220,9 +277,9 @@ final class _MomentsPageState extends State<MomentsPage> {
     try {
       await widget.api.deleteMoment(item.id);
       final snapshot = await _feed;
-      final items = List<Object?>.from((snapshot['items'] as List?) ?? const []);
-      items.removeWhere(
-          (m) => m is Map && m['id']?.toString() == item.id);
+      final items =
+          List<Object?>.from((snapshot['items'] as List?) ?? const []);
+      items.removeWhere((m) => m is Map && m['id']?.toString() == item.id);
       final updated = Map<String, dynamic>.from(snapshot)..['items'] = items;
       final accountKey = await _accountCacheKey();
       await _saveFeedCache(
@@ -366,7 +423,9 @@ final class _MomentsPageState extends State<MomentsPage> {
                 future: _feed,
                 builder: (_, snapshot) {
                   final items = (snapshot.data?['items'] as List?) ?? const [];
-                  return ListView(children: [
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _reportVisiblePosts());
+                  return ListView(controller: _feedScroll, children: [
                     if (_interactionError != null)
                       Padding(
                         padding: const EdgeInsets.all(12),
@@ -402,6 +461,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                         }
                         final item = _itemOverrides[parsed.id] ?? parsed;
                         return WeChatMomentTile(
+                          key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
                           item: item,
                           onLike: _pendingLikeIds.contains(item.id)
                               ? null
@@ -412,6 +472,14 @@ final class _MomentsPageState extends State<MomentsPage> {
                               : null,
                         );
                       }),
+                    if (snapshot.data?['next_cursor'] != null)
+                      CupertinoButton(
+                        key: const Key('moments-load-more'),
+                        onPressed: _loadingMore ? null : _loadMorePosts,
+                        child: _loadingMore
+                            ? const CupertinoActivityIndicator()
+                            : const Text('加载更多'),
+                      ),
                   ]);
                 })),
       );

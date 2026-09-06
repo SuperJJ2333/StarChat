@@ -1,4 +1,5 @@
 from typing import Annotated, Literal
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -78,6 +79,12 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     @router.get("/feed")
     def feed(mode: Literal["recommended", "latest"] = "recommended", cursor: str | None = None, limit: Annotated[int, Query(ge=1, le=50)] = 20, user=Depends(actor)):
         return {**service.feed(user, mode=mode, cursor=cursor, limit=limit), "mode": mode}
+
+    @router.get('/new-posts')
+    def new_posts(since: datetime | None = None, cursor: str | None = None, user=Depends(actor)):
+        if since is not None and since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        return service.new_posts(user, since=since, cursor=cursor)
 
     @router.get("/search")
     def search(q: Annotated[str, Query(min_length=1, max_length=100)], cursor: str | None = None, limit: Annotated[int, Query(ge=1, le=50)] = 20, user=Depends(actor)):

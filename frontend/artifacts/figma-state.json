@@ -1,4 +1,10 @@
 {
+  "cacheEntryRevision": {
+    "date": "2026-09-06",
+    "remoteNodesModified": false,
+    "status": "local-export-ledger; remote-tool-unavailable",
+    "changes": ["favorite-preview-delete", "member-result-avatar-summary", "cached-messages-first", "moments-new-post-count"]
+  },
   "localFeedbackRevision": {
     "date": "2026-09-06",
     "status": "implemented-locally-remote-sync-unavailable",

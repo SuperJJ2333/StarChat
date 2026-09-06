@@ -388,11 +388,19 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
             );
           }
           final message = page.items[index];
+          final member = widget.memberEntries
+                  .where((entry) => entry.userId == message.senderId)
+                  .firstOrNull ??
+              MemberDirectoryEntry(
+                userId: message.senderId,
+                nickname: message.senderDisplayName,
+              );
           return _ResultRow(
             message: message,
             keyword: controller.hasKeywordInput ? _input.text.trim() : '',
             displayName: widget.senderDisplayName?.call(message.senderId) ??
-                message.senderDisplayName,
+                member.displayName,
+            avatar: widget.memberAvatarBuilder?.call(context, member),
             onTap: () => widget.onJumpToMessage(message.eventId),
           );
         },
@@ -427,18 +435,21 @@ final class _ResultRow extends StatelessWidget {
     required this.keyword,
     required this.displayName,
     required this.onTap,
+    this.avatar,
   });
 
   final ChatSearchMessage message;
   final String keyword;
   final String displayName;
   final VoidCallback onTap;
+  final Widget? avatar;
 
   @override
   Widget build(BuildContext context) {
+    final text = message.displayText ?? message.visibleText;
     final segments = keyword.isEmpty
-        ? [const ChatSearchHighlightSegment('', false)]
-        : buildHighlightSnippet(message.visibleText, keyword);
+        ? [ChatSearchHighlightSegment(text, false)]
+        : buildHighlightSnippet(text, keyword);
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     return GestureDetector(
       key: Key('chat-search-result-${message.eventId}'),
@@ -454,21 +465,21 @@ final class _ResultRow extends StatelessWidget {
           ),
         ),
         child: Row(children: [
-          // 发送者头像（占位圆形——真实头像由调用方接入缓存）。
-          Container(
-            width: 38,
-            height: 38,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: WeChatColors.brandPrimary,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              displayName.isNotEmpty ? displayName.characters.first : '?',
-              style:
-                  const TextStyle(fontSize: 16, color: CupertinoColors.white),
-            ),
-          ),
+          avatar ??
+              Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: WeChatColors.brandPrimary,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  displayName.isNotEmpty ? displayName.characters.first : '?',
+                  style: const TextStyle(
+                      fontSize: 16, color: CupertinoColors.white),
+                ),
+              ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

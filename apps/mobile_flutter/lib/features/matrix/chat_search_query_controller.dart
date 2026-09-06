@@ -38,8 +38,7 @@ final class ChatSearchQueryController {
         if (_keyword.trim().isNotEmpty)
           ChatSearchActiveFilter(ChatSearchFilterKind.keyword, _keyword.trim()),
         if (_senderUserId != null)
-          ChatSearchActiveFilter(
-              ChatSearchFilterKind.sender, _senderUserId!),
+          ChatSearchActiveFilter(ChatSearchFilterKind.sender, _senderUserId!),
         if (_mediaCategory != null)
           ChatSearchActiveFilter(
               ChatSearchFilterKind.media, _mediaCategory!.name),
@@ -47,7 +46,9 @@ final class ChatSearchQueryController {
 
   /// 默认空态判定：无关键词且无任何筛选。
   bool get isDefaultEmptyState =>
-      _keyword.trim().isEmpty && _senderUserId == null && _mediaCategory == null;
+      _keyword.trim().isEmpty &&
+      _senderUserId == null &&
+      _mediaCategory == null;
 
   // —— 筛选变更（R10：所有变更递增 epoch 使在途请求失效）——
   // 具体 setKeyword/setSender/setMediaCategory/removeFilter/clearAll
@@ -81,23 +82,23 @@ final class ChatSearchQueryController {
 
   bool removeFilter(ChatSearchFilterKind kind) => switch (kind) {
         ChatSearchFilterKind.keyword => () {
-          if (_keyword.trim().isEmpty) return false;
-          _keyword = '';
-          _epoch++;
-          return true;
-        }(),
+            if (_keyword.trim().isEmpty) return false;
+            _keyword = '';
+            _epoch++;
+            return true;
+          }(),
         ChatSearchFilterKind.sender => () {
-          if (_senderUserId == null) return false;
-          _senderUserId = null;
-          _epoch++;
-          return true;
-        }(),
+            if (_senderUserId == null) return false;
+            _senderUserId = null;
+            _epoch++;
+            return true;
+          }(),
         ChatSearchFilterKind.media => () {
-          if (_mediaCategory == null) return false;
-          _mediaCategory = null;
-          _epoch++;
-          return true;
-        }(),
+            if (_mediaCategory == null) return false;
+            _mediaCategory = null;
+            _epoch++;
+            return true;
+          }(),
       };
 
   void clearAll() {
@@ -178,7 +179,8 @@ final class ChatSearchQueryController {
     );
     if (isDefaultEmptyState) {
       onStateChange?.call(const ChatSearchStateChange.empty());
-      return ChatSearchResultPage(items: const [], nextCursor: null, epoch: epoch);
+      return ChatSearchResultPage(
+          items: const [], nextCursor: null, epoch: epoch);
     }
     onStateChange?.call(ChatSearchStateChange.loading(epoch));
     try {
@@ -259,6 +261,7 @@ final class ChatSearchMessage {
     required this.timestamp,
     required this.timelineOrder,
     required this.visibleText,
+    this.displayText,
     this.mediaCategory,
     this.hasMedia = false,
     this.isVideo = false,
@@ -275,6 +278,9 @@ final class ChatSearchMessage {
 
   /// 用户可见正文（文本/caption/链接文字/正文文件名）。
   final String visibleText;
+
+  /// Optional presentation summary for media. Search still matches visibleText.
+  final String? displayText;
 
   /// 消息自身媒体分类（image/video/file/link）。
   final ChatSearchMediaCategory? mediaCategory;
@@ -316,8 +322,9 @@ final class ChatSearchFilters {
 
   bool matchesMedia(ChatSearchMessage message) => switch (mediaCategory) {
         null => true,
-        ChatSearchMediaCategory.imageVideo => message.mediaCategory ==
-            ChatSearchMediaCategory.imageVideo && message.hasMedia,
+        ChatSearchMediaCategory.imageVideo =>
+          message.mediaCategory == ChatSearchMediaCategory.imageVideo &&
+              message.hasMedia,
         ChatSearchMediaCategory.file =>
           message.mediaCategory == ChatSearchMediaCategory.file,
         ChatSearchMediaCategory.link =>
@@ -325,7 +332,9 @@ final class ChatSearchFilters {
       };
 
   bool matches(ChatSearchMessage message) =>
-      matchesKeyword(message) && matchesSender(message) && matchesMedia(message);
+      matchesKeyword(message) &&
+      matchesSender(message) &&
+      matchesMedia(message);
 }
 
 /// 稳定游标（timelineOrder + eventId 组合键）。
@@ -354,7 +363,8 @@ final class ChatSearchResultPage {
 sealed class ChatSearchStateChange {
   const ChatSearchStateChange();
   const factory ChatSearchStateChange.empty() = ChatSearchEmptyState;
-  const factory ChatSearchStateChange.loading(int epoch) = ChatSearchLoadingState;
+  const factory ChatSearchStateChange.loading(int epoch) =
+      ChatSearchLoadingState;
   const factory ChatSearchStateChange.loaded(ChatSearchResultPage page) =
       ChatSearchLoadedState;
   const factory ChatSearchStateChange.failed(int epoch) = ChatSearchFailedState;
@@ -402,9 +412,8 @@ List<ChatSearchHighlightSegment> buildHighlightSnippet(
   final haystack = text.toLowerCase();
   final index = haystack.indexOf(needle);
   if (index < 0) {
-    final head = text.length > context * 2
-        ? '${text.substring(0, context * 2)}…'
-        : text;
+    final head =
+        text.length > context * 2 ? '${text.substring(0, context * 2)}…' : text;
     return [ChatSearchHighlightSegment(head, false)];
   }
   final start = index > context ? index - context : 0;
@@ -418,7 +427,8 @@ List<ChatSearchHighlightSegment> buildHighlightSnippet(
     ChatSearchHighlightSegment(
         text.substring(index, index + needle.length), true),
     if (end < text.length)
-      ChatSearchHighlightSegment('${text.substring(index + needle.length, end)}…', false)
+      ChatSearchHighlightSegment(
+          '${text.substring(index + needle.length, end)}…', false)
     else
       ChatSearchHighlightSegment(text.substring(index + needle.length), false),
   ];

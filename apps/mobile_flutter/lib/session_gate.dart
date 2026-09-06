@@ -10,11 +10,13 @@ final class SessionGate extends StatefulWidget {
     required this.controller,
     required this.unauthenticatedBuilder,
     required this.authenticatedBuilder,
+    this.cachedMessagesBuilder,
   });
 
   final SessionBootstrapController controller;
   final WidgetBuilder unauthenticatedBuilder;
   final WidgetBuilder authenticatedBuilder;
+  final WidgetBuilder? cachedMessagesBuilder;
 
   @override
   State<SessionGate> createState() => _SessionGateState();
@@ -50,7 +52,11 @@ final class _SessionGateState extends State<SessionGate> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       child: switch (state.status) {
-        SessionBootstrapStatus.loading => const _SessionLoadingPage(),
+        SessionBootstrapStatus.loading =>
+          widget.controller.canShowCachedMessages &&
+                  widget.cachedMessagesBuilder != null
+              ? IgnorePointer(child: widget.cachedMessagesBuilder!(context))
+              : const _SessionLoadingPage(),
         SessionBootstrapStatus.authenticated => _AuthenticatedLayer(
             offline: false,
             onRetry: widget.controller.bootstrap,
@@ -124,23 +130,9 @@ final class _SessionLoadingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const CupertinoPageScaffold(
+        navigationBar: CupertinoNavigationBar(middle: Text('消息')),
         child: SafeArea(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  CupertinoIcons.bubble_left_bubble_right_fill,
-                  size: 64,
-                  color: Color(0xff07c160),
-                ),
-                SizedBox(height: 20),
-                CupertinoActivityIndicator(),
-                SizedBox(height: 12),
-                Text('正在恢复登录状态…'),
-              ],
-            ),
-          ),
+          child: SizedBox.expand(),
         ),
       );
 }

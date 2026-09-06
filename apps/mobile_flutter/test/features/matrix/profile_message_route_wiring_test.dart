@@ -23,7 +23,7 @@ void main() {
   test('message tab passes its existing canonical opener into room navigation',
       () {
     final source = File('lib/app_home.dart').readAsStringSync();
-    final matrixHome = source.split(': MatrixHomePage(')[1].split('1 =>')[0];
+    final matrixHome = source.split('0 => MatrixHomePage(')[1].split('1 =>')[0];
     expect(matrixHome, contains('onMessage: _openMessage'));
     final root = source.split('final class ContactsTabPage')[0];
     expect(root, contains('Future<void> _openMessage(ContactDetails contact)'));

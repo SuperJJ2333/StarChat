@@ -1,6 +1,13 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-06-cache-entry": {
+      "favoritePanel": "160px static preview, GIF badge, long-press delete; loading/error/retry retained",
+      "memberResults": "authoritative avatar, full body or media summary, unchanged message jump",
+      "startup": "read-only matching-account cached Messages until business verification; no spinner page",
+      "momentsEntry": "red numeric unseen-post badge; 99+ cap; consume actual displayed post IDs",
+      "figmaSync": "local export ledger only; remote tooling unavailable"
+    },
     "2026-09-06": {
       "chatMemberPicker": "custom avatar; remark then nickname then username",
       "chatMediaCategory": "date-grouped three-column thumbnails; no sender row; video play and duration",

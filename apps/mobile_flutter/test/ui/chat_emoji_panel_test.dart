@@ -121,9 +121,40 @@ void main() {
       ),
     );
 
+    await tester.pump();
     final image = tester.widget<Image>(find.byKey(const Key('custom-gif-1')));
-    expect(image.image, isA<MemoryImage>());
+    expect(image.image, isA<ResizeImage>());
     expect(image.gaplessPlayback, isTrue);
+  });
+
+  testWidgets('long press offers deletion and removes item only after success',
+      (tester) async {
+    var deleted = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: SizedBox(
+            height: 320,
+            child: ChatEmojiPanel(
+                initialTab: ChatEmojiTab.custom,
+                onEmojiSelected: (_) {},
+                onCustomSelected: (_) {},
+                onCustomRemoved: (_) async {
+                  deleted++;
+                },
+                customItems: [
+                  CustomEmojiItem(
+                      id: 'delete-me',
+                      isAnimated: false,
+                      loadPreview: () async => Uint8List(0))
+                ]))));
+    await tester.pump();
+    await tester.longPress(find.byKey(const Key('custom-button-delete-me')));
+    await tester.pumpAndSettle();
+    expect(find.text('删除'), findsOneWidget);
+    expect(deleted, 0);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(deleted, 1);
+    expect(find.byKey(const Key('custom-button-delete-me')), findsNothing);
   });
 
   testWidgets('switching tabs keeps the three-icon state in sync',

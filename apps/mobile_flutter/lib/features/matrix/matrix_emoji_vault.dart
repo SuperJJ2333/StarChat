@@ -1,10 +1,35 @@
 import 'dart:typed_data';
+import 'dart:convert';
+import 'dart:async';
 
 import 'package:matrix/matrix.dart';
 
 import 'emoji_vault.dart';
+import 'emoji_preview_cache.dart';
 
 const emojiVaultAccountDataType = 'com.changliao.emoji.vault';
+
+abstract interface class MatrixEmojiVaultMetadataBackend {
+  Future<List<EmojiVaultEvent>?> readCachedEvents(String roomId);
+}
+
+/// The vault is an event log, not a latest-messages list: recent-use events can
+/// push every add/remove event out of the first timeline window.
+Future<List<T>> loadCompleteEmojiHistory<T>({
+  required List<T> Function() events,
+  required bool Function() canRequestHistory,
+  required String Function() cursor,
+  required Future<void> Function() requestHistory,
+}) async {
+  while (canRequestHistory()) {
+    final before = '${cursor()}:${events().length}';
+    await requestHistory();
+    if (canRequestHistory() && before == '${cursor()}:${events().length}') {
+      throw StateError('Emoji history pagination did not advance');
+    }
+  }
+  return List.of(events());
+}
 
 abstract interface class MatrixEmojiVaultBackend {
   String? readStoredRoomId();
@@ -29,22 +54,67 @@ abstract interface class MatrixEmojiVaultBackend {
 }
 
 final class MatrixEmojiVault {
-  const MatrixEmojiVault._({
+  MatrixEmojiVault._({
     required this.roomId,
     required this.vault,
     required MatrixEmojiVaultBackend backend,
-  }) : _backend = backend;
+  }) : _backend = backend {
+    if (backend is MatrixSdkEmojiVaultBackend) {
+      final disk = EncryptedEmojiPreviewStore(
+          '${backend.client.homeserver}|${backend.client.userID}');
+      _previews = EmojiPreviewCache(
+          read: disk.read, write: disk.write, delete: disk.delete);
+    } else {
+      _previews = EmojiPreviewCache();
+    }
+  }
 
   final String roomId;
   final EmojiVault vault;
   final MatrixEmojiVaultBackend _backend;
+  late final EmojiPreviewCache _previews;
+  static final _sessions = Expando<Map<String, Future<MatrixEmojiVault>>>();
+
+  String _previewKey(EmojiVaultItem item) =>
+      '$roomId:${item.id}:${item.sha256}:160-v1';
+  Future<Uint8List> loadPreview(EmojiVaultItem item) =>
+      _previews.load(_previewKey(item), () => loadBytes(item));
+
+  Future<void> removeItem(String id) async {
+    final matches = vault.items.where((item) => item.id == id);
+    final item = matches.isEmpty ? null : matches.first;
+    await vault.remove(id);
+    if (item != null) {
+      try {
+        await _previews.remove(_previewKey(item));
+      } catch (_) {/* Accepted deletion must not be undone by cache I/O. */}
+    }
+  }
+
+  /// Metadata refresh never blocks opening the cached panel.
+  Future<void> refresh() async =>
+      vault.apply(await _backend.loadEvents(roomId));
 
   Future<Uint8List> loadBytes(EmojiVaultItem item) =>
       _backend.downloadAndDecrypt(roomId, item.encryptedFile);
 
   static Future<MatrixEmojiVault> open(
     MatrixEmojiVaultBackend backend,
-  ) async {
+  ) {
+    if (backend is MatrixSdkEmojiVaultBackend) {
+      final sessions = _sessions[backend.client] ??= {};
+      final account =
+          '${backend.client.homeserver}|${backend.client.userID}|${backend.readStoredRoomId()}';
+      return sessions[account] ??=
+          _open(backend).onError((Object error, StackTrace stack) {
+        sessions.remove(account);
+        Error.throwWithStackTrace(error, stack);
+      });
+    }
+    return _open(backend);
+  }
+
+  static Future<MatrixEmojiVault> _open(MatrixEmojiVaultBackend backend) async {
     var roomId = backend.readStoredRoomId();
     if (roomId == null || roomId.isEmpty) {
       roomId = await backend.createEncryptedVaultRoom();
@@ -58,7 +128,14 @@ final class MatrixEmojiVault {
       roomId: roomId,
     );
     final vault = EmojiVault(transport: transport);
-    vault.apply(await backend.loadEvents(roomId));
+    List<EmojiVaultEvent>? cached;
+    if (backend is MatrixEmojiVaultMetadataBackend) {
+      try {
+        cached = await (backend as MatrixEmojiVaultMetadataBackend)
+            .readCachedEvents(roomId);
+      } catch (_) {/* Fall back to authoritative history. */}
+    }
+    vault.apply(cached ?? await backend.loadEvents(roomId));
     return MatrixEmojiVault._(roomId: roomId, vault: vault, backend: backend);
   }
 }
@@ -87,10 +164,56 @@ final class _MatrixEmojiVaultTransport implements EmojiVaultTransport {
       backend.sendEncryptedEvent(roomId, event.matrixType, event.toJson());
 }
 
-final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
+final class MatrixSdkEmojiVaultBackend
+    implements MatrixEmojiVaultBackend, MatrixEmojiVaultMetadataBackend {
   MatrixSdkEmojiVaultBackend(this.client);
 
   final Client client;
+  late final _metadata = EncryptedEmojiPreviewStore(
+      '${client.homeserver}|${client.userID}|vault-metadata-v1');
+  final _knownEvents = <String, EmojiVaultEvent>{};
+  Future<void> _metadataWrites = Future.value();
+
+  @override
+  Future<List<EmojiVaultEvent>?> readCachedEvents(String roomId) async {
+    final bytes = await _metadata.read(roomId);
+    if (bytes == null) return null;
+    final raw = jsonDecode(utf8.decode(bytes)) as List;
+    final events = raw
+        .map((value) {
+          final map = Map<String, Object?>.from(value as Map);
+          return _decodeContent(
+              map['type']! as String,
+              Map<String, Object?>.from(map['content']! as Map),
+              '',
+              DateTime.utc(1970));
+        })
+        .whereType<EmojiVaultEvent>()
+        .toList();
+    for (final event in events) {
+      _knownEvents[event.eventId] = event;
+    }
+    return events;
+  }
+
+  Future<void> _persistEvents(
+      String roomId, Iterable<EmojiVaultEvent> events) async {
+    for (final event in events) {
+      _knownEvents[event.eventId] = event;
+    }
+    final write = _metadataWrites.then((_) async {
+      final bytes = Uint8List.fromList(utf8.encode(jsonEncode([
+        for (final event in _knownEvents.values)
+          {'type': event.matrixType, 'content': event.toJson()},
+      ])));
+      await _metadata.write(roomId, bytes);
+    });
+    _metadataWrites =
+        write.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    try {
+      await write;
+    } catch (_) {/* Sync remains usable if disk is unavailable. */}
+  }
 
   @override
   String? readStoredRoomId() =>
@@ -199,6 +322,9 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
       type: type,
     );
     if (eventId == null) throw StateError('Emoji vault event was not accepted');
+    final event =
+        _decodeContent(type, content, eventId, DateTime.now().toUtc());
+    if (event != null) await _persistEvents(roomId, [event]);
   }
 
   @override
@@ -206,10 +332,18 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
     final room = await _room(roomId);
     final timeline = await room.getTimeline();
     try {
-      return timeline.events
+      final all = await loadCompleteEmojiHistory<Event>(
+        events: () => timeline.events,
+        canRequestHistory: () => timeline.canRequestHistory,
+        cursor: () => room.prev_batch ?? '',
+        requestHistory: () => timeline.requestHistory(historyCount: 100),
+      );
+      final events = all
           .map(_decodeEvent)
           .whereType<EmojiVaultEvent>()
           .toList(growable: false);
+      await _persistEvents(roomId, events);
+      return _knownEvents.values.toList(growable: false);
     } finally {
       timeline.cancelSubscriptions();
     }
@@ -230,12 +364,23 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
     if (url == null || key is! Map || hashes is! Map) {
       throw StateError('Encrypted emoji descriptor is invalid');
     }
-    final downloadUri = await Uri.parse(url).getDownloadUri(client);
-    final ciphertext = (await client.httpClient.get(
-      downloadUri,
-      headers: {'authorization': 'Bearer ${client.accessToken}'},
-    ))
-        .bodyBytes;
+    final uri = Uri.parse(url);
+    var ciphertext = await client.database?.getFile(uri);
+    if (ciphertext == null) {
+      final downloadUri = await uri.getDownloadUri(client);
+      final response = await client.httpClient.get(
+        downloadUri,
+        headers: {'authorization': 'Bearer ${client.accessToken}'},
+      );
+      if (response.statusCode != 200) throw StateError('Emoji download failed');
+      ciphertext = response.bodyBytes;
+      // Cache ciphertext, never the decrypted original or its keys.
+      final database = client.database;
+      if (database != null && ciphertext.length <= database.maxFileSize) {
+        await database.storeFile(
+            uri, ciphertext, DateTime.now().millisecondsSinceEpoch);
+      }
+    }
     final plaintext = await client.nativeImplementations.decryptFile(
       EncryptedFile(
         data: ciphertext,
@@ -251,10 +396,16 @@ final class MatrixSdkEmojiVaultBackend implements MatrixEmojiVaultBackend {
   EmojiVaultEvent? _decodeEvent(Event event) {
     if (!event.type.startsWith('com.changliao.emoji.')) return null;
     final content = Map<String, Object?>.from(event.content);
+    return _decodeContent(
+        event.type, content, event.eventId, event.originServerTs.toUtc());
+  }
+
+  EmojiVaultEvent? _decodeContent(String type, Map<String, Object?> content,
+      String eventId, DateTime fallbackAt) {
     final at = DateTime.tryParse(content['at']?.toString() ?? '')?.toUtc() ??
-        event.originServerTs.toUtc();
-    final stableId = content['event_id']?.toString() ?? event.eventId;
-    switch (event.type) {
+        fallbackAt;
+    final stableId = content['event_id']?.toString() ?? eventId;
+    switch (type) {
       case 'com.changliao.emoji.add':
         final rawItem = content['item'];
         if (rawItem is! Map) return null;

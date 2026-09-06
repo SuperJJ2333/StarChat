@@ -64,7 +64,8 @@ void main() {
       matrix: GateMatrix(false),
     );
     await tester.pumpWidget(appFor(controller));
-    expect(find.text('正在恢复登录状态…'), findsOneWidget);
+    expect(find.text('消息'), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
     expect(find.text('LOGIN'), findsNothing);
   });
 

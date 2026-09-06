@@ -4,13 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/emoji_vault.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_emoji_vault.dart';
 
-final class FakeMatrixEmojiVaultBackend implements MatrixEmojiVaultBackend {
+final class FakeMatrixEmojiVaultBackend
+    implements MatrixEmojiVaultBackend, MatrixEmojiVaultMetadataBackend {
   String? storedRoomId;
   bool encrypted = true;
   var creates = 0;
   var stores = 0;
   final events = <EmojiVaultEvent>[];
   final sentTypes = <String>[];
+  List<EmojiVaultEvent>? cachedEvents;
+  bool offline = false;
+  @override
+  Future<List<EmojiVaultEvent>?> readCachedEvents(String roomId) async =>
+      cachedEvents;
 
   @override
   String? readStoredRoomId() => storedRoomId;
@@ -31,7 +37,10 @@ final class FakeMatrixEmojiVaultBackend implements MatrixEmojiVaultBackend {
   Future<bool> isRoomEncrypted(String roomId) async => encrypted;
 
   @override
-  Future<List<EmojiVaultEvent>> loadEvents(String roomId) async => events;
+  Future<List<EmojiVaultEvent>> loadEvents(String roomId) async {
+    if (offline) throw StateError('offline');
+    return events;
+  }
 
   @override
   Future<Uint8List> downloadAndDecrypt(
@@ -62,6 +71,61 @@ final class FakeMatrixEmojiVaultBackend implements MatrixEmojiVaultBackend {
 }
 
 void main() {
+  test('warm metadata opens offline without waiting for network history',
+      () async {
+    final backend = FakeMatrixEmojiVaultBackend()
+      ..storedRoomId = '!vault'
+      ..offline = true;
+    backend.cachedEvents = [
+      EmojiVaultEvent.add(
+          eventId: 'old',
+          at: DateTime.utc(2020),
+          item: EmojiVaultItem(
+              id: 'favorite',
+              sha256: 'hash',
+              mimeType: 'image/gif',
+              encryptedFile: const {},
+              createdAt: DateTime.utc(2020),
+              isAnimated: true))
+    ];
+    final session = await MatrixEmojiVault.open(backend);
+    expect(session.vault.items.single.id, 'favorite');
+    await expectLater(session.refresh(), throwsStateError);
+    expect(session.vault.items.single.id, 'favorite');
+  });
+  test('history replay retains older favorites beyond 50 recent events',
+      () async {
+    final values = List.generate(
+        50,
+        (i) => EmojiVaultEvent.recent(
+            eventId: 'recent-$i',
+            at: DateTime.utc(2026, 1, 1, 0, i),
+            itemIds: ['favorite']));
+    var more = true;
+    var cursor = 'p1';
+    final result = await loadCompleteEmojiHistory<EmojiVaultEvent>(
+        events: () => values,
+        canRequestHistory: () => more,
+        cursor: () => cursor,
+        requestHistory: () async {
+          values.add(EmojiVaultEvent.add(
+              eventId: 'old-add',
+              at: DateTime.utc(2020),
+              item: EmojiVaultItem(
+                  id: 'favorite',
+                  sha256: 'hash',
+                  mimeType: 'image/gif',
+                  encryptedFile: const {},
+                  createdAt: DateTime.utc(2020),
+                  isAnimated: true)));
+          cursor = 'p2';
+          more = false;
+        });
+    expect(result.length, 51);
+    final backend = FakeMatrixEmojiVaultBackend()..events.addAll(result);
+    final session = await MatrixEmojiVault.open(backend);
+    expect(session.vault.items.single.id, 'favorite');
+  });
   test('open creates one encrypted self-room and persists only its room id',
       () async {
     final backend = FakeMatrixEmojiVaultBackend();

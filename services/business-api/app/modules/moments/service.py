@@ -122,17 +122,24 @@ class MomentsService:
                     "THREE_DAYS": timedelta(days=3), "ONE_MONTH": timedelta(days=30),
                     "SIX_MONTHS": timedelta(days=183),
                 }[preference.history_range]
-            rows = session.scalars(
-                select(Moment).where(Moment.deleted_at.is_(None), Moment.status == "PUBLISHED")
-                .order_by(Moment.created_at.desc(), Moment.id.desc()).limit(500)
-            ).all()
+            statement = select(Moment).where(Moment.deleted_at.is_(None), Moment.status == "PUBLISHED", Moment.author_id.in_(self._friend_ids(session, actor) | {actor}))
+            if marker and mode == 'latest':
+                from sqlalchemy import and_, or_
+                marker_time, marker_id = marker
+                statement = statement.where(or_(Moment.created_at < marker_time, and_(Moment.created_at == marker_time, Moment.id < marker_id)))
+            statement = statement.order_by(Moment.created_at.desc(), Moment.id.desc())
+            if mode != 'latest':
+                statement = statement.limit(500)
+            rows = session.scalars(statement.execution_options(yield_per=100))
             policy = VisibilityPolicy(session)
-            visible_rows = [
-                moment for moment in rows
-                if policy.can_view(actor, moment)
-                and (cutoff is None or (moment.created_at if moment.created_at.tzinfo else moment.created_at.replace(tzinfo=timezone.utc)) >= cutoff)
-                and (not q or q.casefold() in f"{moment.text} {moment.location or ''}".casefold())
-            ]
+            visible_rows = []
+            for moment in rows:
+                if (policy.can_view(actor, moment)
+                    and (cutoff is None or (moment.created_at if moment.created_at.tzinfo else moment.created_at.replace(tzinfo=timezone.utc)) >= cutoff)
+                    and (not q or q.casefold() in f"{moment.text} {moment.location or ''}".casefold())):
+                    visible_rows.append(moment)
+                    if mode == 'latest' and len(visible_rows) > limit:
+                        break
             if mode == "recommended" and (preference is None or preference.personalized_recommendations):
                 def score(moment):
                     likes = len(session.scalars(select(MomentLike).where(MomentLike.moment_id == moment.id)).all())
@@ -144,6 +151,39 @@ class MomentsService:
                 visible_rows = [moment for moment in visible_rows if (moment.created_at, moment.id) < (marker_time, marker_id)]
             page_rows = visible_rows[:limit]
             return {'items': [self.dto(session, moment, actor) for moment in page_rows], 'next_cursor': self._encode_cursor(page_rows[-1]) if len(visible_rows) > limit else None}
+
+    def new_posts(self, actor, since=None, cursor=None):
+        now = datetime.now(timezone.utc)
+        if since is None:
+            return {'items': [], 'next_cursor': None, 'server_time': now.isoformat()}
+        marker = self._decode_cursor(cursor)
+        with self.factory() as session:
+            preference = session.get(MomentsPreference, actor)
+            cutoff = since
+            if preference and preference.history_range != 'ALL':
+                cutoff = max(cutoff, now - {'THREE_DAYS': timedelta(days=3), 'ONE_MONTH': timedelta(days=30), 'SIX_MONTHS': timedelta(days=183)}[preference.history_range])
+            statement = select(Moment).where(
+                Moment.deleted_at.is_(None), Moment.status == 'PUBLISHED',
+                Moment.author_id != actor, Moment.created_at >= cutoff,
+                Moment.author_id.in_(self._friend_ids(session, actor)),
+            ).order_by(Moment.created_at.desc(), Moment.id.desc())
+            if marker:
+                from sqlalchemy import and_, or_
+                marker_time, marker_id = marker
+                statement = statement.where(or_(Moment.created_at < marker_time, and_(Moment.created_at == marker_time, Moment.id < marker_id)))
+            policy = VisibilityPolicy(session)
+            visible = []
+            # Stream metadata candidates: unrelated posts must never consume a
+            # global cap and hide a friend's newer post from the badge.
+            for row in session.scalars(statement.execution_options(yield_per=100)):
+                if policy.can_view(actor, row):
+                    visible.append(row)
+                    if len(visible) == 101:
+                        break
+            page = visible[:100]
+            return {'items': [{'id': row.id, 'created_at': row.created_at.isoformat()} for row in page],
+                    'next_cursor': self._encode_cursor(page[-1]) if len(visible) > 100 else None,
+                    'server_time': now.isoformat()}
 
     def detail(self, actor, moment_id):
         with self.factory() as session:

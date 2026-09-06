@@ -8,17 +8,24 @@ import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../moments/moments_page.dart';
+import '../moments/moments_unread_controller.dart';
+import '../../ui/chat/wechat_unread_badge.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../search/global_search_page.dart';
 
 final class DiscoveryPage extends StatelessWidget {
   const DiscoveryPage(
-      {super.key, required this.api, this.matrix, this.identityCache});
+      {super.key,
+      required this.api,
+      this.matrix,
+      this.identityCache,
+      this.unreadController});
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient? matrix;
   final ProfileRepository? identityCache;
+  final MomentsUnreadController? unreadController;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -59,6 +66,9 @@ final class DiscoveryPage extends StatelessWidget {
                                 builder: (_) => MomentsPage(
                                       api: api,
                                       identityCache: cache,
+                                      onPostsDisplayed:
+                                          unreadController?.markDisplayed,
+                                      unreadChanges: unreadController,
                                     )),
                           );
                         },
@@ -92,7 +102,20 @@ final class DiscoveryPage extends StatelessWidget {
                     color: WeChatColors.textSecondary,
                   ),
                 ),
-                trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
+                trailing: ListenableBuilder(
+                  listenable:
+                      unreadController ?? const AlwaysStoppedAnimation(0),
+                  builder: (_, __) =>
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                    if ((unreadController?.count ?? 0) > 0) ...[
+                      WeChatUnreadBadge(
+                          key: const Key('moments-new-posts-badge'),
+                          count: unreadController!.count),
+                      const SizedBox(width: 8),
+                    ],
+                    const Icon(CupertinoIcons.chevron_right, size: 12),
+                  ]),
+                ),
                 onTap: () {
                   final cache = identityCache;
                   if (cache == null) return;
@@ -102,6 +125,8 @@ final class DiscoveryPage extends StatelessWidget {
                       builder: (_) => MomentsPage(
                         api: api,
                         identityCache: cache,
+                        onPostsDisplayed: unreadController?.markDisplayed,
+                        unreadChanges: unreadController,
                       ),
                     ),
                   );

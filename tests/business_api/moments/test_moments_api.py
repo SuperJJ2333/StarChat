@@ -321,3 +321,44 @@ async def test_storage_resign_recovers_expired_tokens():
         unquote(revived.split("/content/")[1].split("?")[0]).encode("ascii")
     ).decode("utf-8")
     assert object_key == "moments/p1.png"
+
+@pytest.mark.asyncio
+async def test_new_posts_metadata_baseline_privacy_and_no_global_500_cap(ctx):
+    from app.modules.moments.models import Moment
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        baseline = await client.get('/api/v1/moments/new-posts', headers=auth(settings, 'u2'))
+        assert baseline.status_code == 200
+        assert baseline.json()['items'] == []
+        since = baseline.json()['server_time']
+        now = datetime.now(timezone.utc)
+        with app.state.session_factory.begin() as session:
+            for i in range(505):
+                session.add(Moment(id=f'noise-{i}', author_id='u3', text='', visibility='PUBLIC', image_urls=[], status='PUBLISHED', idempotency_key=f'noise-{i}', created_at=now + timedelta(microseconds=i)))
+            session.add(Moment(id='friend-post', author_id='u1', text='secret body', visibility='FRIENDS', image_urls=['secret'], status='PUBLISHED', idempotency_key='friend-post', created_at=now))
+            session.add(Moment(id='self-post', author_id='u2', text='', visibility='PUBLIC', image_urls=[], status='PUBLISHED', idempotency_key='self-post', created_at=now))
+        result = await client.get('/api/v1/moments/new-posts', params={'since': since}, headers=auth(settings, 'u2'))
+        assert result.status_code == 200
+        assert [item['id'] for item in result.json()['items']] == ['friend-post']
+        assert set(result.json()['items'][0]) == {'id', 'created_at'}
+
+@pytest.mark.asyncio
+async def test_new_posts_cursor_auth_and_directional_privacy(ctx):
+    from app.modules.moments.models import Moment
+    app, settings = ctx
+    now = datetime.now(timezone.utc)
+    with app.state.session_factory.begin() as session:
+        for i in range(105):
+            session.add(Moment(id=f'post-{i:03}', author_id='u1', text='', visibility='FRIENDS', image_urls=[], status='PUBLISHED', idempotency_key=f'post-{i}', created_at=now))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        assert (await client.get('/api/v1/moments/new-posts')).status_code == 401
+        params = {'since': (now - timedelta(seconds=1)).isoformat()}
+        first = (await client.get('/api/v1/moments/new-posts', params=params, headers=auth(settings, 'u2'))).json()
+        second = (await client.get('/api/v1/moments/new-posts', params={**params, 'cursor': first['next_cursor']}, headers=auth(settings, 'u2'))).json()
+        assert len(first['items']) == 100
+        assert len(second['items']) == 5
+        assert len({i['id'] for i in first['items'] + second['items']}) == 105
+        with app.state.session_factory.begin() as session:
+            session.add(ContactProfile(id='hidden-profile', owner_id='u2', contact_id='u1', remark='', moments_permission='HIDE_THEIRS'))
+        hidden = (await client.get('/api/v1/moments/new-posts', params=params, headers=auth(settings, 'u2'))).json()
+        assert hidden['items'] == []

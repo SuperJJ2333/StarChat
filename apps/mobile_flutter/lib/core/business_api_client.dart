@@ -680,8 +680,16 @@ final class BusinessApiClient
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> momentsFeed({String mode = 'recommended'}) =>
-      getJson('/moments/feed?mode=$mode');
+  Future<Map<String, dynamic>> momentsFeed({String mode = 'recommended', String? cursor}) =>
+      getJson('/moments/feed${Uri(queryParameters: {
+        'mode': mode, if (cursor != null) 'cursor': cursor,
+      })}');
+
+  Future<Map<String, dynamic>> momentNewPosts({String? since, String? cursor}) =>
+      getJson('/moments/new-posts${Uri(queryParameters: {
+        if (since != null) 'since': since,
+        if (cursor != null) 'cursor': cursor,
+      }).toString()}');
   Future<Map<String, dynamic>> searchMoments(String query) =>
       getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
   Future<Map<String, dynamic>> publishMoment(
