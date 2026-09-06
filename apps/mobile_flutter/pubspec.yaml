@@ -13,6 +13,8 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   shared_preferences: 2.5.3
   matrix:
+    # Tracked Matrix 0.34.0 fork; preserves incoming-call media permission fixes.
+    # Provenance and upgrade notes: third_party/matrix/CHATFLOW_PATCH.md.
     path: third_party/matrix
   uuid: ^4.5.1
   cupertino_icons: ^1.0.8

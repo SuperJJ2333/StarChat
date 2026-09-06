@@ -48,8 +48,19 @@ docs/verification/artifacts/2026-09-05/background-call-signature/
 docs/verification/artifacts/2026-09-05/friendship-deploy/
 docs/verification/artifacts/2026-09-05/incoming-call-permission-dedup/
 docs/verification/artifacts/2026-09-05/privacy-forward/
-# vendored matrix fork（thrid_party 源码快照）
-apps/mobile_flutter/third_party/
+# Keep local third-party scratch packages ignored, but ship the patched Matrix
+# path dependency required by clean CI checkouts.
+apps/mobile_flutter/third_party/*
+!apps/mobile_flutter/third_party/matrix/
+apps/mobile_flutter/third_party/matrix/*
+!apps/mobile_flutter/third_party/matrix/lib/
+!apps/mobile_flutter/third_party/matrix/pubspec.yaml
+!apps/mobile_flutter/third_party/matrix/analysis_options.yaml
+!apps/mobile_flutter/third_party/matrix/LICENSE
+!apps/mobile_flutter/third_party/matrix/README.md
+!apps/mobile_flutter/third_party/matrix/CHANGELOG.md
+!apps/mobile_flutter/third_party/matrix/CHATFLOW_PATCH.md
+!apps/mobile_flutter/third_party/matrix/UPSTREAM_SHA256.json
 # 其余大体量验证工件（APK/日志快照；结论在各验证 md 文档中）
 docs/verification/artifacts/2026-09-05/call-echo-scan/
 docs/verification/artifacts/2026-09-05/call-dismiss-release/
