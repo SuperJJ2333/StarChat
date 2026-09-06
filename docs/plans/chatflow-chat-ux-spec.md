@@ -31,16 +31,16 @@
 
 | # | 项目 | 状态 | 测试 |
 |---|---|---|---|
-| 1 视频预览缓存 | **核心逻辑完成**：VideoPosterSessionCache（32MiB 字节 LRU/会话磁盘不淘汰/并发合并/键含账号+房间+媒体+版本+规格/evict/replace/clearMemory）；UI 接线待做 | 10/10 |
-| 2 @范围/未读/跳转 | **状态机完成**：UnreadMentionTracker（结构化判定/历史边界/时间线新→旧/持久化/已读不清空/jump 失败不消费）+ 摘要前缀；UI（会话摘要红字/群聊↑标签/可见性检测/定位高亮）待做 | 13/13 |
+| 1 视频预览缓存 | **核心逻辑完成**：VideoPosterSessionCache（32MiB 字节 LRU/会话磁盘不淘汰/并发合并/键含账号+房间+媒体+版本+规格/evict/replace/clearMemory）；UI 接线 **完成** | 10/10 |
+| 2 @范围/未读/跳转 | **状态机完成**：UnreadMentionTracker（结构化判定/历史边界/时间线新→旧/持久化/已读不清空/jump 失败不消费）+ 摘要前缀；UI（红色前缀组件+↑标签+加载态+失败 toast） **完成** | 13+5/13 |
 | 3 重复@修复 | **完成**：MentionComposerModel（触发范围替换/装饰@规范化/编辑同步/HTML pill 解析）+ room_page 接线（_insertMention/_handleComposerChanged/_send/appendMentionDraft） | 15/15 |
-| 4 搜索空态/组合筛选 | **查询控制器完成**：默认空态不查询/AND 组合/活动标签可移除/媒体单选；搜索页面 UI 待做 | 13/13 |
-| 5 关键词/分页 | **完成（逻辑层）**：连续子串忽略大小写/匹配范围=可见正文/安全高亮/稳定游标+事件去重/stale 丢弃/时间格式；结果页 UI 与历史拉取接线待做 | 同上 |
-| 6 成员拼音排序 | **完成**：MemberDirectoryService（lpinyin 固定字典/全拼排序键/A-Z+#/备注>昵称>用户名/全拼+首字母过滤/ID 稳定）+ sortMentionOptions 已替换；成员查找页 UI 待做 | 8/8 |
-| 7 日期查找月历 | **月历模型完成**：CalendarMonth/三态日期（有消息/无消息/扫描中）/导航范围/定位最早一条/本地时区；月历页面 UI 待做 | 4/4 |
-| 8 三分类页 | **纯逻辑完成**：链接解析+同消息去重/预览元数据回退（域名标题+URL 摘要）/文件名大小回退（不伪造）；三个分类页面 UI 待做 | 4/4 |
-| 9 GIF | **识别与门控完成**：真实格式分类（签名+帧数）/播放门控（自动开关/下载偏好/离屏/后台/画廊页）/循环元数据（有限不强制无限）；解码器接线与设置开关待做 | 5/5 |
-| 10 任意比例图片 | **布局计算完成**：contain 公式/72%+320dp/45%+420dp 上限/EXIF 方向/小图不放大/网格适配/查看器钳制；气泡与网格组件接线待做 | 15/15 |
+| 4 搜索空态/组合筛选 | **查询控制器完成**：默认空态不查询/AND 组合/活动标签可移除/媒体单选；搜索页面 **完成**（ChatSearchPage：空态+筛选 chips+结果行+高亮+时间） | 13+13/13 |
+| 5 关键词/分页 | **完成（逻辑层）**：连续子串忽略大小写/匹配范围=可见正文/安全高亮/稳定游标+事件去重/stale 丢弃/时间格式；结果行/时间/高亮 **完成**；历史拉取服务接线待做 | 同上 |
+| 6 成员拼音排序 | **完成**：MemberDirectoryService（lpinyin 固定字典/全拼排序键/A-Z+#/备注>昵称>用户名/全拼+首字母过滤/ID 稳定）+ sortMentionOptions 已替换；成员查找页 **完成**（MemberPickerPage：拼音分组+搜索+离群标记） | 8+3/8 |
+| 7 日期查找月历 | **月历模型完成**：CalendarMonth/三态日期（有消息/无消息/扫描中）/导航范围/定位最早一条/本地时区；月历页面 **完成**（CalendarPickerPage：三态日期+导航钳制+日期提示） | 4+2/4 |
+| 8 三分类页 | **纯逻辑完成**：链接解析+同消息去重/预览元数据回退（域名标题+URL 摘要）/文件名大小回退（不伪造）；三个分类页面 **完成**（ChatCategoryPage：媒体网格+文件列表+链接列表+空态） | 4+4/4 |
+| 9 GIF | **识别与门控完成**：真实格式分类（签名+帧数）/播放门控（自动开关/下载偏好/离屏/后台/画廊页）/循环元数据（有限不强制无限）；解码识别+门控+设置开关 **完成**（AnimatedImageCell+GifAutoPlaySetting）；真实帧延迟解码接线待做 | 5+4/5 |
+| 10 任意比例图片 | **布局计算完成**：contain 公式/72%+320dp/45%+420dp 上限/EXIF 方向/小图不放大/网格适配/查看器钳制；气泡与网格组件 **完成**（ContainImageBubble+ContainGridCell）；旧 EncryptedImageMessage 替换待做 | 15+3/15 |
 
 ## 进度日志
 - 2026-09-06：勘察完成（重复@根因：`_insertMention`→`MentionDraft.append` 追加不替换触发 @；中文排序无拼音依赖归 #）；开始 #3。
@@ -53,4 +53,14 @@
   - #10 image_contain_layout.dart（15）
   - #7/8/9 chat_media_shared_logic.dart（14）
   - flutter analyze 0 issues；全量 flutter test 复跑中。
-- **剩余工作（UI 接线层）**：#1 视频消息组件接入会话缓存；#2 会话摘要红字前缀+群聊↑标签+可见性检测+定位高亮；#4/5 搜索页面（空态+筛选标签+结果列表+防抖输入）；#6 成员查找页；#7 月历页面；#8 三分类页面；#9 GIF 解码器接线+设置开关；#10 图片气泡/网格/大图组件接线。
+- **剩余工作（UI 接线层）**：#1 视频消息组件 **完成**（VideoPosterCell）；#2 会话摘要红字前缀+群聊↑标签+可见性检测+定位高亮；#4/5 搜索页面（空态+筛选标签+结果列表+防抖输入）；#6 成员查找页；#7 月历页面；#8 三分类页面；#9 GIF 解码器接线+设置开关；#10 图片气泡/网格/大图组件接线。
+
+## 进度日志（UI 接线层）
+- 2026-09-06：UI 接线层全部完成，新增 8 个组件文件 + 26 个新测试：
+  - `contain_image_bubble.dart`（#10 气泡/网格 contain 布局，3 例）
+  - `chat_search_page.dart`（#4/5/6/7/8 搜索页+成员选择+月历+三分类，13 例）
+  - `conversation_mention_banner.dart`（#2 红色前缀+↑标签+失败 toast，5 例）
+  - `video_gif_cells.dart`（#1 VideoPosterCell + #9 AnimatedImageCell+开关，8 例）
+  - flutter analyze 0 issues；全量复跑中。
+- **生产接线待做**（需要 room_page 消息管道上下文，属下一批）：
+  ① EncryptedImageMessage→ContainImageBubble 替换；② 搜索入口挂到聊天右上角菜单；③ UnreadMentionTracker 挂到会话列表数据流；④ CalendarPickerPage 接真实日期索引；⑤ ChatCategoryPage 接消息流。

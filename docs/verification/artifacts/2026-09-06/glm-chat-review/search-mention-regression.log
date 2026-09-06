@@ -1,0 +1,55 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart
+00:00 +0: viewed mention must not reappear after repeated sync or restore
+00:00 +0 -1: viewed mention must not reappear after repeated sync or restore [E]
+  Expected: false
+    Actual: <true>
+  
+  package:matcher                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                     expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-chat-review\search_mention_regression_test.dart 21:5  main.<fn>
+  
+00:00 +0 -1: clearing all search conditions invalidates the in-flight result
+00:00 +0 -2: clearing all search conditions invalidates the in-flight result [E]
+  Expected: true
+    Actual: <false>
+  
+  package:matcher                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                     expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-chat-review\search_mention_regression_test.dart 35:5  main.<fn>
+  
+00:00 +0 -2: changing keyword invalidates old result during debounce window
+00:00 +0 -3: changing keyword invalidates old result during debounce window [E]
+  Expected: true
+    Actual: <false>
+  
+  package:matcher                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                     expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-chat-review\search_mention_regression_test.dart 50:5  main.<fn>
+  
+00:00 +0 -3: old pagination completing after a new query must be stale
+00:00 +0 -4: old pagination completing after a new query must be stale [E]
+  Expected: true
+    Actual: <false>
+  
+  package:matcher                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                     expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-chat-review\search_mention_regression_test.dart 66:5  main.<fn>
+  
+00:00 +0 -4: superseded debounce future must settle instead of hanging
+00:00 +0 -5: superseded debounce future must settle instead of hanging [E]
+  Expected: true
+    Actual: <false>
+  
+  package:matcher                                                                                        expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                     expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-chat-review\search_mention_regression_test.dart 79:5  main.<fn>
+  
+00:00 +0 -5: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart: changing keyword invalidates old result during debounce window
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart: clearing all search conditions invalidates the in-flight result
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart: old pagination completing after a new query must be stale
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart: superseded debounce future must settle instead of hanging
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/search_mention_regression_test.dart: viewed mention must not reappear after repeated sync or restore

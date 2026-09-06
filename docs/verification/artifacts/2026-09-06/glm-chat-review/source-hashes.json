@@ -1,0 +1,50 @@
+[
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\room_page.dart",
+    "Hash": "D84B03F3E1451B57AA60CBBCBAA03035B94C8FB725B196B2585F6ACEF70C85E4"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\mention_composer_model.dart",
+    "Hash": "5368BCB85BF735B0332F461CD8669BDDDE0C279699F166295619E180E4D4E4CC"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\video_poster_session_cache.dart",
+    "Hash": "C141777F0C2641BBBE67373B4EE11FDF1DF7E3523BC9B1F7DF04B7C8232D6F3E"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\unread_mention_tracker.dart",
+    "Hash": "621E6F70C15E0D45B745C68A3675467F8BFFD8C01302F3528FEECF5CD20BD695"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\chat_search_query_controller.dart",
+    "Hash": "738C86BFC104F32A3B5D765B7E8CDD5EDD569DC87EE3961CF88FACAA335B0790"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\image_contain_layout.dart",
+    "Hash": "E70C17081EE97E46E78E29699698F07136A5BF5D4661C1E8D184287375061F16"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\chat_media_shared_logic.dart",
+    "Hash": "F509D753AEAC914363180CA32356104623372E188F3AC47639E3421A02C71FF8"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\contacts\\member_directory_service.dart",
+    "Hash": "296DFC909378F9F21BAA1307433C56E3BD858816FD82C38367DD00CA930D7F2D"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\features\\matrix\\group_chat_info_page.dart",
+    "Hash": "7E8B66F51B6EED484ED9724AF6AD473E96A6252C1F2A69A1EEACC0082D63367A"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\ui\\chat\\chat_search_page.dart",
+    "Hash": "1913ACC6DF581823F7896D65A330336EED47FE1C979DC882E30BECB6EEC32159"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\ui\\chat\\contain_image_bubble.dart",
+    "Hash": "F8B8551273744C624D1A8121A34D53714FA919E09B4220B40065E1B8368F1E28"
+  },
+  {
+    "Path": "D:\\pythonProject\\outsource\\StarChat\\apps\\mobile_flutter\\lib\\ui\\chat\\encrypted_media_view.dart",
+    "Hash": "9DA96DC096F4D48D3D922D4F43403FE313AC3BD2EDC29AD8ED8795504560B3B5"
+  }
+]

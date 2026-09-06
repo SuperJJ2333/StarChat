@@ -1,0 +1,7 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+Analyzing 10 items...                                           
+
+warning - Duplicate import. Try removing all but one import of the library - lib\ui\chat\chat_search_page.dart:9:8 - duplicate_import
+   info - 'minSize' is deprecated and shouldn't be used. Use minimumSize instead. This feature was deprecated after v3.28.0-3.0.pre. Try replacing the use of the deprecated member with the replacement - lib\ui\chat\chat_search_page.dart:164:9 - deprecated_member_use
+
+2 issues found. (ran in 6.0s)

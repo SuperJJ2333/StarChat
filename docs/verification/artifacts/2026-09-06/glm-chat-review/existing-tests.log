@@ -1,0 +1,98 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart
+00:00 +0: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） 输入 @→选择"兄弟"：输入框为一个 @兄弟，无重复
+00:00 +1: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） 带查询片段：@兄 后选中 → @兄 被整体替换为 @兄弟
+00:00 +2: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） 句中选中（光标在句中）：仅替换触发片段，后文保留
+00:00 +3: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） 连续选择两人：两个 token，互不重复
+00:00 +4: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） 名称自带装饰性 @（@兄弟）：仅本次 token 规范化，无双 @@
+00:00 +5: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 替换触发范围（核心缺陷：不再追加双 @） @所有人：token 固定"所有人"，收件为成员范围
+00:00 +6: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 编辑同步（删除后不再提醒） 删除整个 token：发送不再提醒该用户
+00:00 +7: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 编辑同步（删除后不再提醒） 编辑 token 内部：token 失效
+00:00 +8: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 编辑同步（删除后不再提醒） token 之前插入文本：token 范围平移，仍有效
+00:00 +9: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 历史富文本解析（仅合法用户链接） 合法提及 pill：识别目标 userId
+00:00 +10: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 历史富文本解析（仅合法用户链接） @@兄弟 普通文本：不能推断收件人
+00:00 +11: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 历史富文本解析（仅合法用户链接） 非提及 permalink（label 不以 @ 开头）：不计入
+00:00 +12: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 历史富文本解析（仅合法用户链接） 含多个 @ 的历史消息不崩溃
+00:00 +13: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 触发状态机 触发字符被删除：面板应关闭
+00:00 +14: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/mention_composer_model_test.dart: 触发状态机 普通 @ 字符无触发记录：不弹面板（私聊场景调用方判 isGroup）
+00:00 +15: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 分组：阿明、Bob、陈晨、张三、123 分别归入 A、B、C、Z、#
+00:00 +16: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 排序键：全拼次序 + 用户 ID 稳定（同名不混）
+00:00 +17: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 备注优先：修改备注后排序名变化
+00:00 +18: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 过滤：张、zhang、zs 均命中"张三"；昵称含关键词但正文逻辑不适用（成员名匹配即命中）
+00:00 +19: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 过滤：备注入查询；无匹配返回空
+00:00 +20: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 组合入口：排序+过滤共用同一规则
+00:00 +21: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 分桶：# 桶在末尾
+00:00 +22: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/member_directory_service_test.dart: 英文子串忽略大小写匹配昵称/用户名
+00:00 +23: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 验收：零重复加载 首次显示 A 后，滚动移出/移入与退出/重进房间 10 次：加载次数 1
+00:00 +24: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 验收：零重复加载 淘汰内存图片后再次显示：命中磁盘，加载次数仍为 1
+00:00 +25: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 验收：零重复加载 并发同键：只执行一次加载任务
+00:00 +26: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 键与失效 缓存键包含账号/房间/媒体/版本/规格；账号切换不可见
+00:00 +27: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 键与失效 媒体版本变化：新键自然失效旧项
+00:00 +28: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 键与失效 撤回/删除：evict 移除对应项（内存+磁盘）
+00:00 +29: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 键与失效 会话销毁/退出账号：clearMemory 清空（页面重建不调用）
+00:00 +30: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 例外路径（缓存保证例外，单独标注） 加载器失败：返回可重试状态，不自动重试循环
+00:00 +31: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 例外路径（缓存保证例外，单独标注） 磁盘损坏（读抛异常）：降级加载器；磁盘写失败不影响显示
+00:00 +32: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/video_poster_session_cache_test.dart: 例外路径（缓存保证例外，单独标注） 会话存续期间：磁盘不按 LRU 淘汰已成功项
+00:00 +33: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 判定规则 结构化提及包含本人 → 计入；不凭正文 @ 判断
+00:00 +34: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 判定规则 本人发送 / 已撤回删除 → 不计入；撤回后移除
+00:00 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 判定规则 @所有人：本人属于提醒范围 → 计入
+00:00 +36: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 判定规则 历史边界：初次建立的已读位置之前不加入；重新解密不重复
+00:00 +37: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 验收：逐条跳转与清空 A、B、C 时间递增 → 依次定位 C→B→A；全部查看后清空
+00:00 +38: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 验收：逐条跳转与清空 查看 C 后收到 D → 下次定位 D；继续 B→A
+00:00 +39: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 验收：逐条跳转与清空 手动查看 B → 跳转队列不再包含 B
+00:00 +40: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 验收：逐条跳转与清空 跳转失败不消费记录
+00:00 +41: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 验收：逐条跳转与清空 普通已读推进不清空未查看 @
+00:00 +42: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 持久化（账号隔离） 序列化/反序列化保持待查看集合与排序
+00:00 +43: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 持久化（账号隔离） 重启后可恢复；退出重进不清空（边界不回退）
+00:00 +44: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 持久化（账号隔离） 另一账号的持久化数据不可读（键隔离由存储层保证；数据自带账号）
+00:00 +45: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/unread_mention_tracker_test.dart: 会话摘要前缀 [有人@你] 为独立前缀片段，不覆盖原摘要
+00:00 +46: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 首次进入（无条件）为空态：不查询
+00:00 +47: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 只输入关键词即可出结果；空白关键词视为未输入
+00:00 +48: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 成员 + 关键词 AND：仅显示该成员命中消息
+00:00 +49: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 清空关键词保留成员 → 该成员全部记录
+00:00 +50: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 活动条件可移除；清除全部恢复空态
+00:00 +51: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #4 默认空态与组合筛选 媒体分类单选：切换覆盖
+00:00 +52: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #5 匹配范围与分页 Hello 命中 hello（忽略大小写）；昵称含关键词正文不含 → 不命中
+00:00 +53: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #5 匹配范围与分页 分类匹配：图片视频含说明文字匹配；文件匹配正文/文件名；链接匹配正文与 URL 文字
+00:00 +54: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #5 匹配范围与分页 分页：51 条数据每页 50 → 第二页补齐；事件 ID 去重不重复
+00:00 +55: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #5 匹配范围与分页 快速更换关键词：旧查询迟到结果被标记 stale，不覆盖新结果
+00:00 +56: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: #5 匹配范围与分页 无匹配 → 空结果（UI 显示"未找到"）；查询中 → loading 状态
+00:00 +57: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: 高亮与时间 安全文本高亮片段（不执行 HTML）
+00:00 +58: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_search_query_controller_test.dart: 高亮与时间 时间格式：当天 HH:mm；其他日期 yyyy-MM-dd HH:mm
+00:01 +59: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 1000 x 1000 完整适配
+00:01 +60: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 1200 x 800 完整适配
+00:01 +61: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 800 x 1200 完整适配
+00:01 +62: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 1024 x 768 完整适配
+00:01 +63: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 768 x 1024 完整适配
+00:01 +64: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 1280 x 720 完整适配
+00:01 +65: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 720 x 1280 完整适配
+00:01 +66: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 常用比例完整缩入（无裁剪、无失真） 1440 x 720 完整适配
+00:01 +67: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 极端比例与不规则尺寸 1:10 极长图完整缩入（高度触顶，宽度留白）
+00:01 +68: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 极端比例与不规则尺寸 10:1 极宽图完整缩入
+00:01 +69: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 极端比例与不规则尺寸 EXIF 方向纠正：orientation 6（90°）宽高互换后布局
+00:01 +70: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 小图不放大 / 上限 小图（120x90）显示原始尺寸，不放大
+00:01 +71: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 小图不放大 / 上限 气泡上限：宽 72% 与 320dp 取小；高 45% 与 420dp 取小
+00:01 +72: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 网格单元与查看器 三列网格：外框统一，框内完整适配不裁切
+00:01 +73: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/image_contain_layout_test.dart: 网格单元与查看器 查看器：初始 contain、平移钳制在缩放范围内
+00:01 +74: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #7 月历 月导航与标题
+00:01 +75: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #7 月历 验收：仅 1、3、10 日有消息，其余灰显禁用；扫描中日为独立状态
+00:01 +76: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #7 月历 点击 9 月 3 日定位当天最早一条（非最后一条）
+00:01 +77: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #7 月历 月份导航限制在最早与最新可访问月份之间
+00:01 +78: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #7 月历 零点附近时间归当日（设备时区）
+00:01 +79: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #8 链接与文件回退 解析 HTTP/HTTPS；同消息相同 URL 去重
+00:01 +80: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #8 链接与文件回退 预览元数据缺失：域名作标题、URL 作摘要、无缩略图
+00:01 +81: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #8 链接与文件回退 预览元数据存在：展示自带标题/摘要
+00:01 +82: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #8 链接与文件回退 文件名/大小未知不伪造
+00:01 +83: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #9 GIF 识别与门控 .jpg 扩展名但真实内容 GIF（多帧）→ 动画
+00:01 +84: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #9 GIF 识别与门控 单帧 GIF → 静态图
+00:01 +85: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #9 GIF 识别与门控 非 GIF 由解码器格式判定
+00:01 +86: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #9 GIF 识别与门控 门控：离屏/后台/非当前画廊页/自动播放关闭/未获准下载 → 暂停或手动
+00:01 +87: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/chat_media_shared_logic_test.dart: #9 GIF 识别与门控 遵循自带循环：有限循环不强制无限
+00:01 +88: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: mention options sort A-Z by remark first, nickname otherwise
+00:01 +89: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: mention search matches remark and nickname
+00:01 +90: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: panel shows two lines only for remarked members
+00:02 +91: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: 所有人 is pinned first only for admins
+00:02 +92: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: selecting an option reports it to the callback
+00:02 +93: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: search box narrows the member list
+00:02 +94: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/ui/wechat_mention_panel_test.dart: secondary nickname line uses the small gray style
+00:02 +95: All tests passed!

@@ -1,0 +1,96 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart
+00:00 +0: actual history page initially shows no message rows
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _TextWidgetFinder:<Found 1 widget with text "unrelated body": [
+            Text("unrelated body", dependencies: [DefaultSelectionStyle, DefaultTextStyle,
+MediaQuery]),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart:14:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart line 14
+The test description was:
+  actual history page initially shows no message rows
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: actual history page initially shows no message rows [E]
+  Test failed. See exception logs above.
+  The test description was: actual history page initially shows no message rows
+  
+00:00 +0 -1: actual keyword search must not match sender name alone
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _TextWidgetFinder:<Found 1 widget with text "unrelated body": [
+            Text("unrelated body", dependencies: [DefaultSelectionStyle, DefaultTextStyle,
+MediaQuery]),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart:22:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart line 22
+The test description was:
+  actual keyword search must not match sender name alone
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: actual keyword search must not match sender name alone [E]
+  Test failed. See exception logs above.
+  The test description was: actual keyword search must not match sender name alone
+  
+00:00 +0 -2: actual date selector must use calendar instead of wheel
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _TypeWidgetFinder:<Found 1 widget with type "CupertinoDatePicker": [
+            CupertinoDatePicker(dependencies: [CupertinoUserInterfaceLevel, Directionality,
+InheritedCupertinoTheme, MediaQuery, _LocalizationsScope-[GlobalKey#3a852]], state:
+_CupertinoDatePickerDateState#5ec13),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart:29:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart line 29
+The test description was:
+  actual date selector must use calendar instead of wheel
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -3: actual date selector must use calendar instead of wheel [E]
+  Test failed. See exception logs above.
+  The test description was: actual date selector must use calendar instead of wheel
+  
+00:00 +0 -3: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart: actual date selector must use calendar instead of wheel
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart: actual history page initially shows no message rows
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-chat-review/history_page_regression_test.dart: actual keyword search must not match sender name alone
