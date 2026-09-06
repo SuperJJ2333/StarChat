@@ -62,6 +62,7 @@ apps/mobile_flutter/third_party/matrix/*
 !apps/mobile_flutter/third_party/matrix/CHATFLOW_PATCH.md
 !apps/mobile_flutter/third_party/matrix/UPSTREAM_SHA256.json
 # 其余大体量验证工件（APK/日志快照；结论在各验证 md 文档中）
+docs/verification/artifacts/2026-09-06/release-settings-arm64/
 docs/verification/artifacts/2026-09-05/call-echo-scan/
 docs/verification/artifacts/2026-09-05/call-dismiss-release/
 docs/verification/artifacts/2026-09-05/mi6-upgrade/

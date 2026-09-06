@@ -108,3 +108,73 @@ async def test_min_supported_build_cannot_exceed_latest(context):
         )
     assert rejected.status_code == 422
     assert rejected.json()["error"]["code"] == "APP_UPDATE_SETTING_INVALID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial", [False, True])
+async def test_failed_publication_rolls_back_every_setting_and_audit(context, initial):
+    from sqlalchemy import event, select
+    from app.modules.audit.models import AuditEvent
+    from app.modules.settings.models import AppSetting
+    from app.modules.settings.service import APP_UPDATE_NOTES_KEY
+
+    app, factory, settings = context
+    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as client:
+        headers = {**bearer(settings, "admin-1"), "Idempotency-Key": "atomic"}
+        if initial:
+            assert (await client.put("/api/v1/admin/app-update-settings", headers=headers, json=PAYLOAD)).status_code == 200
+        with factory() as session:
+            before = dict(session.execute(select(AppSetting.key, AppSetting.value)).all())
+            audit_ids = set(session.scalars(select(AuditEvent.id)))
+
+        def fail_notes(mapper, connection, target):
+            if target.subject_id == APP_UPDATE_NOTES_KEY:
+                raise RuntimeError("injected audit failure")
+
+        event.listen(AuditEvent, "before_insert", fail_notes)
+        try:
+            response = await client.put("/api/v1/admin/app-update-settings", headers=headers,
+                                        json={**PAYLOAD, "latest_build": 5, "latest_version": "0.5.0"})
+        finally:
+            event.remove(AuditEvent, "before_insert", fail_notes)
+        assert response.status_code == 500
+        with factory() as session:
+            assert dict(session.execute(select(AppSetting.key, AppSetting.value)).all()) == before
+            assert set(session.scalars(select(AuditEvent.id))) == audit_ids
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["/api/v1/admin/app-update-settings", "/api/v1/app-updates/latest"])
+async def test_release_read_uses_one_database_snapshot(context, endpoint):
+    from sqlalchemy import event
+    app, factory, settings = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {**bearer(settings, "admin-1"), "Idempotency-Key": "snapshot"}
+        assert (await client.put("/api/v1/admin/app-update-settings", headers=headers, json=PAYLOAD)).status_code == 200
+        queries = []
+        def record(connection, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT") and "app_settings" in statement:
+                queries.append(statement)
+        engine = factory.kw["bind"]
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            response = await client.get(endpoint, headers=headers)
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+        assert response.status_code == 200
+        assert len(queries) == 1
+
+
+@pytest.mark.asyncio
+async def test_release_text_limits_and_long_values_round_trip(context):
+    app, _factory, settings = context
+    payload = {**PAYLOAD, "notes": "更" * 2000, "apk_url": "https://example.com/" + "a" * 480}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {**bearer(settings, "admin-1"), "Idempotency-Key": "long-text"}
+        assert (await client.put("/api/v1/admin/app-update-settings", headers=headers, json=payload)).status_code == 200
+        for field in ("notes", "apk_url"):
+            rejected = await client.put("/api/v1/admin/app-update-settings", headers=headers, json={**payload, field: payload[field] + "x"})
+            assert rejected.status_code == 422
+        latest = (await client.get("/api/v1/app-updates/latest", headers=headers)).json()
+        assert latest["notes"] == payload["notes"]
+        assert latest["apk_url"] == payload["apk_url"]

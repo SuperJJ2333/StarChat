@@ -12,6 +12,14 @@
 6. 执行 apksigner verify、签名后 zipalign 检查、aapt 包名/版本/ABI/清单检查、重解包代码核对，以及原生库/Flutter 资产逐项 SHA256 对比。
 7. 保存最终 APK、SHA256、证书指纹、工具版本、构建参数和验证记录。上传/更新弹窗必须指向验证过的最终重建 APK。下载后再次核对 SHA256；不能误发布原始中间包。
 
+## 单架构发行门禁（2026-09-06）
+
+正式 ARM64 发行使用 `flutter build apk --release --flavor standard --target-platform android-arm64`，并保留上述三个 HTTPS dart-define。Gradle 根据显式 target-platform 过滤所有插件原生库，不能只相信 Flutter 引擎编译目标或 APK 文件名。非 split 构建保留 pubspec 的 versionCode；不要在同一正式更新序列中混用 split-per-abi 自动增加的版本号。
+
+源 APK 和最终重建 APK 均执行 `python scripts/verify_android_release.py <apk>`。只允许 arm64-v8a，必须同时包含 libapp.so 与 libflutter.so，不允许 debug kernel。另执行 aapt 检查 versionCode、versionName、debuggable 标记，apksigner 验证固定签名以及 zipalign 验证。此 ZIP 门禁不能代替签名、清单和真机检查。
+
+线上采用不可变的版本文件名，上传后核对本地/服务器/公网下载 SHA256；然后在同一事务中更新五个发布设置及审计，原子切换 latest-arm64.apk 符号链接。保留旧文件以支持回退，不覆盖已经被客户端缓存的同名版本 APK。不同签名的 debug 安装不能直接覆盖正式包，也不能通过 install -d 绕过签名检查。
+
 ## 签名连续性
 
 当前用户验证身份的证书 SHA256：

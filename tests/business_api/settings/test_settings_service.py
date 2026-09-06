@@ -69,3 +69,25 @@ def test_set_overwrites_value_and_records_previous(settings_components) -> None:
     assert events[0].before_data == {"value": None}
     assert events[1].before_data == {"value": "0.3.27"}
     assert events[1].after_data == {"value": "0.3.28"}
+
+
+
+def test_values_use_unbounded_text_storage():
+    from sqlalchemy import Text
+    assert isinstance(AppSetting.__table__.c.value.type, Text)
+
+
+def test_batch_write_audits_previous_values_and_snapshot_defaults(settings_components):
+    from app.modules.settings.service import APP_UPDATE_SETTING_KEYS
+    service, factory = settings_components
+    before = {key: "old" for key in APP_UPDATE_SETTING_KEYS}
+    after = {key: "new" for key in APP_UPDATE_SETTING_KEYS}
+    service.set_many(before, actor_id="admin-1", trace_id="before")
+    service.set_many(after, actor_id="admin-2", trace_id="after")
+    assert service.get_many((*APP_UPDATE_SETTING_KEYS, "missing")) == {**after, "missing": None}
+    with factory() as session:
+        events = session.scalars(select(AuditEvent).where(AuditEvent.trace_id == "after")).all()
+    assert len(events) == 5
+    assert {event.subject_id for event in events} == set(APP_UPDATE_SETTING_KEYS)
+    assert all(event.before_data == {"value": "old"} and event.after_data == {"value": "new"}
+               and event.actor_id == "admin-2" for event in events)

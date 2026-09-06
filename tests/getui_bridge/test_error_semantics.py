@@ -132,12 +132,15 @@ def test_call_push_not_blocked_by_message_rate_limit():
     assert limiter.allow("cid-1", "call") is False
 
 
-def test_call_has_shorter_dedup_window():
+def test_call_has_shorter_dedup_window(monkeypatch):
     """来电窗口短（500ms）：不同来电（间隔>500ms）不错误合并。"""
-    import time as _time
+    # Windows monotonic clock ticks can be coarser than this 50 ms window;
+    # drive the limiter clock directly rather than sleeping near the boundary.
+    clock = [100.0]
+    monkeypatch.setattr("app.rate_limit.time.monotonic", lambda: clock[0])
     limiter = CidRateLimiter(min_interval_ms=1500, call_min_interval_ms=50)
     assert limiter.allow("c", "call") is True
-    _time.sleep(0.06)
+    clock[0] += 0.06
     assert limiter.allow("c", "call") is True, "不同来电不得合并"
 
 

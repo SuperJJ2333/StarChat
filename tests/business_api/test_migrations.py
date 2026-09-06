@@ -37,7 +37,27 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_admin_controls_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0037_wallet_deposit_address (head)"
+    assert _alembic("heads").strip() == "0039_merge_settings_wallet (head)"
+
+
+def test_settings_migration_deploys_without_wallet_branch_and_preserves_values() -> None:
+    sql = _normalized_sql(_alembic("upgrade", "0036_group_join_tokens:0038_app_settings_text", "--sql"))
+    assert "alter table app_settings alter column value type text" in sql
+    assert "wallet_deposit_addresses" not in sql
+    assert "drop " not in sql
+    downgrade = _normalized_sql(_alembic("downgrade", "0038_app_settings_text:0036_group_join_tokens", "--sql"))
+    assert downgrade.index("lock table app_settings") < downgrade.index("char_length(value) > 255")
+    assert downgrade.index("raise exception") < downgrade.index("type varchar(255)")
+    assert "substring" not in downgrade
+
+
+def test_repository_merge_can_upgrade_from_either_independent_branch() -> None:
+    from_wallet = _normalized_sql(_alembic("upgrade", "0037_wallet_deposit_address:head", "--sql"))
+    assert "alter table app_settings alter column value type text" in from_wallet
+    assert "create table if not exists wallet_deposit_addresses" not in from_wallet
+    from_settings = _normalized_sql(_alembic("upgrade", "0038_app_settings_text:head", "--sql"))
+    assert "create table if not exists wallet_deposit_addresses" in from_settings
+    assert "alter table app_settings alter column value type text" not in from_settings
 
 
 def test_chat_transfer_migration_chains_after_notice_receipts() -> None:

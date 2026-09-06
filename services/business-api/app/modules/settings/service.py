@@ -1,7 +1,8 @@
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.modules.audit.models import AuditEvent
 from app.modules.settings.models import AppSetting
@@ -47,3 +48,41 @@ class SettingService:
             session.add(AuditEvent(id=str(uuid4()), actor_id=actor_id, subject_type="app_setting", subject_id=key, action="settings.update", result="SUCCESS", reason_code="ADMIN_SETTING_UPDATED", trace_id=trace_id, before_data={"value": previous}, after_data={"value": value}, created_at=now))
             session.flush()
             return row
+
+    def get_many(self, keys: Iterable[str]) -> dict[str, str | None]:
+        """Read all requested values from one database statement snapshot."""
+        keys = tuple(keys)
+        with self.session_factory() as session:
+            values = dict(session.execute(
+                select(AppSetting.key, AppSetting.value).where(AppSetting.key.in_(keys))
+            ).all())
+        return {key: values.get(key) for key in keys}
+
+    def set_many(self, values: Mapping[str, str], *, actor_id: str,
+                 trace_id: str = "settings-update") -> None:
+        """Commit a settings batch and its audit events as one revision."""
+        now = datetime.now(timezone.utc)
+        with self.session_factory.begin() as session:
+            if session.get_bind().dialect.name == "postgresql":
+                # Transaction-scoped lock serializes even first publication, when
+                # SELECT FOR UPDATE has no existing rows to lock.
+                session.execute(text("SELECT pg_advisory_xact_lock(1937006964, 1)"))
+            rows = {row.key: row for row in session.scalars(
+                select(AppSetting).where(AppSetting.key.in_(values)).order_by(AppSetting.key).with_for_update()
+            )}
+            for key, value in values.items():
+                row = rows.get(key)
+                previous = row.value if row else None
+                if row:
+                    row.value = value
+                    row.updated_by = actor_id
+                    row.updated_at = now
+                else:
+                    session.add(AppSetting(key=key, value=value, updated_by=actor_id, updated_at=now))
+                session.add(AuditEvent(
+                    id=str(uuid4()), actor_id=actor_id, subject_type="app_setting",
+                    subject_id=key, action="settings.update", result="SUCCESS",
+                    reason_code="ADMIN_SETTING_UPDATED", trace_id=trace_id,
+                    before_data={"value": previous}, after_data={"value": value}, created_at=now,
+                ))
+            session.flush()

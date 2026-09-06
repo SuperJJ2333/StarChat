@@ -57,6 +57,26 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Flutter's non-split default admits plugin libraries for every ABI,
+        // even when its engine/AOT compilation targets only one platform.
+        // Match the explicit target for all native dependencies. Leave splits
+        // to Flutter and retain other targets for emulator/development builds.
+        if (project.findProperty("split-per-abi") != "true") {
+            val targets = project.findProperty("target-platform")?.toString()
+            if (!targets.isNullOrBlank()) {
+                val platformAbis = mapOf(
+                    "android-arm" to "armeabi-v7a",
+                    "android-arm64" to "arm64-v8a",
+                    "android-x64" to "x86_64",
+                )
+                ndk.abiFilters.clear()
+                ndk.abiFilters.addAll(targets.split(",").map { target ->
+                    requireNotNull(platformAbis[target.trim()]) {
+                        "Unsupported Android target-platform: $target"
+                    }
+                })
+            }
+        }
     }
 
     buildTypes {

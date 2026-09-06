@@ -11,6 +11,7 @@ from app.modules.settings.service import (
     APP_LATEST_VERSION_KEY,
     APP_MIN_SUPPORTED_BUILD_KEY,
     APP_UPDATE_NOTES_KEY,
+    APP_UPDATE_SETTING_KEYS,
     SettingService,
 )
 
@@ -33,7 +34,8 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
     @router.get("/latest")
     def latest(user_id: str = Depends(actor)):
         del user_id  # Any authenticated client may learn the latest release.
-        latest_build = app_settings.get(APP_LATEST_BUILD_KEY)
+        values = app_settings.get_many(APP_UPDATE_SETTING_KEYS)
+        latest_build = values[APP_LATEST_BUILD_KEY]
         if latest_build is None:
             return {
                 "configured": False,
@@ -45,13 +47,13 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
             }
         return {
             "configured": True,
-            "latest_version": app_settings.get(APP_LATEST_VERSION_KEY),
+            "latest_version": values[APP_LATEST_VERSION_KEY],
             "latest_build": int(latest_build),
             "min_supported_build": int(
-                app_settings.get(APP_MIN_SUPPORTED_BUILD_KEY, default="0") or "0"
+                values[APP_MIN_SUPPORTED_BUILD_KEY] or "0"
             ),
-            "notes": app_settings.get(APP_UPDATE_NOTES_KEY),
-            "apk_url": app_settings.get(APP_APK_URL_KEY),
+            "notes": values[APP_UPDATE_NOTES_KEY],
+            "apk_url": values[APP_APK_URL_KEY],
         }
 
     return router

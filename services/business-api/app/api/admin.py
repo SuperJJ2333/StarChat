@@ -229,7 +229,7 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
     def get_app_update_settings(user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
         service = SettingService(session_factory)
-        values = {key: service.get(key) for key in APP_UPDATE_SETTING_KEYS}
+        values = service.get_many(APP_UPDATE_SETTING_KEYS)
         return {
             "latest_version": values[APP_LATEST_VERSION_KEY],
             "latest_build": int(values[APP_LATEST_BUILD_KEY]) if values[APP_LATEST_BUILD_KEY] else None,
@@ -251,8 +251,7 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             APP_UPDATE_NOTES_KEY: body.notes,
             APP_APK_URL_KEY: body.apk_url,
         }
-        for key, value in payload.items():
-            service.set(key, value, actor_id=user_id, trace_id=trace(request))
+        service.set_many(payload, actor_id=user_id, trace_id=trace(request))
         return {"status": "OK", "latest_version": body.latest_version, "latest_build": body.latest_build, "min_supported_build": body.min_supported_build, "idempotency_key": idempotency_key}
 
     @router.get("/session")
