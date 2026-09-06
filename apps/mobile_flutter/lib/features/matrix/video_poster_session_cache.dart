@@ -83,7 +83,9 @@ final class VideoPosterSessionCache {
 
     final flight = _loadSlow(cacheKey, load);
     _inFlight[cacheKey] = flight;
-    return flight.whenComplete(() => _inFlight.remove(cacheKey));
+    return flight.whenComplete(() {
+      if (identical(_inFlight[cacheKey], flight)) _inFlight.remove(cacheKey);
+    });
   }
 
   Future<VideoPosterResult> _loadSlow(
@@ -91,6 +93,12 @@ final class VideoPosterSessionCache {
     Future<Uint8List?> Function() load,
   ) async {
     final generation = _sessionGeneration;
+    final revision = _keyRevisions[cacheKey] ?? 0;
+    await _clearing;
+    await _writes[cacheKey]?.catchError((Object _) {});
+    if (!_isCurrent(cacheKey, generation, revision)) {
+      return const VideoPosterResult(null, stale: true);
+    }
     // ① 会话级磁盘（加密缩略图）。
     if (diskRead != null) {
       try {
@@ -98,7 +106,7 @@ final class VideoPosterSessionCache {
         if (cached != null && cached.isNotEmpty) {
           // 竞争修复：读取期间 evict/clearAll → 返回 stale（不返回
           // 已移除条目的正常数据）。
-          if (generation != _sessionGeneration || isEvicted(cacheKey)) {
+          if (!_isCurrent(cacheKey, generation, revision)) {
             return VideoPosterResult(cached, fromDisk: true, stale: true);
           }
           diskHits++;
@@ -123,20 +131,17 @@ final class VideoPosterSessionCache {
       return const VideoPosterResult.retryable('暂无预览图，可重试');
     }
     // 会话已清理/键已被移除 → 不写回（不复活已删除内容）。
-    if (generation != _sessionGeneration || isEvicted(cacheKey)) {
+    if (!_isCurrent(cacheKey, generation, revision)) {
       return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
     }
     _storeMemory(cacheKey, fresh);
     // ③ 回写会话磁盘（尽力而为；空间不足不失败——内存已命中）。
     if (diskWrite != null) {
       try {
-        await diskWrite!(cacheKey, fresh);
+        await _writeCurrent(cacheKey, fresh, generation, revision);
         // 竞争修复：写入期间 clearAll/evict → 撤销刚写入的数据
         // 并返回 stale（不能让已清理内容在磁盘复活）。
-        if (generation != _sessionGeneration || isEvicted(cacheKey)) {
-          try {
-            await diskDelete?.call(cacheKey);
-          } catch (_) {}
+        if (!_isCurrent(cacheKey, generation, revision)) {
           return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
         }
         diskWrites++;
@@ -144,7 +149,9 @@ final class VideoPosterSessionCache {
         // 磁盘满：例外路径（验证记录单独标注）；不影响本次显示。
       }
     }
-    return VideoPosterResult(fresh, freshlyLoaded: true);
+    return VideoPosterResult(fresh,
+        freshlyLoaded: true,
+        stale: !_isCurrent(cacheKey, generation, revision));
   }
 
   void _storeMemory(String key, Uint8List bytes) {
@@ -167,16 +174,48 @@ final class VideoPosterSessionCache {
   // 移除/代次已变，避免写回已清内容。
   int _sessionGeneration = 0;
   final Set<String> _evictedKeys = <String>{};
+  final Map<String, int> _keyRevisions = {};
+  final Map<String, Future<void>> _writes = {};
+  Future<void> _clearing = Future.value();
+
+  bool _isCurrent(String key, int generation, int revision) =>
+      generation == _sessionGeneration &&
+      revision == (_keyRevisions[key] ?? 0) &&
+      !isEvicted(key);
+
+  // Keep an obsolete write and its cleanup before any replacement write.
+  Future<void> _writeCurrent(
+          String key, Uint8List bytes, int generation, int revision) =>
+      _mutate(key, () async {
+        if (!_isCurrent(key, generation, revision)) return;
+        await diskWrite?.call(key, bytes);
+        if (!_isCurrent(key, generation, revision)) {
+          await diskDelete?.call(key);
+        }
+      });
+
+  Future<void> _mutate(String key, Future<void> Function() action) async {
+    final previous = _writes[key] ?? Future<void>.value();
+    final work = previous.catchError((Object _) {}).then((_) => action());
+    _writes[key] = work;
+    try {
+      await work;
+    } finally {
+      if (identical(_writes[key], work)) _writes.remove(key);
+    }
+  }
 
   /// 撤回/删除：只移除对应媒体项（内存 + 磁盘）。
   /// R11：标记键已移除——在途加载完成时不再写回。
   Future<void> evict(String cacheKey) async {
     _evictedKeys.add(cacheKey);
+    _keyRevisions[cacheKey] = (_keyRevisions[cacheKey] ?? 0) + 1;
+    _inFlight.remove(cacheKey);
     final removed = _memory.remove(cacheKey);
     if (removed != null) _memoryBytes -= removed.length;
     if (diskDelete != null) {
       try {
-        await diskDelete!(cacheKey);
+        await _mutate(cacheKey, () => diskDelete!(cacheKey));
       } catch (_) {}
     }
   }
@@ -189,12 +228,18 @@ final class VideoPosterSessionCache {
 
   /// 媒体替换：版本变化生成新键即自然失效；本方法提供显式入口。
   Future<void> replace(String oldKey, String newKey, Uint8List bytes) async {
+    final generation = _sessionGeneration;
     await evict(oldKey);
+    await _clearing;
+    if (generation != _sessionGeneration) return;
     _restoreKey(newKey); // 新键可写。
+    final revision = (_keyRevisions[newKey] ?? 0) + 1;
+    _keyRevisions[newKey] = revision;
+    _inFlight.remove(newKey);
     _storeMemory(newKey, bytes);
     if (diskWrite != null) {
       try {
-        await diskWrite!(newKey, bytes);
+        await _writeCurrent(newKey, bytes, generation, revision);
       } catch (_) {}
     }
   }
@@ -203,6 +248,7 @@ final class VideoPosterSessionCache {
   /// R11：递增会话代次（在途加载不写回）+ 清空已移除键集。
   void clearMemory() {
     _sessionGeneration++;
+    _inFlight.clear();
     _evictedKeys.clear();
     _memory.clear();
     _memoryBytes = 0;
@@ -211,21 +257,24 @@ final class VideoPosterSessionCache {
   /// 主动清理缓存：内存 + 磁盘全清（R11：真正清磁盘）。
   /// R11 修复：主动清理缓存——内存 + 磁盘全清。
   /// 磁盘键来源：内存键快照 + [diskListKeys] 回调（已淘汰到磁盘的条目）。
-  Future<void> clearAll() async {
+  Future<void> clearAll() {
     // 先快照内存键（clearMemory 会清空 _memory）。
     final memoryKeys = _memory.keys.toList();
     // 会话代次递增 → 在途加载不写回。
     clearMemory();
-    if (diskDelete != null) {
-      // 合并内存键 + 磁盘已知键（回调由注入方实现——生产中可枚举目录）。
-      final diskKeys = await diskListKeys?.call() ?? const <String>[];
-      final allKeys = <String>{...memoryKeys, ...diskKeys};
-      for (final key in allKeys) {
-        try {
-          await diskDelete!(key);
-        } catch (_) {}
+    final previous = _clearing;
+    return _clearing = previous.then((_) async {
+      if (diskDelete != null) {
+        // 合并内存键 + 磁盘已知键（回调由注入方实现——生产中可枚举目录）。
+        final diskKeys = await diskListKeys?.call() ?? const <String>[];
+        final allKeys = <String>{...memoryKeys, ...diskKeys};
+        for (final key in allKeys) {
+          try {
+            await diskDelete!(key);
+          } catch (_) {}
+        }
       }
-    }
+    });
   }
 
   /// 枚举磁盘全部缓存键（clearAll 用；null = 调用方无枚举能力，

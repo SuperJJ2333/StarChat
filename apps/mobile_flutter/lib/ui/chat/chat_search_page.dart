@@ -68,6 +68,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   ChatSearchResultPage? _lastPage;
   Timer? _debounce;
   bool _loadingMore = false;
+  int _queryGeneration = 0;
 
   @override
   void initState() {
@@ -93,7 +94,11 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Future<void> _execute() async {
-    await _controller!.executeNow(
+    _debounce?.cancel();
+    _queryGeneration++;
+    setState(() => _loadingMore = false);
+    try {
+      await _controller!.executeNow(
       onStateChange: (change) {
         if (!mounted) return;
         setState(() {
@@ -105,7 +110,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           }
         });
       },
-    );
+      );
+    } catch (_) {
+      // The controller already publishes the failure state for the current query.
+    }
   }
 
   @override
@@ -345,16 +353,19 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   /// 翻页加载（R6 修复：实际调用 loadMore + 追加到状态）。
   Future<void> _loadMore(ChatSearchResultPage current) async {
     if (_loadingMore || current.nextCursor == null) return;
-    _loadingMore = true;
+    final generation = _queryGeneration;
+    setState(() => _loadingMore = true);
     try {
       final next = await _controller!.loadMore(current);
-      if (mounted && !next.stale) {
+      if (mounted && generation == _queryGeneration && !next.stale) {
         setState(() => _lastPage = next);
       }
     } catch (_) {
       // 翻页失败保持当前页；下次滚动重试。
     } finally {
-      _loadingMore = false;
+      if (mounted && generation == _queryGeneration) {
+        setState(() => _loadingMore = false);
+      }
     }
   }
 }

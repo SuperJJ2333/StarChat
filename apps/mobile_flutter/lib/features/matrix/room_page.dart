@@ -76,6 +76,8 @@ import '../contacts/member_directory_service.dart';
 import '../../ui/chat/chat_search_page.dart';
 import 'unread_mention_tracker.dart';
 import 'video_poster_session_cache.dart';
+import 'video_poster_disk_store.dart';
+import 'video_poster_extractor.dart';
 import 'chat_search_query_controller.dart' show ChatSearchMessage, ChatSearchMediaCategory;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
@@ -202,24 +204,14 @@ class _RoomPageState extends State<RoomPage> {
   // 与全量原图缓存互不挤占。
   final thumbnailMemoryCache = MediaMemoryCache();
 
-  /// R7/R4：视频封面会话缓存（规格#1）——当前账号登录期间的房间会话
-  /// 实例生命周期。磁盘后端 = 会话级 MediaCache 目录（加密缩略图）。
+  final _posterDisk = VideoPosterDiskStore();
+  final Map<String, String> _posterKeys = {};
+  /// Room-instance cache: independent encrypted temporary files, no global LRU.
   late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
-    diskRead: (key) async {
-      final cached = await MediaCache.cached(widget.room.id, key);
-      if (cached == null) return null;
-      return await cached.readAsBytes();
-    },
-    diskWrite: (key, bytes) async {
-      // 注意：MediaCache 为通用缓存（明文字节+全局磁盘 LRU），非本项
-      // 规格要求的"加密缩略图"后端；接入真实加密存储前不宣称已加密。
-      await MediaCache.store(widget.room.id, key, bytes);
-    },
-    diskDelete: (key) async {
-      final file = await MediaCache.cached(widget.room.id, key);
-      if (file != null) await file.delete();
-    },
-    diskListKeys: () async => MediaCache.listCachedKeys(widget.room.id),
+    diskRead: _posterDisk.read,
+    diskWrite: _posterDisk.write,
+    diskDelete: _posterDisk.delete,
+    diskListKeys: _posterDisk.keys,
   );
 
   /// R4：未读 @ 跟踪器（账号隔离；会话实例生命周期）。
@@ -767,6 +759,12 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _changed() {
+    for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
+      if (message.isRecalled) {
+        final key = _posterKeys.remove(message.id);
+        if (key != null) unawaited(videoPosterCache.evict(key));
+      }
+    }
     if (mounted) setState(() {});
     _syncReadReceiptWhileViewing();
   }
@@ -979,21 +977,28 @@ class _RoomPageState extends State<RoomPage> {
   /// 三审接线修复——原走页级 MediaMemoryCache，无磁盘层与会话合并）。
   /// 发送端加密海报缩略图优先；无缩略图返回 null 走占位底。
   Future<Uint8List?> _loadVideoPoster(String messageId) async {
-    final result = await videoPosterCache.load(
-      VideoPosterSessionCache.keyFor(
+    final timeline = controller;
+    if (timeline == null || !mounted) return null;
+    final key = _posterKeys.putIfAbsent(messageId, () => VideoPosterSessionCache.keyFor(
         accountId: widget.room.client.userID ?? '',
         roomId: widget.room.id,
         mediaId: messageId,
-        mediaVersion: '${messageId.hashCode}',
-        spec: 'chat-poster',
-      ),
+        mediaVersion: messageId, // Matrix events are immutable; replacements get new IDs.
+        spec: 'chat-poster-v1',
+      ));
+    final result = await videoPosterCache.load(
+      key,
       () async {
-        final poster = await controller!.loadThumbnail(messageId);
+        final poster = await timeline.loadThumbnail(messageId);
         if (poster != null && poster.isNotEmpty) return poster;
-        return null; // null → retryable（可重试状态，不阻塞卡片）。
+        final file = await resolveCachedVideoFile(
+          key: MediaCacheKey(roomId: widget.room.id, eventId: messageId),
+          decrypt: () => timeline.loadAttachment(messageId),
+        );
+        return extractVideoPoster(file.path);
       },
     );
-    if (result.retryable) return null;
+    if (result.retryable || result.stale || !mounted) return null;
     return result.bytes;
   }
 
@@ -2241,40 +2246,20 @@ class _RoomPageState extends State<RoomPage> {
             decorateContent: false,
             content: LayoutBuilder(
               builder: (context, constraints) {
-                // GIF 修复：跳过 JPEG 缩略图（静态帧），直接加载原始
-                // GIF 字节保持动画（Image.memory 自动播放多帧）。
-                final isGif = message.mimeType == 'image/gif';
+                // Metadata can lie (.jpg / image/jpeg with GIF content).
+                // Paint any cached preview, then let the decoder inspect the
+                // original bytes. A JPEG thumbnail never becomes the final image.
                 return ContainImageBubble(
-                  initialBytes: isGif
-                      ? imageMemoryCache.get(message.id)
-                      : thumbnailMemoryCache.get('thumb:${message.id}') ??
-                          imageMemoryCache.get(message.id),
-                  load: () => isGif
-                      ? imageMemoryCache.putIfAbsent(
+                  initialBytes: imageMemoryCache.get(message.id) ??
+                      thumbnailMemoryCache.get('thumb:${message.id}'),
+                  refreshFromSource: true,
+                  load: () => imageMemoryCache.putIfAbsent(
                           message.id,
                           () => loadMediaWithCache(
                             MediaCacheKey(
                                 roomId: widget.room.id, eventId: message.id),
                             () => controller!.loadAttachment(message.id),
                           ),
-                        )
-                      : thumbnailMemoryCache.putIfAbsent(
-                          'thumb:${message.id}',
-                          () async {
-                            final thumbnail = await controller!
-                                .loadThumbnail(message.id);
-                            if (thumbnail != null) return thumbnail;
-                            return imageMemoryCache.putIfAbsent(
-                              message.id,
-                              () => loadMediaWithCache(
-                                MediaCacheKey(
-                                    roomId: widget.room.id,
-                                    eventId: message.id),
-                                () =>
-                                    controller!.loadAttachment(message.id),
-                              ),
-                            );
-                          },
                         ),
                   availableWidth: constraints.maxWidth,
                   availableHeight: MediaQuery.of(context).size.height,
@@ -2590,6 +2575,8 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   void dispose() {
+    unawaited(videoPosterCache.clearAll().whenComplete(_posterDisk.dispose)
+        .catchError((Object _) {}));
     _identityCache.removeListener(_identityChanged);
     unawaited(voicePlayback.stopAll());
     unawaited(_onVoiceCancel(VoiceArmedTarget.cancel));

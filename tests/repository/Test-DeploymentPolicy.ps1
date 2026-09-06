@@ -1,12 +1,14 @@
 $ErrorActionPreference = 'Stop'
 
 function Assert-Match([string]$Content, [string]$Pattern, [string]$Message) {
+    $Content = $Content.Replace("`r`n", "`n")
     if ($Content -notmatch $Pattern) {
         throw $Message
     }
 }
 
 function Assert-NotMatch([string]$Content, [string]$Pattern, [string]$Message) {
+    $Content = $Content.Replace("`r`n", "`n")
     if ($Content -match $Pattern) {
         throw $Message
     }

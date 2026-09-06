@@ -18,6 +18,7 @@ final class ContainImageBubble extends StatefulWidget {
     super.key,
     required this.load,
     this.initialBytes,
+    this.refreshFromSource = false,
     this.availableWidth = 400,
     this.availableHeight = 800,
     this.onTap,
@@ -25,6 +26,10 @@ final class ContainImageBubble extends StatefulWidget {
 
   final Future<Uint8List> Function() load;
   final Uint8List? initialBytes;
+
+  /// A thumbnail can paint immediately, but must not replace the original
+  /// stream: GIF content may be mislabeled by the sender as image/jpeg.
+  final bool refreshFromSource;
 
   /// 可用聊天宽/高（调用方传 MediaQuery/LayoutBuilder 实际约束）。
   final double availableWidth;
@@ -43,7 +48,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
   @override
   void initState() {
     super.initState();
-    _bytes = widget.initialBytes != null
+    _bytes = widget.initialBytes != null && !widget.refreshFromSource
         ? SynchronousFuture<Uint8List>(widget.initialBytes!)
         : widget.load();
   }
@@ -56,13 +61,15 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
     );
     return FutureBuilder<Uint8List>(
       future: _bytes,
+      initialData: widget.initialBytes,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return CupertinoButton(
             padding: EdgeInsets.zero,
             onPressed: () => setState(() => _bytes = widget.load()),
             child: const Text('图片加载失败，点击重试',
-                style: TextStyle(fontSize: 13, color: WeChatColors.brandPrimary)),
+                style:
+                    TextStyle(fontSize: 13, color: WeChatColors.brandPrimary)),
           );
         }
         if (!snapshot.hasData) {
@@ -105,6 +112,29 @@ final class _ContainImage extends StatefulWidget {
 
 final class _ContainImageState extends State<_ContainImage> {
   ImageContainLayout? _layout;
+  ImageStream? _sizeStream;
+  ImageStreamListener? _sizeListener;
+  int _layoutGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveLayout();
+  }
+
+  void _removeSizeListener() {
+    final listener = _sizeListener;
+    if (listener != null) _sizeStream?.removeListener(listener);
+    _sizeListener = null;
+    _sizeStream = null;
+  }
+
+  @override
+  void dispose() {
+    _layoutGeneration++;
+    _removeSizeListener();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant _ContainImage oldWidget) {
@@ -114,6 +144,7 @@ final class _ContainImageState extends State<_ContainImage> {
         oldWidget.maxWidth != widget.maxWidth ||
         oldWidget.maxHeight != widget.maxHeight) {
       _layout = null;
+      _resolveLayout();
     }
   }
 
@@ -140,33 +171,43 @@ final class _ContainImageState extends State<_ContainImage> {
         widget.bytes,
         fit: BoxFit.contain,
         gaplessPlayback: true,
-        frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-          if (frame == null && !wasSynchronouslyLoaded) return child;
-          _resolveLayout(child);
-          return child;
-        },
       );
     });
   }
 
-  void _resolveLayout(Widget child) {
-    // ImageInfo 解码回调路径：用 ImageProvider resolve 拿原始尺寸。
-    final image = MemoryImage(widget.bytes);
-    image.resolve(const ImageConfiguration()).addListener(
-      ImageStreamListener((info, _) {
-        if (!mounted || _layout != null) return;
-        final corrected = applyExifOrientation(
-            1, info.image.width, info.image.height);
+  void _resolveLayout() {
+    _removeSizeListener();
+    final generation = ++_layoutGeneration;
+    final stream =
+        MemoryImage(widget.bytes).resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener((info, _) {
+      stream.removeListener(listener);
+      try {
+        if (!mounted || generation != _layoutGeneration) return;
+        final corrected =
+            applyExifOrientation(1, info.image.width, info.image.height);
         final layout = computeContainLayout(
           imageWidth: corrected.width,
           imageHeight: corrected.height,
           maxWidth: widget.maxWidth,
           maxHeight: widget.maxHeight,
         );
-        setState(() => _layout = layout);
-        info.image.dispose();
-      }),
-    );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && generation == _layoutGeneration) {
+            setState(() => _layout = layout);
+          }
+        });
+        WidgetsBinding.instance.ensureVisualUpdate();
+      } finally {
+        info.dispose();
+      }
+    }, onError: (Object _, StackTrace? __) {
+      stream.removeListener(listener);
+    });
+    _sizeStream = stream;
+    _sizeListener = listener;
+    stream.addListener(listener);
   }
 }
 
@@ -203,8 +244,7 @@ final class ContainGridCell extends StatelessWidget {
               bytes,
               fit: BoxFit.contain,
               gaplessPlayback: true,
-              errorBuilder: (_, __, ___) => const Icon(
-                  CupertinoIcons.photo,
+              errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.photo,
                   color: WeChatColors.textTertiary),
             ),
             if (overlay != null) Positioned.fill(child: overlay!),

@@ -141,6 +141,7 @@ void main() {
     test('evict 期间在途加载完成 → 不写回已移除键', () async {
       final disk = <String, Uint8List>{};
       final gate = Completer<void>();
+      final started = Completer<void>();
       var loads = 0;
       final cache = VideoPosterSessionCache(
         diskRead: (k) async => disk[k],
@@ -151,10 +152,12 @@ void main() {
       // 发起加载（gate 挂起）。
       final loading = cache.load(key, () async {
         loads++;
+        started.complete();
         await gate.future;
         return Uint8List.fromList(List.filled(20, 1));
       });
       // 加载在途时 evict。
+      await started.future;
       await cache.evict(key);
       gate.complete();
       final result = await loading;
