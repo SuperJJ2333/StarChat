@@ -1,4 +1,10 @@
 {
+  "galleryRefreshRevision": {
+    "date": "2026-09-07",
+    "change": "Refresh creation/modification query cutoff at every album scan; newest-first design unchanged",
+    "remoteNodesModified": false,
+    "status": "runtime bugfix; remote tooling unavailable"
+  },
   "roomFlowFeedbackRevision": {
     "date": "2026-09-06",
     "plan": "docs/superpowers/plans/2026-09-06-room-flow.md",

@@ -13,6 +13,43 @@ import 'package:photo_manager/photo_manager.dart';
 /// - 权限（仅授权缓存）与相册索引会话级复用。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('reopened gallery queries include photos created after first opening',
+      () async {
+    const channel = MethodChannel('com.fluttercandies/photo_manager');
+    final options = <Map>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getAssetPathList') {
+        options.add(((call.arguments as Map)['option'] as Map)['child'] as Map);
+        return {'data': <Map>[]};
+      }
+      return PermissionState.authorized.index;
+    });
+    addTearDown(() {
+      GalleryAccessCache.invalidateAll();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+    GalleryAccessCache.invalidateAll();
+    await DeviceGallerySource.loadAlbums();
+    await Future<void>.delayed(const Duration(milliseconds: 25));
+    final screenshotTime = DateTime.now().millisecondsSinceEpoch;
+    options.clear();
+    GalleryAccessCache.invalidateAll();
+    await DeviceGallerySource.loadAlbums();
+    expect(options, hasLength(3));
+    for (final option in options) {
+      for (final key in ['createDate', 'updateDate']) {
+        final bound = option[key] as Map;
+        expect(
+            bound['ignore'] == true || (bound['max'] as int) >= screenshotTime,
+            isTrue,
+            reason:
+                '$key excludes images created while the app remains running');
+      }
+      expect((option['orders'] as List).first['asc'], false);
+    }
+  });
   test('visible image decoding is bounded and deduplicates concurrent requests',
       () async {
     final store = GalleryThumbnailStore();

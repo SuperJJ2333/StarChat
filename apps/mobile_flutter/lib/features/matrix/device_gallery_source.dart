@@ -253,12 +253,14 @@ final class GalleryAlbum {
 /// - 网格一律按**创建时间倒序**（最新创建的显示在最上方）；
 /// - 缩略图统一按 200px 解码，压缩图/原图仅在发送时按需读取；
 /// - 视频发送默认压缩（480p，减轻服务器负担），原图模式有 20MB 上限。
-final FilterOptionGroup _sortedByCreateDateDesc = FilterOptionGroup(
-  // MIUI 的视频记录可能没有宽高；不能把元数据缺失当作无效视频。
-  videoOption:
-      const FilterOption(sizeConstraint: SizeConstraint(ignoreSize: true)),
-  orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
-);
+// DateTimeCond defaults capture now at construction. Never share the filter
+// across openings: a process-wide instance excludes all later screenshots.
+FilterOptionGroup get _sortedByCreateDateDesc => FilterOptionGroup(
+      // MIUI 的视频记录可能没有宽高；不能把元数据缺失当作无效视频。
+      videoOption:
+          const FilterOption(sizeConstraint: SizeConstraint(ignoreSize: true)),
+      orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
+    );
 
 /// 相册 → 资源查询类型映射（MIUI 修复）："本地视频"是虚拟相册
 /// （entity 为 null），必须用 [RequestType.video] 才能定位到视频

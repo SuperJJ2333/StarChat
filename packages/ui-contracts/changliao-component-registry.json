@@ -1,6 +1,11 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-07-gallery-refresh": {
+      "query": "Fresh creation/update date bounds for every native album query; never pin cutoff to process startup",
+      "ordering": "Creation date descending remains unchanged",
+      "figmaSync": "No remote update; existing visual layout retained"
+    },
     "2026-09-06-room-flow": {
       "sending": "local bubble immediately; no sending indicator or attachment upload progress; failure retry retained",
       "media": "bounded cache; stable layout; uncached loading after scroll settles",
