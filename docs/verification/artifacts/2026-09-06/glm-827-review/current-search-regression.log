@@ -1,0 +1,70 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart
+00:00 +0: second page remains rendered after build
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: <52>
+  Actual: <51>
+51 results plus footer must survive rebuilding
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart:31:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart line 31
+The test description was:
+  second page remains rendered after build
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -1: second page remains rendered after build [E]
+  Test failed. See exception logs above.
+  The test description was: second page remains rendered after build
+  
+00:00 +0 -1: image category uses media layout on actual search route
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: exactly one matching candidate
+  Actual: _TypeWidgetFinder:<Found 0 widgets with type "GridView": []>
+   Which: means none were found but one was expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart:43:5)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1952:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart line 43
+The test description was:
+  image category uses media layout on actual search route
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:00 +0 -2: image category uses media layout on actual search route [E]
+  Test failed. See exception logs above.
+  The test description was: image category uses media layout on actual search route
+  
+00:00 +0 -2: immediate search settles superseded scheduled future
+00:00 +0 -3: immediate search settles superseded scheduled future [E]
+  Expected: true
+    Actual: <false>
+  Enter/search-button must not leave cancelled future pending
+  
+  package:matcher                                                                                       expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                    expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-827-review\current_search_regression_test.dart 55:5  main.<fn>
+  
+00:00 +0 -3: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart: image category uses media layout on actual search route
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart: immediate search settles superseded scheduled future
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-review/current_search_regression_test.dart: second page remains rendered after build

@@ -95,7 +95,15 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   Future<void> _execute() async {
     await _controller!.executeNow(
       onStateChange: (change) {
-        if (mounted) setState(() => _state = change);
+        if (!mounted) return;
+        setState(() {
+          _state = change;
+          // 翻页修复：新查询结果到达时更新 _lastPage（此后 _loadMore
+          // 追加的页不会被 build 覆盖——build 只读不写）。
+          if (change is ChatSearchLoadedState) {
+            _lastPage = change.page;
+          }
+        });
       },
     );
   }
@@ -275,9 +283,9 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         ),
       );
     }
-    final page = _lastPage = (_state is ChatSearchLoadedState)
-        ? (_state as ChatSearchLoadedState).page
-        : _lastPage;
+    // 翻页修复：渲染只读 _lastPage（不在 build 中被 _state 覆盖）；
+    // _lastPage 由 executeNow 的 loaded 回调和 _loadMore 共同维护。
+    final page = _lastPage;
     if (page == null || page.items.isEmpty) {
       return const Center(
         key: Key('chat-search-no-results'),
@@ -302,10 +310,23 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         itemCount: page.items.length + (page.nextCursor != null ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= page.items.length) {
-            return const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(
-                  child: CupertinoActivityIndicator(radius: 10)),
+            // 页脚三态：正在加载 / 已到末尾（无 footer）/ 翻页失败重试。
+            if (_loadingMore) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CupertinoActivityIndicator(radius: 10)),
+              );
+            }
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: CupertinoButton(
+                key: const Key('chat-search-load-more'),
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                onPressed: () => _loadMore(page),
+                child: const Text('加载更多',
+                    style: TextStyle(fontSize: 13, color: WeChatColors.brandPrimary)),
+              ),
             );
           }
           final message = page.items[index];

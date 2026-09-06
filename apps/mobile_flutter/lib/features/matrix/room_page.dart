@@ -211,12 +211,15 @@ class _RoomPageState extends State<RoomPage> {
       return await cached.readAsBytes();
     },
     diskWrite: (key, bytes) async {
+      // 注意：MediaCache 为通用缓存（明文字节+全局磁盘 LRU），非本项
+      // 规格要求的"加密缩略图"后端；接入真实加密存储前不宣称已加密。
       await MediaCache.store(widget.room.id, key, bytes);
     },
     diskDelete: (key) async {
       final file = await MediaCache.cached(widget.room.id, key);
       if (file != null) await file.delete();
     },
+    diskListKeys: () async => MediaCache.listCachedKeys(widget.room.id),
   );
 
   /// R4：未读 @ 跟踪器（账号隔离；会话实例生命周期）。
@@ -310,8 +313,6 @@ class _RoomPageState extends State<RoomPage> {
     if (next != _lastComposerText) {
       final (start, removed, inserted) =
           MentionComposerModel.diffEdit(_lastComposerText, next);
-      // R1 修复：先更新模型文本再检测触发（旧顺序 triggerAt 检查旧
-      // text，空框输入 @ 越界返回，面板不弹）。
       mentionComposer.text = next;
       mentionComposer.applyEdit(
           start: start, removed: removed, inserted: inserted);
@@ -323,7 +324,12 @@ class _RoomPageState extends State<RoomPage> {
           mentionComposer.triggerAt(cursor - 1);
         }
       }
-      // R6：光标移出 @ 查询范围 → 取消触发（面板关闭）。
+      _lastComposerText = next;
+    }
+    // 光标范围检查移到文本差分**之外**：仅移动光标（文本不变）时
+    // 监听器仍触发（selection 通知），面板应正确关闭（R6 三审修复）。
+    {
+      final cursor = input.selection.baseOffset;
       final trigger = mentionComposer.pendingTriggerStart;
       if (trigger != null && cursor >= 0) {
         final inQueryRange = cursor > trigger && cursor <= next.length;
@@ -331,7 +337,6 @@ class _RoomPageState extends State<RoomPage> {
           mentionComposer.pendingTriggerStart = null;
         }
       }
-      _lastComposerText = next;
     }
     final shouldShow =
         isGroup && mentionComposer.pendingTriggerStart != null;
@@ -970,19 +975,27 @@ class _RoomPageState extends State<RoomPage> {
     );
   }
 
-  /// 视频消息封面帧（发送端附带的加密海报缩略图）：
-  /// 经缩略图内存缓存避免反复下载；无缩略图（旧消息）返回 null 走
-  /// 占位底——绝不为封面帧下载整段视频（内存/流量代价不成比例）。
-  Future<Uint8List?> _loadVideoPoster(String messageId) =>
-      thumbnailMemoryCache.putIfAbsent(
-        'thumb:$messageId',
-        () async {
-          final poster = await controller!.loadThumbnail(messageId);
-          if (poster != null) return poster;
-          // 失败不入缓存（putIfAbsent 出错即丢弃），卡片回退占位底。
-          throw StateError('video message has no poster thumbnail');
-        },
-      );
+  /// 视频消息封面帧：经 VideoPosterSessionCache（规格#1 会话级缓存，
+  /// 三审接线修复——原走页级 MediaMemoryCache，无磁盘层与会话合并）。
+  /// 发送端加密海报缩略图优先；无缩略图返回 null 走占位底。
+  Future<Uint8List?> _loadVideoPoster(String messageId) async {
+    final result = await videoPosterCache.load(
+      VideoPosterSessionCache.keyFor(
+        accountId: widget.room.client.userID ?? '',
+        roomId: widget.room.id,
+        mediaId: messageId,
+        mediaVersion: '${messageId.hashCode}',
+        spec: 'chat-poster',
+      ),
+      () async {
+        final poster = await controller!.loadThumbnail(messageId);
+        if (poster != null && poster.isNotEmpty) return poster;
+        return null; // null → retryable（可重试状态，不阻塞卡片）。
+      },
+    );
+    if (result.retryable) return null;
+    return result.bytes;
+  }
 
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
@@ -2227,29 +2240,47 @@ class _RoomPageState extends State<RoomPage> {
             key: Key('image-message-${message.id}'),
             decorateContent: false,
             content: LayoutBuilder(
-              builder: (context, constraints) => ContainImageBubble(
-                // 缩略图优先：命中则同步渲染。
-                initialBytes: thumbnailMemoryCache.get('thumb:${message.id}') ??
-                    imageMemoryCache.get(message.id),
-                load: () => thumbnailMemoryCache.putIfAbsent(
-                  'thumb:${message.id}',
-                  () async {
-                    final thumbnail = await controller!.loadThumbnail(message.id);
-                    if (thumbnail != null) return thumbnail;
-                    return imageMemoryCache.putIfAbsent(
-                      message.id,
-                      () => loadMediaWithCache(
-                        MediaCacheKey(
-                            roomId: widget.room.id, eventId: message.id),
-                        () => controller!.loadAttachment(message.id),
-                      ),
-                    );
-                  },
-                ),
-                availableWidth: constraints.maxWidth,
-                availableHeight: MediaQuery.of(context).size.height,
-                onTap: () => _openImageViewerWithForward(message),
-              ),
+              builder: (context, constraints) {
+                // GIF 修复：跳过 JPEG 缩略图（静态帧），直接加载原始
+                // GIF 字节保持动画（Image.memory 自动播放多帧）。
+                final isGif = message.mimeType == 'image/gif';
+                return ContainImageBubble(
+                  initialBytes: isGif
+                      ? imageMemoryCache.get(message.id)
+                      : thumbnailMemoryCache.get('thumb:${message.id}') ??
+                          imageMemoryCache.get(message.id),
+                  load: () => isGif
+                      ? imageMemoryCache.putIfAbsent(
+                          message.id,
+                          () => loadMediaWithCache(
+                            MediaCacheKey(
+                                roomId: widget.room.id, eventId: message.id),
+                            () => controller!.loadAttachment(message.id),
+                          ),
+                        )
+                      : thumbnailMemoryCache.putIfAbsent(
+                          'thumb:${message.id}',
+                          () async {
+                            final thumbnail = await controller!
+                                .loadThumbnail(message.id);
+                            if (thumbnail != null) return thumbnail;
+                            return imageMemoryCache.putIfAbsent(
+                              message.id,
+                              () => loadMediaWithCache(
+                                MediaCacheKey(
+                                    roomId: widget.room.id,
+                                    eventId: message.id),
+                                () =>
+                                    controller!.loadAttachment(message.id),
+                              ),
+                            );
+                          },
+                        ),
+                  availableWidth: constraints.maxWidth,
+                  availableHeight: MediaQuery.of(context).size.height,
+                  onTap: () => _openImageViewerWithForward(message),
+                );
+              },
             ),
             senderName: message.isOwn ? null : displayName,
             senderBadge: message.isOwn ? null : _senderBadge(message),

@@ -96,12 +96,17 @@ final class VideoPosterSessionCache {
       try {
         final cached = await diskRead!(cacheKey);
         if (cached != null && cached.isNotEmpty) {
-          diskHits++;
-          if (generation == _sessionGeneration && !isEvicted(cacheKey)) {
-            _storeMemory(cacheKey, cached);
+          // 竞争修复：读取期间 evict/clearAll → 返回 stale（不返回
+          // 已移除条目的正常数据）。
+          if (generation != _sessionGeneration || isEvicted(cacheKey)) {
+            return VideoPosterResult(cached, fromDisk: true, stale: true);
           }
+          diskHits++;
+          _storeMemory(cacheKey, cached);
           return VideoPosterResult(cached, fromDisk: true);
         }
+        // cached 为 null（磁盘无数据）→ 继续走加载器（evict 不阻止
+        // 探测——加载结果由加载后的检查决定是否写回）。
       } catch (_) {
         // 磁盘损坏/IO 异常：缓存保证例外——继续尝试加载器；加载器也
         // 失败时给出可重试状态。
@@ -117,7 +122,7 @@ final class VideoPosterSessionCache {
     if (fresh == null || fresh.isEmpty) {
       return const VideoPosterResult.retryable('暂无预览图，可重试');
     }
-    // R11：会话已清理/键已被移除 → 不写回（不复活已删除内容）。
+    // 会话已清理/键已被移除 → 不写回（不复活已删除内容）。
     if (generation != _sessionGeneration || isEvicted(cacheKey)) {
       return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
     }
@@ -126,6 +131,14 @@ final class VideoPosterSessionCache {
     if (diskWrite != null) {
       try {
         await diskWrite!(cacheKey, fresh);
+        // 竞争修复：写入期间 clearAll/evict → 撤销刚写入的数据
+        // 并返回 stale（不能让已清理内容在磁盘复活）。
+        if (generation != _sessionGeneration || isEvicted(cacheKey)) {
+          try {
+            await diskDelete?.call(cacheKey);
+          } catch (_) {}
+          return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
+        }
         diskWrites++;
       } catch (_) {
         // 磁盘满：例外路径（验证记录单独标注）；不影响本次显示。

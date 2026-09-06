@@ -161,6 +161,24 @@ final class MediaCache {
     }
   }
 
+  /// 列出指定房间的全部缓存键（clearAll 枚举用）。
+  /// 键 = 文件名去掉 `.len` 后缀后的原始段（即调用方传入的 cacheKey）。
+  static Future<List<String>> listCachedKeys(String roomId) async {
+    try {
+      final dir = await _dirFor(roomId);
+      final keys = <String>[];
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final name = entity.uri.pathSegments.last;
+        if (name.endsWith('.len') || name.endsWith('.tmp')) continue;
+        keys.add(name);
+      }
+      return keys;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// 当前缓存用量（字节；供设置页展示）。
   static Future<int> totalCachedBytes() async {
     try {

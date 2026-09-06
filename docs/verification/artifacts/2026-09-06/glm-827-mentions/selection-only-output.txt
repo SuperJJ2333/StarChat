@@ -1,0 +1,16 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-mentions/selection_only_regression_test.dart
+00:00 +0: 827 selection-only move before trigger must cancel mention query
+00:00 +0 -1: 827 selection-only move before trigger must cancel mention query [E]
+  Expected: null
+    Actual: <0>
+  selection notification has unchanged text, so production range check is skipped
+  
+  package:matcher                                                                                         expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                      expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-827-mentions\selection_only_regression_test.dart 36:5  main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-827-mentions/selection_only_regression_test.dart: 827 selection-only move before trigger must cancel mention query

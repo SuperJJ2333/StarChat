@@ -161,9 +161,13 @@ final class ChatSearchQueryController {
     int limit = 50,
     void Function(ChatSearchStateChange change)? onStateChange,
   }) async {
-    // R10：仅取消 timer，不完成 debounce completer（正常触发的防抖
-    // 由下方真实结果完成；旧代码 cancelDebounce 导致自我取消返回 stale）。
-    _cancelDebounceTimer();
+    // 防抖悬挂修复：外部调用 executeNow（提交搜索）时，如防抖 timer
+    // 仍在等待（未触发），完成旧 Future 为 stale（否则永不结束）。
+    // timer 已触发（null）→ 本次 executeNow 由防抖回调发起，正常走。
+    if (_debounceTimer != null) {
+      _cancelDebounceTimer();
+      _completePendingDebounce();
+    }
     // 不可变条件快照 + 本次查询的 epoch。
     final epoch = ++_epoch;
     executedQueries = epoch;
