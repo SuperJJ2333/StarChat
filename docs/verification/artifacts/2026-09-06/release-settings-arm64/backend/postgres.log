@@ -1,0 +1,4 @@
+PASS: VARCHAR rejection, TEXT Unicode/URL round trip, guarded downgrade and re-upgrade
+PASS: competing initial publishers serialized with consistent audit before-values
+PASS: settings and audit failure rolls back entire publication
+PASS: 60 competing publications; 123 coherent snapshot reads

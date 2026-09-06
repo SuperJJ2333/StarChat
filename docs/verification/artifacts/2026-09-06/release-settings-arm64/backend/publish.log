@@ -1,0 +1,16 @@
+{"status": "PUBLISH_PASS", "version": "0.3.46", "build": 49, "notes_characters": 326, "audit_events": 5, "value_column": "text", "apk_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.3.46-arm64.apk"}
+ChatFlow-0.3.46-arm64.apk
+a8afd2702bc6850a433eb0c3eed1ea9e22d42d9be2a6480fee6f58cd6c4e3be9  latest-arm64.apk
+HTTP/2 200
+accept-ranges: bytes
+alt-svc: h3=":443"; ma=2592000
+cache-control: no-store
+content-type: application/octet-stream
+date: Sun, 06 Sep 2026 09:56:42 GMT
+etag: "6a9d3857-48693c4"
+last-modified: Sun, 06 Sep 2026 09:54:31 GMT
+server: nginx/1.27.5
+via: 2.0 Caddy
+content-length: 75928516
+
+{"ok":true,"service":"畅聊 Business API","database":"ready"}starchat-business-api:settings-arm64-0.3.46

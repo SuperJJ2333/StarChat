@@ -1,0 +1,98 @@
+== Repository policy ==
+Repository policy: PASS
+== Deployment policy ==
+Deployment policy: PASS
+== Template unit tests ==
+TemplateTools: PASS
+== Render-only configuration smoke test ==
+Configuration rendering complete.
+== Infra render tests ==
+.................                                                        [100%]
+17 passed in 1.30s
+== Getui bridge tests ==
+............................                                             [100%]
+============================== warnings summary ===============================
+C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+services\getui-bridge\app\config.py:5
+  D:\pythonProject\outsource\StarChat-release-fix\services\getui-bridge\app\config.py:5: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class BridgeSettings(BaseSettings):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+28 passed, 2 warnings in 1.53s
+== Matrix Bot tests ==
+.........                                                                [100%]
+9 passed in 1.31s
+== Business API and Worker tests ==
+..............ssssssssssssssssss........................................ [ 19%]
+........................................................................ [ 39%]
+........................................................................ [ 58%]
+.................................................s...................... [ 78%]
+........................................................................ [ 97%]
+........                                                                 [100%]
+============================== warnings summary ===============================
+tests/business_api/wallet/test_wallet_api_audit.py::test_a01_deposit_address_first_allocation_and_reuse
+  C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+349 passed, 19 skipped, 1 warning in 170.68s (0:02:50)
+== Flutter boundary tests ==
+.................................................................        [100%]
+65 passed in 11.78s
+== Flutter-HTML-Figma UI contract drift check ==
+UI contract drift: PASS (17 components, 330 screens)
+== Business API import smoke test ==
+Business API import: PASS
+== Python AST parse ==
+AST parse: PASS (114 files)
+== Business database migrations ==
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Generating static SQL
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_foundation, Establish the initial migration boundary for 六合通 business data.
+INFO  [alembic.runtime.migration] Running upgrade 0001_foundation -> 0002_idempotency_records, Add durable request idempotency records.
+INFO  [alembic.runtime.migration] Running upgrade 0002_idempotency_records -> 0003_outbox_events, Add the transactional outbox.
+INFO  [alembic.runtime.migration] Running upgrade 0003_outbox_events -> 0004_identity_foundation, Add identity, invitation, device, session, RBAC, and security-hold tables.
+INFO  [alembic.runtime.migration] Running upgrade 0004_identity_foundation -> 0005_audit_events, Add append-only audit events with database enforcement.
+INFO  [alembic.runtime.migration] Running upgrade 0005_audit_events -> 0006_support_queue, Add metadata-only support queue tables.
+INFO  [alembic.runtime.migration] Running upgrade 0006_support_queue -> 0007_caibi_ledger, Add immutable CAIBI ledger and adjustment workflow.
+INFO  [alembic.runtime.migration] Running upgrade 0007_caibi_ledger -> 0008_caibi_red_packets, Add CAIBI red packets and preallocated shares.
+INFO  [alembic.runtime.migration] Running upgrade 0008_caibi_red_packets -> 0009_red_packet_claims, Reserve red packet claims to make concurrent user claims unique.
+INFO  [alembic.runtime.migration] Running upgrade 0009_red_packet_claims -> 0010_usdt_wallet, Add USDT-TRC20 wallet state and isolated wallet ledger.
+INFO  [alembic.runtime.migration] Running upgrade 0010_usdt_wallet -> 0011_wallet_webhook_events, Add custody webhook deduplication records.
+INFO  [alembic.runtime.migration] Running upgrade 0011_wallet_webhook_events -> 0012_friendship, Authoritative friendship domain.
+INFO  [alembic.runtime.migration] Running upgrade 0012_friendship -> 0013_moments, Moments social domain.
+INFO  [alembic.runtime.migration] Running upgrade 0013_moments -> 0014_moments_prefs, Moments preferences and reports.
+INFO  [alembic.runtime.migration] Running upgrade 0014_moments_prefs -> 0015_contact_tags, Contact tags.
+INFO  [alembic.runtime.migration] Running upgrade 0015_contact_tags -> 0016_moment_media, Moment media upload sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0016_moment_media -> 0017_registration_profile, Expand registration verification and user profile persistence.
+INFO  [alembic.runtime.migration] Running upgrade 0017_registration_profile -> 0018_avatar_uploads, Add durable private avatar upload sessions.
+INFO  [alembic.runtime.migration] Running upgrade 0018_avatar_uploads -> 0019_matrix_profile_sync, Persist idempotent Matrix profile synchronization state.
+INFO  [alembic.runtime.migration] Running upgrade 0019_matrix_profile_sync -> 0020_friend_request_reuse, Track latest friend request time for safe rejected-request reuse.
+INFO  [alembic.runtime.migration] Running upgrade 0020_friend_request_reuse -> 0021_group_auto_join, Default-enable user-controlled server auto-join for Matrix groups.
+INFO  [alembic.runtime.migration] Running upgrade 0021_group_auto_join -> 0022_profile_nudge_suffix, Store the user-visible nudge suffix in the profile.
+INFO  [alembic.runtime.migration] Running upgrade 0022_profile_nudge_suffix -> 0023_moments_social_completion, Freeze tag sources for moment audiences.
+INFO  [alembic.runtime.migration] Running upgrade 0023_moments_social_completion -> 0024_moment_notifications, Add private moment interaction notifications.
+INFO  [alembic.runtime.migration] Running upgrade 0024_moment_notifications -> 0025_moment_drafts_native_ads, Add private drafts and native ad inventory.
+INFO  [alembic.runtime.migration] Running upgrade 0025_moment_drafts_native_ads -> 0026_moment_cover_media, Store moment covers by stable private object key.
+INFO  [alembic.runtime.migration] Running upgrade 0026_moment_cover_media -> 0027_admin_controls, Add admin command, ban and notice tables.
+INFO  [alembic.runtime.migration] Running upgrade 0027_admin_controls -> 0028_notice_receipts_ads, Add notice receipts and native ad campaign delivery state.
+INFO  [alembic.runtime.migration] Running upgrade 0028_notice_receipts_ads -> 0029_chat_transfers, Add chat transfers with escrow state machine.
+INFO  [alembic.runtime.migration] Running upgrade 0029_chat_transfers -> 0030_app_settings, Add runtime application settings table.
+INFO  [alembic.runtime.migration] Running upgrade 0030_app_settings -> 0031_friend_request_requested_at, 补齐 0020 未落库的 friend_requests.requested_at（幂等修补）。
+INFO  [alembic.runtime.migration] Running upgrade 0031_friend_request_requested_at -> 0032_friend_request_prefs, 补齐 friend_requests 的申请人联系人偏好列（幂等修补，expand-only）。
+INFO  [alembic.runtime.migration] Running upgrade 0032_friend_request_prefs -> 0033_complaints, 补齐 complaints 投诉表（expand-only，幂等）。
+INFO  [alembic.runtime.migration] Running upgrade 0033_complaints -> 0034_referral_bindings, referral 邀请关系表（expand-only，幂等）。
+INFO  [alembic.runtime.migration] Running upgrade 0034_referral_bindings -> 0035_direct_conversations, Canonical Direct Conversation 登记表（好友系统重构 Phase E，expand-only）。
+INFO  [alembic.runtime.migration] Running upgrade 0035_direct_conversations -> 0036_group_join_tokens, 群聊加入令牌与审批（群二维码进群，expand-only，可回滚）。
+INFO  [alembic.runtime.migration] Running upgrade 0036_group_join_tokens -> 0038_app_settings_text, Expand settings values without changing API length limits.
+INFO  [alembic.runtime.migration] Running upgrade 0036_group_join_tokens -> 0037_wallet_deposit_address, 钱包充值地址与历史分页索引（审计 A01/F07，expand-only，可回滚）。
+INFO  [alembic.runtime.migration] Running upgrade 0037_wallet_deposit_address, 0038_app_settings_text -> 0039_merge_settings_wallet, Merge independently deployable settings and wallet branches (no DDL).
+Alembic migrations: PASS
+== OpenAPI drift check ==
+OpenAPI contract: PASS
+== Docker Compose render ==
+Verification: PASS

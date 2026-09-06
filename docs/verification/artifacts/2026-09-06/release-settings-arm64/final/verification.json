@@ -1,0 +1,20 @@
+{
+  "sha256": "a8afd2702bc6850a433eb0c3eed1ea9e22d42d9be2a6480fee6f58cd6c4e3be9",
+  "size": 75928516,
+  "original_entries": 986,
+  "rebuilt_entries": 989,
+  "native_asset_entries": 331,
+  "changed_native_assets": [],
+  "original_class_count": 24573,
+  "rebuilt_class_count": 24573,
+  "changed_smali_classes": [],
+  "manifest_semantics_identical": true,
+  "changed_dex": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex",
+    "classes4.dex",
+    "classes5.dex"
+  ],
+  "resources_rebuilt": true
+}
