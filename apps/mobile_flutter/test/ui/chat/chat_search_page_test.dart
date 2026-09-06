@@ -54,8 +54,11 @@ void main() {
       ));
       await tester.enterText(
           find.byKey(const Key('chat-search-input')), 'hello');
-      await tester.pump(const Duration(milliseconds: 400)); // 越过防抖。
-      await tester.pumpAndSettle();
+      // 越过防抖 + 搜索完成（不用 pumpAndSettle——加载态
+      // CupertinoActivityIndicator 无限动画导致 settle 超时）。
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.byKey(const Key('chat-search-result-e1')), findsOneWidget);
       expect(find.text('Hello world'), findsOneWidget);
     });

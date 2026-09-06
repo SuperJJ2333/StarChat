@@ -24,6 +24,7 @@ final class ChatSearchPage extends StatefulWidget {
     this.scanningDates = const {},
     this.earliestMonth,
     this.latestMonth,
+    this.onJumpToDate,
   });
 
   /// 是否群聊（决定是否显示"群成员"筛选入口）。
@@ -52,6 +53,9 @@ final class ChatSearchPage extends StatefulWidget {
   final DateTime? earliestMonth;
   final DateTime? latestMonth;
 
+  /// 日期定位回调（选中日期后直接定位，不再只弹说明——R6 修复）。
+  final void Function(DateTime date)? onJumpToDate;
+
   @override
   State<ChatSearchPage> createState() => _ChatSearchPageState();
 }
@@ -63,6 +67,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   ChatSearchStateChange _state = const ChatSearchStateChange.empty();
   ChatSearchResultPage? _lastPage;
   Timer? _debounce;
+  bool _loadingMore = false;
 
   @override
   void initState() {
@@ -229,21 +234,9 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
       ),
     );
     if (picked != null && mounted) {
-      // 日期作为独立定位工具（规格 #4）：提示"按会话全部消息定位"。
-      showCupertinoDialog<void>(
-        context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
-          title: const Text('按日期定位'),
-          content: Text('将按会话全部消息定位到 '
-              '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
-      );
+      // R6 修复：日期选择后**直接调用定位回调**（不再只弹说明框）。
+      widget.onJumpToDate?.call(picked);
+      Navigator.of(context).pop();
     }
   }
 
@@ -292,21 +285,56 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
             style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
       );
     }
-    return ListView.builder(
-      key: const Key('chat-search-results'),
-      controller: _scroll,
-      itemCount: page.items.length,
-      itemBuilder: (context, index) {
-        final message = page.items[index];
-        return _ResultRow(
-          message: message,
-          keyword: controller.hasKeywordInput ? _input.text.trim() : '',
-          displayName: widget.senderDisplayName?.call(message.senderId) ??
-              message.senderDisplayName,
-          onTap: () => widget.onJumpToMessage(message.eventId),
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // 滚动接近底部（80%+）且有下一页 → loadMore。
+        if (notification is ScrollUpdateNotification &&
+            !_loadingMore &&
+            page.nextCursor != null &&
+            _scroll.position.extentAfter < 200) {
+          _loadMore(page);
+        }
+        return false;
       },
+      child: ListView.builder(
+        key: const Key('chat-search-results'),
+        controller: _scroll,
+        itemCount: page.items.length + (page.nextCursor != null ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index >= page.items.length) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                  child: CupertinoActivityIndicator(radius: 10)),
+            );
+          }
+          final message = page.items[index];
+          return _ResultRow(
+            message: message,
+            keyword: controller.hasKeywordInput ? _input.text.trim() : '',
+            displayName: widget.senderDisplayName?.call(message.senderId) ??
+                message.senderDisplayName,
+            onTap: () => widget.onJumpToMessage(message.eventId),
+          );
+        },
+      ),
     );
+  }
+
+  /// 翻页加载（R6 修复：实际调用 loadMore + 追加到状态）。
+  Future<void> _loadMore(ChatSearchResultPage current) async {
+    if (_loadingMore || current.nextCursor == null) return;
+    _loadingMore = true;
+    try {
+      final next = await _controller!.loadMore(current);
+      if (mounted && !next.stale) {
+        setState(() => _lastPage = next);
+      }
+    } catch (_) {
+      // 翻页失败保持当前页；下次滚动重试。
+    } finally {
+      _loadingMore = false;
+    }
   }
 }
 

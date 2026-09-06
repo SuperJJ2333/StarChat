@@ -29,6 +29,7 @@ final class VideoPosterSessionCache {
     this.diskRead,
     this.diskWrite,
     this.diskDelete,
+    this.diskListKeys,
   });
 
   /// 内存预算（解码图片字节上限，默认 32 MiB）。
@@ -195,18 +196,28 @@ final class VideoPosterSessionCache {
   }
 
   /// 主动清理缓存：内存 + 磁盘全清（R11：真正清磁盘）。
+  /// R11 修复：主动清理缓存——内存 + 磁盘全清。
+  /// 磁盘键来源：内存键快照 + [diskListKeys] 回调（已淘汰到磁盘的条目）。
   Future<void> clearAll() async {
-    // 先快照键（clearMemory 会清空 _memory），再清内存 + 磁盘。
-    final keys = _memory.keys.toList();
+    // 先快照内存键（clearMemory 会清空 _memory）。
+    final memoryKeys = _memory.keys.toList();
+    // 会话代次递增 → 在途加载不写回。
     clearMemory();
     if (diskDelete != null) {
-      for (final key in keys) {
+      // 合并内存键 + 磁盘已知键（回调由注入方实现——生产中可枚举目录）。
+      final diskKeys = await diskListKeys?.call() ?? const <String>[];
+      final allKeys = <String>{...memoryKeys, ...diskKeys};
+      for (final key in allKeys) {
         try {
           await diskDelete!(key);
         } catch (_) {}
       }
     }
   }
+
+  /// 枚举磁盘全部缓存键（clearAll 用；null = 调用方无枚举能力，
+  /// 只清内存中的键）。
+  final Future<List<String>> Function()? diskListKeys;
 }
 
 /// 加载结果：成功带字节与来源；失败带 retryable 状态；

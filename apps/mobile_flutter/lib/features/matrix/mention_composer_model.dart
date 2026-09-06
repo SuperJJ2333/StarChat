@@ -134,7 +134,8 @@ final class MentionComposerModel {
   }
 
   /// 发送时的收件人（按 userId，绝不凭昵称/正文推断）。
-  /// token 范围与当前文本不一致时以文本为准重新校验（防御）。
+  /// 发送后调 [clearAfterSend] 清触发状态与 token（含未选联系人的
+  /// 残留 @ 查询——R6/审查：不清则下一条普通输入仍弹面板）。
   List<String> recipientUserIds() {
     final ids = <String>{};
     for (final token in tokens) {
@@ -148,6 +149,13 @@ final class MentionComposerModel {
       }
     }
     return ids.toList(growable: false);
+  }
+
+  /// 发送后清理：token、触发状态、文本全部归零。
+  void clearAfterSend() {
+    tokens.clear();
+    pendingTriggerStart = null;
+    text = '';
   }
 
   /// 历史富文本收件解析（规格#3：仅识别合法用户链接；`@@兄弟` 普通

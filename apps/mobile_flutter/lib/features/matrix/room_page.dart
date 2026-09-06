@@ -74,6 +74,8 @@ import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import '../contacts/member_directory_service.dart';
 import '../../ui/chat/chat_search_page.dart';
+import 'unread_mention_tracker.dart';
+import 'video_poster_session_cache.dart';
 import 'chat_search_query_controller.dart' show ChatSearchMessage, ChatSearchMediaCategory;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
@@ -199,6 +201,29 @@ class _RoomPageState extends State<RoomPage> {
   // 缩略图独立缓存（键前缀 thumb:）：消息气泡优先渲染发送端压缩演绎版，
   // 与全量原图缓存互不挤占。
   final thumbnailMemoryCache = MediaMemoryCache();
+
+  /// R7/R4：视频封面会话缓存（规格#1）——当前账号登录期间的房间会话
+  /// 实例生命周期。磁盘后端 = 会话级 MediaCache 目录（加密缩略图）。
+  late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
+    diskRead: (key) async {
+      final cached = await MediaCache.cached(widget.room.id, key);
+      if (cached == null) return null;
+      return await cached.readAsBytes();
+    },
+    diskWrite: (key, bytes) async {
+      await MediaCache.store(widget.room.id, key, bytes);
+    },
+    diskDelete: (key) async {
+      final file = await MediaCache.cached(widget.room.id, key);
+      if (file != null) await file.delete();
+    },
+  );
+
+  /// R4：未读 @ 跟踪器（账号隔离；会话实例生命周期）。
+  late final UnreadMentionTracker unreadMentions = UnreadMentionTracker(
+    accountId: widget.room.client.userID ?? '',
+    roomId: widget.room.id,
+  );
   late final VoiceTranscriber voiceTranscriber =
       widget.voiceTranscriber ?? SpeechToTextVoiceTranscriber();
   // 语音模式：按住说话录音状态机 + 60 秒上限自动发送。
@@ -296,6 +321,14 @@ class _RoomPageState extends State<RoomPage> {
         if (insertedEnd == cursor &&
             next.codeUnitAt(cursor - 1) == 0x40 /* @ */) {
           mentionComposer.triggerAt(cursor - 1);
+        }
+      }
+      // R6：光标移出 @ 查询范围 → 取消触发（面板关闭）。
+      final trigger = mentionComposer.pendingTriggerStart;
+      if (trigger != null && cursor >= 0) {
+        final inQueryRange = cursor > trigger && cursor <= next.length;
+        if (!inQueryRange) {
+          mentionComposer.pendingTriggerStart = null;
         }
       }
       _lastComposerText = next;
@@ -756,9 +789,9 @@ class _RoomPageState extends State<RoomPage> {
     try {
       input.clear();
       _lastComposerText = '';
-      mentionComposer
-        ..text = ''
-        ..tokens.clear();
+      // R6：clearAfterSend 同时清触发状态（未选联系人的 @兄 残留
+      // 不再导致下一条普通输入弹面板）。
+      mentionComposer.clearAfterSend();
     } finally {
       _programmaticComposerEdit = false;
     }
@@ -1713,6 +1746,7 @@ class _RoomPageState extends State<RoomPage> {
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     final messages = controller?.messages ?? const <RoomMessageViewModel>[];
     // 转换为搜索模型（含媒体分类/正文可见文本/时间线序号）。
+    // R6：普通文本含 HTTP(S) URL → link 分类（此前漏检）。
     final searchMessages = <ChatSearchMessage>[
       for (final (index, message) in messages.indexed)
         ChatSearchMessage(
@@ -1729,6 +1763,11 @@ class _RoomPageState extends State<RoomPage> {
               ChatSearchMediaCategory.imageVideo,
             RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
             RoomMessageKind.file => ChatSearchMediaCategory.file,
+            RoomMessageKind.text
+                when RegExp('https?://[^\\\\s<>"]+',
+                        caseSensitive: false)
+                    .hasMatch(message.text) =>
+              ChatSearchMediaCategory.link,
             _ => null,
           },
           hasMedia: message.kind != RoomMessageKind.text,
@@ -1774,6 +1813,21 @@ class _RoomPageState extends State<RoomPage> {
           onJumpToMessage: (eventId) {
             Navigator.pop(context);
             unawaited(_scrollToMessage(eventId));
+          },
+          // R6：日期定位回调——定位当日最早一条消息。
+          onJumpToDate: (date) {
+            // 找到当日时间线中最早一条可展示消息。
+            final dayMessages = searchMessages
+                .where((m) =>
+                    m.timestamp.year == date.year &&
+                    m.timestamp.month == date.month &&
+                    m.timestamp.day == date.day)
+                .toList();
+            if (dayMessages.isNotEmpty) {
+              // timelineOrder 升序 = 旧→新；最早 = order 最小。
+              dayMessages.sort((a, b) => a.timelineOrder.compareTo(b.timelineOrder));
+              unawaited(_scrollToMessage(dayMessages.first.eventId));
+            }
           },
           datesWithMessages: datesWithMessages,
           earliestMonth: earliestMonth,
@@ -1852,6 +1906,38 @@ class _RoomPageState extends State<RoomPage> {
           message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
       size: WeChatDimensions.messageAvatar,
     );
+  }
+
+  /// R7：打开全屏图片查看器（含转发/下载操作）。
+  Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
+    try {
+      final bytes = await imageMemoryCache.putIfAbsent(
+        message.id,
+        () => loadMediaWithCache(
+          MediaCacheKey(roomId: widget.room.id, eventId: message.id),
+          () => controller!.loadAttachment(message.id),
+        ),
+      );
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => ImageViewerPage(
+            previewBytes: bytes,
+            originalSizeHint: message.attachmentSize,
+            loadOriginal: () => imageMemoryCache.putIfAbsent(
+              message.id,
+              () => loadMediaWithCache(
+                MediaCacheKey(roomId: widget.room.id, eventId: message.id),
+                () => controller!.loadAttachment(message.id),
+              ),
+            ),
+            onForward: () => _forwardMessages([message]),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+    }
   }
 
   /// R7：打开全屏图片查看器（ContainImageBubble 的点击动作）。
@@ -2134,45 +2220,36 @@ class _RoomPageState extends State<RoomPage> {
             state: deliveryState,
           )
         else if (isImageMessage)
-          // 微信式图片消息：无气泡底衬，但头像/昵称与普通消息一致展示；
-          // **缩略图优先**：气泡先渲染发送端 ≤800px/≤100KB 压缩演绎版，
-          // 点击查看器再按需加载原图；无缩略图（旧消息）自动回退全量。
-          // 页级内存缓存命中时同步渲染。
+          // 微信式图片消息（R7 修复：ContainImageBubble 替换
+          // EncryptedImageMessage——按解码实际宽高 contain 完整适配，
+          // 不再固定 200x150 cover 裁切）。缩略图优先逻辑保留。
           WeChatMessageBubble(
             key: Key('image-message-${message.id}'),
             decorateContent: false,
-            content: EncryptedImageMessage(
-              initialBytes: thumbnailMemoryCache.get('thumb:${message.id}') ??
-                  imageMemoryCache.get(message.id),
-              loadThumbnail: () => thumbnailMemoryCache.putIfAbsent(
-                'thumb:${message.id}',
-                () async {
-                  final thumbnail = await controller!.loadThumbnail(message.id);
-                  if (thumbnail != null) return thumbnail;
-                  // 旧消息无缩略图：回退全量并计入缩略图缓存，
-                  // 避免滚动往复时重复下载完整附件。
-                  return loadMediaWithCache(
-                    MediaCacheKey(roomId: widget.room.id, eventId: message.id),
-                    () => controller!.loadAttachment(message.id),
-                  );
-                },
-              ),
-              load: () => imageMemoryCache.putIfAbsent(
-                message.id,
-                () => loadMediaWithCache(
-                  MediaCacheKey(roomId: widget.room.id, eventId: message.id),
-                  () => controller!.loadAttachment(message.id),
+            content: LayoutBuilder(
+              builder: (context, constraints) => ContainImageBubble(
+                // 缩略图优先：命中则同步渲染。
+                initialBytes: thumbnailMemoryCache.get('thumb:${message.id}') ??
+                    imageMemoryCache.get(message.id),
+                load: () => thumbnailMemoryCache.putIfAbsent(
+                  'thumb:${message.id}',
+                  () async {
+                    final thumbnail = await controller!.loadThumbnail(message.id);
+                    if (thumbnail != null) return thumbnail;
+                    return imageMemoryCache.putIfAbsent(
+                      message.id,
+                      () => loadMediaWithCache(
+                        MediaCacheKey(
+                            roomId: widget.room.id, eventId: message.id),
+                        () => controller!.loadAttachment(message.id),
+                      ),
+                    );
+                  },
                 ),
+                availableWidth: constraints.maxWidth,
+                availableHeight: MediaQuery.of(context).size.height,
+                onTap: () => _openImageViewerWithForward(message),
               ),
-              originalSizeHint: message.attachmentSize,
-              onForward: () => _forwardMessages([message]),
-              forwardTo: (roomId) async {
-                final interaction = _interaction;
-                if (interaction == null) {
-                  throw StateError('forward unavailable');
-                }
-                await interaction.forward(message.id, roomId);
-              },
             ),
             senderName: message.isOwn ? null : displayName,
             senderBadge: message.isOwn ? null : _senderBadge(message),

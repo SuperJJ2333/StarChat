@@ -1,0 +1,27 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-recheck-mentions/current_composer_edges_test.dart
+00:00 +0: sending literal unselected @ query clears trigger as well as text
+00:00 +0 -1: sending literal unselected @ query clears trigger as well as text [E]
+  Expected: null
+    Actual: <2>
+  new ordinary draft must not reopen mention panel with stale trigger
+  
+  package:matcher                                                                                          expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                       expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-recheck-mentions\current_composer_edges_test.dart 36:5  main.<fn>
+  
+00:00 +0 -1: moving caret before trigger cancels active query
+00:00 +0 -2: moving caret before trigger cancels active query [E]
+  Expected: null
+    Actual: <0>
+  otherwise selecting Bob produces @Bob @兄 instead of cancelling old query
+  
+  package:matcher                                                                                          expect
+  package:flutter_test/src/widget_tester.dart 473:18                                                       expect
+  ..\..\docs\verification\artifacts\2026-09-06\glm-recheck-mentions\current_composer_edges_test.dart 57:5  main.<fn>
+  
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-recheck-mentions/current_composer_edges_test.dart: moving caret before trigger cancels active query
+  D:/pythonProject/outsource/StarChat/docs/verification/artifacts/2026-09-06/glm-recheck-mentions/current_composer_edges_test.dart: sending literal unselected @ query clears trigger as well as text

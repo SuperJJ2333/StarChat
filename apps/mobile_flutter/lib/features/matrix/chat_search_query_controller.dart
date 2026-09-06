@@ -108,9 +108,10 @@ final class ChatSearchQueryController {
     _epoch++;
   }
 
-  /// 输入防抖：300ms 后执行；**R10 修复**：
-  /// - 防抖期间新调度 → 旧 Completer 以 stale 空页完成（不悬挂）。
-  /// - 取消 → Completer 同样完成。
+  /// 输入防抖：300ms 后执行。R10 修复：
+  /// - 被新调度取代 → 旧 Completer 以 stale 完成（不悬挂）。
+  /// - 外部 cancelDebounce → 同样 stale 完成。
+  /// - **正常触发** → executeNow 的真实结果完成（不自我取消）。
   Timer? _debounceTimer;
   Completer<ChatSearchResultPage>? _debounceCompleter;
 
@@ -118,7 +119,9 @@ final class ChatSearchQueryController {
     int limit = 50,
     void Function(ChatSearchStateChange change)? onStateChange,
   }) {
+    // 取代旧防抖（stale 完成），但不清 timer（新 timer 下方重建）。
     _completePendingDebounce();
+    _cancelDebounceTimer();
     _debounceCompleter = Completer<ChatSearchResultPage>();
     final completer = _debounceCompleter!;
     _debounceTimer = Timer(debounce, () {
@@ -132,9 +135,14 @@ final class ChatSearchQueryController {
     return completer.future;
   }
 
-  void cancelDebounce() {
+  /// 仅取消 timer（不清 completer——正常触发路径使用）。
+  void _cancelDebounceTimer() {
     _debounceTimer?.cancel();
     _debounceTimer = null;
+  }
+
+  void cancelDebounce() {
+    _cancelDebounceTimer();
     _completePendingDebounce();
   }
 
@@ -153,7 +161,9 @@ final class ChatSearchQueryController {
     int limit = 50,
     void Function(ChatSearchStateChange change)? onStateChange,
   }) async {
-    cancelDebounce();
+    // R10：仅取消 timer，不完成 debounce completer（正常触发的防抖
+    // 由下方真实结果完成；旧代码 cancelDebounce 导致自我取消返回 stale）。
+    _cancelDebounceTimer();
     // 不可变条件快照 + 本次查询的 epoch。
     final epoch = ++_epoch;
     executedQueries = epoch;
