@@ -55,6 +55,8 @@ final class _FakePreferenceStore implements NotificationPreferenceStore {
 }
 
 final class _FakeSystemPresenter implements SystemNotificationPresenter {
+  final cancellations = <int>[];
+  Future<void> Function()? beforeShow;
   final shows = <({
     int id,
     String title,
@@ -82,6 +84,7 @@ final class _FakeSystemPresenter implements SystemNotificationPresenter {
     String? avatarUrl,
     int? unreadCount,
   }) async {
+    await beforeShow?.call();
     shows.add((
       id: notificationId,
       title: title,
@@ -91,7 +94,9 @@ final class _FakeSystemPresenter implements SystemNotificationPresenter {
   }
 
   @override
-  Future<void> cancelConversation(int notificationId) async {}
+  Future<void> cancelConversation(int notificationId) async {
+    cancellations.add(notificationId);
+  }
 }
 
 final class _RecordingSoundEngine implements SoundEngine {
@@ -185,6 +190,145 @@ NotificationCoordinator _buildCoordinator({
 Future<void> _drain() => Future<void>.delayed(const Duration(milliseconds: 20));
 
 void main() {
+  testWidgets('disposing cancels a pending push fallback', (tester) async {
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    await coordinator.showPushWakeNotification();
+    await tester.runAsync(() async {
+      await coordinator.dispose();
+      await source.close();
+    });
+    await tester.pump(const Duration(seconds: 6));
+    expect(presenter.shows, isEmpty);
+    expect(presenter.cancellations, contains(pushWakeNotificationId));
+  });
+
+  testWidgets(
+      'call resolution cancels an in-flight fallback after show completes',
+      (tester) async {
+    final showing = Completer<void>();
+    final presenter = _FakeSystemPresenter()..beforeShow = () => showing.future;
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    await coordinator.showPushWakeNotification();
+    await tester.pump(const Duration(seconds: 6));
+    await coordinator.cancelPushWakeNotification();
+    final cancelledBeforeShow = presenter.cancellations.length;
+    showing.complete();
+    await tester.pump();
+    expect(presenter.shows, hasLength(1));
+    expect(presenter.cancellations.length, cancelledBeforeShow + 1);
+    expect(presenter.cancellations.last, pushWakeNotificationId);
+    await tester.runAsync(() async {
+      await coordinator.dispose();
+      await source.close();
+    });
+  });
+
+  testWidgets(
+      'push wake waits for local sync and never duplicates an active call',
+      (tester) async {
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final appState = AppStateManager()..updateLifecycle(AppRunState.background);
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: appState,
+    );
+    await coordinator.start();
+    await coordinator.showPushWakeNotification();
+    expect(presenter.shows, isEmpty, reason: 'an opaque wake is not a message');
+    appState.setCallActive(true);
+    await tester.pump(const Duration(seconds: 6));
+    expect(presenter.shows, isEmpty);
+    await coordinator.showPushWakeNotification();
+    await tester.pump(const Duration(seconds: 6));
+    expect(presenter.shows, isEmpty,
+        reason: 'late wake must not duplicate call');
+    await tester.runAsync(() async {
+      await coordinator.dispose();
+      await source.close();
+    });
+  });
+
+  testWidgets('unresolved push retains bounded generic fallback',
+      (tester) async {
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    await coordinator.showPushWakeNotification();
+    expect(presenter.shows, isEmpty);
+    await tester.pump(const Duration(seconds: 6));
+    expect(presenter.shows.single.id, pushWakeNotificationId);
+    await tester.runAsync(() async {
+      await coordinator.dispose();
+      await source.close();
+    });
+  });
+
+  testWidgets('resolved real message replaces pending generic wake',
+      (tester) async {
+    final presenter = _FakeSystemPresenter();
+    final source = _StreamEventSource();
+    final coordinator = _buildCoordinator(
+      engine: _RecordingSoundEngine(),
+      haptics: _RecordingHapticDriver(),
+      badge: _RecordingBadgeGateway(),
+      presenter: presenter,
+      source: source,
+      prefs: _FakePreferenceStore(),
+      unread: _FakeUnreadSource(),
+      appState: AppStateManager()..updateLifecycle(AppRunState.background),
+    );
+    await coordinator.start();
+    await coordinator.showPushWakeNotification();
+    await coordinator.handleEvent(_incoming());
+    await tester.pump(const Duration(seconds: 6));
+    expect(presenter.shows, hasLength(1));
+    expect(presenter.shows.single.id, notificationIdForConversation('!room1'));
+    await tester.runAsync(() async {
+      await coordinator.dispose();
+      await source.close();
+    });
+  });
+
   test('前台普通消息：横幅 + 声音 + 轻震 + 角标，不出系统通知（PRD §18）', () async {
     final engine = _RecordingSoundEngine();
     final haptics = _RecordingHapticDriver();

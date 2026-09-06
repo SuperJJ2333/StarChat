@@ -92,10 +92,14 @@ class CallConnection(private val context: Context) : Connection() {
     }
 
     override fun onReject() {
+        if (finished) return
+        CallManager.onRejectRequested()
         finish(DisconnectCause(DisconnectCause.REJECTED))
     }
 
     override fun onDisconnect() {
+        if (finished) return
+        CallManager.onRejectRequested()
         finish(DisconnectCause(DisconnectCause.LOCAL))
     }
 

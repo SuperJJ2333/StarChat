@@ -36,6 +36,7 @@ final class ForegroundServiceRequest {
     this.playSound = false,
     this.enableVibration = false,
     this.sound,
+    this.payload,
     this.foregroundServiceTypes = const {},
   });
 
@@ -52,6 +53,7 @@ final class ForegroundServiceRequest {
   final bool playSound;
   final bool enableVibration;
   final AndroidNotificationSound? sound;
+  final String? payload;
   final Set<AndroidServiceForegroundType> foregroundServiceTypes;
 
   @override
@@ -69,6 +71,7 @@ final class ForegroundServiceRequest {
           playSound == other.playSound &&
           enableVibration == other.enableVibration &&
           sound == other.sound &&
+          payload == other.payload &&
           setEquals(foregroundServiceTypes, other.foregroundServiceTypes);
 
   @override
@@ -84,6 +87,7 @@ final class ForegroundServiceRequest {
         playSound,
         enableVibration,
         sound,
+        payload,
         Object.hashAllUnordered(foregroundServiceTypes),
       );
 }
@@ -124,11 +128,13 @@ final class FlutterForegroundServiceBackend
         priority: request.priority,
         category: request.category,
         ongoing: request.ongoing,
+        autoCancel: !request.ongoing,
         playSound: request.playSound,
         enableVibration: request.enableVibration,
         sound: request.sound,
       ),
       foregroundServiceTypes: request.foregroundServiceTypes,
+      payload: request.payload,
     );
   }
 

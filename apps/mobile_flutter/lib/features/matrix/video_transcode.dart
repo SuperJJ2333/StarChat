@@ -9,10 +9,10 @@ const maxOriginalVideoBytes = 20 * 1024 * 1024;
 
 /// 视频压缩策略常量：
 /// - 目标减量 ≥50%（体积降为原件一半以下），以 480p 可接受画质为前提；
-/// - 未达 50% 且原件较大（>10MB）时允许降档重试一次，仍取更小者；
+/// - 未达 50% 且原件较大（>2MB）时允许降档重试一次，仍取更小者；
 /// - 移动网络下浏览/上传体积以压缩产物为准，显著降低带宽与存储负担。
 const videoCompressionTargetRatio = 0.5;
-const videoCompressionRetryThresholdBytes = 10 * 1024 * 1024;
+const videoCompressionRetryThresholdBytes = 2 * 1024 * 1024;
 
 /// 视频压缩策略决策（纯逻辑，可测）：
 /// 首次压缩产物未达 ≥50% 减量、且原件较大时，降档再压一次。
@@ -69,7 +69,7 @@ final class VideoRendition {
 /// 聊天视频压缩（相册发送与"拍摄"录像共用的同一策略，需求 2）：
 ///
 /// - 首选 640×480（H.264/AAC MP4），目标体积减量 ≥50%（画质可接受前提）；
-/// - 未达 ≥50% 且原件 >10MB 时自动降档 `LowQuality` 再压一次，取更小者；
+/// - 未达 ≥50% 且原件 >2MB 时自动降档 `LowQuality` 再压一次，取更小者；
 /// - 压缩不可用回退原文件，[VideoRendition.fallbackNotice] 携带明确提示，
 ///   不静默回退；
 /// - [onProgress] 订阅插件转码进度（0~1），供界面展示百分比，避免无反馈。
@@ -91,13 +91,14 @@ Future<VideoRendition> transcodeForChat(
       final info = await VideoCompress.compressVideo(
         origin.path,
         quality: VideoQuality.Res640x480Quality,
+        frameRate: 24,
       );
       compressed = info?.file;
       durationMs = info?.duration;
     } catch (_) {
       compressed = null;
     } finally {
-      _cancelCompressionQuietly();
+      await _cancelCompressionQuietly();
     }
 
     if (compressed != null) {
@@ -112,13 +113,14 @@ Future<VideoRendition> transcodeForChat(
           final info = await VideoCompress.compressVideo(
             origin.path,
             quality: VideoQuality.LowQuality,
+            frameRate: 24,
           );
           lower = info?.file;
           lowerDurationMs = info?.duration;
         } catch (_) {
           lower = null;
         } finally {
-          _cancelCompressionQuietly();
+          await _cancelCompressionQuietly();
         }
         if (lower != null && await lower.length() < firstPassSize) {
           compressed = lower;

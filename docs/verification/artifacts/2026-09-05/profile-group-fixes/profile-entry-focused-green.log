@@ -1,0 +1,86 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart
+00:00 +0: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart: every production room entry wires the profile message action
+00:00 +1: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart: message tab passes its existing canonical opener into room navigation
+00:05 +2: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 非好友群成员 → 反查后进入用户资料页，添加按钮可用
+00:05 +3: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:05 +4: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:05 +5: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +6: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +7: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +8: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +9: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +10: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +11: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +12: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +13: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +14: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+00:06 +15: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts rebuild immediately when the shared remark changes
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +16: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +17: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +18: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +19: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +20: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +21: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+00:06 +22: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts follow Figma star A-Z hash index and grouping
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +23: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts index follows the list surface during pull down
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +24: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contact remark is a viewer-local display override
+00:06 +25: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contact display name is remark then nickname then username
+00:06 +26: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contact details clear an explicitly removed remark
+00:06 +27: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contact details map all identity fields to a summary independently
+00:06 +28: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend profile and settings strictly follow Figma order
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:06 +29: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend tag picker saves multiple selected tags
+00:06 +30: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend remark saves through the gateway and is retained by the profile
+00:07 +31: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend remark failure retains input and shows an error
+00:07 +32: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend profile covers the root tab bar like the Figma detail page
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:07 +33: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: friend moments shrink without overflow below 393px baseline
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:07 +34: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: profile message action navigates once while back pops profile
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+[AvatarFirstPaint] source=unspecified fallback-rendered=true metadata=false
+00:07 +35: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/contacts/contact_flow_test.dart: contacts navigation exposes WeChat-style search and more actions
+00:07 +36: All tests passed!

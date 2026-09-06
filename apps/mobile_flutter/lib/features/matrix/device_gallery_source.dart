@@ -133,6 +133,13 @@ final class GalleryAccessCache {
   GalleryAccessCache._();
 
   static final GalleryAccessCache shared = GalleryAccessCache._();
+  static final GalleryAccessCache photos = GalleryAccessCache._();
+  static GalleryAccessCache forMode(bool photosOnly) =>
+      photosOnly ? photos : shared;
+  static void invalidateAll() {
+    shared.invalidate();
+    photos.invalidate();
+  }
 
   bool? _permissionGranted;
 
@@ -226,6 +233,9 @@ final class GalleryAlbum {
 /// - 缩略图统一按 200px 解码，压缩图/原图仅在发送时按需读取；
 /// - 视频发送默认压缩（480p，减轻服务器负担），原图模式有 20MB 上限。
 final FilterOptionGroup _sortedByCreateDateDesc = FilterOptionGroup(
+  // MIUI 的视频记录可能没有宽高；不能把元数据缺失当作无效视频。
+  videoOption:
+      const FilterOption(sizeConstraint: SizeConstraint(ignoreSize: true)),
   orders: [OrderOption(type: OrderOptionType.createDate, asc: false)],
 );
 
@@ -239,28 +249,35 @@ class DeviceGallerySource {
   /// 顶部子列表：最近图片（默认）+ 本地视频 + 其余本地图库分类
   /// （Camera、Screenshots、Download…）。权限与索引结果经会话级缓存
   /// 复用（GalleryAccessCache.shared）。
-  static Future<List<GalleryAlbum>> loadAlbums() async {
-    if (!await _ensurePermission()) throw GalleryPermissionDenied();
-    return GalleryAccessCache.shared.loadAlbums(_scanAlbums);
+  static Future<List<GalleryAlbum>> loadAlbums(
+      {bool photosOnly = false}) async {
+    if (!await _ensurePermission(photosOnly: photosOnly)) {
+      throw GalleryPermissionDenied();
+    }
+    return GalleryAccessCache.forMode(photosOnly)
+        .loadAlbums(() => _scanAlbums(photosOnly: photosOnly));
   }
 
-  static Future<List<GalleryAlbum>> _scanAlbums() async {
+  static Future<List<GalleryAlbum>> _scanAlbums(
+      {bool photosOnly = false}) async {
     final List<AssetPathEntity> recent;
     final List<AssetPathEntity> videos;
     final List<AssetPathEntity> folders;
     try {
       recent = await PhotoManager.getAssetPathList(
-        type: RequestType.common,
+        type: photosOnly ? RequestType.image : RequestType.common,
         onlyAll: true,
         filterOption: _sortedByCreateDateDesc,
       );
-      videos = await PhotoManager.getAssetPathList(
-        type: RequestType.video,
-        onlyAll: true,
-        filterOption: _sortedByCreateDateDesc,
-      );
+      videos = photosOnly
+          ? <AssetPathEntity>[]
+          : await PhotoManager.getAssetPathList(
+              type: RequestType.video,
+              onlyAll: true,
+              filterOption: _sortedByCreateDateDesc,
+            );
       folders = await PhotoManager.getAssetPathList(
-        type: RequestType.common,
+        type: photosOnly ? RequestType.image : RequestType.common,
         onlyAll: false,
         filterOption: _sortedByCreateDateDesc,
       );
@@ -288,41 +305,46 @@ class DeviceGallerySource {
   }
 
   /// 按相册构造分页器（null = 最近图片）。
-  static DeviceGalleryPager pagerFor(GalleryAlbum? album) =>
-      DeviceGalleryPager(album: album?.entity, type: requestTypeForAlbum(album));
+  static DeviceGalleryPager pagerFor(GalleryAlbum? album,
+          {bool photosOnly = false}) =>
+      DeviceGalleryPager(
+          album: album?.entity,
+          type: photosOnly ? RequestType.image : requestTypeForAlbum(album));
 
-  static Future<bool> _requestPermission() async {
+  static Future<bool> _requestPermission({bool photosOnly = false}) async {
     final permission = await PhotoManager.requestPermissionExtend(
       requestOption: PermissionRequestOption(
         androidPermission: AndroidPermission(
-          type: RequestType.common,
+          type: photosOnly ? RequestType.image : RequestType.common,
           mediaLocation: false,
         ),
         iosAccessLevel: IosAccessLevel.readWrite,
       ),
     );
-    _lastKnownScope = permissionScopeOf(permission);
+    _lastKnownScopes[photosOnly] = permissionScopeOf(permission);
     return permission.hasAccess;
   }
 
-  static Future<bool> _ensurePermission() =>
-      GalleryAccessCache.shared.ensurePermission(
-        _requestPermission,
-        scope: _lastKnownScope,
+  static Future<bool> _ensurePermission({bool photosOnly = false}) =>
+      GalleryAccessCache.forMode(photosOnly).ensurePermission(
+        () => _requestPermission(photosOnly: photosOnly),
+        scope: _lastKnownScopes[photosOnly],
       );
 
   /// 最近一次权限请求的授权范围（null = 尚未请求）。
-  static String? _lastKnownScope;
+  static final Map<bool, String?> _lastKnownScopes = {};
 
   /// 最近一次权限请求/探测的授权范围（'full'/'limited'/null=未知）。
   /// UI 据此在 limited 时提供"管理可见照片/视频"入口（审计注记：
   /// Android 14+ 允许仅授权选定媒体，需要明确入口让用户重选）。
-  static String? get lastKnownPermissionScope => _lastKnownScope;
+  static String? get lastKnownPermissionScope => _lastKnownScopes[false];
+  static String? permissionScopeFor({bool photosOnly = false}) =>
+      _lastKnownScopes[photosOnly];
 
   /// 测试注入。
   @visibleForTesting
   static set lastKnownPermissionScopeForTest(String? value) =>
-      _lastKnownScope = value;
+      _lastKnownScopes[false] = value;
 
   /// 授权范围指纹：部分授权（limited）与全部授权可见的媒体集合不同。
   static String? permissionScopeOf(PermissionState state) =>
@@ -332,13 +354,13 @@ class DeviceGallerySource {
   ///
   /// 返回 true 表示范围已变化且缓存已失效（调用方应重新加载）；
   /// 查询失败按未变化处理（不阻塞浏览）。
-  static Future<bool> permissionScopeChanged() async {
+  static Future<bool> permissionScopeChanged({bool photosOnly = false}) async {
     PermissionState state;
     try {
       state = await PhotoManager.getPermissionState(
-        requestOption: const PermissionRequestOption(
+        requestOption: PermissionRequestOption(
           androidPermission: AndroidPermission(
-            type: RequestType.common,
+            type: photosOnly ? RequestType.image : RequestType.common,
             mediaLocation: false,
           ),
           iosAccessLevel: IosAccessLevel.readWrite,
@@ -348,9 +370,11 @@ class DeviceGallerySource {
       return false;
     }
     final scope = permissionScopeOf(state);
-    _lastKnownScope = scope;
-    if (GalleryAccessCache.shared.matchesPermissionScope(scope)) return false;
-    GalleryAccessCache.shared.invalidate();
+    _lastKnownScopes[photosOnly] = scope;
+    if (GalleryAccessCache.forMode(photosOnly).matchesPermissionScope(scope)) {
+      return false;
+    }
+    GalleryAccessCache.invalidateAll();
     return true;
   }
 }
@@ -378,7 +402,8 @@ class DeviceGalleryPager {
   /// 请求相册权限并定位目标相册（时间倒序：最新创建的显示在最上方）。
   /// 权限与"最近"相册定位结果经会话级缓存复用。
   Future<void> ensureAccess() async {
-    if (!await DeviceGallerySource._ensurePermission()) {
+    if (!await DeviceGallerySource._ensurePermission(
+        photosOnly: _type == RequestType.image)) {
       throw GalleryPermissionDenied();
     }
     if (_album != null) return;
@@ -386,7 +411,8 @@ class DeviceGalleryPager {
       _album = _fixedAlbum;
       return;
     }
-    final album = await GalleryAccessCache.shared.recentAlbum(_type, () async {
+    final album = await GalleryAccessCache.forMode(_type == RequestType.image)
+        .recentAlbum(_type, () async {
       try {
         final albums = await PhotoManager.getAssetPathList(
           type: _type,
@@ -562,7 +588,10 @@ List<int> samplePositionsFor(
 ]) {
   final durationMs = duration?.inMilliseconds ?? 0;
   if (durationMs <= 0) return candidates;
-  final legal = [for (final position in candidates) if (position < durationMs - 50) position];
+  final legal = [
+    for (final position in candidates)
+      if (position < durationMs - 50) position
+  ];
   if (legal.isNotEmpty) return legal;
   final midpoint = (durationMs ~/ 2).clamp(0, durationMs - 1);
   return [midpoint];
@@ -592,8 +621,8 @@ Future<Uint8List?> loadVideoFirstFrame(
         '${(await dirFactory()).path}${Platform.pathSeparator}video_first_frame_cache');
     await dir.create(recursive: true);
     final key = sha256
-        .convert(utf8
-            .encode('${origin.path}|${asset.id}|${asset.videoDuration}|${await origin.length()}'))
+        .convert(utf8.encode(
+            '${origin.path}|${asset.id}|${asset.videoDuration}|${await origin.length()}'))
         .toString();
     final cacheFile = File('${dir.path}${Platform.pathSeparator}$key.jpg');
     // ignoreCache：字节级损坏恢复（存在但不可解码）——跳过磁盘读强制
@@ -609,8 +638,7 @@ Future<Uint8List?> loadVideoFirstFrame(
         // 删除失败也继续抽帧（写回时覆盖）。
       }
     }
-    final positions =
-        (positionsFor ?? samplePositionsFor)(asset.videoDuration);
+    final positions = (positionsFor ?? samplePositionsFor)(asset.videoDuration);
     final frame = await extractVideoPoster(
       origin.path,
       fetch: fetch,
@@ -648,8 +676,8 @@ final class VideoFirstFrameStore {
     Future<Uint8List?> Function(AssetEntity asset)? forceLoader,
     DateTime Function()? clock,
   })  : loader = loader ?? loadVideoFirstFrame,
-        forceLoader =
-            forceLoader ?? ((asset) => loadVideoFirstFrame(asset, ignoreCache: true)),
+        forceLoader = forceLoader ??
+            ((asset) => loadVideoFirstFrame(asset, ignoreCache: true)),
         _clock = clock ?? (() => DateTime.now());
 
   static const maxConcurrentDefault = 2;
@@ -753,8 +781,9 @@ final class _FirstFrameJob {
   Future<void> run() async {
     Uint8List? frame;
     // 损坏恢复：强制重抽走 ignoreCache 路径（跳过磁盘读，重抽后覆盖）。
-    final effectiveLoader =
-        store._forceExtract.contains(key) ? (store.forceLoader ?? store.loader) : store.loader;
+    final effectiveLoader = store._forceExtract.contains(key)
+        ? (store.forceLoader ?? store.loader)
+        : store.loader;
     try {
       frame = await effectiveLoader(asset).timeout(store.timeout);
     } catch (_) {

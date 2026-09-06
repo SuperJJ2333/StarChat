@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/components/wechat_scaffold.dart';
@@ -12,6 +15,9 @@ import 'request_friend_page.dart';
 import '../../core/business_api_client.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
+import '../matrix/image_picker_page.dart';
+import '../profile/profile_controller.dart';
+import '../profile/my_qr_code_page.dart';
 
 /// 「扫一扫」页（微信式）：识别好友二维码 → 进入「申请添加朋友」页。
 ///
@@ -37,22 +43,100 @@ final class ScanQrPage extends StatefulWidget {
   State<ScanQrPage> createState() => _ScanQrPageState();
 }
 
-final class _ScanQrPageState extends State<ScanQrPage> {
+final class _ScanQrPageState extends State<ScanQrPage>
+    with WidgetsBindingObserver {
   MobileScannerController? _controller;
   bool _handling = false;
   String? hint;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_resumeCamera());
+    } else {
+      unawaited(_pauseCamera());
+    }
+  }
+
+  Future<void> _pauseCamera() async {
+    try {
+      await _controller?.stop();
+    } catch (_) {/* Gallery remains available without a camera. */}
+  }
+
+  void _guardCameraRoute() {
+    if (!mounted || _controller?.value.isRunning != true) return;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (_handling ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
+      unawaited(_pauseCamera());
+    }
+  }
+
+  Future<void> _resumeCamera() async {
+    if (!mounted || _handling || ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) return;
+    try {
+      await _controller?.start();
+    } catch (_) {/* Camera widget displays its permission/error state. */}
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _controller?.removeListener(_guardCameraRoute);
     _controller?.dispose();
     super.dispose();
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
     if (_handling || !mounted) return;
-    final raw =
-        capture.barcodes.isNotEmpty ? capture.barcodes.first.rawValue : null;
+    final raw = _payloadOf(capture);
     if (raw == null || raw.isEmpty) return;
+    await _handlePayload(raw);
+  }
+
+  String? _payloadOf(BarcodeCapture capture) {
+    final values = capture.barcodes
+        .map((b) => b.rawValue)
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toList();
+    for (final value in values) {
+      if (parseGroupQrPayload(value) != null ||
+          parseFriendQrPayload(value) != null) {
+        return value;
+      }
+    }
+    return values.isEmpty ? null : values.first;
+  }
+
+  Future<void> _handlePayload(String raw) async {
+    if (_handling || !mounted) return;
+    setState(() => _handling = true);
+    await _pauseCamera();
+    try {
+      await _resolvePayload(raw);
+    } finally {
+      if (mounted) {
+        setState(() => _handling = false);
+        await _resumeCamera();
+      }
+    }
+  }
+
+  Future<void> _resolvePayload(String raw) async {
+    if (!mounted) return;
     // 扫码识别音：纯前台 UI 反馈。
     NotificationFeedback.shared.play(SoundType.scan);
     // BUG2 分流：群码优先（changliao://g/）→ 群资料确认页；
@@ -67,7 +151,6 @@ final class _ScanQrPageState extends State<ScanQrPage> {
       setState(() => hint = '这不是畅聊二维码');
       return;
     }
-    _handling = true;
     setState(() => hint = '正在识别好友信息…');
     try {
       final response = await widget.api.searchUsers(username);
@@ -83,7 +166,6 @@ final class _ScanQrPageState extends State<ScanQrPage> {
       if (match.isEmpty || match['user_id'] == null) {
         setState(() {
           hint = '未找到该好友，请确认二维码有效';
-          _handling = false;
         });
         return;
       }
@@ -105,7 +187,6 @@ final class _ScanQrPageState extends State<ScanQrPage> {
       if (mounted) {
         setState(() {
           hint = '识别失败，请重试';
-          _handling = false;
         });
       }
     }
@@ -117,7 +198,6 @@ final class _ScanQrPageState extends State<ScanQrPage> {
       setState(() => hint = '当前环境暂不支持扫码入群');
       return;
     }
-    _handling = true;
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
@@ -128,18 +208,89 @@ final class _ScanQrPageState extends State<ScanQrPage> {
         ),
       ),
     );
-    if (mounted) {
-      setState(() => _handling = false);
+  }
+
+  Future<void> _openMyQr() async {
+    if (_handling) return;
+    setState(() {
+      _handling = true;
+      hint = null;
+    });
+    await _pauseCamera();
+    try {
+      final gateway = widget.api;
+      if (gateway is! ProfileGateway) throw StateError('Profile unavailable');
+      final profile = await (gateway as ProfileGateway).loadProfile();
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+        builder: (_) => MyQrCodePage(profile: profile),
+      ));
+    } catch (_) {
+      if (mounted) setState(() => hint = '个人二维码加载失败，请重试');
+    } finally {
+      if (mounted) {
+        setState(() => _handling = false);
+        await _resumeCamera();
+      }
+    }
+  }
+
+  Future<void> _openGallery() async {
+    if (_handling) return;
+    setState(() {
+      _handling = true;
+      hint = null;
+    });
+    await _pauseCamera();
+    try {
+      if (!mounted) return;
+      final picked = await Navigator.of(context, rootNavigator: true)
+          .push<({List<GalleryPhoto> photos, bool original})>(
+        CupertinoPageRoute(
+            builder: (_) => const ImagePickerPage(
+                  photosOnly: true,
+                  maxCount: 1,
+                  confirmLabel: '识别',
+                  showOriginalToggle: false,
+                )),
+      );
+      if (!mounted || picked == null || picked.photos.isEmpty) return;
+      final photo = picked.photos.single;
+      if (photo.isVideo) throw StateError('Only photos can be scanned');
+      final directory =
+          await (await getTemporaryDirectory()).createTemp('chatflow-qr-');
+      BarcodeCapture? capture;
+      try {
+        final file = File('${directory.path}/scan-image');
+        await file.writeAsBytes(await photo.originalBytes(), flush: true);
+        if (!mounted) return;
+        capture = await _controller!.analyzeImage(file.path);
+      } finally {
+        await directory.delete(recursive: true);
+      }
+      if (!mounted) return;
+      final payload = capture == null ? null : _payloadOf(capture);
+      if (payload == null) {
+        setState(() => hint = '未在所选照片中识别到二维码，请更换照片');
+      } else {
+        await _resolvePayload(payload);
+      }
+    } catch (_) {
+      if (mounted) setState(() => hint = '照片识别失败，请重试');
+    } finally {
+      if (mounted) {
+        setState(() => _handling = false);
+        await _resumeCamera();
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 相册/手电筒等扩展暂不开放；保持与微信一致的极简扫一扫。
     _controller ??= MobileScannerController(
       detectionSpeed: DetectionSpeed.noDuplicates,
       facing: CameraFacing.back,
-    );
+    )..addListener(_guardCameraRoute);
     return WeChatPageScaffold.navigation(
       backgroundColor: CupertinoColors.black,
       navigationBar: CupertinoNavigationBar(
@@ -183,7 +334,7 @@ final class _ScanQrPageState extends State<ScanQrPage> {
             Positioned(
               left: 0,
               right: 0,
-              bottom: 48,
+              bottom: 16,
               child: Column(
                 children: [
                   Text(
@@ -209,6 +360,16 @@ final class _ScanQrPageState extends State<ScanQrPage> {
                               color: CupertinoColors.systemGrey5)),
                     ),
                   ],
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _action('scan-my-qr', CupertinoIcons.qrcode, '我的二维码',
+                          _openMyQr),
+                      _action('scan-gallery', CupertinoIcons.photo_on_rectangle,
+                          '图库', _openGallery),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -217,4 +378,17 @@ final class _ScanQrPageState extends State<ScanQrPage> {
       ),
     );
   }
+
+  Widget _action(String key, IconData icon, String label, VoidCallback onTap) =>
+      CupertinoButton(
+        key: Key(key),
+        onPressed: _handling ? null : onTap,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 28, color: CupertinoColors.white),
+          const SizedBox(height: 8),
+          Text(label,
+              style:
+                  const TextStyle(fontSize: 13, color: CupertinoColors.white)),
+        ]),
+      );
 }

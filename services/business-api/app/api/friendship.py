@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated,Literal
 from fastapi import APIRouter,Depends,Header,Query,Response
 from pydantic import BaseModel,ConfigDict,Field
 from app.core.config import Settings
@@ -18,7 +18,7 @@ class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
 class FriendRequestProjection(BaseModel):
-    id:str;user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;message:str;remark:str|None=None;tags:list[str]=Field(default_factory=list);status:str;requested_at:str
+    id:str;user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;message:str;remark:str|None=None;tags:list[str]=Field(default_factory=list);status:str;requested_at:str;direction:Literal["INCOMING","OUTGOING"]="INCOMING"
 class FriendRequestListResponse(BaseModel):items:list[FriendRequestProjection];next_cursor:str|None=None
 class UserSearchProjection(BaseModel):
     user_id:str;username:str;nickname:str;avatar_url:str|None;matrix_user_id:str|None;relationship_state:str

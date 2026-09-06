@@ -1,5 +1,7 @@
 # Mobile release runbook
 
+Android delivery policy (user-confirmed 2026-09-05): follow [the mandatory APK rebuild/signing runbook](android-apk-rebuild.md) after the source build. Commands below create intermediate Android artifacts; they do not by themselves complete the final packaging process.
+
 Required GitHub Actions secrets: `IOS_CERTIFICATE_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROFILE_BASE64`, `IOS_PROVISIONING_PROFILE_NAME`, `APPLE_TEAM_ID`, `IOS_BUNDLE_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`, `APPSTORE_PRIVATE_KEY`.
 
 The workflow generates the iOS host project on macOS, runs Dart checks, imports signing assets only in the ephemeral runner, builds the IPA, and uploads it to TestFlight. No certificate, profile, private key, or IPA is committed.

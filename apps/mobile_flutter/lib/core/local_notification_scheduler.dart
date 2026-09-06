@@ -40,8 +40,8 @@ final class FlutterLocalNotificationScheduler
 
   NotificationDetails get _details => const NotificationDetails(
         android: AndroidNotificationDetails(
-          'changliao_message_reminders',
-          '消息提醒',
+          'chatflow_messages_v2',
+          '消息通知',
           channelDescription: '按你选择的时间提醒查看畅聊消息',
           importance: Importance.high,
           priority: Priority.high,

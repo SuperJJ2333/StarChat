@@ -32,17 +32,26 @@ final class FriendAcceptanceCoordinator {
     // 1. 乐观本地插入：通讯录立即出现该好友。
     if (userId != null && userId.isNotEmpty) {
       try {
+        // Only this account's existing contact preferences are trusted here.
+        // Older servers may include the requester's private preferences.
+        ContactSummary? ownContact;
+        for (final contact in identityCache.contacts) {
+          if (contact.userId == userId) {
+            ownContact = contact;
+            break;
+          }
+        }
         await identityCache.applyUpdatedContact(ContactSummary(
           userId: userId,
           username: request['username']?.toString() ?? '',
           matrixUserId: matrixUserId ?? '',
           nickname: nickname,
           avatarUrl: request['avatar_url']?.toString(),
-          remark: request['remark']?.toString(),
-          tags: [
-            for (final tag in (request['tags'] as List? ?? const []))
-              if (tag.toString().isNotEmpty) tag.toString(),
-          ],
+          remark: ownContact?.remark,
+          tags: ownContact?.tags ?? const [],
+          momentsPermission: ownContact?.momentsPermission ?? 'DEFAULT',
+          starred: ownContact?.starred ?? false,
+          nudgeSuffix: ownContact?.nudgeSuffix,
         ));
       } catch (_) {
         // 本地插入失败由随后的整表刷新对账。

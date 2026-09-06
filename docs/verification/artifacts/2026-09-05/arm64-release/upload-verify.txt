@@ -1,0 +1,10 @@
+{
+  "url": "https://www.liuhetong888.com/downloads/ChatFlow-0.3.37-arm64.apk",
+  "sha256": "bc52c6d7924e48523fa6686a071b784271bbe8cf503e921b6e6428983132e238",
+  "size": 75487665,
+  "old_aliases": {
+    "latest-arm32.apk": "ChatFlow-0.3.36-arm32.apk",
+    "latest-x86_64.apk": "ChatFlow-0.3.36-x86_64.apk",
+    "latest-arm64.apk": "ChatFlow-0.3.36-arm64.apk"
+  }
+}

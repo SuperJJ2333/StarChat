@@ -88,7 +88,7 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
       MatrixEvent? lastIncoming;
       for (final event in events) {
         if (event.senderId == currentUserId) continue;
-        if (!_isNotifiableMessage(event)) continue;
+        if (!_isNotifiableMessage(event, roomId)) continue;
         if (event.originServerTs.isBefore(cutoff)) continue;
         lastIncoming = event;
       }
@@ -109,8 +109,13 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
 
   /// 只通知消息类事件；通话信令（m.call.*）由通话状态机处理，
   /// 避免 P0 双重来电路径（PRD §9/§11）。
-  bool _isNotifiableMessage(MatrixEvent event) {
-    final type = event.type;
+  bool _isNotifiableMessage(MatrixEvent event, String roomId) {
+    final resolved = client.getRoomById(roomId)?.lastEvent;
+    // Sync carries the encrypted envelope even when the SDK has already
+    // resolved its local type. Filter before aggregation so a call following
+    // a real message does not discard that message's notification.
+    final type =
+        resolved?.eventId == event.eventId ? resolved!.type : event.type;
     return type == EventTypes.Message ||
         type == EventTypes.Encrypted ||
         type == changliaoNudgeEventType;
@@ -150,8 +155,7 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
       ),
     );
 
-    final user =
-        room.unsafeGetUserFromMemoryOrFallback(raw.senderId);
+    final user = room.unsafeGetUserFromMemoryOrFallback(raw.senderId);
     final matrixDisplayName = user.calcDisplayname();
     // 规格#1/#2：标题=好友备注（解析器优先级链），绝不裸 Matrix ID。
     final resolvedName = displayNameResolver.resolveSync(
@@ -167,9 +171,8 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
         conversationId: roomId,
         senderId: raw.senderId,
         senderName: senderName,
-        conversationName: room.isDirectChat
-            ? senderName
-            : room.getLocalizedDisplayname(),
+        conversationName:
+            room.isDirectChat ? senderName : room.getLocalizedDisplayname(),
         messageKind: _messageKind(decrypted, raw),
         messagePreview: preview,
         isMention: isMention,

@@ -6,8 +6,11 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import 'package:video_compress/video_compress.dart';
 
 import 'matrix_e2ee_client.dart';
+import 'video_transcode.dart';
+import 'video_poster_extractor.dart';
 
 /// 普通文件发送的大小上限（M01）：Matrix 文件走 homeserver 上传，
 /// 客户端在 readAsBytes **之前**拒绝超限文件，避免整文件载入内存。
@@ -159,12 +162,46 @@ final class MediaMessageService {
     final local = File(file.path);
     // 读取前预检（大小/存在性），再进入有界并发槽上传。
     await ensureWithinSendLimit(local);
-    final bytes = await local.readAsBytes();
     await _sendSlots.acquire();
     try {
-      return await matrix.sendEncryptedMedia(
-          roomId, bytes, file.mimeType ?? mimeFromFileName(file.name),
-          filename: file.name);
+      final selectedMime = file.mimeType;
+      var mime = selectedMime == null ||
+              selectedMime.isEmpty ||
+              selectedMime == 'application/octet-stream'
+          ? mimeFromFileName(file.name)
+          : selectedMime;
+      final info = <String, dynamic>{};
+      var upload = local;
+      Uint8List? poster;
+      if (mime.startsWith('video/')) {
+        final rendition = await transcodeForChat(local);
+        upload = rendition.file;
+        if (rendition.usedCompressed) mime = 'video/mp4';
+        if (!rendition.usedCompressed &&
+            await upload.length() > maxOriginalVideoBytes) {
+          throw StateError('视频压缩失败且文件过大，请选择较短的视频');
+        }
+        poster = await extractVideoPoster(upload.path);
+        try {
+          final metadata = await VideoCompress.getMediaInfo(upload.path)
+              .timeout(const Duration(seconds: 15));
+          final duration = metadata.duration;
+          if (duration != null && duration.isFinite && duration > 0) {
+            info['duration'] = duration.round();
+          }
+          if ((metadata.width ?? 0) > 0) info['w'] = metadata.width;
+          if ((metadata.height ?? 0) > 0) info['h'] = metadata.height;
+        } catch (_) {
+          // Unsupported metadata must not prevent sending the original file.
+        }
+      }
+      final bytes = await upload.readAsBytes();
+      return await matrix.sendEncryptedMedia(roomId, bytes, mime,
+          filename: mime == 'video/mp4'
+              ? '${file.name.split('.').first}.mp4'
+              : file.name,
+          thumbnailBytes: poster,
+          extraContent: info.isEmpty ? null : {'info': info});
     } finally {
       _sendSlots.release();
     }

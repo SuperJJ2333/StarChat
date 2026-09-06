@@ -27,8 +27,8 @@ void main() {
 
     test('small original video: never retry (quality first)', () {
       final retry = shouldRetryVideoAtLowerQuality(
-        originalBytes: 5 * 1024 * 1024,
-        compressedBytes: 4 * 1024 * 1024, // 20% 减量但原件小
+        originalBytes: 1 * 1024 * 1024,
+        compressedBytes: 900 * 1024,
       );
       expect(retry, isFalse);
     });

@@ -43,8 +43,8 @@ void main() {
     final lastResort = ContactBackedUserDisplayNameResolver(
       contactFor: (id) => null,
     );
-    expect(lastResort.resolveSync('@a:matrix.localhost'), '@a:matrix.localhost',
-        reason: '无任何资料时回退 Matrix ID（绝不显示空串）');
+    expect(lastResort.resolveSync('@a:matrix.localhost'), 'a',
+        reason: '无资料时仅显示用户名');
   });
 
   test('空备注/空昵称跳过；预热失败回退同步结果', () async {

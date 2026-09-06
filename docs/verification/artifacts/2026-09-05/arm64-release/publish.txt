@@ -1,0 +1,7 @@
+BEFORE {"latest_version": "0.3.36", "latest_build": 39, "min_supported_build": 3, "notes": "0.3.36 更新：修复后台消息通知（好友备注+摘要+头像+未读数）；来电显示好友备注名；系统级全屏来电（锁屏/息屏接听拒绝）；私聊与相册视频秒开优化；接听后通话页保持显示。", "apk_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.3.36-arm64.apk"}
+PUBLISH 200 {"status": "OK", "latest_version": "0.3.37", "latest_build": 40, "min_supported_build": 3, "idempotency_key": "app-update-publish-0.3.37-arm64-20260905"}
+LATEST 200 {"configured": true, "latest_version": "0.3.37", "latest_build": 40, "min_supported_build": 3, "notes": "0.3.37 更新：\n1. 修复好友申请与通过验证后的私聊跳转，自动发送原始打招呼内容。\n2. 调整朋友圈权限选项，新增好友申请红点、提示音及通知弹窗。\n3. 修复群二维码服务、相册保存和视频处理相关问题。\n4. 修复“添加到通讯录”和“通过验证”按钮文字显示。\n本次安装包适用于 ARM64 安卓设备。", "apk_url": "https://www.liuhetong888.com/downloads/ChatFlow-0.3.37-arm64.apk"}
+PUBLISH_RESULT PASS
+lrwxrwxrwx 1 root root 25 Sep  4 20:37 /opt/starchat/frontend/downloads/latest-arm32.apk -> ChatFlow-0.3.36-arm32.apk
+lrwxrwxrwx 1 root root 25 Sep  5 07:36 /opt/starchat/frontend/downloads/latest-arm64.apk -> ChatFlow-0.3.37-arm64.apk
+lrwxrwxrwx 1 root root 26 Sep  4 20:37 /opt/starchat/frontend/downloads/latest-x86_64.apk -> ChatFlow-0.3.36-x86_64.apk

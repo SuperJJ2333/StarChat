@@ -63,6 +63,7 @@ import '../statistics/statistics_room_scope.dart';
 import '../statistics/statistics_tool.dart';
 import 'media_cache.dart';
 import 'matrix_user_avatar.dart';
+import 'matrix_conversation_avatar.dart';
 import 'profile_repository.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
@@ -81,6 +82,7 @@ import 'matrix_control_rooms.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'media_message_service.dart';
 import 'message_reminder_service.dart';
+import 'mention_composer_model.dart';
 import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
@@ -96,6 +98,7 @@ class RoomPage extends StatefulWidget {
     this.initialContact,
     required this.onCreateGroup,
     this.reminderService,
+    this.onMessage,
     this.onVoice,
     this.onVideo,
     this.initialIdentityCache,
@@ -107,6 +110,7 @@ class RoomPage extends StatefulWidget {
   final ContactDetails? initialContact;
   final VoidCallback onCreateGroup;
   final MessageReminderService? reminderService;
+  final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final ProfileRepository? initialIdentityCache;
@@ -150,6 +154,7 @@ Future<void> openGroupMemberProfile(
               : member.displayName,
           relationshipState:
               profile['relationship_state']?.toString() ?? 'NONE',
+          avatarUrl: profile['avatar_url']?.toString(),
         ),
       ),
     );
@@ -204,6 +209,11 @@ class _RoomPageState extends State<RoomPage> {
   Timeline? roomTimeline;
   LocalHiddenEvents? hiddenEvents;
   final mentionDraft = MentionDraft();
+
+  /// 规格#3：统一提及模型（范围式 token 替换，修复双 @）。
+  /// mentionDraft 仅保留给既有测试路径兼容，发送侧以本模型为准。
+  final mentionComposer = MentionComposerModel();
+  String _lastComposerText = '';
   final menuLinks = <String, LayerLink>{};
   OverlayEntry? actionMenuEntry;
   RoomMessageViewModel? replyingTo;
@@ -264,7 +274,27 @@ class _RoomPageState extends State<RoomPage> {
   /// WeChat opens the 「选择提醒的人」 panel when a group message ends with a
   /// freshly typed "@" and closes it again as soon as the text moves on.
   void _handleComposerChanged() {
-    final shouldShow = isGroup && input.text.endsWith('@');
+    // 规格#3：差分同步（删除/编辑使失效的 token 剔除）+ 新 @ 触发记录。
+    final next = input.text;
+    if (next != _lastComposerText) {
+      final (start, removed, inserted) =
+          MentionComposerModel.diffEdit(_lastComposerText, next);
+      mentionComposer.applyEdit(
+          start: start, removed: removed, inserted: inserted);
+      final cursor = input.selection.baseOffset;
+      // 新插入的最后一个字符是 @（含组合输入提交）→ 记录触发位置。
+      if (inserted > 0 && cursor > 0 && cursor <= next.length) {
+        final insertedEnd = start + inserted;
+        if (insertedEnd == cursor &&
+            next.codeUnitAt(cursor - 1) == 0x40 /* @ */) {
+          mentionComposer.triggerAt(cursor - 1);
+        }
+      }
+      mentionComposer.text = next;
+      _lastComposerText = next;
+    }
+    final shouldShow =
+        isGroup && mentionComposer.pendingTriggerStart != null;
     if (mounted && shouldShow != (composerPanel == ComposerPanel.mention)) {
       setState(() {
         composerPanel = shouldShow ? ComposerPanel.mention : ComposerPanel.none;
@@ -308,24 +338,28 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _insertMention(MentionOption option) {
-    final selfId = widget.room.client.userID;
-    final value = option.isAll
-        ? mentionDraft.appendAll(
-            input.text,
-            userIds: [
+    // 规格#3：替换触发范围为一个 token（不再追加双 @）。
+    final cursor = input.selection.baseOffset;
+    final caret = option.isAll
+        ? mentionComposer.replaceTrigger(
+            displayName: option.primaryName,
+            userId: '@all',
+            cursor: cursor < 0 ? null : cursor,
+            mentionAllUserIds: [
               for (final member in orderedJoinedMembers(widget.room))
-                if (member.id != selfId) member.id,
+                if (member.id != widget.room.client.userID) member.id,
             ],
           )
-        : mentionDraft.append(
-            input.text,
+        : mentionComposer.replaceTrigger(
             displayName: option.primaryName,
             userId: option.id,
+            cursor: cursor < 0 ? null : cursor,
           );
     setState(() {
       input
-        ..text = value
-        ..selection = TextSelection.collapsed(offset: value.length);
+        ..text = mentionComposer.text
+        ..selection = TextSelection.collapsed(offset: caret);
+      _lastComposerText = mentionComposer.text;
       composerPanel = ComposerPanel.none;
     });
   }
@@ -414,12 +448,12 @@ class _RoomPageState extends State<RoomPage> {
         return;
       }
       controller = RoomTimelineController(
-      // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
-      // 发送必失败，消息进入本地 failed 状态）。
-      canSendNow: () => InteractionPermission.resolve(
-        isFriend: _peerIsFriend(),
-        isBlocked: false, // 拉黑名单接口接入前保守值（服务侧已隔离）
-      ).canSendMessage(),
+        // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
+        // 发送必失败，消息进入本地 failed 状态）。
+        canSendNow: () => InteractionPermission.resolve(
+          isFriend: _peerIsFriend(),
+          isBlocked: false, // 拉黑名单接口接入前保守值（服务侧已隔离）
+        ).canSendMessage(),
         MatrixRoomTimelineAdapter(widget.room, timeline),
       )..addListener(_changed);
       roomTimeline = timeline;
@@ -692,7 +726,10 @@ class _RoomPageState extends State<RoomPage> {
     input.clear();
     final interaction = _interaction;
     final reply = replyingTo;
-    final mentions = mentionDraft.activeUserIds(text);
+    // 规格#3：收件人以统一提及模型的 token 范围为准（文字已删不提醒）；
+    // 兼容读旧 draft（头像长按快速 @ 的旧路径已迁至新模型）。
+    var mentions = mentionComposer.recipientUserIds();
+    if (mentions.isEmpty) mentions = mentionDraft.activeUserIds(text);
     if (interaction != null && reply != null) {
       await interaction.reply(
         reply.id,
@@ -706,6 +743,10 @@ class _RoomPageState extends State<RoomPage> {
       await controller!.sendText(text);
     }
     mentionDraft.clear();
+    mentionComposer
+      ..text = ''
+      ..tokens.clear();
+    _lastComposerText = '';
   }
 
   MessageInteractionService? get _interaction {
@@ -734,16 +775,6 @@ class _RoomPageState extends State<RoomPage> {
       return null;
     }
   }
-
-  /// 可转发的加密会话（房间 id → 展示名），供图片查看器“转发”使用。
-  List<({String roomId, String title})> get _imageForwardTargets => [
-        for (final room in widget.room.client.rooms)
-          if (room.id != widget.room.id && room.encrypted)
-            (
-              roomId: room.id,
-              title: room.getLocalizedDisplayname(),
-            ),
-      ];
 
   /// 「拍摄」入口：拍摄成功即**自动加密发送**（不进入“查看照片”页）；
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
@@ -846,49 +877,20 @@ class _RoomPageState extends State<RoomPage> {
 
   /// 规格§八：聊天详情页头像 → APP 自己的好友/用户资料页（禁止打开
   /// Matrix Profile）。好友直开；非好友走业务检索（同一 APP 页面）。
-  Future<void> _openPeerProfile(String matrixUserId) async {
-    final contact = _identityCache.contactsByMatrixId[matrixUserId];
-    if (contact != null) {
-      if (!mounted) return;
-      await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
-          builder: (_) => AddFriendProfilePage(
-            api: widget.api,
-            userId: contact.userId,
-            username: contact.username,
-            nickname: (contact.nickname?.isNotEmpty == true)
-                ? contact.nickname!
-                : contact.username,
-            relationshipState: 'FRIEND',
-            avatarUrl: contact.avatarUrl,
-          ),
-        ),
-      );
-      return;
-    }
-    // 非好友（已删除/陌生人）：按 Matrix ID 业务检索（同一 APP 资料页，
-    // 带"添加到通讯录"入口）——绝不打开 Matrix Profile。
-    try {
-      final profile = await widget.api.lookupUserByMatrixId(matrixUserId);
-      if (!mounted) return;
-      await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
-          builder: (_) => AddFriendProfilePage(
-            api: widget.api,
-            userId: profile['user_id']?.toString() ?? '',
-            username: profile['username']?.toString() ?? matrixUserId,
-            nickname: (profile['nickname']?.toString() ?? '')
-                    .isNotEmpty
-                ? profile['nickname'].toString()
-                : matrixUserId,
-            relationshipState:
-                profile['relationship_state']?.toString() ?? 'NONE',
-          ),
-        ),
-      );
-    } catch (_) {
-      // 反查失败：静默返回（详情页仍可用）。
-    }
+  Future<void> _openPeerProfile(String matrixUserId) {
+    final member = widget.room.unsafeGetUserFromMemoryOrFallback(matrixUserId);
+    return openGroupMemberProfile(
+      context,
+      api: widget.api,
+      lookupByMatrixId: widget.api.lookupUserByMatrixId,
+      member: GroupChatMember(
+        matrixUserId: matrixUserId,
+        displayName: member.calcDisplayname(),
+      ),
+      selfMatrixUserId: widget.room.client.userID,
+      friendContact: _identityCache.contactsByMatrixId[matrixUserId],
+      onOpenFriendContact: _openContact,
+    );
   }
 
   Future<void> _openVideoViewer(RoomMessageViewModel message) async {
@@ -901,6 +903,7 @@ class _RoomPageState extends State<RoomPage> {
             decrypt: () => controller!.loadAttachment(message.id),
           ),
           initialDuration: message.videoDuration,
+          onForward: () => _forwardMessages([message]),
         ),
       ),
     );
@@ -1150,7 +1153,7 @@ class _RoomPageState extends State<RoomPage> {
         final frame = await VideoCompress.getByteThumbnail(
           rendition.file.path,
           quality: 60,
-          position: 200,
+          position: 0,
         );
         if (frame != null && frame.isNotEmpty) {
           final dims = await decodeImageDimensions(frame);
@@ -1218,7 +1221,7 @@ class _RoomPageState extends State<RoomPage> {
       final frame = await VideoCompress.getByteThumbnail(
         path,
         quality: 55,
-        position: 200,
+        position: 0,
       );
       return frame == null || frame.isEmpty ? null : frame;
     } catch (_) {
@@ -1537,6 +1540,7 @@ class _RoomPageState extends State<RoomPage> {
           builder: (_) => ContactProfilePage(
             api: widget.api,
             initialContact: contact,
+            onMessage: widget.onMessage,
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
             onContactUpdated: (updated) =>
@@ -1653,8 +1657,8 @@ class _RoomPageState extends State<RoomPage> {
           builder: (_) => GroupMemberPickerPage(
             contacts: contacts,
             existingMemberIds: existing,
-            onInvite: (matrixUserId, businessUserId) =>
-                infoController.invite(matrixUserId, businessUserId: businessUserId),
+            onInvite: (matrixUserId, businessUserId) => infoController
+                .invite(matrixUserId, businessUserId: businessUserId),
           ),
         ),
       );
@@ -1788,7 +1792,7 @@ class _RoomPageState extends State<RoomPage> {
       switch (message.kind) {
         RoomMessageKind.image => EncryptedImageMessage(
             load: () => controller!.loadAttachment(message.id),
-            forwardTargets: _imageForwardTargets,
+            onForward: () => _forwardMessages([message]),
             forwardTo: (roomId) async {
               final interaction = _interaction;
               if (interaction == null) {
@@ -1905,17 +1909,31 @@ class _RoomPageState extends State<RoomPage> {
         break;
       }
     }
-    // 备注隐私红线：只向解析器提供主昵称，不读备注字段。
+    // 联系人投影属于当前账号；自己的备注只在本机呈现，不写入消息。
     return resolveMessageSenderDisplayName(
       senderId: message.senderId,
-      contactDisplayName: contact?.primaryDisplayName,
+      contactDisplayName: contact?.displayName,
       matrixDisplayName: member?.calcDisplayname(),
     );
   }
 
+  Future<void> _openMessageSender(RoomMessageViewModel message) =>
+      _openPeerProfile(message.senderId);
+
+  // Public identity only: mention and nudge payloads reach other participants.
+  String _publicSenderName(RoomMessageViewModel message) =>
+      resolveMessageSenderDisplayName(
+        senderId: message.senderId,
+        contactDisplayName:
+            contactsByMatrixId[message.senderId]?.primaryDisplayName,
+        matrixDisplayName: widget.room
+            .unsafeGetUserFromMemoryOrFallback(message.senderId)
+            .calcDisplayname(),
+      );
+
   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
-    final contact = contactsByMatrixId[message.senderId];
     final displayName = _senderDisplayName(message);
+    final publicDisplayName = _publicSenderName(message);
     if (message.isRecalled) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1954,14 +1972,16 @@ class _RoomPageState extends State<RoomPage> {
     final isAnimatedEmojiMessage = animatedEmojis.isNotEmpty;
     final isImageMessage = message.kind == RoomMessageKind.image;
     void appendMentionDraft() {
-      final value = mentionDraft.append(
-        input.text,
-        displayName: displayName,
+      // 规格#3：头像长按快速 @——经统一模型登记 token（发送/编辑同步
+      // 与面板选择一致）。
+      final caret = mentionComposer.appendAtEnd(
+        displayName: publicDisplayName,
         userId: message.senderId,
       );
       input
-        ..text = value
-        ..selection = TextSelection.collapsed(offset: value.length);
+        ..text = mentionComposer.text
+        ..selection = TextSelection.collapsed(offset: caret);
+      _lastComposerText = mentionComposer.text;
     }
 
     // 即时反馈语义：发送中的消息视觉上等同已发出（无转圈/半透明），
@@ -2000,8 +2020,8 @@ class _RoomPageState extends State<RoomPage> {
             state: deliveryState,
             senderName: message.isOwn ? null : displayName,
             avatar: _avatar(message),
-            onAvatarTap: contact == null ? null : () => _openContact(contact),
-            onAvatarDoubleTap: () => _sendNudge(message, displayName),
+            onAvatarTap: () => _openMessageSender(message),
+            onAvatarDoubleTap: () => _sendNudge(message, publicDisplayName),
             onAvatarLongPress: appendMentionDraft,
             onLongPress: () => unawaited(_showMessageActions(
                 message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
@@ -2020,8 +2040,8 @@ class _RoomPageState extends State<RoomPage> {
             senderBadge: message.isOwn ? null : _senderBadge(message),
             senderName: message.isOwn ? null : displayName,
             avatar: _avatar(message),
-            onAvatarTap: contact == null ? null : () => _openContact(contact),
-            onAvatarDoubleTap: () => _sendNudge(message, displayName),
+            onAvatarTap: () => _openMessageSender(message),
+            onAvatarDoubleTap: () => _sendNudge(message, publicDisplayName),
             onAvatarLongPress: appendMentionDraft,
             onLongPress: () => unawaited(_showMessageActions(
                 message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
@@ -2062,7 +2082,7 @@ class _RoomPageState extends State<RoomPage> {
                 ),
               ),
               originalSizeHint: message.attachmentSize,
-              forwardTargets: _imageForwardTargets,
+              onForward: () => _forwardMessages([message]),
               forwardTo: (roomId) async {
                 final interaction = _interaction;
                 if (interaction == null) {
@@ -2074,8 +2094,8 @@ class _RoomPageState extends State<RoomPage> {
             senderName: message.isOwn ? null : displayName,
             senderBadge: message.isOwn ? null : _senderBadge(message),
             avatar: _avatar(message),
-            onAvatarTap: contact == null ? null : () => _openContact(contact),
-            onAvatarDoubleTap: () => _sendNudge(message, displayName),
+            onAvatarTap: () => _openMessageSender(message),
+            onAvatarDoubleTap: () => _sendNudge(message, publicDisplayName),
             onAvatarLongPress: appendMentionDraft,
             onLongPress: () => unawaited(_showMessageActions(
                 message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
@@ -2092,8 +2112,8 @@ class _RoomPageState extends State<RoomPage> {
             senderName: message.isOwn ? null : displayName,
             senderBadge: message.isOwn ? null : _senderBadge(message),
             avatar: _avatar(message),
-            onAvatarTap: contact == null ? null : () => _openContact(contact),
-            onAvatarDoubleTap: () => _sendNudge(message, displayName),
+            onAvatarTap: () => _openMessageSender(message),
+            onAvatarDoubleTap: () => _sendNudge(message, publicDisplayName),
             onAvatarLongPress: appendMentionDraft,
             onLongPress: () => unawaited(_showMessageActions(
                 message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
@@ -2286,7 +2306,7 @@ class _RoomPageState extends State<RoomPage> {
     setState(selection.exit);
   }
 
-  /// 转发：跳转独立“选择聊天”页完成接收对象选择（微信式，禁止底部弹层）。
+  /// 转发：独立“选择聊天”页选择接收对象，再确认发送。
   Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
     final interaction = _interaction;
     if (interaction == null) {
@@ -2316,16 +2336,30 @@ class _RoomPageState extends State<RoomPage> {
             roomId: room.id,
             title: _forwardTitleFor(room),
             avatar: _forwardRoomAvatar(room),
+            isGroup: !room.isDirectChat,
+            memberCount: room.summary.mJoinedMemberCount ??
+                orderedJoinedMembers(room).length,
           ),
     ];
     if (candidates.isEmpty) {
       if (mounted) setState(() => mediaMessage = '没有可用的端到端加密会话');
       return;
     }
-    await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+    final completed = <(String, String)>{};
+    final forwarded =
+        await Navigator.of(context, rootNavigator: true).push<bool>(
+      CupertinoPageRoute<bool>(
         builder: (_) => ChatForwardPickerPage(
           candidates: candidates,
+          contentPreview: messages
+              .map((message) => switch (message.kind) {
+                    RoomMessageKind.image => '[图片]',
+                    RoomMessageKind.video => '[视频]',
+                    RoomMessageKind.voice => '[语音]',
+                    RoomMessageKind.file => '[文件] ${message.text}',
+                    _ => message.text,
+                  })
+              .join('\n'),
           recentRoomIds: [
             for (final id in recentIds)
               if (candidates.any((c) => c.roomId == id)) id,
@@ -2333,7 +2367,9 @@ class _RoomPageState extends State<RoomPage> {
           onForward: (roomIds) async {
             for (final roomId in roomIds) {
               for (final message in messages) {
+                if (completed.contains((message.id, roomId))) continue;
                 await interaction.forward(message.id, roomId);
+                completed.add((message.id, roomId));
               }
             }
             await store.record(roomIds);
@@ -2341,7 +2377,7 @@ class _RoomPageState extends State<RoomPage> {
         ),
       ),
     );
-    if (!mounted) return;
+    if (!mounted || forwarded != true) return;
     setState(() {
       mediaMessage = '已转发';
       selection.exit();
@@ -2358,19 +2394,7 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   Widget _forwardRoomAvatar(Room room) {
-    if (room.isDirectChat || room.avatar != null) {
-      return MatrixUserAvatar(
-        client: room.client,
-        nickname: room.getLocalizedDisplayname(),
-        fallbackSeed: room.id,
-        matrixAvatarUri: room.avatar,
-        size: 52,
-      );
-    }
-    return const ColoredBox(
-      color: WeChatColors.lightSurface,
-      child: Icon(CupertinoIcons.person_2, size: 25),
-    );
+    return MatrixConversationAvatar(room: room, size: 52);
   }
 
   @override

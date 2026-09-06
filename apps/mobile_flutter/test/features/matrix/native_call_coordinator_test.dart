@@ -8,8 +8,10 @@ import 'package:liuhetong_mobile/features/matrix/native_call_coordinator.dart';
 
 final class FakePermissions implements CallPermissionGateway {
   bool allowed = true;
+  Completer<bool>? pending;
   @override
-  Future<bool> request({required bool video}) async => allowed;
+  Future<bool> request({required bool video}) async =>
+      pending?.future ?? allowed;
 }
 
 final class NoopAlerts extends CallAlerts {
@@ -45,10 +47,12 @@ final class FakeBackend implements CallBackend {
   @override
   bool get hasActiveSession => activeSession;
   @override
-  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async =>
+  Future<bool> isEncryptedDirectRoom(
+          String roomId, String matrixUserId) async =>
       true;
   @override
-  Future<void> start(String roomId, String matrixUserId, CallMediaType type) async {}
+  Future<void> start(
+      String roomId, String matrixUserId, CallMediaType type) async {}
   @override
   Future<void> accept() async => accepts++;
   @override
@@ -124,6 +128,22 @@ void main() {
     calls.dispose();
   });
 
+  test('native denied answer keeps presentation until user retries', () async {
+    (calls.permissions as FakePermissions).allowed = false;
+    await coordinator.handleNativeMessage('incomingCall', {'callId': 'call-1'});
+    backend.ring();
+    await pumpEventLoop();
+    await coordinator.answerFromUser('call-1');
+    expect(calls.state.phase, CallPhase.ringing);
+    expect(dismissed, 0);
+    expect(backend.rejects, 0);
+    expect(channel.reportStates.last, 'ringing');
+    (calls.permissions as FakePermissions).allowed = true;
+    await coordinator.answerFromUser('call-1');
+    expect(backend.accepts, 1);
+    expect(dismissed, 1);
+  });
+
   test('验证1：incomingCall 到达但用户未操作 → accept 调用次数为零', () async {
     await coordinator.handleNativeMessage('incomingCall', {'callId': 'call-1'});
     backend.ring();
@@ -145,7 +165,8 @@ void main() {
     // 双通道/重复点击/重复事件：不再执行第二次 accept。
     await coordinator.handleNativeMessage('callAccepted', {'callId': 'call-1'});
     await coordinator.handleNativeMessage('callAccepted', {'callId': 'call-1'});
-    expect(backend.accepts, 1, reason: '接听处理中（requestingPermission/connecting）不得重复接听');
+    expect(backend.accepts, 1,
+        reason: '接听处理中（requestingPermission/connecting）不得重复接听');
     expect(calls.state.phase, CallPhase.connecting);
   });
 
@@ -287,8 +308,7 @@ void main() {
     await pumpEventLoop();
 
     expect(calls.state.phase, CallPhase.ended);
-    expect(channel.reportStates, contains('ended'),
-        reason: '原生层按通话维度收到状态回报');
+    expect(channel.reportStates, contains('ended'), reason: '原生层按通话维度收到状态回报');
   });
 
   test('原生通知[拒绝] → 对响铃通话执行一次 reject', () async {
@@ -299,12 +319,149 @@ void main() {
     expect(calls.state.phase, CallPhase.ended);
   });
 
-  test('原生呈现结束（callEnded）→ 响铃通话被拒接收尾', () async {
+  test('原生呈现结束不拒绝仍有效的 Matrix 来电', () async {
     backend.ring();
     await pumpEventLoop();
     await coordinator.handleNativeMessage('callEnded', {'callId': 'call-1'});
-    expect(backend.rejects, 1, reason: '远端取消/超时：响铃通话按结束收尾');
-    expect(calls.state.phase, CallPhase.ended);
+    expect(backend.rejects, 0);
+    expect(calls.state.phase, CallPhase.ringing);
+  });
+
+  for (final connected in [false, true]) {
+    test(
+        'presentation cleanup preserves ${connected ? 'connected' : 'connecting'} call',
+        () async {
+      await coordinator
+          .handleNativeMessage('incomingCall', {'callId': 'current'});
+      backend.ring();
+      await pumpEventLoop();
+      await coordinator
+          .handleNativeMessage('callAccepted', {'callId': 'current'});
+      if (connected) {
+        backend.events.add(const CallBackendEvent.connected());
+        await pumpEventLoop();
+      }
+      await coordinator.handleNativeMessage('callEnded', {'callId': 'current'});
+      expect(backend.hangups, 0);
+      expect(calls.state.phase,
+          connected ? CallPhase.connected : CallPhase.connecting);
+    });
+
+    test(
+        'explicit native termination ends ${connected ? 'connected' : 'connecting'} call',
+        () async {
+      await coordinator
+          .handleNativeMessage('incomingCall', {'callId': 'current'});
+      backend.ring();
+      await pumpEventLoop();
+      await coordinator
+          .handleNativeMessage('callAccepted', {'callId': 'current'});
+      if (connected) {
+        backend.events.add(const CallBackendEvent.connected());
+        await pumpEventLoop();
+      }
+      await coordinator
+          .handleNativeMessage('callRejected', {'callId': 'current'});
+      expect(backend.hangups, 1);
+      expect(calls.state.phase, CallPhase.ended);
+    });
+  }
+
+  for (final method in ['callAccepted', 'callRejected', 'callEnded']) {
+    test('stale $method cannot act on a new presentation', () async {
+      await coordinator.handleNativeMessage('incomingCall', {'callId': 'old'});
+      await coordinator
+          .handleNativeMessage('incomingCall', {'callId': 'current'});
+      backend.ring();
+      await pumpEventLoop();
+      await coordinator.handleNativeMessage(method, {'callId': 'old'});
+      expect(backend.accepts, 0);
+      expect(backend.rejects, 0);
+      expect(backend.hangups, 0);
+      expect(calls.state.phase, CallPhase.ringing);
+    });
+  }
+
+  test('old cleanup preserves new pending answer', () async {
+    await coordinator
+        .handleNativeMessage('incomingCall', {'callId': 'current'});
+    await coordinator
+        .handleNativeMessage('callAccepted', {'callId': 'current'});
+    await coordinator.handleNativeMessage('callEnded', {'callId': 'old'});
+    backend.ring();
+    await pumpEventLoop();
+    expect(backend.accepts, 1);
+  });
+
+  test('late action for a dismissed presentation cannot end active media',
+      () async {
+    await coordinator
+        .handleNativeMessage('incomingCall', {'callId': 'current'});
+    backend.ring();
+    await pumpEventLoop();
+    await coordinator
+        .handleNativeMessage('callAccepted', {'callId': 'current'});
+    await coordinator.handleNativeMessage('callEnded', {'callId': 'current'});
+    await coordinator.handleNativeMessage('callRejected', {'callId': 'old'});
+    expect(backend.hangups, 0);
+    expect(calls.state.phase, CallPhase.connecting);
+  });
+
+  test('native hangup cancels permission-waiting accept continuation',
+      () async {
+    final permission = FakePermissions()..pending = Completer<bool>();
+    final waitingCalls = CallController(
+      backend: backend,
+      permissions: permission,
+      alerts: NoopAlerts(),
+    );
+    addTearDown(waitingCalls.dispose);
+    final waiting = NativeCallCoordinator(
+      calls: waitingCalls,
+      onPresentIncoming: () {},
+      channel: channel,
+    );
+    backend.ring();
+    await pumpEventLoop();
+    final accepting =
+        waiting.handleNativeMessage('callAccepted', {'callId': 'current'});
+    await pumpEventLoop();
+    expect(waitingCalls.state.phase, CallPhase.requestingPermission);
+    await waiting.handleNativeMessage('callRejected', {'callId': 'current'});
+    permission.pending!.complete(true);
+    await accepting;
+    expect(backend.accepts, 0);
+    expect(waitingCalls.state.phase, CallPhase.ended);
+  });
+
+  test('new presentation reopens actions after the previous presentation ended',
+      () async {
+    await coordinator.handleNativeMessage('incomingCall', {'callId': 'old'});
+    await coordinator.handleNativeMessage('callEnded', {'callId': 'old'});
+    await coordinator
+        .handleNativeMessage('incomingCall', {'callId': 'current'});
+    backend.ring();
+    await pumpEventLoop();
+    await coordinator.handleNativeMessage('callAccepted', {'callId': 'old'});
+    expect(backend.accepts, 0);
+    await coordinator
+        .handleNativeMessage('callAccepted', {'callId': 'current'});
+    expect(backend.accepts, 1);
+  });
+
+  test(
+      'late action for the ended presentation cannot accept the next Matrix call',
+      () async {
+    await coordinator.handleNativeMessage('incomingCall', {'callId': 'old'});
+    backend.ring();
+    await pumpEventLoop();
+    backend.events.add(const CallBackendEvent.ended());
+    await pumpEventLoop();
+    backend.ring();
+    await pumpEventLoop();
+    await coordinator.handleNativeMessage('callAccepted', {'callId': 'old'});
+    expect(backend.accepts, 0);
+    expect(calls.state.phase, CallPhase.ringing);
   });
 
   test('会话结束（dispose）→ 清空待接听并通知原生清理', () async {

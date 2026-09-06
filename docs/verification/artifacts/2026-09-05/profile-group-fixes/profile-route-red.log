@@ -1,0 +1,48 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart
+00:00 +0: every production room entry wires the profile message action
+00:00 +0 -1: every production room entry wires the profile message action [E]
+  Expected: contains 'onMessage:'
+    Actual: '\r\n'
+              '          api: widget.api,\r\n'
+              '          room: room,\r\n'
+              '          roomName: room.getLocalizedDisplayname(),\r\n'
+              '          onCreateGroup: _createGroupChat,\r\n'
+              '          onVoice: (contact) => _openCall(contact, CallMediaType.audio),\r\n'
+              '          onVideo: (contact) => _openCall(contact, CallMediaType.video),\r\n'
+              '          reminderService: reminderService,\r\n'
+              '          '
+     Which: does not contain 'onMessage:'
+  lib/app_home.dart room entry must keep friend messaging reachable
+  
+  package:matcher                                                   expect
+  package:flutter_test/src/widget_tester.dart 473:18                expect
+  test\features\matrix\profile_message_route_wiring_test.dart 16:9  main.<fn>
+  
+00:00 +0 -1: message tab passes its existing canonical opener into room navigation
+00:00 +0 -2: message tab passes its existing canonical opener into room navigation [E]
+  Expected: contains 'onMessage: _openMessage'
+    Actual: '\r\n'
+              '                        api: widget.api,\r\n'
+              '                        matrix: widget.matrix,\r\n'
+              '                        themeController: widget.themeController,\r\n'
+              '                        onCreateGroup: _createGroupChat,\r\n'
+              '                        onVoice: (contact) =>\r\n'
+              '                            _openCall(contact, CallMediaType.audio),\r\n'
+              '                        onVideo: (contact) =>\r\n'
+              '                            _openCall(contact, CallMediaType.video),\r\n'
+              '                        reminderService: reminderService,\r\n'
+              '                        identityCache: _chatIdentityCache,\r\n'
+              '                      ),\r\n'
+              '                '
+     Which: does not contain 'onMessage: _openMessage'
+  
+  package:matcher                                                   expect
+  package:flutter_test/src/widget_tester.dart 473:18                expect
+  test\features\matrix\profile_message_route_wiring_test.dart 24:5  main.<fn>
+  
+00:00 +0 -2: Some tests failed.
+
+Failing tests:
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart: every production room entry wires the profile message action
+  D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart: message tab passes its existing canonical opener into room navigation

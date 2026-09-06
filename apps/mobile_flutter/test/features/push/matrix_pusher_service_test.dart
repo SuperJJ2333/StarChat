@@ -45,6 +45,26 @@ void main() {
     expect(data.keys.toSet(), {'format', 'url'}, reason: '推送配置不得携带正文/密钥类字段');
   });
 
+  test('个推网关使用 Synapse 强制的标准路径，以查询参数选择通道', () async {
+    final url = MatrixPusherService.getuiGatewayUrl(
+      Uri.parse('https://push.example.test/'),
+    );
+    expect(url.path, '/_matrix/push/v1/notify');
+    expect(url.queryParameters, {'provider': 'getui'});
+    final pusher = MatrixPusherService(
+      gateway: gateway,
+      tokenProvider: tokens,
+      appId: MatrixPusherService.appIdGetui,
+      gatewayUrl: url,
+      diagnostics: diagnostics,
+    );
+    expect(await pusher.ensureRegistered(), isTrue);
+    expect(gateway.created.single.data.url, url);
+    expect(gateway.created.single.data.format, 'event_id_only');
+    expect(
+        gateway.created.single.data.toJson().keys.toSet(), {'format', 'url'});
+  });
+
   test('网关未配置：不注册并留下诊断（安全降级）', () async {
     final pusher = MatrixPusherService(
       gateway: gateway,
@@ -128,11 +148,13 @@ void main() {
     gateway.gateCreate!.complete();
     await unregistering;
     expect(await registering, isFalse, reason: '注销后代数失效：注册结果被丢弃');
-    expect(pusher.isRegistered, isFalse, reason: '迟到 create 不得把旧 pusher 写回本地状态');
+    expect(pusher.isRegistered, isFalse,
+        reason: '迟到 create 不得把旧 pusher 写回本地状态');
     // 服务端净效果：create 之后必须跟随删除（补偿删除/注销删除），
     // 最终不残留旧账号 pusher。
     expect(gateway.created.length, 1);
-    expect(gateway.deleted.isNotEmpty, isTrue, reason: '迟到 create 的 pusher 已被清理');
+    expect(gateway.deleted.isNotEmpty, isTrue,
+        reason: '迟到 create 的 pusher 已被清理');
   });
 
   test('C04：dispose 后失败回调不能再排队重试', () async {
@@ -197,7 +219,6 @@ final class _MemoryDiagStore implements NotificationDiagStore {
   Future<void> write(String encoded) async => _encoded = encoded;
 }
 
-
 // ── C04：推送注册与退出注销的异步竞态 ──────────────────────────
 
 final class _GatedPusherGateway implements MatrixPusherGateway {
@@ -217,4 +238,3 @@ final class _GatedPusherGateway implements MatrixPusherGateway {
   @override
   Future<void> delete(PusherId id) async => deleted.add(id);
 }
-

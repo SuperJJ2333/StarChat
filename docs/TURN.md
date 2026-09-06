@@ -1,5 +1,19 @@
 # TURN 服务与通话网络兜底
 
+## 2026-09-05 已验证修复（优先于下方历史记录）
+
+实测 TLS 失败根因是 coturn 的 nobody:nogroup 用户无法读取 nginx 的 root:root 0600 私钥，TLS 监听未启动。此前根据宿主端口结果推断“托管商安全组阻断”并不准确。
+
+生产已将 coturn 挂载切换到独立 `data/coturn/certs`，使用 root:65534 0750 目录、0640 私钥；nginx 原私钥仍为 0600。同步工具 `scripts/sync_turn_certificates.py` 校验配对后发布；Certbot 域名限定钩子 `scripts/renew_turn_certificates.sh` 安装为 `zz-starchat-turn.sh`，续期成功同步后只重启 coturn。
+
+公网定向复测 UDP/TCP/TLS 全部认证、中继成功：分配约 158/162/360 ms，中继往返约 154 ms。九次强制 relay 的真实 WebRTC 数据通道测试全部通过，建立用时 770–1019 ms。该结果来自 Windows 测试路径，不能替代双真机/跨运营商音视频测试或饱和带宽测量。
+
+客户端原 Matrix 0.34.0 SDK 不刷新 TURN 临时凭证（生产 TTL=3600 秒）。`RefreshingTurnVoIP` 仅覆盖公开 discovery 方法：账号内存缓存按 TTL 提前刷新、最多缓存五分钟、合并并发、预热及三秒超时；未修改 Matrix 信令或媒体加密路径。
+
+当前无需继续“放行 5349”的旧待办：TLS 主机名/证书及外部认证测试均已通过。443 TURN 仍属于可选新节点/网关设计，未实施。
+
+证据：`docs/verification/artifacts/2026-09-05/call-connection/`。
+
 关联：`docs/verification/2026-09-04-release-0.3.33.md`（部署记录）、
 `docs/NOTIFICATION_SYSTEM.md`（通话质量日志 `chatflow/callquality`）。
 

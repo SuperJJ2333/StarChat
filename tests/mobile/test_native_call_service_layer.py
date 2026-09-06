@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[2]
 KOTLIN = ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile/call"
 MANIFEST = ROOT / "apps/mobile_flutter/android/app/src/main/AndroidManifest.xml"
 APP_HOME = ROOT / "apps/mobile_flutter/lib/app_home.dart"
+COORDINATOR = ROOT / "apps/mobile_flutter/lib/features/matrix/native_call_coordinator.dart"
 
 
 def test_native_call_layer_files_exist():
@@ -35,7 +36,18 @@ def test_service_and_receiver_wiring():
     assert "actionAnswer" in rcv and "actionReject" in rcv
     bridge = (KOTLIN / "CallBridge.kt").read_text(encoding="utf-8")
     assert 'channelName = "chatflow/call"' in bridge
-    assert "openIncomingCall" in bridge and "rejectIncomingCall" in bridge
+    # Legacy channel is presentation cleanup only; one native_call action path
+    # prevents accepting twice when both old and new bridges are installed.
+    legacy = bridge[bridge.index("object CallBridge {"):bridge.index("object NativeCallBridge {")]
+    assert 'methodDismiss = "dismiss"' in legacy
+    assert "onDismiss()" in legacy
+    assert "openIncomingCall" not in legacy and "rejectIncomingCall" not in legacy
+    native = bridge[bridge.index("object NativeCallBridge {"):]
+    for event in ('eventAccepted = "callAccepted"', 'eventRejected = "callRejected"'):
+        assert event in native
+    assert "handlers?.onAnswer()" in native
+    assert "handlers?.onReject()" in native
+    assert "handlers?.onEnd()" in native
 
 
 def test_manifest_registers_native_call_components():
@@ -60,10 +72,33 @@ def test_getui_transmission_entry_starts_service():
 def test_flutter_handles_native_call_actions():
     raw = APP_HOME.read_text(encoding="utf-8")
     assert "MethodChannel('chatflow/call')" in raw
-    assert "'openIncomingCall'" in raw
-    assert "'rejectIncomingCall'" in raw
-    assert "calls.accept()" in raw
-    assert "calls.reject()" in raw
+    assert "MethodChannel('native_call')" in raw
+    assert "nativeCalls.handleNativeMessage(call.method, call.arguments)" in raw
+    assert "nativeCalls.restorePendingState()" in raw
+    assert "'openIncomingCall'" not in raw and "'rejectIncomingCall'" not in raw
+    coordinator = COORDINATOR.read_text(encoding="utf-8")
+    incoming = coordinator.split("case 'incomingCall':", 1)[1].split("case 'callAccepted':", 1)[0]
+    assert "arbiter.registerIncoming(callId)" in incoming
+    assert "onPresentIncoming()" in incoming
+    assert "calls.accept()" not in incoming and "answerFromUser(" not in incoming
+    accepted = coordinator.split("case 'callAccepted':", 1)[1].split("case 'callRejected':", 1)[0]
+    assert "await answerFromUser(callId)" in accepted
+    rejected = coordinator.split("case 'callRejected':", 1)[1].split("case 'callEnded':", 1)[0]
+    assert "arbiter.matchesPresentation(callId)" in rejected
+    assert "await rejectFromUser()" in rejected
+    ended = coordinator.split("case 'callEnded':", 1)[1].split("return true;", 1)[0]
+    assert "arbiter.registerEnded(callId)" in ended
+    assert "calls.hangup()" not in ended and "rejectFromUser(" not in ended
+    assert "_endByPresentation(" not in ended
+    answer = coordinator.split("Future<void> answerFromUser(", 1)[1].split("Future<void> rejectFromUser()", 1)[0]
+    assert "arbiter.matchesPresentation(nativeCallId)" in answer
+    assert "case CallPhase.ringing:" in answer and "if (_accepting) return;" in answer
+    assert "await calls.accept()" in answer
+    reject = coordinator.split("Future<void> rejectFromUser()", 1)[1].split("void onCallPhaseChanged()", 1)[0]
+    assert "CallPhase.ringing" in reject and "await calls.reject()" in reject
+    for phase in ("requestingPermission", "connecting", "connected"):
+        assert f"CallPhase.{phase}" in reject
+    assert "await calls.hangup()" in reject
     # 接管后停原生层
     assert "invokeMethod('dismiss')" in raw
     # 红线：WebRTC/CallSession 不落原生（call/ 目录不得 import/调用 webrtc）
@@ -120,7 +155,10 @@ def test_telecom_incoming_call_architecture():
 
     overlay = (base / "CallOverlayService.kt").read_text(encoding="utf-8")
     assert "TYPE_APPLICATION_OVERLAY" in overlay, "规格§五悬浮窗"
-    assert "launchCallActivity" in overlay, "点击悬浮球回到通话"
+    assert "CallManager.returnToCall(applicationContext)" in overlay, "点击悬浮球返回同一通话"
+    returning = cm.split("fun returnToCall(context: Context)", 1)[1].split("/**", 1)[0]
+    assert "launchMainActivity(context)" in returning
+    assert "onAnswerRequested()" not in returning and "onRejectRequested()" not in returning
 
     manifest = MANIFEST.read_text(encoding="utf-8")
     for perm in ("USE_FULL_SCREEN_INTENT", "SYSTEM_ALERT_WINDOW",
@@ -133,7 +171,9 @@ def test_telecom_incoming_call_architecture():
 
     home = APP_HOME.read_text(encoding="utf-8")
     assert "MethodChannel('native_call')" in home, "Flutter 侧 native_call 装配"
-    assert "callEnded" in home and "callAccepted" in home
+    assert "nativeCalls.handleNativeMessage(call.method, call.arguments)" in home
+    assert "if (call.method == 'returnToCall')" in home
+    assert "callUi.restoreCall()" in home
     resume_idx = home.find("state == AppLifecycleState.resumed")
     assert home.find("callUi.showIncomingCall(calls)", resume_idx) > 0, \
         "§四：回前台必须自动进入通话页"

@@ -1,0 +1,9 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart
+00:00 +0: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 非好友群成员 → 反查后进入用户资料页，添加按钮可用
+00:00 +1: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 非好友群成员 → 反查后进入用户资料页，添加按钮可用
+00:00 +2: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 非好友群成员 → 反查后进入用户资料页，添加按钮可用
+00:00 +3: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 好友群成员 → 打开好友资料页，不做反查
+00:00 +4: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 自己不可点击（无导航、无反查）
+00:00 +5: D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/group_member_profile_test.dart: 反查失败（不存在/拉黑）→ 提示对话框，不进入资料页
+00:00 +6: All tests passed!

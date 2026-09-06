@@ -1,0 +1,43 @@
+FFF                                                                      [100%]
+================================== FAILURES ===================================
+__________________ test_room_profile_injects_message_action ___________________
+
+    def test_room_profile_injects_message_action():
+        source = ROOM.read_text(encoding="utf-8")
+        profile = source.split("Future<void> _openContact", 1)[1].split("Future<void> _openConversationDetails", 1)[0]
+>       assert "onMessage: widget.onMessage" in profile
+E       AssertionError: assert 'onMessage: widget.onMessage' in '(ContactDetails contact) => Navigator.push(\n        context,\n        CupertinoPageRoute(\n          builder: (_) =>...=>\n                _identityCache.applyUpdatedContact(updated.toSummary()),\n          ),\n        ),\n      );\n\n  '
+
+tests\mobile\test_profile_group_navigation.py:10: AssertionError
+____________________ test_bubble_uses_viewer_owned_remark _____________________
+
+    def test_bubble_uses_viewer_owned_remark():
+        source = ROOM.read_text(encoding="utf-8")
+        sender = source.split("String _senderDisplayName", 1)[1].split("Widget _messageRow", 1)[0]
+>       assert "contact?.displayName" in sender
+E       AssertionError: assert 'contact?.displayName' in '(RoomMessageViewModel message) {\n    final contact = contactsByMatrixId[message.senderId];\n    User? member;\n    f...ntactDisplayName: contact?.primaryDisplayName,\n      matrixDisplayName: member?.calcDisplayname(),\n    );\n  }\n\n  '
+
+tests\mobile\test_profile_group_navigation.py:16: AssertionError
+___________ test_all_bubble_avatar_branches_allow_stranger_profile ____________
+
+    def test_all_bubble_avatar_branches_allow_stranger_profile():
+        source = ROOM.read_text(encoding="utf-8")
+        row = source.split("Widget _messageRow", 1)[1].split("Future<void> _forwardMessages", 1)[0]
+>       assert "onAvatarTap: contact == null ? null" not in row
+E       AssertionError: assert 'onAvatarTap... null ? null' not in '(RoomMessag...象，再确认发送。\n  '
+E         
+E         'onAvatarTap: contact == null ? null' is contained here:
+E                     onAvatarTap: contact == null ? null : () => _openContact(contact),
+E                       onAvatarDoubleTap: () => _sendNudge(message, displayName),
+E                       onAvatarLongPress: appendMentionDraft,
+E                       onLongPress: () => unawaited(_showMessageActions(
+E                           message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),...
+E         
+E         ...Full output truncated (283 lines hidden), use '-vv' to show
+
+tests\mobile\test_profile_group_navigation.py:23: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_profile_group_navigation.py::test_room_profile_injects_message_action
+FAILED tests/mobile/test_profile_group_navigation.py::test_bubble_uses_viewer_owned_remark
+FAILED tests/mobile/test_profile_group_navigation.py::test_all_bubble_avatar_branches_allow_stranger_profile
+3 failed in 0.17s

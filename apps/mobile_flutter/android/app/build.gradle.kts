@@ -61,9 +61,9 @@ android {
 
     buildTypes {
         release {
-            // 安全加固：R8 混淆 + 资源收缩，降低被安全厂商灰度启发式误报的概率。
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 用户要求从源码直接发布，不启用 R8 混淆或资源收缩。
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -98,6 +98,7 @@ dependencies {
     implementation("com.getui:gsido:1.4.14.0")
     // 原生通话层 JVM 单测（PendingCallActions 冷启动动作暂存）。
     testImplementation(kotlin("test"))
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
 
 kotlin {
@@ -109,6 +110,3 @@ kotlin {
 flutter {
     source = "../.."
 }
-
-
-

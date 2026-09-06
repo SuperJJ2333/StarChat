@@ -23,7 +23,7 @@
 在线 push_message 与离线厂商通道 ups 同样只有通用文案，click=startapp。
 
 - 客户端：`app_id=com.liuhetong.mobile.getui`，
-  `data.url=<LIUHETONG_GETUI_URL>/_matrix/push/v1/getui/notify`，
+  `data.url=<LIUHETONG_GETUI_URL>/_matrix/push/v1/notify?provider=getui`，
   pushkey=CID（**Matrix 设备级绑定**；登出/切号即删 pusher；
   **从不** bindAlias/setTag）。隐私门槛：Application 仅 preInit（同意前
   安全态），initialize 仅在登录勾选《隐私政策》成功后（持久化键
@@ -65,10 +65,14 @@
 
 ### 0.2 厂商通道凭据缺口清单（人工，不得伪造）
 
-个推在线通道与厂商离线通道（ups）已走通"通知到达"；**厂商离线
-通道的厂家凭据仍未配置**——App 被杀后的送达依赖个推自通道，部分
-机型（华为/荣耀纯血鸿蒙等）可能受限。如需补齐，在个推控制台
-「厂商通道」逐家申请（全部**只存服务器 .env**，键名待部署时定）：
+个推 REST 鉴权成功或请求中存在 `push_channel.android.ups`，均不能证明
+厂商离线推送已接入或已送达。**厂商通道凭据仍未配置**，Android 依赖与
+合并 manifest 目前也没有小米等厂商推送组件。清理最近任务后若 ROM
+同时终止 SDK 进程，就不能依赖个推自通道即时拉活。
+
+补齐需要厂商控制台申请、个推控制台配置、对应 Android SDK/公开应用标识
+集成，以及包名/厂商要求的证书指纹一致性验证。服务端秘密不得进入客户端；
+客户端所需公开标识按厂商文档配置。不能仅新增服务器环境变量便宣称完成：
 
 | 厂商 | 需申请 | 状态 |
 | --- | --- | --- |
@@ -78,6 +82,28 @@
 | OPPO | OPPO 推送 AppKey/Secret（MasterSecret） | ❌ 未配置 |
 | vivo | vivo 推送 AppId/AppKey/AppSecret | ❌ 未配置 |
 | 魅族 | 魅族推送 AppId/AppKey/Secret | ❌ 未配置（可选） |
+
+### 0.3 2026-09-05 注册路径故障
+
+生产 Synapse 1.132.0 严格要求 pusher `data.url` 的 path 等于
+`/_matrix/push/v1/notify`。旧客户端使用 `/_matrix/push/v1/getui/notify`，
+服务器持续返回 HTTP 400：`Config Error: 'url' must have a path of
+'/_matrix/push/v1/notify'`。只测网关 HTTP 可达性漏掉了实际注册失败；
+本次只读检查确认生产 `pushers` 表为 0 行。
+
+修复使用标准 path 和 `provider=getui` 查询参数，nginx 仅从固定的个推/
+Sygnal upstream 中选择；无参数或未知参数仍走 Sygnal。旧个推路径保留兼容，
+但不能作为 Synapse pusher 注册地址。bridge 已提供标准路径，无需改业务 API
+或数据库。发布时先验证 nginx 配置并 reload，再升级客户端；应用恢复登录会话
+后自行重新注册，最后用生产表的脱敏汇总验证 `event_id_only` 注册成功。
+
+`event_id_only` 不携带事件类型，加密来电在服务端也不能被可靠识别。因此
+此通道只发通用消息唤醒，真实语音/视频来电由设备 Matrix 同步和本地解密确认。
+不得通过发送明文 SDP/密钥、把所有加密消息视为来电来绕过这一边界。
+自启动/锁屏/后台弹窗设置与厂商离线通道是不同条件；设置不能替代 SDK 集成。
+本修复也不承诺 Android 系统设置「强行停止」后的推送送达。
+
+证据与待发布状态见 `docs/verification/artifacts/2026-09-05/background-call-signature/push-audit.md`。
 
 ## 1. 架构与 E2EE 边界
 

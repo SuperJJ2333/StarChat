@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/friend_request_review_page.dart';
 
-/// BUG 2：通过朋友验证页——展示 头像/昵称/greeting/remark/tags；
+/// BUG 2：通过朋友验证页——展示公开资料和打招呼，忽略对方的私人备注和标签；
 /// 仅点击「通过验证」才触发 accept。
 void main() {
   Map request({
@@ -39,7 +39,7 @@ void main() {
     );
   }
 
-  testWidgets('展示打招呼/备注/标签，点击通过验证才触发 accept', (tester) async {
+  testWidgets('旧API带私人备注标签也不展示，点击通过验证才触发 accept', (tester) async {
     var accepted = 0;
     var rejected = 0;
     await pumpPage(
@@ -52,12 +52,19 @@ void main() {
     expect(find.text('Bob'), findsOneWidget);
     expect(find.text('畅聊号：bob'), findsOneWidget);
     expect(find.text('我是Bob，很高兴认识你'), findsOneWidget);
-    expect(find.text('同事'), findsOneWidget);
-    expect(find.text('工作'), findsOneWidget);
-    expect(find.text('朋友'), findsOneWidget);
+    expect(find.text('对方为你设置的备注'), findsNothing);
+    expect(find.text('标签'), findsNothing);
+    expect(find.text('同事'), findsNothing);
+    expect(find.text('工作'), findsNothing);
+    expect(find.text('朋友'), findsNothing);
 
     // 初始未触发任何受理动作。
     expect(accepted, 0);
+    final actionRect =
+        tester.getRect(find.byKey(const Key('friend-request-accept')));
+    final labelRect = tester.getRect(find.text('通过验证'));
+    expect((actionRect.center - labelRect.center).distance, lessThan(2));
+    expect(actionRect.contains(labelRect.bottomRight), isTrue);
     expect(rejected, 0);
 
     await tester.tap(find.byKey(const Key('friend-request-accept')));

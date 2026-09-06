@@ -54,7 +54,7 @@ final class _NoopDriver implements CallAlertDriver {
   Future<void> vibrate() async {}
 }
 
-final class FakeCallBackend implements CallBackend {
+base class FakeCallBackend implements CallBackend {
   final events = StreamController<CallBackendEvent>.broadcast();
   bool safeRoom = true;
   bool activeSession = true;

@@ -25,6 +25,7 @@ object CallManager {
     const val eventAccepted = "callAccepted"
     const val eventRejected = "callRejected"
     const val eventEnded = "callEnded"
+    const val eventReturn = "returnToCall"
 
     @Volatile var appContext: Context? = null
     @Volatile var state: State = State.idle
@@ -116,7 +117,7 @@ object CallManager {
         NativeCallBridge.notifyUserAction(appContext, eventAccepted, callId)
     }
 
-    /** 用户明确请求拒绝（通知原生层呈现结束 + 通知 Flutter 执行拒绝）。 */
+    /** 用户明确请求结束（Flutter 按相位拒接/挂断，支持冷启动恢复）。 */
     fun onRejectRequested() {
         if (state == State.idle || state == State.ended) return
         NativeCallBridge.notifyUserAction(appContext, eventRejected, callId)
@@ -126,13 +127,27 @@ object CallManager {
     /**
      * Flutter 状态回报（Matrix/WebRTC 事实）：只更新呈现，绝不发事件。
      */
-    fun updateFromFlutter(phase: String?, videoFlag: Boolean?) {
+    fun updateFromFlutter(phase: String?, videoFlag: Boolean?, displayName: String? = null) {
         if (phase == null) return
+        // Flutter owns the actual session. Use a presentation-only opaque ID
+        // for outgoing calls that have no push-created native presentation.
+        if (!hasActiveCall() && phase in listOf("ringing", "requestingPermission", "connecting", "connected")) {
+            resetRunnable?.let { mainHandler.removeCallbacks(it) }
+            resetRunnable = null
+            callId = java.util.UUID.randomUUID().toString()
+            state = if (phase == "ringing") State.ringing else State.answering
+        }
+        if (displayName != null && hasActiveCall()) callerName = displayName
         if (videoFlag != null && hasActiveCall()) video = videoFlag
         when (phase) {
             "ringing" -> {
                 // Matrix 同步确认真实来电存在；语音/视频类型以同步为准。
                 confirmed = true
+                // Permission denial returns to ringing without ending the call.
+                if (state == State.answering) {
+                    state = State.ringing
+                    notifyUi(eventIncoming)
+                }
             }
             "requestingPermission", "connecting" -> {
                 if (state == State.ringing || state == State.answering) {
@@ -183,6 +198,25 @@ object CallManager {
         val context = appContext ?: return
         runCatching { CallNotificationManager.cancel(context) }
         runCatching { CallForegroundService.stop(context) }
+    }
+
+    /** The Flutter arbiter retains the ongoing media service and notification. */
+    fun minimizeCallPresentation(): Boolean {
+        val context = appContext ?: return false
+        if (!hasActiveCall()) return false
+        return CallOverlayService.show(context)
+    }
+
+    fun showCallPage() {
+        appContext?.let { runCatching { CallOverlayService.hide(it) } }
+    }
+
+    /** Navigation only: never answer or reject the existing session. */
+    fun returnToCall(context: Context) {
+        if (!hasActiveCall()) return
+        showCallPage()
+        launchMainActivity(context)
+        emit(eventReturn)
     }
 
     private fun cleanupCall() {

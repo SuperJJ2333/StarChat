@@ -1,0 +1,88 @@
+...........................F...........F..F.F...........                 [100%]
+================================== FAILURES ===================================
+_______ test_video_call_surface_uses_flexible_height_on_compact_devices _______
+
+    def test_video_call_surface_uses_flexible_height_on_compact_devices():
+        source = (
+            ROOT / "apps/mobile_flutter/lib/features/matrix/call_page.dart"
+        ).read_text(encoding="utf-8")
+        video_branch = source[source.index("if (state.type == CallMediaType.video") :]
+>       assert "Expanded(" in video_branch[:500]
+E       assert 'Expanded(' in "if (state.type == CallMediaType.video)\n          CallControlButton(\n            key: const Key('call-control-camera...rn Row(\n      mainAxisAlignment: MainAxisAlignment.spaceEvenly,\n      children: [\n        CallControlButton(\n     "
+
+tests\mobile\test_flutter_boundaries.py:41: AssertionError
+______________________ test_service_and_receiver_wiring _______________________
+
+    def test_service_and_receiver_wiring():
+        svc = (KOTLIN / "CallForegroundService.kt").read_text(encoding="utf-8")
+        assert "FOREGROUND_SERVICE_TYPE_PHONE_CALL" in svc
+        assert "START_NOT_STICKY" in svc
+        rcv = (KOTLIN / "IncomingCallReceiver.kt").read_text(encoding="utf-8")
+        assert "actionAnswer" in rcv and "actionReject" in rcv
+        bridge = (KOTLIN / "CallBridge.kt").read_text(encoding="utf-8")
+        assert 'channelName = "chatflow/call"' in bridge
+>       assert "openIncomingCall" in bridge and "rejectIncomingCall" in bridge
+E       AssertionError: assert ('openIncomingCall' in 'package com.liuhetong.mobile.call\n\nimport android.content.Context\nimport android.content.Intent\nimport android.os....setMethodCallHandler(null)\n        channel = null\n        handlers = null\n        flutterReady = false\n    }\n}\n')
+
+tests\mobile\test_native_call_service_layer.py:38: AssertionError
+__________________ test_flutter_handles_native_call_actions ___________________
+
+    def test_flutter_handles_native_call_actions():
+        raw = APP_HOME.read_text(encoding="utf-8")
+        assert "MethodChannel('chatflow/call')" in raw
+>       assert "'openIncomingCall'" in raw
+E       assert "'openIncomingCall'" in "import 'features/contacts/group_address_list_page.dart';\nimport 'dart:async';\n\nimport 'package:flutter/cupertino.d...: enabled, onChanged: _update),\n                      )\n                    ],\n                  )),\n      );\n}\n"
+
+tests\mobile\test_native_call_service_layer.py:63: AssertionError
+___________________ test_telecom_incoming_call_architecture ___________________
+
+    def test_telecom_incoming_call_architecture():
+        """规格§二/三/四/五/七：Telecom 接管来电（系统电话架构）。"""
+        base = ROOT / "apps/mobile_flutter/android/app/src/main/kotlin/com/liuhetong/mobile/call"
+        cs = (base / "CallConnectionService.kt").read_text(encoding="utf-8")
+        assert "addNewIncomingCall" in cs, "必须经 TelecomManager 上报系统来电"
+        assert "PROPERTY_SELF_MANAGED" in cs
+        assert "setRinging" in cs
+        assert "onAnswer" in cs and "onReject" in cs
+    
+        cm = (base / "CallManager.kt").read_text(encoding="utf-8")
+        assert "State.ringing" in cm and "State.active" in cm
+        assert "hasActiveCall" in cm
+    
+        activity = (base / "CallActivity.kt").read_text(encoding="utf-8")
+        assert "setShowWhenLocked" in activity, "锁屏之上显示（§测试3）"
+        assert "setTurnScreenOn" in activity, "息屏点亮"
+        assert "android.app.Activity" in activity, "纯 Native Activity（不依赖 Flutter）"
+    
+        bridge = (base / "CallBridge.kt").read_text(encoding="utf-8")
+        assert 'channelName = "native_call"' in bridge, "规格§三通道"
+        for m in ("answerCall", "rejectCall", "endCall", "getActiveCall"):
+            assert m in bridge
+        for e in ("incomingCall", "callAccepted", "callEnded"):
+            assert e in bridge
+    
+        overlay = (base / "CallOverlayService.kt").read_text(encoding="utf-8")
+        assert "TYPE_APPLICATION_OVERLAY" in overlay, "规格§五悬浮窗"
+        assert "launchCallActivity" in overlay, "点击悬浮球回到通话"
+    
+        manifest = MANIFEST.read_text(encoding="utf-8")
+        for perm in ("USE_FULL_SCREEN_INTENT", "SYSTEM_ALERT_WINDOW",
+                     "POST_NOTIFICATIONS", "MANAGE_OWN_CALLS",
+                     "FOREGROUND_SERVICE_PHONE_CALL"):
+            assert perm in manifest, f"缺权限 {perm}"
+        assert ".call.CallActivity" in manifest
+        assert ".call.CallConnectionService" in manifest
+        assert ".call.CallOverlayService" in manifest
+    
+        home = APP_HOME.read_text(encoding="utf-8")
+        assert "MethodChannel('native_call')" in home, "Flutter 侧 native_call 装配"
+>       assert "callEnded" in home and "callAccepted" in home
+E       assert ('callEnded' in "import 'features/contacts/group_address_list_page.dart';\nimport 'dart:async';\n\nimport 'package:flutter/cupertino.d...: enabled, onChanged: _update),\n                      )\n                    ],\n                  )),\n      );\n}\n")
+
+tests\mobile\test_native_call_service_layer.py:136: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_flutter_boundaries.py::test_video_call_surface_uses_flexible_height_on_compact_devices
+FAILED tests/mobile/test_native_call_service_layer.py::test_service_and_receiver_wiring
+FAILED tests/mobile/test_native_call_service_layer.py::test_flutter_handles_native_call_actions
+FAILED tests/mobile/test_native_call_service_layer.py::test_telecom_incoming_call_architecture
+4 failed, 52 passed in 45.61s

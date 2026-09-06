@@ -106,5 +106,9 @@ void main() {
     expect(find.text('用户资料'), findsOneWidget);
     expect(find.text('艾莉丝'), findsOneWidget);
     expect(find.text('添加到通讯录'), findsOneWidget);
+    final actionRect = tester.getRect(find.byKey(const Key('add-friend-profile-add')));
+    final labelRect = tester.getRect(find.text('添加到通讯录'));
+    expect((actionRect.center - labelRect.center).distance, lessThan(2));
+    expect(actionRect.contains(labelRect.bottomRight), isTrue);
   });
 }

@@ -154,7 +154,7 @@ async def test_cancel_rejects_resolved_request(friend_components) -> None:
 
 
 @pytest.mark.asyncio
-async def test_requests_list_carries_review_fields(friend_components) -> None:
+async def test_requests_list_carries_public_review_fields_only(friend_components) -> None:
     app, factory = friend_components
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
@@ -164,8 +164,8 @@ async def test_requests_list_carries_review_fields(friend_components) -> None:
     assert response.status_code == 200
     item = response.json()["items"][0]
     assert item["user_id"] == "bob"
-    assert item["remark"] == "同事"
-    assert item["tags"] == ["工作", "朋友"]
+    assert item["remark"] is None
+    assert item["tags"] == []
     assert item["message"] == "你好，我是Bob"
 
 

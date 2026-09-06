@@ -5,6 +5,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:photo_manager/photo_manager.dart';
+import 'encrypted_media_view.dart';
+import '../../core/gallery_save_access.dart';
 
 import '../foundation/wechat_tokens.dart';
 
@@ -27,6 +30,7 @@ final class VideoMessageCard extends StatelessWidget {
   final Future<Uint8List?> Function()? posterLoader;
 
   String get _durationText {
+    if (duration == null || duration! <= Duration.zero) return '--:--';
     final total = duration?.inSeconds ?? 0;
     final minutes = total ~/ 60;
     final seconds = (total % 60).toString().padLeft(2, '0');
@@ -58,15 +62,13 @@ final class VideoMessageCard extends StatelessWidget {
                         return Image.memory(poster,
                             fit: BoxFit.cover,
                             gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) =>
-                                const Center(
+                            errorBuilder: (_, __, ___) => const Center(
                                   child: Icon(CupertinoIcons.videocam_fill,
                                       size: 34,
                                       color: CupertinoColors.systemGrey),
                                 ));
                       }
-                      if (snapshot.connectionState !=
-                          ConnectionState.done) {
+                      if (snapshot.connectionState != ConnectionState.done) {
                         return const Center(
                             child: CupertinoActivityIndicator());
                       }
@@ -96,8 +98,8 @@ final class VideoMessageCard extends StatelessWidget {
                   right: 6,
                   bottom: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 5, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                     decoration: BoxDecoration(
                       color: CupertinoColors.black.withValues(alpha: .55),
                       borderRadius: BorderRadius.circular(4),
@@ -121,10 +123,14 @@ final class VideoViewerPage extends StatefulWidget {
     super.key,
     required this.loadFile,
     this.initialDuration,
+    this.onForward,
+    this.controllerFactory,
   });
 
   final Future<File> Function() loadFile;
   final Duration? initialDuration;
+  final Future<void> Function()? onForward;
+  final VideoPlayerController Function(File file)? controllerFactory;
 
   @override
   State<VideoViewerPage> createState() => _VideoViewerPageState();
@@ -134,25 +140,39 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
   VideoPlayerController? _controller;
   Future<bool>? _initFuture;
   Timer? _uiTicker;
+  File? _videoFile;
+  bool _saving = false;
+  bool _forwarding = false;
+  String? _hint;
 
   /// 加载/初始化失败后可重试（弱网大文件场景）。
   bool loadFailed = false;
 
   Future<bool> _initialize() async {
     loadFailed = false;
+    VideoPlayerController? pendingController;
     try {
-      final videoFile = await widget.loadFile();
-      final controller = VideoPlayerController.file(videoFile);
-      await controller.initialize();
+      final videoFile =
+          await widget.loadFile().timeout(const Duration(seconds: 30));
+      if (!mounted) return false;
+      final controller = widget.controllerFactory?.call(videoFile) ??
+          VideoPlayerController.file(videoFile);
+      pendingController = controller;
+      await controller.initialize().timeout(const Duration(seconds: 30));
       if (!mounted) {
         await controller.dispose();
         return false;
       }
-      unawaited(WakelockPlus.enable());
       await controller.play();
+      if (!mounted) {
+        await controller.dispose();
+        return false;
+      }
+      unawaited(WakelockPlus.enable().catchError((Object _) {}));
       if (mounted) {
         setState(() {
           _controller = controller;
+          _videoFile = videoFile;
           loadFailed = false;
         });
       }
@@ -161,6 +181,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
       });
       return true;
     } catch (_) {
+      await pendingController?.dispose();
       if (mounted) {
         setState(() => loadFailed = true);
       }
@@ -170,6 +191,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
 
   /// 「重试」：重新下载解密并初始化播放器。
   void _retry() {
+    _uiTicker?.cancel();
     _controller?.dispose();
     _controller = null;
     setState(() {
@@ -194,6 +216,61 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _download() async {
+    if (_saving || _videoFile == null) return;
+    setState(() => _saving = true);
+    try {
+      await ensureGallerySaveAccess();
+      final asset = await PhotoManager.editor.saveVideo(_videoFile!,
+          title: 'ChatFlow-${DateTime.now().millisecondsSinceEpoch}.mp4');
+      if (mounted) {
+        setState(() => _hint = asset.id.isNotEmpty ? '已保存到相册' : '保存失败，请稍后重试');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _hint = gallerySaveErrorMessage(error));
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _forward() async {
+    if (_forwarding) return;
+    setState(() => _forwarding = true);
+    try {
+      await _controller?.pause();
+      await widget.onForward?.call();
+    } catch (_) {
+      if (mounted) setState(() => _hint = '转发失败，请重试');
+    } finally {
+      if (mounted) setState(() => _forwarding = false);
+    }
+  }
+
+  Future<void> _chooseSpeed() async {
+    final speed = await showCupertinoModalPopup<double>(
+        context: context,
+        builder: (sheet) => CupertinoActionSheet(
+            title: const Text('播放速度'),
+            actions: [
+              for (final rate in [0.5, 1.0, 1.5, 2.0])
+                CupertinoActionSheetAction(
+                    onPressed: () => Navigator.pop(sheet, rate),
+                    child: Text('$rate×'))
+            ],
+            cancelButton: CupertinoActionSheetAction(
+                onPressed: () => Navigator.pop(sheet),
+                child: const Text('取消'))));
+    if (speed == null || !mounted) return;
+    try {
+      await _controller?.setPlaybackSpeed(speed);
+      if (mounted) setState(() {});
+    } catch (_) {
+      if (mounted) setState(() => _hint = '该视频暂不支持此倍速');
+    }
+  }
+
   String _format(Duration duration) {
     final minutes = duration.inMinutes;
     final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
@@ -203,7 +280,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
   @override
   void dispose() {
     _uiTicker?.cancel();
-    unawaited(WakelockPlus.disable());
+    unawaited(WakelockPlus.disable().catchError((Object _) {}));
     _controller?.dispose();
     super.dispose();
   }
@@ -237,7 +314,16 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
                             builder: (context, snapshot) {
                               if (snapshot.connectionState !=
                                   ConnectionState.done) {
-                                return const CupertinoActivityIndicator();
+                                return const Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CupertinoActivityIndicator(),
+                                    SizedBox(height: 12),
+                                    Text('正在加载视频…',
+                                        style: TextStyle(
+                                            color: CupertinoColors.systemGrey)),
+                                  ],
+                                );
                               }
                               if (snapshot.data == true) {
                                 return const SizedBox.shrink();
@@ -246,29 +332,23 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    loadFailed
-                                        ? '视频加载失败，请检查网络后重试'
-                                        : '视频加载失败',
+                                    loadFailed ? '视频加载失败，请检查网络后重试' : '视频加载失败',
                                     style: const TextStyle(
-                                        color:
-                                            CupertinoColors.systemGrey),
+                                        color: CupertinoColors.systemGrey),
                                   ),
                                   const SizedBox(height: 12),
                                   CupertinoButton(
-                                    key: const Key(
-                                        'video-viewer-retry'),
+                                    key: const Key('video-viewer-retry'),
                                     color: CupertinoColors.systemGrey
                                         .withValues(alpha: .35),
-                                    borderRadius:
-                                        BorderRadius.circular(16),
+                                    borderRadius: BorderRadius.circular(16),
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 20, vertical: 6),
                                     onPressed: _retry,
                                     child: const Text('重试',
                                         style: TextStyle(
                                             fontSize: 14,
-                                            color: CupertinoColors
-                                                .white)),
+                                            color: CupertinoColors.white)),
                                   ),
                                 ],
                               );
@@ -286,6 +366,49 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
                   size: 22, color: CupertinoColors.white),
             ),
           ),
+          Positioned(
+              right: 16,
+              bottom: 110,
+              child: Column(children: [
+                ViewerRoundAction(
+                    key: const Key('video-viewer-download'),
+                    icon: CupertinoIcons.cloud_download,
+                    label: _saving ? '保存中' : '下载',
+                    onPressed: ready && !_saving ? _download : null),
+                const SizedBox(height: 14),
+                if (widget.onForward != null)
+                  ViewerRoundAction(
+                      key: const Key('video-viewer-forward'),
+                      icon: CupertinoIcons.paperplane,
+                      label: '转发',
+                      onPressed: _forwarding ? null : _forward),
+              ])),
+          if (_hint != null)
+            Positioned(
+                left: 0,
+                right: 0,
+                bottom: 96,
+                child: ViewerStatusHint(message: _hint!)),
+          if (ready)
+            Positioned(
+                left: 12,
+                right: 12,
+                bottom: 62,
+                child: CupertinoSlider(
+                  key: const Key('video-viewer-progress'),
+                  value: controller.value.position.inMilliseconds
+                      .toDouble()
+                      .clamp(
+                          0,
+                          controller.value.duration.inMilliseconds
+                              .toDouble()
+                              .clamp(1, double.infinity)),
+                  max: controller.value.duration.inMilliseconds
+                      .toDouble()
+                      .clamp(1, double.infinity),
+                  onChanged: (value) =>
+                      controller.seekTo(Duration(milliseconds: value.round())),
+                )),
           if (ready)
             Positioned(
               left: 16,
@@ -311,13 +434,14 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
                       fontSize: 12, color: CupertinoColors.white),
                 ),
                 const SizedBox(width: 8),
-                const Expanded(
-                  child: Text('加密视频',
-                      textAlign: TextAlign.end,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: CupertinoColors.systemGrey)),
-                ),
+                const Spacer(),
+                CupertinoButton(
+                    key: const Key('video-viewer-speed'),
+                    padding: EdgeInsets.zero,
+                    onPressed: _chooseSpeed,
+                    child: Text('${controller.value.playbackSpeed}×',
+                        style: const TextStyle(
+                            fontSize: 14, color: CupertinoColors.white))),
                 if (total != null) ...[
                   const SizedBox(width: 8),
                   Text(_format(total),

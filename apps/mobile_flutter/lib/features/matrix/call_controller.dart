@@ -118,6 +118,7 @@ final class CallViewState {
     String? message,
     DateTime? connectedAt,
     bool clearConnectedAt = false,
+    bool clearMessage = false,
   }) =>
       CallViewState(
         phase ?? this.phase,
@@ -126,7 +127,7 @@ final class CallViewState {
         matrixUserId: matrixUserId,
         muted: muted ?? this.muted,
         speaker: speaker ?? this.speaker,
-        message: message ?? this.message,
+        message: clearMessage ? null : (message ?? this.message),
         connectedAt:
             clearConnectedAt ? null : (connectedAt ?? this.connectedAt),
       );
@@ -176,34 +177,54 @@ final class CallController extends ChangeNotifier {
   Timer? _connectTimeoutTimer;
   CallViewState state = const CallViewState(CallPhase.idle);
   bool _incomingRinging = false;
+  int _callGeneration = 0;
+  bool _disposed = false;
+
+  bool _isCurrent(int generation) =>
+      !_disposed && generation == _callGeneration;
 
   Future<void> start({
     required String roomId,
     required String matrixUserId,
     required CallMediaType type,
   }) async {
+    if (_disposed) return;
+    final generation = ++_callGeneration;
+    _ringTimeoutTimer?.cancel();
+    _connectTimeoutTimer?.cancel();
     _set(CallViewState(
       CallPhase.requestingPermission,
       roomId: roomId,
       matrixUserId: matrixUserId,
       type: type,
     ));
-    if (!await backend.isEncryptedDirectRoom(roomId, matrixUserId)) {
+    final safeRoom = await backend.isEncryptedDirectRoom(roomId, matrixUserId);
+    if (!_isCurrent(generation)) return;
+    if (!safeRoom) {
       _set(
           state.copyWith(phase: CallPhase.failed, message: '只能在已验证的加密双人会话中通话'));
       throw StateError('Call room is not an encrypted direct room');
     }
-    if (!await permissions.request(video: type == CallMediaType.video)) {
+    final allowed =
+        await permissions.request(video: type == CallMediaType.video);
+    if (!_isCurrent(generation)) return;
+    if (!allowed) {
       _set(state.copyWith(
           phase: CallPhase.permissionDenied, message: '需要麦克风和摄像头权限'));
       return;
     }
     try {
+      // Android WebRTC defaults to speaker-first and retains the prior route.
+      // Apply the UI choice before capture/answer; false still permits headsets.
+      await backend.setSpeaker(state.speaker);
+      if (!_isCurrent(generation)) return;
       await backend.start(roomId, matrixUserId, type);
+      if (!_isCurrent(generation) || state.phase == CallPhase.connected) return;
       _incomingRinging = false; // 主叫：等待音。
       _set(state.copyWith(phase: CallPhase.ringing));
       _armRingTimeout();
     } catch (_) {
+      if (!_isCurrent(generation) || state.phase == CallPhase.connected) return;
       alerts.stop();
       _set(state.copyWith(phase: CallPhase.failed, message: '呼叫失败，请重试'));
       rethrow;
@@ -236,27 +257,45 @@ final class CallController extends ChangeNotifier {
     }
   }
 
-  /// P0（接听加固）：权限失败拒接；信令异常不再裸抛（此前无 try/catch，
+  /// 权限不足保留来电；信令异常不再裸抛（此前无 try/catch，
   /// ICE 不通则永远停在响铃界面）——进入 failed 可重试；
   /// 接听后进入 connecting 并布防连接超时。
   Future<void> accept() async {
-    final type = state.type ?? CallMediaType.audio;
-    diagnostics.mark(CallDiagStage.answerTapped);
-    _set(state.copyWith(phase: CallPhase.requestingPermission));
-    if (!await permissions.request(video: type == CallMediaType.video)) {
-      await _safeReject();
-      _set(state.copyWith(
-          phase: CallPhase.permissionDenied, message: '权限被拒绝，已拒接来电'));
+    if (_disposed ||
+        (state.phase != CallPhase.ringing && state.phase != CallPhase.failed)) {
       return;
     }
+    final generation = _callGeneration;
+    final type = state.type ?? CallMediaType.audio;
+    diagnostics.mark(CallDiagStage.answerTapped);
+    _set(state.copyWith(
+        phase: CallPhase.requestingPermission, clearMessage: true));
     try {
-      await backend.accept();
-      diagnostics.mark(CallDiagStage.answerSent);
-      _incomingRinging = false; // 已接听：停止来电铃（等待音语义不适用）。
+      final allowed =
+          await permissions.request(video: type == CallMediaType.video);
+      if (!_isCurrent(generation)) return;
+      if (!allowed) {
+        _set(state.copyWith(
+            phase: CallPhase.ringing,
+            message:
+                type == CallMediaType.video ? '请授权麦克风和摄像头后接听' : '请授权麦克风后接听'));
+        return;
+      }
+      _incomingRinging = false;
       _set(state.copyWith(phase: CallPhase.connecting));
+      // The answer itself can stall while preparing media or sending signaling.
       _armConnectTimeout();
+      await backend.setSpeaker(state.speaker);
+      if (!_isCurrent(generation) || state.phase != CallPhase.connecting) {
+        return;
+      }
+      await backend.accept();
+      if (!_isCurrent(generation)) return;
+      diagnostics.mark(CallDiagStage.answerSent);
     } catch (_) {
-      _acceptFailed('接听失败，请重试');
+      if (_isCurrent(generation) && state.phase != CallPhase.connected) {
+        _acceptFailed('接听失败，请重试');
+      }
     }
   }
 
@@ -283,10 +322,13 @@ final class CallController extends ChangeNotifier {
 
   void _armConnectTimeout() {
     _connectTimeoutTimer?.cancel();
+    final generation = _callGeneration;
     _connectTimeoutTimer = Timer(connectTimeout, () async {
-      if (state.phase != CallPhase.connecting) return;
+      if (!_isCurrent(generation) || state.phase != CallPhase.connecting) {
+        return;
+      }
+      _acceptFailed('接通超时，请重试');
       await _safeHangup();
-      _set(state.copyWith(phase: CallPhase.failed, message: '接通超时，请重试'));
     });
   }
 
@@ -299,18 +341,15 @@ final class CallController extends ChangeNotifier {
   }
 
   Future<void> reject() async {
-    alerts.stop();
-    _ringTimeoutTimer?.cancel();
-    await _safeReject();
+    if (_disposed) return;
     _set(state.copyWith(phase: CallPhase.ended, message: '已拒接'));
+    unawaited(_safeReject());
   }
 
   Future<void> hangup() async {
-    alerts.stop();
-    _ringTimeoutTimer?.cancel();
-    _connectTimeoutTimer?.cancel();
-    await _safeHangup();
+    if (_disposed) return;
     _set(state.copyWith(phase: CallPhase.ended, message: '通话已结束'));
+    unawaited(_safeHangup());
   }
 
   Future<void> toggleMute() async {
@@ -328,8 +367,10 @@ final class CallController extends ChangeNotifier {
   Future<void> switchCamera() => backend.switchCamera();
 
   Future<void> _handleEvent(CallBackendEvent event) async {
+    if (_disposed) return;
     switch (event.kind) {
       case CallBackendEventKind.incoming:
+        _callGeneration++;
         _incomingRinging = true;
         diagnostics.mark(CallDiagStage.incomingUiShown);
         _set(CallViewState(
@@ -339,6 +380,12 @@ final class CallController extends ChangeNotifier {
           type: event.type,
         ));
       case CallBackendEventKind.connected:
+        if (state.phase == CallPhase.ended ||
+            state.phase == CallPhase.failed ||
+            state.phase == CallPhase.permissionDenied) {
+          return;
+        }
+        final generation = _callGeneration;
         _incomingRinging = false;
         diagnostics.mark(CallDiagStage.iceConnected);
         // 接通即停铃；视频通话默认打开免提（微信语义），语音保持听筒。
@@ -346,19 +393,27 @@ final class CallController extends ChangeNotifier {
         _ringTimeoutTimer?.cancel();
         _connectTimeoutTimer?.cancel();
         final isVideo = state.type == CallMediaType.video;
+        // UI connection must not depend on a platform audio-route Future.
+        _set(state.copyWith(
+          phase: CallPhase.connected,
+          connectedAt: _now(),
+        ));
         if (isVideo && !state.speaker) {
           try {
             await backend.setSpeaker(true);
+            if (_isCurrent(generation)) {
+              _set(state.copyWith(speaker: true));
+            }
           } catch (_) {
             // 免提切换失败不影响接通。
           }
         }
-        _set(state.copyWith(
-          phase: CallPhase.connected,
-          speaker: isVideo ? true : null,
-          connectedAt: _now(),
-        ));
       case CallBackendEventKind.ended:
+        // Cleanup of a failed call must keep its explanation and retry action.
+        if (state.phase == CallPhase.failed ||
+            state.phase == CallPhase.permissionDenied) {
+          return;
+        }
         _set(state.copyWith(phase: CallPhase.ended, message: '通话已结束'));
       case CallBackendEventKind.networkInterrupted:
         _set(state.copyWith(phase: CallPhase.ended, message: '网络中断，通话已结束'));
@@ -366,6 +421,14 @@ final class CallController extends ChangeNotifier {
   }
 
   void _set(CallViewState next) {
+    if (_disposed) return;
+    if (next.phase == CallPhase.ended ||
+        next.phase == CallPhase.failed ||
+        next.phase == CallPhase.permissionDenied) {
+      _callGeneration++;
+      _ringTimeoutTimer?.cancel();
+      _connectTimeoutTimer?.cancel();
+    }
     final previousPhase = state.phase;
     state = next;
     // 响铃阶段维持提醒；接通/结束/失败等其余状态一律停铃。
@@ -388,6 +451,8 @@ final class CallController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _callGeneration++;
     _ringTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();
     alerts.stop();

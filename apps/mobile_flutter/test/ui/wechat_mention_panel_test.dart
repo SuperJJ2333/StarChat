@@ -12,9 +12,11 @@ void main() {
       MentionOption(id: 'd', primaryName: '张三', nickname: '张三'),
     ]);
 
+    // 规格 #6：中文按拼音分组（小明→X、张三→Z），不再归入 #。
     expect(sorted.map((option) => option.id).toList(), ['b', 'c', 'a', 'd']);
     expect(mentionSectionLetter(sorted[0]), 'A');
-    expect(mentionSectionLetter(sorted[3]), '#');
+    expect(mentionSectionLetter(sorted[2]), 'X', reason: '小明(xiaoming)→X');
+    expect(mentionSectionLetter(sorted[3]), 'Z', reason: '张三(zhangsan)→Z');
   });
 
   test('mention search matches remark and nickname', () {

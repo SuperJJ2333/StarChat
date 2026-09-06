@@ -44,7 +44,7 @@ object CallBridge {
  * 规格§三：native_call 通道。
  *
  * Native→Flutter 事件：incomingCall（推送唤醒呈现，仅登记）/
- * callAccepted（用户明确请求接听）/ callRejected（用户明确请求拒绝）/
+ * callAccepted（用户明确请求接听）/ callRejected（用户明确请求拒接/挂断）/
  * callEnded（呈现结束：超时/远端取消/清理）。
  *
  * Flutter→Native 方法：ready（就绪握手，取回冷启动暂存动作与当前呈现）/
@@ -63,6 +63,8 @@ object NativeCallBridge {
     const val methodAnswer = "answerCall"
     const val methodReject = "rejectCall"
     const val methodEnd = "endCall"
+    const val methodMinimize = "minimizeCallPresentation"
+    const val methodShowPage = "showCallPage"
 
     const val eventIncoming = "incomingCall"
     const val eventAccepted = "callAccepted"
@@ -86,8 +88,11 @@ object NativeCallBridge {
      * 创建通道 + 注册方法处理器 + 订阅 CallManager 事件。
      * 幂等：重复调用先 teardown（Activity 重建/引擎重建不泄漏监听）。
      */
-    fun setUp(messenger: BinaryMessenger, callHandlers: CallHandlers) {
+    fun setUp(context: Context, messenger: BinaryMessenger, callHandlers: CallHandlers) {
         teardown()
+        // Foreground Matrix/outgoing calls do not pass through a push receiver.
+        // Always initialize presentation services, retaining no Activity context.
+        CallManager.appContext = context.applicationContext
         handlers = callHandlers
         val ch = MethodChannel(messenger, channelName)
         ch.setMethodCallHandler { call, result ->
@@ -110,11 +115,17 @@ object NativeCallBridge {
                 methodReportState -> {
                     CallManager.updateFromFlutter(
                         call.argument<String>("phase"),
-                        call.argument<Boolean>("video"),
+                        call.argument<Boolean>("video") ?: call.argument<String>("type")?.let { it == "video" },
+                        call.argument<String>("callerName"),
                     )
                     result.success(true)
                 }
                 methodGetActive -> result.success(activeCallSnapshot())
+                methodMinimize -> result.success(CallManager.minimizeCallPresentation())
+                methodShowPage -> {
+                    CallManager.showCallPage()
+                    result.success(true)
+                }
                 methodAnswer -> {
                     handlers?.onAnswer()
                     result.success(true)

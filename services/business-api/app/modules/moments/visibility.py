@@ -1,6 +1,6 @@
 from sqlalchemy import and_,or_,select
 
-from app.modules.friendship.models import Friendship,UserBlock
+from app.modules.friendship.models import ContactProfile,Friendship,UserBlock
 
 
 class VisibilityPolicy:
@@ -22,6 +22,17 @@ class VisibilityPolicy:
         )))
         if blocked:
             return False
+        # Contact preferences are directional: the author controls who can see
+        # their posts, while the viewer controls whose posts they want to see.
+        preferences = self.s.scalars(select(ContactProfile).where(or_(
+            and_(ContactProfile.owner_id == moment.author_id, ContactProfile.contact_id == actor),
+            and_(ContactProfile.owner_id == actor, ContactProfile.contact_id == moment.author_id),
+        )))
+        for preference in preferences:
+            restricted = {'HIDE_BOTH', 'CHAT_ONLY', 'ONLY_CHAT'}
+            restricted.add('HIDE_MINE' if preference.owner_id == moment.author_id else 'HIDE_THEIRS')
+            if preference.moments_permission in restricted:
+                return False
         is_friend = self._are_friends(actor, moment.author_id)
         if moment.visibility in ('PUBLIC', 'FRIENDS'):
             return is_friend

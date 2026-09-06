@@ -72,10 +72,14 @@ void main() {
     final source = File('lib/features/matrix/device_gallery_source.dart')
         .readAsStringSync(encoding: utf8);
     expect(
-      source.contains(
-          'asset.type == AssetType.video\n            ? Future<Uint8List?>.value(Uint8List(0))'),
+      source.contains('asset.type == AssetType.video'),
       isTrue,
       reason: '视频必须跳过系统缩略图解码（规格#4：先渲染再逐 cell 抽帧）',
+    );
+    expect(
+      source.contains('Future<Uint8List?>.value(Uint8List(0))'),
+      isTrue,
+      reason: '视频跳过系统缩略图时立即返回空占位',
     );
     expect(source.contains('video_first_frame_cache'), isTrue,
         reason: '必须有磁盘缓存目录');

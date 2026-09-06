@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_forward_picker_page.dart';
@@ -13,6 +15,107 @@ ChatForwardCandidate _candidate(String id, String title,
     );
 
 void main() {
+  testWidgets('confirmation disables duplicate sends while request is pending',
+      (tester) async {
+    final pending = Completer<void>();
+    var attempts = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatForwardPickerPage(
+      candidates: [_candidate('a', '群聊')],
+      recentRoomIds: const [],
+      onForward: (_) {
+        attempts++;
+        return pending.future;
+      },
+    )));
+    await tester.tap(find.byKey(const Key('forward-chat-a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('forward-confirm-send')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('forward-confirm-send')));
+    await tester.pump();
+    expect(attempts, 1);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.widgetWithText(CupertinoButton, '取消'))
+            .onPressed,
+        isNull);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.byKey(const Key('forward-confirmation-sheet')), findsOneWidget);
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('forward-confirmation-sheet')), findsNothing);
+  });
+
+  testWidgets('bottom card previews content and cancel never sends',
+      (tester) async {
+    var sends = 0;
+    final candidates = List<ChatForwardCandidate>.unmodifiable([
+      _candidate('z', 'Z群'),
+      _candidate('a', 'A群'),
+    ]);
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatForwardPickerPage(
+      candidates: candidates,
+      recentRoomIds: const [],
+      contentPreview: '本次转发的内容',
+      onForward: (_) async {
+        sends++;
+      },
+    )));
+    expect(tester.getTopLeft(find.text('Z群')).dy,
+        lessThan(tester.getTopLeft(find.text('A群')).dy));
+    final row = find.byKey(const Key('forward-chat-z'));
+    expect(find.descendant(of: row, matching: find.byType(CupertinoButton)),
+        findsOneWidget);
+    final gesture = await tester.startGesture(tester.getCenter(row));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final fades = tester.widgetList<FadeTransition>(
+        find.descendant(of: row, matching: find.byType(FadeTransition)));
+    expect(fades.any((fade) => fade.opacity.value < 1), isTrue);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(sends, 0);
+    expect(find.text('本次转发的内容'), findsOneWidget);
+    final sheet = find.byKey(const Key('forward-confirmation-sheet'));
+    expect(tester.getBottomRight(sheet).dy, 600);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(sends, 0);
+    expect(sheet, findsNothing);
+    expect(find.text('选择聊天'), findsOneWidget);
+  });
+
+  testWidgets('recent selection respects multi mode and send errors can retry',
+      (tester) async {
+    var attempts = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatForwardPickerPage(
+      candidates: [_candidate('a', '项目群')],
+      recentRoomIds: const ['a'],
+      onForward: (_) async {
+        if (++attempts == 1) throw StateError('failed');
+      },
+    )));
+    await tester.tap(find.text('多选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('forward-recent-a')));
+    await tester.pumpAndSettle();
+    expect(find.text('发送(1)'), findsOneWidget);
+    expect(find.byKey(const Key('forward-confirmation-sheet')), findsNothing);
+    await tester.tap(find.text('发送(1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(find.text('转发失败，请重试'), findsOneWidget);
+    expect(attempts, 1);
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+  });
+
   testWidgets('renders search, recent forwards and recent chat list',
       (tester) async {
     var forwarded = <String>[];
@@ -42,7 +145,12 @@ void main() {
 
     await tester.tap(find.byKey(const Key('forward-chat-room-b')));
     await tester.pump();
-    expect(forwarded, ['room-b'], reason: '点击会话行即转发');
+    expect(forwarded, isEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('发送给：'), findsOneWidget);
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(forwarded, ['room-b']);
   });
 
   testWidgets('multi-select toggles rows and batch-forwards once',
@@ -69,7 +177,11 @@ void main() {
     await tester.tap(find.text('发送(2)'));
     await tester.pump();
 
-    expect(forwarded, ['room-a', 'room-b'], reason: '多选批量转发按选择顺序');
+    expect(forwarded, isEmpty);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(forwarded, ['room-a', 'room-b']);
   });
 
   testWidgets('search filters the chat list by title', (tester) async {

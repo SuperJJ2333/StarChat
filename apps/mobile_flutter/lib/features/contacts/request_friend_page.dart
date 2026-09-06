@@ -8,9 +8,13 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
+import '../../core/business_api_client.dart';
+import '../friendship/friend_request_watch.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../profile/profile_controller.dart';
 
 /// 微信风格的「申请添加朋友」页：打招呼（≤50 字）、备注（≤20 字）、
-/// 标签（多选 ≤5，可新建）、朋友圈权限（默认"不让他看我的朋友圈和状态"）。
+/// 标签（多选 ≤5，可新建）、朋友圈权限（默认允许，可分别隐藏双方朋友圈）。
 /// 备注与标签在对方通过申请后写入申请人的通讯录。
 final class RequestFriendPage extends StatefulWidget {
   const RequestFriendPage({
@@ -32,23 +36,28 @@ final class RequestFriendPage extends StatefulWidget {
   State<RequestFriendPage> createState() => _RequestFriendPageState();
 }
 
-const _momentsPermissionOptions = <String, String>{
-  'HIDE_MINE': '不让他看我的朋友圈和状态',
-  'HIDE_THEIRS': '不看他的朋友圈和状态',
-  'CHAT_ONLY': '仅聊天',
-};
-
 final class _RequestFriendPageState extends State<RequestFriendPage> {
   static const _maxGreetingLength = 50;
   static const _maxRemarkLength = 20;
   static const _maxTagCount = 5;
 
-  final greeting = TextEditingController(text: '我是');
+  final greeting = TextEditingController(text: '你好，我是');
   final remark = TextEditingController();
   final newTag = TextEditingController();
   List<String> allTags = const [];
   final Set<String> selectedTags = <String>{};
-  String momentsPermission = 'HIDE_MINE';
+  bool chatOnly = false;
+  bool hideMine = false;
+  bool hideTheirs = false;
+  String get momentsPermission => chatOnly
+      ? 'CHAT_ONLY'
+      : hideMine && hideTheirs
+          ? 'HIDE_BOTH'
+          : hideMine
+              ? 'HIDE_MINE'
+              : hideTheirs
+                  ? 'HIDE_THEIRS'
+                  : 'DEFAULT';
   bool submitting = false;
   String? error;
 
@@ -56,6 +65,22 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
   void initState() {
     super.initState();
     _loadTags();
+    unawaited(_loadGreeting());
+  }
+
+  Future<void> _loadGreeting() async {
+    final api = widget.api;
+    if (api is! ProfileGateway) return;
+    try {
+      final profile = await (api as ProfileGateway).loadProfile();
+      if (!mounted || greeting.text != '你好，我是') return;
+      greeting.text = '你好，我是${profile.username}'
+          .characters
+          .take(_maxGreetingLength)
+          .toString();
+    } catch (_) {
+      // 保留可编辑招呼，资料恢复后仍可手动填写。
+    }
   }
 
   @override
@@ -134,13 +159,28 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
       error = null;
     });
     try {
-      await widget.api.requestFriend(
+      final result = await widget.api.requestFriend(
         widget.userId,
         message: message,
         remark: remarkText.isEmpty ? null : remarkText,
         tags: selectedTags.toList(growable: false),
         momentsPermission: momentsPermission,
       );
+      try {
+        final api = widget.api;
+        if (api is BusinessApiClient && result['id'] != null) {
+          final account = await api.currentMatrixUserId();
+          if (account != null) {
+            final prefs = await SharedPreferences.getInstance();
+            final key = FriendRequestWatch.pendingKey(account);
+            final ids = prefs.getStringList(key)?.toSet() ?? <String>{};
+            ids.add(result['id'].toString());
+            await prefs.setStringList(key, ids.toList());
+          }
+        }
+      } catch (_) {
+        // 申请已成功，不能把本地记录失败显示为提交失败；巡检仍可观察待处理申请。
+      }
       if (!mounted) return;
       await showCupertinoDialog<void>(
         context: context,
@@ -263,41 +303,31 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
                   onPressed: _createTag,
                   child: const Text(
                     '添加',
-                    style: TextStyle(color: CupertinoColors.white, fontSize: 14),
+                    style:
+                        TextStyle(color: CupertinoColors.white, fontSize: 14),
                   ),
                 ),
               ]),
               const SizedBox(height: 18),
               const Text('朋友圈权限'),
               const SizedBox(height: 8),
-              for (final entry in _momentsPermissionOptions.entries)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () =>
-                      setState(() => momentsPermission = entry.key),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Row(children: [
-                      Icon(
-                        momentsPermission == entry.key
-                            ? CupertinoIcons.check_mark_circled_solid
-                            : CupertinoIcons.circle,
-                        size: 20,
-                        color: momentsPermission == entry.key
-                            ? WeChatColors.brandPrimary
-                            : WeChatColors.textTertiary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(entry.value),
-                    ]),
-                  ),
-                ),
+              _permissionChoice(
+                  '默认允许', !chatOnly, () => setState(() => chatOnly = false)),
+              if (!chatOnly) ...[
+                _permissionSwitch('不让他看我的朋友圈和状态', hideMine,
+                    (value) => setState(() => hideMine = value)),
+                _permissionSwitch('不看他的朋友圈和状态', hideTheirs,
+                    (value) => setState(() => hideTheirs = value)),
+              ],
+              _permissionChoice(
+                  '仅聊天', chatOnly, () => setState(() => chatOnly = true)),
               if (error != null) ...[
                 const SizedBox(height: 10),
                 Text(
                   error!,
                   key: const Key('request-friend-error'),
-                  style: const TextStyle(color: WeChatColors.danger, fontSize: 13),
+                  style:
+                      const TextStyle(color: WeChatColors.danger, fontSize: 13),
                 ),
               ],
               const SizedBox(height: 24),
@@ -310,6 +340,35 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
               ),
             ],
           ),
+        ),
+      );
+
+  Widget _permissionChoice(String label, bool selected, VoidCallback onTap) =>
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(children: [
+            Expanded(child: Text(label)),
+            if (selected)
+              const Icon(CupertinoIcons.check_mark,
+                  color: WeChatColors.brandPrimary, size: 20),
+          ]),
+        ),
+      );
+
+  Widget _permissionSwitch(
+          String label, bool value, ValueChanged<bool> onChanged) =>
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onChanged(!value),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+          child: Row(children: [
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 14))),
+            CupertinoSwitch(value: value, onChanged: onChanged),
+          ]),
         ),
       );
 

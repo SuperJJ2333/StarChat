@@ -30,13 +30,15 @@ final class FriendRequestNotifier {
       message.isEmpty ? '$nickname 请求添加你为朋友' : '$nickname：$message',
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'changliao_friend_requests',
-          '好友申请',
+          'chatflow_messages_v2',
+          '消息通知',
           channelDescription: '收到新的好友申请时提醒',
           importance: Importance.high,
           priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(presentAlert: true, presentSound: true),
       ),
       payload: 'friend-requests',
     );
@@ -47,7 +49,20 @@ final class FriendRequestNotifier {
 /// 触发系统通知。重复申请更新原记录 → 通知弹窗触发，但红点数字不累计；
 /// 已处理后再次申请会产生新记录 → 通知 + 红点一并累计。
 final class FriendRequestWatch {
-  FriendRequestWatch(this.api, this.prefs, {this.notifier});
+  FriendRequestWatch(this.api, this.prefs,
+      {this.notifier,
+      this.accountKey = '',
+      this.onOutgoingAccepted,
+      this.onPendingCount});
+
+  final void Function(int count)? onPendingCount;
+  static String pendingKey(String accountKey) =>
+      'friend-request-pending-v1:$accountKey';
+  final String accountKey;
+  final Future<void> Function(Map request)? onOutgoingAccepted;
+  Future<int>? _polling;
+  String get _seenStorageKey => '$seenKey:$accountKey';
+  String get _greetedKey => 'friend-request-greeted-v1:$accountKey';
 
   static const seenKey = 'friend-request-seen-v1';
 
@@ -56,7 +71,7 @@ final class FriendRequestWatch {
   final FriendRequestNotifier? notifier;
 
   Map<String, String> _seen() {
-    final raw = prefs.getString(seenKey);
+    final raw = prefs.getString(_seenStorageKey);
     if (raw == null) return {};
     try {
       return (json.decode(raw) as Map).cast<String, String>();
@@ -66,17 +81,25 @@ final class FriendRequestWatch {
   }
 
   Future<void> _saveSeen(Map<String, String> seen) async {
-    await prefs.setString(seenKey, json.encode(seen));
+    await prefs.setString(_seenStorageKey, json.encode(seen));
   }
 
   /// 巡检一次，返回当前未处理申请数量（红点数字）。
-  Future<int> poll() async {
+  Future<int> poll() =>
+      _polling ??= _pollOnce().whenComplete(() => _polling = null);
+
+  Future<int> _pollOnce() async {
     final body = await api.friendRequests();
-    final items = ((body['items'] as List?) ?? const [])
+    final allItems =
+        ((body['items'] as List?) ?? const []).whereType<Map>().toList();
+    final items = allItems
         .whereType<Map>()
-        .where((item) => item['status']?.toString() == 'PENDING')
+        .where((item) =>
+            item['direction'] != 'OUTGOING' &&
+            item['status']?.toString() == 'PENDING')
         .toList();
 
+    onPendingCount?.call(items.length);
     final seen = _seen();
     var seenChanged = false;
     for (final item in items) {
@@ -102,6 +125,37 @@ final class FriendRequestWatch {
       seenChanged = true;
     }
     if (seenChanged) await _saveSeen(seen);
+    final pending =
+        prefs.getStringList(pendingKey(accountKey))?.toSet() ?? <String>{};
+    for (final request in allItems) {
+      if (request['direction'] == 'OUTGOING' &&
+          request['status'] == 'PENDING' &&
+          request['id'] != null) {
+        pending.add(request['id'].toString());
+      }
+    }
+    await prefs.setStringList(pendingKey(accountKey), pending.toList());
+    final greeted = prefs.getStringList(_greetedKey)?.toSet() ?? <String>{};
+    final send = onOutgoingAccepted;
+    if (send != null) {
+      for (final request in allItems) {
+        final id = request['id']?.toString();
+        if (id == null ||
+            greeted.contains(id) ||
+            !pending.contains(id) ||
+            request['direction'] != 'OUTGOING' ||
+            request['status'] != 'ACCEPTED') {
+          continue;
+        }
+        try {
+          await send(request);
+          greeted.add(id);
+          await prefs.setStringList(_greetedKey, greeted.toList());
+        } catch (_) {
+          // 保留待发状态；重试使用同一 Matrix transaction ID。
+        }
+      }
+    }
     return items.length;
   }
 }

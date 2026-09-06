@@ -107,6 +107,13 @@ final class FakePhoto {
 
 /// 选择逻辑（纯逻辑）验收：多选、上限 9、取消勾选、原图开关。
 void main() {
+  test('custom selection limit is reflected in overflow hint', () {
+    final selection = GallerySelection(maxCount: 1);
+    selection.toggle('first');
+    expect(selection.toggle('second'), isFalse);
+    expect(selection.overflowHint, '最多选择1张图片');
+  });
+
   test('gallery selection keeps insertion order and caps at nine', () {
     final selection = GallerySelection();
     for (var i = 1; i <= 9; i++) {

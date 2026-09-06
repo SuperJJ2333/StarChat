@@ -37,6 +37,7 @@ void main() {
             'nickname': '陌生群员',
             'matrix_user_id': mxid,
             'relationship_state': 'NONE',
+            'avatar_url': 'https://example.test/avatar/stranger.png?version=2',
           },
           member: const GroupChatMember(
             matrixUserId: '@stranger:example.test',
@@ -51,6 +52,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AddFriendProfilePage), findsOneWidget);
+    expect(
+      tester
+          .widget<AddFriendProfilePage>(find.byType(AddFriendProfilePage))
+          .avatarUrl,
+      'https://example.test/avatar/stranger.png?version=2',
+      reason: '业务公开头像必须随群成员资料传入，不能丢弃自定义头像',
+    );
     expect(find.text('用户资料'), findsOneWidget);
     expect(find.text('畅聊号：stranger88'), findsOneWidget);
     final addButton = find.byKey(const Key('add-friend-profile-add'));

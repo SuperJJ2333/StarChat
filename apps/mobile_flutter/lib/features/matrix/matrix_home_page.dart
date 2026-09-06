@@ -74,6 +74,7 @@ class MatrixHomePage extends StatefulWidget {
     required this.themeController,
     required this.onCreateGroup,
     this.reminderService,
+    this.onMessage,
     this.onVoice,
     this.onVideo,
     this.identityCache,
@@ -83,6 +84,7 @@ class MatrixHomePage extends StatefulWidget {
   final ThemeController themeController;
   final VoidCallback onCreateGroup;
   final MessageReminderService? reminderService;
+  final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
@@ -421,8 +423,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             CupertinoIcons.qrcode_viewfinder,
             '扫一扫',
             // 扫码统一入口：好友码 → 申请页；群码 → 群确认页（BUG2）。
-            () => Navigator.push(
-              context,
+            () => Navigator.of(context, rootNavigator: true).push(
               CupertinoPageRoute(
                 fullscreenDialog: true,
                 builder: (_) => ScanQrPage(
@@ -548,6 +549,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             room: room,
             roomName: roomName,
             onCreateGroup: widget.onCreateGroup,
+            onMessage: widget.onMessage,
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
             reminderService: widget.reminderService,
@@ -697,106 +699,106 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           final body = rooms.isEmpty && foldedRooms.isEmpty && invites.isEmpty
               ? const _MessagesEmptyState()
               : ListView.separated(
-                padding: EdgeInsets.zero,
-                itemCount: invites.length +
-                    rooms.length +
-                    (foldedRooms.isEmpty ? 0 : 1),
-                separatorBuilder: (_, __) => const Padding(
-                  padding: EdgeInsets.only(
-                    left: WeChatSpacing.lg +
-                        WeChatDimensions.conversationAvatar +
-                        WeChatSpacing.md,
+                  padding: EdgeInsets.zero,
+                  itemCount: invites.length +
+                      rooms.length +
+                      (foldedRooms.isEmpty ? 0 : 1),
+                  separatorBuilder: (_, __) => const Padding(
+                    padding: EdgeInsets.only(
+                      left: WeChatSpacing.lg +
+                          WeChatDimensions.conversationAvatar +
+                          WeChatSpacing.md,
+                    ),
+                    child: SizedBox(
+                      height: 0.5,
+                      child: ColoredBox(color: WeChatColors.divider),
+                    ),
                   ),
-                  child: SizedBox(
-                    height: 0.5,
-                    child: ColoredBox(color: WeChatColors.divider),
-                  ),
-                ),
-                itemBuilder: (context, index) {
-                  if (index < invites.length) {
-                    final invite = invites[index];
-                    return KeyedSubtree(
-                      key: ValueKey<String>('pending-invite-${invite.id}'),
-                      child: PendingGroupInviteTile(
-                      roomId: invite.id,
-                      roomName: invite.name.trim(),
-                      onAccept: () => _acceptGroupInvite(invite),
-                      onDecline: () => _declineGroupInvite(invite),
-                      ),
-                    );
-                  }
-                  final adjustedIndex = index - invites.length;
-                  if (foldedRooms.isNotEmpty &&
-                      adjustedIndex == pinnedCount) {
-                    return ConversationListTile(
-                      key: const Key('folded-group-chats'),
-                      title: '折叠的群聊',
-                      subtitle: '${foldedRooms.length} 个聊天',
-                      timeLabel: '',
-                      avatar: const ColoredBox(
-                        color: WeChatColors.lightSurface,
-                        child: Icon(CupertinoIcons.tray_full, size: 25),
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        CupertinoPageRoute(
-                          builder: (_) => _FoldedGroupChatsPage(
-                            rooms: foldedRooms,
-                            titleFor: _conversationTitle,
-                            subtitleFor: _conversationSubtitle,
-                            onOpen: (room) {
-                              Navigator.pop(context);
-                              _openRoom(room);
-                            },
+                  itemBuilder: (context, index) {
+                    if (index < invites.length) {
+                      final invite = invites[index];
+                      return KeyedSubtree(
+                        key: ValueKey<String>('pending-invite-${invite.id}'),
+                        child: PendingGroupInviteTile(
+                          roomId: invite.id,
+                          roomName: invite.name.trim(),
+                          onAccept: () => _acceptGroupInvite(invite),
+                          onDecline: () => _declineGroupInvite(invite),
+                        ),
+                      );
+                    }
+                    final adjustedIndex = index - invites.length;
+                    if (foldedRooms.isNotEmpty &&
+                        adjustedIndex == pinnedCount) {
+                      return ConversationListTile(
+                        key: const Key('folded-group-chats'),
+                        title: '折叠的群聊',
+                        subtitle: '${foldedRooms.length} 个聊天',
+                        timeLabel: '',
+                        avatar: const ColoredBox(
+                          color: WeChatColors.lightSurface,
+                          child: Icon(CupertinoIcons.tray_full, size: 25),
+                        ),
+                        onTap: () => Navigator.push<void>(
+                          context,
+                          CupertinoPageRoute(
+                            builder: (_) => _FoldedGroupChatsPage(
+                              rooms: foldedRooms,
+                              titleFor: _conversationTitle,
+                              subtitleFor: _conversationSubtitle,
+                              onOpen: (room) {
+                                Navigator.pop(context);
+                                _openRoom(room);
+                              },
+                            ),
                           ),
                         ),
-                      ),
+                      );
+                    }
+                    var roomIndex = adjustedIndex;
+                    if (foldedRooms.isNotEmpty && adjustedIndex > pinnedCount) {
+                      roomIndex = adjustedIndex - 1;
+                    }
+                    final room = rooms[roomIndex];
+                    _ensureGroupMembersLoaded([room]);
+                    final roomName = _conversationTitle(room);
+                    final preference = preferenceForRoom(room);
+                    return ConversationListTile(
+                      key: ValueKey<String>('conversation-${room.id}'),
+                      title: roomName,
+                      subtitle: _conversationSubtitle(room),
+                      timeLabel: _roomTime(room),
+                      avatar: room.isDirectChat || room.avatar != null
+                          ? MatrixUserAvatar(
+                              client: widget.matrix.sdkClient,
+                              nickname: roomName,
+                              fallbackSeed: room.id,
+                              matrixAvatarUri: room.avatar,
+                              size: WeChatDimensions.conversationAvatar,
+                            )
+                          : GroupAvatarMosaic(
+                              avatars: [
+                                for (final member
+                                    in (_groupMembersByRoom[room.id] ??
+                                            orderedJoinedMembers(room))
+                                        .take(9))
+                                  MatrixUserAvatar(
+                                    client: widget.matrix.sdkClient,
+                                    nickname: member.calcDisplayname(),
+                                    fallbackSeed: member.id,
+                                    matrixAvatarUri: member.avatarUrl,
+                                  ),
+                              ],
+                            ),
+                      unreadCount: _conversationUnread(room),
+                      muted: preference.muted ||
+                          room.pushRuleState != PushRuleState.notify,
+                      pinnedGroup: !room.isDirectChat && preference.pinned,
+                      onTap: () => _openRoom(room),
+                      onLongPress: () => _conversationActions(room),
                     );
-                  }
-                  var roomIndex = adjustedIndex;
-                  if (foldedRooms.isNotEmpty && adjustedIndex > pinnedCount) {
-                    roomIndex = adjustedIndex - 1;
-                  }
-                  final room = rooms[roomIndex];
-                  _ensureGroupMembersLoaded([room]);
-                  final roomName = _conversationTitle(room);
-                  final preference = preferenceForRoom(room);
-                  return ConversationListTile(
-                    key: ValueKey<String>('conversation-${room.id}'),
-                    title: roomName,
-                    subtitle: _conversationSubtitle(room),
-                    timeLabel: _roomTime(room),
-                    avatar: room.isDirectChat || room.avatar != null
-                        ? MatrixUserAvatar(
-                            client: widget.matrix.sdkClient,
-                            nickname: roomName,
-                            fallbackSeed: room.id,
-                            matrixAvatarUri: room.avatar,
-                            size: WeChatDimensions.conversationAvatar,
-                          )
-                        : GroupAvatarMosaic(
-                            avatars: [
-                              for (final member
-                                  in (_groupMembersByRoom[room.id] ??
-                                          orderedJoinedMembers(room))
-                                      .take(9))
-                                MatrixUserAvatar(
-                                  client: widget.matrix.sdkClient,
-                                  nickname: member.calcDisplayname(),
-                                  fallbackSeed: member.id,
-                                  matrixAvatarUri: member.avatarUrl,
-                                ),
-                            ],
-                          ),
-                    unreadCount: _conversationUnread(room),
-                    muted: preference.muted ||
-                        room.pushRuleState != PushRuleState.notify,
-                    pinnedGroup: !room.isDirectChat && preference.pinned,
-                    onTap: () => _openRoom(room),
-                    onLongPress: () => _conversationActions(room),
-                  );
-                },
-              );
+                  },
+                );
           return Column(
             children: [
               // BUG1（被邀端，关闭自动入群）：会话列表顶部可接受/拒绝的

@@ -23,8 +23,11 @@ class CallOverlayService : android.app.Service() {
 
     override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        if (ball != null) return START_STICKY
-        if (!Settings.canDrawOverlays(this)) return START_NOT_STICKY
+        if (!CallManager.hasActiveCall() || !Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (ball != null) return START_NOT_STICKY
         val density = resources.displayMetrics.density
         val size = (density * 52).toInt()
         ball = android.widget.ImageView(this).apply {
@@ -49,7 +52,7 @@ class CallOverlayService : android.app.Service() {
                         MotionEvent.ACTION_UP -> {
                             val moved = kotlin.math.abs(e.rawX - downX) + kotlin.math.abs(e.rawY - downY)
                             if (moved < 12) {
-                                CallManager.launchCallActivity(applicationContext)
+                                CallManager.returnToCall(applicationContext)
                                 return true
                             }
                         }
@@ -63,6 +66,7 @@ class CallOverlayService : android.app.Service() {
             wm.addView(ball, layoutParamsOf(0, 0, size))
         } catch (_: Exception) {
             stopSelf()
+            return START_NOT_STICKY
         }
         // 通话结束自动移除（引用持有，onDestroy 时注销防泄漏）。
         val listener: (String) -> Unit = { event ->
@@ -70,7 +74,7 @@ class CallOverlayService : android.app.Service() {
         }
         overlayListener = listener
         CallManager.addListener(listener)
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private var overlayListener: ((String) -> Unit)? = null
@@ -99,13 +103,15 @@ class CallOverlayService : android.app.Service() {
     }
 
     companion object {
-        fun show(context: Context) {
+        fun show(context: Context): Boolean {
             // 通话期间进程持有 ongoing-call 前台服务：普通 startService 即可
             //（无需再挂一个前台通知；失败=无悬浮球，通话不受影响）。
-            runCatching {
+            if (!CallManager.hasActiveCall() || !Settings.canDrawOverlays(context)) return false
+            return runCatching {
                 context.startService(
                     android.content.Intent(context, CallOverlayService::class.java))
-            }
+                true
+            }.getOrDefault(false)
         }
 
         fun hide(context: Context) {

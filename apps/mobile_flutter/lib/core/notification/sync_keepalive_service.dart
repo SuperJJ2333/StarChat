@@ -175,8 +175,8 @@ final class FlutterSyncKeepAliveBackend implements SyncKeepAliveBackend {
   bool _initialized = false;
 
   static const notificationId = 41003;
-  static const channelId = 'chatflow_sync';
-  static const channelName = '消息同步';
+  static const channelId = 'chatflow_silent';
+  static const channelName = '后台服务';
 
   Future<void> _ensureInit() async {
     if (_initialized) return;

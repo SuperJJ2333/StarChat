@@ -48,7 +48,9 @@ final class ContactBackedUserDisplayNameResolver
     if (matrixName != null && matrixName.isNotEmpty) return matrixName;
     final username = contact?.username;
     if (username != null && username.isNotEmpty) return username;
-    return matrixUserId;
+    return matrixUserId.startsWith('@')
+        ? matrixUserId.substring(1).split(':').first
+        : matrixUserId;
   }
 
   @override

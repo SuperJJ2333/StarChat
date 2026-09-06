@@ -35,3 +35,24 @@ docs/verification/nomin36/
 docs/verification/plain36/src/
 docs/verification/plain36/*.apk
 docs/verification/plain36/source.zip
+# APK 反编译工作目录（路径超长无法索引；结论文档保留）
+docs/verification/artifacts/**/decoded/
+docs/verification/artifacts/**/apk-rebuild-test/
+docs/verification/artifacts/**/rebuild-*/
+docs/verification/artifacts/**/verified-decoded/
+# 2026-09-05 审计/验证工件目录整体不入库（大量源码快照/二进制/浏览器 profile）
+docs/verification/artifacts/2026-09-05/group-qr-video/
+docs/verification/artifacts/2026-09-05/call-permissions-return/
+docs/verification/artifacts/2026-09-05/call-connection/
+docs/verification/artifacts/2026-09-05/background-call-signature/
+docs/verification/artifacts/2026-09-05/friendship-deploy/
+docs/verification/artifacts/2026-09-05/incoming-call-permission-dedup/
+docs/verification/artifacts/2026-09-05/privacy-forward/
+# vendored matrix fork（thrid_party 源码快照）
+apps/mobile_flutter/third_party/
+# 其余大体量验证工件（APK/日志快照；结论在各验证 md 文档中）
+docs/verification/artifacts/2026-09-05/call-echo-scan/
+docs/verification/artifacts/2026-09-05/call-dismiss-release/
+docs/verification/artifacts/2026-09-05/mi6-upgrade/
+docs/verification/artifacts/2026-09-05/modifier-apk-comparison/
+docs/verification/artifacts/2026-09-05/gallery-save/

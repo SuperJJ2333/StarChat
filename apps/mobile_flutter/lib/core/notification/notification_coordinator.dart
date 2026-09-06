@@ -93,6 +93,8 @@ final class NotificationCoordinator {
 
   StreamSubscription<IncomingNotification>? _subscription;
   bool _started = false;
+  Timer? _pushWakeTimer;
+  int _pushWakeGeneration = 0;
 
   Future<void> start() async {
     if (_started) return;
@@ -116,6 +118,7 @@ final class NotificationCoordinator {
   }
 
   Future<void> handleEvent(IncomingNotification notification) async {
+    if (!notification.isOwnMessage) await cancelPushWakeNotification();
     debugPrint('[PUSH] received event room='
         '${notification.event.conversationId} kind='
         '${notification.event.messageKind.name}');
@@ -238,7 +241,9 @@ final class NotificationCoordinator {
     try {
       final snapshots = await unreadSource.load();
       for (final snapshot in snapshots) {
-        if (snapshot.roomId == roomId && snapshot.unread > 0) return snapshot.unread;
+        if (snapshot.roomId == roomId && snapshot.unread > 0) {
+          return snapshot.unread;
+        }
       }
       return 1;
     } catch (_) {
@@ -266,10 +271,36 @@ final class NotificationCoordinator {
     await soundService.play(type);
   }
 
-  /// 推送唤醒兜底通知（NativePushBridge pushMessage 事件）：
-  /// 通用文案、无业务内容（详细通知由 Matrix 同步路径产出）；
-  /// 点击仅回应用（payload 空）。
+  /// Opaque push wakes cannot distinguish encrypted calls from messages.
+  /// Give local sync/decryption a bounded opportunity to present the real event;
+  /// retain a generic fallback if the event cannot be resolved.
   Future<void> showPushWakeNotification() async {
+    if (!_started || appState.callActive || _pushWakeTimer != null) return;
+    final generation = ++_pushWakeGeneration;
+    _pushWakeTimer = Timer(const Duration(seconds: 5), () {
+      _pushWakeTimer = null;
+      unawaited(_showUnresolvedPushWake(generation));
+    });
+  }
+
+  /// Called when Matrix resolves a message or an incoming call. Cancels only
+  /// the opaque fallback, never another conversation's actual message alert.
+  Future<void> cancelPushWakeNotification() async {
+    ++_pushWakeGeneration;
+    _pushWakeTimer?.cancel();
+    _pushWakeTimer = null;
+    try {
+      await systemNotifications.cancelConversation(pushWakeNotificationId);
+    } catch (error) {
+      diagnostics.record(NotificationDiagStage.suppressed,
+          'wake cancellation failed: ${error.runtimeType}');
+    }
+  }
+
+  Future<void> _showUnresolvedPushWake(int generation) async {
+    if (!_started || generation != _pushWakeGeneration || appState.callActive) {
+      return;
+    }
     debugPrint('[PUSH] show notification id=$pushWakeNotificationId '
         'channel=wake (push wakeup fallback)');
     await systemNotifications.showConversationMessage(
@@ -279,9 +310,16 @@ final class NotificationCoordinator {
       channel: SystemNotificationChannel.silent,
       roomIdPayload: '',
     );
+    // A call can resolve while the platform show is in flight. Remove the
+    // completed stale fallback too, rather than resurrecting it after cancel.
+    if (!_started || generation != _pushWakeGeneration || appState.callActive) {
+      await systemNotifications.cancelConversation(pushWakeNotificationId);
+    }
   }
 
   Future<void> dispose() async {
+    _started = false;
+    await cancelPushWakeNotification();
     await _subscription?.cancel();
     _subscription = null;
     _started = false;

@@ -486,9 +486,9 @@ button, input, textarea {
 <div class="card">
     <h3>号码统计助手</h3>
     <div class="last-input def-bg" id="lastInput">最后操作：无</div>
-    <textarea id="inputText" placeholder="输入号码/生肖/分类词；支持多行、各号金额，如：&#10;猪牛马猴猪各号100&#10;02，13，44，09，25各200&#10;鸡100 牛200"></textarea>
+    <textarea id="inputText" placeholder="输入号码/生肖/分类词；支持多行、各号金额，如：&#10;猪牛马猴猪各号100&#10;牛马蛇号三十&#10;龙蛇各一万一千零五十"></textarea>
     <input type="text" id="money" placeholder="金额(仅整数，整批统一)" inputmode="numeric">
-    <p class="hint">提示：可多行录入，每行「项目+金额」，如 <b>猪牛马猴猪各号100</b>、<b>02,13/44、09，25各200</b>、<b>鸡100 牛200</b>。间隔可用空格/逗号/顿号/斜杠等；不写金额则整批使用金额框。</p>
+    <p class="hint">提示：可多行录入，每行「项目+金额」，如 <b>猪牛马猴猪各号100</b>、<b>02,13/44、09，25各200</b>、<b>牛马蛇号三十</b>、<b>龙、蛇各一万一千零五十</b>。间隔可用空格/逗号/顿号/斜杠等；金额支持阿拉伯数字或<b>中文数字</b>；不写金额则整批使用金额框。</p>
     <button class="btn-add" onclick="t1_addMoney()">➕ 加金额</button>
     <button class="btn-sub" onclick="t1_subMoney()">➖ 减金额</button>
     <button class="btn-reset-input" onclick="t1_clearInput()">🔄 清空输入框</button>
@@ -840,6 +840,44 @@ function switchTab(i){
         }
         return res;
     }
+    /* 中文数字 → 阿拉伯数字。支持 零~九/两、十百千、万、亿，
+     * 兼容省略零位（一千五十=1050）、连写（一百五十=150）。无法识别返回 null */
+    function parseCnNumber(str){
+        if(!str) return null;
+        const digit = {零:0,〇:0,一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
+        const unit  = {十:10,百:100,千:1000};
+        let result = 0, section = 0, num = 0;
+        for(const ch of str){
+            if(ch === "零" || ch === "〇"){ num = 0; continue; }
+            if(ch in digit){ num = digit[ch]; continue; }
+            if(ch === "万"){
+                section = (section + (num||0)) * 10000;
+                result += section; section = 0; num = 0;
+                continue;
+            }
+            if(ch === "亿"){
+                section = (section + (num||0)) * 100000000;
+                result += section; section = 0; num = 0;
+                continue;
+            }
+            if(ch in unit){
+                if(num === 0) num = 1;   // 「十」「十三」开头补一位
+                section += num * unit[ch];
+                num = 0;
+                continue;
+            }
+            return null;   // 含非数字中文
+        }
+        return result + section + num;
+    }
+    /* 金额解析：纯阿拉伯数字 或 纯中文数字；可选尾缀 元/块。失败返回 null */
+    function parseAmount(s){
+        s = (s||"").trim().replace(/[元块]$/,"").trim();
+        if(!s) return null;
+        if(/^\d+$/.test(s)) return +s;
+        if(/^[零〇一二两三四五六七八九十百千万亿]+$/.test(s)) return parseCnNumber(s);
+        return null;
+    }
     /* 解析一行：项目组 + 金额。返回 [{tokens:[...], amount}]；amount=null 表示该组用金额框 */
     function parseLineGroups(line, groups){
         const norm = line.replace(/[，,、/]/g," ").replace(/\s+/g," ").trim();
@@ -848,12 +886,14 @@ function switchTab(i){
         let pending = [];
         for(const seg of segs){
             if(!seg) continue;
-            // 1) 末尾金额标记：各号/各/号 + 数字 → 金额作用于整行已累积项目
-            const marker = seg.match(/^(.*?)(?:各号|各|号)(\d+)$/);
+            // 1) 末尾金额标记：各号/各/号 + 金额（阿拉伯或中文数字）→ 作用于整行已累积项目
+            const marker = seg.match(/^(.*?)(?:各号|各|号)(.*)$/);
             if(marker){
                 const toks = parseItemGroup(marker[1]);
                 if(!toks || !toks.length) return false;
-                groups.push({tokens: pending.concat(toks), amount: +marker[2]});
+                const amount = parseAmount(marker[2]);
+                if(amount === null || amount <= 0) return false;
+                groups.push({tokens: pending.concat(toks), amount});
                 pending = [];
                 continue;
             }

@@ -5,7 +5,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 
 /// 通过朋友验证页（BUG 2）：新的朋友列表点击请求 → 展示
-/// 头像/昵称/greeting/备注/标签 → 通过验证 或 拒绝。
+/// 头像/昵称/greeting → 通过验证 或 拒绝。私人备注和标签不展示。
 ///
 /// 仅当用户点击「通过验证」时才由回调触发
 /// `POST /friends/requests/{id}/accept`。
@@ -46,13 +46,6 @@ final class FriendRequestReviewPage extends StatelessWidget {
     final message = request['message']?.toString() ?? '';
     return message.isEmpty ? '我是${request['username'] ?? ''}' : message;
   }
-
-  List<String> get _tags => [
-        for (final tag in (request['tags'] as List? ?? const []))
-          if (tag.toString().isNotEmpty) tag.toString(),
-      ];
-
-  String get _remark => request['remark']?.toString() ?? '';
 
   @override
   Widget build(BuildContext context) {
@@ -117,52 +110,6 @@ final class FriendRequestReviewPage extends StatelessWidget {
                     key: const Key('friend-request-greeting'),
                     style: const TextStyle(fontSize: 15),
                   ),
-                  if (_remark.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    const Text(
-                      '对方为你设置的备注',
-                      style: TextStyle(
-                          fontSize: 13, color: WeChatColors.textSecondary),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _remark,
-                      key: const Key('friend-request-remark'),
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                  ],
-                  if (_tags.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    const Text(
-                      '标签',
-                      style: TextStyle(
-                          fontSize: 13, color: WeChatColors.textSecondary),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        for (final tag in _tags)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: WeChatColors.brandPrimary
-                                  .withValues(alpha: .12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              tag,
-                              key: Key('friend-request-tag-$tag'),
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  color: WeChatColors.brandPrimary),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -172,6 +119,9 @@ final class FriendRequestReviewPage extends StatelessWidget {
                 height: 48,
                 child: CupertinoButton(
                   key: const Key('friend-request-accept'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  alignment: Alignment.center,
                   color: WeChatColors.brandPrimary,
                   borderRadius: BorderRadius.circular(12),
                   onPressed: busy ? null : () => onAccept(),

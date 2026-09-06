@@ -47,6 +47,14 @@ final class MatrixPusherService {
   /// 个推通道（自建 getui-bridge 桥接；推送载荷仅通用文案，见
   /// services/getui-bridge 与 docs/PUSH_SETUP.md）。
   static const appIdGetui = 'com.liuhetong.mobile.getui';
+
+  /// Synapse validates this exact path; a query selects the Getui upstream
+  /// without changing the Matrix Push Gateway protocol or E2EE payload.
+  static Uri getuiGatewayUrl(Uri base) => base.replace(
+        path: '/_matrix/push/v1/notify',
+        queryParameters: const {'provider': 'getui'},
+      ).removeFragment();
+
   static const _pushFormat = 'event_id_only';
 
   final MatrixPusherGateway gateway;
@@ -101,7 +109,9 @@ final class MatrixPusherService {
       return await future;
     } finally {
       _registering = false;
-      if (identical(_registrationInFlight, future)) _registrationInFlight = null;
+      if (identical(_registrationInFlight, future)) {
+        _registrationInFlight = null;
+      }
     }
   }
 

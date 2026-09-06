@@ -947,6 +947,15 @@
             ],
             "title": "Avatar Url"
           },
+          "direction": {
+            "default": "INCOMING",
+            "enum": [
+              "INCOMING",
+              "OUTGOING"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"

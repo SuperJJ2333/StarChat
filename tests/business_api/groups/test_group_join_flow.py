@@ -26,6 +26,99 @@ ROOM = '!group:matrix.example.test'
 ROOM2 = '!other:matrix.example.test'
 
 
+@pytest.mark.asyncio
+async def test_qr_issue_replay_and_revoke_conflict_do_not_mutate(env):
+    from sqlalchemy import select
+    from app.modules.groups.models import GroupJoinToken
+    app, settings, gateway, factory = env
+    gateway.set_room(ROOM, [gateway.member_event(ALICE, 'join'), gateway.power_event({ALICE: 100})])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        headers = {**bearer(settings, 'u1'), 'Idempotency-Key': 'issue-replay'}
+        first = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers=headers)
+        replay = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers=headers)
+        assert replay.status_code == 409
+        with factory() as session:
+            assert len(session.scalars(select(GroupJoinToken)).all()) == 1
+        second = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers={**headers, 'Idempotency-Key': 'issue-second'})
+        token1 = first.json()['token_payload'].split('/')[-1]
+        token2 = second.json()['token_payload'].split('/')[-1]
+        revoke_headers = {**headers, 'Idempotency-Key': 'revoke-conflict'}
+        assert (await client.post(f'/api/v1/groups/join-tokens/{token1}/revoke', headers=revoke_headers)).status_code == 200
+        assert (await client.post(f'/api/v1/groups/join-tokens/{token2}/revoke', headers=revoke_headers)).status_code == 409
+        assert (await client.get('/api/v1/groups/join-info', params={'token': token2}, headers=headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_qr_failed_join_can_retry_same_key_and_replay_actual_result(env):
+    app, settings, gateway, _ = env
+    gateway.set_room(ROOM, [gateway.member_event(ALICE, 'join'), gateway.power_event({ALICE: 100})])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        issued = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'issue'})
+        token = issued.json()['token_payload'].split('/')[-1]
+        headers = {**bearer(settings, 'u2'), 'Idempotency-Key': 'retry'}
+        gateway.fail_join_for.add(BOB)
+        assert (await client.post('/api/v1/groups/join-tokens/redeem', headers=headers, json={'token': token})).status_code == 502
+        gateway.fail_join_for.clear()
+        response = await client.post('/api/v1/groups/join-tokens/redeem', headers=headers, json={'token': token})
+        assert response.json() == {'status': 'joined', 'room_id': ROOM}
+        replay = await client.post('/api/v1/groups/join-tokens/redeem', headers=headers, json={'token': token})
+        assert replay.json() == response.json()
+        assert len(gateway.joins) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('invalid_state', ['banned', 'issuer_left', 'issuer_demoted'])
+async def test_qr_redeem_preserves_bans_and_current_inviter_authority(env, invalid_state):
+    app, settings, gateway, _ = env
+    gateway.set_room(ROOM, [gateway.member_event(ALICE, 'join'), gateway.power_event({ALICE: 100})])
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        issued = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers={**bearer(settings, 'u1'), 'Idempotency-Key': 'issue'})
+        token = issued.json()['token_payload'].split('/')[-1]
+        gateway.set_room(ROOM, [gateway.member_event(ALICE, 'leave' if invalid_state == 'issuer_left' else 'join'), gateway.power_event({ALICE: 0 if invalid_state == 'issuer_demoted' else 100}), gateway.member_event(BOB, 'ban' if invalid_state == 'banned' else 'leave')])
+        response = await client.post('/api/v1/groups/join-tokens/redeem', headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'redeem'}, json={'token': token})
+        assert response.status_code == 403
+        assert gateway.invites == []
+        assert gateway.joins == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', ['join', 'ban', 'inactive'])
+async def test_qr_approval_failure_rolls_back_and_can_retry(env, failure):
+    from sqlalchemy import select
+    from app.core.idempotency import IdempotencyRecord
+    app, settings, gateway, factory = env
+    events = [gateway.member_event(ALICE, 'join'), gateway.power_event({ALICE: 100}),
+              {'type': 'com.changliao.group.settings', 'state_key': '', 'content': {'join_approval_required': True}}]
+    gateway.set_room(ROOM, events)
+    admin_headers = {**bearer(settings, 'u1'), 'Idempotency-Key': 'approval-retry'}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        issued = await client.post(f'/api/v1/groups/{ROOM}/join-tokens', headers={**admin_headers, 'Idempotency-Key': 'issue'})
+        token = issued.json()['token_payload'].split('/')[-1]
+        await client.post('/api/v1/groups/join-tokens/redeem', headers={**bearer(settings, 'u2'), 'Idempotency-Key': 'request'}, json={'token': token})
+        pending = await client.get(f'/api/v1/groups/{ROOM}/join-requests', headers=admin_headers)
+        request_id = pending.json()['items'][0]['id']
+        if failure == 'join':
+            gateway.fail_join_for.add(BOB)
+        elif failure == 'ban':
+            gateway.set_room(ROOM, events + [gateway.member_event(BOB, 'ban')])
+        else:
+            with factory.begin() as session:
+                session.get(User, 'u2').status = AccountStatus.PENDING_EMAIL
+        response = await client.post(f'/api/v1/groups/join-requests/{request_id}/approve', headers=admin_headers)
+        assert response.status_code == (502 if failure == 'join' else 403)
+        with factory() as session:
+            assert session.scalar(select(IdempotencyRecord).where(IdempotencyRecord.idempotency_key == 'approval-retry')) is None
+        gateway.fail_join_for.clear()
+        gateway.set_room(ROOM, events)
+        with factory.begin() as session:
+            session.get(User, 'u2').status = AccountStatus.ACTIVE
+        approved = await client.post(f'/api/v1/groups/join-requests/{request_id}/approve', headers=admin_headers)
+        assert approved.json() == {'status': 'approved'}
+        replay = await client.post(f'/api/v1/groups/join-requests/{request_id}/approve', headers=admin_headers)
+        assert replay.json() == approved.json()
+        assert len(gateway.joins) == 1
+
+
 def bearer(settings, user):
     now = datetime.now(timezone.utc)
     token = jwt.encode(
@@ -43,6 +136,7 @@ class FakeMatrixGateway:
         self.rooms = {}
         self.joins = []  # (matrix_user_id, room_id, join_content)
         self.fail_join_for = set()
+        self.invites = []
 
     def set_room(self, room_id, events):
         self.rooms[room_id] = events
@@ -64,6 +158,11 @@ class FakeMatrixGateway:
         return list(self.rooms.get(room_id, []))
 
     def join_room_as_user(self, matrix_user_id, room_id, *, join_content=None):
+        membership = {e.get('state_key'): e.get('content', {}).get('membership')
+                      for e in self.rooms.get(room_id, []) if e.get('type') == 'm.room.member'}
+        if membership.get(matrix_user_id) not in ('invite', 'join'):
+            from app.core.errors import AppError
+            raise AppError(code='MATRIX_GROUP_JOIN_FAILED', message='Private room requires invite', status_code=502)
         if matrix_user_id in self.fail_join_for:
             from app.core.errors import AppError
             raise AppError(code='MATRIX_GROUP_JOIN_FAILED', message='群成员加入失败', status_code=502)
@@ -74,6 +173,12 @@ class FakeMatrixGateway:
             e for e in self.rooms[room_id]
             if not (e.get('type') == 'm.room.member' and e.get('state_key') == matrix_user_id)
         ] + [self.member_event(matrix_user_id, 'join')]
+
+    def invite_room_as_user(self, inviter_id, matrix_user_id, room_id):
+        self.invites.append((inviter_id, matrix_user_id, room_id))
+        self.rooms[room_id] = [e for e in self.rooms[room_id]
+                               if not (e.get('type') == 'm.room.member' and e.get('state_key') == matrix_user_id)]
+        self.rooms[room_id].append(self.member_event(matrix_user_id, 'invite', inviter_id))
 
 
 @pytest.fixture

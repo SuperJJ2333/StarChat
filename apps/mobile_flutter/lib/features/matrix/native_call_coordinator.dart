@@ -39,10 +39,18 @@ final class NativeCallArbiter {
   final DateTime Function() _clock;
 
   String? _presentedCallId;
+  bool _presentationClosed = false;
   PendingUserAnswer? _pendingAnswer;
+
+  /// Native wakeup IDs are independent of Matrix session IDs. Only reject a
+  /// known mismatch against the currently registered native presentation.
+  bool matchesPresentation(String? callId) =>
+      !_presentationClosed &&
+      (_presentedCallId == null || callId == _presentedCallId);
 
   /// 原生来电呈现登记（推送唤醒）。
   void registerIncoming(String? callId) {
+    _presentationClosed = false;
     final pending = _pendingAnswer;
     if (pending != null &&
         pending.callId != null &&
@@ -57,7 +65,9 @@ final class NativeCallArbiter {
   /// 原生通话呈现结束（远端取消/超时/挂断）：作废与之绑定的待接听。
   void registerEnded(String? callId) {
     if (callId == null || callId == _presentedCallId) {
-      _presentedCallId = null;
+      // Keep the binding closed until a new presentation arrives. Clearing it
+      // here would make a delayed action look like an unbound cold-start action.
+      _presentationClosed = true;
     }
     final pending = _pendingAnswer;
     if (pending != null &&
@@ -98,7 +108,7 @@ final class NativeCallArbiter {
 
   void clear() {
     _pendingAnswer = null;
-    _presentedCallId = null;
+    if (_presentedCallId != null) _presentationClosed = true;
   }
 
   /// 是否存在待接听请求（诊断/测试）。
@@ -130,8 +140,8 @@ final class MethodChannelNativeCallChannel implements NativeCallChannel {
 /// - **callAccepted**：用户明确请求接听 → 仅对当前响铃的 Matrix 通话
 ///   执行一次 accept（权限与会话有效性由 CallController.accept 校验）；
 ///   Matrix 响铃未同步到时登记绑定式待接听等待匹配；
-/// - **callRejected**：用户明确请求拒绝；
-/// - **callEnded**：原生呈现结束（超时/远端取消）→ 按 Flutter 相位收尾。
+/// - **callRejected**：用户明确请求拒绝/挂断，按当前相位执行；
+/// - **callEnded**：原生呈现结束，只作废对应待接听；Matrix 决定媒体终态。
 ///
 /// 状态回报：每次 CallController 相位变化经 reportCallState 推送
 /// Matrix/WebRTC 事实（语音/视频类型以同步结果为准）；原生层只负责
@@ -183,11 +193,11 @@ final class NativeCallCoordinator {
         await answerFromUser(callId);
         return true;
       case 'callRejected':
+        if (!arbiter.matchesPresentation(callId)) return true;
         await rejectFromUser();
         return true;
       case 'callEnded':
         arbiter.registerEnded(callId);
-        await _endByPresentation();
         return true;
     }
     return true;
@@ -196,15 +206,15 @@ final class NativeCallCoordinator {
   /// 用户明确接听：只对当前响铃通话执行一次 accept；响铃未同步到则
   /// 登记绑定式待接听（[NativeCallArbiter]；有期限与取消条件）。
   Future<void> answerFromUser(String? nativeCallId) async {
+    if (!arbiter.matchesPresentation(nativeCallId)) return;
     switch (calls.state.phase) {
       case CallPhase.ringing:
         if (_accepting) return;
         // 直接接听即视为消费了任何待接听请求（含绑定的呈现标识）。
-        arbiter.clear();
+        arbiter.consumePendingAnswer();
         _accepting = true;
         try {
-          // 权限不足拒接、Matrix 会话失效由 controller 内部处理并转入
-          // permissionDenied/failed——这里绝不假定接通成功。
+          // 权限不足保持响铃、Matrix 会话失效转入 failed；不假定接通成功。
           await calls.accept();
         } finally {
           _accepting = false;
@@ -221,13 +231,19 @@ final class NativeCallCoordinator {
         arbiter.requestAnswer(nativeCallId);
     }
     onPresentIncoming();
-    onDismissNativeLayer?.call();
+    if (calls.state.phase != CallPhase.ringing) {
+      onDismissNativeLayer?.call();
+    }
   }
 
-  /// 用户明确拒绝：仅对响铃通话 reject。
+  /// 用户明确结束：响铃时拒接，正在连接或已连接时挂断。
   Future<void> rejectFromUser() async {
     if (calls.state.phase == CallPhase.ringing) {
       await calls.reject();
+    } else if (calls.state.phase == CallPhase.requestingPermission ||
+        calls.state.phase == CallPhase.connecting ||
+        calls.state.phase == CallPhase.connected) {
+      await calls.hangup();
     }
     arbiter.clear();
     onDismissNativeLayer?.call();
@@ -251,17 +267,6 @@ final class NativeCallCoordinator {
       arbiter.clear();
     }
     unawaited(_reportState(phase));
-  }
-
-  /// 原生呈现结束（60s 无应答超时/远端取消信号）：按相位收尾。
-  Future<void> _endByPresentation() async {
-    final phase = calls.state.phase;
-    if (phase == CallPhase.connected || phase == CallPhase.connecting) {
-      await calls.hangup();
-    } else if (phase == CallPhase.ringing) {
-      await calls.reject();
-    }
-    arbiter.clear();
   }
 
   Future<void> _reportState(CallPhase phase) async {
@@ -313,7 +318,9 @@ final class NativeCallCoordinator {
         case 'answer':
           scheduleMicrotask(() => answerFromUser(callId));
         case 'reject':
-          scheduleMicrotask(() => rejectFromUser());
+          scheduleMicrotask(() => handleNativeMessage('callRejected', {
+                'callId': callId,
+              }));
       }
     }
   }

@@ -12,6 +12,7 @@ import 'call_controller.dart';
 import 'call_diagnostics.dart';
 import 'call_quality_monitor.dart';
 import 'incoming_call_gate.dart';
+import 'turn_credentials_cache.dart';
 
 /// 通话结束摘要消息的自定义 msgtype（同红包/转账的自定义消息模式）。
 const changliaoCallMessageType = 'com.changliao.call';
@@ -105,12 +106,14 @@ final class MatrixCallBackend implements CallBackend {
       onNewCall: (call) => backend._attach(call),
       onCallEnded: (call) => backend._ended(call),
     );
+    final turnCredentials = TurnCredentialsCache(fetch: client.getTurnServer);
     backend = MatrixCallBackend._(
       client,
-      VoIP(client, delegate),
+      RefreshingTurnVoIP(client, delegate, turnCredentials),
       delegate,
       diagnostics ?? CallDiagnostics(),
     );
+    unawaited(turnCredentials.getIceServers());
     return backend;
   }
 
@@ -143,6 +146,8 @@ final class MatrixCallBackend implements CallBackend {
   );
   CallSession? _call;
   CallQualityMonitor? _quality;
+  bool _disposed = false;
+  bool _connectedEmitted = false;
 
   webrtc.MediaStream? get localMediaStream =>
       _call?.localUserMediaStream?.stream;
@@ -190,8 +195,10 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   Future<void> _attach(CallSession call) async {
-    if (identical(_call, call)) return;
+    if (_disposed || identical(_call, call)) return;
     _call = call;
+    _connectedEmitted = false;
+    unawaited(_fallback.stop());
     _teardownStreamWatch();
     diagnostics.reset();
     diagnostics.mark(CallDiagStage.inviteReceived);
@@ -199,23 +206,20 @@ final class MatrixCallBackend implements CallBackend {
         'outgoing=${call.isOutgoing} type=${call.type.name}');
     delegate.markActive(true);
     await _callStates?.cancel();
+    if (_disposed || !identical(_call, call)) return;
     _callStates = call.onCallStateChanged.stream.listen((state) {
+      if (_disposed || !identical(_call, call)) return;
       debugPrint('[matrix-call] state=${state.name}'); // 全状态关键路径日志（规格§五）
       if (state == CallState.kConnected) {
-        // 兜底已补发过 connected → SDK 事件迟到，去重不重发。
-        final alreadyEmitted = _fallback.didEmit;
-        _fallback.markConnected();
-        if (alreadyEmitted) {
-          debugPrint('[matrix-call] connected dedup (fallback already emitted)');
-          return;
-        }
-        _startQualityMonitor();
-        _events.add(const CallBackendEvent.connected());
-        debugPrint('[matrix-call] connected (sdk event)');
+        _emitConnected(call);
       } else if (state == CallState.kEnded) {
         _ended(call);
       }
     });
+    if (call.callHasEnded) {
+      await _ended(call);
+      return;
+    }
     // P1-3：订阅 SDK 流级事件——流新增/移除/重建都会通知 UI 重新绑定
     // renderer（不再依赖状态事件恰好覆盖流变化时序）。
     _streamAddSub = call.onStreamAdd.stream.listen((wrapped) {
@@ -229,6 +233,8 @@ final class MatrixCallBackend implements CallBackend {
     for (final wrapped in [...call.getLocalStreams, ...call.getRemoteStreams]) {
       _watchWrappedStream(wrapped);
     }
+    // Fast remote answers can connect before outgoing setup finishes attaching.
+    if (call.state == CallState.kConnected) _emitConnected(call);
     if (!call.isOutgoing) {
       // The delegate is awaited by the SDK's sync event handler. Complete that
       // handler before any further work so the incoming-call UI is never
@@ -314,14 +320,28 @@ final class MatrixCallBackend implements CallBackend {
     )..start();
   }
 
+  void _emitConnected(CallSession call) {
+    if (_disposed || !identical(_call, call) || _connectedEmitted) return;
+    _connectedEmitted = true;
+    _fallback.markConnected();
+    _startQualityMonitor();
+    _events.add(const CallBackendEvent.connected());
+  }
+
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
+    // Detach synchronously before cleanup awaits. A new call may arrive while
+    // the old stream subscriptions or quality monitor are shutting down.
+    _call = null;
+    final callStates = _callStates;
+    _callStates = null;
+    final quality = _quality;
+    _quality = null;
+    final fallback = _fallback;
     debugPrint('[matrix-call] ended reason=${call.hangupReason}');
     _teardownStreamWatch();
-    await _fallback.stop();
     delegate.markActive(false);
-    await _quality?.stop();
-    final qualitySummary = _quality?.summary();
+    final qualitySummary = quality?.summary();
     if (qualitySummary != null) debugPrint(qualitySummary);
     diagnostics.mark(CallDiagStage.ended);
     debugPrint(diagnostics.summary());
@@ -329,9 +349,9 @@ final class MatrixCallBackend implements CallBackend {
     _events.add(interrupted
         ? const CallBackendEvent.networkInterrupted()
         : const CallBackendEvent.ended());
-    _call = null;
-    await _callStates?.cancel();
-    _callStates = null;
+    await fallback.stop();
+    await quality?.stop();
+    await callStates?.cancel();
   }
 
   CallSession get _active =>
@@ -339,23 +359,27 @@ final class MatrixCallBackend implements CallBackend {
 
   @override
   Future<void> accept() async {
-    debugPrint('[matrix-call] answerSent (accept)');
-    await _active.answer();
+    final call = _active;
+    debugPrint('[matrix-call] answer_started');
+    await call.answer();
+    if (_disposed || !identical(_call, call) || call.callHasEnded) return;
     // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
     // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。
     await _fallback.stop();
+    if (_disposed || !identical(_call, call) || _connectedEmitted) return;
     _fallback = ConnectedFallbackWatcher(
       pollInterval: const Duration(milliseconds: 500),
       timeout: const Duration(seconds: 10),
       isPeerConnected: () async =>
-          _call?.pc?.connectionState ==
-          webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+          identical(_call, call) &&
+          call.pc?.connectionState ==
+              webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected,
       emitConnected: () {
-        _startQualityMonitor();
-        _events.add(const CallBackendEvent.connected());
+        _emitConnected(call);
       },
     )..start();
   }
+
   @override
   Future<void> reject() => _active.reject(reason: CallErrorCode.userHangup);
   @override
@@ -394,7 +418,10 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   Future<void> dispose() async {
+    _disposed = true;
+    _call = null;
     _teardownStreamWatch();
+    await _quality?.stop();
     await _fallback.stop();
     await _callStates?.cancel();
     await _events.close();

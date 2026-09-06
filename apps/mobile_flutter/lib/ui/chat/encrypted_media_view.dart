@@ -6,6 +6,8 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../foundation/wechat_tokens.dart';
 import '../components/wechat_scaffold.dart';
+import 'chat_forward_picker_page.dart';
+import '../../core/gallery_save_access.dart';
 
 /// 原图大小展示格式：≥1MB 用 MB（10MB 以上取整），否则用 KB。
 /// 大小由每次加载到的真实字节数动态计算，不使用事件元数据。
@@ -41,6 +43,7 @@ final class EncryptedImageMessage extends StatefulWidget {
     this.initialBytes,
     this.forwardTargets = const [],
     this.forwardTo,
+    this.onForward,
   });
 
   final Future<Uint8List> Function() load;
@@ -60,6 +63,7 @@ final class EncryptedImageMessage extends StatefulWidget {
 
   /// 转发动作：把当前图片转发到目标会话。
   final Future<void> Function(String roomId)? forwardTo;
+  final Future<void> Function()? onForward;
 
   @override
   State<EncryptedImageMessage> createState() => _EncryptedImageMessageState();
@@ -111,6 +115,7 @@ final class _EncryptedImageMessageState extends State<EncryptedImageMessage> {
                   loadOriginal: widget.load,
                   forwardTargets: widget.forwardTargets,
                   forwardTo: widget.forwardTo,
+                  onForward: widget.onForward,
                 ),
               ),
             ),
@@ -149,6 +154,7 @@ final class ImageViewerPage extends StatefulWidget {
     this.loadOriginal,
     this.forwardTargets = const [],
     this.forwardTo,
+    this.onForward,
   });
 
   /// 占位缩略图/预览字节：点击“查看原图”前仅展示它。
@@ -165,6 +171,7 @@ final class ImageViewerPage extends StatefulWidget {
 
   /// 转发动作：把当前图片转发到目标会话。
   final Future<void> Function(String roomId)? forwardTo;
+  final Future<void> Function()? onForward;
 
   @override
   State<ImageViewerPage> createState() => _ImageViewerPageState();
@@ -224,6 +231,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
 
   Future<void> _download() async {
     try {
+      await ensureGallerySaveAccess();
       final bytes = originalBytes ??
           await (widget.loadOriginal?.call() ??
               Future<Uint8List>.value(widget.previewBytes));
@@ -233,51 +241,45 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       );
       if (!mounted) return;
       setState(() {
-        hint = result.id.isNotEmpty ? '已保存到相册' : '保存失败，请检查相册权限';
+        hint = result.id.isNotEmpty ? '已保存到相册' : '保存失败，请稍后重试';
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      setState(() => hint = '保存失败，请检查相册权限');
+      setState(() => hint = gallerySaveErrorMessage(error));
     }
   }
 
   Future<void> _forward() async {
-    if (forwarding || widget.forwardTo == null) return;
-    final target = await showCupertinoModalPopup<({String roomId, String title})>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: const Text('转发到'),
-        actions: [
-          for (final target in widget.forwardTargets)
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(sheetContext, target),
-              child: Text(target.title),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('取消'),
-        ),
-      ),
-    );
-    if (target == null || !mounted) return;
-    setState(() {
-      forwarding = true;
-      hint = '正在转发到「${target.title}」…';
-    });
+    if (forwarding) return;
+    setState(() => forwarding = true);
     try {
-      await widget.forwardTo!(target.roomId);
-      if (!mounted) return;
-      setState(() {
-        forwarding = false;
-        hint = '已转发到「${target.title}」';
-      });
+      if (widget.onForward != null) {
+        await widget.onForward!();
+      } else if (widget.forwardTo != null) {
+        await Navigator.of(context, rootNavigator: true)
+            .push(CupertinoPageRoute(
+          builder: (_) => ChatForwardPickerPage(
+            contentPreview: '[图片]',
+            candidates: [
+              for (final t in widget.forwardTargets)
+                ChatForwardCandidate(
+                    roomId: t.roomId,
+                    title: t.title,
+                    avatar: const Icon(CupertinoIcons.chat_bubble))
+            ],
+            recentRoomIds: const [],
+            onForward: (ids) async {
+              for (final id in ids) {
+                await widget.forwardTo!(id);
+              }
+            },
+          ),
+        ));
+      }
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        forwarding = false;
-        hint = '转发失败，请重试';
-      });
+      if (mounted) setState(() => hint = '转发失败，请重试');
+    } finally {
+      if (mounted) setState(() => forwarding = false);
     }
   }
 
@@ -335,8 +337,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
                 child: CupertinoButton(
                   key: const Key('viewer-view-original'),
                   color: CupertinoColors.systemGrey5.withValues(alpha: .28),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   onPressed: originalBytes == null ? _loadOriginal : null,
                   child: Text(
                     _originalLabel,
@@ -350,15 +352,15 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
               bottom: 24,
               child: Column(
                 children: [
-                  _ViewerRoundAction(
+                  ViewerRoundAction(
                     key: const Key('viewer-download'),
                     icon: CupertinoIcons.cloud_download,
                     label: '下载',
                     onPressed: _download,
                   ),
                   const SizedBox(height: 14),
-                  if (widget.forwardTo != null)
-                    _ViewerRoundAction(
+                  if (widget.forwardTo != null || widget.onForward != null)
+                    ViewerRoundAction(
                       key: const Key('viewer-forward'),
                       icon: CupertinoIcons.paperplane,
                       label: '转发',
@@ -372,19 +374,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
                 left: 0,
                 right: 0,
                 bottom: 96,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.systemGrey6.withValues(alpha: .3),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Text(hint!,
-                        style: const TextStyle(
-                            fontSize: 13, color: CupertinoColors.white)),
-                  ),
-                ),
+                child: ViewerStatusHint(message: hint!),
               ),
           ],
         ),
@@ -394,8 +384,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
 }
 
 /// 右下角圆形操作按钮：深灰（#555555）背景 + 白色图标（产品规格色）。
-final class _ViewerRoundAction extends StatelessWidget {
-  const _ViewerRoundAction({
+final class ViewerRoundAction extends StatelessWidget {
+  const ViewerRoundAction({
     super.key,
     required this.icon,
     required this.label,
@@ -424,8 +414,26 @@ final class _ViewerRoundAction extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(label,
-              style: const TextStyle(
-                  fontSize: 12, color: CupertinoColors.white)),
+              style:
+                  const TextStyle(fontSize: 12, color: CupertinoColors.white)),
         ],
       );
+}
+
+/// 图片和视频查看器共用的操作结果提示。
+final class ViewerStatusHint extends StatelessWidget {
+  const ViewerStatusHint({super.key, required this.message});
+  final String message;
+  @override
+  Widget build(BuildContext context) => Center(
+          child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+            color: CupertinoColors.systemGrey6.withValues(alpha: .3),
+            borderRadius: BorderRadius.circular(18)),
+        child: Text(message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: CupertinoColors.white)),
+      ));
 }

@@ -17,7 +17,7 @@ typedef VideoFrameFetcher =
 Future<Uint8List?> extractVideoPoster(
   String videoPath, {
   VideoFrameFetcher? fetch,
-  List<int> positionsMs = const [200, 500, 1000, 2000],
+  List<int> positionsMs = const [0, 200, 500, 1000],
   double blackLumaThreshold = 16,
 }) async {
   final getFrame = fetch ??
@@ -27,6 +27,7 @@ Future<Uint8List?> extractVideoPoster(
     try {
       final bytes = await getFrame(videoPath, positionMs);
       if (bytes == null || bytes.isEmpty) continue;
+      if (positionMs == 0) return bytes;
       final luma = await frameAverageLuma(bytes);
       if (luma >= blackLumaThreshold) return bytes;
     } catch (error) {

@@ -1,9 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
+import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/contacts/request_friend_page.dart';
 
-final class FakeGateway implements AddFriendGateway {
+final class FakeGateway implements AddFriendGateway, ProfileGateway {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  @override
+  Future<ProfileData> loadProfile() async => const ProfileData(
+      username: 'alice',
+      nickname: '艾丽',
+      maskedEmail: '',
+      fallbackSeed: 'alice');
   FakeAddRequestRecorder? recorder;
 
   @override
@@ -95,7 +104,8 @@ void main() {
 
     expect(recorder.calls, hasLength(1));
     expect(recorder.calls.single.userId, 'u-bob');
-    expect(recorder.calls.single.momentsPermission, 'HIDE_MINE');
+    expect(recorder.calls.single.momentsPermission, 'DEFAULT');
+    expect(recorder.calls.single.message, '你好，我是alice');
   });
 
   testWidgets('greeting, remark, tags and permission flow into the request',
@@ -138,12 +148,41 @@ void main() {
     expect(find.text('申请已发送'), findsOneWidget);
   });
 
+  testWidgets('hide switches combine and chat only is mutually exclusive',
+      (tester) async {
+    final recorder = FakeAddRequestRecorder();
+    await _pump(tester, FakeGateway()..recorder = recorder);
+    await tester.scrollUntilVisible(find.text('默认允许'), 140,
+        scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('不看他的朋友圈和状态'));
+    await tester.tap(find.text('不让他看我的朋友圈和状态'));
+    await tester.tap(find.text('不看他的朋友圈和状态'));
+    await tester.pump();
+    expect(
+        tester
+            .widgetList<CupertinoSwitch>(find.byType(CupertinoSwitch))
+            .every((s) => s.value),
+        isTrue);
+    await tester.ensureVisible(find.text('仅聊天'));
+    await tester.tap(find.text('仅聊天'));
+    await tester.pump();
+    expect(find.byType(CupertinoSwitch), findsNothing);
+    await tester.tap(find.text('默认允许'));
+    await tester.pump();
+    await _scrollToSubmit(tester);
+    await tester.ensureVisible(find.byKey(const Key('request-friend-submit')));
+    await tester.tap(find.byKey(const Key('request-friend-submit')));
+    await _settle(tester, 300);
+    expect(recorder.calls.single.momentsPermission, 'HIDE_BOTH');
+  });
+
   testWidgets('new tags can be created inline and selected', (tester) async {
     final recorder = FakeAddRequestRecorder();
     final gateway = FakeGateway()..recorder = recorder;
     await _pump(tester, gateway);
 
-    await tester.enterText(find.byKey(const Key('request-friend-new-tag')), '客户');
+    await tester.enterText(
+        find.byKey(const Key('request-friend-new-tag')), '客户');
     await tester.tap(find.byKey(const Key('request-friend-add-tag')));
     await _settle(tester);
 

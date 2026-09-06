@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../features/contacts/member_directory_service.dart';
 import '../foundation/wechat_tokens.dart';
 
 /// One selectable row of the 「选择提醒的人」 panel.
@@ -29,48 +30,60 @@ final class MentionOption {
   bool get isAll => id == all.id;
 }
 
-/// A-Z grouping identical to the contacts page: entries sort by the first
-/// character of their primary (remark-first) name; non-Latin initials share
-/// the trailing `#` bucket because the project carries no pinyin dependency.
-int _initialBucket(String name) {
-  final trimmed = name.trim();
-  if (trimmed.isEmpty) return 26;
-  final codeUnit = trimmed.characters.first.toUpperCase().codeUnitAt(0);
-  if (codeUnit >= 0x41 && codeUnit <= 0x5A) return codeUnit - 0x41;
-  return 26; // '#' bucket, sorted after Z.
-}
-
-String _initialLetter(String name) {
-  final bucket = _initialBucket(name);
-  return bucket == 26 ? '#' : String.fromCharCode(0x41 + bucket);
-}
-
-/// Sorts A-Z by the remark/nickname initial, `#` bucket last, then by name.
+/// 统一拼音排序服务适配（规格 #6：@选择器与成员列表共用同一排序，
+/// 中文按拼音分组而非归入 #）。
 List<MentionOption> sortMentionOptions(List<MentionOption> options) {
-  final sorted = [...options]..sort((a, b) {
-      final bucket = _initialBucket(a.primaryName) - _initialBucket(b.primaryName);
-      if (bucket != 0) return bucket;
-      return a.primaryName.toLowerCase().compareTo(b.primaryName.toLowerCase());
-    });
-  return sorted;
+  final byId = <String, MentionOption>{
+    for (final option in options) option.id: option,
+  };
+  final entries = [
+    for (final option in options)
+      if (!option.isAll)
+        MemberDirectoryEntry(
+          userId: option.id,
+          nickname: option.nickname,
+          remark: option.hasRemark ? option.primaryName : null,
+        ),
+  ];
+  // 「所有人」固定在成员列表之外（规格 #6），由面板单独渲染置顶。
+  return [
+    for (final entry in sortMemberEntries(entries)) byId[entry.userId]!,
+  ];
 }
 
-/// Filters by the remark/nickname primary name AND the plain nickname.
+/// 过滤同步迁移：拼音全拼/首字母 + 中文子串 + 英文忽略大小写。
 List<MentionOption> filterMentionOptions(
   List<MentionOption> options,
   String query,
 ) {
   final needle = query.trim().toLowerCase();
   if (needle.isEmpty) return options;
-  return options
-      .where((option) =>
-          option.primaryName.toLowerCase().contains(needle) ||
-          option.nickname.toLowerCase().contains(needle))
-      .toList(growable: false);
+  final entries = [
+    for (final option in options)
+      if (!option.isAll)
+        MemberDirectoryEntry(
+          userId: option.id,
+          nickname: option.nickname,
+          remark: option.hasRemark ? option.primaryName : null,
+        ),
+  ];
+  final matched = {
+    for (final entry in filterMemberEntries(entries, needle)) entry.userId,
+  };
+  return [
+    for (final option in options)
+      if (option.isAll || matched.contains(option.id)) option,
+  ];
 }
 
-String mentionSectionLetter(MentionOption option) =>
-    _initialLetter(option.primaryName);
+/// @选择器分组字母（拼音；数字/符号归 #）。
+String mentionSectionLetter(MentionOption option) => option.isAll
+    ? '#'
+    : memberSectionLetter(MemberDirectoryEntry(
+        userId: option.id,
+        nickname: option.nickname,
+        remark: option.hasRemark ? option.primaryName : null,
+      ));
 
 /// WeChat-style 「选择提醒的人」 panel shown while typing "@" in a group.
 final class WeChatMentionPanel extends StatefulWidget {

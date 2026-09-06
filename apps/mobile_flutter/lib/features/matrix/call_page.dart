@@ -12,6 +12,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import 'call_controller.dart';
 import 'matrix_call_adapter.dart';
 import 'media_renderer_binding.dart';
+import '../settings/notification/call_permission_checklist.dart';
 
 /// 加密语音/视频通话页（微信式）：
 /// - **语音**：深色背景 + 对方头像/昵称 + 状态（等待接听/通话时长）；
@@ -32,6 +33,7 @@ final class CallPage extends StatefulWidget {
     this.incoming = false,
     this.mediaBackend,
     this.autoCloseOnEnd = false,
+    this.onMinimize,
   });
 
   final CallController controller;
@@ -45,6 +47,7 @@ final class CallPage extends StatefulWidget {
   /// “通话已结束”独立页面）。来电覆盖层场景保持 false（由覆盖层
   /// 自身的可见性逻辑驱动）。
   final bool autoCloseOnEnd;
+  final VoidCallback? onMinimize;
 
   @override
   State<CallPage> createState() => _CallPageState();
@@ -144,6 +147,7 @@ final class _CallPageState extends State<CallPage> {
   void _autoCloseIfEnded() {
     if (!widget.autoCloseOnEnd || _endPopHandled) return;
     final phase = widget.controller.state.phase;
+    if (phase == CallPhase.permissionDenied) return;
     final ended = phase == CallPhase.ended ||
         phase == CallPhase.failed ||
         phase == CallPhase.permissionDenied;
@@ -183,8 +187,14 @@ final class _CallPageState extends State<CallPage> {
   }
 
   void _popRoute() {
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) navigator.pop();
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
+    final navigator = route.navigator;
+    if (route.isCurrent) {
+      if (navigator?.canPop() == true) navigator!.pop();
+    } else {
+      navigator?.removeRoute(route);
+    }
   }
 
   void _syncDurationTicker() {
@@ -204,8 +214,7 @@ final class _CallPageState extends State<CallPage> {
     final connectedAt = _connectedAt;
     if (connectedAt == null) return '00:00';
     // 时钟取自控制器（可注入 fake clock；与 connectedAt 同源）。
-    return formatCallDuration(
-        widget.controller.now().difference(connectedAt));
+    return formatCallDuration(widget.controller.now().difference(connectedAt));
   }
 
   @override
@@ -226,8 +235,9 @@ final class _CallPageState extends State<CallPage> {
   String get status => switch (widget.controller.state.phase) {
         CallPhase.idle => '准备端到端加密通话',
         CallPhase.requestingPermission => '正在请求通话权限',
-        CallPhase.ringing =>
-          widget.incoming ? _incomingInviteText : '正在等待对方接听…',
+        CallPhase.ringing => widget.incoming
+            ? widget.controller.state.message ?? _incomingInviteText
+            : '正在等待对方接听…',
         CallPhase.connecting => '正在建立加密连接…',
         CallPhase.connected =>
           widget.controller.state.muted ? '麦克风已关闭' : '端到端加密',
@@ -264,9 +274,36 @@ final class _CallPageState extends State<CallPage> {
     } else {
       body = _voiceBody(state, connected, outgoingRinging);
     }
-    return WeChatPageScaffold.bare(
-      backgroundColor: WeChatColors.darkSurface,
-      child: body,
+    final active = switch (state.phase) {
+      CallPhase.requestingPermission ||
+      CallPhase.ringing ||
+      CallPhase.connecting ||
+      CallPhase.connected =>
+        true,
+      _ => false,
+    };
+    return PopScope(
+      canPop: !active || widget.onMinimize == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && active) widget.onMinimize?.call();
+      },
+      child: WeChatPageScaffold.bare(
+        backgroundColor: WeChatColors.darkSurface,
+        child: Stack(fit: StackFit.expand, children: [
+          body,
+          if (active && widget.onMinimize != null)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top + 4,
+              left: 8,
+              child: CupertinoButton(
+                key: const Key('call-minimize'),
+                onPressed: widget.onMinimize,
+                child: const Icon(CupertinoIcons.arrow_down_right_arrow_up_left,
+                    color: CupertinoColors.white),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 
@@ -413,6 +450,31 @@ final class _CallPageState extends State<CallPage> {
   /// 已终止→回拨），其余仅关闭。
   Widget _endedControls() {
     final state = widget.controller.state;
+    if (state.phase == CallPhase.requestingPermission ||
+        state.phase == CallPhase.connecting) {
+      return CallControlButton(
+        key: const Key('call-control-hangup'),
+        icon: ChangliaoIcons.hangup,
+        label: '挂断',
+        kind: CallControlKind.danger,
+        onPressed: widget.controller.hangup,
+      );
+    }
+    if (state.phase == CallPhase.permissionDenied) {
+      return Column(children: [
+        CupertinoButton(
+          key: const Key('call-permission-settings'),
+          onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+            builder: (_) => const CallPermissionSettingsPage(),
+          )),
+          child: const Text('检查通话权限'),
+        ),
+        CupertinoButton(
+          onPressed: () => Navigator.maybePop(context),
+          child: const Text('关闭'),
+        ),
+      ]);
+    }
     final canRetry = state.phase == CallPhase.failed &&
         state.roomId != null &&
         state.matrixUserId != null;
@@ -446,25 +508,35 @@ final class _CallPageState extends State<CallPage> {
 
   /// 来电：拒绝（红）/ 接听（绿），微信式左右两枚大圆钮。
   Widget _incomingControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        CallControlButton(
-          key: const Key('call-control-reject'),
-          icon: ChangliaoIcons.hangup,
-          label: '拒绝',
-          kind: CallControlKind.danger,
-          onPressed: widget.controller.reject,
+    return Column(children: [
+      if (widget.controller.state.message != null)
+        CupertinoButton(
+          key: const Key('call-permission-settings'),
+          onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+            builder: (_) => const CallPermissionSettingsPage(),
+          )),
+          child: const Text('检查通话权限'),
         ),
-        CallControlButton(
-          key: const Key('call-control-answer'),
-          icon: ChangliaoIcons.voiceCallFilled,
-          label: '接听',
-          kind: CallControlKind.accept,
-          onPressed: widget.controller.accept,
-        ),
-      ],
-    );
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          CallControlButton(
+            key: const Key('call-control-reject'),
+            icon: ChangliaoIcons.hangup,
+            label: '拒绝',
+            kind: CallControlKind.danger,
+            onPressed: widget.controller.reject,
+          ),
+          CallControlButton(
+            key: const Key('call-control-answer'),
+            icon: ChangliaoIcons.voiceCallFilled,
+            label: '接听',
+            kind: CallControlKind.accept,
+            onPressed: widget.controller.accept,
+          ),
+        ],
+      ),
+    ]);
   }
 
   /// 语音通话中：静音 / 挂断 / 免提。

@@ -92,8 +92,7 @@ final class DiscoveryPage extends StatelessWidget {
                       fontSize: 12, color: WeChatColors.textSecondary),
                 ),
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
-                onTap: () => Navigator.push(
-                  context,
+                onTap: () => Navigator.of(context, rootNavigator: true).push(
                   CupertinoPageRoute(
                     fullscreenDialog: true,
                     builder: (_) => ScanQrPage(

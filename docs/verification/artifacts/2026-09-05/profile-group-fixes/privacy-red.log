@@ -1,0 +1,33 @@
+...FF                                                                    [100%]
+================================== FAILURES ===================================
+________ test_direct_details_share_friend_and_stranger_profile_routing ________
+
+    def test_direct_details_share_friend_and_stranger_profile_routing():
+        source = ROOM.read_text(encoding="utf-8")
+        peer = source.split("Future<void> _openPeerProfile", 1)[1].split("Future<void> _openVideoViewer", 1)[0]
+>       assert "openGroupMemberProfile(" in peer
+E       assert 'openGroupMemberProfile(' in "(String matrixUserId) async {\n    final contact = _identityCache.contactsByMatrixId[matrixUserId];\n    if (contact ...ing() ?? 'NONE',\n          ),\n        ),\n      );\n    } catch (_) {\n      // 反查失败：静默返回（详情页仍可用）。\n    }\n  }\n\n  "
+
+tests\mobile\test_profile_group_navigation.py:30: AssertionError
+_____ test_private_display_remark_is_not_used_for_outgoing_avatar_actions _____
+
+    def test_private_display_remark_is_not_used_for_outgoing_avatar_actions():
+        source = ROOM.read_text(encoding="utf-8")
+        row = source.split("Widget _messageRow", 1)[1].split("Future<void> _forwardMessages", 1)[0]
+>       assert "_sendNudge(message, displayName)" not in row
+E       AssertionError: assert '_sendNudge(...displayName)' not in '(RoomMessag...象，再确认发送。\n  '
+E         
+E         '_sendNudge(message, displayName)' is contained here:
+E           ap: () => _sendNudge(message, displayName),
+E                       onAvatarLongPress: appendMentionDraft,
+E                       onLongPress: () => unawaited(_showMessageActions(
+E                           message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+E                     )...
+E         
+E         ...Full output truncated (282 lines hidden), use '-vv' to show
+
+tests\mobile\test_profile_group_navigation.py:37: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_profile_group_navigation.py::test_direct_details_share_friend_and_stranger_profile_routing
+FAILED tests/mobile/test_profile_group_navigation.py::test_private_display_remark_is_not_used_for_outgoing_avatar_actions
+2 failed, 3 passed in 0.19s

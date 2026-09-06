@@ -12,6 +12,7 @@ import '../../../core/notification/system_notification_presenter.dart';
 import '../../../ui/components/wechat_scaffold.dart';
 import '../../../ui/foundation/wechat_tokens.dart';
 import 'notification_diagnostics_page.dart';
+import 'call_permission_checklist.dart';
 
 /// 通知与声音设置页（PRD §43/§67）。
 final class NotificationSettingsPage extends StatefulWidget {
@@ -120,6 +121,7 @@ final class _NotificationSettingsPageState
                     (v) =>
                         _update(_values.copyWith(callNotificationEnabled: v))),
               ]),
+              const CallPermissionChecklist(),
               _section(context, '勿扰模式（PRD §30）', [
                 _switchTile('勿扰模式', _values.dndEnabled,
                     (v) => _update(_values.copyWith(dndEnabled: v))),

@@ -18,6 +18,16 @@ final Uint8List _darkGreyPng =
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('默认封面从第零毫秒取首帧，即使首帧为黑场', () async {
+    final positions = <int>[];
+    final poster = await extractVideoPoster('video.mp4', fetch: (_, position) async {
+      positions.add(position);
+      return _blackPng;
+    });
+    expect(positions, [0]);
+    expect(poster, same(_blackPng));
+  });
+
   test('帧平均亮度：黑≈0、白≈255、暗灰≈8', () async {
     expect(await frameAverageLuma(_blackPng), lessThan(4));
     expect(await frameAverageLuma(_whitePng), greaterThan(250));

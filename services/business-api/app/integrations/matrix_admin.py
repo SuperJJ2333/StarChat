@@ -13,6 +13,8 @@ from app.core.errors import AppError
 class MatrixAdminGateway(Protocol):
     def ensure_user(self, localpart: str, password: str) -> str: ...
 
+    def invite_room_as_user(self, inviter_id: str, matrix_user_id: str, room_id: str) -> None: ...
+
     def join_room_as_user(
         self,
         matrix_user_id: str,
@@ -142,6 +144,33 @@ class SynapseMatrixAdminGateway:
         )
         if response.status_code not in (200, 201):
             raise AppError(code="MATRIX_GROUP_JOIN_FAILED", message="群成员加入失败", status_code=502)
+
+    def invite_room_as_user(self, inviter_id: str, matrix_user_id: str, room_id: str) -> None:
+        """Invite via the moderator's client API: Synapse enforces power and bans.
+
+        This deliberately does not use an administrative forced-join endpoint.
+        The short-lived token is kept only in memory and is never returned.
+        """
+        try:
+            login = self._client.post(
+                f"{self._homeserver_url}/_synapse/admin/v1/users/{quote(inviter_id, safe='')}/login",
+                headers={"Authorization": f"Bearer {self._admin_access_token}"},
+                json={"valid_until_ms": int(self._now_factory().timestamp() * 1000) + 60_000},
+            )
+            if login.status_code != 200:
+                raise ValueError('login failed')
+            token = login.json().get('access_token')
+            if not isinstance(token, str) or not token:
+                raise ValueError('missing access token')
+            response = self._client.post(
+                f"{self._homeserver_url}/_matrix/client/v3/rooms/{quote(room_id, safe='')}/invite",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"user_id": matrix_user_id},
+            )
+            if response.status_code != 200:
+                raise ValueError('invite failed')
+        except (httpx.HTTPError, ValueError, AttributeError):
+            raise AppError(code='MATRIX_GROUP_INVITE_FAILED', message='群成员邀请失败', status_code=502) from None
 
     def get_room_state(self, room_id: str) -> list[dict]:
         """读取房间全量状态（Synapse admin API）。

@@ -32,7 +32,7 @@ object CallNotificationManager {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val sound = Uri.parse("android.resource://${context.packageName}/raw/$rawRingtone")
         val channel = NotificationChannel(
-            channelId, "来电铃声",
+            channelId, "通话提醒",
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
             description = "系统级来电提醒（响铃/锁屏全屏）"
@@ -116,7 +116,7 @@ object CallNotificationManager {
     fun buildIncoming(context: Context, video: Boolean): Notification {
         ensureChannel(context)
         val person = android.app.Person.Builder()
-            .setName(if (video) "畅聊视频来电" else "畅聊语音来电")
+            .setName(if (video) "畅聊视频来电" else "语音通话")
             .setImportant(true)
             .build()
         val answerPi = PendingIntent.getBroadcast(
@@ -133,7 +133,7 @@ object CallNotificationManager {
         val showPi = showPendingIntent(context)
         val base = Notification.Builder(context, channelId)
             .setSmallIcon(context.applicationInfo.icon)
-            .setContentTitle(if (video) "畅聊视频来电" else "畅聊语音来电")
+            .setContentTitle(if (video) "畅聊视频来电" else "语音通话")
             .setContentText("加密来电")
             .setCategory(Notification.CATEGORY_CALL)
             .setContentIntent(showPi)

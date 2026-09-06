@@ -57,10 +57,16 @@ final class _GroupQrCodePageState extends State<GroupQrCodePage> {
         _expiresAt = response['expires_at']?.toString();
         _loading = false;
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = '二维码生成失败，请稍后重试';
+        _error = switch (error) {
+          BusinessApiException(statusCode: 404, code: 'BUSINESS_REQUEST_FAILED') =>
+            '群二维码服务尚未部署，暂时无法生成',
+          BusinessApiException(statusCode: 403) => '没有生成群二维码的权限',
+          BusinessApiException(statusCode: 401) => '登录已失效，请重新登录',
+          _ => '二维码生成失败，请稍后重试',
+        };
         _loading = false;
       });
     }

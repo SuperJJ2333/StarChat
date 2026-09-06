@@ -64,6 +64,7 @@ final class ContactsPage extends StatefulWidget {
     required this.pendingFriendRequests,
     this.directChats,
     this.onRequestsChanged,
+    this.onFriendRequests,
     this.onMessage,
     this.onVoice,
     this.onVideo,
@@ -77,6 +78,7 @@ final class ContactsPage extends StatefulWidget {
   final ValueNotifier<int> pendingFriendRequests;
   final DirectChatController? directChats;
   final VoidCallback? onRequestsChanged;
+  final VoidCallback? onFriendRequests;
   final ContactAction? onMessage;
   final ContactAction? onVoice;
   final ContactAction? onVideo;
@@ -283,6 +285,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                               : const SizedBox.shrink(),
                         ),
                         onTap: () async {
+                          if (widget.onFriendRequests != null) {
+                            widget.onFriendRequests!();
+                            return;
+                          }
                           await Navigator.push(
                             context,
                             CupertinoPageRoute(
@@ -1181,14 +1187,13 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   /// BUG 2：点击申请进入"通过朋友验证"页；accept/reject 只在该页触发。
   Future<void> _openReview(Map request) async {
-    final id = request['id'].toString();
     await Navigator.push(
       context,
       CupertinoPageRoute(
         builder: (_) => FriendRequestReviewPage(
           request: request,
-          onAccept: () => _resolve(id, true),
-          onReject: () => _resolve(id, false),
+          onAccept: () => _resolve(request, true),
+          onReject: () => _resolve(request, false),
         ),
       ),
     );
@@ -1200,27 +1205,36 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   /// 成功后：乐观插入本地好友 → 建立/取得加密私聊 → 发送好友接受
   /// 系统消息 → 会话列表刷新。任何后续步骤失败都不回滚好友关系，
   /// 禁止要求用户退出 APP 才能看到好友。
-  Future<void> _resolve(String id, bool accept) async {
-    if (accept) {
-      await widget.api.acceptFriendRequest(id);
-    } else {
-      await widget.api.rejectFriendRequest(id);
+  bool _resolving = false;
+
+  Future<void> _resolve(Map request, bool accept) async {
+    if (_resolving) return;
+    _resolving = true;
+    try {
+      final id = request['id'].toString();
+      if (accept) {
+        await widget.api.acceptFriendRequest(id);
+      } else {
+        await widget.api.rejectFriendRequest(id);
+      }
+      if (!mounted) return;
+      // 先退出验证页，接下来的加密私聊导航成为当前页面。
+      Navigator.of(context).pop();
+      final pending = widget.pendingRequests;
+      if (pending != null && pending.value > 0) pending.value -= 1;
+      if (accept) await _onFriendAccepted({...request, 'status': 'ACCEPTED'});
+      widget.onRequestsChanged?.call();
+      if (mounted) _reload();
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(context: context, builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('操作未完成'),
+        content: const Text('请检查网络后重试'),
+        actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(dialogContext), child: const Text('好的'))],
+      ));
+    } finally {
+      _resolving = false;
     }
-    final pending = widget.pendingRequests;
-    if (pending != null && pending.value > 0) {
-      pending.value -= 1;
-    }
-    if (accept) {
-      final items =
-          ((await widget.api.friendRequests())['items'] as List?) ?? const [];
-      final request = items.whereType<Map>().firstWhere(
-            (item) => item['id']?.toString() == id,
-            orElse: () => const {},
-          );
-      await _onFriendAccepted(request);
-    }
-    widget.onRequestsChanged?.call();
-    if (mounted) _reload();
   }
 
   Future<void> _onFriendAccepted(Map request) async {
@@ -1253,7 +1267,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
           child: FutureBuilder<Map<String, dynamic>>(
             future: requests,
             builder: (_, snapshot) {
-              final items = (snapshot.data?['items'] as List?) ?? const [];
+              final items = ((snapshot.data?['items'] as List?) ?? const []).where((item) => item is Map && item['direction'] != 'OUTGOING').toList();
               return ListView(
                 children: [
                   for (final request in items)

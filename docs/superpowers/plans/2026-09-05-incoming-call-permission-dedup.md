@@ -1,0 +1,17 @@
+# Incoming call presentation and durable packaging policy
+
+Approved scope: user confirms rebuilt 0.3.40 installs and directs future builds to use the same workflow; requests fixes for generic-plus-call duplicate notifications and incoming presentation suppressed by missing microphone/camera permissions, plus architecture explanation.
+
+1. Root owns AGENTS.md packaging pointer, durable release runbook, orchestration/evidence, reference research and integrated verification. Record source build → conventional rebuild → align → stable user-tested signing identity, no arbitrary payload mutations. Protect private keys; no automatic uninstall, key rotation or production deployment in this task.
+2. Permission agent owns native call package and Flutter call permission/controller presentation files (coordinate shared files first), tests missing permissions do not suppress incoming UI/notification; permissions requested on answer and denial preserves usable presentation.
+3. Notification agent owns notification coordinator/push integration/server bridge as needed and focused tests, traces generic wake notifications versus resolved incoming calls, implements correct dedup without silently losing actual message notifications. Preserve E2EE; no plaintext call metadata to server. Request root edits to shared app_home.dart.
+4. Test-first red/green, focused native/Flutter/backend tests as relevant, then repository verify. Specification review precedes quality/security review. Figma deferral from user remains in effect. Artifact evidence under docs/verification/artifacts/2026-09-05/incoming-call-permission-dedup/.
+5. Compare public Telegram/WhatsApp/Android architecture only as supported by primary sources. Separate confirmed code defects from proprietary implementation inferences. No real-recipient calls or messages without authorization.
+
+## 2026-09-06 continuation (user: 请你继续)
+
+Root owns NativePushBridge Kotlin/Dart, MainActivity setup/cleanup, their tests and verification documentation. Fix the confirmed cold-start delivery gap before extending the provider protocol: persist only the two allowed wake categories for at most two minutes, coalesce repeated wakes, wait for an explicit Dart listener-ready handshake, and remove a pending wake only after successful Dart acknowledgement. Engine teardown and failed delivery must retain pending wakes; Android rejection of background activity launch must not crash the push callback. A wake only requests local synchronization, never establishes a call or requests media permissions.
+
+Test before implementation: arrival before engine setup, arrival before Dart readiness, failed acknowledgement/retry, a newer wake while acknowledging an older wake, expiry, and Flutter listener lifecycle. Run focused native and Dart tests, then repository verification. No server payload/cryptography change is authorized by this implementation plan; provider event correlation requires verified OEM notification-ID semantics and a separate privacy review. OEM offline activation is dependent on vendor configuration; this patch cannot make Android permit a prohibited background launch.
+
+Deliver an ARM64 test artifact as 0.3.42+45 (root also owns pubspec.yaml and app_config.dart version updates), following the approved stable-signer rebuild runbook. Do not overwrite the previously delivered 0.3.41 artifact or publish a production update popup during this continuation.

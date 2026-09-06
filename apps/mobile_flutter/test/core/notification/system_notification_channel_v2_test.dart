@@ -23,26 +23,14 @@ void main() {
     expect(spec.soundResource, isNull);
   });
 
-  test('其他渠道映射不变（mentions/attention 高，system 默认）', () {
-    expect(channelSpecFor(SystemNotificationChannel.mentions).id,
-        'chatflow_mentions');
-    expect(channelSpecFor(SystemNotificationChannel.mentions).importance,
-        Importance.high);
-    expect(channelSpecFor(SystemNotificationChannel.attention).importance,
-        Importance.high);
-    expect(channelSpecFor(SystemNotificationChannel.system).importance,
-        Importance.defaultImportance);
-  });
-
-  test('旧 v1 渠道保留为 legacy：不再用于展示，也不再在新安装上创建', () {
-    final legacy =
-        allChannelSpecs.singleWhere((spec) => spec.id == 'chatflow_messages');
-    expect(legacy.legacy, isTrue, reason: '老安装已有渠道，绝不删除');
-    expect(activeChannelSpecs.any((spec) => spec.id == 'chatflow_messages'),
-        isFalse,
-        reason: '新安装不再创建 v1 渠道；v1 不再承载任何通知');
-    expect(activeChannelSpecs.any((spec) => spec.id == 'chatflow_messages_v2'),
-        isTrue);
+  test('重要提醒与系统消息合并到消息渠道，另保留静默后台服务', () {
+    for (final channel in [SystemNotificationChannel.mentions,
+        SystemNotificationChannel.attention, SystemNotificationChannel.system]) {
+      expect(channelSpecFor(channel).id, messagesChannelIdV2);
+      expect(channelSpecFor(channel).importance, Importance.high);
+    }
+    expect(activeChannelSpecs.map((s) => s.id).toSet(),
+        {messagesChannelIdV2, 'chatflow_silent', 'calls_ring'});
   });
 
   test('v2 渠道 ID 常量与设置页深链一致', () {
@@ -66,6 +54,9 @@ void main() {
       dispatch('incoming-call');
       expect(friendRequestOpens, 1, reason: '来电点击只回前台，不路由');
       expect(conversations, isEmpty);
+
+      dispatch('ongoing-call');
+      expect(conversations, isEmpty, reason: 'ongoing call is not a room ID');
 
       dispatch('!room-9:matrix.example');
       expect(conversations, ['!room-9:matrix.example']);

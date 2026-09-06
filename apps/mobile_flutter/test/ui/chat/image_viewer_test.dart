@@ -108,12 +108,17 @@ void main() {
 
     await tester.tap(find.byKey(const Key('viewer-forward')));
     await tester.pumpAndSettle();
-    expect(find.text('转发到'), findsOneWidget, reason: '调起会话选择转发流程');
+    expect(find.text('选择聊天'), findsOneWidget, reason: '调起会话选择转发流程');
 
+    // 新交互：选择目标 → 确认发送卡片（选择本身不再直接发送）。
     await tester.tap(find.text('文件传输助手'));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('forward-confirmation-sheet')), findsOneWidget,
+        reason: '选择后出现确认卡片');
+    await tester.tap(find.byKey(const Key('forward-confirm-send')));
+    await tester.pumpAndSettle();
     expect(forwarded, ['room-1']);
-    expect(find.text('已转发到「文件传输助手」'), findsOneWidget);
+    expect(find.text('选择聊天'), findsNothing);
   });
 
   testWidgets('image message tap opens the full viewer', (tester) async {

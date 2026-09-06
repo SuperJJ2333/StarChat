@@ -25,6 +25,13 @@ upstream sygnal_upstream {
     server sygnal:5000 resolve;
 }
 
+# Synapse requires the exact /_matrix/push/v1/notify path. Only fixed,
+# configured upstreams are selectable; arbitrary query values use Sygnal.
+map $arg_provider $matrix_push_upstream {
+    default sygnal_upstream;
+    getui getui_bridge_upstream;
+}
+
 server {
     listen 80;
     server_name {{PUBLIC_HOSTNAME}} {{ADMIN_PUBLIC_HOSTNAME}};
@@ -77,9 +84,9 @@ server {
         proxy_set_header X-Request-ID $request_id;
     }
 
-    # Sygnal（FCM/APNs 预留通道，休眠态）。更长前缀优先于 /_matrix/。
+    # 标准推送路径：provider=getui 选择个推，其余保留 Sygnal。
     location /_matrix/push/v1/notify {
-        proxy_pass http://sygnal_upstream;
+        proxy_pass http://$matrix_push_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;

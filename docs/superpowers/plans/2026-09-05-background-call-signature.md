@@ -1,0 +1,9 @@
+# Background call delivery, root back, overlay and signing comparison
+
+Approved scope: user wants root back to background the app, explicit reminders for self-start/lockscreen/background popups/overlay, actual overlay after leaving a live call, and incoming calls after swiping the recent task away. The user separately requests reproducing a changed-signature APK for installation comparison.
+
+1. Native/back agent owns MainActivity, call bridge/overlay, AppHome call navigation and focused native/UI tests. Prove the missing native application context and restore actual overlay startup. Root back backgrounds the task; child route navigation remains normal.
+2. Push agent owns Matrix/Getui registration and transport audit. Diagnose server pusher registration before assuming OEM delivery or bandwidth problems. Preserve encrypted media/message boundaries and use only metadata for wakeups. No unsolicited calls to real recipients.
+3. Root owns the four-permission reminder/checklist, evidence, signature comparison and builds. Reminder is contextual and dismissible, does not grant settings silently, and does not present unknown OEM settings as granted. Existing Figma deferral remains authorized.
+4. Signing comparison uses a separate locally generated private keystore outside the repository, protects its credentials, and produces a diagnostic APK without changing functional payloads. Do not replace the production key, uninstall existing installations or promise suppression of antivirus findings. Compare a user-provided processed APK if available; its private key is not requested.
+5. Test-first evidence under docs/verification/artifacts/2026-09-05/background-call-signature/, then targeted native/Flutter tests and repository verification. Review spec then quality; verify package identities, signatures and hashes before delivery. Updates retaining the official key remain separate from the signature comparison artifact.

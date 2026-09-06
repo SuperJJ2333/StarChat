@@ -101,6 +101,9 @@ final class AddFriendProfilePage extends StatelessWidget {
                 height: 48,
                 child: CupertinoButton(
                   key: const Key('add-friend-profile-add'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  alignment: Alignment.center,
                   color: WeChatColors.brandPrimary,
                   borderRadius: BorderRadius.circular(12),
                   onPressed:

@@ -1,0 +1,14 @@
+...F                                                                     [100%]
+================================== FAILURES ===================================
+________ test_direct_details_share_friend_and_stranger_profile_routing ________
+
+    def test_direct_details_share_friend_and_stranger_profile_routing():
+        source = ROOM.read_text(encoding="utf-8")
+        peer = source.split("Future<void> _openPeerProfile", 1)[1].split("Future<void> _openVideoViewer", 1)[0]
+>       assert "openGroupMemberProfile(" in peer
+E       assert 'openGroupMemberProfile(' in "(String matrixUserId) async {\n    final contact = _identityCache.contactsByMatrixId[matrixUserId];\n    if (contact ...ing() ?? 'NONE',\n          ),\n        ),\n      );\n    } catch (_) {\n      // 反查失败：静默返回（详情页仍可用）。\n    }\n  }\n\n  "
+
+tests\mobile\test_profile_group_navigation.py:30: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/mobile/test_profile_group_navigation.py::test_direct_details_share_friend_and_stranger_profile_routing
+1 failed, 3 passed in 0.14s

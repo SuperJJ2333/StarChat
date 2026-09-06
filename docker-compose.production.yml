@@ -15,8 +15,8 @@ services:
   # turns:5349。命令列表整体重述（compose 对 list 采用覆盖合并）。
   # 443 不能用作 TURN TLS：宿主 443/tcp 由边缘层(caddy)、443/udp 由 QUIC
   # 占用（TCP-443 TURN 需 SNI 分流 + 独立域名证书，见 docs/TURN.md §443）。
-  # 防火墙需放行 5349/tcp+udp（生产 2026-09-04 已放行；托管商安全组
-  # 放行仍待人工，见 docs/TURN.md）。
+  # 防火墙需放行 5349/tcp+udp。先运行 scripts/sync_turn_certificates.py，
+  # 让 nobody:nogroup 只读专用 0640 私钥；续期后同步并仅重启 coturn。
   coturn:
     command:
       - "--no-cli"
@@ -32,7 +32,7 @@ services:
       - "--min-port=49160"
       - "--max-port=49200"
     volumes:
-      - ./data/nginx/certs:/etc/coturn/certs:ro
+      - ./data/coturn/certs:/etc/coturn/certs:ro
     ports: !override
       - "${TURN_PORT:-3478}:3478/udp"
       - "${TURN_PORT:-3478}:3478/tcp"

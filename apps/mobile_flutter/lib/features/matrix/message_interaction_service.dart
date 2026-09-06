@@ -220,18 +220,38 @@ final class MatrixMessageInteractionBackend
     if (event.roomId != null && event.roomId != source.id) {
       throw StateError('消息不属于当前会话');
     }
-    if ({MessageTypes.Image, MessageTypes.File, MessageTypes.Audio}
-        .contains(event.messageType)) {
+    if ({
+      MessageTypes.Image,
+      MessageTypes.File,
+      MessageTypes.Audio,
+      MessageTypes.Video
+    }.contains(event.messageType)) {
       final attachment = await event.downloadAndDecryptAttachment();
-      final mimeType = event.content['info'] is Map
-          ? (event.content['info'] as Map)['mimetype']?.toString()
-          : null;
-      await target.sendFileEvent(
-        MatrixFile.fromMimeType(
+      final info = event.content['info'] is Map
+          ? event.content['info'] as Map
+          : const <String, dynamic>{};
+      final mimeType = info['mimetype']?.toString();
+      final MatrixFile file;
+      if (event.messageType == MessageTypes.Video) {
+        file = MatrixVideoFile(
+          bytes: attachment.bytes,
+          name: event.body,
+          mimeType: mimeType ?? 'video/mp4',
+          width: info['w'] is int ? info['w'] as int : null,
+          height: info['h'] is int ? info['h'] as int : null,
+          duration: info['duration'] is int ? info['duration'] as int : null,
+        );
+      } else {
+        file = MatrixFile.fromMimeType(
           bytes: attachment.bytes,
           name: event.body,
           mimeType: mimeType,
-        ),
+        );
+      }
+      // The encrypted room SDK re-encrypts local bytes and generates fresh
+      // attachment keys/URLs. Never reuse source file or thumbnail descriptors.
+      await target.sendFileEvent(
+        file,
       );
       return;
     }

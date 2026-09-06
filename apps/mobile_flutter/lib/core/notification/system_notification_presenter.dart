@@ -18,6 +18,7 @@ void routeSystemNotificationPayload(
   String payload, {
   required void Function(String roomId) openConversation,
   required void Function() openFriendRequests,
+  void Function()? openCall,
 }) {
   if (payload.isEmpty) return;
   switch (payload) {
@@ -25,7 +26,8 @@ void routeSystemNotificationPayload(
       openFriendRequests();
       break;
     case 'incoming-call':
-      // 来电通知点击仅需回到前台，通话 UI 由 CallController 呈现。
+    case 'ongoing-call':
+      openCall?.call();
       break;
     default:
       // 消息通知 payload 为 roomId；进入会话后由本地同步+解密呈现内容。
@@ -84,50 +86,14 @@ final class ChannelSpec {
 const String messagesChannelIdV2 = 'chatflow_messages_v2';
 
 const _channelSpecs = <ChannelSpec>[
+  ChannelSpec('calls_ring', '通话提醒', '语音和视频来电铃声与锁屏提醒', Importance.max,
+      'chatflow_ringtone',
+      vibrationEnabled: true),
+  ChannelSpec(messagesChannelIdV2, '消息通知', '聊天、提及、特别关注与系统消息', Importance.high,
+      'chatflow_message',
+      vibrationEnabled: true),
   ChannelSpec(
-    'chatflow_messages',
-    '消息通知',
-    '旧版消息渠道（已由新渠道取代；保留不删除以便老安装回退设置）',
-    Importance.defaultImportance,
-    'chatflow_message',
-    legacy: true,
-  ),
-  ChannelSpec(
-    messagesChannelIdV2,
-    '消息通知',
-    '聊天消息提醒（顶部横幅、提示音与震动）',
-    Importance.high,
-    'chatflow_message',
-    vibrationEnabled: true,
-  ),
-  ChannelSpec(
-    'chatflow_mentions',
-    '提及与我',
-    '群聊 @我 的高优先级提醒',
-    Importance.high,
-    'chatflow_mention',
-  ),
-  ChannelSpec(
-    'chatflow_attention',
-    '特别关注',
-    '特别关注联系人的高优先级提醒',
-    Importance.high,
-    'chatflow_attention',
-  ),
-  ChannelSpec(
-    'chatflow_system',
-    '系统通知',
-    '好友申请、业务到账等系统提醒',
-    Importance.defaultImportance,
-    'chatflow_system',
-  ),
-  ChannelSpec(
-    'chatflow_silent',
-    '静默同步',
-    '静音会话与勿扰期间的通知中心记录（无声音无横幅）',
-    Importance.low,
-    null,
-  ),
+      'chatflow_silent', '后台服务', '消息同步、通话保活与静默通知', Importance.low, null),
 ];
 
 /// 全部渠道规格（含 legacy：老安装保留、新安装不创建）。
@@ -140,17 +106,11 @@ final List<ChannelSpec> activeChannelSpecs = [
 ];
 
 /// 枚举渠道 → 渠道 ID。
-String _channelIdFor(SystemNotificationChannel channel) => switch (channel) {
-      // v2 heads-up 渠道：v1（chatflow_messages）因 Android 渠道不可
-      // 原地升级而退役为 legacy。
-      SystemNotificationChannel.messages => messagesChannelIdV2,
-      SystemNotificationChannel.mentions => 'chatflow_mentions',
-      SystemNotificationChannel.attention => 'chatflow_attention',
-      SystemNotificationChannel.system => 'chatflow_system',
-      SystemNotificationChannel.silent => 'chatflow_silent',
-    };
+String _channelIdFor(SystemNotificationChannel channel) =>
+    channel == SystemNotificationChannel.silent
+        ? 'chatflow_silent'
+        : messagesChannelIdV2;
 
-/// 枚举渠道 → 渠道规格（messages 已升级到 v2 heads-up 渠道）。
 ChannelSpec channelSpecFor(SystemNotificationChannel channel) =>
     activeChannelSpecs.firstWhere(
       (spec) => spec.id == _channelIdFor(channel),
@@ -192,8 +152,20 @@ final class FlutterLocalSystemNotificationPresenter
     );
     final android = plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
-    // legacy 渠道不创建：老安装的系统副本继续存在但不再承载通知；
-    // 也绝不调用 deleteNotificationChannel——尊重用户已有渠道选择。
+    // 用户要求合并渠道；保留现有消息/铃声/静默设置，仅删除已迁移的旧 ID。
+    for (final id in const [
+      'chatflow_messages',
+      'chatflow_mentions',
+      'chatflow_attention',
+      'chatflow_system',
+      'chatflow_sync',
+      'calls',
+      'call-ongoing',
+      'changliao_message_reminders',
+      'changliao_friend_requests'
+    ]) {
+      await android?.deleteNotificationChannel(id);
+    }
     for (final spec in activeChannelSpecs) {
       await android?.createNotificationChannel(
         AndroidNotificationChannel(

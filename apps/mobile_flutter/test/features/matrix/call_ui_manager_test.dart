@@ -12,7 +12,10 @@ final class _RecordingCallNotifications implements CallNotificationGateway {
 
   @override
   Future<void> showIncoming(
-      {required String callerName, required bool video, bool ring = false}) async {
+      {required String callerName,
+      required bool video,
+      bool ring = false,
+      bool fullScreenIntent = true}) async {
     calls.add('showIncoming(ring=$ring,video=$video)');
   }
 
@@ -20,7 +23,7 @@ final class _RecordingCallNotifications implements CallNotificationGateway {
   Future<void> hideIncoming() async => calls.add('hideIncoming');
 
   @override
-  Future<void> showOngoing({required String title}) async =>
+  Future<void> showOngoing({required String title, bool video = false}) async =>
       calls.add('showOngoing');
 
   @override
@@ -42,11 +45,13 @@ final class _FakeCallBackend implements CallBackend {
   bool get hasActiveSession => true;
 
   @override
-  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async =>
+  Future<bool> isEncryptedDirectRoom(
+          String roomId, String matrixUserId) async =>
       true;
 
   @override
-  Future<void> start(String roomId, String matrixUserId, CallMediaType type) async {}
+  Future<void> start(
+      String roomId, String matrixUserId, CallMediaType type) async {}
 
   @override
   Future<void> accept() async {}
@@ -69,7 +74,9 @@ final class _FakeCallBackend implements CallBackend {
 
 CallBackendEvent _incoming({CallMediaType type = CallMediaType.audio}) =>
     CallBackendEvent.incoming(
-        roomId: '!dm:example.test', matrixUserId: '@alice:example.test', type: type);
+        roomId: '!dm:example.test',
+        matrixUserId: '@alice:example.test',
+        type: type);
 
 Future<void> _emit(
   WidgetTester tester,
@@ -90,6 +97,110 @@ Future<void> _teardown(WidgetTester tester,
 }
 
 void main() {
+  testWidgets(
+      'backgrounding active page requests system overlay and resume hides it',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final backend = _FakeCallBackend();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    final presentation = <String>[];
+    final manager = CallUiManager(
+      navigatorKey: key,
+      notifications: _RecordingCallNotifications(),
+      isAppResumed: () => true,
+      onMinimized: () => presentation.add('overlay'),
+      onRestored: () => presentation.add('page'),
+    )..attach(controller);
+    await tester
+        .pumpWidget(CupertinoApp(navigatorKey: key, home: const Text('home')));
+    await _emit(tester, backend.events, _incoming());
+    await controller.accept();
+    await _emit(tester, backend.events, const CallBackendEvent.connected());
+    await tester.pumpAndSettle();
+    manager.handleAppPaused();
+    expect(presentation, ['overlay']);
+    expect(controller.state.phase, CallPhase.connected);
+    manager.handleAppResumed();
+    expect(presentation, ['overlay', 'page']);
+    manager.minimizeCall();
+    manager.handleAppResumed();
+    expect(presentation.last, 'overlay',
+        reason: 'intentional minimization keeps overlay');
+    await _teardown(tester, backend.events, manager);
+  });
+  testWidgets('outgoing ringing keeps notification return without overlay',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final backend = _FakeCallBackend();
+    final notifications = _RecordingCallNotifications();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    final manager = CallUiManager(
+      navigatorKey: key,
+      notifications: notifications,
+      isAppResumed: () => true,
+    )..attach(controller, outgoingCallPageVisible: () => true);
+    await tester
+        .pumpWidget(CupertinoApp(navigatorKey: key, home: const Text('home')));
+    manager.registerOutgoingCall();
+    await controller.start(
+        roomId: '!room:test',
+        matrixUserId: '@peer:test',
+        type: CallMediaType.audio);
+    await tester.pump();
+    expect(notifications.calls, contains('showOngoing'));
+    manager.minimizeCall();
+    await tester.pump();
+    expect(controller.state.phase, CallPhase.ringing);
+    expect(find.byKey(const Key('return-to-call')), findsOneWidget);
+    await controller.hangup();
+    await _teardown(tester, backend.events, manager);
+  });
+  testWidgets(
+      'minimize preserves connected call and return entry survives resume',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+    );
+    final manager = CallUiManager(
+      navigatorKey: key,
+      notifications: _RecordingCallNotifications(),
+      isAppResumed: () => true,
+    )..attach(controller);
+    await tester.pumpWidget(CupertinoApp(
+      navigatorKey: key,
+      home: const Center(child: Text('home')),
+    ));
+    await _emit(tester, backend.events, _incoming());
+    await tester.pumpAndSettle();
+    await controller.accept();
+    await _emit(tester, backend.events, const CallBackendEvent.connected());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('call-minimize')), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(controller.state.phase, CallPhase.connected);
+    expect(find.text('home'), findsOneWidget);
+    expect(find.byKey(const Key('return-to-call')), findsOneWidget);
+    manager.handleAppResumed();
+    await tester.pumpAndSettle();
+    expect(find.text('home'), findsOneWidget,
+        reason: 'app resume must respect intentional minimization');
+    await tester.tap(find.byKey(const Key('return-to-call')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('call-control-hangup')), findsOneWidget);
+    expect(controller.state.phase, CallPhase.connected);
+    await tester.tap(find.byKey(const Key('call-minimize')));
+    await tester.pumpAndSettle();
+    await controller.hangup();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('return-to-call')), findsNothing);
+    await _teardown(tester, backend.events, manager);
+  });
   // 规格验证场景 1/2：被叫处于任意页面（聊天/联系人页都是根 Navigator
   // 上的页面）→ 来电立即全屏覆盖。
   testWidgets('场景1/2 前台来电：任意页面之上立即弹出来电页', (tester) async {
@@ -116,8 +227,7 @@ void main() {
     await _emit(tester, backend.events, _incoming());
     await tester.pumpAndSettle();
 
-    expect(find.text('邀请你进行语音通话'), findsOneWidget,
-        reason: '来电页必须盖在任意业务页面之上');
+    expect(find.text('邀请你进行语音通话'), findsOneWidget, reason: '来电页必须盖在任意业务页面之上');
     expect(find.text('聊天页占位'), findsNothing);
     expect(
       notifications.calls.where((c) => c.startsWith('showIncoming')),
@@ -191,13 +301,11 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('00:02'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('00:03'), findsOneWidget,
-        reason: '场景4：接通后页面持续存在并走秒');
+    expect(find.text('00:03'), findsOneWidget, reason: '场景4：接通后页面持续存在并走秒');
     await _teardown(tester, backend.events, manager);
   });
 
-  testWidgets('状态抖动：connected 后短暂 ended 不立即关页，恢复即取消关闭',
-      (tester) async {
+  testWidgets('终态迟到 connected 不复活，延迟关闭后新来电仍可显示', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final manager = CallUiManager(
       navigatorKey: navigatorKey,
@@ -223,17 +331,26 @@ void main() {
     await _emit(tester, backend.events, const CallBackendEvent.connected());
     await tester.pump();
 
-    // 抖动：connected → ended → 3 秒内恢复 connected。
+    // SDK ended 是终态：关闭延迟只用于展示结果，迟到 connected 不得复活。
     await _emit(tester, backend.events, const CallBackendEvent.ended());
     await tester.pump(const Duration(seconds: 1));
     // 页面必须仍在（关闭延迟内），显示结束态而非被 pop。
-    expect(find.text('通话已结束'), findsOneWidget,
-        reason: 'hasConnectedOnce 后短暂 ended 不立即 pop（页面仍在栈内）');
+    expect(find.text('通话已结束'), findsOneWidget, reason: '结束状态在关闭延迟内展示（页面仍在栈内）');
     expect(find.text('占位'), findsNothing, reason: '底层页面不可见=通话页未关');
     await _emit(tester, backend.events, const CallBackendEvent.connected());
+    expect(controller.state.phase, CallPhase.ended);
     await tester.pump(const Duration(seconds: 3));
-    // 恢复后重新计秒（接通时刻刷新，pump 3 秒 → 00:03）。
-    expect(find.text('00:03'), findsOneWidget, reason: '抖动恢复后关闭已取消，回到通话态并计秒');
+    await tester.pumpAndSettle();
+    expect(find.text('占位'), findsOneWidget,
+        reason: '迟到 connected 不取消关闭，也不恢复通话计时');
+    expect(manager.isIncomingPageOpen, isFalse);
+
+    // 新 incoming 明确建立下一通话生命周期，可以正常重新显示来电页。
+    await _emit(tester, backend.events, _incoming(type: CallMediaType.video));
+    await tester.pumpAndSettle();
+    expect(controller.state.phase, CallPhase.ringing);
+    expect(find.text('邀请你进行视频通话'), findsOneWidget);
+    expect(manager.isIncomingPageOpen, isTrue);
     await _teardown(tester, backend.events, manager);
   });
 
@@ -282,8 +399,7 @@ void main() {
     expect(manager.ringing, isFalse);
   });
 
-  testWidgets('验证8：后台接听→connecting/connected，回前台补开通话页且不重复压入',
-      (tester) async {
+  testWidgets('验证8：后台接听→connecting/connected，回前台补开通话页且不重复压入', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final notifications = _RecordingCallNotifications();
     var resumed = false; // 用户返回应用后置 true。
@@ -315,8 +431,7 @@ void main() {
     await controller.accept();
     await tester.pump();
     expect(controller.state.phase, CallPhase.connecting);
-    expect(manager.isIncomingPageOpen, isFalse,
-        reason: '后台接听阶段页面尚未挂载（由原生层呈现）');
+    expect(manager.isIncomingPageOpen, isFalse, reason: '后台接听阶段页面尚未挂载（由原生层呈现）');
 
     // 用户回到应用（app_home resume → showIncomingCall）：
     // connecting 且页面缺失 → 补开通话页。
@@ -331,8 +446,7 @@ void main() {
     await _emit(tester, backend.events, const CallBackendEvent.connected());
     await tester.pumpAndSettle();
     expect(manager.isIncomingPageOpen, isTrue);
-    expect(find.text('正在建立加密连接…'), findsNothing,
-        reason: '已接通，connecting 文案消失');
+    expect(find.text('正在建立加密连接…'), findsNothing, reason: '已接通，connecting 文案消失');
     expect(find.text('主页占位'), findsNothing, reason: '通话页仍在最上层');
 
     // 再次触发 showIncomingCall（重复 resume/重复事件）：不得重复压入。
@@ -346,43 +460,41 @@ void main() {
   });
 // ── 审计 P1（gallery-call-review）：回前台必须恢复来电页 ──────
 
-testWidgets('审计复现：后台响铃 → 回前台 handleAppResumed → 来电页必须恢复',
-    (tester) async {
-  final navigatorKey = GlobalKey<NavigatorState>();
-  final notifications = _RecordingCallNotifications();
-  var resumed = false;
-  final manager = CallUiManager(
-    navigatorKey: navigatorKey,
-    notifications: notifications,
-    isAppResumed: () => resumed,
-  );
-  final backend = _FakeCallBackend();
-  final controller = CallController(
-    backend: backend,
-    permissions: _AllowedPermissions(),
-    now: () => tester.binding.clock.now(),
-  );
-  manager.attach(controller);
-  await tester.pumpWidget(CupertinoApp(
-    navigatorKey: navigatorKey,
-    home: const Center(child: Text('主页占位')),
-  ));
+  testWidgets('审计复现：后台响铃 → 回前台 handleAppResumed → 来电页必须恢复', (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final notifications = _RecordingCallNotifications();
+    var resumed = false;
+    final manager = CallUiManager(
+      navigatorKey: navigatorKey,
+      notifications: notifications,
+      isAppResumed: () => resumed,
+    );
+    final backend = _FakeCallBackend();
+    final controller = CallController(
+      backend: backend,
+      permissions: _AllowedPermissions(),
+      now: () => tester.binding.clock.now(),
+    );
+    manager.attach(controller);
+    await tester.pumpWidget(CupertinoApp(
+      navigatorKey: navigatorKey,
+      home: const Center(child: Text('主页占位')),
+    ));
 
-  // 后台来电：仅系统通知，未推页面。
-  await _emit(tester, backend.events, _incoming(type: CallMediaType.video));
-  await tester.pump();
-  expect(manager.isIncomingPageOpen, isFalse, reason: '后台来电不推页面（既有语义）');
+    // 后台来电：仅系统通知，未推页面。
+    await _emit(tester, backend.events, _incoming(type: CallMediaType.video));
+    await tester.pump();
+    expect(manager.isIncomingPageOpen, isFalse, reason: '后台来电不推页面（既有语义）');
 
-  // 用户回前台：真实生命周期入口只调 handleAppResumed（phase 无变化）。
-  resumed = true;
-  manager.handleAppResumed();
-  await tester.pumpAndSettle();
+    // 用户回前台：真实生命周期入口只调 handleAppResumed（phase 无变化）。
+    resumed = true;
+    manager.handleAppResumed();
+    await tester.pumpAndSettle();
 
-  // 审计断言：来电页必须被恢复（此前仅取消通知，页面缺失）。
-  expect(manager.isIncomingPageOpen, isTrue,
-      reason: '回前台后必须补开来电页，而不是只把通知收掉');
-  expect(find.text('邀请你进行视频通话'), findsOneWidget, reason: '来电内容可见');
+    // 审计断言：来电页必须被恢复（此前仅取消通知，页面缺失）。
+    expect(manager.isIncomingPageOpen, isTrue, reason: '回前台后必须补开来电页，而不是只把通知收掉');
+    expect(find.text('邀请你进行视频通话'), findsOneWidget, reason: '来电内容可见');
 
-  await _teardown(tester, backend.events, manager);
-});
+    await _teardown(tester, backend.events, manager);
+  });
 }

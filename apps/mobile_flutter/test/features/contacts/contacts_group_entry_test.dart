@@ -5,10 +5,50 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
+import 'package:liuhetong_mobile/app_home.dart';
+import 'package:liuhetong_mobile/features/matrix/direct_chat_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:matrix/matrix.dart';
 
 /// BUG4：通讯录"群聊"入口 → 群聊通讯录列表（不再误入发起群聊）。
 /// 该区只在 BusinessApiClient 注入时渲染，用 MockClient 构造真实客户端。
 void main() {
+  testWidgets('ContactsTabPage 透传保存群列表入口', (tester) async {
+    final store = SecureSessionStore(_MemoryStore());
+    await store.saveSession(
+        accessToken: 'test-access', refreshToken: 'test-refresh');
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: store,
+        client: MockClient((_) async => http.Response('{"items":[]}', 200)));
+    final sdk = Client('contacts-tab-test');
+    final matrix = MatrixSdkE2eeClient(sdk,
+        homeserver: Uri.parse('https://matrix.example'));
+    final direct = DirectChatController(matrix);
+    final pending = ValueNotifier<int>(0);
+    var saved = 0;
+    var created = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactsTabPage(
+            api: api,
+            matrix: matrix,
+            directChats: direct,
+            onVoice: (_) async {},
+            onVideo: (_) async {},
+            onGroupChat: () => created++,
+            onGroupAddressList: () => saved++,
+            pendingFriendRequests: pending)));
+    await tester.pumpAndSettle();
+    final entry = find.byKey(const Key('contacts-group-address-entry'));
+    await tester.ensureVisible(entry);
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(saved, 1);
+    expect(created, 0);
+    await tester.pumpWidget(const SizedBox());
+    direct.dispose();
+    pending.dispose();
+  });
   Future<BusinessApiClient> api() async {
     final store = SecureSessionStore(_MemoryStore());
     await store.saveSession(accessToken: 'a', refreshToken: 'r');

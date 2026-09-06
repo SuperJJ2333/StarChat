@@ -10,6 +10,8 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 
 ## Required context
 
+- Android APK packaging must follow `docs/runbooks/android-apk-rebuild.md` (user-confirmed on 2026-09-05): source build, conventional DEX/resource/manifest rebuild, alignment, stable user-tested signing identity, and artifact verification. A raw Flutter/Gradle APK is an intermediate, not the final user delivery. Do not rotate the key per build, silently revert to an older signer, or copy arbitrary padding/manifest changes from third-party tools. This replaces the earlier source-only/no-rebuild preference; no packer or Dart/R8 obfuscation is requested.
+
 - Read `docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md` before changing product behavior.
 - Execute work from an approved plan under `docs/superpowers/plans/`.
 - Record non-Git verification evidence under `docs/verification/` while this workspace has no `.git` directory.

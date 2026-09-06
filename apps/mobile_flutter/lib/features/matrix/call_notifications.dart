@@ -8,11 +8,12 @@ abstract interface class CallNotificationGateway {
     required String callerName,
     required bool video,
     bool ring,
+    bool fullScreenIntent,
   });
 
   Future<void> hideIncoming();
 
-  Future<void> showOngoing({required String title});
+  Future<void> showOngoing({required String title, bool video = false});
 
   Future<void> hideOngoing();
 }
@@ -47,19 +48,21 @@ final class CallNotifications implements CallNotificationGateway {
   final FlutterLocalNotificationsPlugin plugin;
   final ForegroundServiceArbiter arbiter;
   bool _initialized = false;
+  int _ongoingGeneration = 0;
+  int _incomingGeneration = 0;
 
   static const incomingCallId = 41001;
   static const ongoingCallId = 41002;
-  static const _callsChannelId = 'calls';
-  static const _callsChannelName = '通话提醒';
+  static const _callsChannelId = 'calls_ring';
   static const _ringChannelId = 'calls_ring';
-  static const _ringChannelName = '来电铃声';
-  static const _ongoingChannelId = 'call-ongoing';
-  static const _ongoingChannelName = '通话中';
+  static const _ringChannelName = '通话提醒';
+  static const _ongoingChannelId = 'chatflow_silent';
+  static const _ongoingChannelName = '后台服务';
 
   /// 通话中前台服务请求（组合根与仲裁器集成测试共用）。
   static ForegroundServiceRequest ongoingCallRequest({
     required String title,
+    bool video = false,
   }) =>
       ForegroundServiceRequest(
         notificationId: ongoingCallId,
@@ -69,9 +72,10 @@ final class CallNotifications implements CallNotificationGateway {
         title: '畅聊通话中',
         body: title,
         category: AndroidNotificationCategory.call,
-        foregroundServiceTypes: const {
+        payload: 'ongoing-call',
+        foregroundServiceTypes: {
           AndroidServiceForegroundType.foregroundServiceTypeMicrophone,
-          AndroidServiceForegroundType.foregroundServiceTypeCamera,
+          if (video) AndroidServiceForegroundType.foregroundServiceTypeCamera,
         },
       );
 
@@ -84,12 +88,6 @@ final class CallNotifications implements CallNotificationGateway {
         AndroidFlutterLocalNotificationsPlugin>();
     // 通知权限统一由 NotificationCoordinator 在登录后上下文式申请
     // （PRD §33），此处不再抢占式弹权限框。
-    await android?.createNotificationChannel(const AndroidNotificationChannel(
-      _callsChannelId,
-      _callsChannelName,
-      description: '加密语音/视频来电提醒，覆盖在其他应用与锁屏之上',
-      importance: Importance.max,
-    ));
     // BUG2 后台/锁屏来电铃声：渠道挂 res/raw/chatflow_ringtone.ogg，由
     // 系统通知发声——应用内 audioplayers 在后台/无焦点时不可靠。
     await android?.createNotificationChannel(const AndroidNotificationChannel(
@@ -106,6 +104,7 @@ final class CallNotifications implements CallNotificationGateway {
       _ongoingChannelName,
       description: '通话进行中的常驻通知，保证切后台后通话继续',
       importance: Importance.low,
+      playSound: false,
     ));
     _initialized = true;
   }
@@ -143,24 +142,26 @@ final class CallNotifications implements CallNotificationGateway {
   /// [ring]：App 退后台时置 true——经 calls_ring 渠道由系统播放来电
   /// 铃声（应用内循环同步静音，见 SoundServiceCallAlertDriver.audible）。
   @override
-  @override
   Future<void> showIncoming({
     required String callerName,
     required bool video,
     bool ring = false,
+    bool fullScreenIntent = true,
   }) async {
+    final generation = ++_incomingGeneration;
     await _ensureInit();
+    if (generation != _incomingGeneration) return;
     await plugin.show(
       incomingCallId,
-      video ? '畅聊视频来电' : '畅聊语音来电',
+      video ? '畅聊视频来电' : '语音通话',
       callerName,
       NotificationDetails(
         android: _details(
           channelId: ring ? _ringChannelId : _callsChannelId,
-          title: video ? '畅聊视频来电' : '畅聊语音来电',
+          title: video ? '畅聊视频来电' : '语音通话',
           body: callerName,
           ongoing: true,
-          fullScreenIntent: true,
+          fullScreenIntent: fullScreenIntent,
           ring: ring,
         ),
       ),
@@ -170,17 +171,21 @@ final class CallNotifications implements CallNotificationGateway {
 
   @override
   Future<void> hideIncoming() async {
+    final generation = ++_incomingGeneration;
     await _ensureInit();
+    if (generation != _incomingGeneration) return;
     await plugin.cancel(incomingCallId);
   }
 
   /// 通话中前台服务：切后台/Home 键后通话继续，麦克风摄像头不被回收。
   @override
-  Future<void> showOngoing({required String title}) async {
+  Future<void> showOngoing({required String title, bool video = false}) async {
+    final generation = ++_ongoingGeneration;
     await _ensureInit();
+    if (generation != _ongoingGeneration) return;
     await arbiter.acquire(
       ForegroundServiceOwner.ongoingCall,
-      ongoingCallRequest(title: title),
+      ongoingCallRequest(title: title, video: video),
     );
   }
 
@@ -188,6 +193,7 @@ final class CallNotifications implements CallNotificationGateway {
   /// 不再出现"挂断电话把消息同步一起停掉"的回归。
   @override
   Future<void> hideOngoing() async {
+    ++_ongoingGeneration;
     await arbiter.release(ForegroundServiceOwner.ongoingCall);
   }
 }

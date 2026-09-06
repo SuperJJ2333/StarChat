@@ -37,6 +37,20 @@ def test_video_call_surface_uses_flexible_height_on_compact_devices():
     source = (
         ROOT / "apps/mobile_flutter/lib/features/matrix/call_page.dart"
     ).read_text(encoding="utf-8")
-    video_branch = source[source.index("if (state.type == CallMediaType.video") :]
-    assert "Expanded(" in video_branch[:500]
-    assert "maxHeight: 360" in video_branch[:900]
+    # Video is now a full-screen Stack, not an Expanded 360px preview card.
+    # Scope to the video body instead of matching a later camera-control branch.
+    video_body = source.split("Widget _videoBody(", 1)[1].split("\n  Widget ", 1)[0]
+    assert "return Stack(" in video_body
+    assert "fit: StackFit.expand" in video_body
+    background = video_body.split("RTCVideoView(", 1)[0]
+    assert "SizedBox(" not in background and "ConstrainedBox(" not in background
+    assert "connected ? _remoteRenderer : _localRenderer" in video_body
+    assert "RTCVideoViewObjectFitCover" in video_body
+    assert "SafeArea(" in video_body and "const Spacer()" in video_body
+    assert "_videoControls(state, connected)" in video_body
+    # Only the local picture-in-picture is fixed size and screen-corner anchored.
+    picture_in_picture = video_body.split("if (connected)", 1)[1].split("SafeArea(", 1)[0]
+    assert "Positioned(" in picture_in_picture and "right:" in picture_in_picture
+    assert "top: safeTop" in picture_in_picture
+    assert "SizedBox(" in picture_in_picture
+    assert "RTCVideoView(_localRenderer, mirror: true)" in picture_in_picture

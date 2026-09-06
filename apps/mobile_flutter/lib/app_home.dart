@@ -46,6 +46,7 @@ import 'features/matrix/call_alerts.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/matrix/call_diagnostics.dart';
 import 'features/matrix/call_permissions.dart';
+import 'features/settings/notification/background_call_permission_prompt.dart';
 import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
@@ -82,6 +83,7 @@ import 'features/update/app_update.dart';
 import 'features/update/update_integrity.dart';
 import 'features/update/app_update_dialog.dart';
 import 'ui/notification/in_app_banner_overlay.dart';
+import 'ui/notification/notification_readiness_banner.dart';
 
 final class AppHome extends StatefulWidget {
   const AppHome({
@@ -178,6 +180,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     ),
   );
   bool callPageVisible = false;
+  Object? _outgoingPresentationToken;
+  bool _outgoingCallActive = false;
 
   /// 全局通话 UI 管理器（规格 §一/§三）：唯一有权推/关来电页面的组件
   /// （根 Navigator 之上，任意页面/子路由都盖不住）。AppHome 只保留
@@ -188,6 +192,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     isAppResumed: () => appResumed,
     displayNameResolver: _sharedDisplayNameResolver,
     onPhaseChanged: _onCallPhaseChangedForBusiness,
+    onMinimized: () =>
+        unawaited(_nativePresentation('minimizeCallPresentation')),
+    onRestored: () => unawaited(_nativePresentation('showCallPage')),
   );
   bool appResumed = true;
 
@@ -241,7 +248,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   ProfileRepository? _chatIdentityCache;
   Future<ProfileRepository>? _chatIdentityCacheLoad;
-  UserDisplayNameResolver? _sharedDisplayNameResolver;
+  late final UserDisplayNameResolver _sharedDisplayNameResolver =
+      ContactBackedUserDisplayNameResolver(
+    contactFor: (id) {
+      for (final contact
+          in _chatIdentityCache?.contacts ?? <ContactSummary>[]) {
+        if (contact.matrixUserId == id) return contact;
+      }
+      return null;
+    },
+    warmContacts: () async {
+      await (_chatIdentityCacheLoad ??= _createIdentityCache());
+    },
+  );
 
   @override
   void initState() {
@@ -251,15 +270,26 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 呈现；只有 callAccepted/callRejected（用户明确动作）才驱动接听/拒接，
     // 全部经 NativeCallCoordinator（含冷启动 ready 握手与待接听仲裁）。
     _nativeCallControl = const MethodChannel('native_call');
-    _nativeCallControl?.setMethodCallHandler((call) =>
-        nativeCalls.handleNativeMessage(call.method, call.arguments));
+    _nativeCallControl?.setMethodCallHandler((call) async {
+      if (call.method == 'returnToCall') {
+        callUi.restoreCall();
+        return true;
+      }
+      return nativeCalls.handleNativeMessage(call.method, call.arguments);
+    });
     unawaited(nativeCalls.restorePendingState());
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
     _nativePushBridge = NativePushBridge(
       onPushMessage: () async {
-        // 推送唤醒兜底通知（通用文案，无业务内容）；详细通知由
-        // Matrix 同步路径的 NotificationCoordinator 产出。
+        // Resolve opaque encrypted wakes locally before choosing a message or
+        // call notification. Existing in-flight sync is reused by the SDK.
+        unawaited(syncWatchdog.target
+            .oneShotSync()
+            .timeout(const Duration(seconds: 10))
+            .catchError((Object error) {
+          debugPrint('[push] wake sync deferred: ${error.runtimeType}');
+        }));
         final coordinator = NotificationSystemHandle.coordinator;
         if (coordinator != null) {
           await coordinator.showPushWakeNotification();
@@ -268,9 +298,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       onFriendRequest: () async {
         // 好友申请：桌面角标 + 通讯录红点（登录会话内）。
         await NotificationSystemHandle.coordinator?.refreshLauncherBadge();
-        if (mounted) {
-          pendingFriendRequests.value = pendingFriendRequests.value + 1;
-        }
+        if (mounted) await _pollFriendRequests();
       },
     );
     unawaited(_nativePushBridge!.install());
@@ -331,6 +359,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(() async {
       await _primeBatteryOptimization();
       await _primeNotificationPermission();
+      await _primeBackgroundCallPermissions();
     }());
     unawaited(_startPushIntegration());
   }
@@ -376,8 +405,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.android &&
         AppConfig.getuiPushGatewayUrl.isNotEmpty &&
         await SharedPreferencesPrivacyConsentStore().accepted()) {
-      final getuiGateway =
-          Uri.tryParse(AppConfig.getuiPushGatewayUrl);
+      final getuiGateway = Uri.tryParse(AppConfig.getuiPushGatewayUrl);
       if (getuiGateway != null) {
         final getui = GetuiPushTokenProvider();
         await getui.initialize();
@@ -386,7 +414,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           gateway: ClientMatrixPusherGateway(client),
           tokenProvider: getui,
           appId: MatrixPusherService.appIdGetui,
-          gatewayUrl: getuiGateway.resolve('_matrix/push/v1/getui/notify'),
+          gatewayUrl: MatrixPusherService.getuiGatewayUrl(getuiGateway),
           deviceDisplayName: 'ChatFlow Android',
         ));
       }
@@ -436,20 +464,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final eventSource = MatrixNotificationEventSource(
       client: widget.matrix.sdkClient,
       // 规格#2：通知标题/头像统一经名称解析器（备注优先）。
-      displayNameResolver: _sharedDisplayNameResolver ??=
-          ContactBackedUserDisplayNameResolver(
-        contactFor: (matrixUserId) {
-          final cache = _chatIdentityCache;
-          if (cache == null) return null;
-          for (final contact in cache.contacts) {
-            if (contact.matrixUserId == matrixUserId) return contact;
-          }
-          return null;
-        },
-        warmContacts: () async {
-          await (_chatIdentityCacheLoad ??= _createIdentityCache());
-        },
-      ),
+      displayNameResolver: _sharedDisplayNameResolver,
     );
     final coordinator = NotificationCoordinator(
       preferenceStore: const SharedPreferencesNotificationPreferenceStore(),
@@ -628,6 +643,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 或厂商 ROM 停止；回前台时幂等补启。
       unawaited(syncKeepAlive.ensureStarted());
     } else if (state == AppLifecycleState.paused) {
+      callUi.handleAppPaused();
       // 退后台瞬间重申保活（部分系统在切后台时回收前台服务/唤醒锁）。
       unawaited(syncKeepAlive.ensureStarted());
     }
@@ -647,6 +663,22 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_checkForAppUpdate());
   }
 
+  Timer? _backgroundCallPermissionTimer;
+
+  Future<void> _primeBackgroundCallPermissions() async {
+    _backgroundCallPermissionTimer?.cancel();
+    if (!mounted) return;
+    final completed = await maybePromptBackgroundCallPermissions(
+      context,
+      canPresent: () => mounted && appResumed && !callUi.hasActiveCall,
+    );
+    if (!completed && mounted) {
+      _backgroundCallPermissionTimer = Timer(const Duration(seconds: 15), () {
+        unawaited(_primeBackgroundCallPermissions());
+      });
+    }
+  }
+
   Timer? _friendRequestPollTimer;
   FriendRequestWatch? _friendRequestWatch;
   final ValueNotifier<int> pendingFriendRequests = ValueNotifier<int>(0);
@@ -655,10 +687,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     try {
       final prefs = await SharedPreferences.getInstance();
       final notifier = FriendRequestNotifier();
-      _friendRequestWatch =
-          FriendRequestWatch(widget.api, prefs, notifier: notifier);
+      _friendRequestWatch = FriendRequestWatch(widget.api, prefs,
+          notifier: notifier,
+          accountKey: widget.matrix.sdkClient.userID ?? '',
+          onOutgoingAccepted: _sendAcceptedRequestGreeting,
+          onPendingCount: (count) {
+        if (mounted) pendingFriendRequests.value = count;
+      });
       _friendRequestPollTimer = Timer.periodic(
-        const Duration(seconds: 60),
+        const Duration(seconds: 5),
         (_) => unawaited(_pollFriendRequests()),
       );
       await _pollFriendRequests();
@@ -718,6 +755,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final reference = await directChats.open(matrixUserId);
     final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
     if (room == null) return;
+    unawaited(_openConversationFromNotification(reference.roomId));
     await room.sendEvent(
       {
         'body': friendAcceptedSystemMessage(friendDisplayName),
@@ -725,7 +763,30 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         'friend_display_name': friendDisplayName,
       },
       type: changliaoFriendAcceptedEventType,
+      txid:
+          'friend-accepted-${reference.roomId}-${widget.matrix.sdkClient.userID}',
     );
+  }
+
+  Future<void> _sendAcceptedRequestGreeting(Map request) async {
+    final peer = request['matrix_user_id']?.toString() ?? '';
+    final greeting = request['message']?.toString() ?? '';
+    if (peer.isEmpty) throw StateError('好友 Matrix 身份尚未就绪');
+    if (greeting.isEmpty) return;
+    final cache = await _identityCache();
+    final businessId = request['user_id']?.toString() ?? '';
+    if (businessId.isEmpty) throw StateError('好友业务身份尚未就绪');
+    await cache.applyUpdatedContact(
+        ContactSummary.fromJson(Map<String, dynamic>.from(request)));
+    final reference = await directChats.open(peer);
+    final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
+    if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
+    final eventId = await room.sendEvent(
+      {'msgtype': 'm.text', 'body': greeting},
+      txid: 'friend-request-greeting-${request['id']}',
+    );
+    if (eventId == null) throw StateError('好友招呼尚未发送');
+    unawaited(_refreshAfterFriendChanges());
   }
 
   AppUpdateDeferStore? _deferStore;
@@ -863,9 +924,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 通话状态变化的业务钩子（UI 呈现全部在 CallUiManager）：
   /// 消息提醒抑制 + 主叫通话摘要。
   void _onCallPhaseChangedForBusiness(CallPhase previous, CallPhase next) {
-    notificationAppState.setCallActive(
-      next == CallPhase.ringing || next == CallPhase.connected,
-    );
+    final active = next == CallPhase.ringing ||
+        next == CallPhase.requestingPermission ||
+        next == CallPhase.connecting ||
+        next == CallPhase.connected;
+    notificationAppState.setCallActive(active);
+    if (active) {
+      unawaited(
+          NotificationSystemHandle.coordinator?.cancelPushWakeNotification());
+    }
   }
 
   NativePushBridge? _nativePushBridge;
@@ -887,6 +954,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_nativeCallChannel?.invokeMethod('dismiss'));
   }
 
+  Future<void> _nativePresentation(String method) async {
+    try {
+      await _nativeCallControl?.invokeMethod(method);
+    } catch (_) {
+      // In-app return entry is available even if native overlay is unsupported.
+    }
+  }
+
   /// 规格§三：来电委托管理器呈现；摘要落消息；登出经 dispose 清理。
   void _handleCallState() {
     if (!mounted) return;
@@ -901,7 +976,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         phase == CallPhase.permissionDenied) {
       // 主叫在结束时落一条通话摘要消息（接通=时长，未接通=已取消），
       // 被叫端经同步收到同一消息，双端会话各显示一条。
-      if (callPageVisible && !callSummarySent) {
+      if (_outgoingCallActive && !callSummarySent) {
         callSummarySent = true;
         final connectedAt = calls.state.connectedAt;
         final roomId = calls.state.roomId;
@@ -917,28 +992,54 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           ));
         }
       }
+      _outgoingCallActive = false;
     }
   }
 
   Future<void> _openCall(ContactDetails contact, CallMediaType type) async {
+    if (callUi.hasActiveCall) {
+      callUi.restoreCall();
+      return;
+    }
+    final presentationToken = Object();
+    void releasePresentation() {
+      if (identical(_outgoingPresentationToken, presentationToken)) {
+        _outgoingPresentationToken = null;
+        callPageVisible = false;
+      }
+    }
+
     try {
       final reference = await directChats.open(contact.matrixUserId);
       if (!mounted) return;
+      if (callUi.hasActiveCall) {
+        callUi.restoreCall();
+        return;
+      }
+      _outgoingPresentationToken = presentationToken;
       callPageVisible = true;
+      _outgoingCallActive = true;
       callSummarySent = false;
+      callUi.registerOutgoingCall();
       final navigation = Navigator.push(
         context,
         CupertinoPageRoute(
-          builder: (_) => CallPage(
+          builder: (pageContext) => CallPage(
             controller: calls,
             displayName: contact.displayName,
             fallbackSeed: contact.username,
             avatarUrl: contact.avatarUrl,
             mediaBackend: callBackend,
             autoCloseOnEnd: true,
+            onMinimize: () {
+              releasePresentation();
+              callUi.minimizeCall();
+              Navigator.of(pageContext).pop();
+            },
           ),
         ),
       );
+      unawaited(navigation.whenComplete(releasePresentation));
       await calls.start(
         roomId: reference.roomId,
         matrixUserId: contact.matrixUserId,
@@ -961,17 +1062,49 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         ),
       );
     } finally {
-      if (calls.state.phase == CallPhase.requestingPermission ||
-          calls.state.phase == CallPhase.ringing ||
-          calls.state.phase == CallPhase.connected) {
-        try {
-          await calls.hangup();
-        } catch (_) {
-          // The route is already closing; the backend also observes Matrix end
-          // events, so cleanup remains best-effort here.
-        }
-      }
-      callPageVisible = false;
+      // Closing presentation never terminates the media session.
+      releasePresentation();
+    }
+  }
+
+  Future<void> _openMessage(ContactDetails contact) async {
+    try {
+      final reference = await directChats.open(contact.matrixUserId);
+      final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
+      if (room == null) throw StateError('Matrix room is unavailable');
+      final cache = await _identityCache();
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        CupertinoPageRoute(
+          builder: (_) => RoomPage(
+            api: widget.api,
+            room: room,
+            roomName: contact.displayName,
+            initialContact: contact,
+            onCreateGroup: _createGroupChat,
+            onMessage: _openMessage,
+            onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+            onVideo: (contact) => _openCall(contact, CallMediaType.video),
+            reminderService: reminderService,
+            initialIdentityCache: cache,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('无法打开加密会话'),
+          content: const Text('请检查网络后重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
     }
   }
 
@@ -1002,6 +1135,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           room: room,
           roomName: room.getLocalizedDisplayname(),
           onCreateGroup: _createGroupChat,
+          onMessage: _openMessage,
           onVoice: (contact) => _openCall(contact, CallMediaType.audio),
           onVideo: (contact) => _openCall(contact, CallMediaType.video),
           reminderService: reminderService,
@@ -1056,6 +1190,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           room: room,
           roomName: room.getLocalizedDisplayname(),
           onCreateGroup: _createGroupChat,
+          onMessage: _openMessage,
           onVoice: (contact) => _openCall(contact, CallMediaType.audio),
           onVideo: (contact) => _openCall(contact, CallMediaType.video),
           reminderService: reminderService,
@@ -1069,6 +1204,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _friendRequestPollTimer?.cancel();
+    _backgroundCallPermissionTimer?.cancel();
     pendingFriendRequests.dispose();
     unawaited(_nativePushBridge?.uninstall());
     calls.removeListener(_handleCallState);
@@ -1120,6 +1256,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       openConversation: (roomId) =>
           unawaited(_openConversationFromNotification(roomId)),
       openFriendRequests: _openFriendRequests,
+      openCall: callUi.restoreCall,
     );
   }
 
@@ -1157,6 +1294,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             room: openedRoom,
             roomName: openedRoom.getLocalizedDisplayname(),
             onCreateGroup: _createGroupChat,
+            onMessage: _openMessage,
             onVoice: (contact) => _openCall(contact, CallMediaType.audio),
             onVideo: (contact) => _openCall(contact, CallMediaType.video),
             reminderService: reminderService,
@@ -1169,29 +1307,51 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  Widget _contactsBadge(Widget icon) => ValueListenableBuilder<int>(
+        valueListenable: pendingFriendRequests,
+        builder: (_, count, child) => Stack(clipBehavior: Clip.none, children: [
+          icon,
+          if (count > 0)
+            Positioned(
+                right: -10,
+                top: -4,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                      color: CupertinoColors.systemRed,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Text(count > 99 ? '99+' : '$count',
+                      style: const TextStyle(
+                          color: CupertinoColors.white, fontSize: 10)),
+                )),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) => Stack(
         children: [
           CupertinoTabScaffold(
             tabBar: CupertinoTabBar(
               activeColor: const Color(0xff07c160),
-              items: const [
-                BottomNavigationBarItem(
+              items: [
+                const BottomNavigationBarItem(
                   icon: Icon(ChangliaoIcons.messages),
                   activeIcon: Icon(ChangliaoIcons.messagesFilled),
                   label: '消息',
                 ),
                 BottomNavigationBarItem(
-                  icon: Icon(ChangliaoIcons.contacts),
-                  activeIcon: Icon(ChangliaoIcons.contactsFilled),
+                  icon: _contactsBadge(const Icon(ChangliaoIcons.contacts)),
+                  activeIcon:
+                      _contactsBadge(const Icon(ChangliaoIcons.contactsFilled)),
                   label: '通讯录',
                 ),
-                BottomNavigationBarItem(
+                const BottomNavigationBarItem(
                   icon: Icon(ChangliaoIcons.discover),
                   activeIcon: Icon(ChangliaoIcons.discoverFilled),
                   label: '发现',
                 ),
-                BottomNavigationBarItem(
+                const BottomNavigationBarItem(
                   icon: Icon(ChangliaoIcons.me),
                   activeIcon: Icon(ChangliaoIcons.meFilled),
                   label: '我',
@@ -1207,6 +1367,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                         matrix: widget.matrix,
                         themeController: widget.themeController,
                         onCreateGroup: _createGroupChat,
+                        onMessage: _openMessage,
                         onVoice: (contact) =>
                             _openCall(contact, CallMediaType.audio),
                         onVideo: (contact) =>
@@ -1220,6 +1381,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                         api: widget.api,
                         matrix: widget.matrix,
                         pendingFriendRequests: pendingFriendRequests,
+                        onFriendRequests: _openFriendRequests,
                         directChats: directChats,
                         onVoice: (contact) =>
                             _openCall(contact, CallMediaType.audio),
@@ -1251,6 +1413,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             onOpenConversation: (conversationId) =>
                 unawaited(_openConversationFromNotification(conversationId)),
           ),
+          const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 64,
+              child: NotificationReadinessBanner()),
         ],
       );
 }
@@ -1285,6 +1452,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVideo,
     required this.onGroupChat,
     this.onGroupAddressList,
+    this.onFriendRequests,
     required this.pendingFriendRequests,
     this.reminderService,
     this.identityCache,
@@ -1298,6 +1466,7 @@ final class ContactsTabPage extends StatefulWidget {
 
   /// BUG4：通讯录"群聊"入口 → 群聊通讯录列表。
   final VoidCallback? onGroupAddressList;
+  final VoidCallback? onFriendRequests;
   final ValueNotifier<int> pendingFriendRequests;
   final MessageReminderService? reminderService;
   final ProfileRepository? identityCache;
@@ -1326,6 +1495,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
             roomName: contact.displayName,
             initialContact: contact,
             onCreateGroup: widget.onGroupChat,
+            onMessage: _openMessage,
             onVoice: widget.onVoice,
             onVideo: widget.onVideo,
             reminderService: widget.reminderService,
@@ -1356,11 +1526,14 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
         api: widget.api,
         matrix: widget.matrix,
         pendingFriendRequests: widget.pendingFriendRequests,
+        directChats: widget.directChats,
+        onFriendRequests: widget.onFriendRequests,
         identityCache: widget.identityCache,
         onMessage: _openMessage,
         onVoice: widget.onVoice,
         onVideo: widget.onVideo,
         onGroupChat: widget.onGroupChat,
+        onGroupAddressList: widget.onGroupAddressList,
       );
 }
 

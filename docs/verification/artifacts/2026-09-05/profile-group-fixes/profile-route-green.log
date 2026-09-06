@@ -1,0 +1,5 @@
+Flutter assets will be downloaded from https://storage.flutter-io.cn. Make sure you trust this source!
+00:00 +0: loading D:/pythonProject/outsource/StarChat/apps/mobile_flutter/test/features/matrix/profile_message_route_wiring_test.dart
+00:00 +0: every production room entry wires the profile message action
+00:00 +1: message tab passes its existing canonical opener into room navigation
+00:00 +2: All tests passed!

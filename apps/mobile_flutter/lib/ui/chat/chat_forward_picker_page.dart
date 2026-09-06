@@ -19,10 +19,10 @@ final class ChatForwardCandidate {
   final int memberCount;
 }
 
-/// “选择聊天”转发页（微信式独立页面，严禁底部弹层）：
+/// 独立选择聊天页；选择后由底部确认卡片执行发送。
 /// - 导航栏右上角“多选”；
 /// - 第一行搜索栏（按会话名过滤）；
-/// - 第二行“最近转发”（最近转发过的会话头像横排，点击即转发）；
+/// - 第二行“最近转发”（最近转发过的会话头像横排）；
 /// - 第三行起“最近聊天”列表（按最后活动时间排序，群聊显示人数）；
 /// - 多选模式下勾选多个会话，底部“发送(N)”批量转发。
 final class ChatForwardPickerPage extends StatefulWidget {
@@ -31,11 +31,13 @@ final class ChatForwardPickerPage extends StatefulWidget {
     required this.candidates,
     required this.recentRoomIds,
     required this.onForward,
+    this.contentPreview = '转发消息',
   });
 
   final List<ChatForwardCandidate> candidates;
   final List<String> recentRoomIds;
   final Future<void> Function(List<String> roomIds) onForward;
+  final String contentPreview;
 
   @override
   State<ChatForwardPickerPage> createState() => _ChatForwardPickerPageState();
@@ -54,8 +56,7 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
   ];
 
   late final List<ChatForwardCandidate> sortedCandidates = [
-    ...widget.candidates
-      ..sort((a, b) => b.title.compareTo(a.title) * -1), // 保持调用方顺序
+    ...widget.candidates, // 保持调用方最近活动顺序，不修改输入集合。
   ];
 
   List<ChatForwardCandidate> get visibleCandidates {
@@ -70,16 +71,41 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
   Future<void> _forward(List<String> roomIds) async {
     if (sending || roomIds.isEmpty) return;
     setState(() => sending = true);
-    await widget.onForward(roomIds);
-    if (mounted) Navigator.pop(context);
+    final sent = await showCupertinoModalPopup<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _ForwardConfirmation(
+        recipients: [
+          for (final id in roomIds)
+            widget.candidates.firstWhere((candidate) => candidate.roomId == id),
+        ],
+        contentPreview: widget.contentPreview,
+        onForward: () => widget.onForward(List.unmodifiable(roomIds)),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => sending = false);
+    if (sent == true) Navigator.pop(context, true);
+  }
+
+  void _choose(String roomId) {
+    if (sending) return;
+    if (!multiSelect) {
+      _forward([roomId]);
+      return;
+    }
+    setState(() {
+      if (!selected.add(roomId)) selected.remove(roomId);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     return CupertinoPageScaffold(
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       navigationBar: CupertinoNavigationBar(
         backgroundColor:
             dark ? WeChatColors.darkSurface : WeChatColors.lightSurface,
@@ -104,7 +130,8 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
               style: const TextStyle(fontSize: 16)),
         ),
       ),
-      child: Column(children: [
+      child: SafeArea(
+          child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
           child: CupertinoSearchTextField(
@@ -134,11 +161,11 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                       children: [
                         for (final candidate in recentCandidates)
                           _RecentAvatar(
-                            key: Key(
-                                'forward-recent-${candidate.roomId}'),
+                            key: Key('forward-recent-${candidate.roomId}'),
                             candidate: candidate,
                             enabled: !sending,
-                            onTap: () => _forward([candidate.roomId]),
+                            selected: selected.contains(candidate.roomId),
+                            onTap: () => _choose(candidate.roomId),
                           ),
                       ],
                     ),
@@ -162,17 +189,7 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                     multiSelect: multiSelect,
                     selected: selected.contains(candidate.roomId),
                     enabled: !sending,
-                    onTap: () {
-                      if (multiSelect) {
-                        setState(() {
-                          if (!selected.add(candidate.roomId)) {
-                            selected.remove(candidate.roomId);
-                          }
-                        });
-                      } else {
-                        _forward([candidate.roomId]);
-                      }
-                    },
+                    onTap: () => _choose(candidate.roomId),
                   ),
               ],
             ),
@@ -184,9 +201,8 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
             child: Container(
               key: const Key('forward-picker-sendbar'),
               height: 54,
-              color: dark
-                  ? WeChatColors.darkSurface
-                  : WeChatColors.lightSurface,
+              color:
+                  dark ? WeChatColors.darkSurface : WeChatColors.lightSurface,
               child: Row(children: [
                 const Spacer(),
                 CupertinoButton(
@@ -197,8 +213,9 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                   borderRadius: BorderRadius.circular(6),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-                  onPressed:
-                      selected.isEmpty || sending ? null : () => _forward([
+                  onPressed: selected.isEmpty || sending
+                      ? null
+                      : () => _forward([
                             for (final id in selected) id,
                           ]),
                   child: Text('发送(${selected.length})',
@@ -212,7 +229,7 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
               ]),
             ),
           ),
-      ]),
+      ])),
     );
   }
 }
@@ -223,29 +240,42 @@ final class _RecentAvatar extends StatelessWidget {
     required this.candidate,
     required this.onTap,
     required this.enabled,
+    required this.selected,
   });
 
   final ChatForwardCandidate candidate;
   final VoidCallback onTap;
   final bool enabled;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(right: 16),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? onTap : null,
+        child: CupertinoButton(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          onPressed: enabled ? onTap : null,
           child: SizedBox(
             width: 60,
             child: Column(children: [
-              SizedBox(width: 52, height: 52, child: candidate.avatar),
+              Stack(children: [
+                SizedBox(width: 52, height: 52, child: candidate.avatar),
+                if (selected)
+                  const Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Icon(CupertinoIcons.check_mark_circled_solid,
+                          color: WeChatColors.brandPrimary, size: 20)),
+              ]),
               const SizedBox(height: 5),
               Text(
                 candidate.title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: CupertinoColors.label.resolveFrom(context)),
               ),
             ]),
           ),
@@ -270,16 +300,16 @@ final class _ChatRow extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? onTap : null,
+  Widget build(BuildContext context) => CupertinoButton(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        onPressed: enabled ? onTap : null,
         child: ColoredBox(
           color: selected && multiSelect
               ? WeChatColors.divider.withValues(alpha: .4)
               : CupertinoColors.transparent,
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(children: [
               SizedBox(width: 42, height: 42, child: candidate.avatar),
               const SizedBox(width: 12),
@@ -290,7 +320,9 @@ final class _ChatRow extends StatelessWidget {
                       : candidate.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 16),
+                  style: TextStyle(
+                      fontSize: 16,
+                      color: CupertinoColors.label.resolveFrom(context)),
                 ),
               ),
               if (multiSelect)
@@ -305,6 +337,136 @@ final class _ChatRow extends StatelessWidget {
                 ),
             ]),
           ),
+        ),
+      );
+}
+
+final class _ForwardConfirmation extends StatefulWidget {
+  const _ForwardConfirmation({
+    required this.recipients,
+    required this.contentPreview,
+    required this.onForward,
+  });
+
+  final List<ChatForwardCandidate> recipients;
+  final String contentPreview;
+  final Future<void> Function() onForward;
+
+  @override
+  State<_ForwardConfirmation> createState() => _ForwardConfirmationState();
+}
+
+final class _ForwardConfirmationState extends State<_ForwardConfirmation> {
+  bool sending = false;
+  bool failed = false;
+
+  Future<void> _send() async {
+    if (sending) return;
+    setState(() {
+      sending = true;
+      failed = false;
+    });
+    try {
+      await widget.onForward();
+      if (mounted) Navigator.pop(context, true);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          sending = false;
+          failed = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: !sending,
+        child: Container(
+          key: const Key('forward-confirmation-sheet'),
+          width: double.infinity,
+          constraints:
+              BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .8),
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemBackground.resolveFrom(context),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('发送给：',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 20),
+                      Flexible(
+                          child: SingleChildScrollView(
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                            for (final recipient in widget.recipients)
+                              Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: Row(children: [
+                                    SizedBox.square(
+                                        dimension: 44, child: recipient.avatar),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                        child: Text(recipient.title,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style:
+                                                const TextStyle(fontSize: 17))),
+                                  ])),
+                            Container(
+                              key: const Key('forward-content-preview'),
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                  color: CupertinoColors
+                                      .secondarySystemBackground
+                                      .resolveFrom(context),
+                                  borderRadius: BorderRadius.circular(8)),
+                              child: Text(widget.contentPreview,
+                                  maxLines: 5,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 15)),
+                            ),
+                          ]))),
+                      if (failed)
+                        const Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: Text('转发失败，请重试',
+                                style: TextStyle(
+                                    color: CupertinoColors.systemRed,
+                                    fontSize: 14))),
+                      const SizedBox(height: 24),
+                      Row(children: [
+                        Expanded(
+                            child: CupertinoButton(
+                                onPressed: sending
+                                    ? null
+                                    : () => Navigator.pop(context, false),
+                                child: const Text('取消'))),
+                        const SizedBox(width: 16),
+                        Expanded(
+                            child: CupertinoButton(
+                          key: const Key('forward-confirm-send'),
+                          color: WeChatColors.brandPrimary,
+                          onPressed: sending ? null : _send,
+                          child: sending
+                              ? const CupertinoActivityIndicator()
+                              : const Text('确认',
+                                  style:
+                                      TextStyle(color: CupertinoColors.white)),
+                        )),
+                      ]),
+                    ]),
+              )),
         ),
       );
 }

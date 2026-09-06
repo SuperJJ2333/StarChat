@@ -66,6 +66,10 @@ class CallActivity : android.app.Activity() {
 
     private fun render() {
         val state = CallManager.state
+        if (state == CallManager.State.idle || state == CallManager.State.ended) {
+            finish()
+            return
+        }
         val ringing = state == CallManager.State.ringing
         val answering = state == CallManager.State.answering
         val name = CallManager.callerName ?: "畅聊来电"
@@ -98,21 +102,13 @@ class CallActivity : android.app.Activity() {
         } else {
             button("回到通话") {
                 // 回到应用内通话页（仅展示，不触发接听/重复接听）。
-                CallManager.launchMainActivity(applicationContext)
+                CallManager.returnToCall(applicationContext)
                 finish()
             }
         }
         val reject = button(if (ringing || answering) "拒绝" else "挂断") {
-            if (ringing) {
-                CallManager.onRejectRequested()
-            } else {
-                CallManager.onEnded()
-                // 通话中挂断：通知 Flutter 结束实际通话。
-                NativeCallBridge.notifyUserAction(
-                    applicationContext, NativeCallBridge.eventEnded,
-                    CallManager.callId,
-                )
-            }
+            // 显式拒接/挂断共用可恢复用户动作；呈现清理不代表媒体挂断。
+            CallManager.onRejectRequested()
             finish()
         }
         val row = LinearLayout(this).apply {

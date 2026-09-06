@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 个推通道 Dart 侧边界：
 /// - 同意门槛存储（未同意=false；accept 后=true）；
 /// - appId 常量（服务端 bridge 的设备过滤键必须一致）；
-/// - 通道 URL 派生约定（<_matrix/push/v1/getui/notify）。
+/// - 标准网关路径与 provider=getui 通道选择。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -31,8 +31,8 @@ void main() {
 
   test('个推网关 notify 路径派生约定', () {
     final base = Uri.parse('https://liuhetong888.com');
-    final notify = base.resolve('_matrix/push/v1/getui/notify');
+    final notify = MatrixPusherService.getuiGatewayUrl(base);
     expect(notify.toString(),
-        'https://liuhetong888.com/_matrix/push/v1/getui/notify');
+        'https://liuhetong888.com/_matrix/push/v1/notify?provider=getui');
   });
 }

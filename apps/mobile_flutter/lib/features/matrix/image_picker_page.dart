@@ -44,7 +44,7 @@ final class GallerySelection extends ChangeNotifier {
       return true;
     }
     if (_orderedIds.length >= maxCount) {
-      overflowHint = overflowMessage;
+      overflowHint = '最多选择$maxCount张图片';
       notifyListeners();
       return false;
     }
@@ -68,7 +68,7 @@ final class _GalleryPreviewPage extends StatefulWidget {
 
   final GalleryPhoto photo;
   final bool selected;
-  final VoidCallback onToggle;
+  final bool Function() onToggle;
 
   @override
   State<_GalleryPreviewPage> createState() => _GalleryPreviewPageState();
@@ -125,8 +125,7 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
               borderRadius: BorderRadius.circular(18),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               onPressed: () {
-                widget.onToggle();
-                setState(() => selected = !selected);
+                if (widget.onToggle()) setState(() => selected = !selected);
               },
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (selected) ...[
@@ -163,16 +162,22 @@ typedef GalleryPagerFactory = DeviceGalleryPager Function(GalleryAlbum? album);
 final class ImagePickerPage extends StatefulWidget {
   const ImagePickerPage({
     super.key,
-    this.pagerBuilder = DeviceGalleryPager.new,
+    this.pagerBuilder,
+    this.photosOnly = false,
+    this.confirmLabel = '发送',
+    this.showOriginalToggle = true,
     this.maxCount = 9,
-    this.albumsLoader = DeviceGallerySource.loadAlbums,
-    this.pagerFactory = DeviceGallerySource.pagerFor,
+    this.albumsLoader,
+    this.pagerFactory,
   });
 
-  final DeviceGalleryPager Function() pagerBuilder;
+  final DeviceGalleryPager Function()? pagerBuilder;
+  final bool photosOnly;
+  final String confirmLabel;
+  final bool showOriginalToggle;
   final int maxCount;
-  final GalleryAlbumsLoader albumsLoader;
-  final GalleryPagerFactory pagerFactory;
+  final GalleryAlbumsLoader? albumsLoader;
+  final GalleryPagerFactory? pagerFactory;
 
   @override
   State<ImagePickerPage> createState() => _ImagePickerPageState();
@@ -180,8 +185,12 @@ final class ImagePickerPage extends StatefulWidget {
 
 final class _ImagePickerPageState extends State<ImagePickerPage>
     with WidgetsBindingObserver {
-  final selection = GallerySelection(maxCount: 9);
-  late DeviceGalleryPager pager = widget.pagerBuilder();
+  late final selection = GallerySelection(maxCount: widget.maxCount);
+  late DeviceGalleryPager pager =
+      widget.pagerBuilder?.call() ?? _pagerFor(null);
+  DeviceGalleryPager _pagerFor(GalleryAlbum? album) =>
+      widget.pagerFactory?.call(album) ??
+      DeviceGallerySource.pagerFor(album, photosOnly: widget.photosOnly);
   final scrollController = ScrollController();
   List<GalleryPhoto> photos = const [];
   bool loading = true;
@@ -200,7 +209,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
 
   /// 系统媒体库变化回调（挂载期间注册；变化即失效会话缓存并重载）。
   void _onGalleryChanged(MethodCall call) {
-    GalleryAccessCache.shared.invalidate();
+    GalleryAccessCache.invalidateAll();
     if (mounted) unawaited(_reloadAfterExternalChange());
   }
 
@@ -225,13 +234,16 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   /// 媒体库变化/权限范围变化后的重载：清空勾选避免跨集合误发。
   Future<void> _reloadAfterExternalChange() async {
     selection.clear();
+    pager = _pagerFor(selectedAlbum);
+    unawaited(_loadAlbums());
     setState(() {}); // 仅刷勾选态；列表由 _load 重建
     await _load();
   }
 
   Future<void> _loadAlbums() async {
     try {
-      final loaded = await widget.albumsLoader();
+      final loaded = await (widget.albumsLoader?.call() ??
+          DeviceGallerySource.loadAlbums(photosOnly: widget.photosOnly));
       if (!mounted) return;
       setState(() => albums = loaded);
     } catch (_) {
@@ -245,7 +257,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     selection.clear();
     setState(() {
       selectedAlbum = album;
-      pager = widget.pagerFactory(album.isRecent ? null : album);
+      pager = _pagerFor(album.isRecent ? null : album);
     });
     await _load();
   }
@@ -279,7 +291,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
 
   Future<void> _reloadIfScopeChanged() async {
     try {
-      if (await DeviceGallerySource.permissionScopeChanged()) {
+      if (await DeviceGallerySource.permissionScopeChanged(
+          photosOnly: widget.photosOnly)) {
         await _reloadAfterExternalChange();
       }
     } catch (_) {
@@ -374,9 +387,10 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     await PhotoManager.openSetting();
   }
 
-  void _toggle(GalleryPhoto photo) {
-    selection.toggle(photo.id);
+  bool _toggle(GalleryPhoto photo) {
+    final changed = selection.toggle(photo.id);
     setState(() {});
+    return changed;
   }
 
   Future<void> _send() async {
@@ -445,7 +459,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           // 审计注记（gallery-call-review）：Android 14+ 部分授权时给
           // 用户明确的"管理可见照片/视频"入口——否则只见部分媒体且无
           // 从得知原因。
-          if (DeviceGallerySource.lastKnownPermissionScope == 'limited')
+          if (DeviceGallerySource.permissionScopeFor(
+                  photosOnly: widget.photosOnly) ==
+              'limited')
             _limitedAccessBanner(),
           Expanded(child: _grid(dark)),
           _bottomBar(barColor),
@@ -505,10 +521,10 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         const Icon(CupertinoIcons.exclamationmark_triangle_fill,
             size: 15, color: Color(0xFFD48806)),
         const SizedBox(width: 6),
-        const Expanded(
+        Expanded(
           child: Text(
-            '仅可访问你选中的部分照片/视频',
-            style: TextStyle(fontSize: 12, color: Color(0xFF8C6A00)),
+            widget.photosOnly ? '仅可访问你选中的部分照片' : '仅可访问你选中的部分照片/视频',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF8C6A00)),
           ),
         ),
         CupertinoButton(
@@ -526,7 +542,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   Future<void> _manageLimitedAccess() async {
     try {
       // 系统照片选择器重选（Android 14+ / iOS limited）。
-      await PhotoManager.presentLimited();
+      await PhotoManager.presentLimited(
+          type: widget.photosOnly ? RequestType.image : RequestType.common);
     } catch (_) {
       // 不支持/受限：退回系统应用设置页。
       await _openSystemSettings();
@@ -740,9 +757,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         builder: (_) => _GalleryPreviewPage(
           photo: photo,
           selected: selection.isSelected(photo.id),
-          onToggle: () {
-            setState(() => _toggle(photo));
-          },
+          onToggle: () => _toggle(photo),
         ),
       ),
     );
@@ -796,17 +811,19 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(children: [
         // 左下角"原图"开关：默认关闭，勾选后发送原图。
-        const Text('原图', style: TextStyle(fontSize: 15)),
-        const SizedBox(width: 6),
-        SizedBox(
-          height: 28,
-          child: CupertinoSwitch(
-            key: const Key('image-picker-original-switch'),
-            value: selection.original,
-            activeTrackColor: WeChatColors.brandPrimary,
-            onChanged: (value) => setState(() => selection.original = value),
+        if (widget.showOriginalToggle) ...[
+          const Text('原图', style: TextStyle(fontSize: 15)),
+          const SizedBox(width: 6),
+          SizedBox(
+            height: 28,
+            child: CupertinoSwitch(
+              key: const Key('image-picker-original-switch'),
+              value: selection.original,
+              activeTrackColor: WeChatColors.brandPrimary,
+              onChanged: (value) => setState(() => selection.original = value),
+            ),
           ),
-        ),
+        ],
         const Spacer(),
         if (selection.overflowHint != null)
           Text(
@@ -823,7 +840,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           minimumSize: const Size(0, 36),
           onPressed: selection.canSend ? _send : null,
           child: Text(
-            selection.canSend ? '发送(${selection.count})' : '发送',
+            selection.canSend
+                ? '${widget.confirmLabel}(${selection.count})'
+                : widget.confirmLabel,
             style: TextStyle(
               fontSize: 15,
               color: selection.canSend

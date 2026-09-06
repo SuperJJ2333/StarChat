@@ -313,6 +313,44 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
 
     # ── 群二维码令牌 ────────────────────────────────────────────────
 
+    def _qr_begin(session, actor_id, scope, key, payload):
+        # Serialize this actor's QR writes, including different keys. NO KEY
+        # UPDATE permits FK checks while preventing duplicate concurrent work.
+        session.scalar(select(User).where(User.id == actor_id).with_for_update(key_share=True))
+        digest = sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        row = session.scalar(select(IdempotencyRecord).where(
+            IdempotencyRecord.scope == scope,
+            IdempotencyRecord.idempotency_key == key,
+        ))
+        if row is not None:
+            if row.request_hash != digest:
+                raise AppError(code='IDEMPOTENCY_KEY_REUSED', message='幂等键已用于不同请求', status_code=409)
+            if not row.response_body:
+                raise AppError(code='GROUP_TOKEN_ALREADY_ISSUED', message='该请求已处理，请使用新的请求重新生成二维码', status_code=409)
+            return row, True
+        row = IdempotencyRecord(
+            id=str(uuid4()), scope=scope, idempotency_key=key, request_hash=digest,
+            status='IN_PROGRESS', created_at=datetime.now(timezone.utc),
+        )
+        session.add(row)
+        return row, False
+
+    def _qr_complete(row, response, *, secret=False):
+        row.status = 'COMPLETED'
+        row.response_status = 200
+        row.response_body = {} if secret else response
+        row.completed_at = datetime.now(timezone.utc)
+        return response
+
+    def _qr_invite(session, state_events, inviter_id, requester, room_id):
+        inviter = _operator(session, inviter_id)
+        _require_moderator(state_events, inviter.matrix_user_id, action='二维码签发者已无邀请权限，请管理员刷新二维码')
+        membership = parse_room_membership(state_events).get(requester.matrix_user_id, {}).get('membership')
+        if membership == 'ban':
+            raise AppError(code='GROUP_INVITEE_BANNED', message='该账号已被群聊封禁', status_code=403)
+        if membership not in ('invite', 'join'):
+            matrix_gateway.invite_room_as_user(inviter.matrix_user_id, requester.matrix_user_id, room_id)
+
     @router.post('/groups/{room_id}/join-tokens')
     def issue_join_token(
         room_id: str,
@@ -320,45 +358,46 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
         actor_user_id: str = Depends(actor),
     ):
         """签发群二维码令牌（群主/管理员）。"""
-        with factory() as session:
-            operator = _operator(session, actor_user_id)
         with factory.begin() as session:
-            _idempotent_replay(
-                session, f'group.token.issue:{actor_user_id}', idempotency_key,
+            operator = _operator(session, actor_user_id)
+            operation, _ = _qr_begin(
+                session, actor_user_id, f'group.token.issue:{actor_user_id}', idempotency_key,
                 {'room_id': room_id},
             )
-        state_events = matrix_gateway.get_room_state(room_id)
-        if not state_events:
-            raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
-        _require_moderator(
-            state_events, operator.matrix_user_id, action='只有群主或管理员才能生成群二维码',
-        )
+            state_events = matrix_gateway.get_room_state(room_id)
+            if not state_events:
+                raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
+            _require_moderator(
+                state_events, operator.matrix_user_id, action='只有群主或管理员才能生成群二维码',
+            )
 
-        token = token_urlsafe(32)
-        now = datetime.now(timezone.utc)
-        record = GroupJoinToken(
-            id=str(uuid4()), room_id=room_id, creator_user_id=actor_user_id,
-            token_hash=_hash_token(token), created_at=now,
-            expires_at=now + TOKEN_TTL, revoked_at=None,
-        )
-        with factory.begin() as session:
+            token = token_urlsafe(32)
+            now = datetime.now(timezone.utc)
+            record = GroupJoinToken(
+                id=str(uuid4()), room_id=room_id, creator_user_id=actor_user_id,
+                token_hash=_hash_token(token), created_at=now,
+                expires_at=now + TOKEN_TTL, revoked_at=None,
+            )
             session.add(record)
-        audit.record(
-            actor_id=actor_user_id, subject_type='group_join_token',
-            subject_id=record.id, action='group.token.issue', result='ok',
-            reason_code='GROUP_TOKEN_ISSUED', trace_id=idempotency_key,
-            after={'room_id': room_id, 'expires_at': record.expires_at.isoformat()},
-        )
-        return {
-            'token_payload': f'changliao://g/{token}',
-            'expires_at': record.expires_at.isoformat(),
-        }
+            audit.record_in_session(session,
+                actor_id=actor_user_id, subject_type='group_join_token',
+                subject_id=record.id, action='group.token.issue', result='ok',
+                reason_code='GROUP_TOKEN_ISSUED', trace_id=idempotency_key,
+                after={'room_id': room_id, 'expires_at': record.expires_at.isoformat()},
+            )
+            return _qr_complete(operation, {
+                'token_payload': f'changliao://g/{token}',
+                'expires_at': record.expires_at.isoformat(),
+            }, secret=True)
 
-    def _load_valid_token(token: str) -> GroupJoinToken:
+    def _load_valid_token(token: str, session=None) -> GroupJoinToken:
         """按哈希定位并校验令牌（无效/撤销/过期 → 明确错误码）。"""
-        with factory() as session:
+        if session is None:
+            with factory() as owned_session:
+                return _load_valid_token(token, owned_session)
+        else:
             record = session.scalar(
-                select(GroupJoinToken).where(GroupJoinToken.token_hash == _hash_token(token))
+                    select(GroupJoinToken).where(GroupJoinToken.token_hash == _hash_token(token)).with_for_update()
             )
             if record is None:
                 raise AppError(code='GROUP_TOKEN_INVALID', message='二维码无效', status_code=404)
@@ -367,9 +406,6 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
                 raise AppError(code='GROUP_TOKEN_REVOKED', message='二维码已被撤销', status_code=410)
             if _as_utc(record.expires_at) <= current:
                 raise AppError(code='GROUP_TOKEN_EXPIRED', message='二维码已过期', status_code=410)
-            # 重新挂载可变实例供后续会话使用。
-            session.refresh(record)
-            session.expunge(record)
             return record
 
     @router.get('/groups/join-info')
@@ -397,31 +433,31 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
         actor_user_id: str = Depends(actor),
     ):
         """扫码入群：校验令牌与群设置 → 直加或转审批。"""
-        with factory() as session:
-            requester = _operator(session, actor_user_id)
         with factory.begin() as session:
-            replayed = _idempotent_replay(
-                session, f'group.token.redeem:{actor_user_id}', idempotency_key,
+            requester = _operator(session, actor_user_id)
+            operation, replayed = _qr_begin(
+                session, actor_user_id, f'group.token.redeem:{actor_user_id}', idempotency_key,
                 {'token': _hash_token(body.token)},
             )
-        if replayed:
-            return {'status': 'already_requested', 'room_id': None}
+            if replayed:
+                return operation.response_body
 
-        record = _load_valid_token(body.token)
-        room_id = record.room_id
-        state_events = matrix_gateway.get_room_state(room_id)
-        if not state_events:
-            raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=410)
-        group_settings = parse_group_settings(state_events)
-        if not group_settings['qr_join_enabled']:
-            raise AppError(code='GROUP_TOKEN_DISABLED', message='该群已关闭二维码进群', status_code=410)
-        membership = parse_room_membership(state_events)
-        if membership.get(requester.matrix_user_id, {}).get('membership') == 'join':
-            return {'status': 'already_joined', 'room_id': room_id}
+            record = _load_valid_token(body.token, session)
+            room_id = record.room_id
+            state_events = matrix_gateway.get_room_state(room_id)
+            if not state_events:
+                raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=410)
+            group_settings = parse_group_settings(state_events)
+            if not group_settings['qr_join_enabled']:
+                raise AppError(code='GROUP_TOKEN_DISABLED', message='该群已关闭二维码进群', status_code=410)
+            membership = parse_room_membership(state_events)
+            if membership.get(requester.matrix_user_id, {}).get('membership') == 'join':
+                return _qr_complete(operation, {'status': 'already_joined', 'room_id': room_id})
+            if membership.get(requester.matrix_user_id, {}).get('membership') == 'ban':
+                raise AppError(code='GROUP_INVITEE_BANNED', message='该账号已被群聊封禁', status_code=403)
 
-        if group_settings['join_approval_required']:
-            now = datetime.now(timezone.utc)
-            with factory.begin() as session:
+            if group_settings['join_approval_required']:
+                now = datetime.now(timezone.utc)
                 existing = session.scalar(
                     select(GroupJoinRequest).where(
                         GroupJoinRequest.room_id == room_id,
@@ -435,23 +471,24 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
                         requester_user_id=actor_user_id, token_id=record.id,
                         status='PENDING', created_at=now,
                     ))
-            audit.record(
-                actor_id=actor_user_id, subject_type='group', subject_id=room_id,
-                action='group.join_request.submit', result='ok',
-                reason_code='GROUP_JOIN_REQUEST_PENDING', trace_id=idempotency_key,
-            )
-            return {'status': 'pending_approval', 'room_id': None}
+                audit.record_in_session(session,
+                    actor_id=actor_user_id, subject_type='group', subject_id=room_id,
+                    action='group.join_request.submit', result='ok',
+                    reason_code='GROUP_JOIN_REQUEST_PENDING', trace_id=idempotency_key,
+                )
+                return _qr_complete(operation, {'status': 'pending_approval', 'room_id': None})
 
-        matrix_gateway.join_room_as_user(
-            requester.matrix_user_id, room_id,
-            join_content=dict(QR_JOIN_SOURCE_CONTENT),
-        )
-        audit.record(
-            actor_id=actor_user_id, subject_type='group', subject_id=room_id,
-            action='group.join_qr', result='ok', reason_code='GROUP_QR_JOINED',
-            trace_id=idempotency_key,
-        )
-        return {'status': 'joined', 'room_id': room_id}
+            _qr_invite(session, state_events, record.creator_user_id, requester, room_id)
+            matrix_gateway.join_room_as_user(
+                requester.matrix_user_id, room_id,
+                join_content=dict(QR_JOIN_SOURCE_CONTENT),
+            )
+            audit.record_in_session(session,
+                actor_id=actor_user_id, subject_type='group', subject_id=room_id,
+                action='group.join_qr', result='ok', reason_code='GROUP_QR_JOINED',
+                trace_id=idempotency_key,
+            )
+            return _qr_complete(operation, {'status': 'joined', 'room_id': room_id})
 
     @router.post('/groups/join-tokens/{token}/revoke')
     def revoke_join_token(
@@ -460,36 +497,35 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
         actor_user_id: str = Depends(actor),
     ):
         """撤销令牌（轮换=再签发新令牌后撤销旧令牌）。"""
-        with factory() as session:
+        with factory.begin() as session:
             operator = _operator(session, actor_user_id)
-        with factory() as session:
+            operation, replayed = _qr_begin(
+                session, actor_user_id, f'group.token.revoke:{actor_user_id}', idempotency_key,
+                {'token': _hash_token(token)},
+            )
+            if replayed:
+                return operation.response_body
             record = session.scalar(
-                select(GroupJoinToken).where(GroupJoinToken.token_hash == _hash_token(token))
+                select(GroupJoinToken).where(GroupJoinToken.token_hash == _hash_token(token)).with_for_update()
             )
             if record is None:
                 raise AppError(code='GROUP_TOKEN_INVALID', message='二维码无效', status_code=404)
-            session.expunge(record)
-        state_events = matrix_gateway.get_room_state(record.room_id)
-        if not state_events:
-            raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
-        _require_moderator(
-            state_events, operator.matrix_user_id, action='只有群主或管理员才能管理群二维码',
-        )
-        with factory.begin() as session:
+            # Record stays in this transaction.
+            state_events = matrix_gateway.get_room_state(record.room_id)
+            if not state_events:
+                raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
+            _require_moderator(
+                state_events, operator.matrix_user_id, action='只有群主或管理员才能管理群二维码',
+            )
             fresh = session.get(GroupJoinToken, record.id)
             if fresh is not None and fresh.revoked_at is None:
                 fresh.revoked_at = datetime.now(timezone.utc)
-        with factory.begin() as session:
-            _idempotent_replay(
-                session, f'group.token.revoke:{actor_user_id}', idempotency_key,
-                {'token': _hash_token(token)},
+            audit.record_in_session(session,
+                actor_id=actor_user_id, subject_type='group_join_token',
+                subject_id=record.id, action='group.token.revoke', result='ok',
+                reason_code='GROUP_TOKEN_REVOKED', trace_id=idempotency_key,
             )
-        audit.record(
-            actor_id=actor_user_id, subject_type='group_join_token',
-            subject_id=record.id, action='group.token.revoke', result='ok',
-            reason_code='GROUP_TOKEN_REVOKED', trace_id=idempotency_key,
-        )
-        return {'revoked': True}
+            return _qr_complete(operation, {'revoked': True})
 
     # ── 入群审批 ────────────────────────────────────────────────────
 
@@ -548,50 +584,45 @@ def create_group_router(settings: Settings, factory, *, matrix_gateway) -> APIRo
     def _decide_join_request(
         request_id: str, actor_user_id: str, idempotency_key: str, *, approved: bool,
     ) -> dict:
-        with factory() as session:
-            operator = _operator(session, actor_user_id)
         with factory.begin() as session:
-            replayed = _idempotent_replay(
-                session, f'group.join_request.decide:{actor_user_id}', idempotency_key,
+            operator = _operator(session, actor_user_id)
+            operation, replayed = _qr_begin(
+                session, actor_user_id, f'group.join_request.decide:{actor_user_id}', idempotency_key,
                 {'request_id': request_id, 'approved': approved},
             )
-        if replayed:
-            return {'status': 'decided'}
-        with factory() as session:
-            record = session.get(GroupJoinRequest, request_id)
+            if replayed:
+                return operation.response_body
+            record = session.scalar(select(GroupJoinRequest).where(GroupJoinRequest.id == request_id).with_for_update())
             if record is None:
                 raise AppError(code='GROUP_JOIN_REQUEST_NOT_FOUND', message='入群申请不存在', status_code=404)
-            if record.status != 'PENDING':
-                return {'status': record.status.lower()}
             room_id = record.room_id
             requester_id = record.requester_user_id
-            session.expunge(record)
-        state_events = matrix_gateway.get_room_state(room_id)
-        if not state_events:
-            raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
-        _require_moderator(
-            state_events, operator.matrix_user_id, action='只有群主或管理员才能处理入群申请',
-        )
+            # Record stays in this transaction.
+            state_events = matrix_gateway.get_room_state(room_id)
+            if not state_events:
+                raise AppError(code='GROUP_ROOM_NOT_FOUND', message='群聊不存在', status_code=404)
+            _require_moderator(
+                state_events, operator.matrix_user_id, action='只有群主或管理员才能处理入群申请',
+            )
+            if record.status != 'PENDING':
+                return _qr_complete(operation, {'status': record.status.lower()})
 
-        if approved:
-            with factory() as session:
-                requester = session.get(User, requester_id)
-            if requester is None or not requester.matrix_user_id:
-                raise AppError(code='GROUP_INVITEE_UNAVAILABLE', message='申请者账号不可用', status_code=422)
-            matrix_gateway.join_room_as_user(requester.matrix_user_id, room_id)
-        now = datetime.now(timezone.utc)
-        with factory.begin() as session:
+            if approved:
+                requester = _operator(session, requester_id)
+                _qr_invite(session, state_events, actor_user_id, requester, room_id)
+                matrix_gateway.join_room_as_user(requester.matrix_user_id, room_id, join_content=dict(QR_JOIN_SOURCE_CONTENT))
+            now = datetime.now(timezone.utc)
             fresh = session.get(GroupJoinRequest, request_id)
             if fresh is not None and fresh.status == 'PENDING':
                 fresh.status = 'APPROVED' if approved else 'REJECTED'
                 fresh.decided_at = now
                 fresh.decider_user_id = actor_user_id
-        audit.record(
-            actor_id=actor_user_id, subject_type='group', subject_id=room_id,
-            action='group.join_request.decide', result='ok',
-            reason_code='APPROVED' if approved else 'REJECTED',
-            trace_id=idempotency_key, after={'request_id': request_id},
-        )
-        return {'status': 'approved' if approved else 'rejected'}
+            audit.record_in_session(session,
+                actor_id=actor_user_id, subject_type='group', subject_id=room_id,
+                action='group.join_request.decide', result='ok',
+                reason_code='APPROVED' if approved else 'REJECTED',
+                trace_id=idempotency_key, after={'request_id': request_id},
+            )
+            return _qr_complete(operation, {'status': 'approved' if approved else 'rejected'})
 
     return router

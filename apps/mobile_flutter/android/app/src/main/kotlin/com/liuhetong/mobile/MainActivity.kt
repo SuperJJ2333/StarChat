@@ -24,12 +24,14 @@ class MainActivity : FlutterActivity() {
         // 原生推送桥。
         com.liuhetong.mobile.push.NativePushBridge.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
+            applicationContext,
         )
         // 原生通话桥（修复初始化顺序：先创建 native_call 通道再注册处理器
         // ——此前 setCallHandler 先于通道创建执行，channel 为 null 时注册
         // 是空操作，answerCall/rejectCall/endCall/getActiveCall 全部不可达；
         // 且 CallManager 监听器在 setUp 内注册、teardown 内移除，重建不泄漏）。
         com.liuhetong.mobile.call.NativeCallBridge.setUp(
+            applicationContext,
             flutterEngine.dartExecutor.binaryMessenger,
             com.liuhetong.mobile.call.NativeCallBridge.CallHandlers(
                 onAnswer = {
@@ -116,6 +118,11 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/gallery")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "androidSdk") result.success(android.os.Build.VERSION.SDK_INT)
+                else result.notImplemented()
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/notification")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -154,6 +161,64 @@ class MainActivity : FlutterActivity() {
                     }
                     // 渠道真实状态（用户可能手动改过重要性/声音）：
                     // 诊断日志与设置页展示用。
+                    "getCallPermissionReadiness" -> {
+                        val nm = getSystemService(android.app.NotificationManager::class.java)
+                        fun granted(permission: String) =
+                            androidx.core.content.ContextCompat.checkSelfPermission(this, permission) ==
+                                android.content.pm.PackageManager.PERMISSION_GRANTED
+                        fun channelReady(id: String, minimum: Int): Boolean? {
+                            if (Build.VERSION.SDK_INT < 26) return true
+                            val channel = nm.getNotificationChannel(id) ?: return null
+                            return channel.importance >= minimum
+                        }
+                        result.success(mapOf(
+                            "android" to true,
+                            "microphone" to granted(android.Manifest.permission.RECORD_AUDIO),
+                            "camera" to granted(android.Manifest.permission.CAMERA),
+                            "notifications" to androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled(),
+                            "callChannel" to channelReady("calls_ring", android.app.NotificationManager.IMPORTANCE_HIGH),
+                            "ongoingChannel" to channelReady("chatflow_silent", android.app.NotificationManager.IMPORTANCE_MIN),
+                            "fullScreenRequired" to (Build.VERSION.SDK_INT >= 34),
+                            "fullScreen" to (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()),
+                            "overlay" to (Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this))
+                        ))
+                    }
+                    "openOverlaySettings" -> {
+                        try {
+                            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")))
+                            result.success(true)
+                        } catch (_: Exception) { result.success(false) }
+                    }
+                    "getNotificationReadiness" -> {
+                        val nm = getSystemService(android.app.NotificationManager::class.java)
+                        val issues = mutableListOf<String>()
+                        if (!androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()) {
+                            issues.add("通知未授权")
+                        }
+                        if (android.os.Build.VERSION.SDK_INT >= 26) {
+                            for ((id, label) in listOf("chatflow_messages_v2" to "消息", "calls_ring" to "来电")) {
+                                val channel = nm.getNotificationChannel(id) ?: continue
+                                if (channel.importance == 0) issues.add("${label}提醒已关闭")
+                                else if (channel.sound == null) issues.add("${label}铃声已关闭")
+                            }
+                        }
+                        val fullScreenDenied = android.os.Build.VERSION.SDK_INT >= 34 && !nm.canUseFullScreenIntent()
+                        if (fullScreenDenied) issues.add("锁屏来电未授权")
+                        result.success(mapOf("issues" to issues, "fullScreenDenied" to fullScreenDenied))
+                    }
+                    "openFullScreenSettings" -> {
+                        try {
+                            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                                startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                    android.net.Uri.parse("package:$packageName")))
+                            } else {
+                                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:$packageName")))
+                            }
+                            result.success(true)
+                        } catch (_: Exception) { result.success(false) }
+                    }
                     "getChannelState" -> {
                         val channelId = call.argument<String>("channelId")
                         if (channelId == null) {
@@ -268,6 +333,13 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // Flutter has already handled child routes before requesting a system pop.
+    // Preserve the engine/session when Back reaches the app root (also pre-31).
+    override fun popSystemNavigator(): Boolean {
+        moveTaskToBack(true)
+        return true
+    }
+
     override fun onDestroy() {
         releaseWakeLocks()
         super.onDestroy()
@@ -277,6 +349,7 @@ class MainActivity : FlutterActivity() {
         // 引擎销毁：移除通道处理器与 CallManager 监听（防泄漏/防重复注册）。
         com.liuhetong.mobile.call.CallBridge.teardown()
         com.liuhetong.mobile.call.NativeCallBridge.teardown()
+        com.liuhetong.mobile.push.NativePushBridge.teardown()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }
