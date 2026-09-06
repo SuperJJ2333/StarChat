@@ -67,3 +67,4 @@ docs/verification/artifacts/2026-09-05/call-dismiss-release/
 docs/verification/artifacts/2026-09-05/mi6-upgrade/
 docs/verification/artifacts/2026-09-05/modifier-apk-comparison/
 docs/verification/artifacts/2026-09-05/gallery-save/
+docs/verification/artifacts/**/*.apk

@@ -1,0 +1,13 @@
+{
+  "device": "MI 6",
+  "serial": "cbd0156b",
+  "versionName": "0.3.43",
+  "versionCode": 2046,
+  "debuggable": true,
+  "install": "Success (-r, data retained)",
+  "launched": true,
+  "runningPid": "24119",
+  "installedApkSha256": "7adbc4d8c7d7a2f48f6e1d22ce3aa88af07f96d3041dd389f493ea6d454c160d",
+  "signatureSha256": "34999c8b561affc263f11df0a3865e8c03c0386997a8c37bd12110380e5bc1f1",
+  "currentProcessCrashCount": 0
+}
