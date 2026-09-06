@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'gif_image_policy.dart';
 
 /// 聊天图片缩略图参数（需求三.1：最长边 ≤800px、体积 ≤100KB）。
 const chatImageThumbnailMaxEdge = 800;
@@ -26,6 +27,9 @@ final class ChatThumbnail {
 /// 降至 40；仍超 100KB 则继续降尺寸（600 → 480）。生成失败返回 null，
 /// 消息退化为“仅原图附件”（接收端自动回退全量加载，行为兼容旧消息）。
 Future<ChatThumbnail?> buildChatImageThumbnail(Uint8List bytes) async {
+  // Native static-image compressors do not reliably support animated GIF.
+  // Send its original animation without a JPEG thumbnail instead.
+  if (isGifBytes(bytes)) return null;
   try {
     final dims = await decodeImageDimensions(bytes);
     if (dims == null) return null;
@@ -81,16 +85,17 @@ Future<ChatThumbnail?> buildChatImageThumbnail(Uint8List bytes) async {
 
 /// 解码图片实际像素尺寸（供视频海报帧等场景计算 thumbnail_info）。
 Future<(int, int)?> decodeImageDimensions(Uint8List bytes) async {
-  ui.Codec? codec;
+  if (isGifBytes(bytes)) return gifDimensions(bytes);
+  ui.ImmutableBuffer? buffer;
+  ui.ImageDescriptor? descriptor;
   try {
-    codec = await ui.instantiateImageCodec(bytes);
-    final frame = await codec.getNextFrame();
-    final dims = (frame.image.width, frame.image.height);
-    frame.image.dispose();
-    return dims;
+    buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    return (descriptor.width, descriptor.height);
   } catch (_) {
     return null;
   } finally {
-    codec?.dispose();
+    descriptor?.dispose();
+    buffer?.dispose();
   }
 }

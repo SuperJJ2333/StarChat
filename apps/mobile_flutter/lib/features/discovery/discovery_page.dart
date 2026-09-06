@@ -80,31 +80,6 @@ final class DiscoveryPage extends StatelessWidget {
             padding: EdgeInsets.zero,
             children: [
               WeChatListTile(
-                key: const Key('discovery-scan-entry'),
-                leading: const SizedBox(
-                  width: 40,
-                  child: Icon(CupertinoIcons.qrcode_viewfinder, size: 21),
-                ),
-                title: const Text('扫一扫'),
-                subtitle: const Text(
-                  '扫描好友二维码，添加朋友',
-                  style: TextStyle(
-                      fontSize: 12, color: WeChatColors.textSecondary),
-                ),
-                trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
-                onTap: () => Navigator.of(context, rootNavigator: true).push(
-                  CupertinoPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => ScanQrPage(
-                      api: api,
-                      groupJoinApi: api,
-                      // 发现页扫码入群：加入后返回消息列表可见新会话，
-                      // 不做自动跳转（保持发现页轻量）。
-                    ),
-                  ),
-                ),
-              ),
-              WeChatListTile(
                 leading: const SizedBox(
                   width: 40,
                   child: Icon(CupertinoIcons.photo_on_rectangle, size: 21),
@@ -131,6 +106,31 @@ final class DiscoveryPage extends StatelessWidget {
                     ),
                   );
                 },
+              ),
+              WeChatListTile(
+                key: const Key('discovery-scan-entry'),
+                leading: const SizedBox(
+                  width: 40,
+                  child: Icon(CupertinoIcons.qrcode_viewfinder, size: 21),
+                ),
+                title: const Text('扫一扫'),
+                subtitle: const Text(
+                  '扫描好友二维码，添加朋友',
+                  style: TextStyle(
+                      fontSize: 12, color: WeChatColors.textSecondary),
+                ),
+                trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
+                onTap: () => Navigator.of(context, rootNavigator: true).push(
+                  CupertinoPageRoute(
+                    fullscreenDialog: true,
+                    builder: (_) => ScanQrPage(
+                      api: api,
+                      groupJoinApi: api,
+                      // 发现页扫码入群：加入后返回消息列表可见新会话，
+                      // 不做自动跳转（保持发现页轻量）。
+                    ),
+                  ),
+                ),
               ),
               WeChatListTile(
                 leading: const SizedBox(

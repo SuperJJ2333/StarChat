@@ -26,6 +26,9 @@ import '../../ui/chat/message_bubble_menu.dart';
 import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
 import 'media_thumbnail.dart';
+import 'gif_image_policy.dart';
+import 'chat_image_preview.dart';
+import '../../ui/chat/message_scroll_locator.dart';
 import 'package:video_compress/video_compress.dart';
 import 'video_send_stage.dart';
 import 'video_transcode.dart';
@@ -78,7 +81,8 @@ import 'unread_mention_tracker.dart';
 import 'video_poster_session_cache.dart';
 import 'video_poster_disk_store.dart';
 import 'video_poster_extractor.dart';
-import 'chat_search_query_controller.dart' show ChatSearchMessage, ChatSearchMediaCategory;
+import 'chat_search_query_controller.dart'
+    show ChatSearchMessage, ChatSearchMediaCategory;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
@@ -187,6 +191,7 @@ class _RoomPageState extends State<RoomPage> {
   final input = TextEditingController();
   final inputFocusNode = FocusNode();
   final messageScrollController = ScrollController();
+  bool _locatingMessage = false;
   late final VoicePlaybackController voicePlayback = VoicePlaybackController(
     // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
     loadAttachment: (eventId) => loadMediaWithCache(
@@ -206,6 +211,7 @@ class _RoomPageState extends State<RoomPage> {
 
   final _posterDisk = VideoPosterDiskStore();
   final Map<String, String> _posterKeys = {};
+
   /// Room-instance cache: independent encrypted temporary files, no global LRU.
   late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
     diskRead: _posterDisk.read,
@@ -330,8 +336,7 @@ class _RoomPageState extends State<RoomPage> {
         }
       }
     }
-    final shouldShow =
-        isGroup && mentionComposer.pendingTriggerStart != null;
+    final shouldShow = isGroup && mentionComposer.pendingTriggerStart != null;
     if (mounted && shouldShow != (composerPanel == ComposerPanel.mention)) {
       setState(() {
         composerPanel = shouldShow ? ComposerPanel.mention : ComposerPanel.none;
@@ -362,7 +367,8 @@ class _RoomPageState extends State<RoomPage> {
     final options = <MentionOption>[];
     for (final member in orderedJoinedMembers(widget.room)) {
       if (member.id == selfId) continue;
-      final nickname = member.calcDisplayname();
+      final nickname =
+          contactsByMatrixId[member.id]?.nickname ?? member.calcDisplayname();
       final remark = contactsByMatrixId[member.id]?.remark?.trim() ?? '';
       options.add(MentionOption(
         id: member.id,
@@ -979,13 +985,16 @@ class _RoomPageState extends State<RoomPage> {
   Future<Uint8List?> _loadVideoPoster(String messageId) async {
     final timeline = controller;
     if (timeline == null || !mounted) return null;
-    final key = _posterKeys.putIfAbsent(messageId, () => VideoPosterSessionCache.keyFor(
-        accountId: widget.room.client.userID ?? '',
-        roomId: widget.room.id,
-        mediaId: messageId,
-        mediaVersion: messageId, // Matrix events are immutable; replacements get new IDs.
-        spec: 'chat-poster-v1',
-      ));
+    final key = _posterKeys.putIfAbsent(
+        messageId,
+        () => VideoPosterSessionCache.keyFor(
+              accountId: widget.room.client.userID ?? '',
+              roomId: widget.room.id,
+              mediaId: messageId,
+              mediaVersion:
+                  messageId, // Matrix events are immutable; replacements get new IDs.
+              spec: 'chat-poster-v1',
+            ));
     final result = await videoPosterCache.load(
       key,
       () async {
@@ -1001,6 +1010,26 @@ class _RoomPageState extends State<RoomPage> {
     if (result.retryable || result.stale || !mounted) return null;
     return result.bytes;
   }
+
+  bool _isAnimatedImage(RoomMessageViewModel message) =>
+      message.mimeType?.toLowerCase().split(';').first.trim() == 'image/gif' ||
+      message.text.toLowerCase().endsWith('.gif') ||
+      isGifBytes(imageMemoryCache.get(message.id) ?? Uint8List(0));
+
+  Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) =>
+      thumbnailMemoryCache.putIfAbsent(
+          'preview:${message.id}',
+          () => loadChatImagePreview(
+                animated: _isAnimatedImage(message),
+                loadThumbnail: () => controller!.loadThumbnail(message.id),
+                loadOriginal: () => imageMemoryCache.putIfAbsent(
+                    message.id,
+                    () => loadMediaWithCache(
+                          MediaCacheKey(
+                              roomId: widget.room.id, eventId: message.id),
+                          () => controller!.loadAttachment(message.id),
+                        )),
+              ));
 
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
@@ -1031,6 +1060,8 @@ class _RoomPageState extends State<RoomPage> {
         final bytes = await (result.original
             ? photo.originalBytes()
             : photo.compressedBytes());
+        validateGifForSend(bytes);
+        final mimeType = isGifBytes(bytes) ? 'image/gif' : photo.mimeType;
         // 视频附带时长（毫秒），接收端显示角标。
         final extra = photo.duration == null
             ? null
@@ -1061,16 +1092,18 @@ class _RoomPageState extends State<RoomPage> {
             );
           }
         }
-        await matrix.sendEncryptedMedia(widget.room.id, bytes, photo.mimeType,
+        await matrix.sendEncryptedMedia(widget.room.id, bytes, mimeType,
             extraContent: extra,
             thumbnailBytes: rendition?.bytes,
             thumbnailWidth: rendition?.width,
             thumbnailHeight: rendition?.height);
       }
       if (mounted) _showMediaMessage('图片已发送');
+    } on FormatException catch (error) {
+      if (mounted) _showMediaMessage(error.message);
     } catch (_) {
       if (mounted) {
-        setState(() => mediaMessage = '图片发送失败，请重试');
+        _showMediaMessage('图片发送失败，请重试');
       }
     } finally {
       // 主动刷新时间线，让发出的事件即时落位。
@@ -1760,9 +1793,21 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _openHistorySearch() {
+    final roomRoute = ModalRoute.of(context);
+    final navigator = Navigator.of(context);
+    void returnToRoom() {
+      if (roomRoute != null) navigator.popUntil((route) => route == roomRoute);
+    }
+
     // R5 修复：改用新 ChatSearchPage（默认空态+组合筛选+拼音成员+
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
-    final messages = controller?.messages ?? const <RoomMessageViewModel>[];
+    final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
+    final messages = (hiddenEvents?.visibleItems(widget.room.id, allMessages,
+                eventId: (message) => message.id) ??
+            allMessages)
+        .where((message) => !message.isRecalled)
+        .toList();
+    final messagesById = {for (final message in messages) message.id: message};
     // 转换为搜索模型（含媒体分类/正文可见文本/时间线序号）。
     // R6：普通文本含 HTTP(S) URL → link 分类（此前漏检）。
     final searchMessages = <ChatSearchMessage>[
@@ -1770,8 +1815,16 @@ class _RoomPageState extends State<RoomPage> {
         ChatSearchMessage(
           eventId: message.id,
           senderId: message.senderId,
-          senderDisplayName: _displayName(message.senderId, message.isOwn),
-          timestamp: message.timestamp,
+          senderDisplayName: MemberDirectoryEntry(
+            userId: message.senderId,
+            remark: contactsByMatrixId[message.senderId]?.remark,
+            nickname: contactsByMatrixId[message.senderId]?.nickname ??
+                widget.room
+                    .unsafeGetUserFromMemoryOrFallback(message.senderId)
+                    .calcDisplayname(),
+            username: contactsByMatrixId[message.senderId]?.username,
+          ).displayName,
+          timestamp: message.timestamp.toLocal(),
           timelineOrder: index,
           visibleText: message.text,
           mediaCategory: switch (message.kind) {
@@ -1782,33 +1835,40 @@ class _RoomPageState extends State<RoomPage> {
             RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
             RoomMessageKind.file => ChatSearchMediaCategory.file,
             RoomMessageKind.text
-                when RegExp('https?://[^\\\\s<>"]+',
-                        caseSensitive: false)
+                when RegExp('https?://[^\\\\s<>"]+', caseSensitive: false)
                     .hasMatch(message.text) =>
               ChatSearchMediaCategory.link,
             _ => null,
           },
           hasMedia: message.kind != RoomMessageKind.text,
+          isVideo: message.kind == RoomMessageKind.video ||
+              message.mimeType?.startsWith('video/') == true,
+          duration: message.videoDuration,
         ),
-    ];
+    ]..sort((a, b) => b.timelineOrder.compareTo(a.timelineOrder));
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
     final memberEntries = <MemberDirectoryEntry>[
       for (final member in orderedJoinedMembers(widget.room))
         MemberDirectoryEntry(
           userId: member.id,
-          nickname: member.calcDisplayname(),
+          remark: contactsByMatrixId[member.id]?.remark,
+          nickname: contactsByMatrixId[member.id]?.nickname ??
+              member.calcDisplayname(),
+          username:
+              contactsByMatrixId[member.id]?.username ?? localPart(member.id),
         ),
     ];
     // 有消息日期（从当前消息集构建；月历不再硬编码——R6）。
     final datesWithMessages = <DateTime>{
-      for (final message in messages)
+      for (final message in searchMessages)
         DateTime(message.timestamp.year, message.timestamp.month,
             message.timestamp.day),
     };
-    final earliestMonth = messages.isEmpty
-        ? DateTime.now()
-        : messages.last.timestamp; // messages 是新→旧。
-    final latestMonth = messages.isEmpty ? DateTime.now() : messages.first.timestamp;
+    final timestamps =
+        messages.map((message) => message.timestamp.toLocal()).toList()..sort();
+    final earliestMonth =
+        timestamps.isEmpty ? DateTime.now() : timestamps.first;
+    final latestMonth = timestamps.isEmpty ? DateTime.now() : timestamps.last;
 
     Navigator.push<void>(
       context,
@@ -1820,16 +1880,66 @@ class _RoomPageState extends State<RoomPage> {
             final matched = searchMessages.where(filters.matches).toList();
             int start = 0;
             if (cursor != null) {
-              start = matched
-                      .indexWhere((m) => m.timelineOrder == cursor.order) +
+              start = matched.indexWhere((m) =>
+                      m.timelineOrder == cursor.order &&
+                      m.eventId == cursor.eventId) +
                   1;
             }
             final end = (start + limit).clamp(0, matched.length);
             return matched.sublist(start, end);
           },
           memberEntries: memberEntries,
+          memberAvatarBuilder: (context, entry) => MatrixUserAvatar(
+            client: widget.room.client,
+            nickname: entry.displayName,
+            fallbackSeed: entry.userId,
+            matrixAvatarUri: (entry.userId == widget.room.client.userID
+                            ? ownProfile?.avatarUrl
+                            : contactsByMatrixId[entry.userId]?.avatarUrl)
+                        ?.trim()
+                        .isNotEmpty ==
+                    true
+                ? null
+                : widget.room
+                    .unsafeGetUserFromMemoryOrFallback(entry.userId)
+                    .avatarUrl,
+            fallbackAvatarUrl: entry.userId == widget.room.client.userID
+                ? ownProfile?.avatarUrl
+                : contactsByMatrixId[entry.userId]?.avatarUrl,
+            diagnosticSource: 'search-member-picker',
+            size: 36,
+          ),
+          mediaThumbnailBuilder: (context, message) =>
+              FutureBuilder<Uint8List?>(
+            future: message.isVideo
+                ? _loadVideoPoster(message.eventId)
+                : _loadImagePreview(messagesById[message.eventId]!),
+            builder: (context, snapshot) {
+              final bytes = snapshot.data;
+              if (bytes != null) {
+                return Image(
+                    image: boundedChatImageProvider(bytes, maxEdge: 360),
+                    fit: BoxFit.contain);
+              }
+              return Center(
+                  child: snapshot.connectionState == ConnectionState.waiting
+                      ? const CupertinoActivityIndicator()
+                      : const Icon(CupertinoIcons.photo,
+                          color: WeChatColors.textTertiary));
+            },
+          ),
+          onOpenMedia: (eventId) {
+            final message = messagesById[eventId];
+            if (message == null) return;
+            if (message.kind == RoomMessageKind.video ||
+                message.mimeType?.startsWith('video/') == true) {
+              unawaited(_openVideoViewer(message));
+            } else {
+              unawaited(_openImageViewerWithForward(message));
+            }
+          },
           onJumpToMessage: (eventId) {
-            Navigator.pop(context);
+            returnToRoom();
             unawaited(_scrollToMessage(eventId));
           },
           // R6：日期定位回调——定位当日最早一条消息。
@@ -1843,7 +1953,9 @@ class _RoomPageState extends State<RoomPage> {
                 .toList();
             if (dayMessages.isNotEmpty) {
               // timelineOrder 升序 = 旧→新；最早 = order 最小。
-              dayMessages.sort((a, b) => a.timelineOrder.compareTo(b.timelineOrder));
+              dayMessages
+                  .sort((a, b) => a.timelineOrder.compareTo(b.timelineOrder));
+              returnToRoom();
               unawaited(_scrollToMessage(dayMessages.first.eventId));
             }
           },
@@ -1866,27 +1978,39 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   Future<void> _scrollToMessage(String eventId) async {
-    var target = messageKeys[eventId]?.currentContext;
-    // A reply may point beyond the currently loaded timeline window. Fetch
-    // older batches until the event becomes available, with a strict bound to
-    // avoid an endless request loop when the event has expired or was purged.
-    for (var attempts = 0;
-        target == null && attempts < 20 && mounted;
-        attempts++) {
-      final before = controller?.messages.length ?? 0;
-      await controller?.loadHistory();
-      if (!mounted || (controller?.messages.length ?? 0) <= before) break;
+    if (_locatingMessage) return;
+    _locatingMessage = true;
+    var found = false;
+    try {
+      for (var attempts = 0; mounted && attempts < 20; attempts++) {
+        if (controller?.messages.any((message) => message.id == eventId) ??
+            false) {
+          break;
+        }
+        final before = controller?.messages.length ?? 0;
+        await controller?.loadHistory();
+        if (!mounted || (controller?.messages.length ?? 0) <= before) break;
+      }
+      if (!mounted) return;
       await WidgetsBinding.instance.endOfFrame;
-      target = messageKeys[eventId]?.currentContext;
+      final all = controller?.messages ?? const <RoomMessageViewModel>[];
+      final visible = hiddenEvents?.visibleItems(widget.room.id, all,
+              eventId: (message) => message.id) ??
+          all;
+      found = await revealLazyMessage(
+        controller: messageScrollController,
+        eventIds: visible.reversed.map((message) => message.id).toList(),
+        messageKeys: messageKeys,
+        eventId: eventId,
+        isMounted: () => mounted,
+      );
+    } finally {
+      _locatingMessage = false;
     }
-    if (target == null || !mounted || !target.mounted) return;
-    final scrollTarget = target;
-    await Scrollable.ensureVisible(
-      scrollTarget,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      alignment: .5,
-    );
+    if (!found) {
+      if (mounted) _showMediaMessage('未找到该消息，请稍后重试');
+      return;
+    }
     if (!mounted) return;
     setState(() => highlightedMessageId = eventId);
     await Future<void>.delayed(const Duration(milliseconds: 1400));
@@ -1929,13 +2053,7 @@ class _RoomPageState extends State<RoomPage> {
   /// R7：打开全屏图片查看器（含转发/下载操作）。
   Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
     try {
-      final bytes = await imageMemoryCache.putIfAbsent(
-        message.id,
-        () => loadMediaWithCache(
-          MediaCacheKey(roomId: widget.room.id, eventId: message.id),
-          () => controller!.loadAttachment(message.id),
-        ),
-      );
+      final bytes = await _loadImagePreview(message);
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
@@ -1955,6 +2073,7 @@ class _RoomPageState extends State<RoomPage> {
       );
     } catch (_) {
       if (!mounted) return;
+      _showMediaMessage('图片加载失败，请重试');
     }
   }
 
@@ -2246,21 +2365,10 @@ class _RoomPageState extends State<RoomPage> {
             decorateContent: false,
             content: LayoutBuilder(
               builder: (context, constraints) {
-                // Metadata can lie (.jpg / image/jpeg with GIF content).
-                // Paint any cached preview, then let the decoder inspect the
-                // original bytes. A JPEG thumbnail never becomes the final image.
                 return ContainImageBubble(
-                  initialBytes: imageMemoryCache.get(message.id) ??
-                      thumbnailMemoryCache.get('thumb:${message.id}'),
-                  refreshFromSource: true,
-                  load: () => imageMemoryCache.putIfAbsent(
-                          message.id,
-                          () => loadMediaWithCache(
-                            MediaCacheKey(
-                                roomId: widget.room.id, eventId: message.id),
-                            () => controller!.loadAttachment(message.id),
-                          ),
-                        ),
+                  initialBytes:
+                      thumbnailMemoryCache.get('preview:${message.id}'),
+                  load: () => _loadImagePreview(message),
                   availableWidth: constraints.maxWidth,
                   availableHeight: MediaQuery.of(context).size.height,
                   onTap: () => _openImageViewerWithForward(message),
@@ -2575,7 +2683,9 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   void dispose() {
-    unawaited(videoPosterCache.clearAll().whenComplete(_posterDisk.dispose)
+    unawaited(videoPosterCache
+        .clearAll()
+        .whenComplete(_posterDisk.dispose)
         .catchError((Object _) {}));
     _identityCache.removeListener(_identityChanged);
     unawaited(voicePlayback.stopAll());
@@ -2648,7 +2758,7 @@ class _RoomPageState extends State<RoomPage> {
   /// 上滑接近顶部（reverse 列表像素增大方向）→ 自动加载更早历史。
   /// 加载中的幂等/耗尽判定由 [RoomTimelineController.loadHistory] 负责。
   void _onMessageScroll() {
-    if (!messageScrollController.hasClients) return;
+    if (_locatingMessage || !messageScrollController.hasClients) return;
     final metrics = messageScrollController.position;
     if (!metrics.hasContentDimensions) return;
     if (metrics.maxScrollExtent - metrics.pixels < 240) {
@@ -2915,6 +3025,24 @@ class _RoomPageState extends State<RoomPage> {
                   if (composerPanel == ComposerPanel.mention)
                     WeChatMentionPanel(
                       options: _mentionMembers(),
+                      avatarBuilder: (context, option) => MatrixUserAvatar(
+                        client: widget.room.client,
+                        nickname: option.primaryName,
+                        fallbackSeed: option.id,
+                        matrixAvatarUri: contactsByMatrixId[option.id]
+                                    ?.avatarUrl
+                                    ?.trim()
+                                    .isNotEmpty ==
+                                true
+                            ? null
+                            : widget.room
+                                .unsafeGetUserFromMemoryOrFallback(option.id)
+                                .avatarUrl,
+                        fallbackAvatarUrl:
+                            contactsByMatrixId[option.id]?.avatarUrl,
+                        diagnosticSource: 'mention-member-picker',
+                        size: 36,
+                      ),
                       canMentionAll: _canMentionAll,
                       onSelect: _insertMention,
                     ),

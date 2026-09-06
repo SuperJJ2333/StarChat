@@ -55,6 +55,16 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
     if (mounted) setState(() {});
   }
 
+  void _openDetails() => Navigator.push(
+        context,
+        CupertinoPageRoute(
+          builder: (_) => ProfileDetailsPage(
+            controller: widget.controller,
+            onInvite: widget.onInvite,
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
@@ -83,17 +93,16 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                 children: [
                   _IdentityCard(
                     profile: profile,
-                    onTap: () => Navigator.push(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (_) => ProfileDetailsPage(
-                          controller: widget.controller,
-                        ),
-                      ),
-                    ),
+                    onTap: _openDetails,
                     onQrCode: widget.onQrCode,
                   ),
                   const SizedBox(height: 12),
+                  _ProfileMenuTile(
+                    key: const Key('profile-details-entry'),
+                    icon: CupertinoIcons.person_crop_circle,
+                    label: '个人信息',
+                    onTap: _openDetails,
+                  ),
                   _ProfileMenuTile(
                     icon: CupertinoIcons.photo_on_rectangle,
                     label: '朋友圈',
@@ -108,12 +117,6 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
                     icon: ChangliaoIcons.wallet,
                     label: '钱包',
                     onTap: widget.onWallet,
-                  ),
-                  _ProfileMenuTile(
-                    key: const Key('profile-invite-entry'),
-                    icon: CupertinoIcons.person_crop_circle_badge_plus,
-                    label: '邀请码',
-                    onTap: widget.onInvite,
                   ),
                   _ProfileMenuTile(
                     icon: ChangliaoIcons.settings,
@@ -152,67 +155,68 @@ final class _IdentityCard extends StatelessWidget {
       child: Stack(
         children: [
           Container(
-        height: 126,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
-        child: Row(
-          children: [
-            SizedBox(
-              width: 72,
-              height: 72,
-              child: UserAvatar(
-                key: const Key('profile-identity-avatar'),
-                nickname: profile.nickname,
-                fallbackSeed: profile.fallbackSeed,
-                avatarUrl: profile.avatarUrl,
-                size: 72,
-              ),
+            height: 126,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+            color:
+                dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 72,
+                  height: 72,
+                  child: UserAvatar(
+                    key: const Key('profile-identity-avatar'),
+                    nickname: profile.nickname,
+                    fallbackSeed: profile.fallbackSeed,
+                    avatarUrl: profile.avatarUrl,
+                    size: 72,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile.nickname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 22,
+                          height: 30 / 22,
+                          fontWeight: FontWeight.w700,
+                          color: foreground,
+                        ),
+                      ),
+                      Text(
+                        '畅聊号：${profile.username}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: 14,
+                          height: 20 / 14,
+                        ),
+                      ),
+                      Text(
+                        profile.signature?.isNotEmpty == true
+                            ? profile.signature!
+                            : '还没有设置个性签名',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: WeChatColors.textSecondary,
+                          fontSize: 14,
+                          height: 20 / 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    profile.nickname,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 22,
-                      height: 30 / 22,
-                      fontWeight: FontWeight.w700,
-                      color: foreground,
-                    ),
-                  ),
-                  Text(
-                    '畅聊号：${profile.username}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: 14,
-                      height: 20 / 14,
-                    ),
-                  ),
-                  Text(
-                    profile.signature?.isNotEmpty == true
-                        ? profile.signature!
-                        : '还没有设置个性签名',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: 14,
-                      height: 20 / 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
           if (onQrCode != null)
             Positioned(
               top: 0,
@@ -291,9 +295,14 @@ final class _ProfileMenuTile extends StatelessWidget {
 }
 
 final class ProfileDetailsPage extends StatefulWidget {
-  const ProfileDetailsPage({super.key, required this.controller});
+  const ProfileDetailsPage({
+    super.key,
+    required this.controller,
+    this.onInvite,
+  });
 
   final ProfileController controller;
+  final VoidCallback? onInvite;
 
   @override
   State<ProfileDetailsPage> createState() => _ProfileDetailsPageState();
@@ -311,6 +320,8 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   void initState() {
     super.initState();
     widget.controller.addListener(_change);
+    nickname.addListener(_change);
+    signature.addListener(_change);
   }
 
   @override
@@ -396,14 +407,27 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
               ],
             ),
             const SizedBox(height: 12),
+            if (widget.onInvite != null) ...[
+              _ProfileMenuTile(
+                key: const Key('profile-invite-entry'),
+                icon: CupertinoIcons.person_crop_circle_badge_plus,
+                label: '邀请码',
+                onTap: widget.onInvite!,
+              ),
+              const SizedBox(height: 12),
+            ],
             CupertinoTextField(
               controller: nickname,
+              textAlign:
+                  nickname.text.isEmpty ? TextAlign.left : TextAlign.right,
               placeholder: '昵称',
               padding: const EdgeInsets.all(16),
             ),
             const SizedBox(height: 12),
             CupertinoTextField(
               controller: signature,
+              textAlign:
+                  signature.text.isEmpty ? TextAlign.left : TextAlign.right,
               placeholder: '个性签名',
               padding: const EdgeInsets.all(16),
             ),

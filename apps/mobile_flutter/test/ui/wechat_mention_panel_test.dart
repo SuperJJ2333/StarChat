@@ -4,6 +4,29 @@ import 'package:liuhetong_mobile/ui/chat/wechat_mention_panel.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 void main() {
+  testWidgets('member avatar callback keeps identity and mention selection',
+      (tester) async {
+    MentionOption? selected;
+    const option = MentionOption(
+        id: '@friend:x',
+        primaryName: 'Remark',
+        nickname: 'Nickname',
+        hasRemark: true);
+    await tester.pumpWidget(CupertinoApp(
+        home: WeChatMentionPanel(
+      options: const [option],
+      canMentionAll: false,
+      avatarBuilder: (context, member) => Icon(
+          CupertinoIcons.person_crop_square,
+          key: Key('avatar-${member.id}')),
+      onSelect: (value) => selected = value,
+    )));
+    expect(find.byKey(const Key('avatar-@friend:x')), findsOneWidget);
+    expect(find.text('Remark'), findsOneWidget);
+    await tester.tap(find.text('Remark'));
+    expect(selected?.id, '@friend:x');
+  });
+
   test('mention options sort A-Z by remark first, nickname otherwise', () {
     final sorted = sortMentionOptions(const [
       MentionOption(id: 'a', primaryName: '小明', nickname: '小明'),
@@ -23,10 +46,7 @@ void main() {
     final filtered = filterMentionOptions(
       const [
         MentionOption(
-            id: 'a',
-            primaryName: '项目小艾',
-            nickname: '艾米',
-            hasRemark: true),
+            id: 'a', primaryName: '项目小艾', nickname: '艾米', hasRemark: true),
         MentionOption(id: 'b', primaryName: '小明', nickname: '小明'),
       ],
       '艾米',
@@ -44,12 +64,15 @@ void main() {
       'a',
     );
 
-    expect(filterMentionOptions(const [
-      MentionOption(id: 'a', primaryName: '小明', nickname: '小明'),
-    ], '不存在'), isEmpty);
+    expect(
+        filterMentionOptions(const [
+          MentionOption(id: 'a', primaryName: '小明', nickname: '小明'),
+        ], '不存在'),
+        isEmpty);
   });
 
-  testWidgets('panel shows two lines only for remarked members', (tester) async {
+  testWidgets('panel shows two lines only for remarked members',
+      (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: WeChatMentionPanel(
         options: const [
@@ -92,8 +115,7 @@ void main() {
     );
   });
 
-  testWidgets('selecting an option reports it to the callback',
-      (tester) async {
+  testWidgets('selecting an option reports it to the callback', (tester) async {
     MentionOption? selected;
     await tester.pumpWidget(CupertinoApp(
       home: WeChatMentionPanel(

@@ -27,6 +27,7 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
 
   final Room room;
   final Timeline timeline;
+  final Set<String> _retrying = {};
 
   @override
   List<RoomMessageViewModel> snapshot() {
@@ -40,7 +41,8 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
         .toList(growable: false)
         .reversed
         .map(_message)
-        .toList(growable: false);
+        .toList(growable: false)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
     // BUG3：入群系统通知——以真实 Matrix 成员事件为唯一权威，本地推导
     // （invite 配对 join 转变），绝不插入本地临时文本；历史重载一致。
     // 规格§一4：私聊（m.direct）房间绝不推导群聊系统通知——DM 的
@@ -48,10 +50,11 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
     final notices = room.isDirectChat
         ? const <GroupJoinNotice>[]
         : deriveGroupJoinNotices(
-      [for (final event in timeline.events) projectMemberEvent(event)],
-      resolveName: (matrixUserId) =>
-          room.unsafeGetUserFromMemoryOrFallback(matrixUserId).calcDisplayname(),
-    );
+            [for (final event in timeline.events) projectMemberEvent(event)],
+            resolveName: (matrixUserId) => room
+                .unsafeGetUserFromMemoryOrFallback(matrixUserId)
+                .calcDisplayname(),
+          );
     if (notices.isEmpty) return viewModels;
     return mergeNoticesIntoTimeline(viewModels, notices);
   }
@@ -201,10 +204,49 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
 
   @override
   Future<void> retry(String transactionId) async {
-    final event = timeline.events.firstWhere(
-      (candidate) => candidate.eventId == transactionId,
-    );
-    await event.sendAgain();
+    if (!_retrying.add(transactionId)) return;
+    try {
+      final matches = timeline.events.where(
+        (candidate) => candidate.eventId == transactionId,
+      );
+      if (matches.isEmpty) return;
+      final event = matches.first;
+      if (!event.status.isError) return;
+      final txid =
+          event.unsigned?['transaction_id'] as String? ?? event.eventId;
+      // A lost HTTP acknowledgement is still the same Matrix transaction.
+      // Recreate the local sending entry at the new attempt time while keeping
+      // the wire transaction id, so the homeserver cannot deliver two copies.
+      if (timeline.events.any((candidate) =>
+          candidate.status.isSent &&
+          candidate.unsigned?['transaction_id'] == txid)) {
+        return;
+      }
+      final media = {
+        MessageTypes.Image,
+        MessageTypes.Video,
+        MessageTypes.Audio,
+        MessageTypes.File,
+      }.contains(event.messageType);
+      final uploaded =
+          event.content['url'] != null || event.content['file'] != null;
+      // The SDK drops its file cache after upload, even if sending then fails.
+      // Retry an uploaded attachment's existing encrypted payload directly.
+      // Keep an uncached upload failure visible rather than losing its bubble.
+      if (media &&
+          !uploaded &&
+          !room.sendingFilePlaceholders.containsKey(event.eventId)) {
+        throw StateError('附件已不可用，请重新选择文件');
+      }
+      await event.cancelSend();
+      final result = media && !uploaded
+          ? await event.sendAgain(txid: txid)
+          : await room.sendEvent(Map<String, dynamic>.from(event.content),
+              type: event.type, txid: txid);
+      if (result == null) throw StateError('消息发送失败');
+    } finally {
+      _retrying.remove(transactionId);
+    }
   }
 
   @override
@@ -216,5 +258,3 @@ final class MatrixRoomTimelineAdapter implements RoomTimelineAdapter {
   @override
   void dispose() => timeline.cancelSubscriptions();
 }
-
-

@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
@@ -38,9 +39,11 @@ final class FakeTimelineAdapter implements RoomTimelineAdapter {
   @override
   Future<void> markRead() async => marks++;
   int retryCalls = 0;
+  Completer<void>? retryPending;
   @override
   Future<void> retry(String transactionId) async {
     retryCalls++;
+    await retryPending?.future;
   }
 
   @override
@@ -77,6 +80,31 @@ final class FakeTimelineAdapter implements RoomTimelineAdapter {
 }
 
 void main() {
+  test('retry respects current permission and deduplicates concurrent taps',
+      () async {
+    final adapter = FakeTimelineAdapter();
+    adapter.items.add(RoomMessageViewModel(
+        id: 'failed',
+        senderId: 'me',
+        text: 'fixture',
+        isOwn: true,
+        deliveryState: RoomDeliveryState.failed,
+        timestamp: DateTime.utc(2026, 9, 6)));
+    var allowed = false;
+    final controller =
+        RoomTimelineController(adapter, canSendNow: () => allowed);
+    await controller.retry('failed');
+    expect(adapter.retryCalls, 0);
+    allowed = true;
+    adapter.retryPending = Completer<void>();
+    final first = controller.retry('failed');
+    final second = controller.retry('failed');
+    expect(adapter.retryCalls, 1);
+    adapter.retryPending!.complete();
+    await Future.wait([first, second]);
+    controller.dispose();
+  });
+
   test('controller owns delivery state, read marker and adapter disposal',
       () async {
     final adapter = FakeTimelineAdapter();

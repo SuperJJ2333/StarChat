@@ -78,28 +78,25 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 200));
     final rendered = tester.widget<Image>(find.byType(Image).first);
-    expect((rendered.image as MemoryImage).bytes, original);
+    final resized = rendered.image as ResizeImage;
+    expect((resized.imageProvider as MemoryImage).bytes, original);
+    expect(resized.policy, ResizeImagePolicy.fit);
+    expect(resized.width, 720);
+    expect(resized.height, 720);
+    final imageKey = await resized.obtainKey(const ImageConfiguration());
     for (var i = 0; i < 30; i++) {
       await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 10)));
       await tester.pump();
-      if (!PaintingBinding.instance.imageCache
-          .statusForKey(MemoryImage(original))
-          .pending) {
+      if (!PaintingBinding.instance.imageCache.statusForKey(imageKey).pending) {
         break;
       }
     }
-    expect(
-        PaintingBinding.instance.imageCache
-            .statusForKey(MemoryImage(original))
-            .pending,
+    expect(PaintingBinding.instance.imageCache.statusForKey(imageKey).pending,
         isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
-    expect(
-        PaintingBinding.instance.imageCache
-            .statusForKey(MemoryImage(original))
-            .live,
+    expect(PaintingBinding.instance.imageCache.statusForKey(imageKey).live,
         isFalse,
         reason: 'disposing the bubble releases its image listeners');
   });

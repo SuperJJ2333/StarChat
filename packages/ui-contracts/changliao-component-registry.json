@@ -1,5 +1,14 @@
 {
   "schemaVersion": 1,
+  "feedbackContracts": {
+    "2026-09-06": {
+      "chatMemberPicker": "custom avatar; remark then nickname then username",
+      "chatMediaCategory": "date-grouped three-column thumbnails; no sender row; video play and duration",
+      "discoveryOrder": ["朋友圈", "扫一扫"],
+      "personalInformation": "header and explicit Me row; invitation before nickname; values right and placeholders left",
+      "figmaSync": "unavailable; local implementation recorded in frontend/artifacts/figma-state.json"
+    }
+  },
   "figma": {
     "fileKey": "zpzwTbnj1hqx80tyRygX78",
     "stateArtifact": "frontend/artifacts/figma-state.json",

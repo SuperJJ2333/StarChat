@@ -151,6 +151,7 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
   final bool Function()? canSendNow;
   List<RoomMessageViewModel> messages;
+  final Set<String> _retrying = {};
 
   /// 历史消息加载状态（上滑到顶自动加载的 UI 反馈）：
   /// [historyLoading] 为 true 时顶部显示加载图标；
@@ -163,10 +164,15 @@ final class RoomTimelineController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 重发失败消息：复用同一事务 ID 重试，不插入消息副本。
+  /// 重建失败消息的本地发送条目；传输事务 ID 由适配器保留以防重复投递。
   Future<void> retry(String transactionId) async {
-    await adapter.retry(transactionId);
-    await refresh();
+    if (!(canSendNow?.call() ?? true) || !_retrying.add(transactionId)) return;
+    try {
+      await adapter.retry(transactionId);
+    } finally {
+      _retrying.remove(transactionId);
+      await refresh();
+    }
   }
 
   /// 上滑加载更早的历史消息：进行中/已耗尽时为幂等空操作；

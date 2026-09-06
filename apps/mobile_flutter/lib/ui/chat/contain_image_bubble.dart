@@ -1,10 +1,30 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show SynchronousFuture;
 
 import '../../features/matrix/image_contain_layout.dart';
+import '../../features/matrix/media_thumbnail.dart';
+import '../../features/matrix/gif_image_policy.dart';
 import '../foundation/wechat_tokens.dart';
+
+/// Bound both decoded axes without changing aspect ratio or animated frames.
+ImageProvider boundedChatImageProvider(Uint8List bytes, {int maxEdge = 720}) {
+  var displayBytes = bytes;
+  try {
+    validateGifForSend(bytes);
+  } on FormatException {
+    // Reject unsafe received/cached GIF before Flutter allocates its codec.
+    // Keep caller-owned original bytes intact for download/forwarding.
+    displayBytes = _unavailableImagePixel;
+  }
+  return ResizeImage(MemoryImage(displayBytes),
+      width: maxEdge, height: maxEdge, policy: ResizeImagePolicy.fit);
+}
+
+final _unavailableImagePixel = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
 
 /// 规格 #10：任意比例图片气泡——按解码后的实际宽高 contain 布局。
 ///
@@ -112,8 +132,6 @@ final class _ContainImage extends StatefulWidget {
 
 final class _ContainImageState extends State<_ContainImage> {
   ImageContainLayout? _layout;
-  ImageStream? _sizeStream;
-  ImageStreamListener? _sizeListener;
   int _layoutGeneration = 0;
 
   @override
@@ -122,17 +140,9 @@ final class _ContainImageState extends State<_ContainImage> {
     _resolveLayout();
   }
 
-  void _removeSizeListener() {
-    final listener = _sizeListener;
-    if (listener != null) _sizeStream?.removeListener(listener);
-    _sizeListener = null;
-    _sizeStream = null;
-  }
-
   @override
   void dispose() {
     _layoutGeneration++;
-    _removeSizeListener();
     super.dispose();
   }
 
@@ -157,8 +167,8 @@ final class _ContainImageState extends State<_ContainImage> {
         child: SizedBox(
           width: layout.width,
           height: layout.height,
-          child: Image.memory(
-            widget.bytes,
+          child: Image(
+            image: boundedChatImageProvider(widget.bytes),
             fit: BoxFit.contain,
             gaplessPlayback: true,
           ),
@@ -167,47 +177,27 @@ final class _ContainImageState extends State<_ContainImage> {
     }
     // 先用解码器取实际宽高（不渲染整帧），再按 contain 公式布局。
     return LayoutBuilder(builder: (context, constraints) {
-      return Image.memory(
-        widget.bytes,
+      return Image(
+        image: boundedChatImageProvider(widget.bytes),
         fit: BoxFit.contain,
         gaplessPlayback: true,
       );
     });
   }
 
-  void _resolveLayout() {
-    _removeSizeListener();
+  Future<void> _resolveLayout() async {
     final generation = ++_layoutGeneration;
-    final stream =
-        MemoryImage(widget.bytes).resolve(const ImageConfiguration());
-    late final ImageStreamListener listener;
-    listener = ImageStreamListener((info, _) {
-      stream.removeListener(listener);
-      try {
-        if (!mounted || generation != _layoutGeneration) return;
-        final corrected =
-            applyExifOrientation(1, info.image.width, info.image.height);
-        final layout = computeContainLayout(
-          imageWidth: corrected.width,
-          imageHeight: corrected.height,
-          maxWidth: widget.maxWidth,
-          maxHeight: widget.maxHeight,
-        );
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && generation == _layoutGeneration) {
-            setState(() => _layout = layout);
-          }
-        });
-        WidgetsBinding.instance.ensureVisualUpdate();
-      } finally {
-        info.dispose();
-      }
-    }, onError: (Object _, StackTrace? __) {
-      stream.removeListener(listener);
-    });
-    _sizeStream = stream;
-    _sizeListener = listener;
-    stream.addListener(listener);
+    final dimensions = await decodeImageDimensions(widget.bytes);
+    if (!mounted || generation != _layoutGeneration || dimensions == null) {
+      return;
+    }
+    final layout = computeContainLayout(
+      imageWidth: dimensions.$1.toDouble(),
+      imageHeight: dimensions.$2.toDouble(),
+      maxWidth: widget.maxWidth,
+      maxHeight: widget.maxHeight,
+    );
+    setState(() => _layout = layout);
   }
 }
 
@@ -240,8 +230,8 @@ final class ContainGridCell extends StatelessWidget {
           alignment: Alignment.center,
           fit: StackFit.loose,
           children: [
-            Image.memory(
-              bytes,
+            Image(
+              image: boundedChatImageProvider(bytes),
               fit: BoxFit.contain,
               gaplessPlayback: true,
               errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.photo,

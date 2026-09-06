@@ -15,5 +15,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: DiscoveryPage(api: api)));
     expect(find.byKey(const Key('discovery-search')), findsOneWidget);
     expect(find.byKey(const Key('discovery-more')), findsOneWidget);
+    expect(tester.getTopLeft(find.text('朋友圈')).dy,
+        lessThan(tester.getTopLeft(find.text('扫一扫')).dy));
   });
 }

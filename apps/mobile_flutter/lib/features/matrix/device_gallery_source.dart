@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import 'video_poster_extractor.dart';
+import 'gif_image_policy.dart';
 import 'video_transcode.dart';
 
 export 'video_transcode.dart'
@@ -467,8 +468,6 @@ class DeviceGalleryPager {
     for (var i = 0; i < assets.length; i++) {
       final asset = assets[i];
       final isVideo = asset.type == AssetType.video;
-      // GIF 走原图字节才能保持动画（压缩重编码会退化成静态图）。
-      final isGif = asset.mimeType == 'image/gif';
       // 缩略图解码失败不丢弃条目（MKV/AVI 等冷门容器也要可选可发）：
       // 网格以占位底色渲染，选择与发送仍走原始字节。
       final thumbBytes = thumbnails[i];
@@ -483,32 +482,10 @@ class DeviceGalleryPager {
           mimeType: mimeType,
           compressedBytes: isVideo
               ? () => _readCompressedVideo(asset)
-              : isGif
-                  ? () async {
-                      // GIF 原样发送：保留逐帧动画。
-                      final data = await asset.originBytes;
-                      if (data == null) throw StateError('gif unavailable');
-                      return Uint8List.fromList(data);
-                    }
-                  : () async {
-                      final data = await asset.thumbnailDataWithSize(
-                        const ThumbnailSize(1280, 1280),
-                        quality: 80,
-                      );
-                      if (data == null) {
-                        throw StateError('compressed image unavailable');
-                      }
-                      return Uint8List.fromList(data);
-                    },
-          originalBytes: () async {
-            final data = await asset.originBytes;
-            if (data == null) {
-              throw StateError(isVideo
-                  ? 'original video unavailable'
-                  : 'original image unavailable');
-            }
-            return Uint8List.fromList(data);
-          },
+              : () => _readImage(asset, compressed: true),
+          originalBytes: () => isVideo
+              ? _readOriginal(asset)
+              : _readImage(asset, compressed: false),
           originalSizeBytes: isVideo
               ? () async {
                   final file = await asset.originFile;
@@ -523,6 +500,61 @@ class DeviceGalleryPager {
       );
     }
     return photos;
+  }
+
+  Future<Uint8List> _readOriginal(AssetEntity asset, {File? file}) async {
+    if (file != null) return file.readAsBytes();
+    Uint8List? bytes;
+    try {
+      bytes = await asset.originBytes;
+    } catch (_) {
+      // Some galleries expose a file but cannot return originBytes.
+    }
+    if (bytes != null) return bytes;
+    final origin = file ?? await asset.originFile;
+    if (origin == null) throw StateError('original media unavailable');
+    return origin.readAsBytes();
+  }
+
+  Future<Uint8List> _readImage(AssetEntity asset,
+      {required bool compressed}) async {
+    File? file;
+    try {
+      file = await asset.originFile;
+    } catch (_) {
+      // Fall back to the platform byte API for cloud-only assets.
+    }
+    Uint8List? original;
+    bool gif;
+    if (file != null) {
+      final handle = await file.open();
+      try {
+        final header = await handle.read(10);
+        gif = isGifBytes(header);
+        if (gif) {
+          validateGifForSend(header);
+          if (await handle.length() > maxChatGifBytes) {
+            throw const FormatException('GIF 过大，请选择不超过 20MB、400 万像素的动图');
+          }
+        }
+      } finally {
+        await handle.close();
+      }
+    } else {
+      original = await _readOriginal(asset);
+      gif = isGifBytes(original);
+    }
+    if (gif || !compressed) {
+      final bytes = original ?? await _readOriginal(asset, file: file);
+      validateGifForSend(bytes);
+      return bytes;
+    }
+    final bytes = await asset.thumbnailDataWithSize(
+      const ThumbnailSize(1280, 1280),
+      quality: 80,
+    );
+    if (bytes == null) throw StateError('compressed image unavailable');
+    return bytes;
   }
 
   /// 视频封面帧：多时间点抽取（200/500/1000/2000ms）+ 近黑帧跳过，

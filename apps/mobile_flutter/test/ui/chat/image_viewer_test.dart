@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,16 +7,103 @@ import 'package:liuhetong_mobile/ui/chat/encrypted_media_view.dart';
 
 /// 1×1 合法 PNG（尺寸解码可得 1×1）。
 Uint8List pngBytes() => Uint8List.fromList(const [
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00,
-      0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-      0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-      0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-      0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00,
-      0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-      0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      0x00,
+      0x00,
+      0x00,
+      0x0D,
+      0x49,
+      0x48,
+      0x44,
+      0x52,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x08,
+      0x06,
+      0x00,
+      0x00,
+      0x00,
+      0x1F,
+      0x15,
+      0xC4,
+      0x89,
+      0x00,
+      0x00,
+      0x00,
+      0x0A,
+      0x49,
+      0x44,
+      0x41,
+      0x54,
+      0x78,
+      0x9C,
+      0x63,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x05,
+      0x00,
+      0x01,
+      0x0D,
+      0x0A,
+      0x2D,
+      0xB4,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x49,
+      0x45,
+      0x4E,
+      0x44,
+      0xAE,
+      0x42,
+      0x60,
+      0x82,
     ]);
 
 void main() {
+  testWidgets('viewer bounds both axes while preserving contain',
+      (tester) async {
+    await tester.pumpWidget(
+        CupertinoApp(home: ImageViewerPage(previewBytes: pngBytes())));
+    final image = tester.widget<Image>(find.byType(Image).first);
+    final resize = image.image as ResizeImage;
+    expect(resize.width, 2048);
+    expect(resize.height, 2048);
+    expect(resize.policy, ResizeImagePolicy.fit);
+    expect(image.fit, BoxFit.contain);
+  });
+
+  testWidgets(
+      'GIF viewer keeps original animation bytes and bounds both axes at 720',
+      (tester) async {
+    final gif = base64Decode(
+        'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+    await tester
+        .pumpWidget(CupertinoApp(home: ImageViewerPage(previewBytes: gif)));
+    final image = tester.widget<Image>(find.byType(Image).first);
+    final resize = image.image as ResizeImage;
+    expect(resize.width, 720);
+    expect(resize.height, 720);
+    expect(resize.policy, ResizeImagePolicy.fit);
+    expect(identical((resize.imageProvider as MemoryImage).bytes, gif), isTrue);
+  });
+
   group('formatMediaSize', () {
     test('uses KB below 1MB and MB above, computed from bytes', () {
       expect(formatMediaSize(512), '1K', reason: '不足 1K 回退 1K');
@@ -86,8 +174,7 @@ void main() {
     await tester.pump();
 
     expect(loads, 1, reason: '点击后才异步加载原图');
-    expect(find.text('已展示原图 1×1'), findsOneWidget,
-        reason: '加载完成后展示原图实际像素尺寸');
+    expect(find.text('已展示原图 1×1'), findsOneWidget, reason: '加载完成后展示原图实际像素尺寸');
     expect(find.text('查看原图 358K'), findsNothing);
   });
 

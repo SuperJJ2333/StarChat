@@ -1,4 +1,11 @@
 {
+  "localFeedbackRevision": {
+    "date": "2026-09-06",
+    "status": "implemented-locally-remote-sync-unavailable",
+    "plan": "docs/superpowers/plans/2026-09-06-mi6-feedback.md",
+    "changes": ["member-avatar-and-remark", "media-thumbnail-grid", "discovery-entry-order", "personal-information-entry-and-fields"],
+    "remoteNodesModified": false
+  },
   "runId": "changliao-html-figma-2026-08-16",
   "fileKey": "zpzwTbnj1hqx80tyRygX78",
   "fileUrl": "https://www.figma.com/design/zpzwTbnj1hqx80tyRygX78",

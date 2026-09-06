@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 
@@ -8,7 +7,7 @@ import '../../features/matrix/chat_media_shared_logic.dart' as logic;
 import '../../features/matrix/chat_search_query_controller.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
-import 'contain_image_bubble.dart';
+import '../components/user_avatar.dart';
 
 /// 规格 #4：聊天记录搜索页——默认空态（仅搜索框+五个筛选入口+提示，
 /// 不显示任何消息行）；组合筛选（AND）+ 可移除标签；结果列表（#5）。
@@ -20,6 +19,9 @@ final class ChatSearchPage extends StatefulWidget {
     required this.memberEntries,
     required this.onJumpToMessage,
     this.senderDisplayName,
+    this.memberAvatarBuilder,
+    this.mediaThumbnailBuilder,
+    this.onOpenMedia,
     this.datesWithMessages = const {},
     this.scanningDates = const {},
     this.earliestMonth,
@@ -29,6 +31,10 @@ final class ChatSearchPage extends StatefulWidget {
 
   /// 是否群聊（决定是否显示"群成员"筛选入口）。
   final bool isGroup;
+  final Widget Function(BuildContext, MemberDirectoryEntry)?
+      memberAvatarBuilder;
+  final Widget Function(BuildContext, ChatSearchMessage)? mediaThumbnailBuilder;
+  final void Function(String eventId)? onOpenMedia;
 
   /// 数据源检索回调（已解密、可访问、未撤回）。
   final Future<List<ChatSearchMessage>> Function(ChatSearchFilters filters,
@@ -99,17 +105,17 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     setState(() => _loadingMore = false);
     try {
       await _controller!.executeNow(
-      onStateChange: (change) {
-        if (!mounted) return;
-        setState(() {
-          _state = change;
-          // 翻页修复：新查询结果到达时更新 _lastPage（此后 _loadMore
-          // 追加的页不会被 build 覆盖——build 只读不写）。
-          if (change is ChatSearchLoadedState) {
-            _lastPage = change.page;
-          }
-        });
-      },
+        onStateChange: (change) {
+          if (!mounted) return;
+          setState(() {
+            _state = change;
+            // 翻页修复：新查询结果到达时更新 _lastPage（此后 _loadMore
+            // 追加的页不会被 build 覆盖——build 只读不写）。
+            if (change is ChatSearchLoadedState) {
+              _lastPage = change.page;
+            }
+          });
+        },
       );
     } catch (_) {
       // The controller already publishes the failure state for the current query.
@@ -126,8 +132,9 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         middle: const Text('查找聊天记录'),
         transitionBetweenRoutes: false,
       ),
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: Column(children: [
           _searchBar(dark),
@@ -185,8 +192,8 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
 
   Widget _chip(String label, ChatSearchFilterKind kind,
       {required Key key, VoidCallback? onTap}) {
-    final active = _controller!.activeFilters.any((f) =>
-        f.kind == kind && (kind != ChatSearchFilterKind.media || true));
+    final active = _controller!.activeFilters.any(
+        (f) => f.kind == kind && (kind != ChatSearchFilterKind.media || true));
     return Padding(
       key: key,
       padding: const EdgeInsets.only(right: 8),
@@ -222,10 +229,12 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   Future<void> _pickMember() async {
     final picked = await Navigator.of(context).push<MemberDirectoryEntry>(
       CupertinoPageRoute(
-        builder: (_) => MemberPickerPage(entries: widget.memberEntries),
+        builder: (_) => MemberPickerPage(
+            entries: widget.memberEntries,
+            avatarBuilder: widget.memberAvatarBuilder),
       ),
     );
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() => _controller!.setSender(picked.userId));
       _execute();
     }
@@ -234,8 +243,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   Future<void> _openCalendar() async {
     // R6 修复：月历接真实数据（不再硬编码 2025-2026/空日期集合）。
     final now = DateTime.now();
-    final earliest = logic.CalendarMonth(
-        widget.earliestMonth?.year ?? now.year,
+    final earliest = logic.CalendarMonth(widget.earliestMonth?.year ?? now.year,
         widget.earliestMonth?.month ?? now.month);
     final latest = logic.CalendarMonth(widget.latestMonth?.year ?? now.year,
         widget.latestMonth?.month ?? now.month);
@@ -251,8 +259,11 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     );
     if (picked != null && mounted) {
       // R6 修复：日期选择后**直接调用定位回调**（不再只弹说明框）。
-      widget.onJumpToDate?.call(picked);
-      Navigator.of(context).pop();
+      if (widget.onJumpToDate != null) {
+        widget.onJumpToDate!(picked);
+      } else {
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -264,10 +275,12 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(CupertinoIcons.search, size: 44, color: WeChatColors.textTertiary),
+            const Icon(CupertinoIcons.search,
+                size: 44, color: WeChatColors.textTertiary),
             const SizedBox(height: 12),
             const Text('请选择筛选条件或输入关键字',
-                style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+                style:
+                    TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
           ],
         ),
       );
@@ -280,7 +293,9 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('查询失败', style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+            const Text('查询失败',
+                style:
+                    TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
             const SizedBox(height: 8),
             CupertinoButton(
               key: const Key('chat-search-retry'),
@@ -299,6 +314,39 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         key: Key('chat-search-no-results'),
         child: Text('未找到符合条件的聊天记录',
             style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)),
+      );
+    }
+    if (controller.activeFilters.any((filter) =>
+        filter.kind == ChatSearchFilterKind.media &&
+        filter.value == ChatSearchMediaCategory.imageVideo.name)) {
+      return NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification &&
+              notification.metrics.extentAfter < 200 &&
+              !_loadingMore &&
+              page.nextCursor != null) {
+            _loadMore(page);
+          }
+          return false;
+        },
+        child: _MediaGrid(
+          messages: page.items,
+          controller: _scroll,
+          thumbnailBuilder: widget.mediaThumbnailBuilder,
+          onOpen: (message) =>
+              (widget.onOpenMedia ?? widget.onJumpToMessage)(message.eventId),
+          footer: page.nextCursor == null
+              ? null
+              : Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: _loadingMore
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : CupertinoButton(
+                          key: const Key('chat-search-load-more'),
+                          onPressed: () => _loadMore(page),
+                          child: const Text('加载更多')),
+                ),
+        ),
       );
     }
     return NotificationListener<ScrollNotification>(
@@ -330,10 +378,12 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
               child: CupertinoButton(
                 key: const Key('chat-search-load-more'),
                 minimumSize: Size.zero,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                 onPressed: () => _loadMore(page),
                 child: const Text('加载更多',
-                    style: TextStyle(fontSize: 13, color: WeChatColors.brandPrimary)),
+                    style: TextStyle(
+                        fontSize: 13, color: WeChatColors.brandPrimary)),
               ),
             );
           }
@@ -399,7 +449,8 @@ final class _ResultRow extends StatelessWidget {
           color: dark ? WeChatColors.darkSurface : WeChatColors.lightSurface,
           border: Border(
             bottom: BorderSide(
-                width: .5, color: dark ? WeChatColors.darkDivider : WeChatColors.divider),
+                width: .5,
+                color: dark ? WeChatColors.darkDivider : WeChatColors.divider),
           ),
         ),
         child: Row(children: [
@@ -414,8 +465,8 @@ final class _ResultRow extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               displayName.isNotEmpty ? displayName.characters.first : '?',
-              style: const TextStyle(
-                  fontSize: 16, color: CupertinoColors.white),
+              style:
+                  const TextStyle(fontSize: 16, color: CupertinoColors.white),
             ),
           ),
           const SizedBox(width: 10),
@@ -466,7 +517,8 @@ final class _ResultRow extends StatelessWidget {
           if (message.mediaCategory == ChatSearchMediaCategory.imageVideo)
             const Padding(
               padding: EdgeInsets.only(left: 8),
-              child: Icon(CupertinoIcons.photo, size: 40, color: WeChatColors.textTertiary),
+              child: Icon(CupertinoIcons.photo,
+                  size: 40, color: WeChatColors.textTertiary),
             ),
         ]),
       ),
@@ -476,7 +528,10 @@ final class _ResultRow extends StatelessWidget {
 
 /// 规格 #6：成员选择页（拼音分组 A-Z+#、搜索、点击返回）。
 final class MemberPickerPage extends StatefulWidget {
-  const MemberPickerPage({super.key, required this.entries});
+  const MemberPickerPage(
+      {super.key, required this.entries, this.avatarBuilder});
+
+  final Widget Function(BuildContext, MemberDirectoryEntry)? avatarBuilder;
 
   final List<MemberDirectoryEntry> entries;
 
@@ -498,8 +553,9 @@ final class _MemberPickerPageState extends State<MemberPickerPage> {
         middle: Text('选择群成员'),
         transitionBetweenRoutes: false,
       ),
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: Column(children: [
           Padding(
@@ -557,23 +613,14 @@ final class _MemberPickerPageState extends State<MemberPickerPage> {
                                   ),
                                 ),
                                 child: Row(children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: WeChatColors.brandPrimary,
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      member.displayName.isNotEmpty
-                                          ? member.displayName.characters.first
-                                          : '?',
-                                      style: const TextStyle(
-                                          fontSize: 15,
-                                          color: CupertinoColors.white),
-                                    ),
-                                  ),
+                                  widget.avatarBuilder?.call(context, member) ??
+                                      UserAvatar(
+                                        nickname: member.displayName,
+                                        fallbackSeed: member.userId,
+                                        diagnosticSource:
+                                            'search-member-picker',
+                                        size: 36,
+                                      ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(member.displayName,
@@ -633,18 +680,19 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    final canPrev = widget.latest
-        .canNavigateTo(_current.previous, earliest: widget.earliest, latest: widget.latest);
-    final canNext =
-        widget.latest.canNavigateTo(_current.next, earliest: widget.earliest, latest: widget.latest);
+    final canPrev = widget.latest.canNavigateTo(_current.previous,
+        earliest: widget.earliest, latest: widget.latest);
+    final canNext = widget.latest.canNavigateTo(_current.next,
+        earliest: widget.earliest, latest: widget.latest);
     return CupertinoPageScaffold(
       key: const Key('calendar-picker-page'),
       navigationBar: const CupertinoNavigationBar(
         middle: Text('选择日期'),
         transitionBetweenRoutes: false,
       ),
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: Column(children: [
           // 月份标题 + 上/下月导航。
@@ -765,8 +813,10 @@ final class ChatCategoryPage extends StatelessWidget {
     required this.category,
     required this.messages,
     required this.onOpen,
+    this.mediaThumbnailBuilder,
   });
 
+  final Widget Function(BuildContext, ChatSearchMessage)? mediaThumbnailBuilder;
   final String title;
   final ChatSearchMediaCategory category;
   final List<ChatSearchMessage> messages;
@@ -781,8 +831,9 @@ final class ChatCategoryPage extends StatelessWidget {
         middle: Text(title),
         transitionBetweenRoutes: false,
       ),
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       child: SafeArea(
         child: messages.isEmpty
             ? Center(
@@ -806,68 +857,10 @@ final class ChatCategoryPage extends StatelessWidget {
     };
   }
 
-  Widget _mediaGrid() {
-    final grouped = <String, List<ChatSearchMessage>>{};
-    for (final m in messages) {
-      final key =
-          '${m.timestamp.year}-${m.timestamp.month}-${m.timestamp.day}';
-      grouped.putIfAbsent(key, () => []).add(m);
-    }
-    return ListView(
-      children: [
-        for (final entry in grouped.entries)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
-                child: Text(entry.key,
-                    style: const TextStyle(
-                        fontSize: 13, color: WeChatColors.textSecondary)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 2,
-                  crossAxisSpacing: 2,
-                  childAspectRatio: 1,
-                  children: [
-                    for (final message in entry.value)
-                      // 缩略图占位（真实缩略图由调用方注入；此处保持
-                      // contain 完整适配——规格 #10/#8）。
-                      ContainGridCell(
-                        key: Key('category-media-${message.eventId}'),
-                        bytes: _placeholderBytes(message),
-                        cellSize: 120,
-                        onTap: () => onOpen(message),
-                        overlay: message.mediaCategory ==
-                                ChatSearchMediaCategory.imageVideo
-                            ? const Center(
-                                child: Icon(CupertinoIcons.play_fill,
-                                    size: 24,
-                                    color: Color(0xCCFFFFFF)))
-                            : null,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-      ],
-    );
-  }
-
-  /// 缩略占位（真实图片字节由调用方通过消息事件加载接入会话缓存——
-  /// 规格 #1 的 UI 接线点）。
-  static final _placeholder = Uint8List.fromList(const [
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
-        0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
-      ]);
-  Uint8List _placeholderBytes(ChatSearchMessage message) => _placeholder;
+  Widget _mediaGrid() => _MediaGrid(
+      messages: messages,
+      thumbnailBuilder: mediaThumbnailBuilder,
+      onOpen: onOpen);
 
   Widget _fileList() {
     return ListView.builder(
@@ -888,8 +881,9 @@ final class ChatCategoryPage extends StatelessWidget {
   }
 
   String _fileNameOf(ChatSearchMessage message) =>
-      logic.FileDisplayFallback.fileName(
-          message.visibleText.trim().isEmpty ? null : message.visibleText.trim());
+      logic.FileDisplayFallback.fileName(message.visibleText.trim().isEmpty
+          ? null
+          : message.visibleText.trim());
 
   Widget _linkList() {
     return ListView.builder(
@@ -897,9 +891,8 @@ final class ChatCategoryPage extends StatelessWidget {
       itemBuilder: (context, index) {
         final message = messages[index];
         final links = logic.extractHttpLinks(message.visibleText);
-        final preview = links.isEmpty
-            ? null
-            : logic.LinkPreviewModel(url: links.first);
+        final preview =
+            links.isEmpty ? null : logic.LinkPreviewModel(url: links.first);
         return _listRow(
           key: 'category-link-${message.eventId}',
           icon: CupertinoIcons.link,
@@ -926,8 +919,8 @@ final class ChatCategoryPage extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: const BoxDecoration(
-          border:
-              Border(bottom: BorderSide(width: .5, color: WeChatColors.divider)),
+          border: Border(
+              bottom: BorderSide(width: .5, color: WeChatColors.divider)),
         ),
         child: Row(children: [
           Icon(icon, size: 36, color: WeChatColors.brandPrimary),
@@ -956,6 +949,97 @@ final class ChatCategoryPage extends StatelessWidget {
                   fontSize: 12, color: WeChatColors.textTertiary)),
         ]),
       ),
+    );
+  }
+}
+
+/// Lazy slivers keep only visible thumbnail rows alive, including across pages.
+final class _MediaGrid extends StatelessWidget {
+  const _MediaGrid(
+      {required this.messages,
+      required this.onOpen,
+      this.thumbnailBuilder,
+      this.controller,
+      this.footer});
+  final List<ChatSearchMessage> messages;
+  final void Function(ChatSearchMessage) onOpen;
+  final Widget Function(BuildContext, ChatSearchMessage)? thumbnailBuilder;
+  final ScrollController? controller;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, List<ChatSearchMessage>>{};
+    for (final message in messages) {
+      final date = message.timestamp.toLocal();
+      groups
+          .putIfAbsent('${date.year}-${date.month}-${date.day}', () => [])
+          .add(message);
+    }
+    return CustomScrollView(
+      key: const Key('chat-search-media-grid'),
+      controller: controller,
+      slivers: [
+        for (final group in groups.entries) ...[
+          SliverToBoxAdapter(
+              child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Text(group.key,
+                style: const TextStyle(
+                    fontSize: 13, color: WeChatColors.textSecondary)),
+          )),
+          SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3, mainAxisSpacing: 2, crossAxisSpacing: 2),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final message = group.value[index];
+                  final seconds = message.duration?.inSeconds;
+                  return Semantics(
+                    button: true,
+                    label: message.isVideo ? '播放视频' : '查看图片',
+                    child: GestureDetector(
+                      key: Key('category-media-${message.eventId}'),
+                      onTap: () => onOpen(message),
+                      child: Stack(fit: StackFit.expand, children: [
+                        thumbnailBuilder?.call(context, message) ??
+                            const ColoredBox(
+                                color: WeChatColors.darkSurface,
+                                child: Center(
+                                    child: Icon(CupertinoIcons.photo,
+                                        color: WeChatColors.textTertiary))),
+                        if (message.isVideo) ...[
+                          const Center(
+                              child: Icon(CupertinoIcons.play_fill,
+                                  size: 24, color: CupertinoColors.white)),
+                          if (seconds != null)
+                            Positioned(
+                                right: 6,
+                                bottom: 6,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                      color: CupertinoColors.black
+                                          .withValues(alpha: .55),
+                                      borderRadius: BorderRadius.circular(3)),
+                                  child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 2),
+                                      child: Text(
+                                          '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}',
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              color: CupertinoColors.white))),
+                                )),
+                        ],
+                      ]),
+                    ),
+                  );
+                }, childCount: group.value.length),
+              )),
+        ],
+        if (footer != null) SliverToBoxAdapter(child: footer),
+      ],
     );
   }
 }

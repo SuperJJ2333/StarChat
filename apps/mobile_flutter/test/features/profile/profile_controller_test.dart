@@ -133,7 +133,7 @@ void main() {
     expect(gateway.puts, 0);
     expect(c.state.status, ProfileStatus.ready);
   });
-  testWidgets('me page strictly exposes Figma identity and five menu rows',
+  testWidgets('me page exposes identity and five menu rows with personal information',
       (tester) async {
     var momentsOpened = false;
     var caibiOpened = false;
@@ -142,8 +142,8 @@ void main() {
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
     await tester.pumpWidget(CupertinoApp(
         home: ProfileExperiencePage(
-        onInvite: () {},
-        onQrCode: () {},
+            onInvite: () {},
+            onQrCode: () {},
             controller: controller,
             onMoments: () => momentsOpened = true,
             onCaibi: () => caibiOpened = true,
@@ -160,13 +160,8 @@ void main() {
     expect(find.text('红包'), findsNothing, reason: '“我”页不再提供红包入口');
     // “二维码”入口：身份卡右上角（微信“我的二维码”样式）。
     expect(find.byKey(const Key('profile-qr-entry')), findsOneWidget);
-    // 邀请码入口固定存在于“设置”上方（需求：“我”页邀请码入口）。
-    expect(find.byKey(const Key('profile-invite-entry')), findsOneWidget);
-    expect(find.text('邀请码'), findsOneWidget);
-    final inviteTop =
-        tester.getTopLeft(find.byKey(const Key('profile-invite-entry'))).dy;
-    final settingsTop = tester.getTopLeft(find.text('设置')).dy;
-    expect(inviteTop, lessThan(settingsTop), reason: '邀请码入口在“设置”上方');
+    expect(find.byKey(const Key('profile-invite-entry')), findsNothing);
+    expect(find.byKey(const Key('profile-details-entry')), findsOneWidget);
     await tester.tap(find.text('朋友圈'));
     await tester.tap(find.text('点钻'));
     await tester.tap(find.text('钱包'));
@@ -178,6 +173,71 @@ void main() {
     expect(settingsLabel.style?.color, isNot(WeChatColors.brandPrimary));
     expect(find.text('退出登录'), findsNothing);
     expect(find.byType(CupertinoTextField), findsNothing);
+  });
+
+  testWidgets(
+      'both personal information entries retain invitation and profile saving',
+      (tester) async {
+    var invites = 0;
+    final controller = ProfileController(
+        gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
+    await tester.pumpWidget(CupertinoApp(
+        home: ProfileExperiencePage(
+      controller: controller,
+      onInvite: () => invites++,
+      onMoments: () {},
+      onCaibi: () {},
+      onWallet: () {},
+      onSettings: () {},
+    )));
+    await tester.pumpAndSettle();
+    for (final entry in ['profile-identity-card', 'profile-details-entry']) {
+      await tester.tap(find.byKey(Key(entry)));
+      await tester.pumpAndSettle();
+      expect(find.byType(ProfileDetailsPage), findsOneWidget);
+      final invitation = find.byKey(const Key('profile-invite-entry'));
+      final fields = find.byType(CupertinoTextField);
+      expect(invitation, findsOneWidget);
+      expect(tester.getTopLeft(invitation).dy,
+          lessThan(tester.getTopLeft(fields.first).dy));
+      await tester.tap(invitation);
+      await tester.pumpAndSettle();
+      Navigator.of(tester.element(find.byType(ProfileDetailsPage))).pop();
+      await tester.pumpAndSettle();
+    }
+    expect(invites, 2);
+    await tester.tap(find.byKey(const Key('profile-details-entry')));
+    await tester.pumpAndSettle();
+    final fields = find.byType(CupertinoTextField);
+    await tester.enterText(fields.first, 'Alice Updated');
+    await tester.enterText(fields.last, 'Updated signature');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(controller.state.profile!.nickname, 'Alice Updated');
+    expect(controller.state.profile!.signature, 'Updated signature');
+  });
+
+  testWidgets(
+      'profile fields align entered values right and empty placeholders left',
+      (tester) async {
+    final controller = ProfileController(
+        gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
+    await controller.load();
+    await tester.pumpWidget(
+        CupertinoApp(home: ProfileDetailsPage(controller: controller)));
+    final fields = find.byType(CupertinoTextField);
+    for (final field in [fields.first, fields.last]) {
+      expect(
+          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+      await tester.enterText(field, '');
+      await tester.pump();
+      expect(
+          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.left);
+      await tester.enterText(field, 'new');
+      await tester.pump();
+      expect(
+          tester.widget<CupertinoTextField>(field).textAlign, TextAlign.right);
+    }
   });
 
   testWidgets('profile avatar opens a dedicated preview and upload flow',

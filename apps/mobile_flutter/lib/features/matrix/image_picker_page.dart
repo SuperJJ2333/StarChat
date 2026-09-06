@@ -1,3 +1,5 @@
+import '../../ui/chat/contain_image_bubble.dart';
+import 'gif_image_policy.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -96,7 +98,10 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
                   child: InteractiveViewer(
                     maxScale: 4,
                     child: Center(
-                      child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+                      child: Image(
+                          image: boundedChatImageProvider(snapshot.data!,
+                              maxEdge: isGifBytes(snapshot.data!) ? 720 : 2048),
+                          fit: BoxFit.contain),
                     ),
                   ),
                 );

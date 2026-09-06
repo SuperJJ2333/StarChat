@@ -1,4 +1,6 @@
-import 'dart:ui' as ui;
+import '../../features/matrix/media_thumbnail.dart';
+import '../../features/matrix/gif_image_policy.dart';
+import 'contain_image_bubble.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -124,12 +126,11 @@ final class _EncryptedImageMessageState extends State<EncryptedImageMessage> {
               child: SizedBox(
                 width: EncryptedImageMessage.thumbnailWidth,
                 height: EncryptedImageMessage.thumbnailHeight,
-                child: Image.memory(
-                  snapshot.data!,
+                child: Image(
+                  image: boundedChatImageProvider(snapshot.data!),
                   fit: BoxFit.cover,
                   // 预览按 720px 解码：显著降低内存与解码耗时，
                   // 全屏查看时由查看器按原图字节另行渲染。
-                  cacheWidth: 720,
                   gaplessPlayback: true,
                 ),
               ),
@@ -205,11 +206,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       final bytes = await loader();
       ({int width, int height})? decoded;
       try {
-        final codec = await ui.instantiateImageCodec(bytes);
-        final frame = await codec.getNextFrame();
-        decoded = (width: frame.image.width, height: frame.image.height);
-        frame.image.dispose();
-        codec.dispose();
+        final size = await decodeImageDimensions(bytes);
+        if (size != null) decoded = (width: size.$1, height: size.$2);
       } catch (_) {
         // 尺寸解码失败不影响原图展示。
       }
@@ -318,11 +316,10 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
               child: Center(
                 child: InteractiveViewer(
                   maxScale: 4,
-                  child: Image.memory(
-                    displayBytes,
+                  child: Image(
+                    image: boundedChatImageProvider(displayBytes,
+                        maxEdge: isGifBytes(displayBytes) ? 720 : 2048),
                     fit: BoxFit.contain,
-                    // 占位阶段按 720px 解码省内存；查看原图后全分辨率渲染。
-                    cacheWidth: originalBytes == null ? 720 : null,
                     gaplessPlayback: true,
                   ),
                 ),

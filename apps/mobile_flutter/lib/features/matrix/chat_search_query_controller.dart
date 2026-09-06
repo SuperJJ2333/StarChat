@@ -261,6 +261,8 @@ final class ChatSearchMessage {
     required this.visibleText,
     this.mediaCategory,
     this.hasMedia = false,
+    this.isVideo = false,
+    this.duration,
   });
 
   final String eventId;
@@ -277,6 +279,8 @@ final class ChatSearchMessage {
   /// 消息自身媒体分类（image/video/file/link）。
   final ChatSearchMediaCategory? mediaCategory;
   final bool hasMedia;
+  final bool isVideo;
+  final Duration? duration;
 }
 
 enum ChatSearchMediaCategory { imageVideo, file, link }

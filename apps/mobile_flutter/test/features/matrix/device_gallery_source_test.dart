@@ -16,6 +16,76 @@ void main() {
     GalleryAccessCache.shared.invalidate();
   });
 
+  test(
+      'mislabeled GIF bypasses static compression without copying original bytes',
+      () async {
+    final bytes =
+        Uint8List.fromList([71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 0, 0, 0, 59]);
+    final asset = _GifAsset(bytes);
+    await GalleryAccessCache.shared.ensurePermission(() async => true);
+    final photos =
+        await DeviceGalleryPager(album: _FakeAlbum([asset])).loadNextPage();
+    expect(identical(await photos.single.compressedBytes(), bytes), isTrue);
+    expect(identical(await photos.single.originalBytes(), bytes), isTrue);
+    expect(asset.staticCompressions, isEmpty);
+  });
+
+  test(
+      'GIF file preflight rejects oversized bytes and canvas before origin bridge',
+      () async {
+    final dir = Directory(
+        '../../docs/verification/artifacts/2026-09-06/mi6-feedback/profile');
+    await dir.create(recursive: true);
+    for (final dimensionsTooLarge in [false, true]) {
+      final header = Uint8List.fromList([
+        71,
+        73,
+        70,
+        56,
+        57,
+        97,
+        dimensionsTooLarge ? 255 : 1,
+        dimensionsTooLarge ? 255 : 0,
+        dimensionsTooLarge ? 255 : 1,
+        dimensionsTooLarge ? 255 : 0
+      ]);
+      final file = File(
+          '${dir.path}/preflight-${dimensionsTooLarge ? 'canvas' : 'bytes'}.gif');
+      await file.writeAsBytes(header);
+      if (!dimensionsTooLarge) {
+        final handle = await file.open(mode: FileMode.append);
+        await handle.truncate(20 * 1024 * 1024 + 1);
+        await handle.close();
+      }
+      addTearDown(() => file.delete());
+      final asset = _GifAsset(
+          Uint8List.fromList([71, 73, 70, 56, 57, 97, 1, 0, 1, 0]),
+          fixtureFile: file);
+      await GalleryAccessCache.shared.ensurePermission(() async => true);
+      final photos =
+          await DeviceGalleryPager(album: _FakeAlbum([asset])).loadNextPage();
+      await expectLater(photos.single.compressedBytes(), throwsFormatException);
+      await expectLater(photos.single.originalBytes(), throwsFormatException);
+      expect(asset.originReads, isEmpty);
+    }
+  });
+
+  test('GIF file is read directly without a platform byte bridge', () async {
+    final bytes =
+        Uint8List.fromList([71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 0, 0, 0, 59]);
+    final file = File(
+        '../../docs/verification/artifacts/2026-09-06/mi6-feedback/profile/direct.gif');
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes);
+    addTearDown(() => file.delete());
+    final asset = _GifAsset(Uint8List(0), fixtureFile: file);
+    await GalleryAccessCache.shared.ensurePermission(() async => true);
+    final photos =
+        await DeviceGalleryPager(album: _FakeAlbum([asset])).loadNextPage();
+    expect(await photos.single.compressedBytes(), bytes);
+    expect(asset.originReads, isEmpty);
+  });
+
   group('decodeThumbnailsBounded（有界并发解码）', () {
     test('并发峰值不超过上限，且保持输入顺序', () async {
       var inFlight = 0;
@@ -270,13 +340,13 @@ void main() {
     test('长视频保留全部候选点；短视频截到时长内', () {
       expect(samplePositionsFor(const Duration(minutes: 1)),
           [200, 500, 1000, 2000]);
-      expect(samplePositionsFor(const Duration(milliseconds: 600)),
-          [200, 500], reason: '600ms 视频：1000/2000ms 越界剔除');
+      expect(samplePositionsFor(const Duration(milliseconds: 600)), [200, 500],
+          reason: '600ms 视频：1000/2000ms 越界剔除');
     });
 
     test('极短视频回退到中点；未知时长按候选原样', () {
-      expect(samplePositionsFor(const Duration(milliseconds: 120)),
-          [60], reason: '短于全部候选点：取时长中点');
+      expect(samplePositionsFor(const Duration(milliseconds: 120)), [60],
+          reason: '短于全部候选点：取时长中点');
       expect(samplePositionsFor(null), [200, 500, 1000, 2000]);
       expect(samplePositionsFor(Duration.zero), [200, 500, 1000, 2000]);
     });
@@ -385,7 +455,8 @@ void main() {
         },
       );
       final asset = _StubAsset('shared-asset');
-      final results = await Future.wait([store.load(asset), store.load(asset), store.load(asset)]);
+      final results = await Future.wait(
+          [store.load(asset), store.load(asset), store.load(asset)]);
       expect(results.every((r) => r != null), isTrue);
       expect(calls, 1, reason: '同一资源的并发请求合并为一个任务');
     });
@@ -411,8 +482,7 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 60));
         now = now.add(const Duration(seconds: 30));
       }
-      expect(submissions, 3,
-          reason: '超时按失败记账，预算上限约束原生任务提交次数（3 次）');
+      expect(submissions, 3, reason: '超时按失败记账，预算上限约束原生任务提交次数（3 次）');
       expect(store.retriesExhaustedById(asset.id), isTrue);
     });
   });
@@ -460,10 +530,16 @@ void main() {
       }
 
       // 首次：抽取并落盘。
-      expect(await loadVideoFirstFrame(asset, fetch: fetch, cacheDir: () async => dir), isNotNull);
+      expect(
+          await loadVideoFirstFrame(asset,
+              fetch: fetch, cacheDir: () async => dir),
+          isNotNull);
       expect(extractions, 1);
       // 第二次：磁盘缓存命中，不再抽帧。
-      expect(await loadVideoFirstFrame(asset, fetch: fetch, cacheDir: () async => dir), isNotNull);
+      expect(
+          await loadVideoFirstFrame(asset,
+              fetch: fetch, cacheDir: () async => dir),
+          isNotNull);
       expect(extractions, 1, reason: '成功封面磁盘缓存复用');
 
       // 把缓存文件写空（模拟写入中断/磁盘损坏）→ 不得把空字节当命中。
@@ -472,7 +548,10 @@ void main() {
       for (final entry in cacheDir.listSync()) {
         if (entry is File) await entry.writeAsBytes(const [], flush: true);
       }
-      expect(await loadVideoFirstFrame(asset, fetch: fetch, cacheDir: () async => dir), isNotNull);
+      expect(
+          await loadVideoFirstFrame(asset,
+              fetch: fetch, cacheDir: () async => dir),
+          isNotNull);
       expect(extractions, 2, reason: '空缓存文件被删除并重新抽帧，不永远占坑');
     });
   });
@@ -526,7 +605,8 @@ final class _StubVideoAsset extends AssetEntity {
     required this.path,
     this.durationOverride,
   })  : _file = File(path),
-        super(id: id, typeInt: 2, width: 100, height: 100, mimeType: 'video/mp4');
+        super(
+            id: id, typeInt: 2, width: 100, height: 100, mimeType: 'video/mp4');
 
   final String path;
   final File _file;
@@ -537,4 +617,36 @@ final class _StubVideoAsset extends AssetEntity {
 
   @override
   Duration get videoDuration => durationOverride ?? Duration.zero;
+}
+
+final class _GifAsset extends AssetEntity {
+  _GifAsset(this.bytes, {this.fixtureFile})
+      : super(
+            id: 'mislabeled',
+            typeInt: 1,
+            width: 1,
+            height: 1,
+            mimeType: 'image/jpeg');
+  final Uint8List bytes;
+  final File? fixtureFile;
+  final originReads = <bool>[];
+  final staticCompressions = <int>[];
+  @override
+  Future<File?> get originFile async => fixtureFile;
+  @override
+  Future<Uint8List?> get originBytes async {
+    originReads.add(true);
+    return bytes;
+  }
+
+  @override
+  Future<Uint8List?> thumbnailDataWithSize(ThumbnailSize size,
+      {ThumbnailFormat format = ThumbnailFormat.jpeg,
+      int quality = 100,
+      int frame = 0,
+      PMProgressHandler? progressHandler,
+      PMCancelToken? cancelToken}) async {
+    if (size.width > 200) staticCompressions.add(size.width);
+    return Uint8List.fromList([1, 2, 3]);
+  }
 }

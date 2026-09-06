@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../features/contacts/member_directory_service.dart';
 import '../foundation/wechat_tokens.dart';
+import '../components/user_avatar.dart';
 
 /// One selectable row of the 「选择提醒的人」 panel.
 ///
@@ -93,12 +94,14 @@ final class WeChatMentionPanel extends StatefulWidget {
     required this.canMentionAll,
     required this.onSelect,
     this.height = 264,
+    this.avatarBuilder,
   });
 
   final List<MentionOption> options;
   final bool canMentionAll;
   final ValueChanged<MentionOption> onSelect;
   final double height;
+  final Widget Function(BuildContext, MentionOption)? avatarBuilder;
 
   @override
   State<WeChatMentionPanel> createState() => _WeChatMentionPanelState();
@@ -132,8 +135,7 @@ final class _WeChatMentionPanelState extends State<WeChatMentionPanel> {
               placeholder: '搜索',
               onChanged: (_) => setState(() {}),
               style: const TextStyle(fontSize: 14),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
                 color: WeChatColors.chatPageBackground,
                 borderRadius: BorderRadius.circular(WeChatRadius.control),
@@ -183,21 +185,20 @@ final class _WeChatMentionPanelState extends State<WeChatMentionPanel> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: WeChatColors.avatarFallbackBlue,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              option.primaryName.isEmpty
-                  ? '?'
-                  : option.primaryName.characters.first,
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
+          if (option.isAll)
+            const SizedBox(
+                width: 36,
+                height: 36,
+                child: Icon(CupertinoIcons.person_2_fill,
+                    color: WeChatColors.brandPrimary))
+          else
+            widget.avatarBuilder?.call(context, option) ??
+                UserAvatar(
+                  nickname: option.primaryName,
+                  fallbackSeed: option.id,
+                  diagnosticSource: 'mention-picker',
+                  size: 36,
+                ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
