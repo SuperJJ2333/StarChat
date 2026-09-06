@@ -57,6 +57,7 @@ import '../../ui/chat/wechat_hold_to_talk.dart';
 import '../../ui/chat/voice_recording_overlay.dart';
 import '../../features/emoji/fluent_emoji_catalog.dart';
 import '../../ui/chat/emoji_text.dart';
+import '../../ui/chat/contain_image_bubble.dart';
 import '../../ui/chat/encrypted_media_view.dart';
 import '../../ui/chat/super_emoji_message.dart';
 import '../statistics/statistics_room_scope.dart';
@@ -71,12 +72,14 @@ import 'chat_red_packet_controller.dart';
 import 'chat_red_packet_sheet.dart';
 import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
+import '../contacts/member_directory_service.dart';
+import '../../ui/chat/chat_search_page.dart';
+import 'chat_search_query_controller.dart' show ChatSearchMessage, ChatSearchMediaCategory;
 import 'conversation_preferences.dart';
 import '../../core/permissions/interaction_permission.dart';
 import 'conversation_presentation.dart';
 import 'conversation_read_state.dart';
 import 'direct_chat_info_page.dart';
-import 'chat_history_search.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
 import 'matrix_message_reminder_backend.dart';
@@ -274,15 +277,20 @@ class _RoomPageState extends State<RoomPage> {
   /// WeChat opens the 「选择提醒的人」 panel when a group message ends with a
   /// freshly typed "@" and closes it again as soon as the text moves on.
   void _handleComposerChanged() {
-    // 规格#3：差分同步（删除/编辑使失效的 token 剔除）+ 新 @ 触发记录。
+    // R3 修复：程序化更新（_insertMention/appendMentionDraft）期间跳过——
+    // 它们已同步模型与 _lastComposerText，此处再差分会把同次编辑应用两次。
+    if (_programmaticComposerEdit) return;
+    // 规格#3：差分同步 + 新 @ 触发记录。
     final next = input.text;
     if (next != _lastComposerText) {
       final (start, removed, inserted) =
           MentionComposerModel.diffEdit(_lastComposerText, next);
+      // R1 修复：先更新模型文本再检测触发（旧顺序 triggerAt 检查旧
+      // text，空框输入 @ 越界返回，面板不弹）。
+      mentionComposer.text = next;
       mentionComposer.applyEdit(
           start: start, removed: removed, inserted: inserted);
       final cursor = input.selection.baseOffset;
-      // 新插入的最后一个字符是 @（含组合输入提交）→ 记录触发位置。
       if (inserted > 0 && cursor > 0 && cursor <= next.length) {
         final insertedEnd = start + inserted;
         if (insertedEnd == cursor &&
@@ -290,7 +298,6 @@ class _RoomPageState extends State<RoomPage> {
           mentionComposer.triggerAt(cursor - 1);
         }
       }
-      mentionComposer.text = next;
       _lastComposerText = next;
     }
     final shouldShow =
@@ -299,6 +306,24 @@ class _RoomPageState extends State<RoomPage> {
       setState(() {
         composerPanel = shouldShow ? ComposerPanel.mention : ComposerPanel.none;
       });
+    }
+  }
+
+  /// R3 修复：程序化更新输入框期间置 true，监听器跳过差分。
+  bool _programmaticComposerEdit = false;
+
+  /// 程序化更新输入框（面板选中/长按头像）：同步模型、token、
+  /// _lastComposerText 与 TextEditingController，不经过监听器差分。
+  void _setComposerText(String text, int caret) {
+    _programmaticComposerEdit = true;
+    try {
+      input
+        ..text = text
+        ..selection = TextSelection.collapsed(offset: caret);
+      _lastComposerText = text;
+      mentionComposer.text = text;
+    } finally {
+      _programmaticComposerEdit = false;
     }
   }
 
@@ -355,11 +380,9 @@ class _RoomPageState extends State<RoomPage> {
             userId: option.id,
             cursor: cursor < 0 ? null : cursor,
           );
+    // R3 修复：经统一程序化更新（不走监听器差分，防同次编辑二次应用）。
+    _setComposerText(mentionComposer.text, caret);
     setState(() {
-      input
-        ..text = mentionComposer.text
-        ..selection = TextSelection.collapsed(offset: caret);
-      _lastComposerText = mentionComposer.text;
       composerPanel = ComposerPanel.none;
     });
   }
@@ -723,30 +746,35 @@ class _RoomPageState extends State<RoomPage> {
   Future<void> _send() async {
     final text = input.text.trim();
     if (text.isEmpty || controller == null) return;
-    input.clear();
+    // R2 修复：先取得正文/回复关系/收件人的**不可变快照**，再清空输入。
+    // （input.clear() 同步触发监听器→applyEdit 移除全部 token→
+    // recipientUserIds 已空——旧顺序丢失 m.mentions。）
     final interaction = _interaction;
     final reply = replyingTo;
-    // 规格#3：收件人以统一提及模型的 token 范围为准（文字已删不提醒）；
-    // 兼容读旧 draft（头像长按快速 @ 的旧路径已迁至新模型）。
-    var mentions = mentionComposer.recipientUserIds();
-    if (mentions.isEmpty) mentions = mentionDraft.activeUserIds(text);
+    final mentions = mentionComposer.recipientUserIds();
+    _programmaticComposerEdit = true;
+    try {
+      input.clear();
+      _lastComposerText = '';
+      mentionComposer
+        ..text = ''
+        ..tokens.clear();
+    } finally {
+      _programmaticComposerEdit = false;
+    }
     if (interaction != null && reply != null) {
       await interaction.reply(
         reply.id,
         text,
         mentionedUserIds: mentions,
       );
-      setState(() => replyingTo = null);
+      if (mounted) setState(() => replyingTo = null);
     } else if (interaction != null && mentions.isNotEmpty) {
       await interaction.sendMention(text, mentions);
     } else {
       await controller!.sendText(text);
     }
     mentionDraft.clear();
-    mentionComposer
-      ..text = ''
-      ..tokens.clear();
-    _lastComposerText = '';
   }
 
   MessageInteractionService? get _interaction {
@@ -1681,37 +1709,75 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   void _openHistorySearch() {
+    // R5 修复：改用新 ChatSearchPage（默认空态+组合筛选+拼音成员+
+    // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     final messages = controller?.messages ?? const <RoomMessageViewModel>[];
+    // 转换为搜索模型（含媒体分类/正文可见文本/时间线序号）。
+    final searchMessages = <ChatSearchMessage>[
+      for (final (index, message) in messages.indexed)
+        ChatSearchMessage(
+          eventId: message.id,
+          senderId: message.senderId,
+          senderDisplayName: _displayName(message.senderId, message.isOwn),
+          timestamp: message.timestamp,
+          timelineOrder: index,
+          visibleText: message.text,
+          mediaCategory: switch (message.kind) {
+            RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
+            RoomMessageKind.image
+                when message.mimeType?.startsWith('video/') == true =>
+              ChatSearchMediaCategory.imageVideo,
+            RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
+            RoomMessageKind.file => ChatSearchMediaCategory.file,
+            _ => null,
+          },
+          hasMedia: message.kind != RoomMessageKind.text,
+        ),
+    ];
+    // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
+    final memberEntries = <MemberDirectoryEntry>[
+      for (final member in orderedJoinedMembers(widget.room))
+        MemberDirectoryEntry(
+          userId: member.id,
+          nickname: member.calcDisplayname(),
+        ),
+    ];
+    // 有消息日期（从当前消息集构建；月历不再硬编码——R6）。
+    final datesWithMessages = <DateTime>{
+      for (final message in messages)
+        DateTime(message.timestamp.year, message.timestamp.month,
+            message.timestamp.day),
+    };
+    final earliestMonth = messages.isEmpty
+        ? DateTime.now()
+        : messages.last.timestamp; // messages 是新→旧。
+    final latestMonth = messages.isEmpty ? DateTime.now() : messages.first.timestamp;
+
     Navigator.push<void>(
       context,
       CupertinoPageRoute(
-        builder: (_) => GroupChatHistorySearchPage(
+        builder: (_) => ChatSearchPage(
           isGroup: isGroup,
-          onEntryTap: (entry) async {
-            Navigator.pop(context);
-            if (entry.eventId.isNotEmpty) {
-              await _scrollToMessage(entry.eventId);
+          search: (filters, {cursor, limit = 50}) async {
+            // 数据源检索（已解密可访问消息）。
+            final matched = searchMessages.where(filters.matches).toList();
+            int start = 0;
+            if (cursor != null) {
+              start = matched
+                      .indexWhere((m) => m.timelineOrder == cursor.order) +
+                  1;
             }
+            final end = (start + limit).clamp(0, matched.length);
+            return matched.sublist(start, end);
           },
-          entries: [
-            for (final message in messages)
-              GroupChatHistoryEntry(
-                sender: _displayName(message.senderId, message.isOwn),
-                text: message.text,
-                senderId: message.senderId,
-                eventId: message.id,
-                timestamp: message.timestamp,
-                kind: switch (message.kind) {
-                  RoomMessageKind.video => LocalChatSearchKind.video,
-                  RoomMessageKind.image
-                      when message.mimeType?.startsWith('video/') == true =>
-                    LocalChatSearchKind.video,
-                  RoomMessageKind.image => LocalChatSearchKind.image,
-                  RoomMessageKind.file => LocalChatSearchKind.file,
-                  _ => LocalChatSearchKind.text,
-                },
-              ),
-          ],
+          memberEntries: memberEntries,
+          onJumpToMessage: (eventId) {
+            Navigator.pop(context);
+            unawaited(_scrollToMessage(eventId));
+          },
+          datesWithMessages: datesWithMessages,
+          earliestMonth: earliestMonth,
+          latestMonth: latestMonth,
         ),
       ),
     );
@@ -1788,18 +1854,37 @@ class _RoomPageState extends State<RoomPage> {
     );
   }
 
+  /// R7：打开全屏图片查看器（ContainImageBubble 的点击动作）。
+  Future<void> _openImageViewer(RoomMessageViewModel message) async {
+    try {
+      final bytes = await controller!.loadAttachment(message.id);
+      if (!mounted) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => ImageViewerPage(
+            previewBytes: bytes,
+            loadOriginal: () => controller!.loadAttachment(message.id),
+            onForward: () => _forwardMessages([message]),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      // 加载失败轻提示（不解密失败不崩溃）。
+    }
+  }
+
   Widget _messageContent(RoomMessageViewModel message) =>
       switch (message.kind) {
-        RoomMessageKind.image => EncryptedImageMessage(
-            load: () => controller!.loadAttachment(message.id),
-            onForward: () => _forwardMessages([message]),
-            forwardTo: (roomId) async {
-              final interaction = _interaction;
-              if (interaction == null) {
-                throw StateError('forward unavailable');
-              }
-              await interaction.forward(message.id, roomId);
-            },
+        // R7 修复：图片气泡改用 ContainImageBubble——按解码实际宽高
+        // contain 适配（不再固定 200x150 cover 裁切）。
+        RoomMessageKind.image => LayoutBuilder(
+            builder: (context, constraints) => ContainImageBubble(
+              load: () => controller!.loadAttachment(message.id),
+              availableWidth: constraints.maxWidth,
+              availableHeight: MediaQuery.of(context).size.height,
+              onTap: () => _openImageViewer(message),
+            ),
           ),
         RoomMessageKind.file => WeChatAttachmentTile(
             name: message.text,
@@ -1972,16 +2057,14 @@ class _RoomPageState extends State<RoomPage> {
     final isAnimatedEmojiMessage = animatedEmojis.isNotEmpty;
     final isImageMessage = message.kind == RoomMessageKind.image;
     void appendMentionDraft() {
-      // 规格#3：头像长按快速 @——经统一模型登记 token（发送/编辑同步
-      // 与面板选择一致）。
+      // 规格#3：头像长按快速 @——经统一模型登记 token；R3 修复：
+      // 走 _setComposerText（不走监听器差分，防同次编辑二次应用导致
+      // token 失效）。
       final caret = mentionComposer.appendAtEnd(
         displayName: publicDisplayName,
         userId: message.senderId,
       );
-      input
-        ..text = mentionComposer.text
-        ..selection = TextSelection.collapsed(offset: caret);
-      _lastComposerText = mentionComposer.text;
+      _setComposerText(mentionComposer.text, caret);
     }
 
     // 即时反馈语义：发送中的消息视觉上等同已发出（无转圈/半透明），

@@ -84,8 +84,24 @@ final class MentionComposerModel {
 
   /// 文本编辑（删除/插入）后同步 token 元数据：
   /// 完整落在被删范围内的 token 移除（不再提醒）；范围右移/收缩修正。
+  ///
+  /// [pendingTriggerStart] 的处理：编辑没有删除触发字符时保留——
+  /// 用户在 @ 后继续输入查询词（如 `@兄`），触发范围应存活直到
+  /// 选中成员/光标离开/触发字符被删，而不是每次输入都丢失（R1）。
   void applyEdit({required int start, required int removed, required int inserted}) {
     final deleteEnd = start + removed;
+    // 触发字符存活判定：触发位置未被删除覆盖。
+    final trigger = pendingTriggerStart;
+    if (trigger != null) {
+      final triggerDeleted =
+          trigger >= start && trigger < deleteEnd;
+      if (triggerDeleted) {
+        pendingTriggerStart = null;
+      } else if (trigger >= deleteEnd) {
+        pendingTriggerStart = trigger + inserted - removed; // 平移。
+      }
+      // trigger < start：编辑在触发之后，不影响。
+    }
     final kept = <MentionToken>[];
     for (final token in tokens) {
       if (token.start >= start && token.end <= deleteEnd) {
@@ -115,7 +131,6 @@ final class MentionComposerModel {
     tokens
       ..clear()
       ..addAll(kept);
-    pendingTriggerStart = null;
   }
 
   /// 发送时的收件人（按 userId，绝不凭昵称/正文推断）。

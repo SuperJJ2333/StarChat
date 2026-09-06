@@ -49,54 +49,80 @@ final class ChatSearchQueryController {
   bool get isDefaultEmptyState =>
       _keyword.trim().isEmpty && _senderUserId == null && _mediaCategory == null;
 
-  /// —— 筛选变更（组合规则：关键词 ∧ 发送者 ∧ 媒体分类；媒体单选、
-  /// 发送者单选；日期是独立定位工具不参与列表条件）——
+  // —— 筛选变更（R10：所有变更递增 epoch 使在途请求失效）——
+  // 具体 setKeyword/setSender/setMediaCategory/removeFilter/clearAll
+  // 在下方 epoch 管理区域定义。
+
+  /// 关键词是否视为已输入（去首尾空白后为空 = 未输入）。
+  bool get hasKeywordInput => _keyword.trim().isNotEmpty;
+
+  // —— R10 修复：以"条件变更即递增的查询代次"管理全部请求生命周期 ——
+  // 任何 setKeyword/setSender/setMediaCategory/clearAll 都递增 epoch，
+  // 使在途请求（executeNow/loadMore/防抖）结果标记 stale。
+  int _epoch = 0;
+
   void setKeyword(String keyword) {
+    if (_keyword == keyword) return;
     _keyword = keyword;
+    _epoch++; // 条件变更 → 旧请求失效。
   }
 
   void setSender(String? userId) {
+    if (_senderUserId == userId) return;
     _senderUserId = userId;
+    _epoch++;
   }
 
   void setMediaCategory(ChatSearchMediaCategory? category) {
+    if (_mediaCategory == category) return;
     _mediaCategory = category;
+    _epoch++;
   }
 
   bool removeFilter(ChatSearchFilterKind kind) => switch (kind) {
         ChatSearchFilterKind.keyword => () {
+          if (_keyword.trim().isEmpty) return false;
           _keyword = '';
+          _epoch++;
           return true;
         }(),
         ChatSearchFilterKind.sender => () {
+          if (_senderUserId == null) return false;
           _senderUserId = null;
+          _epoch++;
           return true;
         }(),
         ChatSearchFilterKind.media => () {
+          if (_mediaCategory == null) return false;
           _mediaCategory = null;
+          _epoch++;
           return true;
         }(),
       };
 
   void clearAll() {
+    if (isDefaultEmptyState) return;
     _keyword = '';
     _senderUserId = null;
     _mediaCategory = null;
+    _epoch++;
   }
 
-  /// 关键词是否视为已输入（去首尾空白后为空 = 未输入）。
-  bool get hasKeywordInput => _keyword.trim().isNotEmpty;
-
-  /// 输入防抖：300ms 后执行（键盘搜索按钮走 [executeNow] 立即执行）。
+  /// 输入防抖：300ms 后执行；**R10 修复**：
+  /// - 防抖期间新调度 → 旧 Completer 以 stale 空页完成（不悬挂）。
+  /// - 取消 → Completer 同样完成。
   Timer? _debounceTimer;
+  Completer<ChatSearchResultPage>? _debounceCompleter;
 
   Future<ChatSearchResultPage> scheduleDebounced({
     int limit = 50,
     void Function(ChatSearchStateChange change)? onStateChange,
   }) {
-    _debounceTimer?.cancel();
-    final completer = Completer<ChatSearchResultPage>();
+    _completePendingDebounce();
+    _debounceCompleter = Completer<ChatSearchResultPage>();
+    final completer = _debounceCompleter!;
     _debounceTimer = Timer(debounce, () {
+      _debounceTimer = null;
       executeNow(limit: limit, onStateChange: onStateChange)
           .then(completer.complete)
           .catchError((Object error) {
@@ -106,30 +132,45 @@ final class ChatSearchQueryController {
     return completer.future;
   }
 
-  void cancelDebounce() => _debounceTimer?.cancel();
+  void cancelDebounce() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    _completePendingDebounce();
+  }
 
-  /// 立即执行查询（本轮生成 epoch：旧查询的迟到结果被丢弃——
-  /// "快速更换关键词只展示最新查询的结果"）。
+  void _completePendingDebounce() {
+    final pending = _debounceCompleter;
+    _debounceCompleter = null;
+    if (pending != null && !pending.isCompleted) {
+      // 以 stale 空页完成（调用方不悬挂，结果可丢弃）。
+      pending.complete(const ChatSearchResultPage(
+          items: [], nextCursor: null, epoch: -1, stale: true));
+    }
+  }
+
+  /// 立即执行查询。R10：空态也递增 epoch（旧请求完成后不能覆盖空态）。
   Future<ChatSearchResultPage> executeNow({
     int limit = 50,
     void Function(ChatSearchStateChange change)? onStateChange,
   }) async {
-    _debounceTimer?.cancel();
-    if (isDefaultEmptyState) {
-      onStateChange?.call(const ChatSearchStateChange.empty());
-      return const ChatSearchResultPage(items: [], nextCursor: null, epoch: -1);
-    }
-    final epoch = ++executedQueries;
-    onStateChange?.call(ChatSearchStateChange.loading(epoch));
+    cancelDebounce();
+    // 不可变条件快照 + 本次查询的 epoch。
+    final epoch = ++_epoch;
+    executedQueries = epoch;
     final filters = ChatSearchFilters(
       keyword: hasKeywordInput ? _keyword.trim() : null,
       senderUserId: _senderUserId,
       mediaCategory: _mediaCategory,
     );
+    if (isDefaultEmptyState) {
+      onStateChange?.call(const ChatSearchStateChange.empty());
+      return ChatSearchResultPage(items: const [], nextCursor: null, epoch: epoch);
+    }
+    onStateChange?.call(ChatSearchStateChange.loading(epoch));
     try {
       final page = await search(filters, cursor: null, limit: limit);
-      // 迟到的旧查询：epoch 已过期 → 不回调状态。
-      if (epoch != executedQueries) {
+      // 迟到的旧查询：epoch 已过期 → 不回调状态，返回 stale。
+      if (epoch != _epoch) {
         return ChatSearchResultPage(
             items: page, nextCursor: null, epoch: epoch, stale: true);
       }
@@ -141,14 +182,15 @@ final class ChatSearchQueryController {
       onStateChange?.call(ChatSearchStateChange.loaded(result));
       return result;
     } catch (_) {
-      if (epoch == executedQueries) {
+      if (epoch == _epoch) {
         onStateChange?.call(ChatSearchStateChange.failed(epoch));
       }
       rethrow;
     }
   }
 
-  /// 追加下一页（稳定游标 + 事件 ID 去重 + 不隐含历史截断）。
+  /// 追加下一页。R10：校验当前 epoch 且用不可变条件快照；
+  /// 旧翻页在新查询后完成 → 标记 stale。
   Future<ChatSearchResultPage> loadMore(
     ChatSearchResultPage current, {
     int limit = 50,
@@ -157,12 +199,18 @@ final class ChatSearchQueryController {
     final cursor = current.nextCursor;
     if (cursor == null) return current;
     final epoch = current.epoch;
+    // 快照当前条件（loadMore 期间条件可能被修改）。
     final filters = ChatSearchFilters(
       keyword: hasKeywordInput ? _keyword.trim() : null,
       senderUserId: _senderUserId,
       mediaCategory: _mediaCategory,
     );
     final more = await search(filters, cursor: cursor, limit: limit);
+    // R10：翻页期间条件变更（epoch 推进）→ stale，不合并到有效结果。
+    if (epoch != _epoch) {
+      return ChatSearchResultPage(
+          items: current.items, nextCursor: cursor, epoch: epoch, stale: true);
+    }
     final merged = dedupeByEventId([...current.items, ...more]);
     return ChatSearchResultPage(
       items: merged,

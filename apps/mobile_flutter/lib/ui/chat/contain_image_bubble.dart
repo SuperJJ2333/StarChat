@@ -109,7 +109,12 @@ final class _ContainImageState extends State<_ContainImage> {
   @override
   void didUpdateWidget(covariant _ContainImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.bytes, widget.bytes)) _layout = null;
+    // R13：字节或约束变化都需重算（旋屏/视口变化后仍用旧尺寸）。
+    if (!identical(oldWidget.bytes, widget.bytes) ||
+        oldWidget.maxWidth != widget.maxWidth ||
+        oldWidget.maxHeight != widget.maxHeight) {
+      _layout = null;
+    }
   }
 
   @override

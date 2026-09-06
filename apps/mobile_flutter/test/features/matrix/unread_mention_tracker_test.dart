@@ -133,16 +133,24 @@ void main() {
       expect(tracker.nextJumpTarget, 'A');
     });
 
-    test('普通已读推进不清空未查看 @', () {
+    test('普通已读推进不清空未查看 @；延迟解密提及仍加入（R9 对齐）', () {
       final tracker = make()..initializeBoundary(lastReadOrder: 0);
       tracker.onMessageArrived(
           eventId: 'A', order: 5, senderIsSelf: false, mentionedUserIds: {'@me:x'});
       tracker.onReadReceiptAdvanced(order: 100);
       expect(tracker.hasPending, isTrue, reason: '已读回执不清空 @ 集合');
-      // 但边界推进后，更早的回填提及不再加入。
+      // R9 对齐："普通已读不替代逐条查看"——回执推进不收窄加入判定；
+      // 初始边界（0）之后到达的延迟解密提及（order=50）仍应加入。
       expect(
         tracker.onMessageArrived(
             eventId: 'old', order: 50, senderIsSelf: false, mentionedUserIds: {'@me:x'}),
+        isTrue,
+        reason: '延迟解密的提及（在初始边界之后）不因回执推进被排除',
+      );
+      // 初始边界之前的真正旧提及仍不加（回填防护）。
+      expect(
+        tracker.onMessageArrived(
+            eventId: 'ancient', order: -1, senderIsSelf: false, mentionedUserIds: {'@me:x'}),
         isFalse,
       );
     });

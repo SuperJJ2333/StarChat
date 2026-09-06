@@ -12,6 +12,7 @@ import 'group_qr_code_page.dart';
 import 'profile_repository.dart';
 import 'chat_history_search.dart';
 import 'matrix_user_avatar.dart';
+import '../contacts/member_directory_service.dart';
 import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/notification/conversation_notification_mode_tile.dart';
 
@@ -721,10 +722,16 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
   String query = '';
   @override
   Widget build(BuildContext context) {
-    final members = widget.snapshot.members.where((member) =>
-        _resolvedMemberName(widget.identityCache, member)
-            .toLowerCase()
-            .contains(query.trim().toLowerCase()));
+    // R12 修复：成员搜索统一走拼音排序/过滤服务（A-Z 分组+全拼/首字母
+    // 匹配），替换旧的展示名 contains 过滤。
+    final entries = [
+      for (final member in widget.snapshot.members)
+        MemberDirectoryEntry(
+          userId: member.matrixUserId,
+          nickname: member.displayName,
+        ),
+    ];
+    final sorted = sortAndFilterMemberEntries(entries, query);
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
           backgroundColor: WeChatColors.chatNavigationBackground,
@@ -736,30 +743,32 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: CupertinoSearchTextField(
+              key: const Key('group-member-search'),
               placeholder: '搜索群成员',
               onChanged: (value) => setState(() => query = value),
             ),
           ),
           Expanded(
-            child: ListView(children: [
-              for (final member in members)
-                WeChatListTile(
-                  leading: UserAvatar(
-                    nickname: _resolvedMemberName(widget.identityCache, member),
-                    fallbackSeed: member.matrixUserId,
-                    avatarUrl: member.avatarUrl,
-                    avatarHeaders: member.avatarHeaders,
-                    size: 40,
-                  ),
-                  title:
-                      Text(_resolvedMemberName(widget.identityCache, member)),
-                  subtitle: Text(member.matrixUserId == widget.snapshot.ownerId
-                      ? '群主'
-                      : widget.snapshot.adminIds.contains(member.matrixUserId)
-                          ? '群管理员'
-                          : ''),
-                ),
-            ]),
+            child: sorted.isEmpty
+                ? const Center(
+                    child: Text('未找到群成员',
+                        style: TextStyle(fontSize: 14, color: WeChatColors.textSecondary)))
+                : ListView(children: [
+                    for (final entry in sorted)
+                      WeChatListTile(
+                        leading: UserAvatar(
+                          nickname: entry.displayName,
+                          fallbackSeed: entry.userId,
+                          size: 40,
+                        ),
+                        title: Text(entry.displayName),
+                        subtitle: Text(entry.userId == widget.snapshot.ownerId
+                            ? '群主'
+                            : widget.snapshot.adminIds.contains(entry.userId)
+                                ? '群管理员'
+                                : ''),
+                      ),
+                  ]),
           ),
         ]),
       ),

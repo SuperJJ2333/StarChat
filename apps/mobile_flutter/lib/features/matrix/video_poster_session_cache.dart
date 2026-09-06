@@ -89,13 +89,16 @@ final class VideoPosterSessionCache {
     String cacheKey,
     Future<Uint8List?> Function() load,
   ) async {
+    final generation = _sessionGeneration;
     // ① 会话级磁盘（加密缩略图）。
     if (diskRead != null) {
       try {
         final cached = await diskRead!(cacheKey);
         if (cached != null && cached.isNotEmpty) {
           diskHits++;
-          _storeMemory(cacheKey, cached);
+          if (generation == _sessionGeneration && !isEvicted(cacheKey)) {
+            _storeMemory(cacheKey, cached);
+          }
           return VideoPosterResult(cached, fromDisk: true);
         }
       } catch (_) {
@@ -112,6 +115,10 @@ final class VideoPosterSessionCache {
     }
     if (fresh == null || fresh.isEmpty) {
       return const VideoPosterResult.retryable('暂无预览图，可重试');
+    }
+    // R11：会话已清理/键已被移除 → 不写回（不复活已删除内容）。
+    if (generation != _sessionGeneration || isEvicted(cacheKey)) {
+      return VideoPosterResult(fresh, freshlyLoaded: true, stale: true);
     }
     _storeMemory(cacheKey, fresh);
     // ③ 回写会话磁盘（尽力而为；空间不足不失败——内存已命中）。
@@ -141,8 +148,16 @@ final class VideoPosterSessionCache {
     }
   }
 
+  // —— R11 修复：会话代次 + 已移除键集合 ——
+  // evict/clearAll/clearMemory 期间在途加载完成时，检查目标键是否已被
+  // 移除/代次已变，避免写回已清内容。
+  int _sessionGeneration = 0;
+  final Set<String> _evictedKeys = <String>{};
+
   /// 撤回/删除：只移除对应媒体项（内存 + 磁盘）。
+  /// R11：标记键已移除——在途加载完成时不再写回。
   Future<void> evict(String cacheKey) async {
+    _evictedKeys.add(cacheKey);
     final removed = _memory.remove(cacheKey);
     if (removed != null) _memoryBytes -= removed.length;
     if (diskDelete != null) {
@@ -152,10 +167,16 @@ final class VideoPosterSessionCache {
     }
   }
 
-  /// 媒体替换：版本变化生成新键即自然失效；本方法提供显式入口
-  /// （旧键删除 + 新键写入合并到 load 流程）。
+  /// R11：条目是否已被移除（在途加载检查用）。
+  bool isEvicted(String cacheKey) => _evictedKeys.contains(cacheKey);
+
+  /// R11：恢复键（replace 新版本等场景）。
+  void _restoreKey(String cacheKey) => _evictedKeys.remove(cacheKey);
+
+  /// 媒体替换：版本变化生成新键即自然失效；本方法提供显式入口。
   Future<void> replace(String oldKey, String newKey, Uint8List bytes) async {
     await evict(oldKey);
+    _restoreKey(newKey); // 新键可写。
     _storeMemory(newKey, bytes);
     if (diskWrite != null) {
       try {
@@ -164,27 +185,39 @@ final class VideoPosterSessionCache {
     }
   }
 
-  /// 应用重启/退出账号/销毁房间会话实例：整体失效（内存清空；磁盘由
-  /// 调用方按生命周期清理会话临时目录）。
+  /// 应用重启/退出账号/销毁房间会话实例：整体失效。
+  /// R11：递增会话代次（在途加载不写回）+ 清空已移除键集。
   void clearMemory() {
+    _sessionGeneration++;
+    _evictedKeys.clear();
     _memory.clear();
     _memoryBytes = 0;
   }
 
-  /// 主动清理缓存：内存 + 磁盘全清。
+  /// 主动清理缓存：内存 + 磁盘全清（R11：真正清磁盘）。
   Future<void> clearAll() async {
+    // 先快照键（clearMemory 会清空 _memory），再清内存 + 磁盘。
+    final keys = _memory.keys.toList();
     clearMemory();
-    // 磁盘清理由注入方提供目录级清理；逐键删除仅覆盖已知键的场景。
+    if (diskDelete != null) {
+      for (final key in keys) {
+        try {
+          await diskDelete!(key);
+        } catch (_) {}
+      }
+    }
   }
 }
 
-/// 加载结果：成功带字节与来源；失败带 retryable 状态。
+/// 加载结果：成功带字节与来源；失败带 retryable 状态；
+/// stale=在途加载完成时目标已被移除/会话已清理（R11）。
 final class VideoPosterResult {
   const VideoPosterResult(
     this.bytes, {
     this.fromMemory = false,
     this.fromDisk = false,
     this.freshlyLoaded = false,
+    this.stale = false,
   })  : retryable = false,
         reason = null;
 
@@ -193,12 +226,16 @@ final class VideoPosterResult {
         fromMemory = false,
         fromDisk = false,
         freshlyLoaded = false,
+        stale = false,
         retryable = true;
 
   final Uint8List? bytes;
   final bool fromMemory;
   final bool fromDisk;
   final bool freshlyLoaded;
+
+  /// R11：在途加载完成时目标已被移除/会话已清理。
+  final bool stale;
   final bool retryable;
   final String? reason;
 }

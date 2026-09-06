@@ -23,19 +23,28 @@ final class UnreadMentionTracker {
   final Map<String, int> _orderByEventId = <String, int>{};
   final Set<String> _pendingEventIds = <String>{};
 
-  /// 历史边界（初次建立的已读位置 order；≤ 边界的旧提及不加）。
+  /// R9 修复：已查看事件集合——重复同步/恢复后，已查看的提及不再
+  /// "复活"为未读。与 pending 一起持久化。
+  final Set<String> _viewedEventIds = <String>{};
+
+  /// 历史边界（初次建立的已读位置 order；用于排除"很久以前"的旧提及
+  /// 回填）。与普通已读回执推进区分（R9：回执不替代逐条查看）。
   int _historyBoundaryOrder = -1;
   bool _initialized = false;
 
   int get pendingCount => _pendingEventIds.length;
   bool get hasPending => _pendingEventIds.isNotEmpty;
 
-  /// 初始化历史边界（登录会话恢复时调用一次）。
+  /// 初始化历史边界（登录会话恢复时调用一次；R9：与回执推进分离）。
   void initializeBoundary({required int lastReadOrder}) {
     if (_initialized) return;
+    _initialBoundaryOrder = lastReadOrder;
     _historyBoundaryOrder = lastReadOrder;
     _initialized = true;
   }
+
+  /// 初始化边界（不可被回执推进覆盖）。
+  int _initialBoundaryOrder = -1;
 
   /// 同步到达一条消息的提及判定。
   ///
@@ -52,8 +61,12 @@ final class UnreadMentionTracker {
   }) {
     if (redactedOrDeleted || senderIsSelf) return false;
     if (!mentionedUserIds.contains(accountId)) return false;
-    // 历史边界：旧消息（重新解密/回填）不重复加入。
-    if (_initialized && order <= _historyBoundaryOrder) return false;
+    // R9：已查看过的事件，重复同步/恢复后不再复活为未读。
+    if (_viewedEventIds.contains(eventId)) return false;
+    // 历史边界：**初始化**时确立的边界之前的旧提及不加（回填防护）。
+    // 普通已读回据推进（onReadReceiptAdvanced）不收窄此判定——
+    // 规则："普通已读不替代逐条查看"。
+    if (_initialized && order <= _initialBoundaryOrder) return false;
     _orderByEventId[eventId] = order;
     return _pendingEventIds.add(eventId);
   }
@@ -75,30 +88,35 @@ final class UnreadMentionTracker {
       pendingEventIdsNewestFirst().firstOrNull;
 
   /// 可见性判定通过（气泡 ≥50% 可见持续 500ms 且应用前台）：标记已查看。
-  /// 返回是否确实消费了一条。
-  bool markViewed(String eventId) => _pendingEventIds.remove(eventId);
+  /// R9：同时记录到已查看集合（重复同步/恢复后不复活）。
+  bool markViewed(String eventId) {
+    _viewedEventIds.add(eventId);
+    return _pendingEventIds.remove(eventId);
+  }
 
   /// 跳转失败：不消费该条（保留在集合中供重试）。
   void onJumpFailed(String eventId) {
     // 不移除：记录重试提示由 UI 层处理。
   }
 
-  /// 普通已读回执推进：只移动历史边界（影响后续回填判定），
-  /// 绝不清空已存在的待查看 @。
+  /// 普通已读回执推进：R9 修复——回执不再收窄提及加入判定
+  /// （"普通已读不替代逐条查看"）；仅推进边界用于诊断。
   void onReadReceiptAdvanced({required int order}) {
     if (order > _historyBoundaryOrder) _historyBoundaryOrder = order;
   }
 
-  /// 持久化序列化（账号隔离本地存储用）。
+  /// 持久化序列化（账号隔离本地存储用；含已查看集合——R9）。
   Map<String, dynamic> toJson() => {
         'accountId': accountId,
         'roomId': roomId,
         'pending': _pendingEventIds.toList(growable: false),
+        'viewed': _viewedEventIds.toList(growable: false),
         'orders': {
           for (final entry in _orderByEventId.entries)
             entry.key: entry.value,
         },
         'boundary': _historyBoundaryOrder,
+        'initialBoundary': _initialBoundaryOrder,
         'initialized': _initialized,
       };
 
@@ -110,11 +128,17 @@ final class UnreadMentionTracker {
     for (final id in (json['pending'] as List).cast<String>()) {
       tracker._pendingEventIds.add(id);
     }
+    // R9：恢复已查看集合。
+    for (final id in ((json['viewed'] as List?) ?? const []).cast<String>()) {
+      tracker._viewedEventIds.add(id);
+    }
     final orders = json['orders'] as Map<String, dynamic>;
     for (final entry in orders.entries) {
       tracker._orderByEventId[entry.key] = entry.value as int;
     }
     tracker._historyBoundaryOrder = (json['boundary'] as num?)?.toInt() ?? -1;
+    tracker._initialBoundaryOrder =
+        (json['initialBoundary'] as num?)?.toInt() ?? tracker._historyBoundaryOrder;
     tracker._initialized = json['initialized'] as bool? ?? false;
     return tracker;
   }

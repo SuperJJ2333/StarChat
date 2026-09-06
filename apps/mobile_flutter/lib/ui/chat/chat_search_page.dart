@@ -20,6 +20,10 @@ final class ChatSearchPage extends StatefulWidget {
     required this.memberEntries,
     required this.onJumpToMessage,
     this.senderDisplayName,
+    this.datesWithMessages = const {},
+    this.scanningDates = const {},
+    this.earliestMonth,
+    this.latestMonth,
   });
 
   /// 是否群聊（决定是否显示"群成员"筛选入口）。
@@ -37,6 +41,16 @@ final class ChatSearchPage extends StatefulWidget {
 
   /// 发送者显示名解析（结果行顶部：备注>昵称>用户名）。
   final String Function(String senderId)? senderDisplayName;
+
+  /// R6：月历数据——有消息日期集合（不再硬编码空集）。
+  final Set<DateTime> datesWithMessages;
+
+  /// 尚未完成历史扫描的日期（独立加载态）。
+  final Set<DateTime> scanningDates;
+
+  /// 可访问历史最早/最新月份（导航钳制；null 用当前月）。
+  final DateTime? earliestMonth;
+  final DateTime? latestMonth;
 
   @override
   State<ChatSearchPage> createState() => _ChatSearchPageState();
@@ -197,11 +211,21 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Future<void> _openCalendar() async {
+    // R6 修复：月历接真实数据（不再硬编码 2025-2026/空日期集合）。
+    final now = DateTime.now();
+    final earliest = logic.CalendarMonth(
+        widget.earliestMonth?.year ?? now.year,
+        widget.earliestMonth?.month ?? now.month);
+    final latest = logic.CalendarMonth(widget.latestMonth?.year ?? now.year,
+        widget.latestMonth?.month ?? now.month);
     final picked = await Navigator.of(context).push<DateTime>(
       CupertinoPageRoute(
-        builder: (_) => const CalendarPickerPage(
-            earliest: logic.CalendarMonth(2025, 1),
-            latest: logic.CalendarMonth(2026, 12)),
+        builder: (_) => CalendarPickerPage(
+          earliest: earliest,
+          latest: latest,
+          datesWithMessages: widget.datesWithMessages,
+          scanningDates: widget.scanningDates,
+        ),
       ),
     );
     if (picked != null && mounted) {
