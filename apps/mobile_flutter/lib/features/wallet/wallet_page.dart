@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -88,6 +90,10 @@ final class _WalletPageState extends State<WalletPage> {
   final address = TextEditingController();
   Future<Map<String, dynamic>>? balance;
   String? depositAddress;
+  String? _depositNotice;
+  String? _depositFeedback;
+  bool _depositLoading = false;
+  bool _depositFundingEnabled = false;
   String? status;
   WithdrawalOrderPoller? _poller;
 
@@ -103,8 +109,6 @@ final class _WalletPageState extends State<WalletPage> {
   /// U01：提交中互斥 + 按钮加载态。
   bool _submitting = false;
 
-  /// U03：服务端有效确认阈值（0/未取到时隐藏具体数字文案）。
-  int? _confirmationThreshold;
   String? _minDepositText;
   bool _conversionEnabled = false;
 
@@ -125,13 +129,9 @@ final class _WalletPageState extends State<WalletPage> {
   Future<void> _loadWalletConfig() async {
     try {
       final config = await widget.api?.walletConfig();
-      final threshold = config?['confirmation_threshold'];
       if (!mounted) return;
       setState(() {
-        _confirmationThreshold = threshold is int ? threshold : null;
         _conversionEnabled = config?['conversion_enabled'] == true;
-        final min = config?['min_deposit']?.toString();
-        _minDepositText = (min == null || min.isEmpty) ? null : min;
       });
     } catch (_) {
       // 配置不可得：保持通用文案（不显示可能错误的具体数字）。
@@ -217,20 +217,81 @@ final class _WalletPageState extends State<WalletPage> {
   }
 
   Future<void> _loadDepositAddress() async {
+    final api = widget.api;
+    if (_depositLoading || api == null) return;
+    setState(() {
+      _depositLoading = true;
+      depositAddress = null;
+      _depositNotice = null;
+      _depositFeedback = null;
+      _depositFundingEnabled = false;
+    });
     try {
-      final body = await widget.api?.walletDepositAddress();
-      if (mounted) {
-        setState(() => depositAddress = body?['address']?.toString());
+      final body = await api.walletDepositAddress();
+      final value = body['address'];
+      final minimum = body['minimum_deposit'];
+      final notice = body['notice'];
+      if (value is! String ||
+          !_validOfficialAddress(value) ||
+          body['asset'] != 'USDT' ||
+          body['network'] != 'TRC20' ||
+          body['funding_enabled'] is! bool ||
+          minimum is! String ||
+          !RegExp(r'^(0|[1-9][0-9]{0,23})\.[0-9]{6}$').hasMatch(minimum) ||
+          notice is! String ||
+          notice.trim().isEmpty) {
+        throw const FormatException('Invalid official deposit response');
       }
-    } catch (_) {
-      if (mounted) setState(() => status = '充值地址获取失败，请稍后重试');
+      if (mounted) {
+        setState(() {
+          depositAddress = value;
+          _depositNotice = notice;
+          _minDepositText = minimum;
+          _depositFundingEnabled = body['funding_enabled'] as bool;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _depositFeedback = error is BusinessApiException
+            ? error.message
+            : error is FormatException
+                ? '充值地址数据无效，请联系管理员'
+                : '无法连接服务器，请检查网络后重试');
+      }
+    } finally {
+      if (mounted) setState(() => _depositLoading = false);
     }
+  }
+
+  static bool _validOfficialAddress(String value) {
+    if (!RegExp(r'^T[1-9A-HJ-NP-Za-km-z]{33}$').hasMatch(value)) return false;
+    const alphabet =
+        '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    var number = BigInt.zero;
+    for (final character in value.split('')) {
+      number =
+          number * BigInt.from(58) + BigInt.from(alphabet.indexOf(character));
+    }
+    final bytes = <int>[];
+    while (number > BigInt.zero) {
+      bytes.insert(0, (number & BigInt.from(255)).toInt());
+      number >>= 8;
+    }
+    if (bytes.length != 25 || bytes.first != 0x41) return false;
+    final checksum =
+        sha256.convert(sha256.convert(bytes.take(21).toList()).bytes).bytes;
+    return List.generate(4, (index) => bytes[index + 21] == checksum[index])
+        .every((matches) => matches);
   }
 
   Future<void> _copyAddress() async {
     if (depositAddress == null) return;
-    await Clipboard.setData(ClipboardData(text: depositAddress!));
-    if (mounted) setState(() => status = '充值地址已复制');
+    try {
+      await Clipboard.setData(ClipboardData(text: depositAddress!));
+      if (mounted) setState(() => _depositFeedback = '充值地址已复制');
+    } catch (_) {
+      if (mounted) setState(() => _depositFeedback = '复制失败，请重试');
+    }
   }
 
   Future<void> withdraw() async {
@@ -391,23 +452,24 @@ final class _WalletPageState extends State<WalletPage> {
           ),
           clipBehavior: Clip.antiAlias,
           child: WeChatListTile(
+            key: const Key('wallet-deposit-load'),
             leading: Icon(CupertinoIcons.arrow_down_circle,
                 size: 24, color: WeChatColors.brandPrimary),
             title: Text('获取充值地址',
                 style: TextStyle(
                     fontSize: 16,
                     color: WeChatColors.resolveTextPrimary(context))),
-            // U03：确认数文案来自服务端 /wallet/config（阈值后端可配，
-            // 客户端不再硬编码"20 个确认"）。
             subtitle: Text(
-                depositAddress == null
-                    ? (_confirmationThreshold == null
-                        ? '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，确认到账以钱包说明为准'
-                        : '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，$_confirmationThreshold 个确认后到账')
-                    : '已生成专属充值地址',
+                _depositLoading ? '正在获取官方充值地址…' : '官方固定地址 · USDT (TRC20)',
                 style: const TextStyle(
                     color: WeChatColors.textSecondary, fontSize: 13)),
-            onTap: _loadDepositAddress,
+            trailing: _depositLoading
+                ? const CupertinoActivityIndicator(
+                    key: Key('wallet-deposit-loading'))
+                : null,
+            onTap: _depositLoading || widget.api == null
+                ? null
+                : _loadDepositAddress,
           ),
         ),
         if (depositAddress != null) ...[
@@ -419,6 +481,25 @@ final class _WalletPageState extends State<WalletPage> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(children: [
+              Text(_depositFundingEnabled ? '官方充值地址' : '充值入账暂未开放',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(_depositNotice!,
+                  key: const Key('wallet-deposit-notice'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: WeChatColors.textSecondary)),
+              const SizedBox(height: 12),
+              QrImageView(
+                  key: const Key('wallet-deposit-qr'),
+                  data: depositAddress!,
+                  size: 180,
+                  backgroundColor: CupertinoColors.white,
+                  semanticsLabel: '官方 USDT TRC20 充值地址二维码'),
+              const SizedBox(height: 10),
               Text(depositAddress!,
                   key: const Key('wallet-deposit-address'),
                   textAlign: TextAlign.center,
@@ -427,13 +508,26 @@ final class _WalletPageState extends State<WalletPage> {
                       height: 1.4,
                       color: WeChatColors.resolveTextPrimary(context))),
               const SizedBox(height: 10),
+              Text('最低充值 $_minDepositText USDT · TRC20',
+                  style: const TextStyle(
+                      fontSize: 12, color: WeChatColors.textSecondary)),
+              const SizedBox(height: 10),
               ModernActionButton(
+                key: const Key('wallet-deposit-copy'),
                 icon: ChangliaoIcons.confirm,
                 label: '复制完整地址',
                 onPressed: _copyAddress,
               ),
             ]),
           ),
+        ],
+        if (_depositFeedback != null) ...[
+          const SizedBox(height: 8),
+          Text(_depositFeedback!,
+              key: const Key('wallet-deposit-feedback'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
         ],
         const SizedBox(height: 16),
         Align(

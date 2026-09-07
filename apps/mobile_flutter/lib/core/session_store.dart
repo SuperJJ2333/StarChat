@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 abstract interface class SecureKeyValueStore {
@@ -14,16 +16,29 @@ final class FlutterSecureKeyValueStore implements SecureKeyValueStore {
       : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
+  static const _iosSession = MethodChannel('chatflow/ios_secure_session');
+  bool _nativeSessionKey(String key) =>
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.iOS &&
+      const {
+        'liuhetong.matrix_database_key.v1',
+        'liuhetong.business_session.v1'
+      }.contains(key);
 
   @override
-  Future<void> delete(String key) => _storage.delete(key: key);
+  Future<void> delete(String key) => _nativeSessionKey(key)
+      ? _iosSession.invokeMethod<void>('delete', {'key': key})
+      : _storage.delete(key: key);
 
   @override
-  Future<String?> read(String key) => _storage.read(key: key);
+  Future<String?> read(String key) => _nativeSessionKey(key)
+      ? _iosSession.invokeMethod<String>('read', {'key': key})
+      : _storage.read(key: key);
 
   @override
-  Future<void> write(String key, String value) =>
-      _storage.write(key: key, value: value);
+  Future<void> write(String key, String value) => _nativeSessionKey(key)
+      ? _iosSession.invokeMethod<void>('write', {'key': key, 'value': value})
+      : _storage.write(key: key, value: value);
 }
 
 final class StoredBusinessSession {
