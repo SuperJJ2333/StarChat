@@ -18,7 +18,15 @@ import httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
@@ -42,6 +50,7 @@ class StrictBody(BaseModel):
 
 
 class Device(StrictBody):
+    registration_id: str = Field(pattern=r"^[0-9a-f]{32}$")
     voip_token: str = Field(pattern=r"^[0-9a-fA-F]{64,200}$")
     apns_token: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64,200}$")
 
@@ -272,6 +281,15 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         CREATE INDEX IF NOT EXISTS device_expiry ON devices(updated);
         CREATE INDEX IF NOT EXISTS rate_expiry ON rates(bucket);
     """)
+    # Expand-only routing metadata migration; no business or Matrix tables.
+    for table in ("devices", "deliveries"):
+        columns = {row[1] for row in db.execute("PRAGMA table_info(" + table + ")")}
+        if "registration_id" not in columns:
+            db.execute(
+                "ALTER TABLE "
+                + table
+                + " ADD COLUMN registration_id TEXT NOT NULL DEFAULT ''"
+            )
     lock = threading.RLock()
 
     @contextmanager
@@ -311,6 +329,7 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         title="iOS call wake gateway", version="1.0.0", docs_url=None, redoc_url=None
     )
     app.state.database = settings.database
+    app.state.cancellation_failures = 0
     app.add_middleware(BodyLimit)
 
     @app.exception_handler(RequestValidationError)
@@ -342,10 +361,9 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         now = int(clock())
         with transaction():
             cleanup(now)
-            db.execute(
-                "DELETE FROM devices WHERE user=? AND device=? AND session!=?",
-                (user, device, fingerprint),
-            )
+            # Distinct still-valid bearer tokens cannot be ordered by whoami.
+            # Only explicit registration replaces a route's session binding;
+            # an old valid request must never delete a newer owner's route.
             bucket = now // 60
             db.execute(
                 "INSERT INTO rates VALUES(?,?,1) ON CONFLICT(subject,bucket) DO UPDATE SET amount=amount+1",
@@ -379,15 +397,37 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
             if any((r["user"], r["device"]) != (user, device) for r in conflict):
                 raise HTTPException(409, "route_already_bound")
             db.execute(
-                "INSERT INTO devices VALUES(?,?,?,?,?,?) ON CONFLICT(user,device) DO UPDATE SET session=excluded.session,voip=excluded.voip,apns=excluded.apns,updated=excluded.updated",
-                (user, device, fingerprint, voip, apns, int(clock())),
+                "INSERT INTO devices VALUES(?,?,?,?,?,?,?) ON CONFLICT(user,device) DO UPDATE SET session=excluded.session,voip=excluded.voip,apns=excluded.apns,updated=excluded.updated,registration_id=excluded.registration_id",
+                (
+                    user,
+                    device,
+                    fingerprint,
+                    voip,
+                    apns,
+                    int(clock()),
+                    body.registration_id,
+                ),
             )
         return {"state": "registered"}
 
-    @app.delete("/v1/devices/ios", response_model=Result)
-    def unregister(auth=Depends(identity)):
+    @app.delete(
+        "/v1/devices/ios",
+        response_model=Result,
+        responses={204: {"description": "No matching registration owner; no mutation"}},
+    )
+    def unregister(
+        registration_id: str = Header(
+            alias="X-Registration-ID", pattern=r"^[0-9a-f]{32}$"
+        ),
+        auth=Depends(identity),
+    ):
         with transaction():
-            db.execute("DELETE FROM devices WHERE user=? AND device=?", auth[:2])
+            deleted = db.execute(
+                "DELETE FROM devices WHERE user=? AND device=? AND session=? AND registration_id=?",
+                (*auth[:3], registration_id),
+            ).rowcount
+        if not deleted:
+            return Response(status_code=204)
         return {"state": "unregistered"}
 
     def result(row):
@@ -417,39 +457,73 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
             with transaction():
                 if voip:
                     db.execute(
-                        "DELETE FROM devices WHERE user=? AND device=? AND voip=? AND session=?",
+                        "DELETE FROM devices WHERE user=? AND device=? AND voip=? AND session=? AND registration_id=?",
                         (
                             route["user"],
                             route["device"],
                             route["voip"],
                             route["session"],
+                            route["registration_id"],
                         ),
                     )
                 else:
                     db.execute(
-                        "UPDATE devices SET apns=NULL WHERE user=? AND device=? AND apns=? AND session=?",
+                        "UPDATE devices SET apns=NULL WHERE user=? AND device=? AND apns=? AND session=? AND registration_id=?",
                         (
                             route["user"],
                             route["device"],
                             route["apns"],
                             route["session"],
+                            route["registration_id"],
                         ),
                     )
         return status
 
     def cancel_route(route, body):
         if not route["apns"] or not eligible(route):
-            return
+            return True
+        with transaction():
+            bound = db.execute(
+                "SELECT 1 FROM devices WHERE user=? AND device=? AND session=? AND registration_id=? AND apns=?",
+                (
+                    route["user"],
+                    route["device"],
+                    route["session"],
+                    route["registration_id"],
+                    route["apns"],
+                ),
+            ).fetchone()
+        if not bound:
+            return True
         payload = {
             "aps": {"content-available": 1},
             "call_action": "end",
             "call_id": body.call_id,
             "room_id": body.room_id,
         }
-        deliver(route, payload, False, int(clock()) + 30)
+        return deliver(route, payload, False, int(clock()) + 30) == 200
+
+    def cancel_routes(routes, body):
+        # FastAPI runs this only after sending the committed HTTP response.
+        # One batch is bounded to 16 routes and a 30-second scheduling window;
+        # each fixed upstream request separately has its eight-second timeout.
+        deadline = time.monotonic() + 30
+        for route in routes[:16]:
+            if time.monotonic() >= deadline:
+                break
+            try:
+                failed = not cancel_route(route, body)
+            except Exception:
+                failed = True
+            if failed:
+                with lock:
+                    # Aggregate only; never persist/log identifiers or exceptions.
+                    app.state.cancellation_failures = min(
+                        app.state.cancellation_failures + 1, 1000000
+                    )
 
     @app.post("/v1/calls", response_model=Result)
-    def create(body: Call, auth=Depends(identity)):
+    def create(body: Call, background: BackgroundTasks, auth=Depends(identity)):
         user, device, fingerprint, token = auth
         if body.recipient == user or not body.recipient.endswith(
             ":" + settings.matrix_server_name
@@ -486,7 +560,7 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                 if count and count[0] >= 6:
                     raise HTTPException(429, "rate_limited")
             routes = db.execute(
-                "SELECT * FROM devices WHERE user=? AND updated>=? ORDER BY device LIMIT 17",
+                "SELECT * FROM devices WHERE user=? AND updated>=? AND registration_id!='' ORDER BY device LIMIT 17",
                 (body.recipient, now - 7 * 86400),
             ).fetchall()
             if len(routes) > 16:
@@ -520,12 +594,13 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
             if not eligible(route):
                 with transaction():
                     db.execute(
-                        "DELETE FROM devices WHERE user=? AND device=? AND session=? AND voip=?",
+                        "DELETE FROM devices WHERE user=? AND device=? AND session=? AND voip=? AND registration_id=?",
                         (
                             route["user"],
                             route["device"],
                             route["session"],
                             route["voip"],
+                            route["registration_id"],
                         ),
                     )
                 continue
@@ -534,8 +609,14 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                 if current["state"] != "sending":
                     break
                 bound = db.execute(
-                    "SELECT 1 FROM devices WHERE user=? AND device=? AND session=? AND voip=?",
-                    (route["user"], route["device"], route["session"], route["voip"]),
+                    "SELECT 1 FROM devices WHERE user=? AND device=? AND session=? AND voip=? AND registration_id=?",
+                    (
+                        route["user"],
+                        route["device"],
+                        route["session"],
+                        route["voip"],
+                        route["registration_id"],
+                    ),
                 ).fetchone()
                 if not bound:
                     continue
@@ -543,13 +624,14 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                 # An in-flight request cannot be recalled; reconcile below after
                 # it completes, with ordinary APNs only, if a terminal action won.
                 db.execute(
-                    "INSERT INTO deliveries VALUES(?,?,?,?,?)",
+                    "INSERT INTO deliveries VALUES(?,?,?,?,?,?)",
                     (
                         body.room_id,
                         body.call_id,
                         route["user"],
                         route["device"],
                         route["session"],
+                        route["registration_id"],
                     ),
                 )
             payload = {
@@ -570,11 +652,16 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                     and current["answer_device"] != route["device"]
                 )
                 current_route = db.execute(
-                    "SELECT * FROM devices WHERE user=? AND device=? AND session=?",
-                    (route["user"], route["device"], route["session"]),
+                    "SELECT * FROM devices WHERE user=? AND device=? AND session=? AND registration_id=?",
+                    (
+                        route["user"],
+                        route["device"],
+                        route["session"],
+                        route["registration_id"],
+                    ),
                 ).fetchone()
             if cancel and current_route and (status == 200 or status >= 500):
-                cancel_route(current_route, body)
+                background.add_task(cancel_routes, [current_route], body)
         with transaction():
             current = lookup(body, auth)
             if current["state"] == "sending":
@@ -598,7 +685,7 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
             raise HTTPException(502, "push_delivery_failed")
         return outcome
 
-    def action(body, auth, answer):
+    def action(body, auth, answer, background):
         with transaction():
             cleanup(int(clock()))
             row = lookup(body, auth)
@@ -622,17 +709,18 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                 ),
             )
             routes = db.execute(
-                "SELECT d.* FROM devices d JOIN deliveries v ON d.user=v.user AND d.device=v.device AND d.session=v.session WHERE v.room=? AND v.call=?",
+                "SELECT d.* FROM devices d JOIN deliveries v ON d.user=v.user AND d.device=v.device AND d.session=v.session AND d.registration_id=v.registration_id WHERE v.room=? AND v.call=?",
                 (body.room_id, body.call_id),
             ).fetchall()
-        for route in routes:
-            if answer and route["device"] == auth[1]:
-                continue
-            cancel_route(route, body)
+        background.add_task(
+            cancel_routes,
+            [route for route in routes if not (answer and route["device"] == auth[1])],
+            body,
+        )
         return {"state": state, "expires_at": row["expires"]}
 
     @app.post("/v1/calls/end", response_model=Result)
-    def end(body: Reference, auth=Depends(identity)):
+    def end(body: Reference, background: BackgroundTasks, auth=Depends(identity)):
         with transaction():
             exists = db.execute(
                 "SELECT 1 FROM calls WHERE room=? AND call=?",
@@ -687,11 +775,11 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                         ),
                     )
                     return {"state": "ended", "expires_at": now + 30}
-        return action(body, auth, False)
+        return action(body, auth, False, background)
 
     @app.post("/v1/calls/answer", response_model=Result)
-    def answer(body: Reference, auth=Depends(identity)):
-        return action(body, auth, True)
+    def answer(body: Reference, background: BackgroundTasks, auth=Depends(identity)):
+        return action(body, auth, True, background)
 
     @app.get("/v1/calls/status", response_model=Result)
     def status(

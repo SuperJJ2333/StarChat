@@ -59,7 +59,10 @@ def env(tmp_path):
                 return await client.request(
                     method,
                     path,
-                    headers={"Authorization": "Bearer " + token},
+                    headers={
+                        "Authorization": "Bearer " + token,
+                        "X-Registration-ID": "1" * 32,
+                    },
                     json=body,
                 )
 
@@ -70,7 +73,11 @@ def env(tmp_path):
             "PUT",
             "/v1/devices/ios",
             token,
-            {"voip_token": digit * 64, "apns_token": digit * 64},
+            {
+                "voip_token": digit * 64,
+                "apns_token": digit * 64,
+                "registration_id": "1" * 32,
+            },
         )
 
     return req, register, matrix, push, clock, app
@@ -147,7 +154,7 @@ def test_expiry_unregister_rebinding_and_revocation(env):
         ).status_code
         == 404
     )
-    assert req("POST", "/v1/calls", body=CALL).status_code == 409
+    assert req("POST", "/v1/calls", body=CALL).status_code == 200
     reg("b-new")
     assert req("POST", "/v1/calls", body={**CALL, "call_id": "c2"}).status_code == 200
     clock[0] += 31
@@ -424,3 +431,138 @@ def test_missing_end_tombstone_is_rate_limited(env):
         for i in range(7)
     ]
     assert statuses == [200] * 6 + [429]
+
+
+def test_committed_answer_response_precedes_cancellation_failure(env):
+    req, reg, matrix, push, clock, app = env
+    reg()
+    reg("b2", "c")
+    req("POST", "/v1/calls", body=CALL)
+    sent_response = []
+    cancellation_after_response = []
+
+    def failing_send(token, payload, voip, expires):
+        cancellation_after_response.append(bool(sent_response))
+        raise RuntimeError("synthetic APNs cancellation failure")
+
+    push.send = failing_send
+
+    async def wrapped(scope, receive, send):
+        async def recording_send(message):
+            if message["type"] == "http.response.body" and not message.get("more_body"):
+                sent_response.append(True)
+            await send(message)
+
+        await app(scope, receive, recording_send)
+
+    async def execute():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=wrapped), base_url="https://gateway.test"
+        ) as client:
+            response = await client.post(
+                "/v1/calls/answer", headers={"Authorization": "Bearer b"}, json=REF
+            )
+            assert response.status_code == 200
+            assert response.json()["state"] == "answered"
+
+    asyncio.run(execute())
+    assert cancellation_after_response == [True]
+    assert app.state.cancellation_failures == 1
+    assert req("POST", "/v1/calls/answer", "b", REF).status_code == 200
+
+
+@pytest.mark.parametrize("new_session", ["b", "b-new"])
+def test_registration_owner_stale_delete_preserves_new_owner(env, new_session):
+    req, reg, matrix, push, clock, app = env
+
+    async def execute():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="https://gateway.test"
+        ) as client:
+            headers = {"Authorization": "Bearer b"}
+            body = {"voip_token": "b" * 64, "registration_id": "1" * 32}
+            assert (
+                await client.put("/v1/devices/ios", headers=headers, json=body)
+            ).status_code == 200
+            assert (
+                await client.put(
+                    "/v1/devices/ios",
+                    headers={"Authorization": "Bearer " + new_session},
+                    json={**body, "registration_id": "2" * 32},
+                )
+            ).status_code == 200
+            assert (
+                await client.delete(
+                    "/v1/devices/ios",
+                    headers={**headers, "X-Registration-ID": "1" * 32},
+                )
+            ).status_code == 204
+            assert (
+                await client.post(
+                    "/v1/calls", headers={"Authorization": "Bearer a"}, json=CALL
+                )
+            ).status_code == 200
+            assert (
+                await client.delete(
+                    "/v1/devices/ios",
+                    headers={
+                        "Authorization": "Bearer " + new_session,
+                        "X-Registration-ID": "2" * 32,
+                    },
+                )
+            ).status_code == 200
+            assert (
+                await client.post(
+                    "/v1/calls",
+                    headers={"Authorization": "Bearer a"},
+                    json={**CALL, "call_id": "new"},
+                )
+            ).status_code == 409
+
+    asyncio.run(execute())
+
+
+def test_late_apns_rejection_cannot_delete_rebound_registration(env):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    req, reg, matrix, push, clock, app = env
+    reg()
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked_send(token, payload, voip, expires):
+        entered.set()
+        assert release.wait(5)
+        return 410
+
+    original = push.send
+    push.send = blocked_send
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        creation = pool.submit(req, "POST", "/v1/calls", "a", CALL)
+        assert entered.wait(2)
+        rebound = req(
+            "PUT",
+            "/v1/devices/ios",
+            "b",
+            {
+                "voip_token": "b" * 64,
+                "apns_token": "b" * 64,
+                "registration_id": "2" * 32,
+            },
+        )
+        release.set()
+        assert rebound.status_code == 200
+        assert creation.result(timeout=2).status_code == 502
+    push.send = original
+    assert req("POST", "/v1/calls", body={**CALL, "call_id": "new"}).status_code == 200
+
+
+def test_old_valid_session_request_cannot_invalidate_new_registration(env):
+    req, reg, matrix, push, clock, app = env
+    reg("b")
+    reg("b-new")
+    assert (
+        req("GET", "/v1/calls/status?room_id=!r:test&call_id=unknown", "b").status_code
+        == 404
+    )
+    assert req("POST", "/v1/calls", body=CALL).status_code == 200

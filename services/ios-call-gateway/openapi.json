@@ -75,6 +75,16 @@
         "operationId": "unregister_v1_devices_ios_delete",
         "parameters": [
           {
+            "name": "X-Registration-ID",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$",
+              "title": "X-Registration-Id"
+            }
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,
@@ -95,6 +105,9 @@
                 }
               }
             }
+          },
+          "204": {
+            "description": "No matching registration owner; no mutation"
           },
           "422": {
             "description": "Validation Error",
@@ -366,6 +379,11 @@
       },
       "Device": {
         "properties": {
+          "registration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Registration Id"
+          },
           "voip_token": {
             "type": "string",
             "pattern": "^[0-9a-fA-F]{64,200}$",
@@ -387,6 +405,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "registration_id",
           "voip_token"
         ],
         "title": "Device"
