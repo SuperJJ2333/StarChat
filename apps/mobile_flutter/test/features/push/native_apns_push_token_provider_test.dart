@@ -93,4 +93,41 @@ void main() {
     expect(calls.where((method) => method == 'stop'), hasLength(1));
     expect(calls.where((method) => method == 'start'), hasLength(1));
   });
+
+  test('logout discards an in-flight token response', () async {
+    final requested = Completer<void>();
+    final response = Completer<String>();
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'getToken') {
+        requested.complete();
+        return response.future;
+      }
+      return null;
+    });
+    final pending = provider.token();
+    await requested.future;
+    await provider.dispose();
+    response.complete('aabb');
+    expect(await pending, isNull);
+  });
+
+  test('logout during initialization cannot revive the listener', () async {
+    final requested = Completer<void>();
+    final response = Completer<void>();
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      if (call.method == 'start') {
+        requested.complete();
+        await response.future;
+      }
+      return null;
+    });
+    final pending = provider.initialize();
+    await requested.future;
+    await provider.dispose();
+    response.complete();
+    await pending;
+    expect(await provider.token(), isNull);
+    expect(calls, ['start', 'stop']);
+  });
 }

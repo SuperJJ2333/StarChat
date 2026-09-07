@@ -1,4 +1,4 @@
-name: iOS source build preflight
+name: iOS signed TestFlight build
 on:
   push:
     branches: [codex/ios-build-preflight-20260907]
@@ -32,16 +32,111 @@ jobs:
       - name: Test push integration
         working-directory: apps/mobile_flutter
         run: flutter test test/features/push
-      - name: Build unsigned iOS device app
+      - name: Install distribution signing identity
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          python3 <<'PY'
+          import base64, os, pathlib, plistlib, secrets, subprocess
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'signing'
+          folder.mkdir(mode=0o700)
+          keychain = folder / 'build.keychain-db'
+          def run(*args):
+              result = subprocess.run(args, capture_output=True)
+              if result.returncode:
+                  raise RuntimeError('Signing command failed: ' + args[1])
+              return result.stdout
+          p12 = folder / 'distribution.p12'
+          p12.write_bytes(base64.b64decode(os.environ['IOS_CERTIFICATE_BASE64'], validate=True))
+          profile = folder / 'app.mobileprovision'
+          profile.write_bytes(base64.b64decode(os.environ['IOS_PROFILE_BASE64'], validate=True))
+          p12.chmod(0o600)
+          profile.chmod(0o600)
+          data = plistlib.loads(run('security', 'cms', '-D', '-i', str(profile)))
+          assert data['TeamIdentifier'] == ['HY9Q7Q35S5']
+          assert data['Name'] == 'ChatFlow_AppStore'
+          assert data['Entitlements']['aps-environment'] == 'production'
+          assert data['Entitlements']['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          password = secrets.token_urlsafe(40)
+          run('security', 'create-keychain', '-p', password, str(keychain))
+          run('security', 'set-keychain-settings', '-lut', '21600', str(keychain))
+          run('security', 'unlock-keychain', '-p', password, str(keychain))
+          run('security', 'import', str(p12), '-k', str(keychain), '-P', os.environ['IOS_CERTIFICATE_PASSWORD'], '-T', '/usr/bin/codesign')
+          run('security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, str(keychain))
+          run('security', 'list-keychains', '-d', 'user', '-s', str(keychain), str(pathlib.Path.home() / 'Library/Keychains/login.keychain-db'))
+          for relative in ['Library/MobileDevice/Provisioning Profiles', 'Library/Developer/Xcode/UserData/Provisioning Profiles']:
+              target = pathlib.Path.home() / relative
+              target.mkdir(parents=True, exist_ok=True)
+              (target / (data['UUID'] + '.mobileprovision')).write_bytes(profile.read_bytes())
+          options = dict(method='app-store-connect', teamID='HY9Q7Q35S5', signingStyle='manual', signingCertificate='Apple Distribution', provisioningProfiles={'com.liuhetong.liuhetongMobile': data['Name']}, uploadSymbols=True, manageAppVersionAndBuildNumber=False)
+          (folder / 'ExportOptions.plist').write_bytes(plistlib.dumps(options))
+          print('Distribution identity and production APNs profile installed')
+          PY
+      - name: Build signed IPA
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ios --release --no-codesign --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release --build-number="$GITHUB_RUN_NUMBER" --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+      - name: Verify signed IPA
+        working-directory: apps/mobile_flutter
+        run: |
+          python3 <<'PY'
+          import hashlib, pathlib, plistlib, subprocess, zipfile, os
+          ipas = list(pathlib.Path('build/ios/ipa').glob('*.ipa'))
+          assert len(ipas) == 1, 'Expected one exported IPA'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ipa-check'
+          with zipfile.ZipFile(ipas[0]) as archive:
+              archive.extractall(target)
+          apps = list((target / 'Payload').glob('*.app'))
+          assert len(apps) == 1
+          app = apps[0]
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+          result = subprocess.run(['codesign', '-d', '--entitlements', ':-', str(app)], capture_output=True, check=True)
+          ent = plistlib.loads(result.stdout)
+          assert ent['aps-environment'] == 'production'
+          assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          assert not ent.get('get-task-allow', False)
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
+          assert 2 in info['UIDeviceFamily'], 'iPad support required'
+          for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
+              assert info.get(key)
+          print('IPA signature, production APNs, iPad and permission declarations verified')
+          print('IPA_SHA256=' + hashlib.sha256(ipas[0].read_bytes()).hexdigest())
+          PY
+      - name: Preserve signed IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatFlow-iOS-signed
+          path: apps/mobile_flutter/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload to App Store Connect for TestFlight
+        working-directory: apps/mobile_flutter
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          chmod 700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          xcrun altool --upload-app --type ios -f build/ios/ipa/*.ipa --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/ios-upload.log"
+      - name: Remove temporary signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing/build.keychain-db" || true
+          rm -rf "$RUNNER_TEMP/signing" "$HOME/.appstoreconnect/private_keys"
       - name: Preserve build diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-preflight-diagnostics
-          path: ${{ runner.temp }}/ios-build.log
+          path: |
+            ${{ runner.temp }}/ios-build.log
+            ${{ runner.temp }}/ios-upload.log
           if-no-files-found: ignore
           retention-days: 7

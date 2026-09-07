@@ -357,6 +357,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 启动失败不抛出：bootstrapper 置 needsRetry 并记录诊断，下一次
   /// 生命周期恢复（didChangeAppLifecycleState）重试。
   Future<void> _startNotificationSystem() async {
+    if (!mounted) return;
     unawaited(NotificationDiagnostics.shared.ensureLoaded());
     final bootstrapper =
         _notificationBootstrapper ??= NotificationSystemBootstrapper(
@@ -373,9 +374,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     final ready = await bootstrapper.ensureStarted();
-    if (!ready) return;
+    if (!ready || !mounted) return;
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
     await syncKeepAlive.ensureStarted();
+    if (!mounted) return;
     syncWatchdog.start();
     unawaited(() async {
       await _primeBatteryOptimization();
@@ -395,19 +397,24 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   ///   绝不做手机号/用户名 alias）。
   /// - FCM/Sygnal 通道（凭据缺失时 Noop 降级，Matrix 同步通道照常）。
   Future<void> _startPushIntegration() async {
+    if (!mounted) return;
     final client = widget.matrix.sdkClient;
     // 老用户升级迁移：privacy.agreement_accepted.v1 引入（0.3.34）之前的
     // 已登录用户从未记录过同意——AppHome 挂载即证明用户已通过登录流程
     // 勾选《用户协议和隐私政策》（登录按钮在勾选前禁用），补写同意，
     // 否则升级后个推永远不初始化、pusher 永远不注册。
     final consentStore = SharedPreferencesPrivacyConsentStore();
-    if (!await consentStore.accepted()) {
+    final accepted = await consentStore.accepted();
+    if (!mounted) return;
+    if (!accepted) {
       await consentStore.accept();
+      if (!mounted) return;
       NotificationDiagnostics.shared.record(
           NotificationDiagStage.push, 'consent migrated for existing session');
     }
     final store = _sharedDedupStore ??=
         await SharedPreferencesNotificationDedupStore.create();
+    if (!mounted) return;
     final deduplicator = _sharedDeduplicator ??= NotificationDeduplicator(
       store: store,
       ttl: SharedPreferencesNotificationDedupStore.defaultTtl,
@@ -426,11 +433,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.android &&
         AppConfig.getuiPushGatewayUrl.isNotEmpty &&
         await SharedPreferencesPrivacyConsentStore().accepted()) {
+      if (!mounted) return;
       final getuiGateway = Uri.tryParse(AppConfig.getuiPushGatewayUrl);
       if (getuiGateway != null) {
         final getui = GetuiPushTokenProvider();
-        await getui.initialize();
         _pushTokenProviders.add(getui);
+        await getui.initialize();
+        if (!mounted) return;
         pushers.add(MatrixPusherService(
           gateway: ClientMatrixPusherGateway(client),
           tokenProvider: getui,
@@ -448,8 +457,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       if (gatewayUrl != null) {
         final apns = NativeApnsPushTokenProvider(onTap: router.handleTap);
-        await apns.initialize();
         _pushTokenProviders.add(apns);
+        await apns.initialize();
+        if (!mounted) return;
         pushers.add(MatrixPusherService(
           gateway: ClientMatrixPusherGateway(client),
           tokenProvider: apns,
@@ -460,6 +470,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
     } else {
       final firebase = await FirebasePushTokenProvider.tryCreate();
+      if (!mounted) {
+        await firebase?.dispose();
+        return;
+      }
       if (firebase != null) {
         _pushTokenProviders.add(firebase);
         pushers.add(MatrixPusherService(
@@ -480,7 +494,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     for (final pusher in pushers) {
       await pusher.ensureRegistered();
+      if (!mounted) return;
       await pusher.watchTokenRefresh();
+      if (!mounted) return;
     }
     // 推送点击路由就绪：通知系统已装配、主页面已挂载。
     router.markReady();

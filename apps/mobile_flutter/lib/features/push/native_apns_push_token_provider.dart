@@ -62,10 +62,10 @@ final class NativeApnsPushTokenProvider implements PushTokenProvider {
   Future<String?> token() async {
     if (_disposed) return null;
     await initialize();
-    if (!_started) return null;
+    if (_disposed || !_started) return null;
     try {
       final value = await _channel.invokeMethod<Object?>('getToken');
-      return _validToken(value) ? value as String : null;
+      return !_disposed && _validToken(value) ? value as String : null;
     } on PlatformException {
       _recordUnavailable();
     } on MissingPluginException {
