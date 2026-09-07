@@ -137,13 +137,13 @@ void main() {
     );
   });
 
-  test('undecrypted events use a safe placeholder instead of event text', () {
+  test('undecrypted events leave the conversation preview blank', () {
     expect(
       safeConversationMessageContent(
         undecrypted: true,
         messageContent: 'MegolmException secret ciphertext detail',
       ),
-      '消息尚未解密',
+      '',
     );
     expect(
       safeConversationMessageContent(

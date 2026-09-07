@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'room_draft_store.dart';
+
 import 'package:flutter/cupertino.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -191,7 +193,35 @@ Future<void> openGroupMemberProfile(
   }
 }
 
-class _RoomPageState extends State<RoomPage> {
+class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  late final _draftKey = RoomDraftStore.key(
+    '${widget.room.client.homeserver}',
+    widget.room.client.userID ?? '',
+    widget.room.id,
+  );
+  int _draftRevision = 0;
+
+  void _saveDraft() {
+    _draftRevision++;
+    RoomDraftStore.shared.save(_draftKey,
+        RoomDraft(input.text, tokens: mentionComposer.tokens));
+  }
+
+  Future<void> _restoreDraft() async {
+    final draft = await RoomDraftStore.shared.read(_draftKey);
+    if (!mounted || _draftRevision != 0 || draft == null) return;
+    mentionComposer.tokens
+      ..clear()
+      ..addAll(draft.tokens);
+    _setComposerText(draft.text, draft.text.length);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      unawaited(RoomDraftStore.shared.flush(_draftKey));
+    }
+  }
   bool _disposing = false;
   final input = TextEditingController();
   final inputFocusNode = FocusNode();
@@ -297,6 +327,8 @@ class _RoomPageState extends State<RoomPage> {
     contactsByMatrixId = _identityCache.contactsByMatrixId;
     _identityCache.addListener(_identityChanged);
     input.addListener(_handleComposerChanged);
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_restoreDraft());
     // 上滑接近顶部时自动加载更早的历史消息（顶部有加载/结束提示）。
     messageScrollController.addListener(_onMessageScroll);
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
@@ -332,6 +364,7 @@ class _RoomPageState extends State<RoomPage> {
         }
       }
       _lastComposerText = next;
+      _saveDraft();
     }
     // 光标范围检查移到文本差分**之外**：仅移动光标（文本不变）时
     // 监听器仍触发（selection 通知），面板应正确关闭（R6 三审修复）。
@@ -369,6 +402,7 @@ class _RoomPageState extends State<RoomPage> {
     } finally {
       _programmaticComposerEdit = false;
     }
+    _saveDraft();
   }
 
   List<MentionOption> _mentionMembers() {
@@ -828,6 +862,8 @@ class _RoomPageState extends State<RoomPage> {
       _programmaticComposerEdit = false;
     }
     if (mounted) setState(() => replyingTo = null);
+    _saveDraft();
+    unawaited(RoomDraftStore.shared.flush(_draftKey));
     mentionDraft.clear();
     await controller!.sendText(
       text,
@@ -2715,6 +2751,8 @@ class _RoomPageState extends State<RoomPage> {
   @override
   void dispose() {
     _disposing = true;
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(RoomDraftStore.shared.flush(_draftKey));
     latestMessageAnchor.dispose();
     messageListScrolling.dispose();
     roomImagePreviewCache.dispose();
