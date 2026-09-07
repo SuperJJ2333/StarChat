@@ -107,7 +107,7 @@
             }
           },
           "204": {
-            "description": "No matching registration owner; no mutation"
+            "description": "No matching active route; registration owner retired"
           },
           "422": {
             "description": "Validation Error",

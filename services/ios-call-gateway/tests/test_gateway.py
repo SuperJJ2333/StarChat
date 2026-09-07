@@ -566,3 +566,80 @@ def test_old_valid_session_request_cannot_invalidate_new_registration(env):
         == 404
     )
     assert req("POST", "/v1/calls", body=CALL).status_code == 200
+
+
+@pytest.mark.parametrize("existing_new_owner", [False, True])
+def test_timed_out_old_put_cannot_revive_retired_owner(env, existing_new_owner):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    req, reg, matrix, push, clock, app = env
+    newer = {"voip_token": "b" * 64, "registration_id": "2" * 32}
+    if existing_new_owner:
+        assert req("PUT", "/v1/devices/ios", "b", newer).status_code == 200
+    entered, release = threading.Event(), threading.Event()
+    original = matrix.identity
+    block_once = [True]
+
+    def blocked_identity(token):
+        if token == "b" and block_once[0]:
+            block_once[0] = False
+            entered.set()
+            assert release.wait(5)
+        return original(token)
+
+    matrix.identity = blocked_identity
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        old = pool.submit(
+            req,
+            "PUT",
+            "/v1/devices/ios",
+            "b",
+            {"voip_token": "b" * 64, "registration_id": "1" * 32},
+        )
+        assert entered.wait(2)
+        try:
+            assert req("DELETE", "/v1/devices/ios", "b").status_code == 204
+            if not existing_new_owner:
+                assert req("PUT", "/v1/devices/ios", "b", newer).status_code == 200
+        finally:
+            release.set()
+        assert old.result(timeout=2).status_code == 409
+    assert req("POST", "/v1/calls", body=CALL).status_code == 200
+
+
+def test_retired_owner_metadata_has_bounded_lifetime(env):
+    import sqlite3
+
+    req, reg, matrix, push, clock, app = env
+    assert req("DELETE", "/v1/devices/ios", "b").status_code == 204
+    assert reg().status_code == 409
+    with sqlite3.connect(app.state.database) as db:
+        assert db.execute("SELECT COUNT(*) FROM retired_owners").fetchone()[0] == 1
+    clock[0] += 3601
+    assert req("GET", "/healthz").status_code == 200
+    with sqlite3.connect(app.state.database) as db:
+        assert db.execute("SELECT COUNT(*) FROM retired_owners").fetchone()[0] == 0
+    assert reg().status_code == 200
+
+
+def test_retired_owner_metadata_has_per_device_cap(env):
+    req, reg, matrix, push, clock, app = env
+
+    async def execute():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="https://gateway.test"
+        ) as client:
+            for i in range(129):
+                if i == 100:
+                    clock[0] += 61
+                response = await client.delete(
+                    "/v1/devices/ios",
+                    headers={
+                        "Authorization": "Bearer b",
+                        "X-Registration-ID": f"{i:032x}",
+                    },
+                )
+                assert response.status_code == (204 if i < 128 else 429)
+
+    asyncio.run(execute())

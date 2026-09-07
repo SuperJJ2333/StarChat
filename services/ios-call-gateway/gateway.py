@@ -276,10 +276,12 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         CREATE TABLE IF NOT EXISTS calls(room TEXT, call TEXT, caller TEXT, recipient TEXT, video INTEGER, expires INTEGER, state TEXT, answer_device TEXT, created INTEGER, PRIMARY KEY(room,call));
         CREATE TABLE IF NOT EXISTS deliveries(room TEXT, call TEXT, user TEXT, device TEXT, session TEXT, PRIMARY KEY(room,call,user,device));
         CREATE TABLE IF NOT EXISTS rates(subject TEXT, bucket INTEGER, amount INTEGER, PRIMARY KEY(subject,bucket));
+        CREATE TABLE IF NOT EXISTS retired_owners(user TEXT, device TEXT, registration_id TEXT, expires INTEGER, PRIMARY KEY(user,device,registration_id));
         CREATE INDEX IF NOT EXISTS call_expiry ON calls(created);
         CREATE INDEX IF NOT EXISTS call_ringing_expiry ON calls(state,expires);
         CREATE INDEX IF NOT EXISTS device_expiry ON devices(updated);
         CREATE INDEX IF NOT EXISTS rate_expiry ON rates(bucket);
+        CREATE INDEX IF NOT EXISTS retired_owner_expiry ON retired_owners(expires);
     """)
     # Expand-only routing metadata migration; no business or Matrix tables.
     for table in ("devices", "deliveries"):
@@ -304,6 +306,10 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
                 raise
 
     def cleanup(now):
+        db.execute(
+            "DELETE FROM retired_owners WHERE rowid IN (SELECT rowid FROM retired_owners WHERE expires<=? LIMIT 500)",
+            (now,),
+        )
         db.execute(
             "UPDATE calls SET state='expired' WHERE rowid IN (SELECT rowid FROM calls WHERE state IN ('ringing','sending','delivery_unknown') AND expires<=? LIMIT 500)",
             (now,),
@@ -391,6 +397,12 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
             body.apns_token.lower() if body.apns_token else None,
         )
         with transaction():
+            retired = db.execute(
+                "SELECT 1 FROM retired_owners WHERE user=? AND device=? AND registration_id=? AND expires>?",
+                (user, device, body.registration_id, int(clock())),
+            ).fetchone()
+            if retired:
+                raise HTTPException(409, "registration_retired")
             conflict = db.execute(
                 "SELECT user,device FROM devices WHERE voip=? OR apns=?", (voip, apns)
             ).fetchall()
@@ -413,7 +425,9 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
     @app.delete(
         "/v1/devices/ios",
         response_model=Result,
-        responses={204: {"description": "No matching registration owner; no mutation"}},
+        responses={
+            204: {"description": "No matching active route; registration owner retired"}
+        },
     )
     def unregister(
         registration_id: str = Header(
@@ -422,6 +436,29 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         auth=Depends(identity),
     ):
         with transaction():
+            now = int(clock())
+            existing = db.execute(
+                "SELECT 1 FROM retired_owners WHERE user=? AND device=? AND registration_id=?",
+                (*auth[:2], registration_id),
+            ).fetchone()
+            if not existing:
+                device_count = db.execute(
+                    "SELECT COUNT(*) FROM retired_owners WHERE user=? AND device=? AND expires>?",
+                    (*auth[:2], now),
+                ).fetchone()[0]
+                total_count = db.execute(
+                    "SELECT COUNT(*) FROM retired_owners WHERE expires>?", (now,)
+                ).fetchone()[0]
+                if device_count >= 128 or total_count >= 100000:
+                    raise HTTPException(429, "registration_lifecycle_limited")
+            # An HTTP timeout does not roll back an already dispatched PUT.
+            # Retire even absent/mismatched owners before returning a no-op:
+            # a late authenticated PUT can never resurrect this old owner.
+            # One hour exceeds the bounded upstream/network operation windows.
+            db.execute(
+                "INSERT INTO retired_owners VALUES(?,?,?,?) ON CONFLICT(user,device,registration_id) DO UPDATE SET expires=excluded.expires",
+                (*auth[:2], registration_id, now + 3600),
+            )
             deleted = db.execute(
                 "DELETE FROM devices WHERE user=? AND device=? AND session=? AND registration_id=?",
                 (*auth[:3], registration_id),
