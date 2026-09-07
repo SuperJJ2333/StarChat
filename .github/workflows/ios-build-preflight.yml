@@ -7,6 +7,9 @@ on:
       - .github/workflows/ios-build-preflight.yml
 permissions:
   contents: read
+concurrency:
+  group: ios-source-preflight
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: macos-15

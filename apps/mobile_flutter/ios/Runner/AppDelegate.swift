@@ -23,7 +23,7 @@ import UserNotifications
     // chatflow/badge。iOS 直接写 UIApplication 角标数字。
     FlutterMethodChannel(
       name: "chatflow/badge",
-      binaryMessenger: engineBridge.engineForDartExecutor.binaryMessenger
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
     ).setMethodCallHandler { call, result in
       switch call.method {
       case "updateCount":
@@ -40,7 +40,7 @@ import UserNotifications
     }
     let channel = FlutterMethodChannel(
       name: "chatflow/apns",
-      binaryMessenger: engineBridge.engineForDartExecutor.binaryMessenger
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
     apnsChannel = channel
     channel.setMethodCallHandler { [weak self] call, result in
