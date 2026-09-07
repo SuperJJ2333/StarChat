@@ -10,18 +10,102 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moment_composer_page.dart';
 import 'package:liuhetong_mobile/features/moments/moment_image_preprocessor.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 Uint8List pngBytes() => Uint8List.fromList(const [
-  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00,
-  0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01,
-  0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-  0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
-  0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00,
-  0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-]);
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      0x00,
+      0x00,
+      0x00,
+      0x0D,
+      0x49,
+      0x48,
+      0x44,
+      0x52,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      0x08,
+      0x06,
+      0x00,
+      0x00,
+      0x00,
+      0x1F,
+      0x15,
+      0xC4,
+      0x89,
+      0x00,
+      0x00,
+      0x00,
+      0x0A,
+      0x49,
+      0x44,
+      0x41,
+      0x54,
+      0x78,
+      0x9C,
+      0x63,
+      0x00,
+      0x01,
+      0x00,
+      0x00,
+      0x05,
+      0x00,
+      0x01,
+      0x0D,
+      0x0A,
+      0x2D,
+      0xB4,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x49,
+      0x45,
+      0x4E,
+      0x44,
+      0xAE,
+      0x42,
+      0x60,
+      0x82,
+    ]);
 
 void main() {
+  testWidgets('dark composer separates navigation from editor surface',
+      (tester) async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://example.test'),
+      sessionStore: SecureSessionStore(_MemoryStore()),
+      client: MockClient((_) async => http.Response('{}', 200)),
+    );
+    await tester.pumpWidget(CupertinoApp(
+      theme: const CupertinoThemeData(brightness: Brightness.dark),
+      home: MomentComposerPage(api: api),
+    ));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<CupertinoNavigationBar>(find.byType(CupertinoNavigationBar))
+            .backgroundColor,
+        WeChatColors.darkSurface);
+    final editor = tester
+        .widget<CupertinoTextField>(find.byType(CupertinoTextField).first);
+    expect(
+        editor.decoration!.color, WeChatColors.darkElevated);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('composer keeps only approved WeChat-style option rows',
       (tester) async {
     final api = BusinessApiClient(
@@ -144,7 +228,8 @@ void main() {
         throw StateError('Unexpected ${request.method} ${request.url}');
       }),
     );
-    final image = XFile.fromData(pngBytes(), name: 'photo.png', mimeType: 'image/png');
+    final image =
+        XFile.fromData(pngBytes(), name: 'photo.png', mimeType: 'image/png');
 
     await tester.pumpWidget(CupertinoApp(
       home: MomentComposerPage(
@@ -170,7 +255,9 @@ void main() {
       client: MockClient((request) async {
         if (request.url.path.endsWith('/moments/draft')) {
           return http.Response(
-            jsonEncode({'error': {'code': 'MOMENT_DRAFT_NOT_FOUND', 'message': '草稿不存在'}}),
+            jsonEncode({
+              'error': {'code': 'MOMENT_DRAFT_NOT_FOUND', 'message': '草稿不存在'}
+            }),
             404,
             headers: {'content-type': 'application/json'},
           );

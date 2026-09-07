@@ -80,6 +80,30 @@ class RetryEvent extends Event {
 }
 
 void main() {
+  test('HTTP ack and sync expose different timestamp authority', () {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.add(RetryEvent(room, timeline,
+        id: 'ack', minute: 1, status: EventStatus.sent));
+    final adapter = MatrixRoomTimelineAdapter(room, timeline);
+    expect(adapter.snapshot().single.isSdkLocalEcho, isTrue);
+    timeline.events[0] = RetryEvent(room, timeline,
+        id: 'ack', minute: 2, status: EventStatus.synced);
+    expect(adapter.snapshot().single.isSdkLocalEcho, isFalse);
+  });
+  test('announcement documents are not ordinary chat bubbles', () {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.add(RetryEvent(room, timeline,
+        id: 'announcement',
+        minute: 1,
+        payload: {
+          'msgtype': 'com.changliao.group.announcement.document',
+          'body': '群公告'
+        }));
+    expect(MatrixRoomTimelineAdapter(room, timeline).snapshot(), isEmpty);
+  });
+
   test('upload failure reuses cached media and SDK send credentials', () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();

@@ -496,6 +496,10 @@ class Timeline {
               : null);
 
       if (i < events.length) {
+        // /sync can beat the HTTP send response. A late local ACK/error still
+        // contains the device timestamp and unconfirmed payload: never replace
+        // an authoritative synced event with that older local projection.
+        if (events[i].status.isSynced && !status.isSynced) return;
         // if the old status is larger than the new one, we also want to preserve the old status
         final oldStatus = events[i].status;
         events[i] = Event.fromJson(

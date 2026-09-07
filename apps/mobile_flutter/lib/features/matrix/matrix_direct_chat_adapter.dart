@@ -8,6 +8,38 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
   const MatrixDirectChatBackend(this.client);
   final Client client;
 
+  /// Open the business directory's canonical room, including an invitation
+  /// that has not yet appeared in the local room list.
+  Future<DirectChatRoom> openCanonicalRoom(String roomId) async {
+    var room = client.getRoomById(roomId);
+    if (room == null || room.membership != Membership.join) {
+      await client.joinRoomById(roomId).timeout(const Duration(seconds: 15));
+      if (client.getRoomById(roomId)?.membership != Membership.join) {
+        await client
+            .waitForRoomInSync(roomId, join: true)
+            .timeout(const Duration(seconds: 15));
+      }
+      room = client.getRoomById(roomId);
+    }
+    var snapshot = await waitForRoom(roomId);
+    final target = snapshot.participantIds
+        .firstWhere((id) => id != client.userID, orElse: () => '');
+    snapshot =
+        await DirectChatService(this).openExisting(snapshot.roomId, target);
+    if (target.isNotEmpty &&
+        (room?.isDirectChat != true || room?.directChatMatrixID != target)) {
+      try {
+        // m.direct is account data. It does not produce a room sync event.
+        await Room(id: roomId, client: client)
+            .addToDirectChat(target)
+            .timeout(const Duration(seconds: 15));
+      } catch (_) {
+        // Metadata repair can be retried when this room is opened again.
+      }
+    }
+    return snapshot;
+  }
+
   @override
   Future<DirectChatRoom?> findJoinedDirectRoom(String matrixUserId) async {
     final roomId = client.getDirectChatFromUserId(matrixUserId);
@@ -23,11 +55,19 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
     // 邀请并补写 m.direct，否则会重复建第二个房间或直接报错。
     for (final room in client.rooms) {
       if (room.membership != Membership.invite || !room.isDirectChat) continue;
-      final participants =
-          await room.requestParticipants([Membership.join, Membership.invite]);
-      if (!participants.any((member) => member.id == matrixUserId)) continue;
+      // Invited users cannot request /members yet. Use stripped invite state.
+      final invitation = room.getState(EventTypes.RoomMember, client.userID!);
+      if (invitation?.senderId != matrixUserId ||
+          invitation?.content['is_direct'] != true ||
+          room.directChatMatrixID != matrixUserId) {
+        continue;
+      }
       await room.join();
-      await client.waitForRoomInSync(room.id, join: true);
+      if (client.getRoomById(room.id)?.membership != Membership.join) {
+        await client
+            .waitForRoomInSync(room.id, join: true)
+            .timeout(const Duration(seconds: 15));
+      }
       final joined = client.getRoomById(room.id);
       if (joined != null && joined.membership == Membership.join) {
         await joined.addToDirectChat(matrixUserId);

@@ -2,10 +2,10 @@ import 'dart:typed_data';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart' show SynchronousFuture;
+import 'package:flutter/foundation.dart' show ValueListenable;
 
 import '../../features/matrix/image_contain_layout.dart';
-import '../../features/matrix/media_thumbnail.dart';
+
 import '../../features/matrix/gif_image_policy.dart';
 import '../foundation/wechat_tokens.dart';
 
@@ -31,13 +31,17 @@ final _unavailableImagePixel = base64Decode(
 /// 替代旧的固定 200x150 cover 裁剪：
 /// - 宽 ≤ min(聊天宽 72%, 320dp)、高 ≤ min(可用高 45%, 420dp)；
 /// - 等比 contain（禁止 cover/拉伸/裁剪）；小图不放大；
-/// - 宽高未知先占位，解码后更新尺寸（FutureBuilder 两阶段）；
+/// - 事件尺寸预留外框；未知尺寸保持稳定占位，完成后不跳动；
 /// - 点击进入大图（查看完整图片 + 缩放平移）。
 final class ContainImageBubble extends StatefulWidget {
   const ContainImageBubble({
     super.key,
     required this.load,
+    this.loadCached,
     this.initialBytes,
+    this.isScrolling,
+    this.sourceSize,
+    this.deferLoading = false,
     this.refreshFromSource = false,
     this.availableWidth = 400,
     this.availableHeight = 800,
@@ -45,7 +49,13 @@ final class ContainImageBubble extends StatefulWidget {
   });
 
   final Future<Uint8List> Function() load;
+  final Future<Uint8List?> Function()? loadCached;
   final Uint8List? initialBytes;
+  final ValueListenable<bool>? isScrolling;
+  final Size? sourceSize;
+
+  /// A local outgoing echo has no downloadable SDK event until acknowledged.
+  final bool deferLoading;
 
   /// A thumbnail can paint immediately, but must not replace the original
   /// stream: GIF content may be mislabeled by the sender as image/jpeg.
@@ -63,14 +73,85 @@ final class ContainImageBubble extends StatefulWidget {
 }
 
 final class _ContainImageBubbleState extends State<ContainImageBubble> {
-  late Future<Uint8List> _bytes;
+  Uint8List? _bytes;
+  ImageProvider? _provider;
+  bool _started = false;
+  bool _failed = false;
+  bool _checkingCache = false;
+  int _generation = 0;
+  late final Size? _sourceSize = widget.sourceSize;
 
   @override
   void initState() {
     super.initState();
-    _bytes = widget.initialBytes != null && !widget.refreshFromSource
-        ? SynchronousFuture<Uint8List>(widget.initialBytes!)
-        : widget.load();
+    _accept(widget.initialBytes);
+    widget.isScrolling?.addListener(_startWhenIdle);
+    _probeLocalCache();
+    _startWhenIdle();
+  }
+
+  void _probeLocalCache() {
+    final read = widget.loadCached;
+    if (_bytes != null || read == null) return;
+    _checkingCache = true;
+    final generation = _generation;
+    void complete(Uint8List? bytes) {
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _checkingCache = false;
+        if (_bytes == null && bytes != null) _accept(bytes);
+      });
+      _startWhenIdle();
+    }
+
+    Future<Uint8List?>.sync(read)
+        .then(complete, onError: (Object _) => complete(null));
+  }
+
+  void _accept(Uint8List? bytes) {
+    _bytes = bytes;
+    _provider = bytes == null ? null : boundedChatImageProvider(bytes);
+  }
+
+  @override
+  void didUpdateWidget(covariant ContainImageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isScrolling != widget.isScrolling) {
+      oldWidget.isScrolling?.removeListener(_startWhenIdle);
+      widget.isScrolling?.addListener(_startWhenIdle);
+    }
+    if (widget.initialBytes != null &&
+        !identical(oldWidget.initialBytes, widget.initialBytes)) {
+      _accept(widget.initialBytes);
+    }
+    _startWhenIdle();
+  }
+
+  void _startWhenIdle() {
+    if (_started ||
+        _checkingCache ||
+        _failed ||
+        widget.deferLoading ||
+        widget.isScrolling?.value == true ||
+        (_bytes != null && !widget.refreshFromSource)) {
+      return;
+    }
+    _started = true;
+    final generation = ++_generation;
+    Future<Uint8List>.sync(widget.load).then((bytes) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _accept(bytes));
+    }, onError: (Object _) {
+      if (!mounted || generation != _generation) return;
+      setState(() => _failed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    widget.isScrolling?.removeListener(_startWhenIdle);
+    super.dispose();
   }
 
   @override
@@ -79,125 +160,54 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
       availableWidth: widget.availableWidth,
       availableHeight: widget.availableHeight,
     );
-    return FutureBuilder<Uint8List>(
-      future: _bytes,
-      initialData: widget.initialBytes,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => setState(() => _bytes = widget.load()),
-            child: const Text('图片加载失败，点击重试',
-                style:
-                    TextStyle(fontSize: 13, color: WeChatColors.brandPrimary)),
-          );
-        }
-        if (!snapshot.hasData) {
-          // 占位容器（等最大尺寸；解码后收缩到 contain 尺寸）。
-          return SizedBox(
-            width: constraints.maxWidth,
-            height: constraints.maxHeight * 0.5,
-            child: const Center(child: CupertinoActivityIndicator()),
-          );
-        }
-        final bytes = snapshot.data!;
-        return GestureDetector(
-          onTap: widget.onTap,
-          child: _ContainImage(
-            bytes: bytes,
+    final size = _sourceSize;
+    // Reserve geometry from event metadata before any IO. Missing/invalid
+    // metadata gets a stable frame; decode completion never moves the timeline.
+    final layout = size != null &&
+            size.width.isFinite &&
+            size.height.isFinite &&
+            size.width > 0 &&
+            size.height > 0
+        ? computeContainLayout(
+            imageWidth: size.width,
+            imageHeight: size.height,
             maxWidth: constraints.maxWidth,
-            maxHeight: constraints.maxHeight,
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// 解码实际宽高后 contain 布局的图片（内部组件）。
-final class _ContainImage extends StatefulWidget {
-  const _ContainImage({
-    required this.bytes,
-    required this.maxWidth,
-    required this.maxHeight,
-  });
-
-  final Uint8List bytes;
-  final double maxWidth;
-  final double maxHeight;
-
-  @override
-  State<_ContainImage> createState() => _ContainImageState();
-}
-
-final class _ContainImageState extends State<_ContainImage> {
-  ImageContainLayout? _layout;
-  int _layoutGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _resolveLayout();
-  }
-
-  @override
-  void dispose() {
-    _layoutGeneration++;
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ContainImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // R13：字节或约束变化都需重算（旋屏/视口变化后仍用旧尺寸）。
-    if (!identical(oldWidget.bytes, widget.bytes) ||
-        oldWidget.maxWidth != widget.maxWidth ||
-        oldWidget.maxHeight != widget.maxHeight) {
-      _layout = null;
-      _resolveLayout();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final layout = _layout;
-    if (layout != null) {
-      return ClipRRect(
+            maxHeight: constraints.maxHeight)
+        : ImageContainLayout(
+            width: constraints.maxWidth, height: constraints.maxHeight * .5);
+    return SizedBox(
+      width: layout.width,
+      height: layout.height,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(WeChatRadius.bubble),
-        child: SizedBox(
-          width: layout.width,
-          height: layout.height,
-          child: Image(
-            image: boundedChatImageProvider(widget.bytes),
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-          ),
-        ),
-      );
-    }
-    // 先用解码器取实际宽高（不渲染整帧），再按 contain 公式布局。
-    return LayoutBuilder(builder: (context, constraints) {
-      return Image(
-        image: boundedChatImageProvider(widget.bytes),
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-      );
-    });
-  }
-
-  Future<void> _resolveLayout() async {
-    final generation = ++_layoutGeneration;
-    final dimensions = await decodeImageDimensions(widget.bytes);
-    if (!mounted || generation != _layoutGeneration || dimensions == null) {
-      return;
-    }
-    final layout = computeContainLayout(
-      imageWidth: dimensions.$1.toDouble(),
-      imageHeight: dimensions.$2.toDouble(),
-      maxWidth: widget.maxWidth,
-      maxHeight: widget.maxHeight,
+        child: _provider != null
+            ? GestureDetector(
+                onTap: widget.onTap,
+                child: Image(
+                  image: _provider!,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) =>
+                      const Center(child: Icon(CupertinoIcons.photo)),
+                ))
+            : _failed
+                ? CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      setState(() {
+                        _failed = false;
+                        _started = false;
+                      });
+                      _startWhenIdle();
+                    },
+                    child: const Text('图片加载失败，点击重试',
+                        style: TextStyle(
+                            fontSize: 13, color: WeChatColors.brandPrimary)))
+                : const Center(
+                    child: Icon(CupertinoIcons.photo,
+                        color: WeChatColors.textTertiary)),
+      ),
     );
-    setState(() => _layout = layout);
   }
 }
 

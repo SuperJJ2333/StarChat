@@ -78,7 +78,7 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
+            backgroundColor: WeChatColors.navigationBackground(context),
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: Text('聊天信息')),
@@ -100,7 +100,9 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          border: Border.all(color: WeChatColors.divider),
+                          border: Border.all(
+                              color: WeChatColors.resolve(
+                                  context, WeChatColors.divider)),
                           borderRadius:
                               BorderRadius.circular(WeChatRadius.control),
                         ),
@@ -165,7 +167,8 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
                   fontSize: 14, color: WeChatColors.textSecondary)),
           const CupertinoListTileChevron(),
         ]),
-        onTap: () => setState(() => _notificationExpanded = !_notificationExpanded),
+        onTap: () =>
+            setState(() => _notificationExpanded = !_notificationExpanded),
       ),
       AnimatedSize(
         duration: const Duration(milliseconds: 200),
@@ -187,8 +190,7 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
     ]);
   }
 
-  Widget _person(String name, String id, String? avatarUrl) =>
-      GestureDetector(
+  Widget _person(String name, String id, String? avatarUrl) => GestureDetector(
         // 规格§八：点击头像进入 APP 自己的好友资料页（onTapPerson 由
         // RoomPage 注入，携带 userId；禁止打开 Matrix Profile）。
         onTap: () => widget.onTapPerson?.call(id),

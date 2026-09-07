@@ -73,9 +73,11 @@ final class AuthErrorMessage extends StatelessWidget {
         decoration: compact
             ? null
             : BoxDecoration(
-                color: WeChatColors.errorSurface,
+                color: WeChatColors.resolve(context, WeChatColors.errorSurface),
                 borderRadius: BorderRadius.circular(WeChatRadius.tag),
-                border: Border.all(color: WeChatColors.errorBorder),
+                border: Border.all(
+                    color: WeChatColors.resolve(
+                        context, WeChatColors.errorBorder)),
               ),
         child: Semantics(
           liveRegion: true,

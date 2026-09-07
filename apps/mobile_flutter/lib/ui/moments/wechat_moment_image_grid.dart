@@ -42,8 +42,9 @@ final class WeChatMomentImageGrid extends StatelessWidget {
                     width: size,
                     height: size,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        Container(color: WeChatColors.divider)))),
+                    errorBuilder: (_, __, ___) => Container(
+                        color: WeChatColors.resolve(
+                            context, WeChatColors.divider))))),
       ),
     );
   }

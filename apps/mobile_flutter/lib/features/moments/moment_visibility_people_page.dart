@@ -47,9 +47,9 @@ final class _MomentVisibilityPeoplePageState
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        backgroundColor: WeChatColors.tabRootPageBackground,
+        backgroundColor: WeChatColors.pageBackground(context),
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text(widget.mode == 'INCLUDE' ? '只给谁看' : '不给谁看'),
@@ -100,7 +100,7 @@ final class _MomentVisibilityPeoplePageState
                     ),
                   ),
                   Container(
-                    color: CupertinoColors.white,
+                    color: WeChatColors.elevatedSurface(context),
                     child: Row(
                       children: [
                         _tabButton('标签'),
@@ -134,7 +134,7 @@ final class _MomentVisibilityPeoplePageState
               label,
               style: TextStyle(
                 color: selected
-                    ? WeChatColors.lightTextPrimary
+                    ? WeChatColors.resolveTextPrimary(context)
                     : WeChatColors.textSecondary,
               ),
             ),

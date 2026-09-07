@@ -392,7 +392,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
+            backgroundColor: WeChatColors.navigationBackground(context),
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: const Text('朋友圈'),
@@ -617,7 +617,7 @@ final class _MomentsSettingsState extends State<MomentsSettingsPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('朋友圈权限')),

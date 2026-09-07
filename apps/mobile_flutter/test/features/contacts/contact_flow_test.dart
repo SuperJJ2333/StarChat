@@ -13,6 +13,7 @@ final class FakeContactsGateway implements ContactsGateway {
   List<String> lastTags = const [];
   String? lastRemark;
   Object? updateError;
+  Object? deleteError;
 
   @override
   Future<Map<String, dynamic>> contactTags() async => {
@@ -67,7 +68,10 @@ final class FakeContactsGateway implements ContactsGateway {
   Future<void> blockContact(String userId) async => blocked = true;
 
   @override
-  Future<void> deleteContact(String userId) async => deleted = true;
+  Future<void> deleteContact(String userId) async {
+    if (deleteError case final error?) throw error;
+    deleted = true;
+  }
 }
 
 final class IndexedContactsGateway extends FakeContactsGateway {
@@ -115,6 +119,81 @@ final class IndexedContactsGateway extends FakeContactsGateway {
 }
 
 void main() {
+  for (final shouldFail in [false, true]) {
+    testWidgets(
+        shouldFail
+            ? 'failed friend deletion preserves shared identity'
+            : 'cancelled friend deletion preserves shared identity',
+        (tester) async {
+      final api = FakeContactsGateway();
+      if (shouldFail) api.deleteError = StateError('offline');
+      var removals = 0;
+      await tester.pumpWidget(CupertinoApp(
+          home: ContactMorePage(
+        api: api,
+        contact: (await api.listContacts()).single.toDetails(),
+        onContactDeleted: (_) async {
+          removals++;
+        },
+      )));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除好友'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(shouldFail ? '删除' : '取消'));
+      await tester.pumpAndSettle();
+      expect(api.deleted, isFalse);
+      expect(removals, 0);
+      expect(find.text(shouldFail ? '删除失败' : '好友设置'), findsOneWidget);
+    });
+  }
+
+  testWidgets(
+      'deleting a friend updates shared identity and disk without restart',
+      (tester) async {
+    final store = ContactFlowIdentityStore();
+    final api = DeletableContactsGateway();
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'delete-test',
+      store: store,
+    );
+    await store.write(
+        'delete-test',
+        ProfileSnapshot(
+          profile: const ProfileData(
+              username: 'me',
+              nickname: 'Me',
+              maskedEmail: '',
+              fallbackSeed: 'me'),
+          contacts: await api.listContacts(),
+        ));
+    await cache.hydrate();
+    final friend = cache.contacts.single;
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactsPage(
+      api: api,
+      identityCache: cache,
+      pendingFriendRequests: ValueNotifier(0),
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(friend.displayName));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除好友'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(api.deleted, isTrue);
+    expect(cache.contactsByMatrixId.containsKey(friend.matrixUserId), isFalse);
+    expect(cache.contacts, isEmpty);
+    expect((await store.read('delete-test'))!.contacts, isEmpty);
+    expect(find.text(friend.displayName), findsNothing);
+    // A later identity notification must not resurrect a stale friend.
+    cache.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text(friend.displayName), findsNothing);
+  });
+
   testWidgets('contacts rebuild immediately when the shared remark changes',
       (tester) async {
     final store = ContactFlowIdentityStore();
@@ -175,7 +254,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: IndexedContactsGateway())),
+      CupertinoApp(
+          home: ContactsPage(
+              pendingFriendRequests: ValueNotifier<int>(0),
+              api: IndexedContactsGateway())),
     );
     await tester.pumpAndSettle();
 
@@ -213,7 +295,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
-      CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: IndexedContactsGateway())),
+      CupertinoApp(
+          home: ContactsPage(
+              pendingFriendRequests: ValueNotifier<int>(0),
+              api: IndexedContactsGateway())),
     );
     await tester.pumpAndSettle();
 
@@ -297,7 +382,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = FakeContactsGateway();
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactsPage(
+            pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
     expect(find.text('产品小艾'), findsOneWidget);
@@ -443,7 +530,8 @@ void main() {
             ],
           ),
           tabBuilder: (_, __) => CupertinoTabView(
-            builder: (_) => ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway),
+            builder: (_) => ContactsPage(
+                pendingFriendRequests: ValueNotifier<int>(0), api: gateway),
           ),
         ),
       ),
@@ -464,7 +552,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final gateway = FakeContactsGateway();
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactsPage(
+            pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('产品小艾'));
@@ -504,7 +594,9 @@ void main() {
       baseUri: Uri.parse('https://example.test'),
       sessionStore: SecureSessionStore(),
     );
-    await tester.pumpWidget(CupertinoApp(home: ContactsPage(pendingFriendRequests: ValueNotifier<int>(0), api: api)));
+    await tester.pumpWidget(CupertinoApp(
+        home: ContactsPage(
+            pendingFriendRequests: ValueNotifier<int>(0), api: api)));
     await tester.pump();
     expect(find.byKey(const Key('contacts-search')), findsOneWidget);
     expect(find.byKey(const Key('contacts-more')), findsOneWidget);
@@ -515,11 +607,16 @@ final class ContactFlowIdentityStore implements ProfileStore {
   final values = <String, ProfileSnapshot>{};
 
   @override
-  Future<ProfileSnapshot?> read(String accountKey) async =>
-      values[accountKey];
+  Future<ProfileSnapshot?> read(String accountKey) async => values[accountKey];
 
   @override
   Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
     values[accountKey] = snapshot;
   }
+}
+
+final class DeletableContactsGateway extends FakeContactsGateway {
+  @override
+  Future<List<ContactSummary>> listContacts() async =>
+      deleted ? const [] : await super.listContacts();
 }

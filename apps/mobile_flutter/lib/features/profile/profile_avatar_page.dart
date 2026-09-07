@@ -65,7 +65,7 @@ final class _ProfileAvatarPageState extends State<ProfileAvatarPage> {
         state.status == ProfileStatus.uploading;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('头像')),

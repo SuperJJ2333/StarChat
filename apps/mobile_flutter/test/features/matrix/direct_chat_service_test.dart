@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'room_timeline_controller_test.dart' show FakeTimelineAdapter;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,9 +10,13 @@ import 'package:matrix/matrix.dart' show Membership;
 void main() {
   group('规格1/5：私聊不产生群聊邀请 + 类型集中判定（源码合同）', () {
     test('时间线推导入群通知前有私聊分型门', () {
-      final source = readFile('lib/features/matrix/matrix_room_timeline_adapter.dart')
-          .replaceAll('\r\n', '\n');
-      expect(source.contains('room.isDirectChat\n        ? const <GroupJoinNotice>[]'), isTrue,
+      final source =
+          readFile('lib/features/matrix/matrix_room_timeline_adapter.dart')
+              .replaceAll('\r\n', '\n');
+      expect(
+          source.contains(
+              'room.isDirectChat\n        ? const <GroupJoinNotice>[]'),
+          isTrue,
           reason: '私聊房间绝不能推导"A邀请B加入群聊"通知');
     });
 
@@ -38,11 +44,9 @@ void main() {
   group('规格4/5：详情页 UI 合同', () {
     test('Group 房间保留"保存到通讯录"，Direct 隐藏', () {
       final direct = readFile('lib/features/matrix/direct_chat_info_page.dart');
-      expect(direct.contains("保存到通讯录"), isFalse,
-          reason: '私聊详情页不得出现保存到通讯录');
+      expect(direct.contains("保存到通讯录"), isFalse, reason: '私聊详情页不得出现保存到通讯录');
       final group = readFile('lib/features/matrix/group_chat_info_page.dart');
-      expect(group.contains('保存到通讯录'), isTrue,
-          reason: '群详情页保留保存到通讯录');
+      expect(group.contains('保存到通讯录'), isTrue, reason: '群详情页保留保存到通讯录');
     });
 
     test('清空聊天记录按钮居中（Center，非 padding 模拟）', () {
@@ -69,14 +73,27 @@ void main() {
   });
 
   group('规格2/3/7：发送门禁与性能链路（源码合同）', () {
-    test('发送路径服务层权限门：blocked/deleted → 本地 failed', () {
+    test('发送路径服务层权限门：blocked/deleted → 本地 failed', () async {
+      final adapter = FakeTimelineAdapter();
       final controller =
-          readFile('lib/features/matrix/room_timeline_controller.dart');
-      expect(controller.contains('canSendNow'), isTrue);
-      final i = controller.indexOf('canSendNow?.call()');
-      expect(controller.indexOf('RoomDeliveryState.failed', i),
-          lessThan(controller.indexOf('RoomDeliveryState.sending', i)),
-          reason: '门禁拒绝时消息直接 failed（感叹号），绝无 sending 假象');
+          RoomTimelineController(adapter, canSendNow: () => false);
+      final observed = <RoomDeliveryState>[];
+      var sends = 0;
+      controller.addListener(() {
+        observed.addAll(
+            controller.messages.map((message) => message.deliveryState));
+      });
+      await controller.sendText('blocked', send: (_) async {
+        sends++;
+        return r'$sent';
+      });
+      await controller.refresh();
+      expect(sends, 0);
+      expect(observed, isNotEmpty);
+      expect(observed, everyElement(RoomDeliveryState.failed));
+      expect(
+          controller.messages.single.deliveryState, RoomDeliveryState.failed);
+      controller.dispose();
     });
 
     test('打开聊天先 push 再后台预热（5 秒延迟根因修复）', () {

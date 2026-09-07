@@ -16,17 +16,114 @@ abstract interface class VoiceTranscriber {
 
 /// 基于 speech_to_text（系统语音识别）的实现。
 final class SpeechToTextVoiceTranscriber implements VoiceTranscriber {
-  SpeechToTextVoiceTranscriber({this.localeId = 'zh-CN'});
+  SpeechToTextVoiceTranscriber({this.localeId = 'zh-CN', SpeechToText? speech})
+      : _stt = speech ?? SpeechToText();
 
   final String localeId;
-  final SpeechToText _stt = SpeechToText();
-  bool _initialized = false;
+  final SpeechToText _stt;
   bool _available = false;
-  bool _listening = false;
-  final StringBuffer _finalText = StringBuffer();
-  String _partial = '';
+  Future<void>? _initialization;
+  Future<void> _nativeQueue = Future<void>.value();
+  _RecognitionSession? _session;
 
-  void _onResult(SpeechRecognitionResult result) {
+  @override
+  Future<bool> isAvailable() async {
+    await _ensureInitialized();
+    return _available;
+  }
+
+  Future<void> _ensureInitialized() => _initialization ??= () async {
+        try {
+          _available = await _stt.initialize();
+        } catch (_) {
+          _available = false;
+        }
+      }();
+
+  Future<void> _native(Future<void> Function() operation) {
+    final work = _nativeQueue.then((_) => operation());
+    _nativeQueue =
+        work.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return work;
+  }
+
+  @override
+  Future<void> start() async {
+    // Repeated starts of the same recording cannot erase recognized words.
+    final current = _session;
+    if (current != null && current.stopping == null && !current.closed) return;
+    final session = _RecognitionSession();
+    _session = session;
+    await _ensureInitialized();
+    if (!_available ||
+        !identical(_session, session) ||
+        session.stopping != null) {
+      return;
+    }
+    await _native(() async {
+      if (!identical(_session, session) || session.stopping != null) {
+        return;
+      }
+      try {
+        await _stt.listen(
+          onResult: session.accept,
+          listenOptions: SpeechListenOptions(
+              localeId: localeId, listenFor: const Duration(minutes: 2)),
+        );
+        session.listening = true;
+      } catch (_) {
+        session.closed = true;
+      }
+    });
+  }
+
+  @override
+  Future<String> stop() {
+    final session = _session;
+    if (session == null) return Future<String>.value('');
+    // A stop belongs to the captured session, even if another recording starts
+    // during native stop or the bounded final-result wait.
+    return session.stopping ??= _stopSession(session);
+  }
+
+  Future<String> _stopSession(_RecognitionSession session) async {
+    var text = '';
+    await _native(() async {
+      if (session.listening) {
+        session.listening = false;
+        try {
+          await _stt.stop();
+        } catch (_) {}
+      }
+      // SpeechToText owns one native result listener. Keep a subsequent listen
+      // behind this short final-result window so late native results still go
+      // to the old session. Audio recording and the composer stay independent.
+      if (_available && !session.closed) {
+        final deadline = DateTime.now().add(const Duration(seconds: 3));
+        while (session.text.isEmpty && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+      }
+      text = session.text;
+      session.closed = true;
+      session.clear();
+    });
+    return text;
+  }
+}
+
+/// Each result callback captures one recording generation. Old final callbacks
+/// may finish that generation; they can never mutate a newer recording.
+final class _RecognitionSession {
+  final _finalText = StringBuffer();
+  String _partial = '';
+  bool listening = false;
+  bool closed = false;
+  Future<String>? stopping;
+  String get text => (_finalText.toString() + _partial).trim();
+
+  void accept(SpeechRecognitionResult result) {
+    if (closed) return;
     if (result.finalResult) {
       _finalText.write(result.recognizedWords);
       _partial = '';
@@ -35,71 +132,9 @@ final class SpeechToTextVoiceTranscriber implements VoiceTranscriber {
     }
   }
 
-  void _onStatus(String status) {
-    if (status == 'done' || status == 'notListening') {
-      _listening = false;
-    }
-  }
-
-  @override
-  Future<bool> isAvailable() async {
-    await _ensureInitialized();
-    return _available;
-  }
-
-  Future<void> _ensureInitialized() async {
-    if (_initialized) return;
-    _initialized = true;
-    try {
-      _available = await _stt.initialize(onStatus: _onStatus);
-    } catch (_) {
-      _available = false;
-    }
-  }
-
-  @override
-  Future<void> start() async {
+  void clear() {
     _finalText.clear();
     _partial = '';
-    await _ensureInitialized();
-    if (!_available || _listening) return;
-    await _stt.listen(
-      onResult: _onResult,
-      // 7.4.0：超时与语言迁移入 SpeechListenOptions（旧参数已废弃）。
-      listenOptions: SpeechListenOptions(
-        localeId: localeId,
-        listenFor: const Duration(minutes: 2),
-      ),
-    );
-    _listening = true;
-  }
-
-  @override
-  Future<String> stop() async {
-    if (_listening) {
-      _listening = false;
-      try {
-        await _stt.stop();
-      } catch (_) {}
-    }
-    if (!_available) {
-      // 识别能力不可用时直接返回累计结果，不做无谓等待。
-      final text = (_finalText.toString() + _partial).trim();
-      _finalText.clear();
-      _partial = '';
-      return text;
-    }
-    // 系统“done”回调可能略晚于 stop()：有界等待最终识别结果落地，
-    // 避免松手即返回空串（转文字因此被误判失败的主要根因）。
-    final deadline = DateTime.now().add(const Duration(seconds: 3));
-    while (DateTime.now().isBefore(deadline)) {
-      if ((_finalText.toString() + _partial).trim().isNotEmpty) break;
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    final text = (_finalText.toString() + _partial).trim();
-    _finalText.clear();
-    _partial = '';
-    return text;
   }
 }
 

@@ -11,6 +11,7 @@ import 'call_connected_fallback.dart';
 import 'call_controller.dart';
 import 'call_diagnostics.dart';
 import 'call_quality_monitor.dart';
+import 'call_wakeup_client.dart';
 import 'incoming_call_gate.dart';
 import 'turn_credentials_cache.dart';
 
@@ -100,6 +101,7 @@ final class MatrixCallBackend implements CallBackend {
   factory MatrixCallBackend(
     Client client, {
     CallDiagnostics? diagnostics,
+    CallWakeupClient? wakeup,
   }) {
     late MatrixCallBackend backend;
     final delegate = FlutterWebRtcDelegate(
@@ -113,11 +115,16 @@ final class MatrixCallBackend implements CallBackend {
       delegate,
       diagnostics ?? CallDiagnostics(),
     );
+    backend.wakeup = wakeup;
     unawaited(turnCredentials.getIceServers());
     return backend;
   }
 
   final Client client;
+  CallWakeupClient? wakeup;
+  String? get activeCallId => _call?.callId;
+  String? get activeRoomId => _call?.room.id;
+  bool get isIncomingCall => _call != null && !_call!.isOutgoing;
   final VoIP voip;
   final FlutterWebRtcDelegate delegate;
 
@@ -192,6 +199,14 @@ final class MatrixCallBackend implements CallBackend {
       userId: matrixUserId,
     );
     await _attach(call);
+    // Only a real, encrypted Matrix invite can trigger the separate VoIP wake.
+    if (!_disposed && identical(_call, call) && !call.callHasEnded) {
+      unawaited(wakeup?.invite(
+          roomId: roomId,
+          callId: call.callId,
+          recipient: matrixUserId,
+          video: type == CallMediaType.video));
+    }
   }
 
   Future<void> _attach(CallSession call) async {
@@ -330,6 +345,7 @@ final class MatrixCallBackend implements CallBackend {
 
   Future<void> _ended(CallSession call) async {
     if (!identical(_call, call)) return;
+    unawaited(wakeup?.end(roomId: call.room.id, callId: call.callId));
     // Detach synchronously before cleanup awaits. A new call may arrive while
     // the old stream subscriptions or quality monitor are shutting down.
     _call = null;
@@ -357,11 +373,26 @@ final class MatrixCallBackend implements CallBackend {
   CallSession get _active =>
       _call ?? (throw StateError('No active Matrix call'));
 
+  int _answerGeneration = 0;
+  void cancelPendingAnswer() => _answerGeneration++;
+
   @override
   Future<void> accept() async {
     final call = _active;
+    final generation = _answerGeneration;
+    if (wakeup != null) {
+      await wakeup!.answerAndConnect(
+        roomId: call.room.id,
+        callId: call.callId,
+        isCurrent: () =>
+            generation == _answerGeneration && !_disposed &&
+            identical(_call, call) && !call.callHasEnded,
+        connect: call.answer,
+      );
+    } else {
+      await call.answer();
+    }
     debugPrint('[matrix-call] answer_started');
-    await call.answer();
     if (_disposed || !identical(_call, call) || call.callHasEnded) return;
     // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
     // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。

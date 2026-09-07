@@ -70,9 +70,9 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
     final state = widget.controller.state;
     final profile = state.profile;
     return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.tabRootPageBackground,
+      backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: const WeChatNavTitle('我')),

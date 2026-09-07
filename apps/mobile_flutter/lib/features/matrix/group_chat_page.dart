@@ -54,7 +54,7 @@ final class _GroupChatPageState extends State<GroupChatPage> {
     final state = widget.controller.state;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('发起群聊')),

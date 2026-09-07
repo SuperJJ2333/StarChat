@@ -16,10 +16,13 @@ final class NetworkStatusCapsule extends StatelessWidget {
             label: reconnecting ? '正在重新连接' : '网络不可用，点击重试',
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: WeChatColors.networkCapsuleSurface,
+                color: WeChatColors.resolve(
+                    context, WeChatColors.networkCapsuleSurface),
                 borderRadius:
                     BorderRadius.circular(WeChatRadius.networkCapsule),
-                border: Border.all(color: WeChatColors.networkCapsuleBorder),
+                border: Border.all(
+                    color: WeChatColors.resolve(
+                        context, WeChatColors.networkCapsuleBorder)),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
