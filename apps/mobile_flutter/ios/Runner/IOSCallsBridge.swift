@@ -33,7 +33,10 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
     provider = CXProvider(configuration: config)
     super.init()
     provider.setDelegate(self, queue: .main)
-    pip.onRestore = { [weak self] in self?.channel?.invokeMethod("returnToCall", arguments: nil) }
+    pip.onRestore = { [weak self] in
+      guard let self = self, self.active, let owner = self.sessionOwner.current else { return }
+      self.channel?.invokeMethod("returnToCall", arguments: ["owner": owner])
+    }
   }
 
   func registerPushKit() {
@@ -57,7 +60,12 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
   private var tokens: [String: Any] {
     ["voipToken": voipToken as Any? ?? NSNull(), "apnsToken": apnsToken as Any? ?? NSNull()]
   }
-  private func notifyTokens() { if active { channel?.invokeMethod("tokensChanged", arguments: tokens) } }
+  private func notifyTokens() {
+    guard active, let owner = sessionOwner.current else { return }
+    var event = tokens
+    event["owner"] = owner
+    channel?.invokeMethod("tokensChanged", arguments: event)
+  }
   private var now: TimeInterval { Date().timeIntervalSince1970 }
 
   private func handle(_ method: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -90,7 +98,7 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
       result(true)
     case "ready", "getPending":
       if method.method == "ready" { ready = active }
-      result(["actions": active ? state.drain(now: now) : []])
+      result(["actions": active ? state.drain(now: now, owner: sessionOwner.current) : []])
     case "showIncoming":
       guard active, let call = descriptor(args) else { result(false); return }
       reportIncoming(call, completion: { result($0) })
@@ -237,9 +245,9 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
   }
   private func emit(_ action: String, call: IOSCallDescriptor, muted: Bool? = nil) {
     guard active else { return }
-    state.enqueue(action: action, call: call, now: now, muted: muted)
+    state.enqueue(action: action, call: call, now: now, muted: muted, owner: sessionOwner.current)
     if ready, let channel = channel {
-      for event in state.drain(now: now) { channel.invokeMethod("event", arguments: event) }
+      for event in state.drain(now: now, owner: sessionOwner.current) { channel.invokeMethod("event", arguments: event) }
     }
   }
   private func end(_ call: IOSCallDescriptor, reason: CXCallEndedReason, notify: Bool) {

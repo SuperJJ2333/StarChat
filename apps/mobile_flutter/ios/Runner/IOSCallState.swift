@@ -64,14 +64,24 @@ final class IOSCallState {
     if tombstones.count >= 128, let oldest = tombstones.min(by: { $0.value < $1.value }) { tombstones.removeValue(forKey: oldest.key) }
     tombstones[IOSCallDescriptor.uuid(for: callId, roomId: roomId)] = now + 60
   }
-  func enqueue(action: String, call: IOSCallDescriptor, now: TimeInterval, muted: Bool? = nil) {
+  func enqueue(action: String, call: IOSCallDescriptor, now: TimeInterval, muted: Bool? = nil, owner: String? = nil) {
     var value: [String: Any] = ["action": action, "callId": call.callId, "roomId": call.roomId, "at": Int64(now * 1000)]
     if let muted = muted { value["muted"] = muted }
+    if let owner = owner { value["owner"] = owner }
     if pending.count >= 64 { pending.removeFirst() }
     pending.append((now + 30, value))
   }
-  func drain(now: TimeInterval) -> [[String: Any]] {
-    let values = pending.filter { $0.expiry > now }.map { $0.value }
+  func drain(now: TimeInterval, owner: String? = nil) -> [[String: Any]] {
+    guard let owner = owner, !owner.isEmpty else { return [] }
+    let values = pending.filter {
+      $0.expiry > now && ($0.value["owner"] == nil || $0.value["owner"] as? String == owner)
+    }.map { action -> [String: Any] in
+      var value = action.value
+      // Only PushKit actions queued before first ownership may be claimed.
+      // Already-owned actions never change identity when a new handler starts.
+      value["owner"] = owner
+      return value
+    }
     pending.removeAll()
     return values
   }
@@ -83,6 +93,7 @@ final class IOSCallState {
 final class IOSCallSessionOwner {
   enum Claim: Equatable { case invalid, initial, resumed, replaced }
   private var owner: String?
+  var current: String? { owner }
 
   func claim(_ candidate: Any?) -> Claim {
     guard let candidate = candidate as? String, !candidate.isEmpty else { return .invalid }
