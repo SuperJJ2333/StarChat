@@ -2,7 +2,8 @@
 
 Upstream package: matrix 0.34.0, existing locked dependency from pub.dev mirror.
 Original LICENSE and attribution retained. Vendored lib tree is unchanged except
-`lib/src/voip/call_session.dart`; see the source hashes in the verification record.
+`lib/src/voip/call_session.dart` and `lib/src/timeline.dart`; see the source hashes
+in the verification records.
 
 Incoming 1:1 invite initialization used to acquire camera/microphone before
 VoIP delivered the call to the application. Missing permission threw before any
@@ -22,3 +23,11 @@ permission-recovery tests. Do not replace this local dependency with stock 0.34.
 without re-running the missing-permission regressions. On upstream upgrades,
 review whether the fix is upstreamed, rebase the minimal diff and record its
 provenance; do not edit a developer pub-cache as the only persistent fix.
+
+2026-09-07 timeline ordering: a synced event must not be replaced by a late
+local sending/sent/error update. The previous merge kept the synced status but
+replaced the server timestamp and payload with local data when /sync arrived
+before the HTTP send acknowledgement. Ignore those lower-authority updates;
+subsequent synced updates still apply normally. The change does not modify
+transport, encryption or outgoing payloads. Real Timeline stream regressions:
+`test/features/matrix/sdk_ack_order_test.dart`.

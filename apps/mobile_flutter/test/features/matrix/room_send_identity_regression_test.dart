@@ -79,7 +79,7 @@ void main() {
   });
 
   test(
-      'ack without transaction metadata on later refresh preserves stable identity and order',
+      'ack without transaction metadata preserves identity and authoritative time',
       () async {
     final transport = _Transport();
     final controller = RoomTimelineController(transport);
@@ -104,7 +104,8 @@ void main() {
     await controller.refresh();
     expect(controller.messages, hasLength(1));
     expect(controller.messages.single.stableId, local.stableId);
-    expect(controller.messages.single.timestamp, local.timestamp);
+    expect(controller.messages.single.timestamp,
+        transport.events.single.timestamp);
     controller.dispose();
   });
 
