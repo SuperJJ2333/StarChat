@@ -374,24 +374,34 @@ final class MatrixCallBackend implements CallBackend {
       _call ?? (throw StateError('No active Matrix call'));
 
   int _answerGeneration = 0;
-  void cancelPendingAnswer() => _answerGeneration++;
+  CallSession? _cancelledAnswerCall;
+  void cancelPendingAnswer() {
+    _cancelledAnswerCall = _call;
+    _answerGeneration++;
+  }
 
   @override
   Future<void> accept() async {
     final call = _active;
+    if (identical(_cancelledAnswerCall, call)) {
+      throw StateError('Call answer was cancelled');
+    }
     final generation = _answerGeneration;
     if (wakeup != null) {
       await wakeup!.answerAndConnect(
         roomId: call.room.id,
         callId: call.callId,
         isCurrent: () =>
-            generation == _answerGeneration && !_disposed &&
-            identical(_call, call) && !call.callHasEnded,
+            generation == _answerGeneration &&
+            !_disposed &&
+            identical(_call, call) &&
+            !call.callHasEnded,
         connect: call.answer,
       );
     } else {
       await call.answer();
     }
+    if (generation != _answerGeneration) return;
     debugPrint('[matrix-call] answer_started');
     if (_disposed || !identical(_call, call) || call.callHasEnded) return;
     // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
