@@ -406,7 +406,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   String _conversationSubtitle(Room room) {
     final event = room.lastEvent;
-    if (event == null) return '端到端加密消息';
+    if (event == null || event.type == EventTypes.Encrypted) return '';
     // 媒体/通话类消息摘要用固定标签（[图片]/[语音]/[视频]/[语音通话]/[视频通话]）。
     final mediaSummary = conversationEventSummaryLabel(
       messageType: event.messageType,

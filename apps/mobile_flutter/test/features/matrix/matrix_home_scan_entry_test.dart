@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
+import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
 import 'package:matrix/matrix.dart';
 
 /// 首页加号「扫一扫」入口：此前是无动作空项，点击只收起菜单；
@@ -31,8 +32,23 @@ void main() {
   });
 
   Future<void> pumpHome(WidgetTester tester,
-      {bool dark = false, bool invite = false}) async {
+      {bool dark = false, bool invite = false, bool encrypted = false}) async {
     final sdk = _NoNetworkClient();
+    if (encrypted) {
+      final room =
+          Room(id: '!locked:example', client: sdk, membership: Membership.join);
+      room.lastEvent = Event.fromJson({
+        'event_id': r'$locked',
+        'type': EventTypes.Encrypted,
+        'sender': '@peer:matrix.example',
+        'origin_server_ts': 1000,
+        'content': {
+          'algorithm': 'm.megolm.v1.aes-sha2',
+          'body': 'fake-error-detail'
+        },
+      }, room);
+      sdk.rooms.add(room);
+    }
     if (invite) {
       sdk.rooms.add(Room(
           id: '!pending:example', client: sdk, membership: Membership.invite));
@@ -53,6 +69,17 @@ void main() {
     ));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('locked group preview is blank without sender or unread prefix',
+      (tester) async {
+    await pumpHome(tester, encrypted: true);
+    final tile = tester.widget<ConversationListTile>(
+        find.byKey(const ValueKey<String>('conversation-!locked:example')));
+    expect(tile.subtitle, '');
+    expect(find.textContaining('消息尚未解密'), findsNothing);
+    expect(find.textContaining('fake-error-detail'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('pending group invitation header uses a dark surface',
       (tester) async {

@@ -96,7 +96,7 @@ String safeConversationMessageContent({
   required bool undecrypted,
   required String messageContent,
 }) =>
-    undecrypted ? '消息尚未解密' : messageContent;
+    undecrypted ? '' : messageContent;
 
 String groupConversationSubtitle({
   required int unreadCount,
