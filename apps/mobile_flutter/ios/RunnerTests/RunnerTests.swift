@@ -53,6 +53,21 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue(ownership.accepts("new-owner"))
   }
 
+  func testActionDeliveryCapturesOwnerAndColdPendingClaimsCurrentOwner() throws {
+    let state = IOSCallState()
+    let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
+    state.enqueue(action: "answer", call: call, now: now, owner: "old-owner")
+    let oldDelivery = state.drain(now: now, owner: "old-owner")
+    XCTAssertEqual(oldDelivery.first?["owner"] as? String, "old-owner")
+    state.enqueue(action: "answer", call: call, now: now, owner: "old-owner")
+    XCTAssertTrue(state.drain(now: now, owner: "new-owner").isEmpty)
+    state.enqueue(action: "incoming", call: call, now: now)
+    XCTAssertTrue(state.drain(now: now).isEmpty)
+    let coldDelivery = state.drain(now: now, owner: "new-owner")
+    XCTAssertEqual(coldDelivery.first?["owner"] as? String, "new-owner")
+    XCTAssertEqual(oldDelivery.first?["owner"] as? String, "old-owner")
+  }
+
   func testDuplicateAndMismatchedRoomCannotReplaceCall() throws {
     let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
     let state = IOSCallState()
@@ -86,15 +101,15 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue(state.insert(call, now: now))
     state.enqueue(action: "incoming", call: call, now: now)
     state.enqueue(action: "answer", call: call, now: now + 1)
-    let actions = state.drain(now: now + 2)
+    let actions = state.drain(now: now + 2, owner: "test-owner")
     XCTAssertEqual(actions.compactMap { $0["action"] as? String }, ["incoming", "answer"])
     XCTAssertTrue(actions.allSatisfy { $0["callId"] as? String == call.callId && $0["roomId"] as? String == call.roomId })
-    XCTAssertTrue(state.drain(now: now + 2).isEmpty)
+    XCTAssertTrue(state.drain(now: now + 2, owner: "test-owner").isEmpty)
     state.enqueue(action: "answer", call: call, now: now)
-    XCTAssertTrue(state.drain(now: now + 31).isEmpty)
+    XCTAssertTrue(state.drain(now: now + 31, owner: "test-owner").isEmpty)
     state.clear()
     XCTAssertNil(state.match(callId: call.callId, roomId: call.roomId))
-    XCTAssertTrue(state.drain(now: now).isEmpty)
+    XCTAssertTrue(state.drain(now: now, owner: "test-owner").isEmpty)
   }
   func testEndedCallTombstonePreventsLatePushAndClearsAnswer() throws {
     let state = IOSCallState()
@@ -103,7 +118,7 @@ final class RunnerTests: XCTestCase {
     state.enqueue(action: "answer", call: call, now: now)
     state.remove(call, now: now + 1)
     XCTAssertFalse(state.insert(call, now: now + 2))
-    XCTAssertTrue(state.drain(now: now + 2).isEmpty)
+    XCTAssertTrue(state.drain(now: now + 2, owner: "test-owner").isEmpty)
   }
 }
 import Security
