@@ -21,9 +21,38 @@ final class RunnerTests: XCTestCase {
     XCTAssertNil(IOSCallDescriptor(push: invalid, now: now))
   }
   func testOpaqueIdentifierProducesStableDistinctUUID() {
-    XCTAssertEqual(IOSCallDescriptor.uuid(for: "call-a"), IOSCallDescriptor.uuid(for: "call-a"))
-    XCTAssertNotEqual(IOSCallDescriptor.uuid(for: "call-a"), IOSCallDescriptor.uuid(for: "call-b"))
+    XCTAssertEqual(IOSCallDescriptor.uuid(for: "call-a", roomId: "!room:server"), IOSCallDescriptor.uuid(for: "call-a", roomId: "!room:server"))
+    XCTAssertNotEqual(IOSCallDescriptor.uuid(for: "call-a", roomId: "!room:server"), IOSCallDescriptor.uuid(for: "call-b", roomId: "!room:server"))
   }
+  func testCallIdentityAndCancellationAreBoundToBothRoomAndCall() throws {
+    XCTAssertNotEqual(IOSCallDescriptor.uuid(for: "same-call", roomId: "!room-a:server"),
+                      IOSCallDescriptor.uuid(for: "same-call", roomId: "!room-b:server"))
+    let state = IOSCallState()
+    state.rememberEnded(callId: "same-call", roomId: "!room-a:server", now: now)
+    var roomB = payload("same-call"); roomB["room_id"] = "!room-b:server"
+    let callB = try XCTUnwrap(IOSCallDescriptor(push: roomB, now: now))
+    XCTAssertTrue(state.insert(callB, now: now))
+    XCTAssertNil(state.match(callId: "same-call", roomId: "!room-a:server"))
+    state.remove(callB, now: now)
+    var roomA = payload("same-call"); roomA["room_id"] = "!room-a:server"
+    XCTAssertFalse(state.insert(try XCTUnwrap(IOSCallDescriptor(push: roomA, now: now)), now: now))
+  }
+  func testSessionOwnerRejectsStaleCommandsAfterNewOwnerStarts() {
+    let ownership = IOSCallSessionOwner()
+    XCTAssertFalse(ownership.accepts(nil))
+    XCTAssertEqual(ownership.claim(nil), .invalid)
+    XCTAssertEqual(ownership.claim(""), .invalid)
+    XCTAssertEqual(ownership.claim("first-owner"), .initial)
+    XCTAssertTrue(ownership.accepts("first-owner"))
+    XCTAssertEqual(ownership.claim("first-owner"), .resumed)
+    XCTAssertEqual(ownership.claim("new-owner"), .replaced)
+    XCTAssertFalse(ownership.accepts("first-owner"))
+    XCTAssertFalse(ownership.accepts(NSNull()))
+    XCTAssertTrue(ownership.accepts("new-owner"))
+    XCTAssertEqual(ownership.claim(42), .invalid)
+    XCTAssertTrue(ownership.accepts("new-owner"))
+  }
+
   func testDuplicateAndMismatchedRoomCannotReplaceCall() throws {
     let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
     let state = IOSCallState()
