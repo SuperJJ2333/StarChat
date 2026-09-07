@@ -102,6 +102,7 @@ final class MatrixRoomTimelineAdapter
       isOwn: event.senderId == room.client.userID,
       deliveryState: status,
       timestamp: event.originServerTs.toLocal(),
+      isSdkLocalEcho: !event.status.isSynced,
       kind: (nudge || friendAccepted)
           ? RoomMessageKind.system
           : switch (messageType) {

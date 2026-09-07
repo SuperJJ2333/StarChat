@@ -61,6 +61,7 @@ final class RoomMessageViewModel {
     this.transactionId,
     this.imageWidth,
     this.imageHeight,
+    this.isSdkLocalEcho = false,
   });
 
   final String id;
@@ -95,6 +96,9 @@ final class RoomMessageViewModel {
   final String? transactionId;
   final int? imageWidth;
   final int? imageHeight;
+
+  /// SDK HTTP acknowledgement still carries the device timestamp until /sync.
+  final bool isSdkLocalEcho;
   String get stableId => transactionId ?? id;
 
   RoomMessageViewModel copyWith({
@@ -126,6 +130,7 @@ final class RoomMessageViewModel {
         transactionId: transactionId ?? this.transactionId,
         imageWidth: imageWidth,
         imageHeight: imageHeight,
+        isSdkLocalEcho: isSdkLocalEcho,
         callVideo: callVideo,
         callConnected: callConnected,
         callDuration: callDuration,
@@ -173,7 +178,6 @@ final class RoomTimelineController extends ChangeNotifier {
   List<RoomMessageViewModel> messages;
   final Set<String> _retrying = {};
   final _localEchoes = <String, RoomMessageViewModel>{};
-  final _sentAt = <String, DateTime>{};
   final _eventTransactions = <String, String>{};
   final _senders = <String, Future<String> Function()>{};
   int _sequence = 0;
@@ -195,18 +199,17 @@ final class RoomTimelineController extends ChangeNotifier {
       }
       if (localKey != null) {
         final local = _localEchoes[localKey]!;
+        final confirmed = message.deliveryState == RoomDeliveryState.sent &&
+            !message.isSdkLocalEcho;
         _eventTransactions[message.id] = localKey;
         message = message.copyWith(
             transactionId: localKey,
-            timestamp: local.timestamp,
-            deliveryState: message.deliveryState == RoomDeliveryState.sent
-                ? RoomDeliveryState.sent
-                : local.deliveryState);
-        if (message.deliveryState == RoomDeliveryState.sent) {
+            timestamp: confirmed ? message.timestamp : local.timestamp,
+            deliveryState:
+                confirmed ? RoomDeliveryState.sent : local.deliveryState);
+        if (confirmed) {
           _localEchoes.remove(localKey);
         }
-      } else if (_sentAt[message.stableId] case final timestamp?) {
-        message = message.copyWith(timestamp: timestamp);
       }
       if (seen.add(message.stableId)) result.add(message);
     }
@@ -215,6 +218,19 @@ final class RoomTimelineController extends ChangeNotifier {
     }
     result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return result;
+  }
+
+  // Pending/failed entries have no server timestamp yet. Anchor the insertion
+  // after the visible timeline even when the phone clock lags the server.
+  // A confirmed event always keeps its authoritative server timestamp.
+  DateTime _nextLocalTimestamp() {
+    var next = DateTime.now();
+    for (final message in messages) {
+      if (!next.isAfter(message.timestamp)) {
+        next = message.timestamp.add(const Duration(microseconds: 1));
+      }
+    }
+    return next;
   }
 
   /// 历史消息加载状态（上滑到顶自动加载的 UI 反馈）：
@@ -246,10 +262,9 @@ final class RoomTimelineController extends ChangeNotifier {
     try {
       if (tx != null) {
         final fresh = _localEchoes[tx]!.copyWith(
-            timestamp: DateTime.now(),
+            timestamp: _nextLocalTimestamp(),
             deliveryState: RoomDeliveryState.sending);
         _localEchoes[tx] = fresh;
-        _sentAt[tx] = fresh.timestamp;
         messages = _snapshot();
         notifyListeners();
         final exists = adapter
@@ -329,7 +344,7 @@ final class RoomTimelineController extends ChangeNotifier {
         senderId: '',
         text: text,
         isOwn: true,
-        timestamp: DateTime.now(),
+        timestamp: _nextLocalTimestamp(),
         deliveryState:
             permitted ? RoomDeliveryState.sending : RoomDeliveryState.failed,
         replyToEventId: replyToEventId,
@@ -344,7 +359,6 @@ final class RoomTimelineController extends ChangeNotifier {
                 .sendTextWithTransaction(text, tx)
             : adapter.sendText(text);
     _localEchoes[tx] = local;
-    _sentAt[tx] = local.timestamp;
     messages = [...messages, local];
     notifyListeners();
     if (permitted) await _dispatch(tx, local);
