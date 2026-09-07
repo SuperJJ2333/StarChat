@@ -179,6 +179,35 @@ final class ImageViewerPage extends StatefulWidget {
 }
 
 final class _ImageViewerPageState extends State<ImageViewerPage> {
+  final _transform = TransformationController();
+  Offset _doubleTapPosition = Offset.zero;
+  Size? _viewportSize;
+
+  void _toggleZoom() {
+    if (_transform.value.getMaxScaleOnAxis() > 1.01) {
+      _transform.value = Matrix4.identity();
+      return;
+    }
+    final size = _viewportSize;
+    if (size == null) return;
+    const scale = 3.0;
+    final x = (-_doubleTapPosition.dx * (scale - 1))
+        .clamp(-size.width * (scale - 1), 0.0);
+    final y = (-_doubleTapPosition.dy * (scale - 1))
+        .clamp(-size.height * (scale - 1), 0.0);
+    _transform.value = Matrix4.identity()
+      ..setEntry(0, 0, scale)
+      ..setEntry(1, 1, scale)
+      ..setEntry(0, 3, x)
+      ..setEntry(1, 3, y);
+  }
+
+  @override
+  void dispose() {
+    _transform.dispose();
+    super.dispose();
+  }
+
   Uint8List? originalBytes;
   bool loadingOriginal = false;
   bool originalFailed = false;
@@ -310,21 +339,33 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       ),
       child: SafeArea(
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: Center(
+            LayoutBuilder(builder: (context, constraints) {
+              final size = constraints.biggest;
+              if (_viewportSize != size) {
+                _viewportSize = size;
+                _transform.value = Matrix4.identity();
+              }
+              return GestureDetector(
+                onTap: () => Navigator.pop(context),
+                onDoubleTapDown: (details) =>
+                    _doubleTapPosition = details.localPosition,
+                onDoubleTap: _toggleZoom,
                 child: InteractiveViewer(
+                  transformationController: _transform,
                   maxScale: 4,
                   child: Image(
+                    width: size.width,
+                    height: size.height,
                     image: boundedChatImageProvider(displayBytes,
                         maxEdge: isGifBytes(displayBytes) ? 720 : 2048),
                     fit: BoxFit.contain,
                     gaplessPlayback: true,
                   ),
                 ),
-              ),
-            ),
+              );
+            }),
             if (loadingOriginal)
               const Center(child: CupertinoActivityIndicator()),
             if (widget.loadOriginal != null)
