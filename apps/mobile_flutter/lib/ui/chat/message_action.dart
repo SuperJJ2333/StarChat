@@ -9,7 +9,18 @@ enum MessageAction {
   recall,
 }
 
-enum MessageContentKind { text, image, video, gif, file, voice, call, redPacket, transfer, system }
+enum MessageContentKind {
+  text,
+  image,
+  video,
+  gif,
+  file,
+  voice,
+  call,
+  redPacket,
+  transfer,
+  system
+}
 
 final class MessageCapabilities {
   const MessageCapabilities({
@@ -17,12 +28,14 @@ final class MessageCapabilities {
     required this.isOwn,
     required this.sentAt,
     required this.serverNow,
+    this.isSent = true,
   });
 
   final MessageContentKind kind;
   final bool isOwn;
   final DateTime sentAt;
   final DateTime serverNow;
+  final bool isSent;
 
   bool get canRecall {
     if (!isOwn) return false;
@@ -34,8 +47,7 @@ final class MessageCapabilities {
 abstract final class MessageActionPolicy {
   /// 不可转发类型：红包/转账（业务卡片，转发无意义）、系统通知、
   /// 语音（媒体隐私）与通话摘要（“通话已取消/通话时长”）。
-  static bool isForwardable(MessageContentKind kind) =>
-      !{
+  static bool isForwardable(MessageContentKind kind) => !{
         MessageContentKind.redPacket,
         MessageContentKind.transfer,
         MessageContentKind.system,
@@ -44,6 +56,11 @@ abstract final class MessageActionPolicy {
       }.contains(kind);
 
   static Set<MessageAction> actionsFor(MessageCapabilities message) {
+    // A local echo has no server event to quote, forward or redact yet.
+    // Failed sends remain retryable through the bubble's dedicated action.
+    if (!message.isSent) {
+      return {if (message.kind == MessageContentKind.text) MessageAction.copy};
+    }
     if ({
       MessageContentKind.redPacket,
       MessageContentKind.transfer,
@@ -86,8 +103,10 @@ abstract final class MessageActionPolicy {
     MessageAction.deleteLocal,
   ];
 
-  static List<MessageAction> ordered(Iterable<MessageAction> actions) =>
-      [for (final action in displayOrder) if (actions.contains(action)) action];
+  static List<MessageAction> ordered(Iterable<MessageAction> actions) => [
+        for (final action in displayOrder)
+          if (actions.contains(action)) action
+      ];
 }
 
 final class MessageSelectionController {

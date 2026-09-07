@@ -1,11 +1,51 @@
 import 'package:flutter/cupertino.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 
 void main() {
+  testWidgets('acknowledged source reloads poster once', (tester) async {
+    var loads = 0;
+    Widget build(String id) => CupertinoApp(
+        home: Center(
+            child: VideoMessageCard(
+                duration: null,
+                onOpen: () {},
+                posterIdentity: id,
+                posterLoader: () async {
+                  loads++;
+                  return null;
+                })));
+    await tester.pumpWidget(build('local'));
+    await tester.pumpWidget(build('server'));
+    await tester.pumpWidget(build('server'));
+    expect(loads, 2);
+  });
+  testWidgets(
+      'pending video poster does not show sending animation or reload on rebuild',
+      (tester) async {
+    var loads = 0;
+    final pending = Completer<Uint8List?>();
+    Widget build() => CupertinoApp(
+        home: Center(
+            child: VideoMessageCard(
+                duration: null,
+                onOpen: () {},
+                posterLoader: () {
+                  loads++;
+                  return pending.future;
+                })));
+    await tester.pumpWidget(build());
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    await tester.pumpWidget(build());
+    expect(loads, 1);
+    pending.complete(null);
+    await tester.pump();
+    expect(find.byIcon(CupertinoIcons.play_arrow_solid), findsOneWidget);
+  });
   testWidgets('视频文件加载无响应时提供超时重试', (tester) async {
     await tester.pumpWidget(CupertinoApp(
         home: VideoViewerPage(loadFile: () => Completer<File>().future)));

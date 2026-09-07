@@ -21,16 +21,19 @@ class _Picker extends FileSelectorPlatform {
 class _Matrix implements MatrixE2eeClient {
   Map<String, dynamic>? content;
   String? mime;
+  String? transaction;
   Uint8List? sentBytes;
   @override
   Future<String> sendEncryptedMedia(
       String roomId, Uint8List plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
+      String? txid,
       String? filename,
       Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
     content = extraContent;
+    transaction = txid;
     mime = mimeType;
     sentBytes = plaintext;
     return 'test-event';
@@ -52,19 +55,21 @@ void main() {
             const MethodChannel('com.llfbandit.record/messages'),
             (call) async => null);
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-05/group-qr-video');
+        '../../docs/verification/artifacts/2026-09-06/room-flow/images/file-send');
     await root.create(recursive: true);
     dir = await root.createTemp('metadata-');
     video = await File('${dir.path}/clip.mp4').writeAsBytes([1, 2, 3]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             channel,
-            (call) async => jsonEncode({
-                  'path': video.path,
-                  'duration': 12500.0,
-                  'width': 1920,
-                  'height': 1080
-                }));
+            (call) async => call.method == 'getByteThumbnail'
+                ? null
+                : jsonEncode({
+                    'path': video.path,
+                    'duration': 12500.0,
+                    'width': 1920,
+                    'height': 1080
+                  }));
   });
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -84,14 +89,38 @@ void main() {
       expect(matrix.content?['info']?['duration'], 12500);
     });
   }
+  test(
+      'selection does no upload and selected file preserves optimistic transaction',
+      () async {
+    FileSelectorPlatform.instance = _Picker(video.path, 'video/mp4');
+    final matrix = _Matrix();
+    final service = MediaMessageService(matrix);
+    final selected = await service.pickFileForSend();
+    expect(matrix.sentBytes, isNull);
+    await service.sendSelectedFile('test-room', selected!, txid: 'local-file');
+    expect(matrix.transaction, 'local-file');
+  });
+  test('voice preserves optimistic transaction and measured duration',
+      () async {
+    final matrix = _Matrix();
+    await MediaMessageService(matrix).sendVoicePreview('test-room', video.path,
+        txid: 'local-voice', duration: const Duration(seconds: 7));
+    expect(matrix.transaction, 'local-voice');
+    expect(matrix.content?['info']?['duration'], 7000);
+  });
   test('文件入口加密发送较小的压缩产物，而不是原文件', () async {
-    final compressed = await File('${dir.path}/compressed.mp4').writeAsBytes([9]);
+    final compressed =
+        await File('${dir.path}/compressed.mp4').writeAsBytes([9]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'cancelCompression') return true;
       if (call.method == 'getByteThumbnail') return null;
-      return jsonEncode({'path': compressed.path, 'duration': 12500.0,
-        'width': 640, 'height': 480});
+      return jsonEncode({
+        'path': compressed.path,
+        'duration': 12500.0,
+        'width': 640,
+        'height': 480
+      });
     });
     FileSelectorPlatform.instance = _Picker(video.path, 'video/mp4');
     final matrix = _Matrix();

@@ -32,6 +32,7 @@ import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
 import 'nudge_service.dart';
 import 'group_invitation_auto_join.dart';
+import 'direct_invitation_auto_join.dart';
 
 List<User> orderedJoinedMembers(Room room) {
   final joined = room.getParticipants([Membership.join]);
@@ -152,6 +153,23 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
+  final Set<String> _directJoinInFlight = {};
+
+  Future<void> _processPendingDirectInvites() async {
+    if (widget.previewOnly) return;
+    try {
+      await _identityCache.preload();
+      final joined = await autoJoinFriendDirectInvites(
+        client: widget.matrix.sdkClient,
+        friendMatrixIds: _identityCache.contactsByMatrixId.keys.toSet(),
+        inFlight: _directJoinInFlight,
+      );
+      if (mounted && joined.isNotEmpty) setState(() {});
+    } catch (_) {
+      // Contact availability is required; retry when identity or sync updates.
+    }
+  }
+
   /// 待处理群邀请（设置关闭自动入群时展示接受/拒绝入口）。
   List<Room> get _pendingInviteRooms => _autoAllowGroupJoin == false
       ? widget.matrix.sdkClient.rooms
@@ -266,10 +284,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       _groupMembersByRoom.clear();
       unawaited(_restoreHiddenConversations());
       unawaited(_processPendingGroupInvites());
+      unawaited(_processPendingDirectInvites());
       if (mounted) setState(() {});
     });
     unawaited(_loadAutoAllowPreference());
     unawaited(_processPendingGroupInvites());
+    unawaited(_processPendingDirectInvites());
     unawaited(_identityCache.preload().catchError((_) {}));
     _sendPresenceHeartbeat();
     _presenceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -315,6 +335,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   void _identityChanged() {
+    unawaited(_processPendingDirectInvites());
     if (mounted) setState(() {});
   }
 

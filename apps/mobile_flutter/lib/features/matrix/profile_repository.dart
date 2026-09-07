@@ -349,6 +349,8 @@ final class ProfileRepository extends ChangeNotifier {
   Future<void>? _hydrate;
   Future<void>? _preload;
   DateTime? _lastContactsRefreshAt;
+  // Local successful mutations supersede reads started before those mutations.
+  int _contactsMutation = 0;
 
   ProfileData? profile;
   List<ContactSummary> contacts = const [];
@@ -362,13 +364,22 @@ final class ProfileRepository extends ChangeNotifier {
     final store = _store;
     final key = _accountKey;
     if (store == null || key == null) return;
+    final mutation = _contactsMutation;
     final snapshot = await store.read(key);
     if (snapshot == null) return;
-    _apply(snapshot, invalidateChangedAvatars: false);
+    _apply(_preserveContactMutations(snapshot, mutation),
+        invalidateChangedAvatars: false);
+    if (mutation != _contactsMutation) {
+      await _persist(operation: 'profile.persist');
+    }
     wasHydratedFromDisk = true;
   }
 
-  Future<void> preload() => _preload ??= _load(operation: 'preload');
+  Future<void> preload() => _preload ??= _load(operation: 'preload')
+          .catchError((Object error, StackTrace stackTrace) {
+        _preload = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
 
   Future<void> refresh() => _load(operation: 'refresh');
 
@@ -384,8 +395,10 @@ final class ProfileRepository extends ChangeNotifier {
     _lastContactsRefreshAt = clock();
     final loadContacts = _loadContacts;
     if (loadContacts == null) return;
+    final mutation = _contactsMutation;
     try {
       final fresh = await loadContacts();
+      if (mutation != _contactsMutation) return;
       if (_contactsEqual(contacts, fresh)) return;
       final currentProfile = profile;
       if (currentProfile == null) return;
@@ -404,19 +417,22 @@ final class ProfileRepository extends ChangeNotifier {
     final loadProfile = _loadProfile;
     final loadContacts = _loadContacts;
     if (loadProfile == null || loadContacts == null) return;
+    final mutation = _contactsMutation;
     try {
       final results = await Future.wait<Object>([
         loadProfile(),
         loadContacts(),
       ]);
-      await _applyAndPersist(ProfileSnapshot(
-        profile: results[0] as ProfileData,
-        contacts: results[1] as List<ContactSummary>,
-        contactsRevision:
-            _contactsEqual(contacts, results[1] as List<ContactSummary>)
-                ? contactsRevision
-                : contactsRevision + 1,
-      ));
+      await _applyAndPersist(_preserveContactMutations(
+          ProfileSnapshot(
+            profile: results[0] as ProfileData,
+            contacts: results[1] as List<ContactSummary>,
+            contactsRevision:
+                _contactsEqual(contacts, results[1] as List<ContactSummary>)
+                    ? contactsRevision
+                    : contactsRevision + 1,
+          ),
+          mutation));
     } catch (error, stackTrace) {
       _report(operation, error, stackTrace);
       rethrow;
@@ -425,6 +441,7 @@ final class ProfileRepository extends ChangeNotifier {
 
   /// BUG 3：accept 后乐观写入（也用于备注/标签等单点更新）。
   Future<void> applyUpdatedContact(ContactSummary updated) async {
+    _contactsMutation += 1;
     final currentProfile = profile;
     if (currentProfile == null) {
       // 尚无 profile 快照：仅更新内存并通知（与旧实现一致，不落库）。
@@ -457,13 +474,23 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> removeContact(String userId) async {
+    _contactsMutation += 1;
     final currentProfile = profile;
-    if (currentProfile == null) return;
     final next = [
       for (final contact in contacts)
         if (contact.userId != userId) contact,
     ];
     if (next.length == contacts.length) return;
+    if (currentProfile == null) {
+      contacts = List.unmodifiable(next);
+      contactsByMatrixId = {
+        for (final contact in contacts)
+          contact.matrixUserId: contact.toDetails(),
+      };
+      contactsRevision += 1;
+      notifyListeners();
+      return;
+    }
     await _applyAndPersist(ProfileSnapshot(
       profile: currentProfile,
       contacts: List.unmodifiable(next),
@@ -477,6 +504,16 @@ final class ProfileRepository extends ChangeNotifier {
     return [
       for (final contact in contacts) FriendProfile.fromContact(contact, at),
     ];
+  }
+
+  ProfileSnapshot _preserveContactMutations(
+      ProfileSnapshot snapshot, int startedMutation) {
+    if (startedMutation == _contactsMutation) return snapshot;
+    return ProfileSnapshot(
+      profile: snapshot.profile,
+      contacts: contacts,
+      contactsRevision: contactsRevision,
+    );
   }
 
   Future<void> _applyAndPersist(ProfileSnapshot snapshot) async {

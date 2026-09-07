@@ -58,6 +58,9 @@ final class RoomMessageViewModel {
     this.callDuration = Duration.zero,
     this.videoDuration,
     this.attachmentSize,
+    this.transactionId,
+    this.imageWidth,
+    this.imageHeight,
   });
 
   final String id;
@@ -89,11 +92,17 @@ final class RoomMessageViewModel {
   /// 原始附件字节数（m.image/m.video/m.file info.size），用于
   /// 查看器“查看原图 xK/M”的精确提示；未知为 null。
   final int? attachmentSize;
+  final String? transactionId;
+  final int? imageWidth;
+  final int? imageHeight;
+  String get stableId => transactionId ?? id;
 
   RoomMessageViewModel copyWith({
     String? id,
     RoomDeliveryState? deliveryState,
     NudgeInfo? nudge,
+    DateTime? timestamp,
+    String? transactionId,
   }) =>
       RoomMessageViewModel(
         id: id ?? this.id,
@@ -101,7 +110,7 @@ final class RoomMessageViewModel {
         text: text,
         isOwn: isOwn,
         deliveryState: deliveryState ?? this.deliveryState,
-        timestamp: timestamp,
+        timestamp: timestamp ?? this.timestamp,
         kind: kind,
         mimeType: mimeType,
         packetId: packetId,
@@ -114,6 +123,13 @@ final class RoomMessageViewModel {
         replyToEventId: replyToEventId,
         nudge: nudge ?? this.nudge,
         attachmentSize: attachmentSize,
+        transactionId: transactionId ?? this.transactionId,
+        imageWidth: imageWidth,
+        imageHeight: imageHeight,
+        callVideo: callVideo,
+        callConnected: callConnected,
+        callDuration: callDuration,
+        videoDuration: videoDuration,
       );
 }
 
@@ -141,6 +157,10 @@ abstract interface class RoomTimelineAdapter {
   void dispose();
 }
 
+abstract interface class RoomOptimisticTextAdapter {
+  Future<String> sendTextWithTransaction(String text, String transactionId);
+}
+
 final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter, {this.canSendNow})
       : messages = adapter.snapshot();
@@ -152,6 +172,50 @@ final class RoomTimelineController extends ChangeNotifier {
   final bool Function()? canSendNow;
   List<RoomMessageViewModel> messages;
   final Set<String> _retrying = {};
+  final _localEchoes = <String, RoomMessageViewModel>{};
+  final _sentAt = <String, DateTime>{};
+  final _eventTransactions = <String, String>{};
+  final _senders = <String, Future<String> Function()>{};
+  int _sequence = 0;
+  bool _disposed = false;
+
+  List<RoomMessageViewModel> _snapshot() {
+    final snapshot = adapter.snapshot();
+    final result = <RoomMessageViewModel>[];
+    final seen = <String>{};
+    for (var message in snapshot) {
+      final alias = _eventTransactions[message.id];
+      if (alias != null) message = message.copyWith(transactionId: alias);
+      String? localKey;
+      for (final entry in _localEchoes.entries) {
+        if (entry.key == message.stableId || entry.value.id == message.id) {
+          localKey = entry.key;
+          break;
+        }
+      }
+      if (localKey != null) {
+        final local = _localEchoes[localKey]!;
+        _eventTransactions[message.id] = localKey;
+        message = message.copyWith(
+            transactionId: localKey,
+            timestamp: local.timestamp,
+            deliveryState: message.deliveryState == RoomDeliveryState.sent
+                ? RoomDeliveryState.sent
+                : local.deliveryState);
+        if (message.deliveryState == RoomDeliveryState.sent) {
+          _localEchoes.remove(localKey);
+        }
+      } else if (_sentAt[message.stableId] case final timestamp?) {
+        message = message.copyWith(timestamp: timestamp);
+      }
+      if (seen.add(message.stableId)) result.add(message);
+    }
+    for (final local in _localEchoes.values) {
+      if (seen.add(local.stableId)) result.add(local);
+    }
+    result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return result;
+  }
 
   /// 历史消息加载状态（上滑到顶自动加载的 UI 反馈）：
   /// [historyLoading] 为 true 时顶部显示加载图标；
@@ -160,15 +224,49 @@ final class RoomTimelineController extends ChangeNotifier {
   bool historyExhausted = false;
 
   Future<void> refresh() async {
-    messages = adapter.snapshot();
+    if (_disposed) return;
+    messages = _snapshot();
     notifyListeners();
   }
 
   /// 重建失败消息的本地发送条目；传输事务 ID 由适配器保留以防重复投递。
   Future<void> retry(String transactionId) async {
-    if (!(canSendNow?.call() ?? true) || !_retrying.add(transactionId)) return;
+    if (_disposed ||
+        !(canSendNow?.call() ?? true) ||
+        !_retrying.add(transactionId)) {
+      return;
+    }
+    String? tx;
+    for (final entry in _localEchoes.entries) {
+      if (entry.key == transactionId || entry.value.id == transactionId) {
+        tx = entry.key;
+        break;
+      }
+    }
     try {
+      if (tx != null) {
+        final fresh = _localEchoes[tx]!.copyWith(
+            timestamp: DateTime.now(),
+            deliveryState: RoomDeliveryState.sending);
+        _localEchoes[tx] = fresh;
+        _sentAt[tx] = fresh.timestamp;
+        messages = _snapshot();
+        notifyListeners();
+        final exists = adapter
+            .snapshot()
+            .any((m) => m.id == transactionId || m.stableId == tx);
+        if (!exists && _senders.containsKey(tx)) {
+          await _dispatch(tx, fresh);
+          return;
+        }
+      }
       await adapter.retry(transactionId);
+    } catch (_) {
+      if (tx != null && _localEchoes.containsKey(tx)) {
+        _localEchoes[tx] =
+            _localEchoes[tx]!.copyWith(deliveryState: RoomDeliveryState.failed);
+      }
+      rethrow;
     } finally {
       _retrying.remove(transactionId);
       await refresh();
@@ -178,17 +276,18 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 上滑加载更早的历史消息：进行中/已耗尽时为幂等空操作；
   /// 加载后消息数不增长即判定历史已取尽。
   Future<void> loadHistory() async {
-    if (historyLoading || historyExhausted) return;
+    if (_disposed || historyLoading || historyExhausted) return;
     historyLoading = true;
     notifyListeners();
     try {
       final before = messages.length;
       await adapter.loadHistory();
-      messages = adapter.snapshot();
+      if (_disposed) return;
+      messages = _snapshot();
       if (messages.length <= before) historyExhausted = true;
     } finally {
       historyLoading = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -213,63 +312,67 @@ final class RoomTimelineController extends ChangeNotifier {
   ) =>
       adapter.sendTransferReference(transferId, amount, note);
 
-  Future<void> sendText(String text) async {
-    final transactionId = 'local-${DateTime.now().microsecondsSinceEpoch}';
-    // 规格§三：无互动权限 → 本地 failed（发送失败感叹号），不丢弃
-    // 不假成功，也绝不触达发送服务。
-    if (!(canSendNow?.call() ?? true)) {
-      messages = [
-        ...messages,
-        RoomMessageViewModel(
-          id: transactionId,
-          senderId: '',
-          text: text,
-          isOwn: true,
-          deliveryState: RoomDeliveryState.failed,
-          timestamp: DateTime.now(),
-        ),
-      ];
-      notifyListeners();
-      return;
-    }
-    messages = [
-      ...messages,
-      RoomMessageViewModel(
-        id: transactionId,
+  Future<void> sendText(
+    String text, {
+    Future<String> Function(String transactionId)? send,
+    String? replyToEventId,
+    RoomMessageKind kind = RoomMessageKind.text,
+    String? mimeType,
+    Duration voiceDuration = const Duration(seconds: 1),
+  }) async {
+    if (_disposed) return;
+    final tx = 'local-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
+    final permitted = canSendNow?.call() ?? true;
+    final local = RoomMessageViewModel(
+        id: tx,
+        transactionId: tx,
         senderId: '',
         text: text,
         isOwn: true,
-        deliveryState: RoomDeliveryState.sending,
         timestamp: DateTime.now(),
-      ),
-    ];
+        deliveryState:
+            permitted ? RoomDeliveryState.sending : RoomDeliveryState.failed,
+        replyToEventId: replyToEventId,
+        kind: kind,
+        mimeType: mimeType,
+        voiceDuration: voiceDuration);
+    final transport = adapter;
+    _senders[tx] = () => send != null
+        ? send(tx)
+        : transport is RoomOptimisticTextAdapter
+            ? (transport as RoomOptimisticTextAdapter)
+                .sendTextWithTransaction(text, tx)
+            : adapter.sendText(text);
+    _localEchoes[tx] = local;
+    _sentAt[tx] = local.timestamp;
+    messages = [...messages, local];
     notifyListeners();
+    if (permitted) await _dispatch(tx, local);
+  }
+
+  Future<void> _dispatch(String tx, RoomMessageViewModel local) async {
     try {
-      final eventId = await adapter.sendText(text);
-      // PRD §26：发送成功仅作纯前台轻反馈，不计未读不出通知。
+      final eventId = await _senders[tx]!();
+      if (_disposed) return;
+      _eventTransactions[eventId] = tx;
+      if (_localEchoes.containsKey(tx)) {
+        _localEchoes[tx] =
+            local.copyWith(id: eventId, deliveryState: RoomDeliveryState.sent);
+      }
+      _senders.remove(tx);
       NotificationFeedback.shared.play(SoundType.messageSent);
-      messages = [
-        for (final message in messages)
-          message.id == transactionId
-              ? message.copyWith(
-                  id: eventId,
-                  deliveryState: RoomDeliveryState.sent,
-                )
-              : message,
-      ];
     } catch (_) {
-      messages = [
-        for (final message in messages)
-          message.id == transactionId
-              ? message.copyWith(deliveryState: RoomDeliveryState.failed)
-              : message,
-      ];
+      if (_disposed) return;
+      _localEchoes[tx] =
+          local.copyWith(deliveryState: RoomDeliveryState.failed);
     }
+    messages = _snapshot();
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     adapter.dispose();
     super.dispose();
   }

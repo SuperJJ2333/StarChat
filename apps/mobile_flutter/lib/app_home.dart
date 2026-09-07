@@ -32,7 +32,7 @@ import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
-import 'package:matrix/matrix.dart' show Membership, Room;
+import 'package:matrix/matrix.dart' show Room;
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/cached_direct_room_directory.dart';
 import 'features/matrix/matrix_direct_chat_adapter.dart';
@@ -125,36 +125,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 打开规范登记的私聊房间：受邀未加入时先加入；对端建的房间我方
   /// m.direct 可能缺失，补写后房间才具备 DM 语义（否则渲染成"群聊"，
   /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
-  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) async {
-    final client = widget.matrix.sdkClient;
-    var room = client.getRoomById(roomId);
-    if (room == null || room.membership != Membership.join) {
-      try {
-        await room?.join();
-      } catch (_) {
-        // 可能已在 join 中；下方等待同步兜底。
-      }
-      await client.waitForRoomInSync(roomId, join: true);
-      room = client.getRoomById(roomId);
-    }
-    final backend = MatrixDirectChatBackend(client);
-    var snapshot = await backend.waitForRoom(roomId);
-    final target = snapshot.participantIds
-        .firstWhere((id) => id != client.userID, orElse: () => '');
-    if (target.isNotEmpty &&
-        (room?.isDirectChat != true || room?.directChatMatrixID != target)) {
-      try {
-        await Room(id: roomId, client: client).addToDirectChat(target);
-        await client.waitForRoomInSync(roomId, join: true);
-        room = client.getRoomById(roomId);
-        snapshot = await backend.waitForRoom(roomId);
-      } catch (_) {
-        // m.direct 补写失败不阻断打开；下次进入会再次补写。
-      }
-    }
-    final service = DirectChatService(backend);
-    return service.openExisting(snapshot.roomId, target);
-  }
+  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) =>
+      MatrixDirectChatBackend(widget.matrix.sdkClient)
+          .openCanonicalRoom(roomId);
 
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
   /// （UI 展示/点击接听）共享同一时间线。
@@ -966,7 +939,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     _chatIdentityCache = cache;
     if (mounted) setState(() {});
-    unawaited(cache.preload());
+    unawaited(cache.preload().catchError((_) {}));
     return cache;
   }
 
@@ -1118,11 +1091,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<void> _openMessage(ContactDetails contact) async {
     try {
+      final cache = await _identityCache();
+      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
       final reference = await directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
-      final cache = _chatIdentityCache;
-      unawaited(_identityCache());
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push<void>(
         CupertinoPageRoute(
@@ -1495,6 +1468,22 @@ final class _ApiCanonicalDirectRoomDirectory
   }
 }
 
+// Existing contacts use the hydrated snapshot immediately. A newly accepted
+// contact must be resolved through the business API before room lookup, so the
+// canonical directory and RoomPage share the same current identity projection.
+Future<void> _refreshMissingFriendIdentity(
+    ProfileRepository cache, String matrixUserId) async {
+  await cache.hydrate();
+  if (cache.contactsByMatrixId.containsKey(matrixUserId)) return;
+  if (cache.profile == null) await cache.preload();
+  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
+    await cache.refreshContactsQuietly(minInterval: Duration.zero);
+  }
+  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
+    throw StateError('The contact is no longer a current friend');
+  }
+}
+
 final class ContactsTabPage extends StatefulWidget {
   const ContactsTabPage({
     super.key,
@@ -1531,12 +1520,12 @@ final class ContactsTabPage extends StatefulWidget {
 final class _ContactsTabPageState extends State<ContactsTabPage> {
   Future<void> _openMessage(ContactDetails contact) async {
     try {
+      final identityCache =
+          widget.identityCache ?? ProfileRepository(widget.api);
+      await _refreshMissingFriendIdentity(identityCache, contact.matrixUserId);
       final reference = await widget.directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
-      final identityCache =
-          widget.identityCache ?? ProfileRepository(widget.api);
-      unawaited(identityCache.preload().catchError((_) {}));
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
