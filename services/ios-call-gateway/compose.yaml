@@ -20,7 +20,7 @@ services:
     volumes:
       - routes:/data
       - ${APNS_KEY_FILE:?Set server-only APNS_KEY_FILE}:/run/secrets/apns.p8:ro
-    tmpfs: [/tmp:size=16m,mode=1777]
+    tmpfs: ["/tmp:size=16m,mode=1777"]
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3).close()"]
       interval: 30s
