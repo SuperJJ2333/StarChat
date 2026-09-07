@@ -135,6 +135,43 @@ final class IOSSecureSessionTests: XCTestCase {
     XCTAssertThrowsError(try store.delete(key: "recovery-key"))
     XCTAssertTrue(ops.queries.isEmpty); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
   }
+  func testMigrationVerificationLockedErrorIsNotAbsence() {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecInteractionNotAllowed, nil)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertEqual(ops.queries.count, 2); XCTAssertEqual(ops.updates.count, 1)
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testMigrationCannotSilentlyChangeAccessGroup() {
+    let ops = FakeSessionSecurity()
+    var changed = item(accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly)
+    changed[kSecAttrAccessGroup as String] = "different-group"
+    ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecSuccess, changed as CFDictionary)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testExistingWriteUpdatesAndVerifiesWithoutDeleteAdd() throws {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecSuccess, item("new-secret", accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) as CFDictionary)]
+    try IOSSecureSessionStore(security: ops).write(key: key, value: "new-secret")
+    XCTAssertEqual(ops.updates.count, 1)
+    XCTAssertEqual(ops.updates[0].1[kSecValueData as String] as? Data, Data("new-secret".utf8))
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testNewWriteAddsOnceAndVerifies() throws {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecItemNotFound, nil), (errSecSuccess, item("new-secret", accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) as CFDictionary)]
+    try IOSSecureSessionStore(security: ops).write(key: key, value: "new-secret")
+    XCTAssertEqual(ops.additions.count, 1); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testExplicitDeleteIsScopedToOneAllowedBusinessKey() throws {
+    let ops = FakeSessionSecurity()
+    try IOSSecureSessionStore(security: ops).delete(key: "liuhetong.business_session.v1")
+    XCTAssertEqual(ops.deletions.count, 1)
+    XCTAssertEqual(ops.deletions[0][kSecAttrAccount as String] as? String, "liuhetong.business_session.v1")
+    XCTAssertEqual(ops.deletions[0][kSecAttrSynchronizable as String] as? Bool, false)
+    XCTAssertTrue(ops.queries.isEmpty); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.additions.isEmpty)
+  }
 }
 
 private final class FakeSessionSecurity: IOSSessionSecurityOperations {

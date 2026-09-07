@@ -1,0 +1,71 @@
+import Foundation
+import CoreFoundation
+import CryptoKit
+
+struct IOSCallDescriptor {
+  let callId: String
+  let roomId: String
+  let video: Bool
+  let expiresAt: TimeInterval
+  var uuid: UUID { Self.uuid(for: callId) }
+
+  init?(push: [String: Any], now: TimeInterval) {
+    guard let callId = push["call_id"] as? String, !callId.isEmpty, callId.utf8.count <= 255,
+          let roomId = push["room_id"] as? String, !roomId.isEmpty, roomId.utf8.count <= 255,
+          let expiry = push["expires_at"] as? NSNumber,
+          CFGetTypeID(expiry) != CFBooleanGetTypeID(),
+          expiry.doubleValue.isFinite, expiry.doubleValue > now,
+          expiry.doubleValue <= now + 35 else { return nil }
+    self.callId = callId
+    self.roomId = roomId
+    self.video = push["video"] as? Bool ?? false
+    self.expiresAt = min(expiry.doubleValue, now + 30)
+  }
+
+  static func uuid(for callId: String) -> UUID {
+    var bytes = Array(SHA256.hash(data: Data(("chatflow.call:" + callId).utf8)).prefix(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x50
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+  }
+}
+
+// All access is serialized on the main queue by IOSCallsBridge.
+final class IOSCallState {
+  private(set) var calls: [UUID: IOSCallDescriptor] = [:]
+  private var tombstones: [String: TimeInterval] = [:]
+  private var pending: [(expiry: TimeInterval, value: [String: Any])] = []
+
+  func insert(_ call: IOSCallDescriptor, now: TimeInterval) -> Bool {
+    tombstones = tombstones.filter { $0.value > now }
+    guard calls.isEmpty, tombstones[call.callId] == nil, call.expiresAt > now else { return false }
+    calls[call.uuid] = call
+    return true
+  }
+  func match(callId: String, roomId: String) -> IOSCallDescriptor? {
+    guard let call = calls[IOSCallDescriptor.uuid(for: callId)], call.callId == callId, call.roomId == roomId else { return nil }
+    return call
+  }
+  func remove(_ call: IOSCallDescriptor, now: TimeInterval) {
+    calls.removeValue(forKey: call.uuid)
+    rememberEnded(callId: call.callId, now: now)
+    pending.removeAll { $0.value["callId"] as? String == call.callId }
+  }
+  func rememberEnded(callId: String, now: TimeInterval) {
+    tombstones = tombstones.filter { $0.value > now }
+    if tombstones.count >= 128, let oldest = tombstones.min(by: { $0.value < $1.value }) { tombstones.removeValue(forKey: oldest.key) }
+    tombstones[callId] = now + 60
+  }
+  func enqueue(action: String, call: IOSCallDescriptor, now: TimeInterval, muted: Bool? = nil) {
+    var value: [String: Any] = ["action": action, "callId": call.callId, "roomId": call.roomId, "at": Int64(now * 1000)]
+    if let muted = muted { value["muted"] = muted }
+    if pending.count >= 64 { pending.removeFirst() }
+    pending.append((now + 30, value))
+  }
+  func drain(now: TimeInterval) -> [[String: Any]] {
+    let values = pending.filter { $0.expiry > now }.map { $0.value }
+    pending.removeAll()
+    return values
+  }
+  func clear() { calls.removeAll(); pending.removeAll(); tombstones.removeAll() }
+}
