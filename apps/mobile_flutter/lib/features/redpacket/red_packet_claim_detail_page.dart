@@ -5,6 +5,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'red_packet_controller.dart';
+
 final class RedPacketClaimRecord {
   const RedPacketClaimRecord({
     required this.userId,
@@ -195,7 +196,7 @@ final class _RedPacketClaimDetailPageState
                     ],
                   ),
                 ),
-  );
+    );
   }
 
   Widget _headerCard(
@@ -282,7 +283,7 @@ final class _RedPacketClaimDetailPageState
               Container(
                 height: .5,
                 margin: const EdgeInsets.only(left: 62),
-                color: WeChatColors.divider,
+                color: WeChatColors.resolve(context, WeChatColors.divider),
               ),
             _recordRow(records[i], isBest: i == bestIndex),
           ],
@@ -334,8 +335,7 @@ final class _RedPacketClaimDetailPageState
               const SizedBox(height: 4),
               Container(
                 key: const Key('luck-best-badge'),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   border: Border.all(color: WeChatColors.redPacketGradientTop),
                   borderRadius: BorderRadius.circular(4),

@@ -879,6 +879,7 @@ final class ChatCategoryPage extends StatelessWidget {
       itemBuilder: (context, index) {
         final message = messages[index];
         return _listRow(
+          context: context,
           key: 'category-file-${message.eventId}',
           icon: CupertinoIcons.doc,
           title: _fileNameOf(message),
@@ -905,6 +906,7 @@ final class ChatCategoryPage extends StatelessWidget {
         final preview =
             links.isEmpty ? null : logic.LinkPreviewModel(url: links.first);
         return _listRow(
+          context: context,
           key: 'category-link-${message.eventId}',
           icon: CupertinoIcons.link,
           title: preview?.displayTitle ?? '链接',
@@ -917,6 +919,7 @@ final class ChatCategoryPage extends StatelessWidget {
   }
 
   Widget _listRow({
+    required BuildContext context,
     required String key,
     required IconData icon,
     required String title,
@@ -929,9 +932,11 @@ final class ChatCategoryPage extends StatelessWidget {
       onTap: () => onOpen(message),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           border: Border(
-              bottom: BorderSide(width: .5, color: WeChatColors.divider)),
+              bottom: BorderSide(
+                  width: .5,
+                  color: WeChatColors.resolve(context, WeChatColors.divider))),
         ),
         child: Row(children: [
           Icon(icon, size: 36, color: WeChatColors.brandPrimary),

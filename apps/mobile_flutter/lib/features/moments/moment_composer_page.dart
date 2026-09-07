@@ -243,7 +243,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
     // Photo Picker 允许选中视频：朋友圈仅支持图片，按 MIME/扩展名过滤。
     final imageOnly = selected.where(isSupportedMomentImage).toList();
     if (imageOnly.length < selected.length) {
-      setState(() => errorMessage = '朋友圈仅支持图片，已跳过 ${selected.length - imageOnly.length} 个视频/文件');
+      setState(() => errorMessage =
+          '朋友圈仅支持图片，已跳过 ${selected.length - imageOnly.length} 个视频/文件');
     }
     if (imageOnly.isEmpty) return;
     final truncated = imageOnly.length > remaining;
@@ -252,7 +253,6 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
       if (truncated) errorMessage = '一次最多发布 9 张图片，已截取前 $remaining 张';
     });
   }
-
 
   Future<void> _openVisibility() async {
     final selected = await Navigator.push<MomentVisibilitySelection>(
@@ -355,11 +355,13 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
           if (await _onBack() && context.mounted) Navigator.pop(context);
         },
         child: WeChatPageScaffold.navigation(
-          backgroundColor: CupertinoColors.white,
+          backgroundColor: WeChatColors.elevatedSurface(context),
           navigationBar: CupertinoNavigationBar(
-            backgroundColor: CupertinoColors.white,
-            border: const Border(
-              bottom: BorderSide(color: WeChatColors.divider, width: .5),
+            backgroundColor: WeChatColors.navigationBackground(context),
+            border: Border(
+              bottom: BorderSide(
+                  color: WeChatColors.resolve(context, WeChatColors.divider),
+                  width: .5),
             ),
             leading: CupertinoButton(
               key: const Key('moment-compose-cancel'),
@@ -367,9 +369,10 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
               onPressed: () async {
                 if (await _onBack() && context.mounted) Navigator.pop(context);
               },
-              child: const Text(
+              child: Text(
                 '取消',
-                style: TextStyle(color: CupertinoColors.black),
+                style:
+                    TextStyle(color: WeChatColors.resolveTextPrimary(context)),
               ),
             ),
             middle: const Text(
@@ -382,10 +385,11 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
               onPressed: saving || !dirty ? null : _publish,
               child: saving
                   ? const CupertinoActivityIndicator()
-                  : const Text(
+                  : Text(
                       '发表',
                       style: TextStyle(
-                        color: WeChatColors.socialLink,
+                        color: WeChatColors.resolve(
+                            context, WeChatColors.socialLink),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -413,8 +417,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                     minLines: 6,
                     maxLines: 12,
                     padding: EdgeInsets.zero,
-                    decoration: const BoxDecoration(
-                      color: CupertinoColors.white,
+                    decoration: BoxDecoration(
+                      color: WeChatColors.elevatedSurface(context),
                     ),
                     placeholder: '这一刻的想法…',
                     onChanged: (_) => setState(() {}),
@@ -481,7 +485,8 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
                       if (images.length + remoteImageUrls.length < 9)
                         CupertinoButton(
                           key: const Key('moment-pick-images'),
-                          color: WeChatColors.lightSurface,
+                          color: WeChatColors.resolve(
+                              context, WeChatColors.lightSurface),
                           minimumSize: const Size(84, 84),
                           padding: EdgeInsets.zero,
                           onPressed: _pickImages,

@@ -1594,7 +1594,9 @@ final class ProfileTabPage extends StatefulWidget {
 final class _ProfileTabPageState extends State<ProfileTabPage> {
   late final ProfileController controller = ProfileController(
     gateway: widget.api,
-    avatarSource: GalleryAvatarSource(),
+    avatarSource: GalleryAvatarSource(
+      brightnessProvider: () => CupertinoTheme.brightnessOf(context),
+    ),
     onAvatarUpdated: _refreshAvatarDisplays,
   );
 

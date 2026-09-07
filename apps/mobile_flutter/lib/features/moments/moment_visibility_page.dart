@@ -45,9 +45,9 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        backgroundColor: WeChatColors.tabRootPageBackground,
+        backgroundColor: WeChatColors.pageBackground(context),
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: const Text('谁可以看'),
@@ -62,18 +62,20 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
           child: ListView(
             children: [
               Container(
-                color: CupertinoColors.white,
+                color: WeChatColors.elevatedSurface(context),
                 child: RadioGroup<String>(
                   groupValue: selection.visibility,
                   onChanged: (next) => _selectPrimary(next),
                   child: Column(
                     children: [
                       _primaryRow('公开', 'PUBLIC'),
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(left: 16),
                         child: SizedBox(
                           height: .5,
-                          child: ColoredBox(color: WeChatColors.divider),
+                          child: ColoredBox(
+                              color: WeChatColors.resolve(
+                                  context, WeChatColors.divider)),
                         ),
                       ),
                       _primaryRow('私密', 'SELF'),
@@ -83,15 +85,17 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
               ),
               const SizedBox(key: Key('visibility-group-gap'), height: 12),
               Container(
-                color: CupertinoColors.white,
+                color: WeChatColors.elevatedSurface(context),
                 child: Column(
                   children: [
                     _submenuRow('只给谁看', 'INCLUDE'),
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(left: 16),
                       child: SizedBox(
                         height: .5,
-                        child: ColoredBox(color: WeChatColors.divider),
+                        child: ColoredBox(
+                            color: WeChatColors.resolve(
+                                context, WeChatColors.divider)),
                       ),
                     ),
                     _submenuRow('不给谁看', 'EXCLUDE'),

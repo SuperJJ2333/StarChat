@@ -35,8 +35,8 @@ final class WeChatContactTile extends StatelessWidget {
             const SizedBox(width: WeChatSpacing.md),
             Expanded(
               child: Text(nickname,
-                  style: const TextStyle(
-                      color: WeChatColors.lightTextPrimary,
+                  style: TextStyle(
+                      color: WeChatColors.resolveTextPrimary(context),
                       fontSize: WeChatTypography.callout)),
             ),
             if (trailing != null) trailing!,

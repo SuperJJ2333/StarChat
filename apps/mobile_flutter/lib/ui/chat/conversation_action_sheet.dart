@@ -50,7 +50,7 @@ CupertinoActionSheetAction _item(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 20, color: WeChatColors.lightTextPrimary),
+          Icon(icon, size: 20, color: WeChatColors.resolveTextPrimary(context)),
           const SizedBox(width: WeChatSpacing.sm),
           Text(label),
         ],

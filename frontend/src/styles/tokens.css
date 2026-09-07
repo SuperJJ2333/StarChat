@@ -182,3 +182,26 @@
 /* Final APP-aligned semantic aliases */
 :root{--admin-brand:var(--color-brand-primary);--admin-brand-strong:var(--color-brand-pressed);--admin-page:var(--color-page-background);--admin-surface:var(--color-surface-elevated);--admin-ink:var(--color-text-primary);--admin-muted:var(--color-text-secondary);--admin-border:var(--color-divider);--admin-hero:var(--color-brand-primary);--admin-hero-accent:var(--color-brand-pressed);--admin-hero-glow:var(--color-surface-elevated);--admin-nav-muted:var(--color-on-accent);--admin-hero-text:var(--color-on-accent);--admin-hero-light:var(--color-on-accent);--admin-focus:var(--color-brand-primary);--admin-radius-sm:8px;--admin-radius-md:12px}
 
+
+/* Mobile review surfaces mirror Flutter without changing the admin palette. */
+.ui-screen[data-theme="light"] {
+  --color-page-background: #ededed;
+  --color-surface-primary: #f7f7f7;
+  --color-brand-primary: #07c160;
+  --color-brand-pressed: #06ad56;
+  --color-bubble-outgoing: #95ec69;
+}
+.ui-screen[data-theme="dark"] {
+  --color-page-background: #111111;
+  --color-surface-primary: #191919;
+  --color-surface-elevated: #232323;
+  --color-bubble-incoming: #232323;
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #999999;
+  --color-divider: #2c2c2c;
+  --color-social-link: #9aaece;
+  --color-brand-primary: #07c160;
+  --color-brand-pressed: #06ad56;
+  --color-bubble-outgoing: #95ec69;
+}
+ .ui-screen { --color-outgoing-text: #191919; }

@@ -29,9 +29,9 @@ final class DiscoveryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        backgroundColor: WeChatColors.tabRootPageBackground,
+        backgroundColor: WeChatColors.pageBackground(context),
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
+            backgroundColor: WeChatColors.navigationBackground(context),
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             transitionBetweenRoutes: false,

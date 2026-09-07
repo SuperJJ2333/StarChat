@@ -4,7 +4,7 @@ abstract final class WeChatColors {
   static const brandPrimary = Color(0xFF07C160);
   static const brandPressed = Color(0xFF06AD56);
   static const lightPageBackground = Color(0xFFEDEDED);
-  // Fixed product-spec colors. Do not substitute theme-dependent surfaces.
+  // Light palette references; resolve at the painting site for dark mode.
   static const chatNavigationBackground = Color(0xFFF7F7F7);
   static const chatPageBackground = Color(0xFFEDEDED);
   static const tabRootPageBackground = Color(0xFFEDEDED);
@@ -44,6 +44,42 @@ abstract final class WeChatColors {
   static const avatarFallbackGreen = Color(0xFFDFF2E4);
   static const avatarFallbackOrange = Color(0xFFFFE5D5);
   static const avatarFallbackPurple = Color(0xFFEEE1FF);
+
+  /// Resolve an unresolved light-palette reference at the painting site.
+  /// Container/TextStyle do not resolve Cupertino dynamic colors themselves.
+  /// Do not pass already-resolved colors: foreground and surface palette values
+  /// can overlap. Prefer the role-specific helpers when available.
+  static Color resolve(BuildContext context, Color color) {
+    final resolved = CupertinoDynamicColor.resolve(color, context);
+    // Dynamic colors already encode their semantic role. Remapping their dark
+    // value could turn a dark background black into foreground white.
+    if (color is CupertinoDynamicColor) return resolved;
+    if (CupertinoTheme.brightnessOf(context) != Brightness.dark) {
+      return resolved;
+    }
+    return switch (resolved.toARGB32()) {
+      0xFFEDEDED || 0xFFF5F5F5 => darkPageBackground,
+      0xFFF7F7F7 => darkSurface,
+      0xFFFFFFFF => darkElevated,
+      0xFF191919 || 0xFF000000 => darkTextPrimary,
+      0xFFD9D9D9 => darkDivider,
+      0xFF888888 => const Color(0xFF999999),
+      0xFF576B95 => const Color(0xFF9AAECE),
+      0xFFFFF1F0 => const Color(0xFF331D1D),
+      0xFFFFCCC7 => const Color(0xFF613434),
+      0xD9FFFFFF => const Color(0xD9232323),
+      0x22000000 => const Color(0x33FFFFFF),
+      0xFFE7F5EA => const Color(0xFF17251B),
+      0xFFF6F7F8 => darkPageBackground,
+      _ => resolved,
+    };
+  }
+
+  static Color pageBackground(BuildContext context) =>
+      resolve(context, lightPageBackground);
+
+  static Color navigationBackground(BuildContext context) =>
+      resolve(context, chatNavigationBackground);
 
   static Color elevatedSurface(BuildContext context) =>
       CupertinoTheme.brightnessOf(context) == Brightness.dark
@@ -139,7 +175,3 @@ abstract final class WeChatMotion {
   static const actionPressDuration = Duration(milliseconds: 150);
   static const actionPressScale = .98;
 }
-
-
-
-

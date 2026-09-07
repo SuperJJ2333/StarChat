@@ -6,11 +6,9 @@ abstract final class WeChatTheme {
     final dark = brightness == Brightness.dark;
     final primaryText =
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
-    // Navigation surfaces follow the surfacePrimary token pair; the pages
-    // pinned by UI_DESIGN.md 2.1 pass their fixed colors explicitly.
-    final navigationSurface = dark
-        ? WeChatColors.darkSurface
-        : WeChatColors.chatNavigationBackground;
+    // Navigation, including pages with a custom title, follows the theme.
+    final navigationSurface =
+        dark ? WeChatColors.darkSurface : WeChatColors.chatNavigationBackground;
     return CupertinoThemeData(
       brightness: brightness,
       primaryColor: WeChatColors.brandPrimary,
@@ -35,7 +33,7 @@ abstract final class WeChatTheme {
           // inherit:true so the transition can interpolate them.
           navActionTextStyle: TextStyle(
               fontSize: WeChatTypography.body,
-              color: WeChatColors.socialLink)),
+              color: dark ? const Color(0xFF9AAECE) : WeChatColors.socialLink)),
     );
   }
 }

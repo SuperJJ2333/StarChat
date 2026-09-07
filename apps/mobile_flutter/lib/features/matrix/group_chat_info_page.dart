@@ -155,7 +155,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
     final snapshot = state.snapshot;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: Text(state.title),
@@ -432,7 +432,7 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
     final snapshot = controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('以下消息仍通知')),
@@ -521,7 +521,7 @@ final class _FollowedGroupMemberPickerPageState
     final snapshot = widget.controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('关注群成员'),
@@ -638,7 +638,8 @@ final class _RemoveMemberCell extends StatelessWidget {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              border: Border.all(color: WeChatColors.divider),
+              border: Border.all(
+                  color: WeChatColors.resolve(context, WeChatColors.divider)),
               borderRadius: BorderRadius.circular(WeChatRadius.control),
             ),
             child: const Icon(CupertinoIcons.minus, size: 24),
@@ -849,7 +850,7 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
     final sorted = sortAndFilterMemberEntries(entries, query);
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('群成员')),
@@ -911,7 +912,7 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
         !(snapshot.isAdmin && snapshot.adminIds.contains(member.matrixUserId)));
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('移除群成员'),
@@ -1030,7 +1031,8 @@ final class _AddMemberCell extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                border: Border.all(color: WeChatColors.divider),
+                border: Border.all(
+                    color: WeChatColors.resolve(context, WeChatColors.divider)),
                 borderRadius: BorderRadius.circular(WeChatRadius.control),
               ),
               child: const Icon(CupertinoIcons.person_add, size: 24),
@@ -1070,7 +1072,7 @@ final class _GroupTextEditPageState extends State<_GroupTextEditPage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text(widget.title),
@@ -1140,7 +1142,7 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
         .toList(growable: false);
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text('添加群成员'),
@@ -1251,7 +1253,7 @@ final class _GroupChatHistorySearchPageState
         .toList(growable: false);
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('查找聊天记录')),

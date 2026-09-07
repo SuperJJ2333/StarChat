@@ -699,9 +699,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final pinnedCount =
         rooms.where((room) => preferenceForRoom(room).pinned).length;
     return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.tabRootPageBackground,
+      backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         transitionBetweenRoutes: false,
@@ -737,7 +737,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                   itemCount: invites.length +
                       rooms.length +
                       (foldedRooms.isEmpty ? 0 : 1),
-                  separatorBuilder: (_, __) => const Padding(
+                  separatorBuilder: (_, __) => Padding(
                     padding: EdgeInsets.only(
                       left: WeChatSpacing.lg +
                           WeChatDimensions.conversationAvatar +
@@ -745,7 +745,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     ),
                     child: SizedBox(
                       height: 0.5,
-                      child: ColoredBox(color: WeChatColors.divider),
+                      child: ColoredBox(
+                          color: WeChatColors.resolve(
+                              context, WeChatColors.divider)),
                     ),
                   ),
                   itemBuilder: (context, index) {
@@ -769,8 +771,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                         title: '折叠的群聊',
                         subtitle: '${foldedRooms.length} 个聊天',
                         timeLabel: '',
-                        avatar: const ColoredBox(
-                          color: WeChatColors.lightSurface,
+                        avatar: ColoredBox(
+                          color: WeChatColors.resolve(
+                              context, WeChatColors.lightSurface),
                           child: Icon(CupertinoIcons.tray_full, size: 25),
                         ),
                         onTap: () => Navigator.push<void>(
@@ -840,7 +843,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
               if (invites.isNotEmpty)
                 Container(
                   key: const Key('pending-group-invites'),
-                  color: CupertinoColors.systemBackground,
+                  color: WeChatColors.elevatedSurface(context),
                   padding: const EdgeInsets.symmetric(
                       horizontal: WeChatSpacing.md, vertical: WeChatSpacing.xs),
                   child: Row(

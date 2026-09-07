@@ -174,9 +174,9 @@ final class _ContactsPageState extends State<ContactsPage> {
         ? widget.api as BusinessApiClient
         : null;
     return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.tabRootPageBackground,
+      backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         transitionBetweenRoutes: false,
@@ -1272,7 +1272,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        backgroundColor: WeChatColors.tabRootPageBackground,
+        backgroundColor: WeChatColors.pageBackground(context),
         navigationBar: CupertinoNavigationBar(
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,

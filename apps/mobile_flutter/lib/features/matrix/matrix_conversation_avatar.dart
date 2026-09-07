@@ -74,8 +74,8 @@ final class _MatrixConversationAvatarState
     if (orderedIds.isEmpty) {
       return SizedBox.square(
         dimension: widget.size,
-        child: const ColoredBox(
-          color: WeChatColors.lightSurface,
+        child: ColoredBox(
+          color: WeChatColors.resolve(context, WeChatColors.lightSurface),
           child: Icon(CupertinoIcons.person_2_fill, size: 25),
         ),
       );

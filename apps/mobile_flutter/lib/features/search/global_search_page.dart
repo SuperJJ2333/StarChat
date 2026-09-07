@@ -63,7 +63,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
           key: const Key('global-search-nav'),
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           // 统一搜索页与页面本体一起滑入，导航标题不做 Hero 飞行，

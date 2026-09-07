@@ -61,7 +61,10 @@ final class _GroupQrCodePageState extends State<GroupQrCodePage> {
       if (!mounted) return;
       setState(() {
         _error = switch (error) {
-          BusinessApiException(statusCode: 404, code: 'BUSINESS_REQUEST_FAILED') =>
+          BusinessApiException(
+            statusCode: 404,
+            code: 'BUSINESS_REQUEST_FAILED'
+          ) =>
             '群二维码服务尚未部署，暂时无法生成',
           BusinessApiException(statusCode: 403) => '没有生成群二维码的权限',
           BusinessApiException(statusCode: 401) => '登录已失效，请重新登录',
@@ -103,7 +106,7 @@ final class _GroupQrCodePageState extends State<GroupQrCodePage> {
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            backgroundColor: WeChatColors.chatNavigationBackground,
+            backgroundColor: WeChatColors.navigationBackground(context),
             automaticBackgroundVisibility: false,
             enableBackgroundFilterBlur: false,
             middle: const Text('群二维码'),
@@ -124,29 +127,26 @@ final class _GroupQrCodePageState extends State<GroupQrCodePage> {
               ),
               const SizedBox(height: 20),
               if (!widget.snapshot.qrJoinEnabled) ...[
-                const Icon(CupertinoIcons.qrcode, size: 150,
-                    color: WeChatColors.textTertiary),
+                const Icon(CupertinoIcons.qrcode,
+                    size: 150, color: WeChatColors.textTertiary),
                 const SizedBox(height: 12),
                 const Text('群二维码已关闭',
-                    style:
-                        TextStyle(color: WeChatColors.textSecondary)),
+                    style: TextStyle(color: WeChatColors.textSecondary)),
                 const SizedBox(height: 6),
                 const Text('可在 群管理 → 二维码进群 中开启',
                     style: TextStyle(
                         fontSize: 12, color: WeChatColors.textTertiary)),
               ] else if (!widget.snapshot.canManage) ...[
-                const Icon(CupertinoIcons.qrcode, size: 150,
-                    color: WeChatColors.textTertiary),
+                const Icon(CupertinoIcons.qrcode,
+                    size: 150, color: WeChatColors.textTertiary),
                 const SizedBox(height: 12),
                 const Text('仅群主和管理员可生成群二维码',
-                    style:
-                        TextStyle(color: WeChatColors.textSecondary)),
+                    style: TextStyle(color: WeChatColors.textSecondary)),
               ] else if (_loading) ...[
                 const CupertinoActivityIndicator(),
                 const SizedBox(height: 12),
                 const Text('正在生成二维码…',
-                    style:
-                        TextStyle(color: WeChatColors.textSecondary)),
+                    style: TextStyle(color: WeChatColors.textSecondary)),
               ] else if (_error != null) ...[
                 Text(_error!,
                     style: const TextStyle(color: CupertinoColors.systemRed)),
@@ -173,8 +173,7 @@ final class _GroupQrCodePageState extends State<GroupQrCodePage> {
                 ),
                 const SizedBox(height: 12),
                 const Text('扫描二维码加入群聊',
-                    style:
-                        TextStyle(color: WeChatColors.textSecondary)),
+                    style: TextStyle(color: WeChatColors.textSecondary)),
                 if (_computeExpiry().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),

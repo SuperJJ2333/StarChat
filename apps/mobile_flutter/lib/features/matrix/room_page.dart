@@ -2272,9 +2272,11 @@ class _RoomPageState extends State<RoomPage> {
                       input.selection =
                           TextSelection.collapsed(offset: input.text.length);
                     }),
-                    child: const Text('重新编辑',
+                    child: Text('重新编辑',
                         style: TextStyle(
-                            color: WeChatColors.socialLink, fontSize: 13)),
+                            color: WeChatColors.resolve(
+                                context, WeChatColors.socialLink),
+                            fontSize: 13)),
                   ),
                 ])
               : Text('$displayName 撤回了一条消息',
@@ -2830,9 +2832,9 @@ class _RoomPageState extends State<RoomPage> {
         ) ??
         allMessages;
     return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.chatPageBackground,
+      backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: CupertinoButton(
@@ -2924,7 +2926,9 @@ class _RoomPageState extends State<RoomPage> {
                                                   milliseconds: 180),
                                               color: highlightedMessageId ==
                                                       message.id
-                                                  ? WeChatColors.divider
+                                                  ? WeChatColors.resolve(
+                                                      context,
+                                                      WeChatColors.divider)
                                                   : const Color(0x00000000),
                                               child: _messageRow(
                                                   message, previous),
@@ -2944,7 +2948,7 @@ class _RoomPageState extends State<RoomPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
-                      color: WeChatColors.chatNavigationBackground,
+                      color: WeChatColors.navigationBackground(context),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -3166,7 +3170,7 @@ final class _QuotePreview extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 236),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         decoration: BoxDecoration(
-          color: WeChatColors.divider,
+          color: WeChatColors.resolve(context, WeChatColors.divider),
           borderRadius: BorderRadius.circular(WeChatRadius.control),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [

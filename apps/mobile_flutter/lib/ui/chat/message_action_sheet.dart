@@ -105,8 +105,10 @@ final class MessageSelectionBar extends StatelessWidget {
         height: 58,
         decoration: BoxDecoration(
           color: CupertinoTheme.of(context).barBackgroundColor,
-          border: const Border(
-            top: BorderSide(color: CupertinoColors.separator, width: .5),
+          border: Border(
+            top: BorderSide(
+                color: CupertinoColors.separator.resolveFrom(context),
+                width: .5),
           ),
         ),
         child: Row(

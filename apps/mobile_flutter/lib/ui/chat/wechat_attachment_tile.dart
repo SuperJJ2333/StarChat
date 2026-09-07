@@ -3,7 +3,11 @@ import '../foundation/wechat_tokens.dart';
 
 final class WeChatAttachmentTile extends StatelessWidget {
   const WeChatAttachmentTile(
-      {super.key, required this.name, required this.progress, this.onRetry, this.showProgress = true});
+      {super.key,
+      required this.name,
+      required this.progress,
+      this.onRetry,
+      this.showProgress = true});
   final String name;
   final double progress;
   final VoidCallback? onRetry;
@@ -12,7 +16,9 @@ final class WeChatAttachmentTile extends StatelessWidget {
   Widget build(BuildContext context) => Container(
       padding: const EdgeInsets.all(WeChatSpacing.md),
       decoration: BoxDecoration(
-          color: CupertinoTheme.of(context).barBackgroundColor,
+          color: CupertinoTheme.brightnessOf(context) == Brightness.dark
+              ? WeChatColors.darkElevated
+              : CupertinoTheme.of(context).barBackgroundColor,
           borderRadius: BorderRadius.circular(WeChatRadius.bubble)),
       child: Row(children: [
         const Icon(CupertinoIcons.doc),
@@ -20,9 +26,13 @@ final class WeChatAttachmentTile extends StatelessWidget {
         Expanded(
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name),
-          if (showProgress) CupertinoActivityIndicator.partiallyRevealed(
-              progress: progress.clamp(0, 1))
+          // This card owns a neutral surface even inside a green sent bubble.
+          Text(name,
+              style:
+                  TextStyle(color: WeChatColors.resolveTextPrimary(context))),
+          if (showProgress)
+            CupertinoActivityIndicator.partiallyRevealed(
+                progress: progress.clamp(0, 1))
         ])),
         if (onRetry != null)
           CupertinoButton(onPressed: onRetry, child: const Text('重试'))
