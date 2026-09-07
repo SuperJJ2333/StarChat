@@ -63,7 +63,15 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -euo pipefail
-          cp "$RUNNER_TEMP/fixed.pbxproj" ios/Runner.xcodeproj/project.pbxproj
+          ruby -rxcodeproj <<'RUBY'
+          project = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          runner = project.targets.find { |target| target.name == 'Runner' }
+          raise 'Runner target missing' unless runner
+          runner.build_configurations.each do |config|
+            config.build_settings['OTHER_LDFLAGS'] = ['-framework', 'SQLCipher', '$(inherited)']
+          end
+          project.save
+          RUBY
           flutter build ios --simulator --debug --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/fixed-build.log"
       - name: Verify repaired startup
         run: |
