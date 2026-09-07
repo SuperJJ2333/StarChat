@@ -60,3 +60,93 @@ final class RunnerTests: XCTestCase {
     XCTAssertTrue(state.drain(now: now + 2).isEmpty)
   }
 }
+import Security
+
+final class IOSSecureSessionTests: XCTestCase {
+  private let key = "liuhetong.matrix_database_key.v1"
+  private func item(_ value: String = "existing-secret", accessible: CFString = kSecAttrAccessibleWhenUnlocked) -> [String: Any] {
+    [kSecValueData as String: Data(value.utf8), kSecAttrAccount as String: key,
+     kSecAttrService as String: "flutter_secure_storage_service", kSecAttrAccessible as String: accessible,
+     kSecAttrSynchronizable as String: false, kSecAttrAccessGroup as String: "existing-app-group"]
+  }
+  func testLockedReadPropagatesWithoutFallbackOrMutation() {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecInteractionNotAllowed, nil)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertEqual(ops.queries.count, 1)
+    XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testOnlyNotFoundReturnsNil() throws {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecItemNotFound, nil)]
+    XCTAssertNil(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.additions.isEmpty)
+  }
+  func testMigrationChangesOnlyAccessibilityAndVerifiesOriginalBytes() throws {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecSuccess, item(accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) as CFDictionary)]
+    XCTAssertEqual(try IOSSecureSessionStore(security: ops).read(key: key), "existing-secret")
+    XCTAssertEqual(ops.updates.count, 1)
+    XCTAssertEqual(Set(ops.updates[0].1.keys), [kSecAttrAccessible as String])
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+    for query in ops.queries {
+      XCTAssertNil(query[kSecAttrAccessible as String]); XCTAssertNil(query[kSecAttrAccessGroup as String])
+      XCTAssertEqual(query[kSecAttrAccount as String] as? String, key)
+      XCTAssertEqual(query[kSecAttrService as String] as? String, "flutter_secure_storage_service")
+      XCTAssertEqual(query[kSecAttrSynchronizable as String] as? Bool, false)
+    }
+  }
+  func testMigrationFailureNeverDeletesAddsOrRewritesSecret() {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecSuccess, item() as CFDictionary)]
+    ops.updateStatus = errSecInteractionNotAllowed
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertEqual(ops.updates.count, 1)
+    XCTAssertNil(ops.updates[0].1[kSecValueData as String])
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testMigrationReadbackMismatchStopsWithoutRepair() {
+    let ops = FakeSessionSecurity()
+    ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecSuccess, item("changed-secret", accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) as CFDictionary)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).read(key: key))
+    XCTAssertEqual(ops.updates.count, 1); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testAlreadyMigratedReadDoesNotWrite() throws {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecSuccess, item(accessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly) as CFDictionary)]
+    XCTAssertEqual(try IOSSecureSessionStore(security: ops).read(key: key), "existing-secret")
+    XCTAssertTrue(ops.updates.isEmpty)
+  }
+  func testWriteLockedLookupNeverAdds() {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecInteractionNotAllowed, nil)]
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).write(key: key, value: "new-secret"))
+    XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testExistingWriteFailureNeverFallsBackToAddDelete() {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecSuccess, item() as CFDictionary)]; ops.updateStatus = errSecItemNotFound
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).write(key: key, value: "new-secret"))
+    XCTAssertEqual(ops.updates.count, 1); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testAddOnlyAfterDefinitiveAbsenceAndDuplicateFailureStops() {
+    let ops = FakeSessionSecurity(); ops.copies = [(errSecItemNotFound, nil)]; ops.addStatus = errSecDuplicateItem
+    XCTAssertThrowsError(try IOSSecureSessionStore(security: ops).write(key: key, value: "new-secret"))
+    XCTAssertEqual(ops.additions.count, 1); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+  func testScopeRejectsAllOtherKeysWithoutTouchingSecurity() {
+    let ops = FakeSessionSecurity(); let store = IOSSecureSessionStore(security: ops)
+    XCTAssertThrowsError(try store.read(key: "recovery-key"))
+    XCTAssertThrowsError(try store.write(key: "recovery-key", value: "value"))
+    XCTAssertThrowsError(try store.delete(key: "recovery-key"))
+    XCTAssertTrue(ops.queries.isEmpty); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
+  }
+}
+
+private final class FakeSessionSecurity: IOSSessionSecurityOperations {
+  var copies: [(OSStatus, CFTypeRef?)] = []
+  var queries: [[String: Any]] = []
+  var updates: [([String: Any], [String: Any])] = []
+  var additions: [[String: Any]] = []
+  var deletions: [[String: Any]] = []
+  var updateStatus = errSecSuccess
+  var addStatus = errSecSuccess
+  func copy(_ query: [String: Any]) -> (OSStatus, CFTypeRef?) { queries.append(query); return copies.removeFirst() }
+  func update(_ query: [String: Any], attributes: [String: Any]) -> OSStatus { updates.append((query, attributes)); return updateStatus }
+  func add(_ attributes: [String: Any]) -> OSStatus { additions.append(attributes); return addStatus }
+  func delete(_ query: [String: Any]) -> OSStatus { deletions.append(query); return errSecSuccess }
+}
