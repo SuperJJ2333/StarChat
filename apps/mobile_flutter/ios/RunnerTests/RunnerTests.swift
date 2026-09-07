@@ -34,6 +34,22 @@ final class RunnerTests: XCTestCase {
     XCTAssertNil(state.match(callId: call.callId, roomId: "!other:server"))
     XCTAssertEqual(state.match(callId: call.callId, roomId: call.roomId)?.uuid, call.uuid)
   }
+  func testEndCommandRequiresBothIdentifiersAndCannotSelectAnotherRoom() throws {
+    let state = IOSCallState()
+    let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
+    XCTAssertTrue(state.insert(call, now: now))
+    for invalid: [String: Any] in [[:], ["callId": call.callId], ["roomId": call.roomId],
+                                  ["callId": call.callId, "roomId": "!other:server"],
+                                  ["callId": "another-call", "roomId": call.roomId],
+                                  ["callId": 1, "roomId": call.roomId],
+                                  ["callId": call.callId, "roomId": NSNull()]] {
+      XCTAssertNil(state.resolveEndCommand(invalid))
+      XCTAssertEqual(state.calls.count, 1)
+    }
+    XCTAssertEqual(state.resolveEndCommand(["callId": call.callId, "roomId": call.roomId])?.uuid, call.uuid)
+    XCTAssertEqual(state.calls.count, 1)
+  }
+
   func testActionQueueIsBoundedFIFOAndLogoutClearsEverything() throws {
     let state = IOSCallState()
     let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
