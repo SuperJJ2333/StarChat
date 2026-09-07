@@ -1,7 +1,7 @@
 name: iOS launch diagnostics
 on:
   push:
-    branches: [codex/ios-build-preflight-20260907]
+    branches: [codex/ios-build-preflight-20260907, codex/ios-startup-repair-20260907]
     paths: [.github/workflows/ios-launch-diagnostics.yml]
 permissions:
   contents: read
