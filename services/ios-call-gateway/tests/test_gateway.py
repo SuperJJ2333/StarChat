@@ -309,3 +309,118 @@ def test_cleanup_is_bounded_and_target_status_still_expires(env):
         )
     response = req("GET", "/v1/calls/status?room_id=!r:test&call_id=old1499")
     assert response.json()["state"] == "expired"
+
+
+@pytest.mark.parametrize("action", ["answer", "end"])
+def test_action_completes_while_voip_delivery_is_in_flight(env, action):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    import threading
+
+    req, reg, matrix, push, clock, app = env
+    reg()
+    entered, release = threading.Event(), threading.Event()
+    original = push.send
+
+    def blocked_send(token, payload, voip, expires):
+        if voip:
+            entered.set()
+            assert release.wait(5)
+        return original(token, payload, voip, expires)
+
+    push.send = blocked_send
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        creation = pool.submit(req, "POST", "/v1/calls", "a", CALL)
+        assert entered.wait(2)
+        response = pool.submit(req, "POST", "/v1/calls/" + action, "b", REF)
+        try:
+            completed = response.result(timeout=1)
+            assert completed.status_code == 200
+            expected = "answered" if action == "answer" else "ended"
+            status = pool.submit(
+                req, "GET", "/v1/calls/status?room_id=!r:test&call_id=c1"
+            ).result(timeout=1)
+            assert status.json()["state"] == expected
+        except TimeoutError:
+            pytest.fail("APNs network operation blocked participant action or status")
+        finally:
+            release.set()
+        assert creation.result(timeout=2).json()["state"] == expected
+    if action == "end":
+        assert not push.sent[-1][2], (
+            "Late VoIP completion needs a fresh ordinary cancellation"
+        )
+
+
+def test_ambiguous_delivery_timeout_remains_answerable(env):
+    req, reg, matrix, push, clock, app = env
+    reg()
+    push.status = 503
+    assert req("POST", "/v1/calls", body=CALL).status_code == 502
+    assert (
+        req("GET", "/v1/calls/status?room_id=!r:test&call_id=c1").json()["state"]
+        == "delivery_unknown"
+    )
+    assert req("POST", "/v1/calls/answer", "b", REF).status_code == 200
+
+
+def test_cancellation_during_admin_check_prevents_voip(env):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    import threading
+
+    req, reg, matrix, push, clock, app = env
+    reg()
+    entered, release = threading.Event(), threading.Event()
+
+    def blocked_eligibility(user, device):
+        entered.set()
+        assert release.wait(5)
+        return True
+
+    matrix.eligible = blocked_eligibility
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        creation = pool.submit(req, "POST", "/v1/calls", "a", CALL)
+        assert entered.wait(2)
+        ending = pool.submit(req, "POST", "/v1/calls/end", "a", REF)
+        try:
+            assert ending.result(timeout=1).status_code == 200
+        except TimeoutError:
+            pytest.fail("Admin network operation blocked cancellation")
+        finally:
+            release.set()
+        assert creation.result(timeout=2).json()["state"] == "ended"
+    assert push.sent == []
+
+
+def test_end_before_create_reserves_authenticated_tombstone(env):
+    req, reg, matrix, push, clock, app = env
+    reg()
+    assert req("POST", "/v1/calls/end", body=REF).json()["state"] == "ended"
+    assert req("POST", "/v1/calls/end", body=REF).status_code == 200
+    assert req("POST", "/v1/calls", body=CALL).status_code == 409
+    assert push.sent == []
+
+
+@pytest.mark.parametrize(
+    "encrypted,members",
+    [
+        (False, {"@a:test", "@b:test"}),
+        (True, {"@b:test", "@c:test"}),
+        (True, {"@a:test", "@b:test", "@c:test"}),
+        (True, {"@a:test", "@x:remote"}),
+    ],
+)
+def test_missing_end_cannot_poison_unsafe_room(env, encrypted, members):
+    req, reg, matrix, push, clock, app = env
+    matrix.encrypted = encrypted
+    matrix.members = members
+    assert req("POST", "/v1/calls/end", body=REF).status_code == 403
+    assert req("GET", "/v1/calls/status?room_id=!r:test&call_id=c1").status_code == 404
+
+
+def test_missing_end_tombstone_is_rate_limited(env):
+    req, *_ = env
+    statuses = [
+        req("POST", "/v1/calls/end", body={**REF, "call_id": f"never{i}"}).status_code
+        for i in range(7)
+    ]
+    assert statuses == [200] * 6 + [429]

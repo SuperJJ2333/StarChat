@@ -287,7 +287,7 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
 
     def cleanup(now):
         db.execute(
-            "UPDATE calls SET state='expired' WHERE rowid IN (SELECT rowid FROM calls WHERE state IN ('ringing','sending') AND expires<=? LIMIT 500)",
+            "UPDATE calls SET state='expired' WHERE rowid IN (SELECT rowid FROM calls WHERE state IN ('ringing','sending','delivery_unknown') AND expires<=? LIMIT 500)",
             (now,),
         )
         db.execute(
@@ -395,7 +395,7 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
 
     def lookup(ref, auth):
         db.execute(
-            "UPDATE calls SET state='expired' WHERE room=? AND call=? AND state IN ('sending','ringing') AND expires<=?",
+            "UPDATE calls SET state='expired' WHERE room=? AND call=? AND state IN ('sending','ringing','delivery_unknown') AND expires<=?",
             (ref.room_id, ref.call_id, int(clock())),
         )
         row = db.execute(
@@ -409,22 +409,44 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         return matrix.eligible(route["user"], route["device"])
 
     def deliver(route, payload, voip, expires):
+        # Never hold the database mutex during any external I/O.
         status = push.send(
             route["voip"] if voip else route["apns"], payload, voip, expires
         )
         if status == 410:
-            # Compare exact route to avoid removing a concurrently refreshed token.
-            if voip:
-                db.execute(
-                    "DELETE FROM devices WHERE user=? AND device=? AND voip=? AND session=?",
-                    (route["user"], route["device"], route["voip"], route["session"]),
-                )
-            else:
-                db.execute(
-                    "UPDATE devices SET apns=NULL WHERE user=? AND device=? AND apns=? AND session=?",
-                    (route["user"], route["device"], route["apns"], route["session"]),
-                )
-        return status == 200
+            with transaction():
+                if voip:
+                    db.execute(
+                        "DELETE FROM devices WHERE user=? AND device=? AND voip=? AND session=?",
+                        (
+                            route["user"],
+                            route["device"],
+                            route["voip"],
+                            route["session"],
+                        ),
+                    )
+                else:
+                    db.execute(
+                        "UPDATE devices SET apns=NULL WHERE user=? AND device=? AND apns=? AND session=?",
+                        (
+                            route["user"],
+                            route["device"],
+                            route["apns"],
+                            route["session"],
+                        ),
+                    )
+        return status
+
+    def cancel_route(route, body):
+        if not route["apns"] or not eligible(route):
+            return
+        payload = {
+            "aps": {"content-available": 1},
+            "call_action": "end",
+            "call_id": body.call_id,
+            "room_id": body.room_id,
+        }
+        deliver(route, payload, False, int(clock()) + 30)
 
     @app.post("/v1/calls", response_model=Result)
     def create(body: Call, auth=Depends(identity)):
@@ -436,155 +458,235 @@ def create_app(settings=None, matrix=None, push=None, clock=time.time):
         encrypted, members = matrix.room(token, body.room_id)
         if not encrypted or members != {user, body.recipient}:
             raise HTTPException(403, "invalid_call_room")
-        # One worker + lock serializes delivery with terminal actions. Claim committed
-        # before external side effects, preventing duplicate pushes after a crash.
-        with lock:
+        now = int(clock())
+        # Reserve before network checks. Concurrent participant actions can see
+        # and claim this row immediately, and a repeated create never sends again.
+        with transaction():
+            cleanup(now)
+            existing = db.execute(
+                "SELECT * FROM calls WHERE room=? AND call=?",
+                (body.room_id, body.call_id),
+            ).fetchone()
+            if existing:
+                if (
+                    existing["caller"] != user
+                    or existing["expires"] <= now
+                    or existing["recipient"] != body.recipient
+                    or bool(existing["video"]) != body.video
+                    or existing["state"]
+                    not in ("ringing", "sending", "delivery_unknown")
+                ):
+                    raise HTTPException(409, "call_conflict")
+                return result(existing)
+            for subject in ("call:" + user, "receive:" + body.recipient):
+                count = db.execute(
+                    "SELECT amount FROM rates WHERE subject=? AND bucket=?",
+                    (subject, now // 60),
+                ).fetchone()
+                if count and count[0] >= 6:
+                    raise HTTPException(429, "rate_limited")
+            routes = db.execute(
+                "SELECT * FROM devices WHERE user=? AND updated>=? ORDER BY device LIMIT 17",
+                (body.recipient, now - 7 * 86400),
+            ).fetchall()
+            if len(routes) > 16:
+                raise HTTPException(409, "device_limit")
+            if not routes:
+                raise HTTPException(409, "no_eligible_device")
+            for subject in ("call:" + user, "receive:" + body.recipient):
+                db.execute(
+                    "INSERT INTO rates VALUES(?,?,1) ON CONFLICT(subject,bucket) DO UPDATE SET amount=amount+1",
+                    (subject, now // 60),
+                )
+            db.execute(
+                "INSERT INTO calls VALUES(?,?,?,?,?,?,?,NULL,?)",
+                (
+                    body.room_id,
+                    body.call_id,
+                    user,
+                    body.recipient,
+                    int(body.video),
+                    now + 30,
+                    "sending",
+                    now,
+                ),
+            )
+        successes, ambiguous, attempts = 0, False, 0
+        for route in routes:
+            with transaction():
+                current = lookup(body, auth)
+                if current["state"] != "sending":
+                    break
+            if not eligible(route):
+                with transaction():
+                    db.execute(
+                        "DELETE FROM devices WHERE user=? AND device=? AND session=? AND voip=?",
+                        (
+                            route["user"],
+                            route["device"],
+                            route["session"],
+                            route["voip"],
+                        ),
+                    )
+                continue
+            with transaction():
+                current = lookup(body, auth)
+                if current["state"] != "sending":
+                    break
+                bound = db.execute(
+                    "SELECT 1 FROM devices WHERE user=? AND device=? AND session=? AND voip=?",
+                    (route["user"], route["device"], route["session"], route["voip"]),
+                ).fetchone()
+                if not bound:
+                    continue
+                # A committed attempt is visible to end/answer before sending.
+                # An in-flight request cannot be recalled; reconcile below after
+                # it completes, with ordinary APNs only, if a terminal action won.
+                db.execute(
+                    "INSERT INTO deliveries VALUES(?,?,?,?,?)",
+                    (
+                        body.room_id,
+                        body.call_id,
+                        route["user"],
+                        route["device"],
+                        route["session"],
+                    ),
+                )
+            payload = {
+                "aps": {},
+                "call_id": body.call_id,
+                "room_id": body.room_id,
+                "video": body.video,
+                "expires_at": now + 30,
+            }
+            status = deliver(route, payload, True, now + 30)
+            attempts += 1
+            successes += int(status == 200)
+            ambiguous = ambiguous or status >= 500
+            with transaction():
+                current = lookup(body, auth)
+                cancel = current["state"] in ("ended", "expired", "failed") or (
+                    current["state"] == "answered"
+                    and current["answer_device"] != route["device"]
+                )
+                current_route = db.execute(
+                    "SELECT * FROM devices WHERE user=? AND device=? AND session=?",
+                    (route["user"], route["device"], route["session"]),
+                ).fetchone()
+            if cancel and current_route and (status == 200 or status >= 500):
+                cancel_route(current_route, body)
+        with transaction():
+            current = lookup(body, auth)
+            if current["state"] == "sending":
+                state = (
+                    "ringing"
+                    if successes
+                    else ("delivery_unknown" if ambiguous else "failed")
+                )
+                db.execute(
+                    "UPDATE calls SET state=? WHERE room=? AND call=? AND state='sending'",
+                    (state, body.room_id, body.call_id),
+                )
+                current = lookup(body, auth)
+            outcome = result(current)
+        # A participant winning while delivery was in flight is authoritative.
+        if outcome["state"] in ("answered", "ended", "expired"):
+            return outcome
+        if not successes:
+            if not attempts:
+                raise HTTPException(409, "no_eligible_device")
+            raise HTTPException(502, "push_delivery_failed")
+        return outcome
+
+    def action(body, auth, answer):
+        with transaction():
+            cleanup(int(clock()))
+            row = lookup(body, auth)
+            if answer:
+                if auth[0] != row["recipient"]:
+                    raise HTTPException(403, "recipient_required")
+                if row["state"] == "answered" and row["answer_device"] == auth[1]:
+                    return result(row)
+                if row["state"] not in ("ringing", "sending", "delivery_unknown"):
+                    raise HTTPException(409, "call_not_ringing")
+            elif row["state"] in ("ended", "expired", "failed"):
+                return result(row)
+            state = "answered" if answer else "ended"
+            db.execute(
+                "UPDATE calls SET state=?,answer_device=? WHERE room=? AND call=?",
+                (
+                    state,
+                    auth[1] if answer else row["answer_device"],
+                    body.room_id,
+                    body.call_id,
+                ),
+            )
+            routes = db.execute(
+                "SELECT d.* FROM devices d JOIN deliveries v ON d.user=v.user AND d.device=v.device AND d.session=v.session WHERE v.room=? AND v.call=?",
+                (body.room_id, body.call_id),
+            ).fetchall()
+        for route in routes:
+            if answer and route["device"] == auth[1]:
+                continue
+            cancel_route(route, body)
+        return {"state": state, "expires_at": row["expires"]}
+
+    @app.post("/v1/calls/end", response_model=Result)
+    def end(body: Reference, auth=Depends(identity)):
+        with transaction():
+            exists = db.execute(
+                "SELECT 1 FROM calls WHERE room=? AND call=?",
+                (body.room_id, body.call_id),
+            ).fetchone()
+        if not exists:
+            # A client may time out while create is still validating its room.
+            # Only a freshly verified participant of the same encrypted two-user
+            # local room may reserve a cancellation before that create arrives.
+            encrypted, members = matrix.room(auth[3], body.room_id)
+            if (
+                not encrypted
+                or len(members) != 2
+                or auth[0] not in members
+                or any(
+                    not member.startswith("@")
+                    or not member.endswith(":" + settings.matrix_server_name)
+                    for member in members
+                )
+            ):
+                raise HTTPException(403, "invalid_call_room")
+            other = next(member for member in members if member != auth[0])
             now = int(clock())
             with transaction():
-                cleanup(now)
-                existing = db.execute(
-                    "SELECT * FROM calls WHERE room=? AND call=?",
+                exists = db.execute(
+                    "SELECT 1 FROM calls WHERE room=? AND call=?",
                     (body.room_id, body.call_id),
                 ).fetchone()
-                if existing:
-                    if (
-                        existing["caller"] != user
-                        or existing["expires"] <= now
-                        or existing["recipient"] != body.recipient
-                        or bool(existing["video"]) != body.video
-                        or existing["state"] not in ("ringing", "sending")
-                    ):
-                        raise HTTPException(409, "call_conflict")
-                    return result(existing)
-                for subject in ("call:" + user, "receive:" + body.recipient):
+                if not exists:
+                    subject = "cancel:" + auth[0]
                     count = db.execute(
                         "SELECT amount FROM rates WHERE subject=? AND bucket=?",
                         (subject, now // 60),
                     ).fetchone()
                     if count and count[0] >= 6:
                         raise HTTPException(429, "rate_limited")
-                routes = db.execute(
-                    "SELECT * FROM devices WHERE user=? AND updated>=? ORDER BY device LIMIT 17",
-                    (body.recipient, now - 7 * 86400),
-                ).fetchall()
-                if len(routes) > 16:
-                    raise HTTPException(409, "device_limit")
-            valid = [r for r in routes if eligible(r)]
-            with transaction():
-                for r in routes:
-                    if r not in valid:
-                        db.execute(
-                            "DELETE FROM devices WHERE user=? AND device=?",
-                            (r["user"], r["device"]),
-                        )
-                if not valid:
-                    # Commit route invalidation before returning the safe failure.
-                    failure = True
-                else:
-                    failure = False
-                    for subject in ("call:" + user, "receive:" + body.recipient):
-                        db.execute(
-                            "INSERT INTO rates VALUES(?,?,1) ON CONFLICT(subject,bucket) DO UPDATE SET amount=amount+1",
-                            (subject, now // 60),
-                        )
+                    db.execute(
+                        "INSERT INTO rates VALUES(?,?,1) ON CONFLICT(subject,bucket) DO UPDATE SET amount=amount+1",
+                        (subject, now // 60),
+                    )
                     db.execute(
                         "INSERT INTO calls VALUES(?,?,?,?,?,?,?,NULL,?)",
                         (
                             body.room_id,
                             body.call_id,
-                            user,
-                            body.recipient,
-                            int(body.video),
+                            auth[0],
+                            other,
+                            0,
                             now + 30,
-                            "sending",
+                            "ended",
                             now,
                         ),
                     )
-            if failure:
-                raise HTTPException(409, "no_eligible_device")
-            successes = 0
-            for route in valid:
-                if int(clock()) >= now + 30:
-                    break
-                payload = {
-                    "aps": {},
-                    "call_id": body.call_id,
-                    "room_id": body.room_id,
-                    "video": body.video,
-                    "expires_at": now + 30,
-                }
-                with transaction():
-                    # Persist attempted delivery; ambiguous APNs timeouts must also
-                    # receive ordinary cancellation, never a second VoIP retry.
-                    db.execute(
-                        "INSERT INTO deliveries VALUES(?,?,?,?,?)",
-                        (
-                            body.room_id,
-                            body.call_id,
-                            route["user"],
-                            route["device"],
-                            route["session"],
-                        ),
-                    )
-                with transaction():
-                    successes += int(deliver(route, payload, True, now + 30))
-            state = "ringing" if successes and int(clock()) < now + 30 else "failed"
-            with transaction():
-                db.execute(
-                    "UPDATE calls SET state=? WHERE room=? AND call=?",
-                    (state, body.room_id, body.call_id),
-                )
-            if not successes:
-                raise HTTPException(502, "push_delivery_failed")
-            return {"state": state, "expires_at": now + 30}
-
-    def action(body, auth, answer):
-        with lock:
-            with transaction():
-                cleanup(int(clock()))
-                row = lookup(body, auth)
-                if answer:
-                    if auth[0] != row["recipient"]:
-                        raise HTTPException(403, "recipient_required")
-                    if row["state"] == "answered" and row["answer_device"] == auth[1]:
-                        return result(row)
-                    if row["state"] != "ringing":
-                        raise HTTPException(409, "call_not_ringing")
-                elif row["state"] in ("ended", "expired", "failed"):
-                    return result(row)
-                state = "answered" if answer else "ended"
-                db.execute(
-                    "UPDATE calls SET state=?,answer_device=? WHERE room=? AND call=?",
-                    (
-                        state,
-                        auth[1] if answer else row["answer_device"],
-                        body.room_id,
-                        body.call_id,
-                    ),
-                )
-                routes = db.execute(
-                    "SELECT d.* FROM devices d JOIN deliveries v ON d.user=v.user AND d.device=v.device AND d.session=v.session WHERE v.room=? AND v.call=?",
-                    (body.room_id, body.call_id),
-                ).fetchall()
-            for route in routes:
-                if (
-                    not route["apns"]
-                    or (answer and route["device"] == auth[1])
-                    or not eligible(route)
-                ):
-                    continue
-                payload = {
-                    "aps": {"content-available": 1},
-                    "call_action": "end",
-                    "call_id": body.call_id,
-                    "room_id": body.room_id,
-                }
-                with transaction():
-                    deliver(route, payload, False, int(clock()) + 30)
-            return {"state": state, "expires_at": row["expires"]}
-
-    @app.post("/v1/calls/end", response_model=Result)
-    def end(body: Reference, auth=Depends(identity)):
+                    return {"state": "ended", "expires_at": now + 30}
         return action(body, auth, False)
 
     @app.post("/v1/calls/answer", response_model=Result)
@@ -623,7 +725,7 @@ def production_app():
     ):
         raise RuntimeError("Invalid APNs environment")
     # Production is Linux-only. A filesystem lease prevents accidental second
-    # workers/replicas from violating the send-versus-cancel ordering guarantee.
+    # workers/replicas from running independent process-local route coordinators.
     import fcntl
 
     os.umask(0o077)
