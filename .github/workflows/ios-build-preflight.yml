@@ -26,11 +26,14 @@ jobs:
       - name: Resolve Flutter dependencies
         working-directory: apps/mobile_flutter
         run: flutter pub get
+      - name: Test push integration
+        working-directory: apps/mobile_flutter
+        run: flutter test test/features/push
       - name: Build unsigned iOS device app
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ios --release --no-codesign --dart-define=LIUHETONG_IN_APP_UPDATE=false 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ios --release --no-codesign --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Preserve build diagnostics
         if: always()
         uses: actions/upload-artifact@v4

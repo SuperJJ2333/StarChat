@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于选择并裁剪个人头像。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于将您选择的图片和视频保存到相册。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>用于在您选择语音输入时将语音转换成文字。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>用于发起和接听加密视频通话。</string>
 	<key>NSMicrophoneUsageDescription</key>
@@ -38,6 +42,7 @@
 		     （推送载荷仅 eventId 等不透明标识，不含 E2EE 明文；
 		     见 docs/PUSH_SETUP.md 与 Runner.Push.entitlements 模板）。 -->
 		<string>remote-notification</string>
+		<string>audio</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

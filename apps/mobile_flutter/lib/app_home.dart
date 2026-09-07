@@ -59,6 +59,7 @@ import 'features/matrix/matrix_room_timeline_adapter.dart'
     show changliaoFriendAcceptedEventType, friendAcceptedSystemMessage;
 import 'features/matrix/message_reminder_service.dart';
 import 'features/push/firebase_push_token_provider.dart';
+import 'features/push/native_apns_push_token_provider.dart';
 import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
 import 'features/push/getui_push_token_provider.dart';
@@ -440,25 +441,36 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
     }
 
-    // ② FCM/Sygnal 通道（原有行为不变）。
+    // ② Sygnal: iOS uses native APNs tokens; Android uses FCM tokens.
     final gatewayUrl = AppConfig.sygnalPushGatewayUrl.isEmpty
         ? null
         : Uri.tryParse(AppConfig.sygnalPushGatewayUrl);
-    final firebase = await FirebasePushTokenProvider.tryCreate();
-    if (firebase != null) {
-      _pushTokenProviders.add(firebase);
-      pushers.add(MatrixPusherService(
-        gateway: ClientMatrixPusherGateway(client),
-        tokenProvider: firebase,
-        appId: defaultTargetPlatform == TargetPlatform.iOS
-            ? MatrixPusherService.appIdIOS
-            : MatrixPusherService.appIdAndroid,
-        gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
-        deviceDisplayName: defaultTargetPlatform == TargetPlatform.iOS
-            ? 'ChatFlow iOS'
-            : 'ChatFlow Android',
-      ));
-      unawaited(configureFirebasePushHandlers(tapRouter: router));
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      if (gatewayUrl != null) {
+        final apns = NativeApnsPushTokenProvider(onTap: router.handleTap);
+        await apns.initialize();
+        _pushTokenProviders.add(apns);
+        pushers.add(MatrixPusherService(
+          gateway: ClientMatrixPusherGateway(client),
+          tokenProvider: apns,
+          appId: MatrixPusherService.appIdIOS,
+          gatewayUrl: gatewayUrl.resolve('/_matrix/push/v1/notify'),
+          deviceDisplayName: 'ChatFlow iOS',
+        ));
+      }
+    } else {
+      final firebase = await FirebasePushTokenProvider.tryCreate();
+      if (firebase != null) {
+        _pushTokenProviders.add(firebase);
+        pushers.add(MatrixPusherService(
+          gateway: ClientMatrixPusherGateway(client),
+          tokenProvider: firebase,
+          appId: MatrixPusherService.appIdAndroid,
+          gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
+          deviceDisplayName: 'ChatFlow Android',
+        ));
+        unawaited(configureFirebasePushHandlers(tapRouter: router));
+      }
     }
     _pusherServices.addAll(pushers);
     // 诊断页读取：登记全部通道（登出统一 clear）。
