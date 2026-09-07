@@ -7,6 +7,7 @@ import UIKit
 
 final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate {
   private let state = IOSCallState()
+  private let sessionOwner = IOSCallSessionOwner()
   private let controller = CXCallController()
   private let provider: CXProvider
   private var registry: PKPushRegistry?
@@ -61,8 +62,18 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
 
   private func handle(_ method: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = method.arguments as? [String: Any] ?? [:]
+    if method.method != "start", !sessionOwner.accepts(args["owner"]) { result(false); return }
     switch method.method {
     case "start":
+      let claim = sessionOwner.claim(args["owner"])
+      guard claim != .invalid else { result(false); return }
+      if claim == .replaced {
+        generation += 1
+        ready = false
+        for call in Array(state.calls.values) { end(call, reason: .remoteEnded, notify: false) }
+        state.clear()
+        pip.clear()
+      }
       active = true
       UserDefaults.standard.set(true, forKey: "chatflow.iosCalls.active")
       registerPushKit()
@@ -163,8 +174,11 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
   }
 
   private func reportRejectedPush(_ data: [String: Any], completion: @escaping () -> Void) {
-    let callId = data["call_id"] as? String
-    let uuid = callId.map { IOSCallDescriptor.uuid(for: $0) } ?? UUID()
+    let uuid: UUID
+    if let callId = data["call_id"] as? String, let roomId = data["room_id"] as? String,
+       !callId.isEmpty, !roomId.isEmpty {
+      uuid = IOSCallDescriptor.uuid(for: callId, roomId: roomId)
+    } else { uuid = UUID() }
     let existing = state.calls[uuid]
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: "ChatFlow")
@@ -183,7 +197,7 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
           let roomId = info["room_id"] as? String, !roomId.isEmpty else { return false }
     guard active else { return true }
     if let call = state.match(callId: callId, roomId: roomId) { end(call, reason: .remoteEnded, notify: true) }
-    else if state.calls[IOSCallDescriptor.uuid(for: callId)] == nil { state.rememberEnded(callId: callId, now: now) }
+    else { state.rememberEnded(callId: callId, roomId: roomId, now: now) }
     return true
   }
 
