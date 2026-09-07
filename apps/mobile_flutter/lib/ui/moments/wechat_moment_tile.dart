@@ -31,7 +31,7 @@ final class WeChatMomentTile extends StatelessWidget {
     final isAd = item.kind == 'AD';
     final isLiked = likedOverride ?? item.liked;
     return Container(
-      color: CupertinoColors.systemBackground,
+      color: WeChatColors.elevatedSurface(context),
       padding: const EdgeInsets.all(12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         GestureDetector(
@@ -52,8 +52,9 @@ final class WeChatMomentTile extends StatelessWidget {
               onTap: isAd ? null : onAuthorTap,
               child: Text(item.author.displayName,
                   key: const Key('moment-author-name'),
-                  style: const TextStyle(
-                      color: WeChatColors.socialLink,
+                  style: TextStyle(
+                      color: WeChatColors.resolve(
+                          context, WeChatColors.socialLink),
                       fontSize: 16,
                       fontWeight: FontWeight.w600)),
             ),
@@ -115,8 +116,10 @@ final class WeChatMomentTile extends StatelessWidget {
             if (!isAd && item.likeUsers.isNotEmpty)
               Text(
                   '♡ ${item.likeUsers.map((user) => user.displayName).join('、')}',
-                  style: const TextStyle(
-                      color: WeChatColors.socialLink, fontSize: 13)),
+                  style: TextStyle(
+                      color: WeChatColors.resolve(
+                          context, WeChatColors.socialLink),
+                      fontSize: 13)),
             if (!isAd)
               for (final comment in item.comments)
                 Text(

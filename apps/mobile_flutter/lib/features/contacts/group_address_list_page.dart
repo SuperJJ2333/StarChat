@@ -44,13 +44,15 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
 
   List<Room> _savedGroups() {
     final rooms = widget.client.rooms
-        .where((room) =>
-            room.membership == Membership.join && !room.isDirectChat)
+        .where(
+            (room) => room.membership == Membership.join && !room.isDirectChat)
         .where((room) => preferenceForRoom(room).saved)
         .toList(growable: false)
       ..sort((a, b) {
-        final left = a.lastEvent?.originServerTs ?? DateTime.fromMillisecondsSinceEpoch(0);
-        final right = b.lastEvent?.originServerTs ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final left = a.lastEvent?.originServerTs ??
+            DateTime.fromMillisecondsSinceEpoch(0);
+        final right = b.lastEvent?.originServerTs ??
+            DateTime.fromMillisecondsSinceEpoch(0);
         return right.compareTo(left);
       });
     return rooms;
@@ -101,10 +103,13 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
       key: const Key('group-address-list'),
       padding: EdgeInsets.zero,
       itemCount: rooms.length,
-      separatorBuilder: (_, __) => const Padding(
-        padding: EdgeInsets.only(
-            left: WeChatSpacing.lg + 40 + WeChatSpacing.md),
-        child: SizedBox(height: 0.5, child: ColoredBox(color: WeChatColors.divider)),
+      separatorBuilder: (_, __) => Padding(
+        padding:
+            EdgeInsets.only(left: WeChatSpacing.lg + 40 + WeChatSpacing.md),
+        child: SizedBox(
+            height: 0.5,
+            child: ColoredBox(
+                color: WeChatColors.resolve(context, WeChatColors.divider))),
       ),
       itemBuilder: (context, index) {
         final room = rooms[index];
@@ -166,8 +171,8 @@ final class _GroupAddressTile extends StatelessWidget {
         additionalInfo: Text(
           '$memberCount 人',
           key: ValueKey<String>('group-address-count-${room.id}'),
-          style: const TextStyle(
-              fontSize: 12, color: WeChatColors.textSecondary),
+          style:
+              const TextStyle(fontSize: 12, color: WeChatColors.textSecondary),
         ),
         trailing: const Icon(CupertinoIcons.chevron_right, size: 14),
         onTap: onTap,

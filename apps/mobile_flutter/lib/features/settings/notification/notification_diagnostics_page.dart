@@ -79,7 +79,8 @@ final class _NotificationDiagnosticsPageState
       denied: '受限（后台可能被杀）',
     );
     final channels = <_ChannelStatus>[];
-    for (final service in (widget.registry ?? PushStatusRegistry.shared).services) {
+    for (final service
+        in (widget.registry ?? PushStatusRegistry.shared).services) {
       bool? sdkInitialized;
       bool? cidPresent;
       final provider = service.tokenProvider;
@@ -116,8 +117,8 @@ final class _NotificationDiagnosticsPageState
     String denied = '未授权',
   }) async {
     try {
-      final status = await permission.status
-          .timeout(const Duration(seconds: 2));
+      final status =
+          await permission.status.timeout(const Duration(seconds: 2));
       return switch (status) {
         PermissionStatus.granted ||
         PermissionStatus.limited ||
@@ -193,8 +194,8 @@ final class _NotificationDiagnosticsPageState
               padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text(
                 '诊断日志',
-                style: TextStyle(
-                    fontSize: 13, color: CupertinoColors.systemGrey),
+                style:
+                    TextStyle(fontSize: 13, color: CupertinoColors.systemGrey),
               ),
             ),
             Expanded(child: _buildLogList(entries)),
@@ -208,7 +209,7 @@ final class _NotificationDiagnosticsPageState
   Widget _buildStatusSummary() {
     final channels = _channels;
     return Container(
-      color: CupertinoColors.systemGroupedBackground,
+      color: CupertinoColors.systemGroupedBackground.resolveFrom(context),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,11 +217,13 @@ final class _NotificationDiagnosticsPageState
           const Text('推送状态',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
-          _row('隐私同意', switch (_consentAccepted) {
-            true => '已同意',
-            false => '未同意',
-            null => '…',
-          }),
+          _row(
+              '隐私同意',
+              switch (_consentAccepted) {
+                true => '已同意',
+                false => '未同意',
+                null => '…',
+              }),
           _row('通知权限', _notificationPermission),
           _row('电池优化', _batteryOptimization),
           for (final channel in channels ?? const <_ChannelStatus>[]) ...[
@@ -239,8 +242,8 @@ final class _NotificationDiagnosticsPageState
           ],
           if (channels != null && channels.isEmpty)
             const Text('（推送通道未装配：未登录或网关未配置）',
-                style: TextStyle(
-                    fontSize: 12, color: CupertinoColors.systemGrey)),
+                style:
+                    TextStyle(fontSize: 12, color: CupertinoColors.systemGrey)),
         ],
       ),
     );
@@ -272,8 +275,7 @@ final class _NotificationDiagnosticsPageState
       ? const Center(
           child: Text(
             '暂无诊断记录',
-            style: TextStyle(
-                fontSize: 14, color: CupertinoColors.systemGrey),
+            style: TextStyle(fontSize: 14, color: CupertinoColors.systemGrey),
           ),
         )
       : ListView.builder(

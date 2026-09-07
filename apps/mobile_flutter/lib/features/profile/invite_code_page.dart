@@ -123,7 +123,7 @@ final class _InviteCodePageState extends State<InviteCodePage> {
           ? WeChatColors.darkPageBackground
           : WeChatColors.lightPageBackground,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const WeChatNavTitle('邀请码'),
@@ -240,12 +240,15 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: CupertinoColors.systemGrey6.withValues(alpha: .95),
+                  color: CupertinoDynamicColor.resolve(
+                          CupertinoColors.systemGrey6, context)
+                      .withValues(alpha: .95),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Text(state.message!,
-                    style: const TextStyle(
-                        fontSize: 13, color: CupertinoColors.black)),
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: WeChatColors.resolveTextPrimary(context))),
               ),
             ),
           ),

@@ -38,6 +38,15 @@ final class WeChatMessageBubble extends StatelessWidget {
   /// 发送者头衔徽标（群主/管理员，QQ 式），显示在昵称前。
   final Widget? senderBadge;
 
+  /// Green outgoing bubbles retain dark ink, including in night mode.
+  static Color foregroundOf(BuildContext context) {
+    final bubble = context.findAncestorWidgetOfExactType<WeChatMessageBubble>();
+    return bubble?.direction == MessageDirection.outgoing ||
+            CupertinoTheme.brightnessOf(context) != Brightness.dark
+        ? CupertinoColors.black
+        : WeChatColors.darkTextPrimary;
+  }
+
   @override
   Widget build(BuildContext context) {
     final outgoing = direction == MessageDirection.outgoing;
@@ -76,7 +85,10 @@ final class WeChatMessageBubble extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: outgoing
                           ? WeChatColors.bubbleOutgoing
-                          : CupertinoTheme.of(context).barBackgroundColor,
+                          : CupertinoTheme.brightnessOf(context) ==
+                                  Brightness.dark
+                              ? WeChatColors.darkElevated
+                              : CupertinoTheme.of(context).barBackgroundColor,
                       borderRadius: BorderRadius.circular(WeChatRadius.bubble),
                     ),
                     child: Padding(
@@ -84,7 +96,14 @@ final class WeChatMessageBubble extends StatelessWidget {
                         horizontal: 12,
                         vertical: 9,
                       ),
-                      child: content,
+                      child: DefaultTextStyle.merge(
+                        style: TextStyle(
+                          color: outgoing
+                              ? CupertinoColors.black
+                              : foregroundOf(context),
+                        ),
+                        child: content,
+                      ),
                     ),
                   )
                 : content,
@@ -95,9 +114,8 @@ final class WeChatMessageBubble extends StatelessWidget {
 
     // WeChat shows the sender nickname right above the bubble, aligned with
     // the bubble edge (avatar width + gutter when an avatar is present).
-    final showSenderName = !outgoing &&
-        senderName != null &&
-        senderName!.trim().isNotEmpty;
+    final showSenderName =
+        !outgoing && senderName != null && senderName!.trim().isNotEmpty;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onLongPress: onLongPress,
@@ -149,5 +167,3 @@ final class WeChatMessageBubble extends StatelessWidget {
     );
   }
 }
-
-

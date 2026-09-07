@@ -29,9 +29,22 @@
     "2026-09-06": {
       "chatMemberPicker": "custom avatar; remark then nickname then username",
       "chatMediaCategory": "date-grouped three-column thumbnails; no sender row; video play and duration",
-      "discoveryOrder": ["朋友圈", "扫一扫"],
+      "discoveryOrder": [
+        "朋友圈",
+        "扫一扫"
+      ],
       "personalInformation": "header and explicit Me row; invitation before nickname; values right and placeholders left",
       "figmaSync": "unavailable; local implementation recorded in frontend/artifacts/figma-state.json"
+    },
+    "2026-09-07-dark-mode": {
+      "navigation": "#191919",
+      "page": "#111111",
+      "elevated": "#232323",
+      "text": "#F5F5F5",
+      "divider": "#2C2C2C",
+      "behavior": "Resolve at build; light/dark/system live updates; preserve photos, QR and accent contrast",
+      "html": "frontend/src/styles/tokens.css",
+      "figmaSync": "Deferred: Figma connector unavailable; no remote nodes modified"
     }
   },
   "figma": {

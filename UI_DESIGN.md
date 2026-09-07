@@ -38,9 +38,9 @@
 
 ### 2.1 强制页面配色映射
 
-下表为私聊、群聊和底部主导航根页面的**固定颜色约束**。这些页面必须通过对应颜色变量引用，不得用 `surfaceElevated`、品牌色、图片取色或页面局部硬编码替代；本表指定的色值优先于通用亮暗主题映射。
+下表是浅色模式的颜色基准（2026-09-07 用户要求修订）。深色模式导航栏解析为 `#191919`、页面背景为 `#111111`、卡片/输入区为 `#232323`、正文为 `#F5F5F5`、分隔线为 `#2C2C2C`。所有自绘表面和文字须在 build 中按当前主题解析，浅色/深色/跟随系统切换应即时重绘，不得以本表浅色色值覆盖深色主题。照片、视频、二维码及品牌色保留自身颜色。
 
-| 页面/区域 | 必用颜色变量 | 固定色值 | 禁止替代 |
+| 页面/区域 | 必用颜色变量 | 浅色色值 | 禁止替代 |
 |---|---|---:|---|
 | 私聊消息页顶部导航栏 | `chatNavigationBackground` | `#F7F7F7` | `surfaceElevated`、`pageBackground`、品牌色或自定义灰色 |
 | 群聊消息页顶部导航栏 | `chatNavigationBackground` | `#F7F7F7` | `surfaceElevated`、`pageBackground`、品牌色或自定义灰色 |
@@ -51,7 +51,7 @@
 | “发现”主导航根页面 | `tabRootPageBackground` | `#EDEDED` | `surfaceElevated`、白色或自定义灰色 |
 | “我”主导航根页面 | `tabRootPageBackground` | `#EDEDED` | `surfaceElevated`、白色或自定义灰色 |
 
-`WeChatAppTheme` 必须导出 `chatNavigationBackground`、`chatPageBackground` 和 `tabRootPageBackground`；`WeChatPageScaffold`、私聊页、群聊页及四个主导航根页只能消费这些变量。消息气泡、列表单元、输入区和浮层仍按其专用 Token 取色，不得反向改变页面整体或导航栏背景。
+`WeChatAppTheme` 必须导出 `chatNavigationBackground`、`chatPageBackground` 和 `tabRootPageBackground`；`WeChatPageScaffold`、私聊页、群聊页及四个主导航根页消费这些变量时必须按当前主题解析。消息气泡、列表单元、输入区和浮层仍按其专用 Token 取色，不得反向改变页面整体或导航栏背景。
 
 ## 3. 字体与字号
 
@@ -191,7 +191,7 @@
 - [ ] “消息、通讯录、发现、我”四个主导航根页只引用 `tabRootPageBackground`，截图/Widget 测试断言其色值均为 `#EDEDED`。
 - [ ] 新增或修改相关页面时，不得使用 `Color(0xFF...)`、`Color.fromARGB(...)`、十六进制字符串或第三方默认背景色绕过上述变量。
 - [ ] 代码审查同时检查嵌套 `Scaffold`、`Container`、`CustomScrollView`、空状态和加载状态，确保它们没有覆盖根页面或导航栏规定的背景色。
-- [ ] 亮暗主题、动态主题或远端配置不得覆盖本节八个固定区域的色值；变更本表需同步修改 Token、页面测试和本检查清单。
+- [ ] 本节八个区域必须支持浅色→深色→浅色及跟随系统即时切换；深色导航/页面不能残留浅色；变更同步 Token、页面测试及设计登记。
 
 ## 11. 通讯录组件与页面
 
