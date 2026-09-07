@@ -45,6 +45,27 @@ void main() {
     expect(data.keys.toSet(), {'format', 'url'}, reason: '推送配置不得携带正文/密钥类字段');
   });
 
+  test('iOS APNs event-id-only pushes include a generic visible alert', () async {
+    final pusher = MatrixPusherService(
+      gateway: gateway,
+      tokenProvider: tokens,
+      appId: MatrixPusherService.appIdIOS,
+      gatewayUrl: Uri.parse('https://sygnal.example.test/_matrix/push/v1/notify'),
+      diagnostics: diagnostics,
+    );
+    expect(await pusher.ensureRegistered(), isTrue);
+    final data = gateway.created.single.data.toJson();
+    expect(data['format'], 'event_id_only');
+    expect(data['default_payload'], {
+      'aps': {
+        'alert': {'title': '畅聊 ChatFlow', 'body': '您有一条新消息'},
+        'sound': 'default',
+      },
+    });
+    expect(data.keys.toSet(), {'format', 'url', 'default_payload'});
+    await pusher.dispose();
+  });
+
   test('个推网关使用 Synapse 强制的标准路径，以查询参数选择通道', () async {
     final url = MatrixPusherService.getuiGatewayUrl(
       Uri.parse('https://push.example.test/'),

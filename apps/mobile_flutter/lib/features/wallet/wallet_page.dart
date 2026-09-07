@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import 'wallet_conversion_card.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/changliao_icons.dart';
@@ -19,7 +21,11 @@ final class WithdrawalOrderPoller {
   WithdrawalOrderPoller({
     required this.fetch,
     this.interval = const Duration(seconds: 10),
-    this.terminalStatuses = const {'CHAIN_CONFIRMED', 'FAILED', 'FAILED_COMPENSATED'},
+    this.terminalStatuses = const {
+      'CHAIN_CONFIRMED',
+      'FAILED_COMPENSATED',
+      'CANCELLED'
+    },
     this.onStatus,
     this.onError,
   });
@@ -55,7 +61,8 @@ final class WithdrawalOrderPoller {
     } catch (error) {
       if (_orderId == orderId) {
         // 轮询失败转明确可恢复状态；下一轮继续（不抛出不中断）。
-        onError?.call(error is BusinessApiException ? error.message : '状态查询失败，将继续重试');
+        onError?.call(
+            error is BusinessApiException ? error.message : '状态查询失败，将继续重试');
       }
     } finally {
       _inFlight = false;
@@ -88,6 +95,10 @@ final class _WalletPageState extends State<WalletPage> {
   /// 全链路幂等，防抖不替代服务端）。
   static const _pendingOrderKeyPref = 'wallet.pending_withdrawal_order_key';
   String? _pendingOrderKey;
+  String? _intentStorageKey;
+  late final Future<void> _intentLoaded;
+  Map<String, String>? _pendingWithdrawal;
+  bool _withdrawalTerminal = false;
 
   /// U01：提交中互斥 + 按钮加载态。
   bool _submitting = false;
@@ -95,6 +106,7 @@ final class _WalletPageState extends State<WalletPage> {
   /// U03：服务端有效确认阈值（0/未取到时隐藏具体数字文案）。
   int? _confirmationThreshold;
   String? _minDepositText;
+  bool _conversionEnabled = false;
 
   static final RegExp _trc20Pattern = RegExp(r'^T[1-9A-HJ-NP-Za-km-z]{33}$');
   static final RegExp _amountPattern = RegExp(r'^(0|[1-9]\d*)(\.\d{1,6})?$');
@@ -106,8 +118,8 @@ final class _WalletPageState extends State<WalletPage> {
     if (api != null) {
       balance = api.walletBalance();
       _loadWalletConfig();
-      _loadPendingOrderKey();
     }
+    _intentLoaded = _loadPendingOrderKey();
   }
 
   Future<void> _loadWalletConfig() async {
@@ -117,6 +129,7 @@ final class _WalletPageState extends State<WalletPage> {
       if (!mounted) return;
       setState(() {
         _confirmationThreshold = threshold is int ? threshold : null;
+        _conversionEnabled = config?['conversion_enabled'] == true;
         final min = config?['min_deposit']?.toString();
         _minDepositText = (min == null || min.isEmpty) ? null : min;
       });
@@ -126,27 +139,56 @@ final class _WalletPageState extends State<WalletPage> {
   }
 
   Future<void> _loadPendingOrderKey() async {
+    if (widget.api == null) return;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = prefs.getString(_pendingOrderKeyPref);
-      if (key != null && mounted) setState(() => _pendingOrderKey = key);
-    } catch (_) {}
+      final scope = await widget.api!.walletIntentScope();
+      _intentStorageKey = '$_pendingOrderKeyPref.v2:$scope';
+      if (prefs.containsKey(_pendingOrderKeyPref)) {
+        if (mounted) setState(() => status = '存在旧版待确认提现，请先联系财务核对，暂不能创建新提现');
+        _intentStorageKey = null;
+        return;
+      }
+      final saved = prefs.getString(_intentStorageKey!);
+      if (saved != null) {
+        final intent = Map<String, String>.from(jsonDecode(saved) as Map);
+        _pendingWithdrawal = intent;
+        _pendingOrderKey = intent['key'];
+        if (mounted) {
+          setState(() {
+            amount.text = intent['amount']!;
+            address.text = intent['address']!;
+            status = '有待确认提现，重试将查询同一申请';
+          });
+        }
+      }
+    } catch (_) {
+      _intentStorageKey = null;
+      if (mounted) setState(() => status = '无法读取提现记录，请重新登录后重试');
+    }
   }
 
   Future<void> _rememberOrderKey(String key) async {
+    if (_intentStorageKey == null) throw StateError('无法保存提现记录');
+    final intent = _pendingWithdrawal ??
+        {
+          'key': key,
+          'amount': amount.text.trim(),
+          'address': address.text.trim()
+        };
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(_intentStorageKey!, jsonEncode(intent))) {
+      throw StateError('无法保存提现记录');
+    }
     _pendingOrderKey = key;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_pendingOrderKeyPref, key);
-    } catch (_) {}
+    _pendingWithdrawal = intent;
   }
 
   Future<void> _clearOrderKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.remove(_intentStorageKey!)) throw StateError('无法更新提现记录');
     _pendingOrderKey = null;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_pendingOrderKeyPref);
-    } catch (_) {}
+    _pendingWithdrawal = null;
   }
 
   @override
@@ -165,7 +207,9 @@ final class _WalletPageState extends State<WalletPage> {
           ? '提现金额最多支持六位小数'
           : '提现金额格式不正确';
     }
-    if (double.tryParse(text)! <= 0) return '提现金额必须大于0';
+    if (BigInt.parse(text.replaceAll('.', '')) <= BigInt.zero) {
+      return '提现金额必须大于0';
+    }
     if (!_trc20Pattern.hasMatch(address.text.trim())) {
       return '请输入正确的 TRC20 收款地址';
     }
@@ -175,7 +219,9 @@ final class _WalletPageState extends State<WalletPage> {
   Future<void> _loadDepositAddress() async {
     try {
       final body = await widget.api?.walletDepositAddress();
-      if (mounted) setState(() => depositAddress = body?['address']?.toString());
+      if (mounted) {
+        setState(() => depositAddress = body?['address']?.toString());
+      }
     } catch (_) {
       if (mounted) setState(() => status = '充值地址获取失败，请稍后重试');
     }
@@ -199,40 +245,86 @@ final class _WalletPageState extends State<WalletPage> {
     _submitting = true;
     setState(() {}); // 按钮 loading。
     try {
-      final orderKey =
-          _pendingOrderKey ?? 'mobile-${DateTime.now().millisecondsSinceEpoch}';
+      await _intentLoaded;
+      if (_intentStorageKey == null || widget.api == null) {
+        throw StateError('提现记录未准备好');
+      }
+      final scope = await widget.api!.walletIntentScope();
+      if (_intentStorageKey != '$_pendingOrderKeyPref.v2:$scope') {
+        throw StateError('账户已切换');
+      }
+      final existingId = _pendingWithdrawal?['order_id'];
+      if (existingId != null) {
+        _startPolling(existingId);
+        return;
+      }
+      final orderKey = _pendingOrderKey ?? widget.api!.newIdempotencyKey();
       await _rememberOrderKey(orderKey);
       final r = await widget.api?.requestWithdrawal(
-          amount: amount.text.trim(),
-          address: address.text.trim(),
+          amount: _pendingWithdrawal!['amount']!,
+          address: _pendingWithdrawal!['address']!,
           clientOrderId: orderKey,
           reasonCode: 'USER_WITHDRAWAL');
       final orderId = r?['id']?.toString();
       if (!mounted) return;
       setState(() => status = '提现申请已提交：${r?['status'] ?? '审核中'}');
       if (orderId != null) {
-        // 提交成功：本次意图已落单，清除保留键（下一次点击=新意图新键）。
-        await _clearOrderKey();
-        _poller?.stop();
-        _poller = WithdrawalOrderPoller(
-          fetch: (id) async => await widget.api?.withdrawalStatus(id),
-          onStatus: (latest) {
-            if (mounted) setState(() => status = '提现状态：$latest');
-          },
-          onError: (message) {
-            if (mounted) setState(() => status = message);
-          },
-        )..start(orderId);
+        _pendingWithdrawal!['order_id'] = orderId;
+        await _rememberOrderKey(orderKey);
+        if (mounted) {
+          setState(() {
+            balance = widget.api!.walletBalance();
+          });
+        }
+        _startPolling(orderId);
       }
     } catch (e) {
       // 失败/超时：保留订单键——重试复用同一键，服务端幂等返回原单。
       if (mounted) {
-        setState(
-            () => status = e is BusinessApiException ? e.message : '提现提交失败，请稍后重试');
+        setState(() =>
+            status = e is BusinessApiException ? e.message : '提现提交失败，请稍后重试');
       }
     } finally {
       _submitting = false;
       if (mounted) setState(() {});
+    }
+  }
+
+  void _startPolling(String orderId) {
+    _poller?.stop();
+    _poller = WithdrawalOrderPoller(
+      fetch: (id) async => await widget.api?.withdrawalStatus(id),
+      onStatus: (latest) {
+        if (mounted) {
+          setState(() {
+            status = '提现状态：$latest';
+            _withdrawalTerminal = const {
+              'CHAIN_CONFIRMED',
+              'FAILED_COMPENSATED',
+              'CANCELLED'
+            }.contains(latest);
+          });
+        }
+      },
+      onError: (message) {
+        if (mounted) setState(() => status = message);
+      },
+    )..start(orderId);
+  }
+
+  Future<void> _newWithdrawal() async {
+    if (!_withdrawalTerminal || _submitting) return;
+    try {
+      await _clearOrderKey();
+      if (!mounted) return;
+      setState(() {
+        amount.clear();
+        address.clear();
+        status = null;
+        _withdrawalTerminal = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => status = '无法更新提现记录，请重试');
     }
   }
 
@@ -276,9 +368,18 @@ final class _WalletPageState extends State<WalletPage> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text('六位小数 · 与点钻严格隔离，不可互兑',
-                  style:
-                      TextStyle(color: WeChatColors.textSecondary, fontSize: 12)),
+              const Text('USDT 六位小数 · 点钻两位小数',
+                  style: TextStyle(
+                      color: WeChatColors.textSecondary, fontSize: 12)),
+              FutureBuilder<Map<String, dynamic>>(
+                future: balance,
+                builder: (_, snapshot) => Text(
+                    '冻结 ${snapshot.data?['usdt_held'] ?? '--'} USDT · '
+                    '点钻 ${snapshot.data?['caibi_available'] ?? '--'}',
+                    key: const Key('wallet-held-points'),
+                    style: const TextStyle(
+                        fontSize: 12, color: WeChatColors.textSecondary)),
+              ),
             ],
           ),
         ),
@@ -298,11 +399,12 @@ final class _WalletPageState extends State<WalletPage> {
                     color: WeChatColors.resolveTextPrimary(context))),
             // U03：确认数文案来自服务端 /wallet/config（阈值后端可配，
             // 客户端不再硬编码"20 个确认"）。
-            subtitle: Text(depositAddress == null
-                ? (_confirmationThreshold == null
-                    ? '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，确认到账以钱包说明为准'
-                    : '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，$_confirmationThreshold 个确认后到账')
-                : '已生成专属充值地址',
+            subtitle: Text(
+                depositAddress == null
+                    ? (_confirmationThreshold == null
+                        ? '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，确认到账以钱包说明为准'
+                        : '最低充值${_minDepositText == null ? '' : ' $_minDepositText USDT'}，$_confirmationThreshold 个确认后到账')
+                    : '已生成专属充值地址',
                 style: const TextStyle(
                     color: WeChatColors.textSecondary, fontSize: 13)),
             onTap: _loadDepositAddress,
@@ -339,9 +441,8 @@ final class _WalletPageState extends State<WalletPage> {
           child: Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text('提现',
-                style: TextStyle(
-                    fontSize: 13,
-                    color: WeChatColors.textSecondary)),
+                style:
+                    TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
           ),
         ),
         Container(
@@ -369,11 +470,19 @@ final class _WalletPageState extends State<WalletPage> {
         ModernActionButton(
           key: const Key('wallet-withdraw-submit'),
           icon: ChangliaoIcons.transfer,
-          label: _submitting ? '提交中…' : '提交提现申请',
+          label: _submitting
+              ? '提交中…'
+              : (_pendingOrderKey != null ? '查询原提现申请' : '提交提现申请'),
           // U01：提交中互斥（loading 禁用）——快速双击只创建一单。
           loading: _submitting,
           onPressed: widget.api == null ? null : withdraw,
         ),
+        if (_withdrawalTerminal)
+          CupertinoButton(
+            key: const Key('wallet-withdraw-new'),
+            onPressed: _newWithdrawal,
+            child: const Text('创建新的提现申请'),
+          ),
         if (status != null) ...[
           const SizedBox(height: 12),
           Text(status!,
@@ -382,14 +491,27 @@ final class _WalletPageState extends State<WalletPage> {
               style: const TextStyle(
                   color: WeChatColors.textSecondary, fontSize: 13)),
         ],
+        if (widget.api != null) ...[
+          const SizedBox(height: 16),
+          WalletConversionCard(
+              api: widget.api!,
+              enabled: _conversionEnabled,
+              onCompleted: () {
+                if (mounted) {
+                  setState(() {
+                    balance = widget.api!.walletBalance();
+                  });
+                }
+              }),
+        ],
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
           child: Padding(
             padding: const EdgeInsets.only(left: 4, bottom: 8),
             child: Text('交易记录',
-                style: TextStyle(
-                    fontSize: 13, color: WeChatColors.textSecondary)),
+                style:
+                    TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
           ),
         ),
         Container(
@@ -426,17 +548,14 @@ final class _WalletPageState extends State<WalletPage> {
                       title: Text(r['kind'] == 'deposit' ? '充值' : '提现',
                           style: TextStyle(
                               fontSize: 16,
-                              color:
-                                  WeChatColors.resolveTextPrimary(context))),
+                              color: WeChatColors.resolveTextPrimary(context))),
                       subtitle: Text(r['status'].toString(),
                           style: const TextStyle(
-                              color: WeChatColors.textSecondary,
-                              fontSize: 13)),
+                              color: WeChatColors.textSecondary, fontSize: 13)),
                       trailing: Text('${r['amount']} USDT',
                           style: TextStyle(
                               fontSize: 14,
-                              color:
-                                  WeChatColors.resolveTextPrimary(context))),
+                              color: WeChatColors.resolveTextPrimary(context))),
                     ),
                 ],
               );

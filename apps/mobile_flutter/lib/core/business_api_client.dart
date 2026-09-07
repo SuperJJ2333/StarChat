@@ -325,11 +325,13 @@ final class BusinessApiClient
       throw const BusinessApiException(
           statusCode: 401, code: 'AUTH_REQUIRED', message: '需要登录');
     }
-    final response = await _client.post(
-      _uri('/auth/refresh'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refresh_token': stored.refreshToken}),
-    ).timeout(_httpTimeout);
+    final response = await _client
+        .post(
+          _uri('/auth/refresh'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'refresh_token': stored.refreshToken}),
+        )
+        .timeout(_httpTimeout);
     final body = _decode(response);
     if (epoch != _sessionEpoch) {
       // A03：登出已发生——迟到的刷新结果不得恢复已清除的会话。
@@ -386,11 +388,13 @@ final class BusinessApiClient
     final stored = await sessionStore.session();
     try {
       if (stored != null) {
-        await _client.post(
-          _uri('/auth/logout'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'refresh_token': stored.refreshToken}),
-        ).timeout(_httpTimeout);
+        await _client
+            .post(
+              _uri('/auth/logout'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({'refresh_token': stored.refreshToken}),
+            )
+            .timeout(_httpTimeout);
       }
     } catch (_) {
       // 退出请求失败/超时：本地会话仍必须清除（finally 兜底）。
@@ -473,12 +477,36 @@ final class BusinessApiClient
       getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() =>
       getJson('/wallet/deposit-address');
+
   /// U03：服务端有效网络/确认阈值/最小金额（客户端展示的统一来源）。
   Future<Map<String, dynamic>> walletConfig() => getJson('/wallet/config');
   Future<Map<String, dynamic>> walletHistory({String? kind}) =>
       getJson('/wallet/transactions${kind == null ? '' : '?kind=$kind'}');
   Future<Map<String, dynamic>> withdrawalStatus(String id) =>
       getJson('/wallet/withdrawals/$id');
+  Future<Map<String, dynamic>> convertWallet(
+          {required String direction,
+          required String amount,
+          required String idempotencyKey}) =>
+      postJson(
+          '/wallet/conversions', {'direction': direction, 'amount': amount},
+          idempotencyKey: idempotencyKey);
+  Future<Map<String, dynamic>> walletConversionStatus(String id) =>
+      getJson('/wallet/conversions/$id');
+
+  /// Local storage namespace only. Authentication remains server-authoritative.
+  Future<String> walletIntentScope() async {
+    final session = await sessionStore.session();
+    if (session == null) throw StateError('需要登录');
+    final parts = session.accessToken.split('.');
+    if (parts.length != 3) throw StateError('无法识别当前账户');
+    final claims = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+    final subject = claims is Map ? claims['sub'] : null;
+    if (subject is! String || subject.isEmpty) throw StateError('无法识别当前账户');
+    return '${baseUri.origin}:$subject';
+  }
+
   Future<bool> autoAllowGroupJoin() async =>
       (await getJson('/profile/privacy'))['auto_allow_group_join'] == true;
   Future<bool> setAutoAllowGroupJoin(bool enabled) async =>
@@ -628,9 +656,10 @@ final class BusinessApiClient
 
   /// BUG 2 群成员非好友：按 Matrix ID 反查公开资料与关系状态。
   /// 不存在/拉黑/自己时服务端返回 404（抛 BusinessApiException）。
-  Future<Map<String, dynamic>> lookupUserByMatrixId(String matrixUserId) =>
-      getJson(
-          '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}');
+  Future<
+      Map<String,
+          dynamic>> lookupUserByMatrixId(String matrixUserId) => getJson(
+      '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}');
 
   @override
   Future<Map<String, dynamic>> requestFriend(String userId,
@@ -680,16 +709,19 @@ final class BusinessApiClient
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> momentsFeed({String mode = 'recommended', String? cursor}) =>
+  Future<Map<String, dynamic>> momentsFeed(
+          {String mode = 'recommended', String? cursor}) =>
       getJson('/moments/feed${Uri(queryParameters: {
-        'mode': mode, if (cursor != null) 'cursor': cursor,
-      })}');
+            'mode': mode,
+            if (cursor != null) 'cursor': cursor,
+          })}');
 
-  Future<Map<String, dynamic>> momentNewPosts({String? since, String? cursor}) =>
+  Future<Map<String, dynamic>> momentNewPosts(
+          {String? since, String? cursor}) =>
       getJson('/moments/new-posts${Uri(queryParameters: {
-        if (since != null) 'since': since,
-        if (cursor != null) 'cursor': cursor,
-      }).toString()}');
+            if (since != null) 'since': since,
+            if (cursor != null) 'cursor': cursor,
+          }).toString()}');
   Future<Map<String, dynamic>> searchMoments(String query) =>
       getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
   Future<Map<String, dynamic>> publishMoment(
@@ -808,7 +840,7 @@ final class BusinessApiClient
             'client_order_id': clientOrderId,
             'reason_code': reasonCode
           },
-          idempotencyKey: newIdempotencyKey());
+          idempotencyKey: clientOrderId);
   Future<Map<String, dynamic>> getJson(String path) async {
     final response = await _authorized(
         (headers) => _client.get(_uri(path), headers: headers));
