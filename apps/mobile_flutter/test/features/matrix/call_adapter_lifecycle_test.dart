@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:liuhetong_mobile/features/matrix/call_wakeup_client.dart';
 import 'package:matrix/matrix.dart';
 import 'package:matrix/src/voip/models/call_options.dart';
 import 'package:webrtc_interface/webrtc_interface.dart';
@@ -37,6 +40,14 @@ class DeferredCall extends CallSession {
           iceServers: [],
         ));
   final answerPending = Completer<void>();
+  int answerCalls = 0;
+  int rejectCalls = 0;
+  @override
+  Future<void> reject({CallErrorCode? reason, bool shouldEmit = true}) async {
+    rejectCalls++;
+    endedBeforeAttach = true;
+  }
+
   bool connectedBeforeAttach = false;
   bool endedBeforeAttach = false;
   @override
@@ -46,7 +57,10 @@ class DeferredCall extends CallSession {
           ? CallState.kConnected
           : super.state;
   @override
-  Future<void> answer({String? txid}) => answerPending.future;
+  Future<void> answer({String? txid}) {
+    answerCalls++;
+    return answerPending.future;
+  }
 }
 
 void main() {
@@ -54,6 +68,35 @@ void main() {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
           const MethodChannel('FlutterWebRTC.Event'), (_) async => null);
+  test('cancel before backend admission persists for the same call session',
+      () async {
+    final client = OfflineClient();
+    final backend = MatrixCallBackend(client);
+    final call = DeferredCall(backend.voip,
+        Room(id: '!test:example.test', client: client), 'cancelled-answer');
+    await backend.delegate.handleNewCall(call);
+    backend.cancelPendingAnswer();
+    await expectLater(backend.accept(), throwsStateError);
+    expect(call.answerCalls, 0);
+    await backend.dispose();
+  });
+  test(
+      'failed wake claim ends the old call instead of retrying a tombstoned call',
+      () async {
+    final client = OfflineClient();
+    final wakeup = CallWakeupClient(
+        baseUrl: Uri.parse('https://example.test/ios-call/'),
+        accessToken: () => 'session',
+        httpClient: MockClient((_) async => http.Response('{}', 503)));
+    final backend = MatrixCallBackend(client, wakeup: wakeup);
+    final call = DeferredCall(backend.voip,
+        Room(id: '!test:example.test', client: client), 'failed-claim');
+    await backend.delegate.handleNewCall(call);
+    await expectLater(backend.accept(), throwsStateError);
+    expect(call.answerCalls, 0);
+    expect(call.rejectCalls, 1);
+    await backend.dispose();
+  });
   test('late subscription observes connected snapshot only once', () async {
     final client = OfflineClient();
     final backend = MatrixCallBackend(client);

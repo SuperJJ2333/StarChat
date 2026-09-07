@@ -388,16 +388,25 @@ final class MatrixCallBackend implements CallBackend {
     }
     final generation = _answerGeneration;
     if (wakeup != null) {
-      await wakeup!.answerAndConnect(
-        roomId: call.room.id,
-        callId: call.callId,
-        isCurrent: () =>
-            generation == _answerGeneration &&
-            !_disposed &&
-            identical(_call, call) &&
-            !call.callHasEnded,
-        connect: call.answer,
-      );
+      try {
+        await wakeup!.answerAndConnect(
+          roomId: call.room.id,
+          callId: call.callId,
+          isCurrent: () =>
+              generation == _answerGeneration &&
+              !_disposed &&
+              identical(_call, call) &&
+              !call.callHasEnded,
+          connect: call.answer,
+        );
+      } catch (_) {
+        // A failed system call has a native tombstone and released audio.
+        // End this session; a later retry must use a fresh Matrix call ID.
+        if (!_disposed && identical(_call, call) && !call.callHasEnded) {
+          await call.reject(reason: CallErrorCode.userHangup);
+        }
+        rethrow;
+      }
     } else {
       await call.answer();
     }
