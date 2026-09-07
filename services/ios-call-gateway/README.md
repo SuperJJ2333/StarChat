@@ -1,0 +1,48 @@
+# iOS call wake gateway
+
+Independent metadata-only service for the approved iOS 0.3.53 background-call plan. It does not subscribe to Matrix events, decrypt messages, accept SDP/media/keys, or access any business/financial database. A caller explicitly invokes it after sending a real encrypted Matrix call invite.
+
+## Contract
+
+Public base: `https://liuhetong888.com/ios-call`. Proxy strips `/ios-call`; internal paths below. All `/v1` endpoints require `Authorization: Bearer <current Matrix access token>`. Identity is checked against the configured Synapse `/_matrix/client/v3/account/whoami` on **every** request; guest, remote-domain, missing-device and revoked sessions fail closed.
+
+| Method/path | Body | Success |
+| --- | --- | --- |
+| PUT `/v1/devices/ios` | `{voip_token, apns_token?}` | `{state:"registered",expires_at:null}` |
+| DELETE `/v1/devices/ios` | none | `{state:"unregistered",expires_at:null}` |
+| POST `/v1/calls` | `{room_id,call_id,recipient,video}` | `{state:"ringing",expires_at:<unix seconds>}` |
+| POST `/v1/calls/answer` | `{room_id,call_id}` | `{state:"answered",expires_at:<unix seconds>}` |
+| POST `/v1/calls/end` | `{room_id,call_id}` | `{state:"ended",expires_at:<unix seconds>}` |
+| GET `/v1/calls/status?room_id=...&call_id=...` | none | `{state,expires_at:<unix seconds>}` |
+
+`/openapi.json` is the generated machine-readable contract. `/healthz` has no identifiers and runs bounded cleanup. Request bodies max 4096 bytes, identifiers max 255 characters, APNs tokens bounded hex. Unknown input fields rejected with a generic 422, without echoing input. `video` must be a JSON boolean.
+
+Errors use `{detail:<safe reason>}`. 401 `invalid_session`; 403 `invalid_call_room` or `recipient_required`; 404 `call_not_found` (also nonparticipants); 409 `route_already_bound`, `no_eligible_device`, `device_limit`, `call_conflict`, `call_not_ringing`; 413 `request_too_large`; 422 `invalid_request`; 429 `rate_limited`; 502 `push_delivery_failed`; 503 `matrix_unavailable`/`device_verification_unavailable`. Framework errors do not include submitted values.
+
+Creation requires an encrypted Megolm room containing exactly the authenticated caller and recipient, both on `MATRIX_SERVER_NAME`. There is no requirement for the caller to register an iOS route. No event plaintext or event proof is requested. Six new call attempts per caller and per recipient per minute, plus 120 authenticated gateway requests per user per minute. Up to 16 recipient devices. Repeats with identical room/call/participants/video are idempotent only while `sending`/`ringing`; a different caller or payload colliding with the same room/call is 409. No replay causes a second VoIP wake. Terminal tombstones last 24 hours; clients must generate globally unique call IDs and never reuse them. All short-term records are cleaned in bounded batches; device routes expire after seven days without registration. Client must refresh registration on launch/resume and token changes.
+
+The first recipient device to answer wins the SQLite transaction. The winning device may retry; other devices get 409. Absent gateway records return 404 so the client can continue an authenticated online Matrix call initiated by older clients. **The client must claim an existing gateway call before accepting Matrix media.** Both participants may end; only the recipient may answer. States are `sending`, `ringing`, `answered`, `ended`, `expired`, `failed`. Ringing expires after 30 seconds; answered calls remain addressable until 24-hour cleanup. Call state never establishes E2EE identity or starts media.
+
+VoIP payload: `{aps:{},call_id,room_id,video,expires_at}`. Fixed bundle `.voip` topic, type `voip`, priority `10`, expiration equal to the 30-second deadline. No names, message plaintext or auth tokens. Cancellation / answered elsewhere uses registered ordinary APNs routes only, topic without `.voip`, type `background`, priority `5`, payload `{aps:{"content-available":1},call_action:"end",call_id,room_id}`. Only attempted incoming-call delivery routes receive cancellation. APNs 410 or invalid-token 400 removes the affected route; expired ordinary tokens clear only the ordinary route. No retries of an ambiguous VoIP delivery. Failed background pushes do not reopen terminal calls; native timeout and status reconciliation remain mandatory because ordinary APNs is best effort.
+
+## ADR: reuse Matrix identity, isolate wake authorization
+
+Decision: reuse existing Matrix whoami validation, without changing login, RBAC, TOTP or E2EE. Store a SHA-256 session fingerprint, never a user bearer. Route uniqueness prevents a different user/device claiming an existing push token. Requests authenticated as a changed session for the same user/device invalidate its old route; observed revoked bearer invalidates its fingerprint. Logout must DELETE the route before deleting the local credentials.
+
+Before each wake/cancellation delivery the gateway uses **only fixed read-only Synapse admin GET endpoints** `/_synapse/admin/v2/users/{user}` and `/_synapse/admin/v2/users/{user}/devices/{device}`. Deactivated/locked/suspended/missing accounts and deleted devices are ineligible. Missing or failing admin verification fails closed. Admin credential never reaches clients, APNs, URLs or SQLite. The credential itself is an existing privileged Synapse credential; the gateway is limited in code to read-only calls but Synapse does not scope the token to these paths. Protect its mount and container as a privileged service; domain and security reviewers must approve this ADR before deployment.
+
+Limit: an access token revoked while its Matrix device remains present cannot be detected for a sleeping recipient without retaining its bearer (rejected for privacy). Standard Synapse logout device deletion must be verified on the deployed version; registration lease, explicit unregister, observed-session invalidation and account/device checks are conservative eligibility controls, not proof of every possible token-only revocation. Explicit calls can be initiated by a valid member without proving the encrypted event content; room checks/rate limits constrain abuse without server decryption. Existing released Android callers need the companion wake-client update for lock-screen iOS calls.
+
+SQLite is persistent, transactionally claims before APNs side effects, and records attempted recipients for cancellation after ambiguous timeouts. One process serializes wake and termination; a Linux `flock` lease rejects accidental extra workers/replicas. A crash after claim may miss a wake but does not duplicate it. Single service instance is deliberate for this rollout; do not scale replicas against this database. Files use 0700 directory / 0600 file and process umask 0077. WAL is inside the protected volume. No request/access/body logging. TLS/reverse proxy request and response timeouts and per-IP rate limits must be configured outside this loopback-only service to bound unauthenticated traffic.
+
+## Deployment
+
+`compose.yaml` is independent of all existing deployments. Host listener is `127.0.0.1:8099`; do not expose it publicly. Reverse proxy should enforce TLS, `client_max_body_size 4k`, a short request-header/body timeout and per-IP request limits, strip the fixed `/ios-call` prefix, and avoid logging authorization or query strings. Only `/healthz`, `/openapi.json`, and `/v1/...` are served. No direct cross-module writes.
+
+Create root-owned mode-0600 `/etc/starchat/ios-call-gateway.env` outside the repository containing `MATRIX_URL` (actual fixed Synapse HTTPS origin), `MATRIX_SERVER_NAME` (actual Matrix user-ID domain), `MATRIX_ADMIN_TOKEN` (existing server-only credential), `APNS_TEAM_ID`, `APNS_KEY_ID`. Never print or commit this file. Set `APNS_KEY_FILE` to the existing APNs p8 path before running compose; it is mounted read-only. Ensure UID 10001 can read that single key without relaxing world-readable permissions (use a dedicated group or ACL). No key rotation. APNs environment defaults production, matching TestFlight; do not silently switch sandbox. Bundle is fixed `com.liuhetong.liuhetongMobile`.
+
+Build with `docker compose build`; start `docker compose up -d`. Python base is pinned `3.12.12-slim-bookworm`; dependency versions are pinned. Container runs UID/GID 10001, read-only root filesystem, dropped capabilities, no-new-privileges, 256 MB and 128 PID limits. Health check every 30 seconds performs cleanup even during idle periods. Backups contain routing metadata and require the same restricted permissions; never put them in Git. Rollback is stopping this independent container and removing the proxy route; existing Matrix messaging/calls continue online.
+
+## Verification
+
+Use Python 3.12, `pip install -r requirements-dev.txt`, then `python -m pytest tests -q -p no:cacheprovider` and `ruff check gateway.py tests`; test keys/tokens are synthetic. Windows checks do not validate Linux flock/container startup, production APNs delivery, deployed Synapse semantics, iOS CallKit timing or physical-device background behavior. Deployment smoke tests and real-device evidence are separate release gates.
