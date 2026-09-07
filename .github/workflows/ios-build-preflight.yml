@@ -101,6 +101,14 @@ jobs:
           assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
           assert not ent.get('get-task-allow', False)
           info = plistlib.loads((app / 'Info.plist').read_bytes())
+          linked = subprocess.check_output(['otool', '-L', str(app / info['CFBundleExecutable'])], text=True)
+          libraries = [line.strip().split(' (', 1)[0] for line in linked.splitlines()[1:]]
+          cipher = '@rpath/SQLCipher.framework/SQLCipher'
+          sqlite = '/usr/lib/libsqlite3.dylib'
+          assert (app / 'Frameworks/SQLCipher.framework/SQLCipher').is_file(), 'Bundled SQLCipher missing'
+          assert cipher in libraries, 'Runner does not load SQLCipher'
+          assert sqlite not in libraries or libraries.index(cipher) < libraries.index(sqlite), 'System SQLite shadows SQLCipher'
+          print('SQLCIPHER_LOAD_ORDER_PASS')
           assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
           assert 2 in info['UIDeviceFamily'], 'iPad support required'
           for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
