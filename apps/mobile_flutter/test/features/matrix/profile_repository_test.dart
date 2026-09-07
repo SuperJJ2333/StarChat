@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
@@ -5,6 +7,97 @@ import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  test('preload retries after a transient failure', () async {
+    var attempts = 0;
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'retry',
+      store: MemoryProfileStore(),
+      loadProfile: () async {
+        if (attempts++ == 0) throw StateError('offline');
+        return profile('Alice');
+      },
+      loadContacts: () async => [contact(remark: 'friend')],
+    );
+    await expectLater(cache.preload(), throwsStateError);
+    await cache.preload();
+    expect(cache.contacts, hasLength(1));
+    expect(attempts, 2);
+    await cache.preload();
+    expect(attempts, 2);
+  });
+
+  for (final operation in ['quiet refresh', 'preload', 'refresh']) {
+    test('in-flight $operation cannot restore a deleted friend', () async {
+      final store = MemoryProfileStore();
+      final friend = contact(remark: 'friend');
+      await store.write('race',
+          ProfileSnapshot(profile: profile('Alice'), contacts: [friend]));
+      final pending = Completer<List<ContactSummary>>();
+      final started = Completer<void>();
+      var loads = 0;
+      final cache = ProfileRepository.forTesting(
+        accountKey: 'race',
+        store: store,
+        loadProfile: () async => profile('Alice'),
+        loadContacts: () {
+          if (loads++ > 0) return Future.value([friend]);
+          started.complete();
+          return pending.future;
+        },
+      );
+      await cache.hydrate();
+      final request = operation == 'quiet refresh'
+          ? cache.refreshContactsQuietly(minInterval: Duration.zero)
+          : operation == 'preload'
+              ? cache.preload()
+              : cache.refresh();
+      await started.future;
+      await cache.removeContact(friend.userId);
+      pending.complete([friend]);
+      await request;
+      expect(cache.contacts, isEmpty);
+      expect(cache.contactsByMatrixId, isEmpty);
+      expect((await store.read('race'))!.contacts, isEmpty);
+      // A newly requested authoritative refresh can see a later re-add.
+      await cache.refreshContactsQuietly(minInterval: Duration.zero);
+      expect(cache.contacts.single.userId, friend.userId);
+    });
+  }
+
+  test('in-flight hydration cannot restore a deleted friend', () async {
+    final store = DelayedReadProfileStore();
+    final friend = contact(remark: 'friend');
+    final cache =
+        ProfileRepository.forTesting(accountKey: 'race', store: store);
+    await cache.applyUpdatedContact(friend);
+    final hydration = cache.hydrate();
+    await cache.removeContact(friend.userId);
+    store.pending.complete(
+        ProfileSnapshot(profile: profile('Alice'), contacts: [friend]));
+    await hydration;
+    expect(cache.profile?.nickname, 'Alice');
+    expect(cache.contacts, isEmpty);
+    expect(cache.contactsByMatrixId, isEmpty);
+    expect(store.saved?.contacts, isEmpty);
+  });
+
+  test('removes an accepted friend before the profile snapshot has loaded',
+      () async {
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'pending-profile',
+      store: MemoryProfileStore(),
+    );
+    final friend = contact(remark: 'friend');
+    await cache.applyUpdatedContact(friend);
+    var changes = 0;
+    cache.addListener(() => changes++);
+    await cache.removeContact(friend.userId);
+    expect(cache.contacts, isEmpty);
+    expect(cache.contactsByMatrixId, isEmpty);
+    expect(changes, 1);
+    expect(cache.contactsRevision, 2);
+  });
+
   setUpAll(sqfliteFfiInit);
   test('hydrates the prior account avatar metadata before a network refresh',
       () async {
@@ -270,4 +363,15 @@ final class _ThrowingDatabaseFactory implements DatabaseFactory {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw StateError('unable to open database file');
+}
+
+final class DelayedReadProfileStore implements ProfileStore {
+  final pending = Completer<ProfileSnapshot?>();
+  ProfileSnapshot? saved;
+  @override
+  Future<ProfileSnapshot?> read(String accountKey) => pending.future;
+  @override
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
+    saved = snapshot;
+  }
 }

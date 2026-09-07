@@ -35,6 +35,14 @@
           }
         }
 
+        const sendingMessage = root.querySelector('[data-screen-id="chat-room-message-sending"]');
+        if (!sendingMessage || [...sendingMessage.querySelectorAll('.c-message__delivery')].some(node => node.textContent.trim())) {
+          throw new Error("sending message must paint without a sending indicator");
+        }
+        const uploadingAttachment = root.querySelector('[data-screen-id="chat-attachment-uploading"]');
+        if (!uploadingAttachment || uploadingAttachment.querySelector('progress')) {
+          throw new Error("sending attachment must not show progress");
+        }
         const failedMessage = root.querySelector('[data-screen-id="chat-room-message-failed"]');
         if (!failedMessage?.textContent.includes("重新发送")) {
           throw new Error("failed message does not expose retry copy");

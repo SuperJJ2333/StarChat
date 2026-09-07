@@ -340,6 +340,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                                     onMessage: widget.onMessage,
                                     onVoice: widget.onVoice,
                                     onVideo: widget.onVideo,
+                                    onContactDeleted:
+                                        widget.identityCache?.removeContact,
                                     onContactUpdated:
                                         widget.identityCache == null
                                             ? null
@@ -420,6 +422,7 @@ final class ContactProfilePage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.onContactUpdated,
+    this.onContactDeleted,
   });
 
   final ContactsGateway api;
@@ -428,6 +431,7 @@ final class ContactProfilePage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final Future<void> Function(ContactDetails contact)? onContactUpdated;
+  final Future<void> Function(String userId)? onContactDeleted;
 
   @override
   State<ContactProfilePage> createState() => _ContactProfilePageState();
@@ -444,6 +448,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
           api: widget.api,
           contact: contact,
           onContactUpdated: widget.onContactUpdated,
+          onContactDeleted: widget.onContactDeleted,
         ),
       ),
     );
@@ -506,10 +511,12 @@ final class ContactMorePage extends StatefulWidget {
     required this.api,
     required this.contact,
     this.onContactUpdated,
+    this.onContactDeleted,
   });
   final ContactsGateway api;
   final ContactDetails contact;
   final Future<void> Function(ContactDetails contact)? onContactUpdated;
+  final Future<void> Function(String userId)? onContactDeleted;
   @override
   State<ContactMorePage> createState() => _ContactMorePageState();
 }
@@ -671,6 +678,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
         return;
       }
       await widget.api.deleteContact(widget.contact.userId);
+      await widget.onContactDeleted?.call(widget.contact.userId);
       if (mounted) Navigator.pop(context, const ContactMoreResult.deleted());
     } catch (_) {
       if (mounted) {
@@ -1227,11 +1235,17 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
       if (mounted) _reload();
     } catch (_) {
       if (!mounted) return;
-      await showCupertinoDialog<void>(context: context, builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('操作未完成'),
-        content: const Text('请检查网络后重试'),
-        actions: [CupertinoDialogAction(onPressed: () => Navigator.pop(dialogContext), child: const Text('好的'))],
-      ));
+      await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+                title: const Text('操作未完成'),
+                content: const Text('请检查网络后重试'),
+                actions: [
+                  CupertinoDialogAction(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('好的'))
+                ],
+              ));
     } finally {
       _resolving = false;
     }
@@ -1267,7 +1281,10 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
           child: FutureBuilder<Map<String, dynamic>>(
             future: requests,
             builder: (_, snapshot) {
-              final items = ((snapshot.data?['items'] as List?) ?? const []).where((item) => item is Map && item['direction'] != 'OUTGOING').toList();
+              final items = ((snapshot.data?['items'] as List?) ?? const [])
+                  .where(
+                      (item) => item is Map && item['direction'] != 'OUTGOING')
+                  .toList();
               return ListView(
                 children: [
                   for (final request in items)

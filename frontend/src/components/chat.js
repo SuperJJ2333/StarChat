@@ -18,7 +18,7 @@ export class AppMessageBubble extends StrictElement {
     const row = element("div", "c-message__row");
     row.append(
       element("div", "c-message__bubble", this.attr("content", "明天见，路上注意安全。")),
-      element("span", "c-message__delivery", delivery === "failed" ? "!" : delivery === "sending" ? "···" : "")
+      element("span", "c-message__delivery", delivery === "failed" ? "!" : "")
     );
     content.append(row);
     root.append(avatar, content);
@@ -46,13 +46,8 @@ export class AppAttachmentTile extends StrictElement {
     const body = element("div", "c-attachment__body");
     body.append(
       element("h3", "c-attachment__name", this.attr("name", "项目说明.pdf")),
-      element("p", "c-attachment__meta", this.attr("meta", "2.4 MB · 端到端加密")),
-      element("progress", "c-attachment__progress")
+      element("p", "c-attachment__meta", this.attr("meta", "2.4 MB · 端到端加密"))
     );
-    const progress = body.querySelector("progress");
-    progress.max = 100;
-    progress.value = Number(this.attr("progress", state === "sent" ? "100" : "48"));
-    progress.setAttribute("aria-label", "上传进度");
     const action = button("c-attachment__action", state === "failed" ? "重试上传" : "查看附件", state === "failed" ? "retry-attachment" : "open-attachment");
     action.append(icon(state === "failed" ? "retry" : "chevron", "c-attachment__action-icon"));
     root.append(body, action);
