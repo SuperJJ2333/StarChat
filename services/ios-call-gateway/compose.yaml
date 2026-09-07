@@ -11,6 +11,7 @@ services:
     mem_limit: 256m
     cpus: 1
     ports: ["127.0.0.1:8099:8000"]
+    networks: [matrix-private]
     env_file: ["/etc/starchat/ios-call-gateway.env"]
     environment:
       DATABASE_PATH: /data/routes.sqlite
@@ -27,3 +28,7 @@ services:
       retries: 3
 volumes:
   routes:
+networks:
+  matrix-private:
+    external: true
+    name: ${MATRIX_DOCKER_NETWORK:?Set the existing trusted Synapse Docker network}

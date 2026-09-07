@@ -38,6 +38,7 @@ class Settings:
     matrix_url: str = "https://matrix.liuhetong888.com"
     matrix_server_name: str = "liuhetong888.com"
     matrix_admin_token: str = ""
+    matrix_admin_url: str = "http://synapse:8008"
     apns_key_path: str = "/run/secrets/apns.p8"
     apns_team_id: str = ""
     apns_key_id: str = ""
@@ -83,18 +84,30 @@ class Matrix:
             or parsed.fragment
         ):
             raise ValueError("Matrix URL must be a fixed HTTPS origin")
+        # The trusted existing Docker network is the sole allowed cleartext
+        # admin origin. Never forward this credential through public nginx,
+        # redirects, environment proxies, arbitrary hostnames, paths or ports.
+        if settings.matrix_admin_url.rstrip("/") != "http://synapse:8008":
+            raise ValueError(
+                "Matrix admin URL must be the fixed private Synapse origin"
+            )
         self.client = httpx.Client(
             base_url=settings.matrix_url.rstrip("/"),
             timeout=8,
             follow_redirects=False,
             trust_env=False,
         )
+        self.admin_client = httpx.Client(
+            base_url="http://synapse:8008",
+            timeout=8,
+            follow_redirects=False,
+            trust_env=False,
+        )
 
-    def get(self, path, token, auth=False):
+    def get(self, path, token, auth=False, admin=False):
         try:
-            response = self.client.get(
-                path, headers={"Authorization": "Bearer " + token}
-            )
+            client = self.admin_client if admin else self.client
+            response = client.get(path, headers={"Authorization": "Bearer " + token})
             if response.status_code in (401, 403) and auth:
                 raise HTTPException(401, "invalid_session")
             if response.status_code == 404:
@@ -127,7 +140,7 @@ class Matrix:
         if not token:
             raise HTTPException(503, "device_verification_unavailable")
         user_path = quote(user, safe="")
-        account = self.get("/_synapse/admin/v2/users/" + user_path, token)
+        account = self.get("/_synapse/admin/v2/users/" + user_path, token, admin=True)
         if (
             not account
             or account.get("deactivated")
@@ -141,6 +154,7 @@ class Matrix:
             + "/devices/"
             + quote(device, safe=""),
             token,
+            admin=True,
         )
         return bool(result and result.get("device_id") == device)
 
@@ -839,6 +853,7 @@ def production_app():
         "MATRIX_URL",
         "MATRIX_SERVER_NAME",
         "MATRIX_ADMIN_TOKEN",
+        "MATRIX_ADMIN_URL",
         "APNS_TEAM_ID",
         "APNS_KEY_ID",
     )
@@ -870,6 +885,7 @@ def production_app():
             matrix_url=os.environ["MATRIX_URL"],
             matrix_server_name=os.environ["MATRIX_SERVER_NAME"],
             matrix_admin_token=os.environ["MATRIX_ADMIN_TOKEN"],
+            matrix_admin_url=os.environ["MATRIX_ADMIN_URL"],
             apns_team_id=os.environ["APNS_TEAM_ID"],
             apns_key_id=os.environ["APNS_KEY_ID"],
             apns_key_path=os.environ.get("APNS_KEY_PATH", "/run/secrets/apns.p8"),
