@@ -8,6 +8,7 @@ import '../../features/matrix/image_contain_layout.dart';
 
 import '../../features/matrix/gif_image_policy.dart';
 import '../foundation/wechat_tokens.dart';
+import 'wechat_message_bubble.dart';
 
 /// Bound both decoded axes without changing aspect ratio or animated frames.
 ImageProvider boundedChatImageProvider(Uint8List bytes, {int maxEdge = 720}) {
@@ -186,6 +187,15 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
                 child: Image(
                   image: _provider!,
                   fit: BoxFit.contain,
+                  // Stable metadata/placeholder frames can be wider than the
+                  // painted image. Keep that spare space away from the avatar.
+                  alignment: context
+                              .findAncestorWidgetOfExactType<
+                                  WeChatMessageBubble>()
+                              ?.direction ==
+                          MessageDirection.outgoing
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   gaplessPlayback: true,
                   errorBuilder: (_, __, ___) =>
                       const Center(child: Icon(CupertinoIcons.photo)),
