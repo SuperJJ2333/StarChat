@@ -46,6 +46,11 @@ final class IOSCallState {
     guard let call = calls[IOSCallDescriptor.uuid(for: callId)], call.callId == callId, call.roomId == roomId else { return nil }
     return call
   }
+  func resolveEndCommand(_ arguments: [String: Any]) -> IOSCallDescriptor? {
+    guard let callId = arguments["callId"] as? String, !callId.isEmpty,
+          let roomId = arguments["roomId"] as? String, !roomId.isEmpty else { return nil }
+    return match(callId: callId, roomId: roomId)
+  }
   func remove(_ call: IOSCallDescriptor, now: TimeInterval) {
     calls.removeValue(forKey: call.uuid)
     rememberEnded(callId: call.callId, now: now)

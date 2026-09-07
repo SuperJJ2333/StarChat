@@ -38,11 +38,12 @@ final class RunnerTests: XCTestCase {
     let state = IOSCallState()
     let call = try XCTUnwrap(IOSCallDescriptor(push: payload(), now: now))
     XCTAssertTrue(state.insert(call, now: now))
-    for invalid: [String: Any] in [[:], ["callId": call.callId], ["roomId": call.roomId],
+    let invalidCommands: [[String: Any]] = [[:], ["callId": call.callId], ["roomId": call.roomId],
                                   ["callId": call.callId, "roomId": "!other:server"],
                                   ["callId": "another-call", "roomId": call.roomId],
                                   ["callId": 1, "roomId": call.roomId],
-                                  ["callId": call.callId, "roomId": NSNull()]] {
+                                  ["callId": call.callId, "roomId": NSNull()]]
+    for invalid in invalidCommands {
       XCTAssertNil(state.resolveEndCommand(invalid))
       XCTAssertEqual(state.calls.count, 1)
     }

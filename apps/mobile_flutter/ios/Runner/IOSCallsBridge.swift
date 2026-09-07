@@ -85,10 +85,8 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
       reportIncoming(call, completion: { result($0) })
     case "reportState": result(reportState(args))
     case "endCall":
-      let id = args["callId"] as? String
-      for call in Array(state.calls.values) where id == nil || call.callId == id {
-        end(call, reason: .remoteEnded, notify: false)
-      }
+      guard let call = state.resolveEndCommand(args) else { result(false); return }
+      end(call, reason: .remoteEnded, notify: false)
       result(true)
     case "setPipVideo":
       guard active, !state.calls.isEmpty else { pip.clear(); result(false); return }
