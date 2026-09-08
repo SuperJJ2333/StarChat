@@ -1,0 +1,74 @@
+name: iPhone 15 native compatibility
+on:
+  push:
+    branches: [codex/ios-compatibility]
+permissions:
+  contents: read
+jobs:
+  simulator:
+    name: iPhone 15 iOS ${{ matrix.ios }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - xcode: '16.4'
+            ios: 18
+          - xcode: '26.3'
+            ios: 26
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Select exact runtime and fresh iPhone 15
+        env:
+          IOS_MAJOR: ${{ matrix.ios }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/compatibility"
+          xcodebuild -version | tee "$RUNNER_TEMP/compatibility/toolchain.txt"
+          xcrun simctl list runtimes -j > "$RUNNER_TEMP/compatibility/runtimes.json"
+          python3 <<'PY'
+          import json, os, pathlib, subprocess
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'compatibility'
+          runtimes = json.loads((folder / 'runtimes.json').read_text())['runtimes']
+          candidates = [r for r in runtimes if r.get('isAvailable') and r['name'].startswith('iOS ') and r['version'].split('.')[0] == os.environ['IOS_MAJOR']]
+          assert candidates, 'Requested iOS major runtime unavailable; no silent substitution'
+          runtime = max(candidates, key=lambda r: tuple(map(int, r['version'].split('.'))))
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
+          device = next(d for d in devices if d['name'] == 'iPhone 15')
+          udid = subprocess.check_output(['xcrun', 'simctl', 'create', 'ChatFlow compatibility', device['identifier'], runtime['identifier']], text=True).strip()
+          (folder / 'selected.json').write_text(json.dumps({'runtime': runtime, 'device': device['name']}, indent=2))
+          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('SIMULATOR_ID=' + udid + '\n')
+          print('Selected iPhone 15 / iOS ' + runtime['version'])
+          subprocess.run(['xcrun', 'simctl', 'boot', udid], check=True)
+          subprocess.run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], check=True)
+          PY
+      - name: Resolve dependencies
+        working-directory: apps/mobile_flutter
+        run: flutter pub get
+      - name: Native media and seed encrypted history
+        id: seed
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --dart-define=COMPAT_PHASE=seed --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/seed.log"
+      - name: Verify retained history in a new app process
+        if: ${{ !cancelled() && (steps.seed.outcome == 'success' || steps.seed.outcome == 'failure') }}
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
+          xcrun simctl terminate "$SIMULATOR_ID" com.liuhetong.liuhetongMobile || true
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --dart-define=COMPAT_PHASE=verify --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/verify.log"
+      - name: Preserve synthetic diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphone15-ios${{ matrix.ios }}-compatibility
+          path: ${{ runner.temp }}/compatibility/
+          retention-days: 14
