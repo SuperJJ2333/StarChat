@@ -33,7 +33,7 @@ jobs:
         run: flutter pub get
       - name: Test push integration
         working-directory: apps/mobile_flutter
-        run: flutter test test/features/push test/core/ios_secure_session_test.dart test/features/matrix/ios_call_coordinator_test.dart test/features/matrix/call_wakeup_client_test.dart
+        run: flutter test test/features/push test/core/ios_secure_session_test.dart test/features/matrix/ios_call_coordinator_test.dart test/features/matrix/call_wakeup_client_test.dart test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart
       - name: Test native call and Keychain core
         run: |
           python3 <<'PY'
@@ -173,3 +173,4 @@ jobs:
             ${{ runner.temp }}/native-tests.log
           if-no-files-found: ignore
           retention-days: 7
+
