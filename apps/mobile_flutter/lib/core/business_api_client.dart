@@ -476,7 +476,7 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> walletBalance() =>
       getJson('/wallet/balances/me');
   Future<Map<String, dynamic>> walletDepositAddress() =>
-      getJson('/wallet/deposit-address');
+      getJson('/wallet/official-deposit-address');
 
   /// U03：服务端有效网络/确认阈值/最小金额（客户端展示的统一来源）。
   Future<Map<String, dynamic>> walletConfig() => getJson('/wallet/config');

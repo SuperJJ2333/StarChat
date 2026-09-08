@@ -53,6 +53,8 @@ import 'features/matrix/call_notifications.dart';
 import 'features/matrix/call_page.dart';
 import 'features/matrix/matrix_call_adapter.dart';
 import 'features/matrix/native_call_coordinator.dart';
+import 'features/matrix/ios_call_coordinator.dart';
+import 'features/matrix/call_wakeup_client.dart';
 import 'features/matrix/matrix_message_reminder_backend.dart';
 import 'features/matrix/matrix_notification_event_source.dart';
 import 'features/matrix/matrix_room_timeline_adapter.dart'
@@ -132,9 +134,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
   /// （UI 展示/点击接听）共享同一时间线。
   late final CallDiagnostics callDiagnostics = CallDiagnostics();
+  late final CallWakeupClient callWakeup = CallWakeupClient(
+    baseUrl: Uri.parse(AppConfig.businessApiBaseUrl).resolve('/ios-call/'),
+    accessToken: () => widget.matrix.sdkClient.accessToken,
+  );
   late final MatrixCallBackend callBackend = MatrixCallBackend(
     widget.matrix.sdkClient,
     diagnostics: callDiagnostics,
+    wakeup: callWakeup,
   );
   late final ForegroundSoundService notificationSounds =
       ForegroundSoundService();
@@ -154,7 +161,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             true,
         // BUG2 双声去重：后台来电由 calls_ring 渠道系统发声，
         // 应用内循环静音；回前台（或前台来电）恢复应用内铃声。
-        audible: () => appResumed || !callUi.ringing,
+        audible: () => defaultTargetPlatform == TargetPlatform.iOS
+            ? !callBackend.isIncomingCall
+            : appResumed || !callUi.ringing,
       ),
     ),
   );
@@ -263,15 +272,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 事件语义严格区分（修复"来电事件即自动接听"）：incomingCall 只登记
     // 呈现；只有 callAccepted/callRejected（用户明确动作）才驱动接听/拒接，
     // 全部经 NativeCallCoordinator（含冷启动 ready 握手与待接听仲裁）。
-    _nativeCallControl = const MethodChannel('native_call');
-    _nativeCallControl?.setMethodCallHandler((call) async {
-      if (call.method == 'returnToCall') {
-        callUi.restoreCall();
-        return true;
-      }
-      return nativeCalls.handleNativeMessage(call.method, call.arguments);
-    });
-    unawaited(nativeCalls.restorePendingState());
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      unawaited(_initializeIosCalls());
+    } else {
+      _nativeCallControl = const MethodChannel('native_call');
+      _nativeCallControl?.setMethodCallHandler((call) async {
+        if (call.method == 'returnToCall') {
+          callUi.restoreCall();
+          return true;
+        }
+        return nativeCalls.handleNativeMessage(call.method, call.arguments);
+      });
+      unawaited(nativeCalls.restorePendingState());
+    }
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
     _nativePushBridge = NativePushBridge(
@@ -624,6 +637,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (defaultTargetPlatform == TargetPlatform.iOS &&
+        state == AppLifecycleState.resumed) {
+      unawaited(_refreshIosCallTokens());
+    }
     appResumed = state == AppLifecycleState.resumed;
     if (state == AppLifecycleState.resumed) {
       unawaited(_momentsUnread?.refresh());
@@ -960,6 +977,93 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   NativePushBridge? _nativePushBridge;
   MethodChannel? _nativeCallChannel;
   MethodChannel? _nativeCallControl;
+  static const _iosCallChannel = MethodChannel('chatflow/ios_calls');
+  IosCallCoordinator? _iosCalls;
+  StreamSubscription<void>? _iosVideoSubscription;
+
+  Future<void> _initializeIosCalls() async {
+    final coordinator = IosCallCoordinator(
+      owner: callWakeup.registrationId,
+      cancelPendingAnswer: callBackend.cancelPendingAnswer,
+      snapshot: () => IosCallSnapshot(
+        callId: callBackend.activeCallId,
+        roomId: callBackend.activeRoomId,
+        phase: calls.state.phase.name,
+        incoming: callBackend.isIncomingCall,
+        video: calls.state.type == CallMediaType.video,
+        muted: calls.state.muted,
+      ),
+      invoke: _invokeIosCall,
+      accept: calls.accept,
+      end: () async {
+        if (calls.state.phase == CallPhase.ringing) {
+          await calls.reject();
+        } else if (callBackend.hasActiveSession) {
+          await calls.hangup();
+        }
+      },
+      mute: (muted) async {
+        if (calls.state.muted != muted) await calls.toggleMute();
+      },
+      sync: () => syncWatchdog.target
+          .oneShotSync()
+          .timeout(const Duration(seconds: 10)),
+      registerTokens: (tokens) async {
+        if (mounted) await callWakeup.register(tokens);
+      },
+    );
+    _iosCalls = coordinator;
+    _iosCallChannel.setMethodCallHandler((call) async {
+      if (!mounted) return false;
+      if (call.arguments is! Map ||
+          (call.arguments as Map)['owner'] != callWakeup.registrationId) {
+        return false;
+      }
+      if (call.method == 'returnToCall') {
+        callUi.restoreCall();
+        return true;
+      }
+      return coordinator.handle(call.method, call.arguments);
+    });
+    _iosVideoSubscription = callBackend.mediaStreamChanges.listen((_) {
+      unawaited(_refreshIosVideo());
+    });
+    try {
+      await coordinator.start();
+    } catch (error) {
+      debugPrint(
+          '[ios-call] native initialization failed: ${error.runtimeType}');
+    }
+  }
+
+  Future<Object?> _invokeIosCall(String method, [Object? args]) =>
+      _iosCallChannel.invokeMethod<Object?>(method, {
+        if (args is Map) ...Map<String, Object?>.from(args),
+        'owner': callWakeup.registrationId,
+      });
+
+  Future<void> _refreshIosCallTokens() async {
+    try {
+      final raw = await _invokeIosCall('getTokens');
+      if (mounted && raw is Map) {
+        await callWakeup.register(Map<String, Object?>.from(raw));
+      }
+    } catch (_) {/* A later foreground resume retries registration. */}
+  }
+
+  Future<void> _refreshIosVideo() async {
+    if (!mounted || defaultTargetPlatform != TargetPlatform.iOS) return;
+    final stream = calls.state.type == CallMediaType.video &&
+            calls.state.phase == CallPhase.connected
+        ? callBackend.remoteMediaStream
+        : null;
+    try {
+      await _invokeIosCall('setPipVideo', {
+        'streamId': stream?.id,
+        'ownerTag': stream?.ownerTag,
+      });
+    } catch (_) {/* Unsupported PiP does not end a working encrypted call. */}
+  }
 
   /// 原生通话协调器：来电呈现/用户接听/拒绝/冷启动恢复的唯一接线。
   /// （原 _autoAcceptWhenRinging"未来 8 秒出现任何响铃即接听"的宽泛
@@ -978,6 +1082,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<void> _nativePresentation(String method) async {
     try {
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        await _invokeIosCall(
+            method == 'minimizeCallPresentation' ? 'startPip' : 'stopPip');
+        return;
+      }
       await _nativeCallControl?.invokeMethod(method);
     } catch (_) {
       // In-app return entry is available even if native overlay is unsupported.
@@ -988,7 +1097,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _handleCallState() {
     if (!mounted) return;
     // 待接听匹配（用户已在原生层点接听而 Matrix 响铃刚到）+ 状态回报。
-    nativeCalls.onCallPhaseChanged();
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      unawaited(_iosCalls?.update().catchError((Object error) {
+        debugPrint('[ios-call] state update failed: ${error.runtimeType}');
+      }));
+      unawaited(_refreshIosVideo());
+    } else {
+      nativeCalls.onCallPhaseChanged();
+    }
     final phase = calls.state.phase;
     if (phase == CallPhase.ringing) {
       // 前台：任意页面之上弹出来电页；后台：系统全屏来电通知。
@@ -1233,7 +1349,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(_nativePushBridge?.uninstall());
     calls.removeListener(_handleCallState);
     // 通话协调器清理：作废待接听 + 通知原生层收尾（登出不留旧通话呈现）。
-    unawaited(nativeCalls.dispose());
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      _iosCallChannel.setMethodCallHandler(null);
+      unawaited(_iosVideoSubscription?.cancel());
+      unawaited(_iosCalls?.dispose().catchError((_) {}));
+      unawaited(callWakeup.unregister().whenComplete(callWakeup.close));
+    } else {
+      unawaited(nativeCalls.dispose());
+      callWakeup.close();
+    }
     unawaited(callUi.detach());
     calls.dispose();
     callBackend.dispose();
