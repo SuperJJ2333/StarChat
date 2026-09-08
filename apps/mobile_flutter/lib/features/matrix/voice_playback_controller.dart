@@ -45,6 +45,17 @@ final class AudioplayersVoiceEngine implements VoiceAudioEngine {
 
   static String? _containerMime(Uint8List bytes) {
     if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x41 &&
+        bytes[10] == 0x56 &&
+        bytes[11] == 0x45) {
+      return 'audio/wav';
+    }
+    if (bytes.length >= 12 &&
         bytes[4] == 0x66 &&
         bytes[5] == 0x74 &&
         bytes[6] == 0x79 &&

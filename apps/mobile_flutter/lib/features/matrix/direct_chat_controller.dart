@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 final class DirectChatRoom {
@@ -136,22 +138,31 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
     if (canonical != null && canonical.isNotEmpty) {
       try {
         return _forPeer(await _openExistingRoom(canonical), matrixUserId);
+      } on TimeoutException {
+        // 同步超时不能证明旧房间已失效；等待重试，避免误建重复私聊。
+        rethrow;
       } catch (_) {
         // 规范房间不可用（如对端重建）：回落新建并重新注册。
       }
     }
     final room = await _inner.openOrCreateDirectChat(matrixUserId);
+    String? effective;
     try {
-      final effective = await _directory.registerRoom(peerUserId, room.roomId);
-      if (effective != null &&
-          effective.isNotEmpty &&
-          effective != room.roomId) {
+      effective = await _directory.registerRoom(peerUserId, room.roomId);
+    } catch (_) {
+      // 保留目录注册异常时使用本次有效房间的既有行为。
+      return room;
+    }
+    if (effective != null && effective.isNotEmpty && effective != room.roomId) {
+      try {
         // 并发双开：弃用本次房间，采用规范房间。
         return _forPeer(await _openExistingRoom(effective), matrixUserId);
+      } on TimeoutException {
+        // 已确认规范房间存在；暂未同步时不能展示另一个房间。
+        rethrow;
+      } catch (_) {
+        // 规范房间失效时，保留使用本次有效房间的恢复路径。
       }
-    } catch (_) {
-      // 目录异常或规范房间已失效（如对端退出后被替换）：采用本次新建的
-      // 有效房间，禁止因失效的登记死锁报错。
     }
     return room;
   }

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/voice_playback_controller.dart';
 import 'package:matrix/matrix.dart';
 import 'package:path/path.dart' as p;
@@ -14,7 +15,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:video_player/video_player.dart';
 
-// CI creates only synthetic, four-second media in assets/diagnostics/.
+// Fixtures contain only generated, four-second media in assets/diagnostics/.
 // Run seed, terminate the app process, then run verify on the same simulator
 // without uninstalling the app or clearing its container/Keychain.
 const _phase = String.fromEnvironment('COMPAT_PHASE');
@@ -23,7 +24,8 @@ const _sessionKey = 'liuhetong.business_session.v1';
 const _wait = Duration(seconds: 15);
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized().defaultTestTimeout =
+      const Timeout(Duration(minutes: 2));
 
   testWidgets('diagnostic invocation is explicitly iOS seed or verify',
       (_) async {
@@ -141,7 +143,7 @@ void main() {
             .timeout(_wait);
         await _expectAudioAdvances(player);
       } finally {
-        await player.dispose();
+        await player.dispose().timeout(_wait);
       }
     });
     for (final earpiece in [false, true]) {
@@ -161,7 +163,7 @@ void main() {
           await engine.resume();
           await engine.stop();
         } finally {
-          await player.dispose();
+          await player.dispose().timeout(_wait);
         }
       });
     }
@@ -170,16 +172,27 @@ void main() {
     for (final extensionless in [false, true]) {
       testWidgets(
           'native VideoPlayer $name '
-          '${extensionless ? 'extensionless cache' : 'mp4 file'} advances',
+          '${extensionless ? 'production cache resolver' : 'mp4 file'} advances',
           (_) async {
-        // MediaCache uses opaque extensionless names in production. Exercise
-        // those separately from normal .mp4 files to expose type sniffing bugs.
-        final cacheName = extensionless
-            ? sha256.convert(utf8.encode('synthetic-$name')).toString()
-            : name;
-        final file =
-            File(p.join((await getTemporaryDirectory()).path, cacheName));
-        await file.writeAsBytes(await _fixture(name), flush: true);
+        final bytes = await _fixture(name);
+        late File file;
+        if (extensionless) {
+          final key = MediaCacheKey(
+            roomId: '!synthetic-compat:example.test',
+            eventId: sha256.convert(utf8.encode('synthetic-$name')).toString(),
+          );
+          await MediaCache.store(key.roomId, key.eventId, bytes);
+          file = await resolveCachedVideoFile(
+            key: key,
+            decrypt: () async =>
+                throw StateError('Cached media must not download'),
+          );
+          expect(file.path.endsWith('.mp4'), isTrue);
+          expect(await file.length(), bytes.length);
+        } else {
+          file = File(p.join((await getTemporaryDirectory()).path, name));
+          await file.writeAsBytes(bytes, flush: true);
+        }
         final player = VideoPlayerController.file(file);
         try {
           await player.initialize().timeout(_wait);
@@ -195,8 +208,10 @@ void main() {
             return (position?.inMilliseconds ?? 0) >= 300;
           });
         } finally {
-          await player.dispose();
+          await player.dispose().timeout(_wait);
           await file.delete();
+          final meta = File('${file.path}.len');
+          if (await meta.exists()) await meta.delete();
         }
       });
     }

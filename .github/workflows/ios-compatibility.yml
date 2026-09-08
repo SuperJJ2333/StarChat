@@ -65,19 +65,43 @@ jobs:
           flutter config --no-enable-swift-package-manager
           flutter pub get
           flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_compatibility_test.dart --dart-define=COMPAT_PHASE=seed
+      - name: Test corrected media and direct-room paths
+        working-directory: apps/mobile_flutter
+        run: flutter test --no-pub test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart test/features/matrix/direct_chat_sync_failure_test.dart test/features/matrix/canonical_direct_chat_test.dart test/features/matrix/video_playback_extension_test.dart test/features/matrix/video_viewer_cache_test.dart
       - name: Native media and seed encrypted history
         id: seed
+        timeout-minutes: 18
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --dart-define=COMPAT_PHASE=seed --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/seed.log"
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --no-dds --timeout=2m --dart-define=COMPAT_PHASE=seed --reporter expanded --verbose 2>&1 | tee "$RUNNER_TEMP/compatibility/seed.log"
       - name: Verify retained history in a new app process
         if: ${{ !cancelled() && (steps.seed.outcome == 'success' || steps.seed.outcome == 'failure') }}
+        timeout-minutes: 10
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
           xcrun simctl terminate "$SIMULATOR_ID" com.liuhetong.liuhetongMobile || true
-          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --dart-define=COMPAT_PHASE=verify --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/verify.log"
+          python3 <<'PY'
+          import os, pathlib, subprocess
+          container = pathlib.Path(subprocess.check_output(['xcrun', 'simctl', 'get_app_container', os.environ['SIMULATOR_ID'], 'com.liuhetong.liuhetongMobile', 'data'], text=True).strip())
+          exists = any(container.rglob('ios_compatibility.sqlite'))
+          print('Retained seed database exists: ' + str(exists))
+          assert exists, 'Seed database absent before reinstall/verify; cannot claim persistence'
+          PY
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --no-dds --timeout=2m --dart-define=COMPAT_PHASE=verify --reporter expanded --verbose 2>&1 | tee "$RUNNER_TEMP/compatibility/verify.log"
+      - name: Collect simulator launch diagnostics
+        if: ${{ always() && env.SIMULATOR_ID != '' }}
+        timeout-minutes: 2
+        run: |
+          xcrun simctl spawn "$SIMULATOR_ID" log show --last 30m --style compact --predicate 'process == "Runner"' > "$RUNNER_TEMP/compatibility/runner-console.log" 2>&1 || true
+          python3 <<'PY'
+          import os, pathlib, shutil
+          source = pathlib.Path.home() / 'Library/Logs/DiagnosticReports'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'compatibility'
+          for path in source.glob('Runner*'):
+              if path.is_file(): shutil.copy2(path, target / path.name)
+          PY
       - name: Preserve synthetic diagnostics
         if: always()
         uses: actions/upload-artifact@v4
