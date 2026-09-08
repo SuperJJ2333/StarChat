@@ -47,8 +47,74 @@ final class MediaCache {
 
   static Future<File> _fileFor(String roomId, String eventId) async {
     final dir = await _dirFor(roomId);
-    return File(
-        '${dir.path}${Platform.pathSeparator}${_safeSegment(eventId)}');
+    final base =
+        File('${dir.path}${Platform.pathSeparator}${_safeSegment(eventId)}');
+    if (await base.exists()) return base;
+    for (final suffix in ['.mp4', '.mov']) {
+      final prepared = File('${base.path}$suffix');
+      if (await prepared.exists()) return prepared;
+    }
+    return base;
+  }
+
+  /// Give a validated cached video its native container suffix in place.
+  /// Only cache-owned paths and recognized signatures are used; no user
+  /// filename, extra media copy, or file outside quota management is involved.
+  static Future<File> preparePlaybackFile(String roomId, String eventId) async {
+    final flightKey = '$roomId\u0000$eventId';
+    // Finish an in-flight store before starting migration. The atomic worker
+    // calls cached(), never store(), so the shared flight cannot await itself.
+    while (_storeFlights.containsKey(flightKey)) {
+      await _storeFlights[flightKey]!;
+    }
+    final flight = _preparePlaybackAtomic(roomId, eventId);
+    _storeFlights[flightKey] = flight;
+    try {
+      return await flight;
+    } finally {
+      _storeFlights.remove(flightKey);
+    }
+  }
+
+  static Future<File> _preparePlaybackAtomic(
+      String roomId, String eventId) async {
+    final file = await cached(roomId, eventId);
+    if (file == null) throw FileSystemException('Video cache is unavailable');
+    final handle = await file.open();
+    late Uint8List header;
+    try {
+      header = await handle.read(24);
+    } finally {
+      await handle.close();
+    }
+    final suffix = _videoContainerSuffix(header);
+    if (suffix == null || file.path.endsWith(suffix)) return file;
+    // _fileFor resolves only the extensionless or two known typed variants.
+    // A typed entry is already prepared; never append another extension.
+    if (file.path.endsWith('.mp4') || file.path.endsWith('.mov')) return file;
+    final target = File('${file.path}$suffix');
+    final meta = _metaFor(file);
+    // Write the tiny integrity sidecar first. A crash before the data rename
+    // leaves the original validated entry usable; no media bytes are copied.
+    await _metaFor(target).writeAsString('${await file.length()}', flush: true);
+    final prepared = await file.rename(target.path);
+    await _deleteQuietly(meta);
+    return prepared;
+  }
+
+  static String? _videoContainerSuffix(Uint8List header) {
+    if (header.length < 16 ||
+        String.fromCharCodes(header.sublist(4, 8)) != 'ftyp') {
+      return null;
+    }
+    final brand = String.fromCharCodes(header.sublist(8, 12));
+    if (brand == 'qt  ') return '.mov';
+    if (RegExp(r'^iso[0-9m]$').hasMatch(brand) ||
+        const {'mp41', 'mp42', 'avc1', 'M4V ', 'M4VH', 'M4VP', 'MSNV', 'dash'}
+            .contains(brand)) {
+      return '.mp4';
+    }
+    return null;
   }
 
   /// 长度元数据（`.len`）：损坏检测依据。
@@ -138,7 +204,8 @@ final class MediaCache {
       if (!await root.exists()) return;
       final files = <File>[];
       var total = 0;
-      await for (final entity in root.list(recursive: true, followLinks: false)) {
+      await for (final entity
+          in root.list(recursive: true, followLinks: false)) {
         if (entity is! File) continue;
         if (entity.path.endsWith('.len') || entity.path.endsWith('.tmp')) {
           continue;
@@ -147,7 +214,8 @@ final class MediaCache {
         total += await entity.length();
       }
       if (total <= diskHardQuotaBytes) return;
-      files.sort((a, b) => a.modifiedSyncOrDefault().compareTo(b.modifiedSyncOrDefault()));
+      files.sort((a, b) =>
+          a.modifiedSyncOrDefault().compareTo(b.modifiedSyncOrDefault()));
       for (final candidate in files) {
         if (total <= diskSoftQuotaBytes) break;
         if (candidate.path == keep.path) continue;
@@ -168,7 +236,8 @@ final class MediaCache {
       final root = Directory('${docs.path}${Platform.pathSeparator}chat-media');
       if (!await root.exists()) return 0;
       var total = 0;
-      await for (final entity in root.list(recursive: true, followLinks: false)) {
+      await for (final entity
+          in root.list(recursive: true, followLinks: false)) {
         if (entity is File && !entity.path.endsWith('.len')) {
           total += await entity.length();
         }
@@ -300,11 +369,15 @@ Future<File> resolveCachedVideoFile({
   MediaMemoryCache? memoryCache,
 }) async {
   final disk = await MediaCache.cached(key.roomId, key.eventId);
-  if (disk != null) return disk;
+  if (disk != null) {
+    return MediaCache.preparePlaybackFile(key.roomId, key.eventId);
+  }
   final bytes = await (memoryCache ?? videoMemoryCache)
       .putIfAbsent(key.eventId, () => loadMediaWithCache(key, decrypt));
-  return (await MediaCache.cached(key.roomId, key.eventId)) ??
-      await MediaCache.store(key.roomId, key.eventId, bytes);
+  if (await MediaCache.cached(key.roomId, key.eventId) == null) {
+    await MediaCache.store(key.roomId, key.eventId, bytes);
+  }
+  return MediaCache.preparePlaybackFile(key.roomId, key.eventId);
 }
 
 final class MediaCacheKey {
