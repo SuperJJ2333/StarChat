@@ -1,13 +1,13 @@
 name: iOS launch diagnostics
 on:
   push:
-    branches: [codex/ios-build-preflight-20260907]
+    branches: [codex/ios-build-preflight-20260907, codex/ios-startup-repair-20260907]
     paths: [.github/workflows/ios-launch-diagnostics.yml]
 permissions:
   contents: read
 jobs:
   launch:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 35
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
@@ -18,6 +18,17 @@ jobs:
           flutter-version: '3.44.9'
           channel: stable
           cache: true
+      - name: Prepare original link order for comparison
+        run: |
+          python3 <<'PY'
+          import os,pathlib,re
+          path=pathlib.Path('apps/mobile_flutter/ios/Runner.xcodeproj/project.pbxproj')
+          original=path.read_text()
+          (pathlib.Path(os.environ['RUNNER_TEMP'])/'fixed.pbxproj').write_text(original)
+          baseline,n=re.subn(r'\s*OTHER_LDFLAGS = \(\s*"-framework",\s*SQLCipher,\s*"\$\(inherited\)",\s*\);','',original)
+          assert n==3
+          path.write_text(baseline)
+          PY
       - name: Build simulator app
         working-directory: apps/mobile_flutter
         run: |
@@ -38,6 +49,38 @@ jobs:
           subprocess.run(['xcrun','simctl','boot',udid],check=True)
           subprocess.run(['xcrun','simctl','bootstatus',udid,'-b'],check=True)
           subprocess.run(['xcrun','simctl','install',udid,'apps/mobile_flutter/build/ios/iphonesimulator/Runner.app'],check=True)
+          (root/'simulator-udid').write_text(udid)
+          with (root/'baseline-startup.log').open('w') as output:
+              proc=subprocess.Popen(['xcrun','simctl','launch','--console',udid,'com.liuhetong.liuhetongMobile'],stdout=output,stderr=subprocess.STDOUT)
+              time.sleep(45)
+              subprocess.run(['xcrun','simctl','io',udid,'screenshot',str(root/'baseline-startup.png')],check=True)
+              proc.terminate()
+              try: proc.wait(timeout=10)
+              except subprocess.TimeoutExpired: proc.kill()
+          print((root/'baseline-startup.log').read_text()[-20000:])
+          PY
+      - name: Build with SQLCipher first
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          ruby -rxcodeproj <<'RUBY'
+          project = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          runner = project.targets.find { |target| target.name == 'Runner' }
+          raise 'Runner target missing' unless runner
+          runner.build_configurations.each do |config|
+            config.build_settings['OTHER_LDFLAGS'] = ['-framework', 'SQLCipher', '$(inherited)']
+          end
+          project.save
+          RUBY
+          flutter build ios --simulator --debug --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/fixed-build.log"
+      - name: Verify repaired startup
+        run: |
+          python3 <<'PY'
+          import os,pathlib,subprocess,time
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          udid=(root/'simulator-udid').read_text()
+          subprocess.run(['xcrun','simctl','uninstall',udid,'com.liuhetong.liuhetongMobile'],check=True)
+          subprocess.run(['xcrun','simctl','install',udid,'apps/mobile_flutter/build/ios/iphonesimulator/Runner.app'],check=True)
           with (root/'startup.log').open('w') as output:
               proc=subprocess.Popen(['xcrun','simctl','launch','--console',udid,'com.liuhetong.liuhetongMobile'],stdout=output,stderr=subprocess.STDOUT)
               time.sleep(45)
@@ -45,7 +88,11 @@ jobs:
               proc.terminate()
               try: proc.wait(timeout=10)
               except subprocess.TimeoutExpired: proc.kill()
-          print((root/'startup.log').read_text()[-20000:])
+          log=(root/'startup.log').read_text()
+          print(log[-20000:])
+          assert 'User is not logged in.' in log, 'First-launch Matrix initialization did not complete'
+          assert 'Unhandled Exception' not in log, 'Unhandled startup exception remains'
+          print('FIRST_LAUNCH_INITIALIZATION_PASS')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -55,4 +102,9 @@ jobs:
             ${{ runner.temp }}/simulator-build.log
             ${{ runner.temp }}/startup.log
             ${{ runner.temp }}/startup.png
+            ${{ runner.temp }}/baseline-startup.log
+            ${{ runner.temp }}/baseline-startup.png
+            ${{ runner.temp }}/fixed-build.log
+            apps/mobile_flutter/ios/Flutter/Debug.xcconfig
+            apps/mobile_flutter/ios/Podfile
           retention-days: 7
