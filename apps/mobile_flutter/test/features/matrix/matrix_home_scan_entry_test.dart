@@ -32,7 +32,10 @@ void main() {
   });
 
   Future<void> pumpHome(WidgetTester tester,
-      {bool dark = false, bool invite = false, bool encrypted = false}) async {
+      {bool dark = false,
+      bool invite = false,
+      bool encrypted = false,
+      bool previewOnly = false}) async {
     final sdk = _NoNetworkClient();
     if (encrypted) {
       final room =
@@ -62,6 +65,7 @@ void main() {
           brightness: dark ? Brightness.dark : Brightness.light),
       home: MatrixHomePage(
         api: api,
+        previewOnly: previewOnly,
         matrix: matrix,
         themeController: ThemeController(store: _MemoryThemeStore()),
         onCreateGroup: () {},
@@ -69,6 +73,16 @@ void main() {
     ));
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+      'cached-only startup displays local rooms before authentication refresh',
+      (tester) async {
+    await pumpHome(tester, previewOnly: true, encrypted: true);
+    expect(find.byKey(const ValueKey<String>('conversation-!locked:example')),
+        findsOneWidget);
+    expect(find.textContaining('fake-error-detail'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('locked group preview is blank without sender or unread prefix',
       (tester) async {

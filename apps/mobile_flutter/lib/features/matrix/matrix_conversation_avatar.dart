@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
+import 'matrix_e2ee_client.dart';
 
 import '../../ui/chat/group_avatar_mosaic.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -11,9 +11,15 @@ import 'matrix_user_avatar.dart';
 /// A conversation avatar that also works before the full member list is cached.
 final class MatrixConversationAvatar extends StatefulWidget {
   const MatrixConversationAvatar(
-      {super.key, required this.room, this.size = 48});
+      {super.key,
+      required this.room,
+      required this.avatarMedia,
+      this.loadMembers,
+      this.size = 48});
 
-  final Room room;
+  final MatrixConversationRoomSnapshot room;
+  final AvatarMediaCapability avatarMedia;
+  final Future<List<MatrixMemberSnapshot>> Function()? loadMembers;
   final double size;
 
   @override
@@ -23,7 +29,7 @@ final class MatrixConversationAvatar extends StatefulWidget {
 
 final class _MatrixConversationAvatarState
     extends State<MatrixConversationAvatar> {
-  List<User> members = const [];
+  List<MatrixMemberSnapshot> members = const [];
   int generation = 0;
 
   @override
@@ -35,17 +41,22 @@ final class _MatrixConversationAvatarState
   @override
   void didUpdateWidget(covariant MatrixConversationAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.room != widget.room) _load();
+    if (oldWidget.room != widget.room ||
+        oldWidget.loadMembers != widget.loadMembers) {
+      _load();
+    }
   }
 
   void _load() {
     final room = widget.room;
     final current = ++generation;
-    members = room.getParticipants([Membership.join]);
-    if (room.isDirectChat || room.avatar != null) return;
+    members = room.members;
+    if (room.isDirect || room.avatar != null || widget.loadMembers == null) {
+      return;
+    }
     unawaited(() async {
       try {
-        final loaded = await room.requestParticipants([Membership.join]);
+        final loaded = await widget.loadMembers!();
         if (!mounted || generation != current) return;
         setState(() => members = loaded);
       } catch (_) {
@@ -57,10 +68,10 @@ final class _MatrixConversationAvatarState
   @override
   Widget build(BuildContext context) {
     final room = widget.room;
-    if (room.isDirectChat || room.avatar != null) {
+    if (room.isDirect || room.avatar != null) {
       return MatrixUserAvatar(
-        client: room.client,
-        nickname: room.getLocalizedDisplayname(),
+        avatarMedia: widget.avatarMedia,
+        nickname: room.displayName,
         fallbackSeed: room.id,
         matrixAvatarUri: room.avatar,
         size: widget.size,
@@ -68,7 +79,7 @@ final class _MatrixConversationAvatarState
     }
     final byId = {for (final member in members) member.id: member};
     final orderedIds = reconcileMemberOrder(
-      preferenceForRoom(room).memberOrderIds,
+      room.preference.memberOrderIds,
       byId.keys,
     ).take(9);
     if (orderedIds.isEmpty) {
@@ -85,10 +96,10 @@ final class _MatrixConversationAvatarState
       avatars: [
         for (final id in orderedIds)
           MatrixUserAvatar(
-            client: room.client,
-            nickname: byId[id]!.calcDisplayname(),
+            avatarMedia: widget.avatarMedia,
+            nickname: byId[id]!.displayName,
             fallbackSeed: id,
-            matrixAvatarUri: byId[id]!.avatarUrl,
+            matrixAvatarUri: byId[id]!.avatar,
             size: widget.size,
           ),
       ],

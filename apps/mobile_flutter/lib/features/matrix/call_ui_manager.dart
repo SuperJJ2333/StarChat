@@ -150,7 +150,7 @@ final class CallUiManager {
     MatrixCallBackend? mediaBackend,
     bool Function()? outgoingCallPageVisible,
   }) {
-    detach();
+    unawaited(detach());
     _controller = controller;
     _mediaBackend = mediaBackend;
     _outgoingCallPageVisible = outgoingCallPageVisible ?? () => false;
@@ -158,15 +158,47 @@ final class CallUiManager {
     controller.addListener(_handleCallState);
   }
 
-  Future<void> detach() async {
+  Future<void> _notificationTail = Future<void>.value();
+  Future<void>? _detachFlight;
+  int _presentationGeneration = 0;
+
+  Future<void> _queueNotification(Future<void> Function() operation,
+      {bool cleanup = false}) {
+    final generation = _presentationGeneration;
+    final next = _notificationTail.then((_) async {
+      if (!cleanup && generation != _presentationGeneration) return;
+      await operation();
+    });
+    _notificationTail = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> detach() {
+    if (_controller == null && _incomingRoute == null) {
+      return _detachFlight ?? Future<void>.value();
+    }
+    ++_presentationGeneration;
+    final route = _incomingRoute;
+    _incomingRoute = null;
     _removeReturnEntry();
     _minimized = false;
     _outgoingSession = false;
     _controller?.removeListener(_handleCallState);
     _controller = null;
+    _mediaBackend = null;
+    _outgoingCallPageVisible = () => false;
     _cancelClose();
-    _incomingRoute = null;
     _overlay.reset();
+    // Remove only our route, even when an unrelated route covers it. Never
+    // pop the root authentication page or another feature's route.
+    if (route != null && route.isActive) route.navigator?.removeRoute(route);
+    // Complete old native work before allowing a reattached controller's
+    // notifications through. No post-await code mutates presentation state.
+    return _detachFlight = _queueNotification(
+      () => Future.wait(
+          [notifications.hideIncoming(), notifications.hideOngoing()]),
+      cleanup: true,
+    );
   }
 
   /// 规格入口（§三）：来电呈现（前台推页 / 后台全屏通知）。幂等。
@@ -199,7 +231,7 @@ final class CallUiManager {
     }
     // 无活动通话时的防御性清理（残留通知）。
     if (_overlay.ringing) {
-      unawaited(notifications.hideIncoming());
+      unawaited(_queueNotification(() => notifications.hideIncoming()));
     }
   }
 
@@ -217,17 +249,17 @@ final class CallUiManager {
       if (phase == CallPhase.connecting ||
           phase == CallPhase.connected ||
           (phase == CallPhase.ringing && _outgoingSession)) {
-        unawaited(notifications.showOngoing(
-          title: '点击返回通话',
-          video: controller.state.type == CallMediaType.video,
-        ));
+        unawaited(_queueNotification(() => notifications.showOngoing(
+              title: '点击返回通话',
+              video: controller.state.type == CallMediaType.video,
+            )));
       } else if (phase == CallPhase.ringing && !_outgoingSession) {
-        unawaited(notifications.showIncoming(
-          callerName: _callerDisplayName(controller.state.matrixUserId),
-          video: controller.state.type == CallMediaType.video,
-          ring: !isAppResumed(),
-          fullScreenIntent: false,
-        ));
+        unawaited(_queueNotification(() => notifications.showIncoming(
+              callerName: _callerDisplayName(controller.state.matrixUserId),
+              video: controller.state.type == CallMediaType.video,
+              ring: !isAppResumed(),
+              fullScreenIntent: false,
+            )));
       }
       return;
     }
@@ -236,28 +268,28 @@ final class CallUiManager {
       case CallPhase.ringing:
         _cancelClose();
         if (_outgoingSession) {
-          unawaited(notifications.showOngoing(
-            title: '等待接听，点击返回通话',
-            video: controller.state.type == CallMediaType.video,
-          ));
+          unawaited(_queueNotification(() => notifications.showOngoing(
+                title: '等待接听，点击返回通话',
+                video: controller.state.type == CallMediaType.video,
+              )));
         }
         if (_outgoingCallPageVisible()) break; // 主叫回铃：不盖来电页
         if (isAppResumed()) {
-          unawaited(notifications.hideIncoming());
+          unawaited(_queueNotification(() => notifications.hideIncoming()));
           _pushIncomingPage(controller);
         } else if (!_incomingOpen()) {
           final caller = controller.state.matrixUserId;
-          unawaited(notifications.showIncoming(
-            callerName: _callerDisplayName(caller),
-            video: controller.state.type == CallMediaType.video,
-            ring: true,
-          ));
+          unawaited(_queueNotification(() => notifications.showIncoming(
+                callerName: _callerDisplayName(caller),
+                video: controller.state.type == CallMediaType.video,
+                ring: true,
+              )));
         }
       case CallPhase.connecting:
       case CallPhase.connected:
         _cancelClose(); // 抖动恢复：取消挂起的关闭
         if (previous == CallPhase.ringing) {
-          unawaited(notifications.hideIncoming());
+          unawaited(_queueNotification(() => notifications.hideIncoming()));
         }
         // 回前台恢复通话页（覆盖 ringing/connecting/connected）：页面
         // 不存在则补开（后台经原生通知接听后回 App 必须能看到通话页），
@@ -266,18 +298,18 @@ final class CallUiManager {
           _pushIncomingPage(controller);
         }
         // 通话中前台服务：切后台后麦克风/摄像头不回收。
-        unawaited(notifications.showOngoing(
-          title: '点击返回通话',
-          video: controller.state.type == CallMediaType.video,
-        ));
+        unawaited(_queueNotification(() => notifications.showOngoing(
+              title: '点击返回通话',
+              video: controller.state.type == CallMediaType.video,
+            )));
       case CallPhase.ended:
       case CallPhase.failed:
       case CallPhase.permissionDenied:
         _minimized = false;
         _outgoingSession = false;
         _removeReturnEntry();
-        unawaited(notifications.hideIncoming());
-        unawaited(notifications.hideOngoing());
+        unawaited(_queueNotification(() => notifications.hideIncoming()));
+        unawaited(_queueNotification(() => notifications.hideOngoing()));
         if (phase != CallPhase.permissionDenied) _scheduleClose();
       case CallPhase.idle:
       case CallPhase.requestingPermission:

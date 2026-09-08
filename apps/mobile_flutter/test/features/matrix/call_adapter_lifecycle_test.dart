@@ -72,9 +72,14 @@ void main() {
       () async {
     final client = OfflineClient();
     final backend = MatrixCallBackend(client);
-    final call = DeferredCall(backend.voip,
-        Room(id: '!test:example.test', client: client), 'cancelled-answer');
-    await backend.delegate.handleNewCall(call);
+    final call = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        Room(id: '!test:example.test', client: client),
+        'cancelled-answer');
+    await backend.debugAttachCall(call);
     backend.cancelPendingAnswer();
     await expectLater(backend.accept(), throwsStateError);
     expect(call.answerCalls, 0);
@@ -89,9 +94,14 @@ void main() {
         accessToken: () => 'session',
         httpClient: MockClient((_) async => http.Response('{}', 503)));
     final backend = MatrixCallBackend(client, wakeup: wakeup);
-    final call = DeferredCall(backend.voip,
-        Room(id: '!test:example.test', client: client), 'failed-claim');
-    await backend.delegate.handleNewCall(call);
+    final call = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        Room(id: '!test:example.test', client: client),
+        'failed-claim');
+    await backend.debugAttachCall(call);
     await expectLater(backend.accept(), throwsStateError);
     expect(call.answerCalls, 0);
     expect(call.rejectCalls, 1);
@@ -100,12 +110,17 @@ void main() {
   test('late subscription observes connected snapshot only once', () async {
     final client = OfflineClient();
     final backend = MatrixCallBackend(client);
-    final call = DeferredCall(backend.voip,
-        Room(id: '!test:example.test', client: client), 'fast-answer')
+    final call = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        Room(id: '!test:example.test', client: client),
+        'fast-answer')
       ..connectedBeforeAttach = true;
     final events = <app.CallBackendEvent>[];
     final subscription = backend.callEvents.listen(events.add);
-    await backend.delegate.handleNewCall(call);
+    await backend.debugAttachCall(call);
     await Future<void>.delayed(Duration.zero);
     expect(
         events
@@ -123,10 +138,15 @@ void main() {
   test('already ended call does not remain active after attachment', () async {
     final client = OfflineClient();
     final backend = MatrixCallBackend(client);
-    final call = DeferredCall(backend.voip,
-        Room(id: '!test:example.test', client: client), 'fast-end')
+    final call = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        Room(id: '!test:example.test', client: client),
+        'fast-end')
       ..endedBeforeAttach = true;
-    await backend.delegate.handleNewCall(call);
+    await backend.debugAttachCall(call);
     expect(backend.hasActiveSession, isFalse);
     await backend.dispose();
   });
@@ -136,15 +156,27 @@ void main() {
     final client = OfflineClient();
     final backend = MatrixCallBackend(client);
     final room = Room(id: '!test:example.test', client: client);
-    final first = DeferredCall(backend.voip, room, 'first');
-    final second = DeferredCall(backend.voip, room, 'second');
+    final first = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        room,
+        'first');
+    final second = DeferredCall(
+        VoIP(
+            client,
+            FlutterWebRtcDelegate(
+                onNewCall: (_) async {}, onCallEnded: (_) async {})),
+        room,
+        'second');
     second.pc = ConnectedPeer();
     final events = <app.CallBackendEvent>[];
     final subscription = backend.callEvents.listen(events.add);
-    await backend.delegate.handleNewCall(first);
+    await backend.debugAttachCall(first);
     final answering = backend.accept();
-    await backend.delegate.handleCallEnded(first);
-    await backend.delegate.handleNewCall(second);
+    await backend.debugEndCall(first);
+    await backend.debugAttachCall(second);
     events.clear();
     first.answerPending.complete();
     await answering;

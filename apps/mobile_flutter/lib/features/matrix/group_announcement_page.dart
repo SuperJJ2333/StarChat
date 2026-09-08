@@ -11,7 +11,7 @@ final class GroupAnnouncementPage extends StatefulWidget {
   const GroupAnnouncementPage(
       {super.key, required this.service, this.pickImage});
   final Future<XFile?> Function()? pickImage;
-  final MatrixGroupAnnouncementService service;
+  final GroupAnnouncementService service;
   @override
   State<GroupAnnouncementPage> createState() => _GroupAnnouncementPageState();
 }
@@ -226,7 +226,7 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
 
 final class _AnnouncementImage extends StatefulWidget {
   const _AnnouncementImage({required this.service, required this.eventId});
-  final MatrixGroupAnnouncementService service;
+  final GroupAnnouncementService service;
   final String eventId;
   @override
   State<_AnnouncementImage> createState() => _AnnouncementImageState();
@@ -262,7 +262,7 @@ final class _AnnouncementImageState extends State<_AnnouncementImage> {
 
 final class GroupAnnouncementBanner extends StatefulWidget {
   const GroupAnnouncementBanner({super.key, required this.service});
-  final MatrixGroupAnnouncementService service;
+  final GroupAnnouncementService service;
   @override
   State<GroupAnnouncementBanner> createState() =>
       _GroupAnnouncementBannerState();
@@ -277,10 +277,8 @@ final class _GroupAnnouncementBannerState
   void initState() {
     super.initState();
     unawaited(_load());
-    subscription = widget.service.room.client.onSync.stream.listen((update) {
-      if (update.rooms?.join?.containsKey(widget.service.room.id) == true) {
-        unawaited(_load());
-      }
+    subscription = widget.service.changes.listen((_) {
+      unawaited(_load());
     });
   }
 

@@ -2,35 +2,54 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matrix/matrix.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_conversation_avatar.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
 import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 
-class AvatarRoom extends Room {
-  AvatarRoom() : super(id: '!group:test', client: Client('avatar-test'));
-  final loading = Completer<List<User>>();
+class AvatarRoom implements AvatarMediaCapability {
+  final loading = Completer<List<MatrixMemberSnapshot>>();
   int requests = 0;
-
-  @override
-  Future<List<User>> requestParticipants([
-    List<Membership> membershipFilter = const [Membership.join],
-    bool suppressWarning = false,
-    bool cache = true,
-  ]) {
+  List<MatrixMemberSnapshot> cached = [];
+  MatrixConversationRoomSnapshot get snapshot => MatrixConversationRoomSnapshot(
+        id: '!group:test',
+        displayName: 'Group',
+        avatar: null,
+        isDirect: false,
+        directPeerId: null,
+        members: cached,
+        lastEvent: null,
+        preference: const ConversationPreference(),
+        notificationCount: 0,
+        notificationsEnabled: true,
+      );
+  Future<List<MatrixMemberSnapshot>> loadMembers() {
     requests++;
     return loading.future;
   }
+
+  @override
+  Future<ResolvedAvatarUrl?> resolveAvatar(
+          {required Uri? avatarUri, required double size}) async =>
+      null;
 }
 
 void main() {
   testWidgets('cached members stay visible while loading and after failure',
       (tester) async {
     final room = AvatarRoom();
-    room.setState(User('@cached:test',
-        room: room, displayName: 'Cached', membership: 'join'));
+    room.cached = [
+      const MatrixMemberSnapshot(
+          id: '@cached:test', displayName: 'Cached', avatar: null)
+    ];
     await tester.pumpWidget(CupertinoApp(
-      home: Center(child: MatrixConversationAvatar(room: room)),
+      home: Center(
+          child: MatrixConversationAvatar(
+              room: room.snapshot,
+              avatarMedia: room,
+              loadMembers: room.loadMembers)),
     ));
     expect(find.byType(GroupAvatarMosaic), findsOneWidget);
     expect(find.byType(MatrixUserAvatar), findsOneWidget);
@@ -44,7 +63,11 @@ void main() {
       (tester) async {
     final room = AvatarRoom();
     await tester.pumpWidget(CupertinoApp(
-      home: Center(child: MatrixConversationAvatar(room: room)),
+      home: Center(
+          child: MatrixConversationAvatar(
+              room: room.snapshot,
+              avatarMedia: room,
+              loadMembers: room.loadMembers)),
     ));
     await tester.pumpWidget(const SizedBox());
     room.loading.complete([]);
@@ -56,14 +79,19 @@ void main() {
       (tester) async {
     final room = AvatarRoom();
     await tester.pumpWidget(CupertinoApp(
-      home: Center(child: MatrixConversationAvatar(room: room, size: 52)),
+      home: Center(
+          child: MatrixConversationAvatar(
+              room: room.snapshot,
+              avatarMedia: room,
+              loadMembers: room.loadMembers,
+              size: 52)),
     ));
     expect(room.requests, 1);
     expect(find.byIcon(CupertinoIcons.person_2_fill), findsOneWidget);
-    final alice = User('@alice:test',
-        room: room, displayName: 'Alice', membership: 'join');
+    final alice = MatrixMemberSnapshot(
+        id: '@alice:test', displayName: 'Alice', avatar: null);
     final bob =
-        User('@bob:test', room: room, displayName: 'Bob', membership: 'join');
+        MatrixMemberSnapshot(id: '@bob:test', displayName: 'Bob', avatar: null);
     room.loading.complete([alice, bob]);
     await tester.pumpAndSettle();
     expect(find.byType(GroupAvatarMosaic), findsOneWidget);
@@ -80,7 +108,11 @@ void main() {
       (tester) async {
     final room = AvatarRoom();
     await tester.pumpWidget(CupertinoApp(
-      home: Center(child: MatrixConversationAvatar(room: room)),
+      home: Center(
+          child: MatrixConversationAvatar(
+              room: room.snapshot,
+              avatarMedia: room,
+              loadMembers: room.loadMembers)),
     ));
     room.loading.completeError(StateError('offline'));
     await tester.pumpAndSettle();

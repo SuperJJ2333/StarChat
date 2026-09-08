@@ -1,15 +1,23 @@
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
 
 import '../../ui/components/user_avatar.dart';
 import 'avatar_url_resolver.dart';
+
+/// Minimal managed capability for resolving Matrix media without exposing a
+/// Matrix SDK client to presentation code.
+abstract interface class AvatarMediaCapability {
+  Future<ResolvedAvatarUrl?> resolveAvatar({
+    required Uri? avatarUri,
+    required double size,
+  });
+}
 
 /// Converts Matrix mxc avatars into cacheable thumbnail requests without ever
 /// placing the Matrix access token in a cache key or URL.
 final class MatrixUserAvatar extends StatefulWidget {
   const MatrixUserAvatar({
     super.key,
-    required this.client,
+    required this.avatarMedia,
     required this.nickname,
     required this.fallbackSeed,
     this.matrixAvatarUri,
@@ -18,7 +26,7 @@ final class MatrixUserAvatar extends StatefulWidget {
     this.size = 48,
   });
 
-  final Client client;
+  final AvatarMediaCapability avatarMedia;
   final String nickname;
   final String fallbackSeed;
   final Uri? matrixAvatarUri;
@@ -32,16 +40,11 @@ final class MatrixUserAvatar extends StatefulWidget {
 
 final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
+  int _resolutionGeneration = 0;
 
   @override
   void initState() {
     super.initState();
-    resolved = MatrixAvatarUrlResolver.resolveImmediately(
-      avatarUri: widget.matrixAvatarUri,
-      homeserver: widget.client.homeserver,
-      accessToken: widget.client.accessToken,
-      size: widget.size,
-    );
     _diagnose('initial');
     _resolve();
   }
@@ -51,25 +54,35 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matrixAvatarUri != widget.matrixAvatarUri ||
         oldWidget.size != widget.size ||
-        oldWidget.client != widget.client) {
+        oldWidget.avatarMedia != widget.avatarMedia) {
       _resolve();
     }
   }
 
   Future<void> _resolve() async {
+    final generation = ++_resolutionGeneration;
+    final avatarUri = widget.matrixAvatarUri;
+    final size = widget.size;
     try {
-      final value = await MatrixAvatarUrlResolver.resolveForClient(
-        avatarUri: widget.matrixAvatarUri,
-        client: widget.client,
-        size: widget.size,
+      final value = await widget.avatarMedia.resolveAvatar(
+        avatarUri: avatarUri,
+        size: size,
       );
-      if (mounted) setState(() => resolved = value);
+      if (!mounted || generation != _resolutionGeneration) return;
+      setState(() => resolved = value);
       _diagnose('resolved');
     } catch (_) {
+      if (!mounted || generation != _resolutionGeneration) return;
       _diagnose('resolution-failed');
       // Retain the HTTP profile fallback or local text avatar while Matrix
       // media capability discovery is temporarily unavailable.
     }
+  }
+
+  @override
+  void dispose() {
+    _resolutionGeneration++;
+    super.dispose();
   }
 
   void _diagnose(String phase) {

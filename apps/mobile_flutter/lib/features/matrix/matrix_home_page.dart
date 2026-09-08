@@ -1,11 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
 
 import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
-import '../contacts/contact_models.dart';
 import '../contacts/contacts_page.dart';
 import '../contacts/scan_qr_page.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
@@ -23,48 +21,59 @@ import 'profile_repository.dart';
 import 'conversation_preferences.dart';
 import 'conversation_read_state.dart';
 import 'conversation_presentation.dart';
+import 'decryption_state_controller.dart';
+export 'conversation_presentation.dart'
+    show directRoomNavigationTitle, groupRoomNavigationTitle;
+export 'room_page.dart' show RoomPage;
 import '../search/global_search_page.dart';
 import 'room_page.dart';
-import 'matrix_emoji_vault.dart';
 import 'matrix_control_rooms.dart';
-import 'matrix_message_reminder_backend.dart';
 import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
 import 'nudge_service.dart';
-import 'group_invitation_auto_join.dart';
-import 'direct_invitation_auto_join.dart';
 
-List<User> orderedJoinedMembers(Room room) {
-  final joined = room.getParticipants([Membership.join]);
-  final byId = {for (final member in joined) member.id: member};
-  final order = reconcileMemberOrder(
-    preferenceForRoom(room).memberOrderIds,
-    joined.map((member) => member.id),
-  );
-  return [
-    for (final id in order)
-      if (byId[id] != null) byId[id]!
-  ];
+final class _RoomAvatarSnapshot {
+  const _RoomAvatarSnapshot(this.nickname, this.fallbackSeed, this.uri);
+  final String nickname;
+  final String fallbackSeed;
+  final Uri? uri;
 }
 
-String directRoomNavigationTitle({
-  required String? peerMatrixUserId,
-  required Map<String, ContactDetails> contactsByMatrixId,
-  required String fallbackRoomName,
-}) {
-  final contact = contactsByMatrixId[peerMatrixUserId];
-  if (contact == null) return fallbackRoomName;
-  return directConversationTitle(ConversationIdentity(
-    matrixUserId: contact.matrixUserId,
-    remark: contact.remark,
-    nickname: contact.nickname,
-    username: contact.username,
-  ));
-}
-
-Future<List<User>> loadOrderedJoinedMembers(Room room) async {
-  await room.requestParticipants([Membership.join]);
-  return orderedJoinedMembers(room);
+final class _RoomSnapshot {
+  const _RoomSnapshot({
+    required this.id,
+    required this.displayName,
+    required this.title,
+    required this.subtitle,
+    required this.timeLabel,
+    required this.lastBody,
+    required this.lastActivity,
+    required this.avatar,
+    required this.groupAvatars,
+    required this.preference,
+    required this.unread,
+    required this.muted,
+    required this.isDirect,
+    required this.lastEventId,
+    required this.groupName,
+    required this.memberCount,
+  });
+  final String id;
+  final String displayName;
+  final String title;
+  final String subtitle;
+  final String timeLabel;
+  final String lastBody;
+  final DateTime lastActivity;
+  final Uri? avatar;
+  final List<_RoomAvatarSnapshot> groupAvatars;
+  final ConversationPreference preference;
+  final int unread;
+  final bool muted;
+  final bool isDirect;
+  final String? lastEventId;
+  final String groupName;
+  final int memberCount;
 }
 
 class MatrixHomePage extends StatefulWidget {
@@ -80,6 +89,7 @@ class MatrixHomePage extends StatefulWidget {
     this.onVideo,
     this.identityCache,
     this.previewOnly = false,
+    this.onUnreadChanged,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
@@ -91,6 +101,7 @@ class MatrixHomePage extends StatefulWidget {
   final ContactAction? onVideo;
   final ProfileRepository? identityCache;
   final bool previewOnly;
+  final VoidCallback? onUnreadChanged;
   @override
   State<MatrixHomePage> createState() => _MatrixHomePageState();
 }
@@ -98,16 +109,19 @@ class MatrixHomePage extends StatefulWidget {
 class _MatrixHomePageState extends State<MatrixHomePage> {
   bool syncing = false;
   StreamSubscription<Object?>? syncSubscription;
+  StreamSubscription<MatrixDecryptionUpdate>? decryptionSubscription;
+  late final DecryptionStateController decryptionStates =
+      DecryptionStateController();
+  List<_RoomSnapshot> _rooms = const [];
+  String? _vaultRoomId;
+  String? _reminderRoomId;
   Timer? _presenceTimer;
   bool _openingRoom = false;
   final ConversationReadState _readState = ConversationReadState.shared();
-  final Map<String, List<User>> _groupMembersByRoom = {};
-  final Set<String> _groupMemberLoadsInFlight = {};
-
-  /// BUG1（被邀端）：auto_allow_group_join 设置（null=未知，按开处理并
-  /// 惰性校正）；实时 onSync 收到新群邀请时按设置分流。
   bool? _autoAllowGroupJoin;
   final Set<String> _autoJoinInFlight = {};
+  final Set<String> _directJoinInFlight = {};
+  List<MatrixGroupInviteSnapshot> _invites = const [];
   late ProfileRepository _identityCache =
       widget.identityCache ?? ProfileRepository(widget.api);
 
@@ -116,173 +130,92 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     try {
       _autoAllowGroupJoin = await widget.api.autoAllowGroupJoin();
     } catch (_) {
-      _autoAllowGroupJoin = true; // 查询失败按默认开处理（与历史行为一致）。
+      _autoAllowGroupJoin = true;
     }
     if (mounted) setState(() {});
   }
 
-  /// BUG1（被邀端）：按设置分流处理待处理群邀请。
-  /// 开启自动入群 → 立即 join（实时/冷启动/断网恢复一致）；
-  /// 关闭 → 保留为待处理邀请（会话列表顶部可接受/拒绝，不自动加入）。
   Future<void> _processPendingGroupInvites() async {
-    await _loadAutoAllowPreference();
-    if (_autoAllowGroupJoin != true) return;
-    final client = widget.matrix.sdkClient;
-    final pending = client.rooms
-        .where((room) =>
-            room.membership == Membership.invite &&
-            !room.isDirectChat &&
-            !_autoJoinInFlight.contains(room.id))
-        .map((room) => room.id)
-        .toList(growable: false);
-    if (pending.isEmpty) return;
-    _autoJoinInFlight.addAll(pending);
+    if (widget.previewOnly) return;
     try {
-      final result = await autoJoinInvitedRoomIds(
-        invitedRoomIds: pending,
-        joinRoom: client.joinRoom,
-      );
-      _autoJoinInFlight.removeAll(pending);
-      if (result.joinedRoomIds.isNotEmpty) {
-        await client.oneShotSync();
+      await _loadAutoAllowPreference();
+      if (_autoAllowGroupJoin == true) {
+        await widget.matrix.conversations
+            .autoJoinGroupInvites(_autoJoinInFlight);
       }
-      if (mounted) setState(() {});
-    } catch (_) {
-      _autoJoinInFlight.removeAll(pending);
-      // 下一次 sync 重试。
-    }
+      final invites = await widget.matrix.conversations.pendingGroupInvites();
+      if (mounted) setState(() => _invites = invites);
+    } catch (_) {/* Retry after the next sync. */}
   }
-
-  final Set<String> _directJoinInFlight = {};
 
   Future<void> _processPendingDirectInvites() async {
     if (widget.previewOnly) return;
     try {
       await _identityCache.preload();
-      final joined = await autoJoinFriendDirectInvites(
-        client: widget.matrix.sdkClient,
-        friendMatrixIds: _identityCache.contactsByMatrixId.keys.toSet(),
-        inFlight: _directJoinInFlight,
-      );
-      if (mounted && joined.isNotEmpty) setState(() {});
-    } catch (_) {
-      // Contact availability is required; retry when identity or sync updates.
-    }
+      await widget.matrix.conversations.autoJoinDirectInvites(
+          _identityCache.contactsByMatrixId.keys.toSet(), _directJoinInFlight);
+      await _refreshClientSnapshot();
+    } catch (_) {/* Contact availability is required; retry after sync. */}
   }
 
-  /// 待处理群邀请（设置关闭自动入群时展示接受/拒绝入口）。
-  List<Room> get _pendingInviteRooms => _autoAllowGroupJoin == false
-      ? widget.matrix.sdkClient.rooms
-          .where((room) =>
-              room.membership == Membership.invite && !room.isDirectChat)
-          .toList(growable: false)
-      : const <Room>[];
+  List<MatrixGroupInviteSnapshot> get _pendingInviteRooms =>
+      _autoAllowGroupJoin == false ? _invites : const [];
 
-  Future<void> _acceptGroupInvite(Room room) async {
+  Future<void> _acceptGroupInvite(MatrixGroupInviteSnapshot room) async {
     try {
-      await widget.matrix.sdkClient.joinRoom(room.id);
-      await widget.matrix.sdkClient.oneShotSync();
+      await widget.matrix.conversations.acceptGroupInvite(room.id);
+      await _processPendingGroupInvites();
+      await _refreshClientSnapshot();
     } catch (_) {
-      if (mounted) {
-        showCupertinoDialog<void>(
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
           context: context,
           builder: (dialogContext) => CupertinoAlertDialog(
-            title: const Text('加入失败'),
-            content: const Text('请稍后重试。'),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('好的'),
-              ),
-            ],
-          ),
-        );
-      }
-      return;
+                  title: const Text('加入失败'),
+                  content: const Text('请稍后重试。'),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('好的'))
+                  ]));
     }
-    if (mounted) setState(() {});
   }
 
-  Future<void> _declineGroupInvite(Room room) async {
+  Future<void> _declineGroupInvite(MatrixGroupInviteSnapshot room) async {
     try {
-      await room.leave();
-    } catch (_) {
-      // 拒绝失败保留邀请；下次可再拒绝。
-    }
-    if (mounted) setState(() {});
+      await widget.matrix.conversations.declineGroupInvite(room.id);
+      await _processPendingGroupInvites();
+    } catch (_) {/* Preserve the invitation so it can be retried. */}
   }
 
   Future<void> sync() async {
     if (syncing) return;
     setState(() => syncing = true);
     try {
-      await widget.matrix.sync();
-      _ensureGroupMembersLoaded(widget.matrix.sdkClient.rooms);
+      await widget.matrix.syncIfActive();
       await _reconcileConversationMetadata();
+      await _refreshClientSnapshot();
     } finally {
       if (mounted) setState(() => syncing = false);
     }
   }
 
-  void _ensureGroupMembersLoaded(Iterable<Room> rooms) {
-    if (widget.previewOnly) return;
-    for (final room in rooms.where((room) => !room.isDirectChat)) {
-      if (_groupMembersByRoom.containsKey(room.id)) continue;
-      if (_groupMemberLoadsInFlight.contains(room.id)) continue;
-      _groupMemberLoadsInFlight.add(room.id);
-      unawaited(() async {
-        try {
-          final members = await loadOrderedJoinedMembers(room);
-          if (mounted) setState(() => _groupMembersByRoom[room.id] = members);
-        } catch (_) {
-          // Preserve currently known members; the next sync retries loading.
-        } finally {
-          _groupMemberLoadsInFlight.remove(room.id);
-        }
-      }());
-    }
-  }
-
   Future<void> _reconcileConversationMetadata() async {
-    final base = DateTime.now().toUtc();
-    var offset = 0;
-    for (final room in widget.matrix.sdkClient.rooms) {
-      final preference = preferenceForRoom(room);
-      final memberOrder = room.isDirectChat
-          ? preference.memberOrderIds
-          : reconcileMemberOrder(
-              preference.memberOrderIds,
-              room.getParticipants([Membership.join]).map(
-                  (member) => member.id),
-            );
-      final needsPinTime = preference.pinned && preference.pinnedAt == null;
-      final orderChanged = memberOrder.join('\u0000') !=
-          preference.memberOrderIds.join('\u0000');
-      if (!needsPinTime && !orderChanged) continue;
-      try {
-        await writeConversationPreference(
-          room,
-          preference.copyWith(
-            pinnedAt: needsPinTime
-                ? base.add(Duration(microseconds: offset++))
-                : preference.pinnedAt,
-            memberOrderIds: memberOrder,
-          ),
-        );
-      } catch (_) {
-        // Matrix sync will retry reconciliation without losing local state.
-      }
-    }
+    await widget.matrix.conversations.reconcileMetadata();
   }
 
   @override
   void initState() {
     super.initState();
-    if (widget.previewOnly) return;
+    if (widget.previewOnly) {
+      unawaited(_refreshClientSnapshot());
+      return;
+    }
     _identityCache.addListener(_identityChanged);
-    syncSubscription = widget.matrix.sdkClient.onSync.stream.listen((_) {
-      _groupMembersByRoom.clear();
-      unawaited(_restoreHiddenConversations());
+    syncSubscription = widget.matrix.syncEvents.listen((_) {
+      unawaited(_refreshClientSnapshot());
+      unawaited(_refreshMembers());
+      unawaited(_restoreHiddenConversations().catchError((_) {}));
       unawaited(_processPendingGroupInvites());
       unawaited(_processPendingDirectInvites());
       if (mounted) setState(() {});
@@ -290,12 +223,29 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     unawaited(_loadAutoAllowPreference());
     unawaited(_processPendingGroupInvites());
     unawaited(_processPendingDirectInvites());
+    decryptionSubscription = widget.matrix.decryptionUpdates.listen((update) {
+      switch (update.state) {
+        case MessageDecryptionState.decrypted:
+          decryptionStates.lateKeyReceived(update.eventId);
+        case MessageDecryptionState.missingKey:
+          decryptionStates.markMissingKey(update.eventId,
+              eventCode: update.eventCode ?? 'MISSING_ROOM_KEY');
+        case MessageDecryptionState.decrypting:
+          decryptionStates.markDecrypting(update.eventId);
+        case MessageDecryptionState.failed:
+          decryptionStates.markFailed(update.eventId,
+              eventCode: update.eventCode ?? 'DECRYPTION_FAILED');
+      }
+      unawaited(_refreshClientSnapshot());
+    });
     unawaited(_identityCache.preload().catchError((_) {}));
     _sendPresenceHeartbeat();
     _presenceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _sendPresenceHeartbeat();
     });
-    sync();
+    unawaited(_refreshClientSnapshot());
+    unawaited(_refreshMembers());
+    unawaited(sync().catchError((_) {}));
   }
 
   Future<void> _sendPresenceHeartbeat() async {
@@ -309,21 +259,61 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   Future<void> _restoreHiddenConversations() async {
-    final currentUserId = widget.matrix.sdkClient.userID;
-    for (final room in widget.matrix.sdkClient.rooms) {
-      final preference = preferenceForRoom(room);
-      final event = room.lastEvent;
-      if (!preference.hidden || event == null) continue;
-      final restored = restoreForIncomingEvent(
-        preference,
-        eventAt: event.originServerTs,
-        isIncoming: event.senderId != currentUserId,
-      );
-      if (!restored.hidden) {
-        await writeConversationPreference(room, restored);
-      }
-    }
-    if (mounted) setState(() {});
+    await widget.matrix.conversations.restoreHidden();
+    await _refreshClientSnapshot();
+  }
+
+  int _snapshotEpoch = 0;
+  Future<void> _refreshClientSnapshot() async {
+    final epoch = ++_snapshotEpoch;
+    try {
+      final snapshot = await widget.matrix.conversations.snapshot();
+      if (!mounted || epoch != _snapshotEpoch) return;
+      setState(() {
+        _vaultRoomId = snapshot.vaultRoomId;
+        _reminderRoomId = snapshot.reminderRoomId;
+        _rooms = [for (final room in snapshot.rooms) _snapshotRoom(room)];
+      });
+    } catch (_) {/* Keep cached presentation during sync/revocation. */}
+  }
+
+  Future<void> _refreshMembers() async {
+    try {
+      await widget.matrix.conversations.refreshMembers();
+      await _refreshClientSnapshot();
+    } catch (_) {/* Retry on a later sync. */}
+  }
+
+  _RoomSnapshot _snapshotRoom(MatrixConversationRoomSnapshot room) {
+    final preference = room.preference;
+    final members =
+        room.isDirect ? const <MatrixMemberSnapshot>[] : room.members;
+    return _RoomSnapshot(
+      id: room.id,
+      displayName: room.displayName,
+      title: _conversationTitle(room),
+      subtitle: _conversationSubtitle(room),
+      timeLabel: _roomTime(room),
+      lastBody: room.lastEvent?.body ?? '',
+      lastActivity: room.lastEvent?.originServerTs ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      avatar: room.avatar,
+      groupAvatars: [
+        for (final member in members.take(9))
+          _RoomAvatarSnapshot(
+            member.displayName,
+            member.id,
+            member.avatar,
+          ),
+      ],
+      preference: preference,
+      unread: _conversationUnread(room),
+      muted: preference.muted || !room.notificationsEnabled,
+      isDirect: room.isDirect,
+      lastEventId: room.lastEvent?.eventId,
+      groupName: room.name,
+      memberCount: room.members.length,
+    );
   }
 
   @override
@@ -331,12 +321,14 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     _identityCache.removeListener(_identityChanged);
     syncSubscription?.cancel();
     _presenceTimer?.cancel();
+    decryptionSubscription?.cancel();
+    decryptionStates.dispose();
     super.dispose();
   }
 
   void _identityChanged() {
     unawaited(_processPendingDirectInvites());
-    if (mounted) setState(() {});
+    unawaited(_refreshClientSnapshot());
   }
 
   @override
@@ -350,7 +342,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
-  String _roomTime(Room room) {
+  String _roomTime(MatrixConversationRoomSnapshot room) {
     final timestamp = room.lastEvent?.originServerTs.toLocal();
     if (timestamp == null) return '';
     final now = DateTime.now();
@@ -363,9 +355,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     return '${timestamp.month}/${timestamp.day}';
   }
 
-  ConversationIdentity _memberIdentity(User member) {
-    // 会话标题/摘要按用户要求备注优先（备注仅查看者本人可见，无泄露面）。
-    final own = member.id == widget.matrix.sdkClient.userID;
+  ConversationIdentity _memberIdentity(MatrixMemberSnapshot member) {
+    final own = member.id == widget.matrix.userId;
     final contact = _identityCache.contactsByMatrixId[member.id];
     final profile = own ? _identityCache.profile : null;
     return ConversationIdentity(
@@ -373,57 +364,61 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       remark: contact?.remark,
       nickname: profile?.nickname ?? contact?.nickname,
       username: profile?.username ?? contact?.username,
-      matrixDisplayName: member.calcDisplayname(),
+      matrixDisplayName: member.displayName,
     );
   }
 
-  String _conversationTitle(Room room) {
-    if (room.isDirectChat) {
-      final peerId = room.directChatMatrixID!;
-      final peer = room.unsafeGetUserFromMemoryOrFallback(peerId);
+  String _conversationTitle(MatrixConversationRoomSnapshot room) {
+    if (room.isDirect) {
+      final peerId = room.directPeerId ?? room.displayName;
+      final peer = room.members.firstWhere(
+        (member) => member.id == peerId,
+        orElse: () => MatrixMemberSnapshot(
+          id: peerId,
+          displayName: room.displayName,
+          avatar: room.avatar,
+        ),
+      );
       return directConversationTitle(_memberIdentity(peer));
     }
-    // 群聊名称（m.room.name）优先于成员清单拼接；成员顺序保持加入顺序。
-    final members = _groupMembersByRoom[room.id] ?? orderedJoinedMembers(room);
     final title = groupConversationTitle(
-      members.map(_memberIdentity).toList(growable: false),
+      room.members.map(_memberIdentity).toList(growable: false),
       groupName: room.name,
     );
     return title.isEmpty ? '未命名' : title;
   }
 
-  int _conversationUnread(Room room) {
-    final preference = preferenceForRoom(room);
+  int _conversationUnread(MatrixConversationRoomSnapshot room) {
+    final preference = room.preference;
     return _readState.unreadCount(
       roomId: room.id,
       serverUnreadCount: room.notificationCount,
       lastEventId: room.lastEvent?.eventId,
       lastEventSenderId: room.lastEvent?.senderId,
-      currentUserId: widget.matrix.sdkClient.userID,
+      currentUserId: widget.matrix.userId,
       manualUnread: preference.manualUnread,
     );
   }
 
-  String _conversationSubtitle(Room room) {
+  String _conversationSubtitle(MatrixConversationRoomSnapshot room) {
     final event = room.lastEvent;
-    if (event == null || event.type == EventTypes.Encrypted) return '';
-    // 媒体/通话类消息摘要用固定标签（[图片]/[语音]/[视频]/[语音通话]/[视频通话]）。
-    final mediaSummary = conversationEventSummaryLabel(
-      messageType: event.messageType,
-      content: event.content,
-      eventType: event.type,
-    );
-    final messageContent = mediaSummary ??
+    if (event == null) return '';
+    final state = decryptionStates.knownStateFor(event.eventId)?.state ??
+        event.decryptionState;
+    if (state != MessageDecryptionState.decrypted) return '';
+    final messageContent = conversationEventSummaryLabel(
+          messageType: event.messageType,
+          content: event.content,
+          eventType: event.type,
+        ) ??
         safeConversationMessageContent(
-          undecrypted: event.type == EventTypes.Encrypted,
-          messageContent: event.text,
-        );
-    if (room.isDirectChat) return messageContent;
+            decryptionState: state, messageContent: event.text);
+    if (room.isDirect) return messageContent;
     final sender = conversationSenderName(
-      _memberIdentity(event.senderFromMemoryOrFallback),
+      _memberIdentity(event.sender),
     );
-    final isSenderMessage = event.type == EventTypes.Message ||
-        event.type == EventTypes.Encrypted ||
+    final isSenderMessage = event.type == 'm.room.message' ||
+        event.type == 'm.room.encrypted' ||
         event.type == changliaoNudgeEventType;
     return groupConversationSubtitle(
       unreadCount: _conversationUnread(room),
@@ -518,159 +513,131 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
-  /// BUG2：扫码入群成功后按 roomId 打开会话（等待首次同步带回房间）。
   Future<void> _openRoomById(String roomId) async {
-    if (roomId.isEmpty) return;
-    var room = widget.matrix.sdkClient.getRoomById(roomId);
-    if (room == null || room.membership != Membership.join) {
-      try {
-        await widget.matrix.sdkClient
-            .waitForRoomInSync(roomId)
-            .timeout(const Duration(seconds: 10));
-        room = widget.matrix.sdkClient.getRoomById(roomId);
-      } catch (_) {
-        // 下次同步后用户可从会话列表进入。
-      }
-    }
-    final joined = room;
-    if (joined != null && joined.membership == Membership.join && mounted) {
-      await _openRoom(joined);
-    }
+    if (roomId.isEmpty || widget.previewOnly) return;
+    try {
+      await widget.matrix.conversations.waitForJoinedRoom(roomId);
+      await _refreshClientSnapshot();
+      final matches = _rooms.where((room) => room.id == roomId);
+      if (mounted && matches.isNotEmpty) await _openRoom(matches.first);
+    } catch (_) {/* The next sync makes the room available in the list. */}
   }
 
-  /// 聊天页后台预热（身份快照 + 头像解码；失败不影响已打开的会话）。
   Future<void> _warmChatIdentity() async {
     try {
       await _identityCache.preload();
       if (!mounted) return;
-      if (!mounted) return;
       await _identityCache.precacheAvatarImages(context);
     } catch (_) {
-      // 保留上一次成功快照；页面内自身会重试资料刷新。
+      // Keep the last successful identity snapshot while offline.
     }
   }
 
-  Future<void> _openRoom(Room room) async {
-    if (_openingRoom) return;
-    // Navigator 先行捕获：后续任何 await 之后都不再触碰 context。
+  Future<void> _openRoom(_RoomSnapshot snapshot) async {
+    if (_openingRoom || widget.previewOnly) return;
     final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
+    MatrixRoomLease? lease;
+    _readState.setRoomOpen(snapshot.id, open: true);
+    _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
+    unawaited(widget.matrix.conversations
+        .markReadOnOpen(snapshot.id)
+        .catchError((_) {}));
+    widget.onUnreadChanged?.call();
+    unawaited(_warmChatIdentity());
     try {
-      final preference = preferenceForRoom(room);
-      _readState.setRoomOpen(room.id, open: true);
-      _readState.markCleared(room.id, eventId: room.lastEvent?.eventId);
-      if (preference.manualUnread) {
-        try {
-          await writeConversationPreference(
-            room,
-            clearUnreadOnOpen(preference),
-          );
-        } catch (_) {
-          // A failed account-data write is retried by the next sync.
-        }
-      }
-
-      // 规格§七（P0）：打开聊天页绝不等待身份预载/头像预解码——
-      // 先用本地已有数据渲染，资料与头像在后台补齐（原实现在此处
-      // 串行 await preload + precache，正是"点开聊天等 5 秒"的根因）。
-      unawaited(_warmChatIdentity());
-      final roomName = room.isDirectChat
-          ? _conversationTitle(room)
-          : groupRoomNavigationTitle(
-              room.name,
-              orderedJoinedMembers(room).length,
-            );
-      await navigator.push(
-        CupertinoPageRoute(
+      lease = await widget.matrix.openRoomLease(snapshot.id);
+      if (!mounted) return;
+      final openedLease = lease;
+      final route = CupertinoPageRoute<void>(
           builder: (_) => RoomPage(
-            api: widget.api,
-            room: room,
-            roomName: roomName,
-            onCreateGroup: widget.onCreateGroup,
-            onMessage: widget.onMessage,
-            onVoice: widget.onVoice,
-            onVideo: widget.onVideo,
-            reminderService: widget.reminderService,
-            initialIdentityCache: _identityCache,
-          ),
-        ),
-      );
+                api: widget.api,
+                roomLease: openedLease,
+                roomName: snapshot.isDirect
+                    ? snapshot.title
+                    : groupRoomNavigationTitle(
+                        snapshot.groupName, snapshot.memberCount),
+                onCreateGroup: widget.onCreateGroup,
+                onMessage: widget.onMessage,
+                onVoice: widget.onVoice,
+                onVideo: widget.onVideo,
+                reminderService: widget.reminderService,
+                initialIdentityCache: _identityCache,
+              ));
+      lease.setOnRevoked(() async {
+        if (route.isActive) {
+          navigator.popUntil((candidate) => identical(candidate, route));
+          navigator.removeRoute(route);
+        }
+        await route.popped;
+      });
+      await navigator.push(route);
     } finally {
-      // 退出聊天页：解除"查看中"，并把清零位点推进到最后一条已知事件，
-      // 抑制服务器计数同步滞后造成的自己消息红点回显。
-      _readState.setRoomOpen(room.id, open: false);
-      _readState.markCleared(room.id, eventId: room.lastEvent?.eventId);
+      await lease?.cancel();
+      _readState.setRoomOpen(snapshot.id, open: false);
+      final latest = _rooms.where((room) => room.id == snapshot.id);
+      _readState.markCleared(snapshot.id,
+          eventId:
+              latest.isEmpty ? snapshot.lastEventId : latest.first.lastEventId);
       _openingRoom = false;
+      if (mounted) {
+        unawaited(_refreshClientSnapshot());
+        widget.onUnreadChanged?.call();
+      }
     }
   }
 
-  Future<void> _conversationActions(Room room) async {
-    final preference = preferenceForRoom(room);
+  Future<void> _conversationActions(_RoomSnapshot snapshot) async {
     final action = await showConversationActionSheet(
       context,
-      pinned: preference.pinned,
+      pinned: snapshot.preference.pinned,
       onAction: (_) {},
     );
     if (!mounted || action == null) return;
-    switch (action) {
-      case ConversationAction.markUnread:
-        await writeConversationPreference(room, markUnread(preference));
-      case ConversationAction.togglePin:
-        final next = preference.pinned
-            ? preference.copyWith(pinned: false, clearPinnedAt: true)
-            : preference.copyWith(
-                pinned: true,
-                pinnedAt: DateTime.now().toUtc(),
-              );
-        await writeConversationPreference(room, next);
-      case ConversationAction.hide:
-        await writeConversationPreference(
-          room,
-          hideConversation(preference, DateTime.now().toUtc()),
-        );
-      case ConversationAction.delete:
-        final confirmed = await showCupertinoDialog<bool>(
-          context: context,
-          builder: (dialogContext) => CupertinoAlertDialog(
-            title: const Text('确定删除该聊天？'),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('取消'),
-              ),
-              CupertinoDialogAction(
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('删除'),
-              ),
-            ],
-          ),
-        );
-        if (confirmed == true) {
-          await room.leave();
-          await room.forget();
-          // 删除会话时清理该会话的统计工具缓存
-          await StatisticsStateStore.clear(room.id);
-        }
+    var confirmedDelete = false;
+    if (action == ConversationAction.delete) {
+      confirmedDelete = await showCupertinoDialog<bool>(
+            context: context,
+            builder: (dialogContext) => CupertinoAlertDialog(
+              title: const Text('确定删除该聊天？'),
+              actions: [
+                CupertinoDialogAction(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('取消'),
+                ),
+                CupertinoDialogAction(
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('删除'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmedDelete) return;
     }
-    if (mounted) setState(() {});
+    final mutation = switch (action) {
+      ConversationAction.markUnread => MatrixConversationMutation.markUnread,
+      ConversationAction.togglePin => MatrixConversationMutation.togglePin,
+      ConversationAction.hide => MatrixConversationMutation.hide,
+      ConversationAction.delete => MatrixConversationMutation.delete,
+    };
+    await widget.matrix.conversations.mutate(snapshot.id, mutation);
+    if (action == ConversationAction.delete) {
+      await StatisticsStateStore.clear(snapshot.id);
+    }
+    await _refreshClientSnapshot();
   }
 
   @override
   Widget build(BuildContext context) {
-    final vaultRoomId = widget.matrix.sdkClient
-        .accountData[emojiVaultAccountDataType]?.content['room_id']
-        ?.toString();
-    final reminderRoomId = widget.matrix.sdkClient
-        .accountData[messageReminderAccountDataType]?.content['room_id']
-        ?.toString();
-    final visibleRooms = widget.matrix.sdkClient.rooms
+    final visibleRooms = _rooms
         .where(
           (room) => !isMatrixControlRoom(
             roomId: room.id,
-            displayName: room.getLocalizedDisplayname(),
-            vaultRoomId: vaultRoomId,
-            reminderRoomId: reminderRoomId,
+            displayName: room.displayName,
+            vaultRoomId: _vaultRoomId,
+            reminderRoomId: _reminderRoomId,
           ),
         )
         .toList(growable: false);
@@ -679,25 +646,23 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       for (final room in visibleRooms)
         ConversationProjection(
           roomId: room.id,
-          isGroup: !room.isDirectChat,
-          lastActivity: room.lastEvent?.originServerTs ??
-              DateTime.fromMillisecondsSinceEpoch(0),
-          preference: preferenceForRoom(room),
+          isGroup: !room.isDirect,
+          lastActivity: room.lastActivity,
+          preference: room.preference,
         ),
     ]);
     final orderedRooms = [for (final item in ordered) roomById[item.roomId]!];
     final activeRooms = orderedRooms
-        .where((room) => !preferenceForRoom(room).hidden)
+        .where((room) => !room.preference.hidden)
         .toList(growable: false);
     final foldedRooms = activeRooms.where((room) {
-      final value = preferenceForRoom(room);
-      return !room.isDirectChat && value.muted && value.folded;
+      final value = room.preference;
+      return !room.isDirect && value.muted && value.folded;
     }).toList(growable: false);
     final rooms = activeRooms
         .where((room) => !foldedRooms.contains(room))
         .toList(growable: false);
-    final pinnedCount =
-        rooms.where((room) => preferenceForRoom(room).pinned).length;
+    final pinnedCount = rooms.where((room) => room.preference.pinned).length;
     return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.pageBackground(context),
       navigationBar: CupertinoNavigationBar(
@@ -781,8 +746,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           CupertinoPageRoute(
                             builder: (_) => _FoldedGroupChatsPage(
                               rooms: foldedRooms,
-                              titleFor: _conversationTitle,
-                              subtitleFor: _conversationSubtitle,
+                              avatarMedia: widget.matrix,
                               onOpen: (room) {
                                 Navigator.pop(context);
                                 _openRoom(room);
@@ -797,17 +761,16 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                       roomIndex = adjustedIndex - 1;
                     }
                     final room = rooms[roomIndex];
-                    _ensureGroupMembersLoaded([room]);
-                    final roomName = _conversationTitle(room);
-                    final preference = preferenceForRoom(room);
+                    final roomName = room.title;
+                    final preference = room.preference;
                     return ConversationListTile(
                       key: ValueKey<String>('conversation-${room.id}'),
                       title: roomName,
-                      subtitle: _conversationSubtitle(room),
-                      timeLabel: _roomTime(room),
-                      avatar: room.isDirectChat || room.avatar != null
+                      subtitle: room.subtitle,
+                      timeLabel: room.timeLabel,
+                      avatar: room.isDirect || room.avatar != null
                           ? MatrixUserAvatar(
-                              client: widget.matrix.sdkClient,
+                              avatarMedia: widget.matrix,
                               nickname: roomName,
                               fallbackSeed: room.id,
                               matrixAvatarUri: room.avatar,
@@ -815,22 +778,18 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                             )
                           : GroupAvatarMosaic(
                               avatars: [
-                                for (final member
-                                    in (_groupMembersByRoom[room.id] ??
-                                            orderedJoinedMembers(room))
-                                        .take(9))
+                                for (final member in room.groupAvatars)
                                   MatrixUserAvatar(
-                                    client: widget.matrix.sdkClient,
-                                    nickname: member.calcDisplayname(),
-                                    fallbackSeed: member.id,
-                                    matrixAvatarUri: member.avatarUrl,
+                                    avatarMedia: widget.matrix,
+                                    nickname: member.nickname,
+                                    fallbackSeed: member.fallbackSeed,
+                                    matrixAvatarUri: member.uri,
                                   ),
                               ],
                             ),
-                      unreadCount: _conversationUnread(room),
-                      muted: preference.muted ||
-                          room.pushRuleState != PushRuleState.notify,
-                      pinnedGroup: !room.isDirectChat && preference.pinned,
+                      unreadCount: room.unread,
+                      muted: room.muted,
+                      pinnedGroup: !room.isDirect && preference.pinned,
                       onTap: () => _openRoom(room),
                       onLongPress: () => _conversationActions(room),
                     );
@@ -968,14 +927,12 @@ final class _MessagesEmptyState extends StatelessWidget {
 final class _FoldedGroupChatsPage extends StatelessWidget {
   const _FoldedGroupChatsPage({
     required this.rooms,
+    required this.avatarMedia,
     required this.onOpen,
-    required this.titleFor,
-    required this.subtitleFor,
   });
-  final List<Room> rooms;
-  final ValueChanged<Room> onOpen;
-  final String Function(Room room) titleFor;
-  final String Function(Room room) subtitleFor;
+  final List<_RoomSnapshot> rooms;
+  final AvatarMediaCapability avatarMedia;
+  final ValueChanged<_RoomSnapshot> onOpen;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -989,27 +946,26 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
             separatorBuilder: (_, __) => const SizedBox(height: .5),
             itemBuilder: (context, index) {
               final room = rooms[index];
-              final members = orderedJoinedMembers(room).take(9);
               return ConversationListTile(
-                title: titleFor(room),
-                subtitle: subtitleFor(room),
+                title: room.title,
+                subtitle: room.subtitle,
                 timeLabel: '',
                 muted: true,
                 avatar: room.avatar != null
                     ? MatrixUserAvatar(
-                        client: room.client,
-                        nickname: room.getLocalizedDisplayname(),
+                        avatarMedia: avatarMedia,
+                        nickname: room.displayName,
                         fallbackSeed: room.id,
                         matrixAvatarUri: room.avatar,
                       )
                     : GroupAvatarMosaic(
                         avatars: [
-                          for (final member in members)
+                          for (final member in room.groupAvatars)
                             MatrixUserAvatar(
-                              client: room.client,
-                              nickname: member.calcDisplayname(),
-                              fallbackSeed: member.id,
-                              matrixAvatarUri: member.avatarUrl,
+                              avatarMedia: avatarMedia,
+                              nickname: member.nickname,
+                              fallbackSeed: member.fallbackSeed,
+                              matrixAvatarUri: member.uri,
                             ),
                         ],
                       ),

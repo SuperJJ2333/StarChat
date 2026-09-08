@@ -25,7 +25,7 @@ class _Matrix implements MatrixE2eeClient {
   Uint8List? sentBytes;
   @override
   Future<String> sendEncryptedMedia(
-      String roomId, Uint8List plaintext, String mimeType,
+      String roomId, List<int> plaintext, String mimeType,
       {Map<String, dynamic>? extraContent,
       String? txid,
       String? filename,
@@ -35,7 +35,8 @@ class _Matrix implements MatrixE2eeClient {
     content = extraContent;
     transaction = txid;
     mime = mimeType;
-    sentBytes = plaintext;
+    sentBytes =
+        plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext);
     return 'test-event';
   }
 

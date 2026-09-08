@@ -1,11 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/group_qr_code_page.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_page.dart';
-import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 
 final class FakeGroupChatInfoGateway implements GroupChatInfoGateway {
   @override
@@ -98,20 +96,19 @@ void main() {
     expect(groupInfoDisplayName(' 项目群 '), '项目群');
   });
 
-  test('loads joined members before building a group avatar mosaic', () async {
-    final client = Client('test')
-      ..homeserver = Uri.parse('https://matrix.example.test');
-    final room = Room(id: '!group:example.test', client: client);
-    room.setState(
-      User(
-        '@alice:example.test',
-        room: room,
-        displayName: 'Alice',
-        membership: 'join',
-      ),
+  test('group member DTO reports app-owned joined membership', () {
+    const joined = GroupChatMember(
+      matrixUserId: '@alice:example.test',
+      displayName: 'Alice',
+    );
+    const invited = GroupChatMember(
+      matrixUserId: '@bob:example.test',
+      displayName: 'Bob',
+      membership: GroupMemberMembership.invited,
     );
 
-    expect(orderedJoinedMembers(room), hasLength(1));
+    expect(joined.isJoined, isTrue);
+    expect(invited.isJoined, isFalse);
   });
 
   test('group chat info controller loads members and persists changes',
@@ -348,6 +345,18 @@ void main() {
       ).map((member) => member.matrixUserId),
       ['@owner:test', '@admin:test', '@adam:test', '@zoe:test'],
     );
+  });
+
+  test('group member DTO retains only immutable avatar display data', () {
+    const member = GroupChatMember(
+      matrixUserId: '@alice:test',
+      displayName: 'Alice',
+      avatarUrl: 'https://media.example.test/alice.png',
+      avatarHeaders: {'authorization': 'Bearer redacted'},
+    );
+
+    expect(member.avatarUrl, 'https://media.example.test/alice.png');
+    expect(member.avatarHeaders, {'authorization': 'Bearer redacted'});
   });
 
   test('group management limits administrators to three', () {

@@ -47,6 +47,9 @@ void main() {
       expect(backend.rejects, 0);
       expect(backend.accepts, 0);
       expect(permissions.requests, [type == CallMediaType.video]);
+      // Native notification operations serialize across attachment generations.
+      // Drain that queue before asserting the repeated actionable notification.
+      await tester.pump();
       expect(notifications.incoming, 2,
           reason: 'denial retains an actionable background notification');
       resumed = true;

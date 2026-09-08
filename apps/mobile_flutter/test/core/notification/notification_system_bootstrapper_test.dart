@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/notification/notification_diagnostics.dart';
 import 'package:liuhetong_mobile/core/notification/notification_system_bootstrapper.dart';
@@ -73,6 +74,46 @@ void main() {
     expect(await boot.ensureStarted(), isFalse, reason: '会话已结束，不得重启旧装配');
     expect(calls.starts, 1);
   });
+
+  for (final failLate in [false, true]) {
+    test(
+        'dispose drains pending startup without readiness resurrection ($failLate)',
+        () async {
+      final pending = Completer<void>();
+      var startFinished = false;
+      final boot = NotificationSystemBootstrapper(
+        start: () async {
+          await pending.future;
+          startFinished = true;
+          if (failLate) throw StateError('capability revoked');
+        },
+        stop: () async {
+          expect(startFinished, isTrue,
+              reason: 'cleanup must follow startup settlement');
+          calls.stops++;
+        },
+        onReady: calls.onReady,
+        diagnostics: diagnostics,
+      );
+      final starting = boot.ensureStarted();
+      var disposed = false;
+      final disposing = boot.dispose().then((_) => disposed = true);
+      final secondDispose = boot.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(disposed, isFalse,
+          reason: 'dispose must drain pending initialization');
+      expect(calls.stops, 0);
+      expect(await boot.ensureStarted(), isFalse);
+      pending.complete();
+      expect(await starting, isFalse);
+      await Future.wait([disposing, secondDispose]);
+      expect(calls.readies, 0,
+          reason: 'revoked notification handles must not be installed');
+      expect(calls.stops, 1);
+      expect(boot.isReady, isFalse);
+      expect(boot.needsRetry, isFalse);
+    });
+  }
 
   test('dispose 中 stop 失败不抛出（退出登录不被通知清理卡住）', () async {
     final boot = NotificationSystemBootstrapper(

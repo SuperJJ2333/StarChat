@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/group_chat_info_controller.dart';
 
 /// BUG1 修复断言：
@@ -18,7 +17,7 @@ void main() {
         GroupChatMember(
           matrixUserId: '@c:x',
           displayName: 'C',
-          membership: Membership.invite,
+          membership: GroupMemberMembership.invited,
         ),
       ],
     );
@@ -41,7 +40,7 @@ void main() {
           GroupChatMember(
             matrixUserId: '@pending:x',
             displayName: '待确认',
-            membership: Membership.invite,
+            membership: GroupMemberMembership.invited,
           ),
         ],
       ),

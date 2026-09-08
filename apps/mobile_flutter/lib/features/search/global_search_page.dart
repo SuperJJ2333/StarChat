@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
 import '../matrix/matrix_e2ee_client.dart';
+import '../matrix/decryption_state_controller.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -45,18 +46,23 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   Future<void> _loadMatrixScope() async {
-    final client = widget.matrix?.sdkClient;
-    if (client == null) return;
-    final rooms = client.rooms;
-    if (!mounted) return;
-    setState(() {
-      matrixRooms = [
-        for (final room in rooms) room.getLocalizedDisplayname(),
-      ];
-      matrixMessages = [
-        for (final room in rooms) room.lastEvent?.body ?? '',
-      ];
-    });
+    final matrix = widget.matrix;
+    if (matrix == null) return;
+    try {
+      final snapshot = await matrix.conversations.snapshot();
+      if (!mounted) return;
+      setState(() {
+        matrixRooms = [for (final room in snapshot.rooms) room.displayName];
+        matrixMessages = [
+          for (final room in snapshot.rooms)
+            if (room.lastEvent?.decryptionState ==
+                MessageDecryptionState.decrypted)
+              room.lastEvent!.text
+        ];
+      });
+    } catch (_) {
+      // Preserve supplied cached results while the Matrix session is unavailable.
+    }
   }
 
   @override

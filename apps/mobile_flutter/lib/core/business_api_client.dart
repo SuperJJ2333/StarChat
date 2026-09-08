@@ -20,7 +20,22 @@ enum BusinessSessionRestore { absent, authenticated, offline, invalid }
 abstract interface class BusinessSessionGateway {
   Future<BusinessSessionRestore> restoreSession();
   Future<String?> currentMatrixUserId();
-  Future<void> logout();
+  Future<BusinessSessionRevocation?> clearLocalSession();
+}
+
+/// Opaque authority to revoke the server-side session after local access has
+/// already been removed. The credential used by the implementation is never
+/// exposed to controllers or logs.
+abstract interface class BusinessSessionRevocation {
+  Future<void> revoke();
+}
+
+final class _BusinessSessionRevocation implements BusinessSessionRevocation {
+  const _BusinessSessionRevocation(this._revoke);
+  final Future<void> Function() _revoke;
+
+  @override
+  Future<void> revoke() => _revoke();
 }
 
 final class BusinessApiClient
@@ -34,9 +49,11 @@ final class BusinessApiClient
         ComplaintGateway,
         RedPacketViewGateway,
         PersonalInvitationGateway {
-  BusinessApiClient(
-      {required this.baseUri, required this.sessionStore, http.Client? client})
-      : _client = client ?? http.Client();
+  BusinessApiClient({
+    required this.baseUri,
+    required this.sessionStore,
+    http.Client? client,
+  }) : _client = client ?? http.Client();
   final Uri baseUri;
   final SecureSessionStore sessionStore;
   final http.Client _client;
@@ -46,56 +63,71 @@ final class BusinessApiClient
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
   Uri _uri(String path) {
-    final url =
-        baseUri.resolve(path.startsWith('/api/v1/') ? path : '/api/v1$path');
+    final url = baseUri.resolve(
+      path.startsWith('/api/v1/') ? path : '/api/v1$path',
+    );
     _lastRequestUrl = url; // 供 debug 日志记录（不含 query 密钥）
     return url;
   }
 
-  Future<Map<String, dynamic>> login(
-      {required String username,
-      required String password,
-      required String deviceKey,
-      required String deviceName}) async {
-    final response = await _client.post(_uri('/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': username,
-          'password': password,
-          'device_key': deviceKey,
-          'device_name': deviceName
-        }));
+  Future<Map<String, dynamic>> login({
+    required String username,
+    required String password,
+    required String deviceKey,
+    required String deviceName,
+  }) async {
+    final previous = await sessionStore.session();
+    final response = await _client.post(
+      _uri('/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': username,
+        'password': password,
+        'device_key': deviceKey,
+        'device_name': deviceName,
+      }),
+    );
     final body = _decode(response);
+    final returnedMatrixUserId = body['matrix_user_id']?.toString();
     await sessionStore.saveSession(
-        accessToken: body['access_token'] as String,
-        refreshToken: body['refresh_token'] as String,
-        deviceKey: deviceKey);
+      accessToken: body['access_token'] as String,
+      refreshToken: body['refresh_token'] as String,
+      deviceKey: deviceKey,
+      matrixUserId: returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+          ? previous?.matrixUserId
+          : returnedMatrixUserId,
+    );
     return body;
   }
 
   @override
-  Future<void> loginBusiness(
-      {required String username,
-      required String password,
-      required String deviceKey,
-      required String deviceName}) async {
+  Future<void> loginBusiness({
+    required String username,
+    required String password,
+    required String deviceKey,
+    required String deviceName,
+  }) async {
     await login(
-        username: username,
-        password: password,
-        deviceKey: deviceKey,
-        deviceName: deviceName);
+      username: username,
+      password: password,
+      deviceKey: deviceKey,
+      deviceName: deviceName,
+    );
   }
 
   @override
   Future<MatrixLoginGrant> issueMatrixLoginToken() async {
-    final response = await _authorized((headers) =>
-        _client.post(_uri('/auth/matrix-login-token'), headers: headers));
+    final response = await _authorized(
+      (headers) =>
+          _client.post(_uri('/auth/matrix-login-token'), headers: headers),
+    );
     final body = _decode(response);
     return MatrixLoginGrant(
-        loginToken: body['login_token'] as String,
-        homeserver: body['homeserver'] as String,
-        expiresIn: body['expires_in'] as int,
-        matrixUserId: body['matrix_user_id'] as String);
+      loginToken: body['login_token'] as String,
+      homeserver: body['homeserver'] as String,
+      expiresIn: body['expires_in'] as int,
+      matrixUserId: body['matrix_user_id'] as String,
+    );
   }
 
   @override
@@ -103,22 +135,29 @@ final class BusinessApiClient
     final stored = await sessionStore.session();
     if (stored == null) {
       throw const BusinessApiException(
-          statusCode: 401, code: 'AUTH_REQUIRED', message: '需要登录');
+        statusCode: 401,
+        code: 'AUTH_REQUIRED',
+        message: '需要登录',
+      );
     }
     await sessionStore.saveSession(
-        accessToken: stored.accessToken,
-        refreshToken: stored.refreshToken,
-        matrixUserId: matrixUserId);
+      accessToken: stored.accessToken,
+      refreshToken: stored.refreshToken,
+      matrixUserId: matrixUserId,
+    );
   }
 
   @override
   Future<void> logoutBusiness() => logout();
   @override
   Future<InvitationValidationResult> validateInvitation(
-      String invitationCode) async {
-    final response = await _client.post(_uri('/invitations/validate'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'invitation_code': invitationCode}));
+    String invitationCode,
+  ) async {
+    final response = await _client.post(
+      _uri('/invitations/validate'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'invitation_code': invitationCode}),
+    );
     final body = _decode(response);
     return mapInvitationCheck(
       valid: body['valid'] == true,
@@ -138,53 +177,59 @@ final class BusinessApiClient
   }
 
   @override
-  Future<RegistrationReceipt> register(
-      {required String username,
-      String? nickname,
-      required String email,
-      required String password,
-      required String invitationCode}) async {
+  Future<RegistrationReceipt> register({
+    required String username,
+    String? nickname,
+    required String email,
+    required String password,
+    required String invitationCode,
+  }) async {
     final operation =
         'register:${username.trim().toLowerCase()}:${email.trim().toLowerCase()}:$invitationCode';
-    final response = await _client.post(_uri('/auth/register'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Device-Key': await sessionStore.registrationDeviceKey(),
-          'Idempotency-Key': _pendingIdempotencyKey(operation)
-        },
-        body: jsonEncode({
-          'username': username,
-          if (nickname != null) 'nickname': nickname,
-          'email': email,
-          'password': password,
-          'invitation_code': invitationCode,
-        }));
+    final response = await _client.post(
+      _uri('/auth/register'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Key': await sessionStore.registrationDeviceKey(),
+        'Idempotency-Key': _pendingIdempotencyKey(operation),
+      },
+      body: jsonEncode({
+        'username': username,
+        if (nickname != null) 'nickname': nickname,
+        'email': email,
+        'password': password,
+        'invitation_code': invitationCode,
+      }),
+    );
     final body = _decode(response);
     _pendingIdempotencyKeys.remove(operation);
     return RegistrationReceipt(
-        registrationSession: body['registration_session'] as String,
-        status: body['status'] as String,
-        resendAfterSeconds: body['resend_after_seconds'] as int);
+      registrationSession: body['registration_session'] as String,
+      status: body['status'] as String,
+      resendAfterSeconds: body['resend_after_seconds'] as int,
+    );
   }
 
   @override
-  Future<void> verifyEmail(
-      {required String registrationSession,
-      String? code,
-      String? token}) async {
+  Future<void> verifyEmail({
+    required String registrationSession,
+    String? code,
+    String? token,
+  }) async {
     final operation =
         'verify:$registrationSession:${code != null ? 'code:$code' : 'token:$token'}';
-    final response =
-        await _client.post(_uri('/auth/email-verifications/verify'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Idempotency-Key': _pendingIdempotencyKey(operation)
-            },
-            body: jsonEncode({
-              'registration_session': registrationSession,
-              if (code != null) 'code': code,
-              if (token != null) 'token': token
-            }));
+    final response = await _client.post(
+      _uri('/auth/email-verifications/verify'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': _pendingIdempotencyKey(operation),
+      },
+      body: jsonEncode({
+        'registration_session': registrationSession,
+        if (code != null) 'code': code,
+        if (token != null) 'token': token,
+      }),
+    );
     _decode(response);
     _pendingIdempotencyKeys.remove(operation);
   }
@@ -192,14 +237,15 @@ final class BusinessApiClient
   @override
   Future<int> resendVerification(String registrationSession) async {
     final operation = 'resend:$registrationSession';
-    final response =
-        await _client.post(_uri('/auth/email-verifications/resend'),
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Device-Key': await sessionStore.registrationDeviceKey(),
-              'Idempotency-Key': _pendingIdempotencyKey(operation)
-            },
-            body: jsonEncode({'registration_session': registrationSession}));
+    final response = await _client.post(
+      _uri('/auth/email-verifications/resend'),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Device-Key': await sessionStore.registrationDeviceKey(),
+        'Idempotency-Key': _pendingIdempotencyKey(operation),
+      },
+      body: jsonEncode({'registration_session': registrationSession}),
+    );
     final body = _decode(response);
     _pendingIdempotencyKeys.remove(operation);
     return body['resend_after_seconds'] as int;
@@ -207,76 +253,99 @@ final class BusinessApiClient
 
   @override
   Future<RegistrationStatusReceipt> registrationStatus(
-      String registrationSession) async {
-    final response = await _client.get(_uri(
-        '/auth/registrations/${Uri.encodeComponent(registrationSession)}'));
+    String registrationSession,
+  ) async {
+    final response = await _client.get(
+      _uri('/auth/registrations/${Uri.encodeComponent(registrationSession)}'),
+    );
     final body = _decode(response);
     return RegistrationStatusReceipt(
-        status: body['status'] as String,
-        resendAfterSeconds: body['resend_after_seconds'] as int);
+      status: body['status'] as String,
+      resendAfterSeconds: body['resend_after_seconds'] as int,
+    );
   }
 
   ProfileData _profile(Map<String, dynamic> body) => ProfileData(
-      username: body['username'] as String,
-      nickname: body['nickname'] as String,
-      maskedEmail: body['masked_email'] as String,
-      fallbackSeed: body['avatar_fallback_seed'] as String,
-      signature: body['signature']?.toString(),
-      nudgeSuffix: body['nudge_suffix']?.toString(),
-      avatarUrl: body['avatar_url']?.toString());
+    username: body['username'] as String,
+    nickname: body['nickname'] as String,
+    maskedEmail: body['masked_email'] as String,
+    fallbackSeed: body['avatar_fallback_seed'] as String,
+    signature: body['signature']?.toString(),
+    nudgeSuffix: body['nudge_suffix']?.toString(),
+    avatarUrl: body['avatar_url']?.toString(),
+  );
   @override
   Future<ProfileData> loadProfile() async =>
       _profile(await getJson('/profile/me'));
   @override
-  Future<ProfileData> updateProfile(
-          {required String nickname,
-          String? signature,
-          String? nudgeSuffix}) async =>
-      _profile(await patchJson(
-          '/profile/me',
-          {
-            'nickname': nickname,
-            'signature': signature,
-            'nudge_suffix': nudgeSuffix
-          },
-          idempotencyKey: newIdempotencyKey()));
+  Future<ProfileData> updateProfile({
+    required String nickname,
+    String? signature,
+    String? nudgeSuffix,
+  }) async => _profile(
+    await patchJson('/profile/me', {
+      'nickname': nickname,
+      'signature': signature,
+      'nudge_suffix': nudgeSuffix,
+    }, idempotencyKey: newIdempotencyKey()),
+  );
   @override
-  Future<AvatarUploadSession> createAvatarUpload(
-      {required String mimeType, required int byteSize}) async {
-    final body = await postJson('/profile/avatar/uploads',
-        {'mime_type': mimeType, 'byte_size': byteSize},
-        idempotencyKey: newIdempotencyKey());
+  Future<AvatarUploadSession> createAvatarUpload({
+    required String mimeType,
+    required int byteSize,
+  }) async {
+    final body = await postJson('/profile/avatar/uploads', {
+      'mime_type': mimeType,
+      'byte_size': byteSize,
+    }, idempotencyKey: newIdempotencyKey());
     return AvatarUploadSession(
-        uploadId: body['upload_id'] as String,
-        uploadUrl: body['upload_url'] as String);
+      uploadId: body['upload_id'] as String,
+      uploadUrl: body['upload_url'] as String,
+    );
   }
 
   @override
   Future<void> putAvatar(
-      AvatarUploadSession session, AvatarCandidate candidate) async {
-    final response = await _authorized((headers) => _client.put(
+    AvatarUploadSession session,
+    AvatarCandidate candidate,
+  ) async {
+    final response = await _authorized(
+      (headers) => _client.put(
         baseUri.resolve(session.uploadUrl),
         headers: {...headers, 'Content-Type': candidate.mimeType},
-        body: candidate.bytes));
+        body: candidate.bytes,
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   @override
-  Future<ProfileData> completeAvatar(String uploadId) async =>
-      _profile(await postJson('/profile/avatar/uploads/$uploadId/complete', {},
-          idempotencyKey: newIdempotencyKey()));
+  Future<ProfileData> completeAvatar(String uploadId) async => _profile(
+    await postJson(
+      '/profile/avatar/uploads/$uploadId/complete',
+      {},
+      idempotencyKey: newIdempotencyKey(),
+    ),
+  );
   @override
   Future<void> cancelAvatar(String uploadId) async {
-    final response = await _authorized((headers) => _client
-        .delete(_uri('/profile/avatar/uploads/$uploadId'), headers: headers));
+    final response = await _authorized(
+      (headers) => _client.delete(
+        _uri('/profile/avatar/uploads/$uploadId'),
+        headers: headers,
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   @override
   Future<void> deleteAvatar() async {
-    final response = await _authorized((headers) => _client.delete(
+    final response = await _authorized(
+      (headers) => _client.delete(
         _uri('/profile/avatar'),
-        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
@@ -323,7 +392,10 @@ final class BusinessApiClient
     final stored = await sessionStore.session();
     if (stored == null) {
       throw const BusinessApiException(
-          statusCode: 401, code: 'AUTH_REQUIRED', message: '需要登录');
+        statusCode: 401,
+        code: 'AUTH_REQUIRED',
+        message: '需要登录',
+      );
     }
     final response = await _client
         .post(
@@ -336,7 +408,10 @@ final class BusinessApiClient
     if (epoch != _sessionEpoch) {
       // A03：登出已发生——迟到的刷新结果不得恢复已清除的会话。
       throw const BusinessApiException(
-          statusCode: 401, code: 'AUTH_SESSION_ENDED', message: '会话已结束');
+        statusCode: 401,
+        code: 'AUTH_SESSION_ENDED',
+        message: '会话已结束',
+      );
     }
     final replacement = StoredBusinessSession(
       version: 1,
@@ -366,41 +441,46 @@ final class BusinessApiClient
         message: '需要登录',
       );
     }
-    final response = await _authorized((headers) => _client.post(
-          _uri('/presence/heartbeat'),
-          headers: {
-            ...headers,
-            if (session.deviceKey != null) 'X-Device-Key': session.deviceKey!,
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            if (clientVersion != null) 'client_version': clientVersion,
-          }),
-        ));
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/presence/heartbeat'),
+        headers: {
+          ...headers,
+          if (session.deviceKey != null) 'X-Device-Key': session.deviceKey!,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          if (clientVersion != null) 'client_version': clientVersion,
+        }),
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
-  @override
   Future<void> logout() async {
-    // A03：登出先使会话代数失效（在途刷新的迟到结果不得恢复会话），
-    // 且退出请求有确定完成时限——本地清理不因网络悬挂而拖延。
+    final revocation = await clearLocalSession();
+    if (revocation == null) return;
+    try {
+      await revocation.revoke().timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Local authorization is already removed. Server revocation is
+      // deliberately bounded and retried by normal token expiry policy.
+    }
+  }
+
+  @override
+  Future<BusinessSessionRevocation?> clearLocalSession() async {
     _sessionEpoch++;
     final stored = await sessionStore.session();
-    try {
-      if (stored != null) {
-        await _client
-            .post(
-              _uri('/auth/logout'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({'refresh_token': stored.refreshToken}),
-            )
-            .timeout(_httpTimeout);
-      }
-    } catch (_) {
-      // 退出请求失败/超时：本地会话仍必须清除（finally 兜底）。
-    } finally {
-      await sessionStore.clearBusinessSession();
-    }
+    await sessionStore.clearBusinessSession();
+    if (stored == null) return null;
+    return _BusinessSessionRevocation(() async {
+      await _client.post(
+        _uri('/auth/logout'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': stored.refreshToken}),
+      );
+    });
   }
 
   Future<String?> currentUserId() async {
@@ -409,7 +489,8 @@ final class BusinessApiClient
     final parts = token.split('.');
     if (parts.length != 3) return null;
     final payload = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
     return payload is Map<String, dynamic> ? payload['sub']?.toString() : null;
   }
 
@@ -418,59 +499,62 @@ final class BusinessApiClient
       (await sessionStore.session())?.matrixUserId;
   Future<Map<String, dynamic>> caibiBalance() => getJson('/ledger/balances/me');
   Future<Map<String, dynamic>> transferCaibi(
-          String receiverId, String amount) =>
-      postJson(
-          '/ledger/transfers', {'receiver_id': receiverId, 'amount': amount},
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> createRedPacket(
-          {required String mode,
-          required String total,
-          required int shareCount,
-          String? roomId,
-          String? recipientId}) =>
-      postJson(
-          '/red-packets',
-          {
-            'mode': mode,
-            'total': total,
-            'share_count': shareCount,
-            if (roomId != null) 'room_id': roomId,
-            if (recipientId != null) 'recipient_id': recipientId
-          },
-          idempotencyKey: newIdempotencyKey());
+    String receiverId,
+    String amount,
+  ) => postJson('/ledger/transfers', {
+    'receiver_id': receiverId,
+    'amount': amount,
+  }, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> createRedPacket({
+    required String mode,
+    required String total,
+    required int shareCount,
+    String? roomId,
+    String? recipientId,
+  }) => postJson('/red-packets', {
+    'mode': mode,
+    'total': total,
+    'share_count': shareCount,
+    if (roomId != null) 'room_id': roomId,
+    if (recipientId != null) 'recipient_id': recipientId,
+  }, idempotencyKey: newIdempotencyKey());
   @override
-  Future<Map<String, dynamic>> claimRedPacket(String id) =>
-      postJson('/red-packets/$id/claims', {},
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> claimRedPacket(String id) => postJson(
+    '/red-packets/$id/claims',
+    {},
+    idempotencyKey: newIdempotencyKey(),
+  );
   @override
   Future<Map<String, dynamic>> redPacketDetail(String id) =>
       getJson('/red-packets/$id');
   Future<Map<String, dynamic>> listRedPackets({String? roomId}) => getJson(
-      '/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}');
+    '/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}',
+  );
   Future<Map<String, dynamic>> redPacketLimits() =>
       getJson('/red-packets/limits');
   Future<Map<String, dynamic>> latestAppUpdate() =>
       getJson('/app-updates/latest');
-  Future<Map<String, dynamic>> createChatTransfer(
-          {required String receiverId,
-          required String amount,
-          String? note,
-          String? roomId}) =>
-      postJson(
-          '/chat-transfers',
-          {
-            'receiver_id': receiverId,
-            'amount': amount,
-            if (note != null && note.isNotEmpty) 'note': note,
-            if (roomId != null) 'room_id': roomId,
-          },
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> acceptChatTransfer(String id) =>
-      postJson('/chat-transfers/$id/accept', {},
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> declineChatTransfer(String id) =>
-      postJson('/chat-transfers/$id/decline', {},
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> createChatTransfer({
+    required String receiverId,
+    required String amount,
+    String? note,
+    String? roomId,
+  }) => postJson('/chat-transfers', {
+    'receiver_id': receiverId,
+    'amount': amount,
+    if (note != null && note.isNotEmpty) 'note': note,
+    if (roomId != null) 'room_id': roomId,
+  }, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> acceptChatTransfer(String id) => postJson(
+    '/chat-transfers/$id/accept',
+    {},
+    idempotencyKey: newIdempotencyKey(),
+  );
+  Future<Map<String, dynamic>> declineChatTransfer(String id) => postJson(
+    '/chat-transfers/$id/decline',
+    {},
+    idempotencyKey: newIdempotencyKey(),
+  );
   Future<Map<String, dynamic>> chatTransferDetail(String id) =>
       getJson('/chat-transfers/$id');
   Future<Map<String, dynamic>> walletBalance() =>
@@ -484,13 +568,14 @@ final class BusinessApiClient
       getJson('/wallet/transactions${kind == null ? '' : '?kind=$kind'}');
   Future<Map<String, dynamic>> withdrawalStatus(String id) =>
       getJson('/wallet/withdrawals/$id');
-  Future<Map<String, dynamic>> convertWallet(
-          {required String direction,
-          required String amount,
-          required String idempotencyKey}) =>
-      postJson(
-          '/wallet/conversions', {'direction': direction, 'amount': amount},
-          idempotencyKey: idempotencyKey);
+  Future<Map<String, dynamic>> convertWallet({
+    required String direction,
+    required String amount,
+    required String idempotencyKey,
+  }) => postJson('/wallet/conversions', {
+    'direction': direction,
+    'amount': amount,
+  }, idempotencyKey: idempotencyKey);
   Future<Map<String, dynamic>> walletConversionStatus(String id) =>
       getJson('/wallet/conversions/$id');
 
@@ -501,7 +586,8 @@ final class BusinessApiClient
     final parts = session.accessToken.split('.');
     if (parts.length != 3) throw StateError('无法识别当前账户');
     final claims = jsonDecode(
-        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
     final subject = claims is Map ? claims['sub'] : null;
     if (subject is! String || subject.isEmpty) throw StateError('无法识别当前账户');
     return '${baseUri.origin}:$subject';
@@ -512,18 +598,23 @@ final class BusinessApiClient
   Future<bool> setAutoAllowGroupJoin(bool enabled) async =>
       _setAutoAllowGroupJoin(enabled);
   Future<bool> _setAutoAllowGroupJoin(bool enabled) async {
-    final response = await _authorized((headers) => _client.put(
-          _uri('/profile/privacy/auto-allow-group-join'),
-          headers: {...headers, 'Content-Type': 'application/json'},
-          body: jsonEncode({'enabled': enabled}),
-        ));
+    final response = await _authorized(
+      (headers) => _client.put(
+        _uri('/profile/privacy/auto-allow-group-join'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'enabled': enabled}),
+      ),
+    );
     return _decode(response)['auto_allow_group_join'] == true;
   }
 
   /// BUG2 群二维码：签发入群令牌（群主/管理员；返回 `changliao://g/<token>`）。
   Future<Map<String, dynamic>> issueGroupJoinToken({required String roomId}) =>
-      postJson('/groups/$roomId/join-tokens', const {},
-          idempotencyKey: newIdempotencyKey());
+      postJson(
+        '/groups/$roomId/join-tokens',
+        const {},
+        idempotencyKey: newIdempotencyKey(),
+      );
 
   /// 扫码后的安全群摘要（不返回 room_id/令牌明文）。
   Future<Map<String, dynamic>> groupJoinInfo({required String token}) =>
@@ -531,26 +622,25 @@ final class BusinessApiClient
 
   /// 兑换令牌入群（直加或转审批，服务端校验）。
   Future<Map<String, dynamic>> redeemGroupJoinToken({required String token}) =>
-      postJson('/groups/join-tokens/redeem', {'token': token},
-          idempotencyKey: newIdempotencyKey());
+      postJson('/groups/join-tokens/redeem', {
+        'token': token,
+      }, idempotencyKey: newIdempotencyKey());
 
   /// 撤销令牌（轮换 = 新签发 + 撤销旧）。
   Future<Map<String, dynamic>> revokeGroupJoinToken({required String token}) =>
-      postJson('/groups/join-tokens/${Uri.encodeQueryComponent(token)}/revoke',
-          const {},
-          idempotencyKey: newIdempotencyKey());
+      postJson(
+        '/groups/join-tokens/${Uri.encodeQueryComponent(token)}/revoke',
+        const {},
+        idempotencyKey: newIdempotencyKey(),
+      );
 
   Future<Map<String, dynamic>> requestServerGroupAutoJoin({
     required String roomId,
     required List<String> inviteeUserIds,
-  }) =>
-      postJson(
-          '/groups/auto-join',
-          {
-            'room_id': roomId,
-            'invitee_user_ids': inviteeUserIds,
-          },
-          idempotencyKey: newIdempotencyKey());
+  }) => postJson('/groups/auto-join', {
+    'room_id': roomId,
+    'invitee_user_ids': inviteeUserIds,
+  }, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> friends() => getJson('/friends');
   @override
   Future<List<ContactSummary>> listContacts() async {
@@ -562,68 +652,77 @@ final class BusinessApiClient
 
   Future<Map<String, dynamic>> friendRequests() => getJson('/friends/requests');
   @override
-  Future<Map<String, dynamic>> submitComplaint(
-          {required String category, required String description}) =>
-      postJson(
-          '/support/complaints',
-          {
-            'category': category,
-            'description': description,
-          },
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> submitComplaint({
+    required String category,
+    required String description,
+  }) => postJson('/support/complaints', {
+    'category': category,
+    'description': description,
+  }, idempotencyKey: newIdempotencyKey());
   @override
   Future<Map<String, dynamic>> contactTags() => getJson('/contact-tags');
   @override
-  Future<Map<String, dynamic>> createContactTag(String name) =>
-      postJson('/contact-tags', {'name': name},
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> createContactTag(String name) => postJson(
+    '/contact-tags',
+    {'name': name},
+    idempotencyKey: newIdempotencyKey(),
+  );
   @override
   Future<Map<String, dynamic>> renameContactTag(String id, String name) =>
-      patchJson('/contact-tags/$id', {'name': name},
-          idempotencyKey: newIdempotencyKey());
+      patchJson('/contact-tags/$id', {
+        'name': name,
+      }, idempotencyKey: newIdempotencyKey());
   @override
   Future<void> deleteContactTag(String id) async {
-    final response = await _authorized((headers) => _client.delete(
-          _uri('/contact-tags/$id'),
-          headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
-        ));
+    final response = await _authorized(
+      (headers) => _client.delete(
+        _uri('/contact-tags/$id'),
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   @override
   Future<void> deleteContactTags(List<String> ids) async {
-    final response = await _authorized((headers) => _client.delete(
-          _uri('/contact-tags'),
-          headers: {
-            ...headers,
-            'Idempotency-Key': newIdempotencyKey(),
-            'Content-Type': 'application/json'
-          },
-          body: jsonEncode({'tag_ids': ids}),
-        ));
+    final response = await _authorized(
+      (headers) => _client.delete(
+        _uri('/contact-tags'),
+        headers: {
+          ...headers,
+          'Idempotency-Key': newIdempotencyKey(),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'tag_ids': ids}),
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   Future<Map<String, dynamic>> blocks() => getJson('/blocks');
-  Future<Map<String, dynamic>> updateContact(String id,
-          {String? remark,
-          List<String> tags = const [],
-          String momentsPermission = 'DEFAULT'}) =>
-      patchJson(
-          '/friends/$id',
-          {
-            'remark': remark,
-            'tags': tags,
-            'moments_permission': momentsPermission
-          },
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> updateContact(
+    String id, {
+    String? remark,
+    List<String> tags = const [],
+    String momentsPermission = 'DEFAULT',
+  }) => patchJson('/friends/$id', {
+    'remark': remark,
+    'tags': tags,
+    'moments_permission': momentsPermission,
+  }, idempotencyKey: newIdempotencyKey());
   @override
-  Future<ContactDetails> updateContactDetails(ContactDetails contact,
-      {required String? remark,
-      required List<String> tags,
-      required String momentsPermission}) async {
-    final body = await updateContact(contact.userId,
-        remark: remark, tags: tags, momentsPermission: momentsPermission);
+  Future<ContactDetails> updateContactDetails(
+    ContactDetails contact, {
+    required String? remark,
+    required List<String> tags,
+    required String momentsPermission,
+  }) async {
+    final body = await updateContact(
+      contact.userId,
+      remark: remark,
+      tags: tags,
+      momentsPermission: momentsPermission,
+    );
     return contact.copyWith(
       remark: body['remark']?.toString(),
       clearRemark: body['remark'] == null,
@@ -644,9 +743,12 @@ final class BusinessApiClient
 
   @override
   Future<void> deleteContact(String userId) async {
-    final response = await _authorized((headers) => _client.delete(
+    final response = await _authorized(
+      (headers) => _client.delete(
         _uri('/friends/$userId'),
-        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
@@ -656,101 +758,109 @@ final class BusinessApiClient
 
   /// BUG 2 群成员非好友：按 Matrix ID 反查公开资料与关系状态。
   /// 不存在/拉黑/自己时服务端返回 404（抛 BusinessApiException）。
-  Future<
-      Map<String,
-          dynamic>> lookupUserByMatrixId(String matrixUserId) => getJson(
-      '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}');
+  Future<Map<String, dynamic>> lookupUserByMatrixId(
+    String matrixUserId,
+  ) => getJson(
+    '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}',
+  );
 
   @override
-  Future<Map<String, dynamic>> requestFriend(String userId,
-          {String message = '',
-          String? remark,
-          List<String> tags = const [],
-          String momentsPermission = 'DEFAULT'}) =>
-      postJson(
-          '/friends/requests',
-          {
-            'target_user_id': userId,
-            'message': message,
-            if (remark != null && remark.isNotEmpty) 'remark': remark,
-            if (tags.isNotEmpty) 'tags': tags,
-            'moments_permission': momentsPermission,
-          },
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> acceptFriendRequest(String id) =>
-      postJson('/friends/requests/$id/accept', {},
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> rejectFriendRequest(String id) =>
-      postJson('/friends/requests/$id/reject', {},
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> requestFriend(
+    String userId, {
+    String message = '',
+    String? remark,
+    List<String> tags = const [],
+    String momentsPermission = 'DEFAULT',
+  }) => postJson('/friends/requests', {
+    'target_user_id': userId,
+    'message': message,
+    if (remark != null && remark.isNotEmpty) 'remark': remark,
+    if (tags.isNotEmpty) 'tags': tags,
+    'moments_permission': momentsPermission,
+  }, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> acceptFriendRequest(String id) => postJson(
+    '/friends/requests/$id/accept',
+    {},
+    idempotencyKey: newIdempotencyKey(),
+  );
+  Future<Map<String, dynamic>> rejectFriendRequest(String id) => postJson(
+    '/friends/requests/$id/reject',
+    {},
+    idempotencyKey: newIdempotencyKey(),
+  );
 
   /// Canonical Direct Conversation（好友系统重构 Phase E）：
   /// 创建私聊前先查询规范房间，存在即复用。
   Future<String?> canonicalDirectRoomId(String peerUserId) async {
-    final body =
-        await getJson('/direct-conversations?peer_user_id=$peerUserId');
+    final body = await getJson(
+      '/direct-conversations?peer_user_id=$peerUserId',
+    );
     return body['matrix_room_id']?.toString();
   }
 
   /// 客户端创建 Matrix Direct Chat 后注册；并发冲突时服务端返回既有行。
   Future<String> registerDirectConversation(
-      String peerUserId, String matrixRoomId) async {
-    final body = await postJson('/direct-conversations',
-        {'peer_user_id': peerUserId, 'matrix_room_id': matrixRoomId},
-        idempotencyKey: newIdempotencyKey());
+    String peerUserId,
+    String matrixRoomId,
+  ) async {
+    final body = await postJson('/direct-conversations', {
+      'peer_user_id': peerUserId,
+      'matrix_room_id': matrixRoomId,
+    }, idempotencyKey: newIdempotencyKey());
     return body['matrix_room_id']?.toString() ?? matrixRoomId;
   }
 
   /// BUG 2 状态机：申请人撤销待处理申请（PENDING → CANCELLED）。
   Future<Map<String, dynamic>> cancelFriendRequest(String id) async {
-    final response = await _authorized((headers) => _client.delete(
+    final response = await _authorized(
+      (headers) => _client.delete(
         _uri('/friends/requests/$id'),
-        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> momentsFeed(
-          {String mode = 'recommended', String? cursor}) =>
-      getJson('/moments/feed${Uri(queryParameters: {
-            'mode': mode,
-            if (cursor != null) 'cursor': cursor,
-          })}');
+  Future<Map<String, dynamic>> momentsFeed({
+    String mode = 'recommended',
+    String? cursor,
+  }) => getJson(
+    '/moments/feed${Uri(queryParameters: {'mode': mode, if (cursor != null) 'cursor': cursor})}',
+  );
 
-  Future<Map<String, dynamic>> momentNewPosts(
-          {String? since, String? cursor}) =>
-      getJson('/moments/new-posts${Uri(queryParameters: {
-            if (since != null) 'since': since,
-            if (cursor != null) 'cursor': cursor,
-          }).toString()}');
+  Future<Map<String, dynamic>> momentNewPosts({
+    String? since,
+    String? cursor,
+  }) => getJson(
+    '/moments/new-posts${Uri(queryParameters: {if (since != null) 'since': since, if (cursor != null) 'cursor': cursor}).toString()}',
+  );
   Future<Map<String, dynamic>> searchMoments(String query) =>
       getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
-  Future<Map<String, dynamic>> publishMoment(
-          {required String text,
-          required String visibility,
-          List<String> imageUrls = const [],
-          List<String> includeUserIds = const [],
-          List<String> excludeUserIds = const [],
-          List<String> includeTagIds = const [],
-          List<String> excludeTagIds = const [],
-          String? linkUrl}) =>
-      postJson(
-          '/moments',
-          {
-            'text': text,
-            'visibility': visibility,
-            'image_urls': imageUrls,
-            'include_user_ids': includeUserIds,
-            'exclude_user_ids': excludeUserIds,
-            'include_tag_ids': includeTagIds,
-            'exclude_tag_ids': excludeTagIds,
-            'link_url': linkUrl,
-          },
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> publishMoment({
+    required String text,
+    required String visibility,
+    List<String> imageUrls = const [],
+    List<String> includeUserIds = const [],
+    List<String> excludeUserIds = const [],
+    List<String> includeTagIds = const [],
+    List<String> excludeTagIds = const [],
+    String? linkUrl,
+  }) => postJson('/moments', {
+    'text': text,
+    'visibility': visibility,
+    'image_urls': imageUrls,
+    'include_user_ids': includeUserIds,
+    'exclude_user_ids': excludeUserIds,
+    'include_tag_ids': includeTagIds,
+    'exclude_tag_ids': excludeTagIds,
+    'link_url': linkUrl,
+  }, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
       postJson('/moments/$id/likes', {}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> commentMoment(String id, String text) =>
-      postJson('/moments/$id/comments', {'text': text},
-          idempotencyKey: newIdempotencyKey());
+      postJson('/moments/$id/comments', {
+        'text': text,
+      }, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> momentDetail(String id) =>
       getJson('/moments/$id');
   Future<void> unlikeMoment(String id) => deleteJson('/moments/$id/likes');
@@ -762,49 +872,71 @@ final class BusinessApiClient
       putJson('/moments/draft', {'payload': payload});
   Future<void> deleteMomentDraft() => deleteJson('/moments/draft');
   Future<Map<String, dynamic>> momentAds() => getJson('/moments/ads');
-  Future<Map<String, dynamic>> beginMomentUpload(
-          {required String fileName,
-          required String mimeType,
-          required int byteSize}) =>
-      postJson('/moments/media/uploads',
-          {'file_name': fileName, 'mime_type': mimeType, 'byte_size': byteSize},
-          idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> beginMomentUpload({
+    required String fileName,
+    required String mimeType,
+    required int byteSize,
+  }) => postJson('/moments/media/uploads', {
+    'file_name': fileName,
+    'mime_type': mimeType,
+    'byte_size': byteSize,
+  }, idempotencyKey: newIdempotencyKey());
   Future<void> putMomentUpload(
-      String uploadId, List<int> bytes, String mimeType) async {
-    final response = await _authorized((headers) => _client.put(
+    String uploadId,
+    List<int> bytes,
+    String mimeType,
+  ) async {
+    final response = await _authorized(
+      (headers) => _client.put(
         _uri('/moments/media/uploads/$uploadId/content'),
         headers: {...headers, 'Content-Type': mimeType},
-        body: bytes));
+        body: bytes,
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   Future<Map<String, dynamic>> completeMomentUpload(String uploadId) =>
-      postJson('/moments/media/uploads/$uploadId/complete', {},
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> beginMomentCoverUpload(
-          {required String fileName,
-          required String mimeType,
-          required int byteSize}) =>
-      postJson('/moments/cover/uploads',
-          {'file_name': fileName, 'mime_type': mimeType, 'byte_size': byteSize},
-          idempotencyKey: newIdempotencyKey());
+      postJson(
+        '/moments/media/uploads/$uploadId/complete',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
+  Future<Map<String, dynamic>> beginMomentCoverUpload({
+    required String fileName,
+    required String mimeType,
+    required int byteSize,
+  }) => postJson('/moments/cover/uploads', {
+    'file_name': fileName,
+    'mime_type': mimeType,
+    'byte_size': byteSize,
+  }, idempotencyKey: newIdempotencyKey());
   Future<void> putMomentCoverUpload(
-      String uploadId, List<int> bytes, String mimeType) async {
-    final response = await _authorized((headers) => _client.put(
+    String uploadId,
+    List<int> bytes,
+    String mimeType,
+  ) async {
+    final response = await _authorized(
+      (headers) => _client.put(
         _uri('/moments/cover/uploads/$uploadId/content'),
         headers: {...headers, 'Content-Type': mimeType},
-        body: bytes));
+        body: bytes,
+      ),
+    );
     if (response.statusCode >= 400) _decode(response);
   }
 
   Future<Map<String, dynamic>> completeMomentCoverUpload(String uploadId) =>
-      postJson('/moments/cover/uploads/$uploadId/complete', {},
-          idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> setMomentCover(String uploadId) => putJson(
-        '/moments/cover',
-        {'upload_id': uploadId},
+      postJson(
+        '/moments/cover/uploads/$uploadId/complete',
+        {},
         idempotencyKey: newIdempotencyKey(),
       );
+  Future<Map<String, dynamic>> setMomentCover(String uploadId) => putJson(
+    '/moments/cover',
+    {'upload_id': uploadId},
+    idempotencyKey: newIdempotencyKey(),
+  );
   Future<Map<String, dynamic>> personalMoments(String userId) =>
       getJson('/moments/users/$userId');
   Future<Map<String, dynamic>> momentNotifications() =>
@@ -812,81 +944,105 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> momentUnreadCount() =>
       getJson('/moments/notifications/unread-count');
   Future<void> markMomentNotificationsRead(List<String> ids) async {
-    await postJson('/moments/notifications/read', {'ids': ids},
-        idempotencyKey: newIdempotencyKey());
+    await postJson('/moments/notifications/read', {
+      'ids': ids,
+    }, idempotencyKey: newIdempotencyKey());
   }
 
   Future<Map<String, dynamic>> momentsPreferences() =>
       getJson('/moments/preferences');
-  Future<Map<String, dynamic>> updateMomentsPreferences(
-          {required String historyRange,
-          required bool personalized,
-          String? coverUrl}) =>
-      putJson('/moments/preferences', {
-        'history_range': historyRange,
-        'personalized_recommendations': personalized,
-        if (coverUrl != null) 'cover_url': coverUrl
-      });
-  Future<Map<String, dynamic>> requestWithdrawal(
-          {required String amount,
-          required String address,
-          required String clientOrderId,
-          required String reasonCode}) =>
-      postJson(
-          '/wallet/withdrawals',
-          {
-            'amount': amount,
-            'address': address,
-            'client_order_id': clientOrderId,
-            'reason_code': reasonCode
-          },
-          idempotencyKey: clientOrderId);
+  Future<Map<String, dynamic>> updateMomentsPreferences({
+    required String historyRange,
+    required bool personalized,
+    String? coverUrl,
+  }) => putJson('/moments/preferences', {
+    'history_range': historyRange,
+    'personalized_recommendations': personalized,
+    if (coverUrl != null) 'cover_url': coverUrl,
+  });
+  Future<Map<String, dynamic>> requestWithdrawal({
+    required String amount,
+    required String address,
+    required String clientOrderId,
+    required String reasonCode,
+  }) => postJson('/wallet/withdrawals', {
+    'amount': amount,
+    'address': address,
+    'client_order_id': clientOrderId,
+    'reason_code': reasonCode,
+  }, idempotencyKey: clientOrderId);
   Future<Map<String, dynamic>> getJson(String path) async {
     final response = await _authorized(
-        (headers) => _client.get(_uri(path), headers: headers));
+      (headers) => _client.get(_uri(path), headers: headers),
+    );
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body,
-      {required String idempotencyKey}) async {
-    final response = await _authorized((headers) => _client.post(_uri(path),
+  Future<Map<String, dynamic>> postJson(
+    String path,
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) async {
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri(path),
         headers: {
           ...headers,
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey
+          'Idempotency-Key': idempotencyKey,
         },
-        body: jsonEncode(body)));
+        body: jsonEncode(body),
+      ),
+    );
     return _decode(response);
   }
 
   Future<void> deleteJson(String path) async {
-    final response = await _authorized((headers) => _client.delete(_uri(path),
-        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()}));
+    final response = await _authorized(
+      (headers) => _client.delete(
+        _uri(path),
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
     if (response.statusCode == 204) return;
     _decode(response);
   }
 
-  Future<Map<String, dynamic>> patchJson(String path, Map<String, dynamic> body,
-      {required String idempotencyKey}) async {
-    final response = await _authorized((headers) => _client.patch(_uri(path),
+  Future<Map<String, dynamic>> patchJson(
+    String path,
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) async {
+    final response = await _authorized(
+      (headers) => _client.patch(
+        _uri(path),
         headers: {
           ...headers,
           'Content-Type': 'application/json',
-          'Idempotency-Key': idempotencyKey
+          'Idempotency-Key': idempotencyKey,
         },
-        body: jsonEncode(body)));
+        body: jsonEncode(body),
+      ),
+    );
     return _decode(response);
   }
 
-  Future<Map<String, dynamic>> putJson(String path, Map<String, dynamic> body,
-      {String? idempotencyKey}) async {
-    final response = await _authorized((headers) => _client.put(_uri(path),
+  Future<Map<String, dynamic>> putJson(
+    String path,
+    Map<String, dynamic> body, {
+    String? idempotencyKey,
+  }) async {
+    final response = await _authorized(
+      (headers) => _client.put(
+        _uri(path),
         headers: {
           ...headers,
           'Content-Type': 'application/json',
           if (idempotencyKey != null) 'Idempotency-Key': idempotencyKey,
         },
-        body: jsonEncode(body)));
+        body: jsonEncode(body),
+      ),
+    );
     return _decode(response);
   }
 
@@ -918,7 +1074,7 @@ final class BusinessApiClient
     http.Response response;
     try {
       response = await operation({
-        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}'
+        if (initial != null) 'Authorization': 'Bearer ${initial.accessToken}',
       }).timeout(timeout);
     } catch (error) {
       _logRequest('REQUEST', requestUrl, 'ERROR:${error.runtimeType}');
@@ -933,8 +1089,9 @@ final class BusinessApiClient
     if (budget.isNegative) {
       throw TimeoutException('authorized request budget exhausted');
     }
-    return operation({'Authorization': 'Bearer ${replacement.accessToken}'})
-        .timeout(budget < timeout ? budget : timeout);
+    return operation({
+      'Authorization': 'Bearer ${replacement.accessToken}',
+    }).timeout(budget < timeout ? budget : timeout);
   }
 
   Uri? _lastRequestUrl;

@@ -6,6 +6,7 @@ import 'package:liuhetong_mobile/features/matrix/conversation_presentation.dart'
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart'
     show changliaoCallMessageType;
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/features/matrix/decryption_state_controller.dart';
 
 void main() {
   test('direct title is remark then nickname with defensive fallbacks', () {
@@ -140,14 +141,21 @@ void main() {
   test('undecrypted events leave the conversation preview blank', () {
     expect(
       safeConversationMessageContent(
-        undecrypted: true,
+        decryptionState: MessageDecryptionState.decrypting,
         messageContent: 'MegolmException secret ciphertext detail',
       ),
       '',
     );
     expect(
       safeConversationMessageContent(
-        undecrypted: false,
+        decryptionState: MessageDecryptionState.missingKey,
+        messageContent: 'MegolmException secret ciphertext detail',
+      ),
+      '',
+    );
+    expect(
+      safeConversationMessageContent(
+        decryptionState: MessageDecryptionState.decrypted,
         messageContent: '正常消息',
       ),
       '正常消息',
@@ -226,13 +234,14 @@ void main() {
           .readAsStringSync(encoding: utf8);
       expect(source.contains("startDirectChat"), isTrue);
       expect(source.contains("isDirect: true"), isTrue);
-      expect(source.contains("Direct chat m.direct metadata not synced"), isTrue,
+      expect(
+          source.contains("Direct chat m.direct metadata not synced"), isTrue,
           reason: "m.direct 未同步必须抛错，不得把房间当私聊返回");
     });
     test("UI 分叉守卫：私聊=好友名 / 群聊=群名（N）", () {
       final home = File("lib/features/matrix/matrix_home_page.dart")
           .readAsStringSync(encoding: utf8);
-      expect(home.contains("room.isDirectChat"), isTrue);
+      expect(home.contains("room.isDirect"), isTrue);
       expect(home.contains("groupRoomNavigationTitle"), isTrue);
     });
   });

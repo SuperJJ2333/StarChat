@@ -74,11 +74,8 @@ void main() {
       expect(start, greaterThan(0));
       expect(end, greaterThan(start));
       final body = source.substring(start, end);
-      expect(body.contains('Uint8List.fromList'), isFalse,
-          reason: 'sendEncryptedMedia 不得对正文/缩略图再做全量拷贝'
-              '（SDK 加密内部的原生拷贝不在应用层控制范围）');
-      expect(body.contains('bytes: plaintext,'), isTrue,
-          reason: '正文必须原实例透传给 MatrixFile');
+      expect(body.contains('plaintext is Uint8List'), isTrue,
+          reason: '现有 Uint8List 必须直接传给 SDK，只有普通 List<int> 可以转换');
       expect(body.contains('bytes: thumbnailBytes,'), isTrue,
           reason: '缩略图必须原实例透传给 MatrixImageFile');
     });

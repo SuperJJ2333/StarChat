@@ -16,6 +16,7 @@ import 'features/matrix/matrix_client_factory.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'ui/foundation/changliao_icons.dart';
+import 'features/matrix/matrix_recovery_service.dart';
 import 'session_gate.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
@@ -42,22 +43,42 @@ Future<void> main() async {
   final matrix = MatrixSdkE2eeClient(
     sdkClient,
     homeserver: Uri.parse(AppConfig.matrixHomeserver),
-    reopenClient: matrixFactory.reopen,
-    resetClient: matrixFactory.reset,
+    suspendClient: matrixFactory.suspend,
+    resumeClient: matrixFactory.create,
+    clearClientData: matrixFactory.clearLocalChatData,
+    readContinuityMetadata: matrixFactory.continuityMetadata,
   );
-  final session = SessionBootstrapController(business: api, matrix: matrix);
+  final session = SessionBootstrapController(
+    business: api,
+    matrix: matrix,
+    securityLogger: matrix.securityLogger,
+  );
+  final recovery = MatrixRecoveryService(matrix);
+  final login = DualDomainLoginService(
+    business: api,
+    matrix: matrix,
+    deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+  );
   final gate = SessionGate(
     controller: session,
     cachedMessagesBuilder: (_) => CupertinoTabScaffold(
-      tabBar: CupertinoTabBar(items: const [
-        BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.messagesFilled), label: '消息'),
-        BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.contacts), label: '通讯录'),
-        BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.discover), label: '发现'),
-        BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
-      ]),
+      tabBar: CupertinoTabBar(
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.messagesFilled),
+            label: '消息',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.contacts),
+            label: '通讯录',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(ChangliaoIcons.discover),
+            label: '发现',
+          ),
+          BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
+        ],
+      ),
       tabBuilder: (_, index) => MatrixHomePage(
         api: api,
         matrix: matrix,
@@ -68,14 +89,9 @@ Future<void> main() async {
     ),
     unauthenticatedBuilder: (_) => AuthenticationFlow(
       api: api,
-      onLogin: (username, password) async {
-        final login = DualDomainLoginService(
-          business: api,
-          matrix: matrix,
-          deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
-        );
-        await login.login(username, password);
-      },
+      onLogin: login.login,
+      onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
+      onCancelMatrixAccountSwitch: api.logoutBusiness,
       onAuthenticated: session.bootstrap,
     ),
     authenticatedBuilder: (_) => AppHome(
@@ -86,7 +102,19 @@ Future<void> main() async {
     ),
   );
   runApp(LiuhetongApp(home: gate, themeController: themeController));
-  unawaited(session.bootstrap());
+  final bootstrap = session.bootstrap();
+  unawaited(() async {
+    try {
+      await bootstrap;
+      await session.runAuthenticatedBackground(
+        prepare: () => recovery.restoreFromLocalSecureStorage(store),
+        complete: matrix.syncIfActive,
+      );
+    } catch (_) {
+      // The encrypted database and secure-store records remain intact. The
+      // recovery UI can present a retry/import flow without exposing secrets.
+    }
+  }());
 }
 
 final class LiuhetongApp extends StatefulWidget {

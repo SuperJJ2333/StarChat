@@ -1,0 +1,4 @@
+Changed branch/field: feat/e2ee-session-continuity / MatrixAccountSwitchRequired.fromMxid,toMxid; confirmed switch; MatrixRoomLease operation tracking.
+Baseline: 22b06b421c14d49c3dc0206193698fdd17803b43
+Modified tree: HEAD 57c96f0 plus unstaged implementation verified below.
+Artifact SHA256: 487D3494DA06A207D2974BCC4E867B50174BE311E67E533B41B07449DF2875BE

@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
-import 'package:matrix/matrix.dart';
 
 import 'matrix_user_avatar.dart';
 import '../../ui/components/wechat_list_tile.dart';
@@ -18,7 +17,7 @@ final class DirectChatInfoPage extends StatefulWidget {
     this.onTapPerson,
     required this.peerName,
     required this.peerId,
-    required this.matrixClient,
+    required this.avatarMedia,
     required this.preference,
     required this.onAddMember,
     required this.onSearchHistory,
@@ -30,7 +29,7 @@ final class DirectChatInfoPage extends StatefulWidget {
 
   final String peerName;
   final String peerId;
-  final Client matrixClient;
+  final AvatarMediaCapability avatarMedia;
   final String? peerAvatarUrl;
   final ConversationPreference preference;
   final VoidCallback onAddMember;
@@ -200,7 +199,7 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
   Widget _personColumn(String name, String id, String? avatarUrl) =>
       Column(mainAxisSize: MainAxisSize.min, children: [
         MatrixUserAvatar(
-          client: widget.matrixClient,
+          avatarMedia: widget.avatarMedia,
           nickname: name,
           fallbackSeed: id,
           matrixAvatarUri: Uri.tryParse(avatarUrl ?? ''),

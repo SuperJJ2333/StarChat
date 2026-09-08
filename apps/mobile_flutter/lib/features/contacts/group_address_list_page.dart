@@ -1,39 +1,37 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
-import 'package:matrix/matrix.dart';
+import '../matrix/matrix_e2ee_client.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
-import '../matrix/conversation_preferences.dart';
-import '../matrix/matrix_home_page.dart' show orderedJoinedMembers;
 import '../matrix/matrix_user_avatar.dart';
 
 /// BUG4：群聊通讯录——只显示当前用户已 join、非私聊、且开了
 /// 「保存到通讯录」（room account data `saved=true`，个人设置不泄露给
 /// 其他成员）的群聊；按最近活跃倒序；随 Matrix 同步与保存状态即时刷新。
 final class GroupAddressListPage extends StatefulWidget {
-  const GroupAddressListPage({super.key, required this.client, this.onOpen});
+  const GroupAddressListPage({super.key, required this.matrix, this.onOpen});
 
-  final Client client;
+  final MatrixSdkE2eeClient matrix;
 
   /// 点击进入会话（组合根注入 RoomPage 打开路径）。
-  final void Function(Room room)? onOpen;
+  final void Function(String roomId)? onOpen;
 
   @override
   State<GroupAddressListPage> createState() => _GroupAddressListPageState();
 }
 
 final class _GroupAddressListPageState extends State<GroupAddressListPage> {
-  StreamSubscription<SyncUpdate>? _subscription;
+  StreamSubscription<void>? _subscription;
 
   @override
   void initState() {
     super.initState();
-    _subscription = widget.client.onSync.stream.listen((_) {
-      if (mounted) setState(() {});
-    });
+    _subscription =
+        widget.matrix.syncEvents.listen((_) => unawaited(_refresh()));
+    unawaited(_refresh());
   }
 
   @override
@@ -42,20 +40,23 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
     super.dispose();
   }
 
-  List<Room> _savedGroups() {
-    final rooms = widget.client.rooms
-        .where(
-            (room) => room.membership == Membership.join && !room.isDirectChat)
-        .where((room) => preferenceForRoom(room).saved)
-        .toList(growable: false)
-      ..sort((a, b) {
-        final left = a.lastEvent?.originServerTs ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        final right = b.lastEvent?.originServerTs ??
-            DateTime.fromMillisecondsSinceEpoch(0);
-        return right.compareTo(left);
-      });
-    return rooms;
+  List<MatrixConversationRoomSnapshot> _rooms = [];
+  int _generation = 0;
+  Future<void> _refresh() async {
+    final generation = ++_generation;
+    try {
+      final snapshot = await widget.matrix.conversations.snapshot();
+      if (!mounted || generation != _generation) return;
+      final rooms = snapshot.rooms
+          .where((room) =>
+              room.isJoined && !room.isDirect && room.preference.saved)
+          .toList()
+        ..sort((a, b) => (b.lastEvent?.originServerTs ?? DateTime(1970))
+            .compareTo(a.lastEvent?.originServerTs ?? DateTime(1970)));
+      setState(() => _rooms = rooms);
+    } catch (_) {
+      // Keep cached group entries available while the connection recovers.
+    }
   }
 
   @override
@@ -75,7 +76,7 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
   static final _preferenceNotifier = _PreferenceRefreshNotifier();
 
   Widget _buildList(BuildContext context) {
-    final rooms = _savedGroups();
+    final rooms = _rooms;
     if (rooms.isEmpty) {
       return Center(
         child: Column(
@@ -113,13 +114,15 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
       ),
       itemBuilder: (context, index) {
         final room = rooms[index];
-        final members = orderedJoinedMembers(room);
-        final name = room.name.trim().isEmpty ? '未命名群聊' : room.name.trim();
+        final members = room.members;
+        final name =
+            room.displayName.trim().isEmpty ? '未命名群聊' : room.displayName.trim();
         return _GroupAddressTile(
           room: room,
+          avatarMedia: widget.matrix,
           name: name,
           memberCount: members.length,
-          onTap: () => widget.onOpen?.call(room),
+          onTap: () => widget.onOpen?.call(room.id),
         );
       },
     );
@@ -129,12 +132,14 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
 final class _GroupAddressTile extends StatelessWidget {
   const _GroupAddressTile({
     required this.room,
+    required this.avatarMedia,
     required this.name,
     required this.memberCount,
     this.onTap,
   });
 
-  final Room room;
+  final MatrixConversationRoomSnapshot room;
+  final AvatarMediaCapability avatarMedia;
   final String name;
   final int memberCount;
   final VoidCallback? onTap;
@@ -145,7 +150,7 @@ final class _GroupAddressTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: room.avatar != null
             ? MatrixUserAvatar(
-                client: room.client,
+                avatarMedia: avatarMedia,
                 nickname: name,
                 fallbackSeed: room.id,
                 matrixAvatarUri: room.avatar,
@@ -153,12 +158,12 @@ final class _GroupAddressTile extends StatelessWidget {
               )
             : GroupAvatarMosaic(
                 avatars: [
-                  for (final member in orderedJoinedMembers(room).take(9))
+                  for (final member in room.members.take(9))
                     MatrixUserAvatar(
-                      client: room.client,
-                      nickname: member.calcDisplayname(),
+                      avatarMedia: avatarMedia,
+                      nickname: member.displayName,
                       fallbackSeed: member.id,
-                      matrixAvatarUri: member.avatarUrl,
+                      matrixAvatarUri: member.avatar,
                     ),
                 ],
               ),

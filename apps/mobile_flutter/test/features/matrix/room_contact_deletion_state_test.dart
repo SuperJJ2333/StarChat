@@ -7,6 +7,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
 
 BusinessApiClient _api() => BusinessApiClient(
@@ -14,11 +15,29 @@ BusinessApiClient _api() => BusinessApiClient(
     sessionStore: SecureSessionStore());
 
 class _Room extends Room {
-  _Room({this.direct = true})
-      : super(id: '!contact-state:test', client: Client('contact-state'));
+  _Room({required super.client, this.direct = true})
+      : super(id: '!contact-state:test');
   final bool direct;
   @override
+  bool get isDirectChat => direct;
+  @override
   String? get directChatMatrixID => direct ? '@friend:test' : null;
+}
+
+class _RoomClient extends Client {
+  _RoomClient({bool direct = true}) : super('contact-state') {
+    testRoom = _Room(client: this, direct: direct);
+  }
+  late final Room testRoom;
+  @override
+  Room? getRoomById(String roomId) => roomId == testRoom.id ? testRoom : null;
+}
+
+Future<MatrixRoomLease> _lease({bool direct = true}) async {
+  final client = _RoomClient(direct: direct);
+  return MatrixSdkE2eeClient(client,
+          homeserver: Uri.parse('https://matrix.test'))
+      .openRoomLease(client.testRoom.id);
 }
 
 const _friend = ContactDetails(
@@ -38,7 +57,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: RoomPage(
             api: _api(),
-            room: _Room(),
+            roomLease: await _lease(),
             roomName: 'Friend',
             initialContact: _friend,
             initialIdentityCache: cache,
@@ -65,7 +84,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: RoomPage(
             api: _api(),
-            room: _Room(),
+            roomLease: await _lease(),
             roomName: 'Friend',
             initialContact: _friend,
             initialIdentityCache: cache,
@@ -86,7 +105,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: RoomPage(
             api: _api(),
-            room: _Room(direct: false),
+            roomLease: await _lease(direct: false),
             roomName: 'Group',
             initialContact: _friend,
             initialIdentityCache: cache,

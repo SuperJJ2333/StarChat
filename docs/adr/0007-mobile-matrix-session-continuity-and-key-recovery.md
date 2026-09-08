@@ -1,6 +1,6 @@
 # ADR-0007：移动端 Matrix 会话连续性与 Megolm 密钥恢复
 
-**状态：** 产品设计已批准；Domain 与 Quality/Security 评审待完成
+**状态：** 已批准（Product、Domain、Quality/Security）
 
 **日期：** 2026-08-25
 
@@ -28,6 +28,8 @@
 ## 标准协议选择
 
 采用 Matrix 已有的 SSSS、交叉签名、Olm to-device 加密、秘密请求和 room-key backup API，不使用 Business API自定义密钥信封。所谓“服务器中转密钥信封”是 Synapse 对 Olm 加密 `m.secret.send` 事件的暂存与转发，不代表服务器持有或能够解开恢复秘密。
+
+可信恢复由应用层 adapter 使用标准 `m.secret.request` / `m.secret.send`，但自行关联单一目标设备和 request ID；响应解密后、缓存或使用 secret 前，必须从当前设备密钥集合实时重查 MXID、设备 ID、Curve25519 key、验证与封禁状态，并完成时限及备份公钥/版本校验。该 adapter 不得让 SDK 依据请求时的旧设备快照自动缓存 backup secret。
 
 ## 安全理由
 
@@ -60,3 +62,5 @@
 2. Quality/Security Review：SQLCipher、系统安全存储、设备信任校验、秘密不出端、日志脱敏、失败路径和端到端测试。
 
 详细状态机、错误码、测试矩阵和发布验收见 `docs/superpowers/specs/2026-08-25-matrix-session-continuity-key-recovery-design.md`。
+
+2026-08-25 的 Domain 与 Quality/Security 预实施评审已批准控制设计；该批准不等同于实现或测试通过。最终实现仍须在 Task 10 完成规格符合性、Domain 与 Quality/Security 后评审，并以实际测试、真实 Synapse、模拟器 E2E 和脱敏日志扫描证据决定发布资格。

@@ -1,10 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:matrix/matrix.dart';
 import 'dart:async';
 
-import 'conversation_preferences.dart';
-import 'avatar_url_resolver.dart';
-import 'group_room_authority.dart';
 import 'group_announcement_service.dart';
 
 const groupChatAccountDataType = 'com.liuhetong.group_chat.settings.v1';
@@ -53,6 +49,9 @@ enum GroupChatPreference {
   notifyAnnouncement,
 }
 
+/// App-owned membership DTO, deliberately independent from Matrix SDK enums.
+enum GroupMemberMembership { joined, invited }
+
 final class GroupChatMember {
   const GroupChatMember({
     required this.matrixUserId,
@@ -60,8 +59,7 @@ final class GroupChatMember {
     this.avatarUrl,
     this.avatarHeaders = const {},
     this.matrixAvatarUri,
-    this.client,
-    this.membership = Membership.join,
+    this.membership = GroupMemberMembership.joined,
   });
 
   final String matrixUserId;
@@ -69,9 +67,8 @@ final class GroupChatMember {
   final String? avatarUrl;
   final Map<String, String> avatarHeaders;
   final Uri? matrixAvatarUri;
-  final Client? client;
-  final Membership membership;
-  bool get isJoined => membership == Membership.join;
+  final GroupMemberMembership membership;
+  bool get isJoined => membership == GroupMemberMembership.joined;
 }
 
 final class GroupChatInfoSnapshot {
@@ -195,6 +192,14 @@ abstract interface class GroupChatInfoGateway {
   Future<void> removeMembers(List<String> matrixUserIds);
 }
 
+abstract interface class GroupChatInfoReloadGateway {
+  Future<GroupChatInfoSnapshot> load();
+}
+
+abstract interface class GroupAnnouncementGateway {
+  GroupAnnouncementService get announcementService;
+}
+
 abstract interface class GroupOwnershipGateway {
   Future<void> transferOwnership(String userId);
   Future<void> dissolve();
@@ -222,295 +227,6 @@ final class GroupPreferenceOverlay {
     });
     _lastRemote = remote;
     return {...remote, ..._pending};
-  }
-}
-
-final class MatrixGroupChatInfoGateway
-    implements GroupChatInfoGateway, GroupOwnershipGateway {
-  MatrixGroupChatInfoGateway(this.room);
-
-  final Room room;
-
-  @override
-  String? get roomId => room.id;
-  final _preferenceOverlay = GroupPreferenceOverlay();
-  Future<void> _preferenceWrites = Future.value();
-
-  Map<String, Object?> get _settings => _preferenceOverlay.read(
-        room.roomAccountData[conversationPreferenceType]?.content ??
-            room.roomAccountData[groupChatAccountDataType]?.content ??
-            const <String, Object?>{},
-      );
-
-  @override
-  Future<GroupChatInfoSnapshot> load() async {
-    await GroupRoomAuthority(room).refresh();
-    final localJoined = room.getParticipants([Membership.join]).length;
-    final users = await room.requestParticipants([Membership.join]);
-    final invited = await room.requestParticipants([Membership.invite]);
-    debugPrint(
-      '[GroupMembers] local_joined=$localJoined '
-      'server_joined=${users.length} server_invited=${invited.length}',
-    );
-    final settings = _settings;
-    final followed = settings['followed_member_ids'];
-    final storedOrder = settings['member_order_ids'];
-    // BUG1：人数与成员列表只认真正 join；invite 是待确认邀请，绝不合并
-    // 进 members（不再出现"人数增加了但对方没有真正进群"的假象）。
-    final order = reconcileMemberOrder(
-      storedOrder is List
-          ? storedOrder.map((value) => value.toString())
-          : const <String>[],
-      users.map((user) => user.id),
-    );
-    final userById = {for (final user in users) user.id: user};
-    final invitedOrder = reconcileMemberOrder(
-      const <String>[],
-      invited.map((user) => user.id),
-    );
-    final invitedById = {for (final user in invited) user.id: user};
-    final authority = GroupRoomAuthority(room);
-    final ownerId = authority.ownerId;
-    final adminIds = users
-        .where((user) =>
-            user.id != ownerId && room.getPowerLevelByUserId(user.id) >= 50)
-        .map((user) => user.id)
-        .toList();
-    final shared = room.getState(groupSettingsStateType)?.content ?? const {};
-    final orderedUsers = [for (final id in order) userById[id]!];
-    final activeIds = orderedUsers.map((user) => user.id).toSet();
-    return GroupChatInfoSnapshot(
-      name: room.name.trim(),
-      announcement: await _announcementPreview(),
-      remark: settings['remark']?.toString() ?? '',
-      muted: settings['muted'] == true,
-      attention: settings['attention'] == true,
-      pinned: settings['pinned'] == true,
-      saved: settings['saved'] == true,
-      folded: settings['folded'] == true,
-      notifyMentionMe: settings['notify_mention_me'] != false,
-      notifyMentionAll: settings['notify_mention_all'] != false,
-      notifyAnnouncement: settings['notify_announcement'] != false,
-      followedMemberIds: followed is List
-          ? followed
-              .map((value) => value.toString())
-              .where(activeIds.contains)
-              .take(4)
-              .toList()
-          : const [],
-      ownerId: ownerId,
-      adminIds: adminIds,
-      qrJoinEnabled: shared['qr_join_enabled'] != false,
-      joinApprovalRequired: shared['join_approval_required'] == true,
-      onlyManagersCanRename: authority.onlyManagersCanRename,
-      currentUserId: room.client.userID,
-      roomId: room.id,
-      members: orderGroupMembers(members: [
-        for (final user in orderedUsers) await _member(user),
-      ], ownerId: ownerId, adminIds: adminIds.toSet()),
-      invitedMembers: [
-        for (final id in invitedOrder)
-          if (invitedById[id] != null) await _member(invitedById[id]!),
-      ],
-    );
-  }
-
-  Future<String> _announcementPreview() async {
-    try {
-      return (await MatrixGroupAnnouncementService(room).load()).preview;
-    } catch (_) {
-      return '公告暂不可用，点击重试';
-    }
-  }
-
-  Future<GroupChatMember> _member(User user) async {
-    final avatar = MatrixAvatarUrlResolver.resolveImmediately(
-      avatarUri: user.avatarUrl,
-      homeserver: room.client.homeserver,
-      accessToken: room.client.accessToken,
-      size: 48,
-    );
-    return GroupChatMember(
-      matrixUserId: user.id,
-      displayName: user.calcDisplayname(),
-      avatarUrl: avatar?.url,
-      avatarHeaders: avatar?.headers ?? const {},
-      matrixAvatarUri: user.avatarUrl,
-      client: room.client,
-      membership: user.membership,
-    );
-  }
-
-  @override
-  Future<void> invite(String matrixUserId) => room.invite(matrixUserId);
-
-  @override
-  Future<void> leave() => room.leave();
-
-  @override
-  Future<void> removeMembers(List<String> matrixUserIds) async {
-    final authority = GroupRoomAuthority(room);
-    await authority.refresh();
-    authority.requireManager();
-    for (final userId in matrixUserIds) {
-      if (userId == authority.ownerId ||
-          room.getPowerLevelByUserId(userId) >= room.ownPowerLevel) {
-        throw StateError('不能移除群主或同级管理员');
-      }
-      await room.kick(userId);
-    }
-  }
-
-  @override
-  Future<void> setAdminIds(List<String> matrixUserIds) async {
-    final authority = GroupRoomAuthority(room);
-    await authority.refresh();
-    authority.requireOwner();
-    if (matrixUserIds.toSet().length > 3 ||
-        matrixUserIds.contains(authority.ownerId)) {
-      throw StateError('最多设置3位管理员');
-    }
-    final members = await room.requestParticipants([Membership.join]);
-    if (matrixUserIds.any((id) => !members.any((user) => user.id == id))) {
-      throw StateError('请选择已加入的成员');
-    }
-    await authority.protectState(protectRoles: true);
-    final current = Map<String, dynamic>.from(
-        room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
-    final users = Map<String, dynamic>.from(current['users'] as Map? ?? {});
-    for (final member in members) {
-      if (member.id == authority.ownerId) continue;
-      if (matrixUserIds.contains(member.id)) {
-        users[member.id] = 50;
-      } else if (room.getPowerLevelByUserId(member.id) >= 50) {
-        users[member.id] = 0;
-      }
-    }
-    await room.client.setRoomStateWithKey(
-        room.id, EventTypes.RoomPowerLevels, '', {...current, 'users': users});
-  }
-
-  @override
-  Future<void> transferOwnership(String userId) async {
-    final authority = GroupRoomAuthority(room);
-    await authority.refresh();
-    authority.requireOwner();
-    final members = await room.requestParticipants([Membership.join]);
-    if (userId == authority.ownerId ||
-        !members.any((user) => user.id == userId)) {
-      throw StateError('请选择其他已加入的成员');
-    }
-    await authority.protectState(protectRoles: true);
-    final current = Map<String, dynamic>.from(
-        room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
-    final users = Map<String, dynamic>.from(current['users'] as Map? ?? {});
-    users[userId] = 100;
-    users[authority.ownerId] = 0;
-    await room.client.setRoomStateWithKey(
-        room.id, EventTypes.RoomPowerLevels, '', {...current, 'users': users});
-  }
-
-  @override
-  Future<void> dissolve() async {
-    final authority = GroupRoomAuthority(room);
-    await authority.refresh();
-    authority.requireOwner();
-    await setGroupSetting('qr_join_enabled', false);
-    final members =
-        await room.requestParticipants([Membership.join, Membership.invite]);
-    // Stop on failure: never report dissolution after a partial removal.
-    for (final member in members) {
-      if (member.id != authority.ownerId) await room.kick(member.id);
-    }
-    await room.leave();
-  }
-
-  @override
-  Future<void> setGroupSetting(String key, Object value) async {
-    final authority = GroupRoomAuthority(room);
-    await authority.refresh();
-    authority.requireManager();
-    if (!{
-          'qr_join_enabled',
-          'join_approval_required',
-          'only_managers_can_rename'
-        }.contains(key) ||
-        value is! bool) {
-      throw ArgumentError('不支持的群设置');
-    }
-    await authority.protectState();
-    if (key == 'only_managers_can_rename') {
-      final current = Map<String, dynamic>.from(
-          room.getState(EventTypes.RoomPowerLevels)?.content ?? {});
-      final events = Map<String, dynamic>.from(current['events'] as Map? ?? {});
-      events[EventTypes.RoomName] = value ? 50 : 0;
-      await room.client.setRoomStateWithKey(room.id, EventTypes.RoomPowerLevels,
-          '', {...current, 'events': events});
-    } else {
-      await room.client.setRoomStateWithKey(room.id, groupSettingsStateType, '',
-          {...?room.getState(groupSettingsStateType)?.content, key: value});
-    }
-  }
-
-  @override
-  Future<void> rename(String name) async {
-    if (!room.canChangeStateEvent(EventTypes.RoomName)) {
-      throw StateError('没有修改群名权限');
-    }
-    await room.setName(name);
-  }
-
-  @override
-  Future<void> setAnnouncement(String announcement) async {
-    await MatrixGroupAnnouncementService(room)
-        .save(GroupAnnouncement([AnnouncementBlock.text(announcement)]));
-  }
-
-  @override
-  Future<void> setPreference(
-    GroupChatPreference preference,
-    bool value,
-  ) async {
-    await _writeSetting(
-      switch (preference) {
-        GroupChatPreference.muted => 'muted',
-        GroupChatPreference.attention => 'attention',
-        GroupChatPreference.pinned => 'pinned',
-        GroupChatPreference.saved => 'saved',
-        GroupChatPreference.folded => 'folded',
-        GroupChatPreference.notifyMentionMe => 'notify_mention_me',
-        GroupChatPreference.notifyMentionAll => 'notify_mention_all',
-        GroupChatPreference.notifyAnnouncement => 'notify_announcement',
-      },
-      value,
-    );
-    if (preference == GroupChatPreference.pinned) {
-      await _writeSetting(
-        'pinned_at',
-        value ? DateTime.now().toUtc().toIso8601String() : '',
-      );
-    }
-  }
-
-  @override
-  Future<void> setFollowedMemberIds(List<String> matrixUserIds) =>
-      _writeSetting('followed_member_ids', matrixUserIds.take(4).toList());
-
-  @override
-  Future<void> setRemark(String remark) => _writeSetting('remark', remark);
-
-  Future<void> _writeSetting(String key, Object value) {
-    final operation = _preferenceWrites.then((_) async {
-      final userId = room.client.userID;
-      if (userId == null) throw StateError('Matrix 账号尚未登录');
-      final next = {..._settings, key: value};
-      final baseline = _preferenceOverlay.remoteIdentity;
-      await room.client.setAccountDataPerRoom(
-          userId, room.id, conversationPreferenceType, next);
-      _preferenceOverlay.wrote(key, value, baseline: baseline);
-    });
-    _preferenceWrites = operation.catchError((Object _) {});
-    return operation;
   }
 }
 
@@ -569,16 +285,13 @@ final class GroupChatInfoController extends ChangeNotifier {
   final Future<GroupAutoJoinOutcome?> Function(
       String roomId, List<String> inviteeUserIds)? serverAutoJoin;
   GroupChatInfoState state = const GroupChatInfoState();
-  StreamSubscription<SyncUpdate>? _membershipSubscription;
+  StreamSubscription<void>? _membershipSubscription;
 
   /// Binds Matrix room updates so membership changes refresh this controller
   /// while the chat-info route stays open.
-  void bindMembershipChanges(Stream<SyncUpdate> updates,
-      {required String roomId}) {
+  void bindMembershipChanges(Stream<void> updates, {required String roomId}) {
     _membershipSubscription?.cancel();
-    _membershipSubscription = updates
-        .where((update) => update.rooms?.join?.containsKey(roomId) == true)
-        .listen((_) {
+    _membershipSubscription = updates.listen((_) {
       if (state.status != GroupChatInfoStatus.loading) unawaited(load());
     });
   }
@@ -812,13 +525,13 @@ final class GroupChatInfoController extends ChangeNotifier {
       await operation();
       _set(GroupChatInfoState(
         status: GroupChatInfoStatus.ready,
-        snapshot: gateway is MatrixGroupChatInfoGateway
+        snapshot: gateway is GroupChatInfoReloadGateway
             ? await gateway.load()
             : update(snapshot),
       ));
     } catch (_) {
       var refreshed = snapshot;
-      if (gateway is MatrixGroupChatInfoGateway) {
+      if (gateway is GroupChatInfoReloadGateway) {
         try {
           refreshed = await gateway.load();
         } catch (_) {/* Keep the last verified snapshot. */}

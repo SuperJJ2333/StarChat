@@ -10,12 +10,11 @@ import 'package:matrix/matrix.dart' show Membership;
 void main() {
   group('规格1/5：私聊不产生群聊邀请 + 类型集中判定（源码合同）', () {
     test('时间线推导入群通知前有私聊分型门', () {
-      final source =
-          readFile('lib/features/matrix/matrix_room_timeline_adapter.dart')
-              .replaceAll('\r\n', '\n');
+      final source = readFile('lib/features/matrix/matrix_e2ee_client.dart')
+          .replaceAll('\r\n', '\n');
       expect(
           source.contains(
-              'room.isDirectChat\n        ? const <GroupJoinNotice>[]'),
+              '_lease._activeRoom.isDirectChat\n        ? const <GroupJoinNotice>[]'),
           isTrue,
           reason: '私聊房间绝不能推导"A邀请B加入群聊"通知');
     });
@@ -104,7 +103,8 @@ void main() {
       expect(push, greaterThan(0));
       // 预载/头像预解码只存在于 _warmChatIdentity（后台），
       // _openRoom 主体内 push 前无任何 await preload。
-      final openRoomStart = home.indexOf('Future<void> _openRoom(Room room)');
+      final openRoomStart =
+          home.indexOf('Future<void> _openRoom(_RoomSnapshot snapshot)');
       final body = home.substring(
           openRoomStart, home.indexOf('await navigator.push(', openRoomStart));
       expect(body.contains('await _identityCache.preload()'), isFalse,

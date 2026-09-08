@@ -98,10 +98,25 @@ final class GroupAnnouncement {
   }
 }
 
-final class MatrixGroupAnnouncementService {
+abstract interface class GroupAnnouncementService {
+  bool get canEdit;
+  Stream<void> get changes;
+  Future<GroupAnnouncement> load();
+  Future<void> save(GroupAnnouncement announcement);
+  Future<String> uploadImage(Uint8List bytes, String name);
+  Future<Uint8List> loadImage(String eventId);
+}
+
+final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   MatrixGroupAnnouncementService(this.room);
   final Room room;
+  @override
   bool get canEdit => GroupRoomAuthority(room).canManage;
+  @override
+  Stream<void> get changes => room.client.onSync.stream
+      .where((update) => update.rooms?.join?.containsKey(room.id) == true)
+      .map<void>((_) {});
+  @override
   Future<GroupAnnouncement> load() async {
     final reference = room.getState(groupAnnouncementStateType);
     if (reference == null) {
@@ -134,6 +149,7 @@ final class MatrixGroupAnnouncementService {
     }
   }
 
+  @override
   Future<void> save(GroupAnnouncement announcement) async {
     announcement.validateForSave();
     _requireEncryptedManager();
@@ -158,6 +174,7 @@ final class MatrixGroupAnnouncementService {
         room.id, groupAnnouncementStateType, '', {'event_id': id});
   }
 
+  @override
   Future<String> uploadImage(Uint8List bytes, String name) async {
     validateAnnouncementImage(bytes);
     _requireEncryptedManager();
@@ -167,6 +184,7 @@ final class MatrixGroupAnnouncementService {
     return id;
   }
 
+  @override
   Future<Uint8List> loadImage(String eventId) async {
     final event = await room.getEventById(eventId);
     if (event == null ||

@@ -14,6 +14,8 @@ final class LoginPage extends StatefulWidget {
     super.key,
     required this.api,
     this.onLogin,
+    this.onConfirmMatrixAccountSwitch,
+    this.onCancelMatrixAccountSwitch,
     this.onAuthenticated,
     this.destination,
     this.onRegister,
@@ -23,6 +25,8 @@ final class LoginPage extends StatefulWidget {
 
   final BusinessApiClient api;
   final Future<void> Function(String username, String password)? onLogin;
+  final Future<void> Function()? onConfirmMatrixAccountSwitch;
+  final Future<void> Function()? onCancelMatrixAccountSwitch;
   final Future<void> Function()? onAuthenticated;
   final WidgetBuilder? destination;
   final VoidCallback? onRegister;
@@ -109,6 +113,18 @@ final class _LoginPageState extends State<LoginPage>
       if (!success && mounted) {
         setState(() => _error = controller.state.message);
       }
+    } on MatrixAccountSwitchRequired {
+      final confirmed = await _confirmMatrixAccountSwitch();
+      if (confirmed && mounted) {
+        try {
+          await widget.onConfirmMatrixAccountSwitch?.call();
+          await widget.onAuthenticated?.call();
+        } catch (_) {
+          if (mounted) setState(() => _error = '服务暂时不可用，请稍后重试');
+        }
+      } else {
+        await widget.onCancelMatrixAccountSwitch?.call();
+      }
     } catch (_) {
       if (mounted) {
         setState(() => _error = '服务暂时不可用，请稍后重试');
@@ -117,6 +133,28 @@ final class _LoginPageState extends State<LoginPage>
       controller.dispose();
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<bool> _confirmMatrixAccountSwitch() async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+        title: const Text('切换聊天账号'),
+        content: const Text('确认后将清除本机聊天数据，并使用新账号创建新的加密设备。'),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('确认切换'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
   }
 
   @override

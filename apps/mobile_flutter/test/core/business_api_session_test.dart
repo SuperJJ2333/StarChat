@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,40 @@ final class MemoryStore implements SecureKeyValueStore {
   Future<String?> read(String key) async => values[key];
   @override
   Future<void> write(String key, String value) async => values[key] = value;
+}
+
+final class _AlreadyAuthenticatedMatrix implements MatrixTokenLoginGateway {
+  var tokenRequests = 0;
+
+  @override
+  bool get credentialsInvalid => false;
+
+  @override
+  String? get deviceId => 'DEVICE-A';
+
+  @override
+  bool get isLoggedIn => true;
+
+  @override
+  String? get userId => '@alice:matrix.example';
+
+  @override
+  Future<void> clearLocalChatData() async {}
+
+  @override
+  Future<void> loginWithToken({
+    required String loginToken,
+    required Uri homeserver,
+    String? deviceId,
+  }) async {
+    tokenRequests++;
+  }
+
+  @override
+  Future<void> suspend() async {}
+
+  @override
+  Future<void> sync() async {}
 }
 
 void main() {
@@ -205,6 +240,42 @@ void main() {
     expect(grant.loginToken, 'matrix-once');
     expect(grant.matrixUserId, '@alice:matrix.example');
     expect((await store.session())?.matrixUserId, '@alice:matrix.example');
+  });
+
+  test('real Business login preserves Matrix identity for same-device reuse',
+      () async {
+    final store = SecureSessionStore(MemoryStore());
+    var matrixTokenEndpoints = 0;
+    final business = BusinessApiClient(
+      baseUri: Uri.parse('https://business.example'),
+      sessionStore: store,
+      client: MockClient((request) async {
+        if (request.url.path == '/api/v1/auth/login') {
+          return http.Response(
+            jsonEncode({
+              'access_token': 'business-a',
+              'refresh_token': 'business-r',
+              'matrix_user_id': '@alice:matrix.example',
+            }),
+            200,
+          );
+        }
+        matrixTokenEndpoints++;
+        return http.Response('{}', 500);
+      }),
+    );
+    final matrix = _AlreadyAuthenticatedMatrix();
+    final service = DualDomainLoginService(
+      business: business,
+      matrix: matrix,
+      deviceKey: () => 'device-key',
+    );
+
+    await service.login('alice', 'business-password');
+
+    expect((await store.session())?.matrixUserId, '@alice:matrix.example');
+    expect(matrix.tokenRequests, 0);
+    expect(matrixTokenEndpoints, 0);
   });
 
   test(

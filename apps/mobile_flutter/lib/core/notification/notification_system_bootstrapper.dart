@@ -31,6 +31,7 @@ final class NotificationSystemBootstrapper {
   bool _disposed = false;
   bool _failed = false;
   Future<bool>? _starting;
+  Future<void>? _disposing;
 
   bool get isReady => _ready;
 
@@ -46,13 +47,14 @@ final class NotificationSystemBootstrapper {
   Future<bool> _runStart() async {
     _failed = false;
     try {
-      await _start();
+      await Future<void>.sync(_start);
+      if (_disposed) return false;
       _ready = true;
       _onReady();
       diagnostics.record(NotificationDiagStage.startup, '$_tag ready');
       return true;
     } catch (error) {
-      _failed = true;
+      _failed = !_disposed;
       // 只记异常类型：插件异常消息可能含路径等，且无助于分层定位。
       diagnostics.record(NotificationDiagStage.startup,
           '$_tag start failed: ${error.runtimeType}');
@@ -62,12 +64,21 @@ final class NotificationSystemBootstrapper {
     }
   }
 
-  Future<void> dispose() async {
-    if (_disposed) return;
+  Future<void> dispose() {
+    final existing = _disposing;
+    if (existing != null) return existing;
     _disposed = true;
     _ready = false;
     _failed = false;
-    _starting = null;
+    // Capture before _runStart's finally clears the flight. Shutdown callers
+    // share this drain; a late successful start cannot install its handles.
+    return _disposing = _drainAndStop(_starting);
+  }
+
+  Future<void> _drainAndStop(Future<bool>? starting) async {
+    // Startup errors are converted to false by _runStart. Its managed Matrix
+    // operations reject revoked capabilities rather than re-entering shutdown.
+    if (starting != null) await starting;
     try {
       await _stop();
     } catch (error) {

@@ -112,9 +112,10 @@ final class _Business implements BusinessSessionGateway {
   Future<BusinessSessionRestore> restoreSession() async =>
       BusinessSessionRestore.authenticated;
   @override
-  Future<void> logout() async {
-    await logoutCallback?.call();
-  }
+  Future<BusinessSessionRevocation?> clearLocalSession() async =>
+      _Revocation(() async {
+        await logoutCallback?.call();
+      });
 }
 
 final class _Matrix implements MatrixSessionGateway {
@@ -132,7 +133,14 @@ final class _Matrix implements MatrixSessionGateway {
   @override
   Future<void> suspend() async {}
   @override
-  Future<void> resetLocalStore() async {
+  Future<void> clearLocalChatData() async {
     resets++;
   }
+}
+
+final class _Revocation implements BusinessSessionRevocation {
+  _Revocation(this.callback);
+  final Future<void> Function() callback;
+  @override
+  Future<void> revoke() => callback();
 }

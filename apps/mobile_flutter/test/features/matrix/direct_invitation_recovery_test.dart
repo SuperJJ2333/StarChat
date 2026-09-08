@@ -203,7 +203,10 @@ void main() {
       () {
     final source =
         File('lib/features/matrix/matrix_home_page.dart').readAsStringSync();
-    expect(source, contains('autoJoinFriendDirectInvites('));
+    expect(source, contains('conversations.autoJoinDirectInvites('));
+    final capability =
+        File('lib/features/matrix/matrix_e2ee_client.dart').readAsStringSync();
+    expect(capability, contains('autoJoinFriendDirectInvites('));
     final identity = source.substring(source.indexOf('void _identityChanged()'),
         source.indexOf('void didUpdateWidget'));
     expect(identity, contains('_processPendingDirectInvites()'));

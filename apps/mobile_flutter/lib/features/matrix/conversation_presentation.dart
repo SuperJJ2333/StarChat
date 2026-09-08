@@ -1,8 +1,7 @@
-import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
-import 'conversation_preferences.dart';
 import 'room_timeline_controller.dart';
 import 'matrix_room_timeline_adapter.dart' show changliaoCallMessageType;
+import 'decryption_state_controller.dart';
 
 final class ConversationIdentity {
   const ConversationIdentity({
@@ -24,6 +23,13 @@ String? _normalized(String? value) {
   final normalized = value?.trim();
   return normalized == null || normalized.isEmpty ? null : normalized;
 }
+
+String decryptionPlaceholder(MessageDecryptionState state) => switch (state) {
+      MessageDecryptionState.decrypting => '正在解密',
+      MessageDecryptionState.missingKey => '缺少密钥，无法解密',
+      MessageDecryptionState.failed => '消息解密失败',
+      MessageDecryptionState.decrypted => '',
+    };
 
 String _matrixLocalpart(String matrixUserId) {
   final withoutSigil =
@@ -93,10 +99,16 @@ String groupConversationTitle(
 }
 
 String safeConversationMessageContent({
-  required bool undecrypted,
+  MessageDecryptionState? decryptionState,
+  bool? undecrypted,
   required String messageContent,
-}) =>
-    undecrypted ? '' : messageContent;
+}) {
+  final state = decryptionState ??
+      (undecrypted == true
+          ? MessageDecryptionState.missingKey
+          : MessageDecryptionState.decrypted);
+  return state == MessageDecryptionState.decrypted ? messageContent : '';
+}
 
 String groupConversationSubtitle({
   required int unreadCount,
@@ -121,19 +133,6 @@ bool messageBubbleIsDecorated(RoomMessageKind kind) =>
     kind != RoomMessageKind.voice &&
     kind != RoomMessageKind.video &&
     kind != RoomMessageKind.image;
-
-List<User> orderedJoinedMembers(Room room) {
-  final joined = room.getParticipants([Membership.join]);
-  final byId = {for (final member in joined) member.id: member};
-  final order = reconcileMemberOrder(
-    preferenceForRoom(room).memberOrderIds,
-    joined.map((member) => member.id),
-  );
-  return [
-    for (final id in order)
-      if (byId[id] != null) byId[id]!
-  ];
-}
 
 /// 规格#3：会话类型判定（两个人聊天 ≠ 群聊）。
 ///
@@ -170,11 +169,6 @@ String directRoomNavigationTitle({
     nickname: contact.nickname,
     username: contact.username,
   ));
-}
-
-Future<List<User>> loadOrderedJoinedMembers(Room room) async {
-  await room.requestParticipants([Membership.join]);
-  return orderedJoinedMembers(room);
 }
 
 /// 聊天内发送者展示名（需求 3 的优先级，纯逻辑可测）：

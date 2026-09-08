@@ -8,7 +8,6 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'group_chat_info_controller.dart';
-import 'group_announcement_service.dart';
 import 'group_announcement_page.dart';
 import 'group_qr_code_page.dart';
 import 'profile_repository.dart';
@@ -35,6 +34,7 @@ final class GroupChatInfoPage extends StatefulWidget {
     required this.onSearchHistory,
     required this.onClearLocalHistory,
     required this.onLeft,
+    this.avatarMedia,
     this.onMemberTap,
     this.identityCache,
   });
@@ -47,6 +47,7 @@ final class GroupChatInfoPage extends StatefulWidget {
   final VoidCallback onSearchHistory;
   final Future<void> Function() onClearLocalHistory;
   final VoidCallback onLeft;
+  final AvatarMediaCapability? avatarMedia;
   final ValueChanged<GroupChatMember>? onMemberTap;
 
   /// 身份缓存：成员名按“备注 → 昵称 → 用户名”优先级实时解析；
@@ -193,6 +194,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         ? snapshot.members
                         : snapshot.members.take(collapsedMemberCount).toList(),
                     onAdd: widget.onAddMember,
+                    avatarMedia: widget.avatarMedia,
                     onMemberTap: widget.onMemberTap,
                     identityCache: widget.identityCache,
                     onRemove: snapshot.canManage
@@ -243,13 +245,14 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         : snapshot.announcement,
                     () {
                       final gateway = widget.controller.gateway;
-                      if (gateway is MatrixGroupChatInfoGateway) {
+                      if (gateway is GroupAnnouncementGateway) {
                         Navigator.push(
                             context,
                             CupertinoPageRoute<void>(
                                 builder: (_) => GroupAnnouncementPage(
-                                    service: MatrixGroupAnnouncementService(
-                                        gateway.room))));
+                                    service:
+                                        (gateway as GroupAnnouncementGateway)
+                                            .announcementService)));
                       }
                     },
                   ),
@@ -578,12 +581,14 @@ final class _MemberGrid extends StatelessWidget {
   const _MemberGrid(
       {required this.members,
       required this.onAdd,
+      this.avatarMedia,
       this.onMemberTap,
       this.onRemove,
       this.identityCache});
 
   final List<GroupChatMember> members;
   final VoidCallback onAdd;
+  final AvatarMediaCapability? avatarMedia;
   final ValueChanged<GroupChatMember>? onMemberTap;
   final VoidCallback? onRemove;
   final ProfileRepository? identityCache;
@@ -606,6 +611,7 @@ final class _MemberGrid extends StatelessWidget {
                   key: Key('group-member-${members[index].matrixUserId}'),
                   member: members[index],
                   identityCache: identityCache,
+                  avatarMedia: avatarMedia,
                   onTap: onMemberTap == null
                       ? null
                       : () => onMemberTap!(members[index]),
@@ -979,8 +985,13 @@ final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
 
 final class _MemberCell extends StatelessWidget {
   const _MemberCell(
-      {super.key, required this.member, this.onTap, this.identityCache});
+      {super.key,
+      required this.member,
+      this.onTap,
+      this.identityCache,
+      this.avatarMedia});
   final GroupChatMember member;
+  final AvatarMediaCapability? avatarMedia;
   final VoidCallback? onTap;
   final ProfileRepository? identityCache;
 
@@ -990,9 +1001,9 @@ final class _MemberCell extends StatelessWidget {
       onPressed: onTap,
       child: Column(
         children: [
-          member.client != null && member.matrixAvatarUri != null
+          avatarMedia != null && member.matrixAvatarUri != null
               ? MatrixUserAvatar(
-                  client: member.client!,
+                  avatarMedia: avatarMedia!,
                   matrixAvatarUri: member.matrixAvatarUri,
                   nickname: _resolvedMemberName(identityCache, member),
                   fallbackSeed: member.matrixUserId,

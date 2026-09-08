@@ -1,6 +1,6 @@
 # Matrix 会话连续性、Megolm 在线备份与可信设备恢复设计
 
-**状态：** 产品设计已批准；受保护变更评审待完成
+**状态：** 产品、Domain、Quality/Security 预实施评审已批准；Task 10 实施后评审待完成
 
 **日期：** 2026-08-25
 
@@ -87,10 +87,11 @@ database_generation
 新设备登录后生成标准 Matrix Olm 设备身份，不创建独立于 Matrix 的临时密码学协议。恢复步骤为：
 
 1. 新设备与旧设备通过 SAS/二维码完成 Matrix 设备验证。
-2. 新设备只向同一 MXID 下已验证、未封禁且不是自身的设备发送 `m.secret.request`。
+2. 新设备只向同一 MXID 下已验证、未封禁且不是自身的单一目标设备发送 `m.secret.request`；失败或超时后才选择下一台候选设备，不广播同一个有效请求。
 3. 旧设备确认请求设备可信，并通过 Olm 加密的 `m.secret.send` 返回 `m.megolm_backup.v1` 秘密。
-4. 新设备校验发送设备、公钥、请求 ID、有效期和备份公钥匹配关系。
-5. 校验成功后缓存秘密并恢复在线 Megolm 备份。
+4. 应用层可信恢复 adapter 使用标准 `m.secret.request` / `m.secret.send`，但自行生成并持有 request ID、目标 MXID、目标 device ID、目标 Curve25519 key、创建时间和备份版本。backup-secret 路径不得调用 SDK SSSS `request()`，不得向 SDK `pendingShareRequests` 注册请求，也不得接受 SDK 自动写入的 SSSS cache。
+5. 收到 Olm 解密的 `m.secret.send` 后，adapter 必须在写入 SSSS cache 或使用 secret 前，从当前 `userDeviceKeys` 实时重新取得目标设备，并同时校验：同一 MXID、device ID一致、Curve25519 key一致、`verified == true`、`blocked == false`、request ID一致、请求未超过 15 分钟，以及当前备份版本和由 secret 导出的备份公钥均匹配。请求发出后才被封禁或失去验证的设备也必须拒绝。
+6. 任一检查失败立即丢弃响应，不缓存 secret、不触发恢复；全部通过后才由 adapter 写入加密 SSSS cache并恢复在线 Megolm 备份。
 
 没有可信旧设备时，只能使用用户以前主动导出的 SSSS 恢复密钥。两者都不存在时，业务账号和资金仍可恢复，但历史聊天永久无法恢复。
 
@@ -219,7 +220,20 @@ E2EE_SECRET_REJECTED_UNVERIFIED
 E2EE_MEGOLM_SESSION_MISSING
 E2EE_MEGOLM_SESSION_CORRUPT
 E2EE_LOCAL_CLEAR_FAILED
+E2EE_LIFECYCLE_DRAIN_TIMEOUT
+E2EE_LIFECYCLE_SUSPEND_FAILED
+E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED
+E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED
+E2EE_ROOM_LEASE_DRAIN_TIMEOUT
+E2EE_ROOM_LEASE_DRAIN_FAILED
+E2EE_ROOM_LEASE_REVOKE_CALLBACK_FAILED
+E2EE_HOME_RESOURCE_DISPOSE_FAILED
 ```
+
+生命周期诊断事件固定且只允许输出 `trace_id`、`stage`、`outcome`、
+`event_code` 四个字段。每个 Matrix 会话生命周期创建一个新的随机
+`trace_id`，该生命周期内的启动、暂停、恢复和资源回收共享该值；不得使用
+固定 trace，也不得附加异常文本、消息、密钥、Token 或完整 Matrix 标识。
 
 严禁记录消息正文、附件内容、恢复密钥、Megolm/Olm 会话密钥、Access Token、完整 MXID或完整房间/事件/设备 ID。一次恢复链路共享 `trace_id`。身份标识使用 HMAC-SHA256 脱敏：每次安装生成独立诊断盐并存入系统安全存储，输出前 12 字节十六进制；诊断盐不得进入日志、分析、崩溃报告或验证材料。该设计只允许同一安装内关联故障，不能跨设备反查真实标识。
 
@@ -245,8 +259,9 @@ E2EE_LOCAL_CLEAR_FAILED
 - 新入站会话在同步后增量上传；失败幂等重试且不重复创建版本。
 - 恢复秘密不进入 Business API。
 - 备份公钥不匹配时拒绝恢复且不覆盖现有版本。
-- 仅向同 MXID、已验证、未封禁的其他设备发送秘密请求。
+- 每个秘密请求仅指向同 MXID、已验证、未封禁的一个其他目标设备。
 - 拒绝未验证、封禁、其他账号、请求 ID错误、超过 15 分钟、非 Olm 加密、发送设备公钥不匹配及秘密校验失败的响应。
+- 请求发出后目标设备被封禁时，响应接收侧从当前 `userDeviceKeys` 实时重查并拒绝，SSSS cache 不写入且恢复不启动。
 - 有效秘密写入加密缓存后触发在线备份恢复，并取消其他未完成请求。
 
 ### 11.4 解密状态组件测试

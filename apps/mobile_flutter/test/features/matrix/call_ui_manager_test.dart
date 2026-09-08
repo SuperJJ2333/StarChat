@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/features/matrix/call_ui_manager.dart';
 /// 通知网关测试替身：记录调用，不碰插件。
 final class _RecordingCallNotifications implements CallNotificationGateway {
   final List<String> calls = <String>[];
+  Completer<void>? hideBarrier;
 
   @override
   Future<void> showIncoming(
@@ -20,7 +21,10 @@ final class _RecordingCallNotifications implements CallNotificationGateway {
   }
 
   @override
-  Future<void> hideIncoming() async => calls.add('hideIncoming');
+  Future<void> hideIncoming() async {
+    await hideBarrier?.future;
+    calls.add('hideIncoming');
+  }
 
   @override
   Future<void> showOngoing({required String title, bool video = false}) async =>
@@ -97,6 +101,79 @@ Future<void> _teardown(WidgetTester tester,
 }
 
 void main() {
+  testWidgets(
+      'detach removes only its incoming route and clears both notifications',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final backend = _FakeCallBackend();
+    final notifications = _RecordingCallNotifications();
+    final controller =
+        CallController(backend: backend, permissions: _AllowedPermissions());
+    final manager = CallUiManager(
+        navigatorKey: key,
+        notifications: notifications,
+        isAppResumed: () => true)
+      ..attach(controller);
+    await tester.pumpWidget(
+        CupertinoApp(navigatorKey: key, home: const Text('login-root')));
+    await _emit(tester, backend.events, _incoming());
+    await tester.pumpAndSettle();
+    expect(manager.isIncomingPageOpen, isTrue);
+    final unrelated =
+        CupertinoPageRoute<void>(builder: (_) => const Text('unrelated-page'));
+    unawaited(key.currentState!.push(unrelated));
+    await tester.pumpAndSettle();
+    notifications.calls.clear();
+    await manager.detach();
+    await tester.pumpAndSettle();
+    expect(unrelated.isCurrent, isTrue);
+    expect(notifications.calls, containsAll(['hideIncoming', 'hideOngoing']));
+    key.currentState!.removeRoute(unrelated);
+    await tester.pumpAndSettle();
+    expect(find.text('login-root'), findsOneWidget);
+    controller.dispose();
+    await backend.events.close();
+  });
+
+  testWidgets('reattach queues new notifications after old cleanup settles',
+      (tester) async {
+    final key = GlobalKey<NavigatorState>();
+    final oldBackend = _FakeCallBackend();
+    final newBackend = _FakeCallBackend();
+    final oldController =
+        CallController(backend: oldBackend, permissions: _AllowedPermissions());
+    final newController =
+        CallController(backend: newBackend, permissions: _AllowedPermissions());
+    final notifications = _RecordingCallNotifications();
+    final manager = CallUiManager(
+        navigatorKey: key,
+        notifications: notifications,
+        isAppResumed: () => false)
+      ..attach(oldController);
+    await tester
+        .pumpWidget(CupertinoApp(navigatorKey: key, home: const Text('home')));
+    await _emit(tester, oldBackend.events, _incoming());
+    await tester.pump();
+    notifications.calls.clear();
+    final barrier = Completer<void>();
+    notifications.hideBarrier = barrier;
+    final detaching = manager.detach();
+    manager.attach(newController);
+    await _emit(tester, newBackend.events, _incoming());
+    expect(notifications.calls.where((call) => call.startsWith('showIncoming')),
+        isEmpty);
+    barrier.complete();
+    await detaching;
+    await tester.pump();
+    expect(notifications.calls.last, startsWith('showIncoming'));
+    notifications.hideBarrier = null;
+    await manager.detach();
+    oldController.dispose();
+    newController.dispose();
+    await oldBackend.events.close();
+    await newBackend.events.close();
+  });
+
   testWidgets(
       'backgrounding active page requests system overlay and resume hides it',
       (tester) async {

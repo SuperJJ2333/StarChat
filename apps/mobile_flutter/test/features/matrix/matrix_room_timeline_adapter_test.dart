@@ -5,14 +5,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
 import 'package:matrix/src/utils/file_send_request_credentials.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 
 class RetryTimeline extends Fake implements Timeline {
   @override
   final events = <Event>[];
 }
 
+class RetryClient extends Client {
+  RetryClient() : super('retry-test');
+  late Room room;
+  @override
+  Room? getRoomById(String id) => room.id == id ? room : null;
+}
+
+Future<MatrixRoomTimelineAdapter> openAdapter(
+    RetryRoom room, RetryTimeline timeline) async {
+  (room.client as RetryClient).room = room;
+  room.timeline = timeline;
+  final owner =
+      MatrixSdkE2eeClient(room.client, homeserver: Uri.parse('https://test'));
+  final lease = await owner.openRoomLease(room.id);
+  return MatrixRoomTimelineAdapter(
+      await lease.openRoomTimeline(onUpdate: () {}));
+}
+
 class RetryRoom extends Room {
-  RetryRoom() : super(id: '!retry:test', client: Client('retry-test'));
+  RetryRoom() : super(id: '!retry:test', client: RetryClient());
+  late RetryTimeline timeline;
+  @override
+  Future<Timeline> getTimeline(
+          {void Function(int)? onChange,
+          void Function(int)? onRemove,
+          void Function(int)? onInsert,
+          void Function()? onNewEvent,
+          void Function()? onUpdate,
+          String? eventContextId}) async =>
+      timeline;
   final sends = <Map<String, dynamic>>[];
   final transactions = <String?>[];
   Completer<String?>? pending;
@@ -80,18 +109,18 @@ class RetryEvent extends Event {
 }
 
 void main() {
-  test('HTTP ack and sync expose different timestamp authority', () {
+  test('HTTP ack and sync expose different timestamp authority', () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();
     timeline.events.add(RetryEvent(room, timeline,
         id: 'ack', minute: 1, status: EventStatus.sent));
-    final adapter = MatrixRoomTimelineAdapter(room, timeline);
+    final adapter = (await openAdapter(room, timeline));
     expect(adapter.snapshot().single.isSdkLocalEcho, isTrue);
     timeline.events[0] = RetryEvent(room, timeline,
         id: 'ack', minute: 2, status: EventStatus.synced);
     expect(adapter.snapshot().single.isSdkLocalEcho, isFalse);
   });
-  test('announcement documents are not ordinary chat bubbles', () {
+  test('announcement documents are not ordinary chat bubbles', () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();
     timeline.events.add(RetryEvent(room, timeline,
@@ -101,7 +130,7 @@ void main() {
           'msgtype': 'com.changliao.group.announcement.document',
           'body': '群公告'
         }));
-    expect(MatrixRoomTimelineAdapter(room, timeline).snapshot(), isEmpty);
+    expect((await openAdapter(room, timeline)).snapshot(), isEmpty);
   });
 
   test('upload failure reuses cached media and SDK send credentials', () async {
@@ -122,7 +151,7 @@ void main() {
         MatrixFile(bytes: Uint8List.fromList([1, 2]), name: 'fixture.mp4');
     room.sendingFilePlaceholders[failed.eventId] = file;
     timeline.events.add(failed);
-    await MatrixRoomTimelineAdapter(room, timeline).retry(failed.eventId);
+    await (await openAdapter(room, timeline)).retry(failed.eventId);
     expect(failed.cancellations, 1);
     expect(room.retryFile, same(file));
     expect(room.retryExtra, extra);
@@ -137,14 +166,14 @@ void main() {
         minute: 1,
         payload: {'msgtype': 'm.video', 'body': 'fixture.mp4'});
     timeline.events.add(failed);
-    await expectLater(MatrixRoomTimelineAdapter(room, timeline).retry('upload'),
-        throwsStateError);
+    await expectLater(
+        (await openAdapter(room, timeline)).retry('upload'), throwsStateError);
     expect(failed.cancellations, 0);
     expect(timeline.events, [failed]);
   });
 
   test('failed events stay at original timestamp despite SDK status ordering',
-      () {
+      () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();
     timeline.events.addAll([
@@ -154,8 +183,7 @@ void main() {
       RetryEvent(room, timeline,
           id: 'older', minute: 0, status: EventStatus.sent),
     ]);
-    expect(
-        MatrixRoomTimelineAdapter(room, timeline).snapshot().map((e) => e.id),
+    expect((await openAdapter(room, timeline)).snapshot().map((e) => e.id),
         ['older', 'failed', 'newer']);
   });
 
@@ -182,7 +210,7 @@ void main() {
     final failed =
         RetryEvent(room, timeline, id: 'failed', minute: 1, payload: payload);
     timeline.events.add(failed);
-    final adapter = MatrixRoomTimelineAdapter(room, timeline);
+    final adapter = (await openAdapter(room, timeline));
     final first = adapter.retry('failed');
     final second = adapter.retry('failed');
     await Future<void>.delayed(Duration.zero);
@@ -199,7 +227,7 @@ void main() {
     final timeline = RetryTimeline();
     timeline.events.add(RetryEvent(room, timeline,
         id: 'sent', minute: 1, status: EventStatus.sent));
-    final adapter = MatrixRoomTimelineAdapter(room, timeline);
+    final adapter = (await openAdapter(room, timeline));
     await adapter.retry('sent');
     await adapter.retry('missing');
     expect(room.sends, isEmpty);
@@ -214,7 +242,7 @@ void main() {
         id: r'$sent', minute: 1, status: EventStatus.sent);
     sent.unsigned!['transaction_id'] = failed.unsigned!['transaction_id'];
     timeline.events.addAll([failed, sent]);
-    await MatrixRoomTimelineAdapter(room, timeline).retry('failed');
+    await (await openAdapter(room, timeline)).retry('failed');
     expect(room.sends, isEmpty);
     expect(failed.cancellations, 0);
   });

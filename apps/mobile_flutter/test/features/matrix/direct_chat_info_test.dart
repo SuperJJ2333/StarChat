@@ -1,8 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_info_page.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+
+final class _FakeAvatarMedia implements AvatarMediaCapability {
+  @override
+  Future<ResolvedAvatarUrl?> resolveAvatar({
+    required Uri? avatarUri,
+    required double size,
+  }) async =>
+      null;
+}
 
 void main() {
   testWidgets('direct chat info exposes shared rows and omits group-only rows',
@@ -11,8 +21,7 @@ void main() {
       home: DirectChatInfoPage(
         peerName: '安然',
         peerId: '@anran:test',
-        matrixClient: Client('test')
-          ..homeserver = Uri.parse('https://matrix.example.test'),
+        avatarMedia: _FakeAvatarMedia(),
         preference: const ConversationPreference(),
         onAddMember: () {},
         onSearchHistory: () {},
@@ -36,14 +45,12 @@ void main() {
     expect(find.text('退出群聊'), findsNothing);
   });
 
-  testWidgets('规格§四：点击"消息通知"展开三态（默认/静音/特别关注）',
-      (tester) async {
+  testWidgets('规格§四：点击"消息通知"展开三态（默认/静音/特别关注）', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: DirectChatInfoPage(
         peerName: '安然',
         peerId: '@anran:test',
-        matrixClient: Client('test2')
-          ..homeserver = Uri.parse('https://matrix.example.test'),
+        avatarMedia: _FakeAvatarMedia(),
         preference: const ConversationPreference(),
         onAddMember: () {},
         onSearchHistory: () {},

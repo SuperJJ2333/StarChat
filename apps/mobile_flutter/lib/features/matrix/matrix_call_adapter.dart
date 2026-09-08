@@ -96,17 +96,19 @@ final class FlutterWebRtcDelegate implements WebRTCDelegate {
 }
 
 final class MatrixCallBackend implements CallBackend {
-  MatrixCallBackend._(this.client, this.voip, this.delegate, this.diagnostics);
+  MatrixCallBackend._(this._client, this._voip, this._delegate,
+      this.diagnostics, this._ensureActive);
 
   factory MatrixCallBackend(
     Client client, {
     CallDiagnostics? diagnostics,
     CallWakeupClient? wakeup,
+    void Function()? ensureActive,
   }) {
     late MatrixCallBackend backend;
     final delegate = FlutterWebRtcDelegate(
-      onNewCall: (call) => backend._attach(call),
-      onCallEnded: (call) => backend._ended(call),
+      onNewCall: (call) => backend._execute(() => backend._attach(call)),
+      onCallEnded: (call) => backend._execute(() => backend._ended(call)),
     );
     final turnCredentials = TurnCredentialsCache(fetch: client.getTurnServer);
     backend = MatrixCallBackend._(
@@ -114,19 +116,21 @@ final class MatrixCallBackend implements CallBackend {
       RefreshingTurnVoIP(client, delegate, turnCredentials),
       delegate,
       diagnostics ?? CallDiagnostics(),
+      ensureActive ?? () {},
     );
     backend.wakeup = wakeup;
     unawaited(turnCredentials.getIceServers());
     return backend;
   }
 
-  final Client client;
+  final Client _client;
+  final void Function() _ensureActive;
   CallWakeupClient? wakeup;
   String? get activeCallId => _call?.callId;
   String? get activeRoomId => _call?.room.id;
   bool get isIncomingCall => _call != null && !_call!.isOutgoing;
-  final VoIP voip;
-  final FlutterWebRtcDelegate delegate;
+  final VoIP _voip;
+  final FlutterWebRtcDelegate _delegate;
 
   /// 关键路径耗时诊断（与 CallController 共享同一实例/时间线）。
   final CallDiagnostics diagnostics;
@@ -153,8 +157,24 @@ final class MatrixCallBackend implements CallBackend {
   );
   CallSession? _call;
   CallQualityMonitor? _quality;
-  bool _disposed = false;
   bool _connectedEmitted = false;
+  var _disposed = false;
+  int _operations = 0;
+  Completer<void>? _operationsDrained;
+
+  Future<T> _execute<T>(Future<T> Function() operation) async {
+    if (_disposed) throw StateError('Matrix call backend is disposed');
+    _ensureActive();
+    if (_operations++ == 0) _operationsDrained = Completer<void>();
+    try {
+      return await operation();
+    } finally {
+      if (--_operations == 0) {
+        _operationsDrained?.complete();
+        _operationsDrained = null;
+      }
+    }
+  }
 
   webrtc.MediaStream? get localMediaStream =>
       _call?.localUserMediaStream?.stream;
@@ -169,9 +189,13 @@ final class MatrixCallBackend implements CallBackend {
   bool get hasActiveSession => _call != null;
 
   @override
-  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) async {
-    final room = client.getRoomById(roomId);
-    final localUserId = client.userID;
+  Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId) =>
+      _execute(() => _isEncryptedDirectRoom(roomId, matrixUserId));
+
+  Future<bool> _isEncryptedDirectRoom(
+      String roomId, String matrixUserId) async {
+    final room = _client.getRoomById(roomId);
+    final localUserId = _client.userID;
     if (room == null ||
         localUserId == null ||
         room.membership != Membership.join ||
@@ -186,14 +210,32 @@ final class MatrixCallBackend implements CallBackend {
     );
   }
 
+  @visibleForTesting
+  Future<void> debugAttachCall(CallSession call) => _execute(() {
+        if (!identical(call.room.client, _client)) {
+          throw StateError('Matrix call session client mismatch');
+        }
+        return _attach(call);
+      });
+  @visibleForTesting
+  Future<void> debugEndCall(CallSession call) => _execute(() {
+        if (!identical(call.room.client, _client)) {
+          throw StateError('Matrix call session client mismatch');
+        }
+        return _ended(call);
+      });
+
   @override
-  Future<void> start(
+  Future<void> start(String roomId, String matrixUserId, CallMediaType type) =>
+      _execute(() => _start(roomId, matrixUserId, type));
+
+  Future<void> _start(
       String roomId, String matrixUserId, CallMediaType type) async {
-    if (!await isEncryptedDirectRoom(roomId, matrixUserId)) {
+    if (!await _isEncryptedDirectRoom(roomId, matrixUserId)) {
       throw StateError('Unsafe Matrix call room');
     }
-    final room = client.getRoomById(roomId)!;
-    final call = await voip.inviteToCall(
+    final room = _client.getRoomById(roomId)!;
+    final call = await _voip.inviteToCall(
       room,
       type == CallMediaType.video ? CallType.kVideo : CallType.kVoice,
       userId: matrixUserId,
@@ -219,7 +261,7 @@ final class MatrixCallBackend implements CallBackend {
     diagnostics.mark(CallDiagStage.inviteReceived);
     debugPrint('[matrix-call] inviteReceived room=${call.room.id} '
         'outgoing=${call.isOutgoing} type=${call.type.name}');
-    delegate.markActive(true);
+    _delegate.markActive(true);
     await _callStates?.cancel();
     if (_disposed || !identical(_call, call)) return;
     _callStates = call.onCallStateChanged.stream.listen((state) {
@@ -251,10 +293,10 @@ final class MatrixCallBackend implements CallBackend {
     // Fast remote answers can connect before outgoing setup finishes attaching.
     if (call.state == CallState.kConnected) _emitConnected(call);
     if (!call.isOutgoing) {
-      // The delegate is awaited by the SDK's sync event handler. Complete that
-      // handler before any further work so the incoming-call UI is never
-      // blocked behind the sync that delivered it.
-      unawaited(_validateIncoming(call));
+      // The _delegate is awaited by the SDK's sync event handler. Complete that
+      // handler before a server-backed membership request, otherwise the
+      // incoming-call UI can deadlock behind the sync that delivered it.
+      unawaited(_execute(() => _validateIncoming(call)).catchError((_) {}));
     }
   }
 
@@ -282,7 +324,7 @@ final class MatrixCallBackend implements CallBackend {
   /// 与旧实现安全语义一致）。
   Future<void> _validateIncoming(CallSession call) async {
     await Future<void>.delayed(Duration.zero);
-    final localUserId = client.userID;
+    final localUserId = _client.userID;
     final gate = IncomingCallGate(
       localMembers: () => call.room
           .getParticipants([Membership.join])
@@ -290,7 +332,7 @@ final class MatrixCallBackend implements CallBackend {
           .toSet(),
       remoteMembers: () async {
         try {
-          final memberEvents = await client.getMembersByRoom(
+          final memberEvents = await _client.getMembersByRoom(
             call.room.id,
             membership: Membership.join,
           );
@@ -356,7 +398,7 @@ final class MatrixCallBackend implements CallBackend {
     final fallback = _fallback;
     debugPrint('[matrix-call] ended reason=${call.hangupReason}');
     _teardownStreamWatch();
-    delegate.markActive(false);
+    _delegate.markActive(false);
     final qualitySummary = quality?.summary();
     if (qualitySummary != null) debugPrint(qualitySummary);
     diagnostics.mark(CallDiagStage.ended);
@@ -381,70 +423,73 @@ final class MatrixCallBackend implements CallBackend {
   }
 
   @override
-  Future<void> accept() async {
-    final call = _active;
-    if (identical(_cancelledAnswerCall, call)) {
-      throw StateError('Call answer was cancelled');
-    }
-    final generation = _answerGeneration;
-    if (wakeup != null) {
-      try {
-        await wakeup!.answerAndConnect(
-          roomId: call.room.id,
-          callId: call.callId,
-          isCurrent: () =>
-              generation == _answerGeneration &&
-              !_disposed &&
-              identical(_call, call) &&
-              !call.callHasEnded,
-          connect: call.answer,
-        );
-      } catch (_) {
-        // A failed system call has a native tombstone and released audio.
-        // End this session; a later retry must use a fresh Matrix call ID.
-        if (!_disposed && identical(_call, call) && !call.callHasEnded) {
-          await call.reject(reason: CallErrorCode.userHangup);
+  Future<void> accept() => _execute(() async {
+        final call = _active;
+        if (identical(_cancelledAnswerCall, call)) {
+          throw StateError('Call answer was cancelled');
         }
-        rethrow;
-      }
-    } else {
-      await call.answer();
-    }
-    if (generation != _answerGeneration) return;
-    debugPrint('[matrix-call] answer_started');
-    if (_disposed || !identical(_call, call) || call.callHasEnded) return;
-    // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
-    // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。
-    await _fallback.stop();
-    if (_disposed || !identical(_call, call) || _connectedEmitted) return;
-    _fallback = ConnectedFallbackWatcher(
-      pollInterval: const Duration(milliseconds: 500),
-      timeout: const Duration(seconds: 10),
-      isPeerConnected: () async =>
-          identical(_call, call) &&
-          call.pc?.connectionState ==
-              webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected,
-      emitConnected: () {
-        _emitConnected(call);
-      },
-    )..start();
-  }
-
+        final generation = _answerGeneration;
+        if (wakeup != null) {
+          try {
+            await wakeup!.answerAndConnect(
+              roomId: call.room.id,
+              callId: call.callId,
+              isCurrent: () =>
+                  generation == _answerGeneration &&
+                  !_disposed &&
+                  identical(_call, call) &&
+                  !call.callHasEnded,
+              connect: call.answer,
+            );
+          } catch (_) {
+            // A failed system call has a native tombstone and released audio.
+            // End this session; a later retry must use a fresh Matrix call ID.
+            if (!_disposed && identical(_call, call) && !call.callHasEnded) {
+              await call.reject(reason: CallErrorCode.userHangup);
+            }
+            rethrow;
+          }
+        } else {
+          await call.answer();
+        }
+        if (generation != _answerGeneration) return;
+        debugPrint('[matrix-call] answer_started');
+        if (_disposed || !identical(_call, call) || call.callHasEnded) return;
+        // kConnected 丢失兜底（规格§五）：10 秒内 peerConnection 已连而
+        // SDK 状态事件未到 → 主动补发 connected（事件先到则 watcher 静默）。
+        await _fallback.stop();
+        if (_disposed || !identical(_call, call) || _connectedEmitted) return;
+        _fallback = ConnectedFallbackWatcher(
+          pollInterval: const Duration(milliseconds: 500),
+          timeout: const Duration(seconds: 10),
+          isPeerConnected: () async =>
+              identical(_call, call) &&
+              call.pc?.connectionState ==
+                  webrtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+          emitConnected: () {
+            _emitConnected(call);
+          },
+        )..start();
+      });
   @override
-  Future<void> reject() => _active.reject(reason: CallErrorCode.userHangup);
+  Future<void> reject() =>
+      _execute(() => _active.reject(reason: CallErrorCode.userHangup));
   @override
-  Future<void> hangup() => _active.hangup(reason: CallErrorCode.userHangup);
+  Future<void> hangup() =>
+      _execute(() => _active.hangup(reason: CallErrorCode.userHangup));
   @override
-  Future<void> setMuted(bool value) => _active.setMicrophoneMuted(value);
+  Future<void> setMuted(bool value) =>
+      _execute(() => _active.setMicrophoneMuted(value));
   @override
   Future<void> setSpeaker(bool value) => webrtc.Helper.setSpeakerphoneOn(value);
 
   @override
-  Future<void> switchCamera() async {
-    final tracks = _active.localUserMediaStream?.stream?.getVideoTracks() ?? [];
-    if (tracks.isEmpty) return;
-    await webrtc.Helper.switchCamera(tracks.first);
-  }
+  Future<void> switchCamera() => _execute(() async {
+        final tracks =
+            _active.localUserMediaStream?.stream?.getVideoTracks() ?? [];
+        if (tracks.isEmpty) return;
+        await webrtc.Helper.switchCamera(tracks.first);
+      });
 
   /// 通话结束摘要：呼叫方落一条会话消息（加密房间自动加密），
   /// 双端时间线各显示“通话时长/已取消”。
@@ -454,7 +499,7 @@ final class MatrixCallBackend implements CallBackend {
     required bool connected,
     required Duration duration,
   }) async {
-    final room = client.getRoomById(roomId);
+    final room = _client.getRoomById(roomId);
     if (room == null) return;
     await room.sendEvent({
       'msgtype': changliaoCallMessageType,
@@ -469,11 +514,14 @@ final class MatrixCallBackend implements CallBackend {
 
   Future<void> dispose() async {
     _disposed = true;
+    final drained = _operationsDrained;
+    if (drained != null) await drained.future;
     _call = null;
     _teardownStreamWatch();
     await _quality?.stop();
     await _fallback.stop();
     await _callStates?.cancel();
+    _callStates = null;
     await _events.close();
     await _mediaStreamEvents.close();
   }

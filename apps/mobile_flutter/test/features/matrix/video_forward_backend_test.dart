@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
-import 'package:liuhetong_mobile/features/matrix/message_interaction_service.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 
 class ForwardTimeline extends Fake implements Timeline {
   ForwardTimeline(this.events);
@@ -20,6 +20,16 @@ class ForwardClient extends Client {
 class ForwardRoom extends Room {
   ForwardRoom({required super.id, required super.client, this.secure = true});
   final bool secure;
+  late ForwardTimeline timeline;
+  @override
+  Future<Timeline> getTimeline(
+          {void Function(int)? onChange,
+          void Function(int)? onRemove,
+          void Function(int)? onInsert,
+          void Function()? onNewEvent,
+          void Function()? onUpdate,
+          String? eventContextId}) async =>
+      timeline;
   MatrixFile? sent;
   @override
   bool get encrypted => secure;
@@ -84,10 +94,11 @@ void main() {
       final target = ForwardRoom(id: '!target:test', client: client);
       client.destinations.addAll({source.id: source, target.id: target});
       final video = ForwardVideo(source, withInfo: withInfo);
-      final backend = MatrixMessageInteractionBackend(
-        client: client,
-        timeline: ForwardTimeline([video]),
-      );
+      source.timeline = ForwardTimeline([video]);
+      final owner =
+          MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+      final backend = await owner.openRoomLease(source.id);
+      await backend.openRoomTimeline(onUpdate: () {});
       await backend.forwardEncryptedCopy(source.id, target.id, video.eventId);
       expect(video.decryptions, 1);
       expect(target.sent, isA<MatrixVideoFile>());
@@ -109,10 +120,11 @@ void main() {
         ForwardRoom(id: '!target:test', client: client, secure: false);
     client.destinations.addAll({source.id: source, target.id: target});
     final video = ForwardVideo(source);
-    final backend = MatrixMessageInteractionBackend(
-      client: client,
-      timeline: ForwardTimeline([video]),
-    );
+    source.timeline = ForwardTimeline([video]);
+    final owner =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    final backend = await owner.openRoomLease(source.id);
+    await backend.openRoomTimeline(onUpdate: () {});
     await expectLater(
         backend.forwardEncryptedCopy(source.id, target.id, video.eventId),
         throwsStateError);
