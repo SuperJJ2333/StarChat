@@ -32,7 +32,7 @@ import 'features/discovery/discovery_page.dart';
 import 'features/moments/moments_page.dart';
 import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
-import 'package:matrix/matrix.dart' show Membership, Room;
+import 'package:matrix/matrix.dart' show Room;
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/cached_direct_room_directory.dart';
 import 'features/matrix/matrix_direct_chat_adapter.dart';
@@ -59,6 +59,7 @@ import 'features/matrix/matrix_room_timeline_adapter.dart'
     show changliaoFriendAcceptedEventType, friendAcceptedSystemMessage;
 import 'features/matrix/message_reminder_service.dart';
 import 'features/push/firebase_push_token_provider.dart';
+import 'features/push/native_apns_push_token_provider.dart';
 import 'core/privacy_consent.dart';
 import 'features/push/firebase_push_wiring.dart';
 import 'features/push/getui_push_token_provider.dart';
@@ -124,36 +125,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 打开规范登记的私聊房间：受邀未加入时先加入；对端建的房间我方
   /// m.direct 可能缺失，补写后房间才具备 DM 语义（否则渲染成"群聊"，
   /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
-  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) async {
-    final client = widget.matrix.sdkClient;
-    var room = client.getRoomById(roomId);
-    if (room == null || room.membership != Membership.join) {
-      try {
-        await room?.join();
-      } catch (_) {
-        // 可能已在 join 中；下方等待同步兜底。
-      }
-      await client.waitForRoomInSync(roomId, join: true);
-      room = client.getRoomById(roomId);
-    }
-    final backend = MatrixDirectChatBackend(client);
-    var snapshot = await backend.waitForRoom(roomId);
-    final target = snapshot.participantIds
-        .firstWhere((id) => id != client.userID, orElse: () => '');
-    if (target.isNotEmpty &&
-        (room?.isDirectChat != true || room?.directChatMatrixID != target)) {
-      try {
-        await Room(id: roomId, client: client).addToDirectChat(target);
-        await client.waitForRoomInSync(roomId, join: true);
-        room = client.getRoomById(roomId);
-        snapshot = await backend.waitForRoom(roomId);
-      } catch (_) {
-        // m.direct 补写失败不阻断打开；下次进入会再次补写。
-      }
-    }
-    final service = DirectChatService(backend);
-    return service.openExisting(snapshot.roomId, target);
-  }
+  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) =>
+      MatrixDirectChatBackend(widget.matrix.sdkClient)
+          .openCanonicalRoom(roomId);
 
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
   /// （UI 展示/点击接听）共享同一时间线。
@@ -356,6 +330,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 启动失败不抛出：bootstrapper 置 needsRetry 并记录诊断，下一次
   /// 生命周期恢复（didChangeAppLifecycleState）重试。
   Future<void> _startNotificationSystem() async {
+    if (!mounted) return;
     unawaited(NotificationDiagnostics.shared.ensureLoaded());
     final bootstrapper =
         _notificationBootstrapper ??= NotificationSystemBootstrapper(
@@ -372,9 +347,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     final ready = await bootstrapper.ensureStarted();
-    if (!ready) return;
+    if (!ready || !mounted) return;
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
     await syncKeepAlive.ensureStarted();
+    if (!mounted) return;
     syncWatchdog.start();
     unawaited(() async {
       await _primeBatteryOptimization();
@@ -394,19 +370,24 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   ///   绝不做手机号/用户名 alias）。
   /// - FCM/Sygnal 通道（凭据缺失时 Noop 降级，Matrix 同步通道照常）。
   Future<void> _startPushIntegration() async {
+    if (!mounted) return;
     final client = widget.matrix.sdkClient;
     // 老用户升级迁移：privacy.agreement_accepted.v1 引入（0.3.34）之前的
     // 已登录用户从未记录过同意——AppHome 挂载即证明用户已通过登录流程
     // 勾选《用户协议和隐私政策》（登录按钮在勾选前禁用），补写同意，
     // 否则升级后个推永远不初始化、pusher 永远不注册。
     final consentStore = SharedPreferencesPrivacyConsentStore();
-    if (!await consentStore.accepted()) {
+    final accepted = await consentStore.accepted();
+    if (!mounted) return;
+    if (!accepted) {
       await consentStore.accept();
+      if (!mounted) return;
       NotificationDiagnostics.shared.record(
           NotificationDiagStage.push, 'consent migrated for existing session');
     }
     final store = _sharedDedupStore ??=
         await SharedPreferencesNotificationDedupStore.create();
+    if (!mounted) return;
     final deduplicator = _sharedDeduplicator ??= NotificationDeduplicator(
       store: store,
       ttl: SharedPreferencesNotificationDedupStore.defaultTtl,
@@ -425,11 +406,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (defaultTargetPlatform == TargetPlatform.android &&
         AppConfig.getuiPushGatewayUrl.isNotEmpty &&
         await SharedPreferencesPrivacyConsentStore().accepted()) {
+      if (!mounted) return;
       final getuiGateway = Uri.tryParse(AppConfig.getuiPushGatewayUrl);
       if (getuiGateway != null) {
         final getui = GetuiPushTokenProvider();
-        await getui.initialize();
         _pushTokenProviders.add(getui);
+        await getui.initialize();
+        if (!mounted) return;
         pushers.add(MatrixPusherService(
           gateway: ClientMatrixPusherGateway(client),
           tokenProvider: getui,
@@ -440,25 +423,41 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       }
     }
 
-    // ② FCM/Sygnal 通道（原有行为不变）。
+    // ② Sygnal: iOS uses native APNs tokens; Android uses FCM tokens.
     final gatewayUrl = AppConfig.sygnalPushGatewayUrl.isEmpty
         ? null
         : Uri.tryParse(AppConfig.sygnalPushGatewayUrl);
-    final firebase = await FirebasePushTokenProvider.tryCreate();
-    if (firebase != null) {
-      _pushTokenProviders.add(firebase);
-      pushers.add(MatrixPusherService(
-        gateway: ClientMatrixPusherGateway(client),
-        tokenProvider: firebase,
-        appId: defaultTargetPlatform == TargetPlatform.iOS
-            ? MatrixPusherService.appIdIOS
-            : MatrixPusherService.appIdAndroid,
-        gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
-        deviceDisplayName: defaultTargetPlatform == TargetPlatform.iOS
-            ? 'ChatFlow iOS'
-            : 'ChatFlow Android',
-      ));
-      unawaited(configureFirebasePushHandlers(tapRouter: router));
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      if (gatewayUrl != null) {
+        final apns = NativeApnsPushTokenProvider(onTap: router.handleTap);
+        _pushTokenProviders.add(apns);
+        await apns.initialize();
+        if (!mounted) return;
+        pushers.add(MatrixPusherService(
+          gateway: ClientMatrixPusherGateway(client),
+          tokenProvider: apns,
+          appId: MatrixPusherService.appIdIOS,
+          gatewayUrl: gatewayUrl.resolve('/_matrix/push/v1/notify'),
+          deviceDisplayName: 'ChatFlow iOS',
+        ));
+      }
+    } else {
+      final firebase = await FirebasePushTokenProvider.tryCreate();
+      if (!mounted) {
+        await firebase?.dispose();
+        return;
+      }
+      if (firebase != null) {
+        _pushTokenProviders.add(firebase);
+        pushers.add(MatrixPusherService(
+          gateway: ClientMatrixPusherGateway(client),
+          tokenProvider: firebase,
+          appId: MatrixPusherService.appIdAndroid,
+          gatewayUrl: gatewayUrl?.resolve('_matrix/push/v1/notify'),
+          deviceDisplayName: 'ChatFlow Android',
+        ));
+        unawaited(configureFirebasePushHandlers(tapRouter: router));
+      }
     }
     _pusherServices.addAll(pushers);
     // 诊断页读取：登记全部通道（登出统一 clear）。
@@ -468,7 +467,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     for (final pusher in pushers) {
       await pusher.ensureRegistered();
+      if (!mounted) return;
       await pusher.watchTokenRefresh();
+      if (!mounted) return;
     }
     // 推送点击路由就绪：通知系统已装配、主页面已挂载。
     router.markReady();
@@ -938,7 +939,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
     _chatIdentityCache = cache;
     if (mounted) setState(() {});
-    unawaited(cache.preload());
+    unawaited(cache.preload().catchError((_) {}));
     return cache;
   }
 
@@ -1090,11 +1091,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   Future<void> _openMessage(ContactDetails contact) async {
     try {
+      final cache = await _identityCache();
+      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
       final reference = await directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
-      final cache = _chatIdentityCache;
-      unawaited(_identityCache());
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push<void>(
         CupertinoPageRoute(
@@ -1467,6 +1468,22 @@ final class _ApiCanonicalDirectRoomDirectory
   }
 }
 
+// Existing contacts use the hydrated snapshot immediately. A newly accepted
+// contact must be resolved through the business API before room lookup, so the
+// canonical directory and RoomPage share the same current identity projection.
+Future<void> _refreshMissingFriendIdentity(
+    ProfileRepository cache, String matrixUserId) async {
+  await cache.hydrate();
+  if (cache.contactsByMatrixId.containsKey(matrixUserId)) return;
+  if (cache.profile == null) await cache.preload();
+  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
+    await cache.refreshContactsQuietly(minInterval: Duration.zero);
+  }
+  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
+    throw StateError('The contact is no longer a current friend');
+  }
+}
+
 final class ContactsTabPage extends StatefulWidget {
   const ContactsTabPage({
     super.key,
@@ -1503,12 +1520,12 @@ final class ContactsTabPage extends StatefulWidget {
 final class _ContactsTabPageState extends State<ContactsTabPage> {
   Future<void> _openMessage(ContactDetails contact) async {
     try {
+      final identityCache =
+          widget.identityCache ?? ProfileRepository(widget.api);
+      await _refreshMissingFriendIdentity(identityCache, contact.matrixUserId);
       final reference = await widget.directChats.open(contact.matrixUserId);
       final room = widget.matrix.sdkClient.getRoomById(reference.roomId);
       if (room == null) throw StateError('Matrix room is unavailable');
-      final identityCache =
-          widget.identityCache ?? ProfileRepository(widget.api);
-      unawaited(identityCache.preload().catchError((_) {}));
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
@@ -1577,7 +1594,9 @@ final class ProfileTabPage extends StatefulWidget {
 final class _ProfileTabPageState extends State<ProfileTabPage> {
   late final ProfileController controller = ProfileController(
     gateway: widget.api,
-    avatarSource: GalleryAvatarSource(),
+    avatarSource: GalleryAvatarSource(
+      brightnessProvider: () => CupertinoTheme.brightnessOf(context),
+    ),
     onAvatarUpdated: _refreshAvatarDisplays,
   );
 

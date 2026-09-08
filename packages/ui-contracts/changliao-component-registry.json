@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-07-gallery-refresh": {
+      "query": "Fresh creation/update date bounds for every native album query; never pin cutoff to process startup",
+      "ordering": "Creation date descending remains unchanged",
+      "figmaSync": "No remote update; existing visual layout retained"
+    },
+    "2026-09-06-room-flow": {
+      "sending": "local bubble immediately; no sending indicator or attachment upload progress; failure retry retained",
+      "media": "bounded cache; stable layout; uncached loading after scroll settles",
+      "gallery": "refresh metadata on open/resume/media changes; preserve cached initial preview; newest first; permission scope isolated",
+      "groupManagement": "owner/admin guards; owner-only roles, transfer and dissolve; rename policy owner-only Matrix constraint",
+      "groupAnnouncement": "effective banner remains after viewing; empty hidden; text/image encrypted; member read-only",
+      "htmlScope": [
+        "app-message-bubble",
+        "app-attachment-tile"
+      ],
+      "figmaPageNode": "18:7",
+      "figmaSync": "remote nodes unchanged; tooling unavailable; local ledger only"
+    },
     "2026-09-06-cache-entry": {
       "favoritePanel": "160px static preview, GIF badge, long-press delete; loading/error/retry retained",
       "memberResults": "authoritative avatar, full body or media summary, unchanged message jump",
@@ -11,9 +29,22 @@
     "2026-09-06": {
       "chatMemberPicker": "custom avatar; remark then nickname then username",
       "chatMediaCategory": "date-grouped three-column thumbnails; no sender row; video play and duration",
-      "discoveryOrder": ["朋友圈", "扫一扫"],
+      "discoveryOrder": [
+        "朋友圈",
+        "扫一扫"
+      ],
       "personalInformation": "header and explicit Me row; invitation before nickname; values right and placeholders left",
       "figmaSync": "unavailable; local implementation recorded in frontend/artifacts/figma-state.json"
+    },
+    "2026-09-07-dark-mode": {
+      "navigation": "#191919",
+      "page": "#111111",
+      "elevated": "#232323",
+      "text": "#F5F5F5",
+      "divider": "#2C2C2C",
+      "behavior": "Resolve at build; light/dark/system live updates; preserve photos, QR and accent contrast",
+      "html": "frontend/src/styles/tokens.css",
+      "figmaSync": "Deferred: Figma connector unavailable; no remote nodes modified"
     }
   },
   "figma": {

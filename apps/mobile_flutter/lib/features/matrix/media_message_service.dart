@@ -103,7 +103,6 @@ final class MediaMessageService {
 
   /// M01：读取前统一预检——存在、可读、未超限。
   /// 超限在 readAsBytes **之前**拒绝（低内存设备不被大文件撑爆）。
-  @visibleForTesting
   static Future<void> ensureWithinSendLimit(File file,
       {int limitBytes = maxFileSendBytes}) async {
     final stat = await file.stat();
@@ -157,8 +156,15 @@ final class MediaMessageService {
   }
 
   Future<String> sendFile(String roomId) async {
-    final file = await openFile();
+    final file = await pickFileForSend();
     if (file == null) throw StateError('File selection cancelled');
+    return sendSelectedFile(roomId, file);
+  }
+
+  Future<XFile?> pickFileForSend() => openFile();
+
+  Future<String> sendSelectedFile(String roomId, XFile file,
+      {String? txid}) async {
     final local = File(file.path);
     // 读取前预检（大小/存在性），再进入有界并发槽上传。
     await ensureWithinSendLimit(local);
@@ -197,6 +203,7 @@ final class MediaMessageService {
       }
       final bytes = await upload.readAsBytes();
       return await matrix.sendEncryptedMedia(roomId, bytes, mime,
+          txid: txid,
           filename: mime == 'video/mp4'
               ? '${file.name.split('.').first}.mp4'
               : file.name,
@@ -229,8 +236,8 @@ final class MediaMessageService {
 
   /// 语音发送携带真实录音时长（毫秒），接收端据此显示秒数。
   Future<String> sendVoicePreview(String roomId, String path,
-          {Duration? duration}) =>
-      _send(roomId, path, 'audio/aac', duration: duration);
+          {Duration? duration, String? txid}) =>
+      _send(roomId, path, 'audio/aac', duration: duration, txid: txid);
 
   Future<void> cancelVoiceRecording() async {
     final path = await _recorder.stop();
@@ -243,14 +250,15 @@ final class MediaMessageService {
   }
 
   Future<String> _send(String roomId, String path, String mimeType,
-      {Duration? duration}) async {
+      {Duration? duration, String? txid}) async {
     final local = File(path);
     // 语音消息同样走读取前预检（防异常大录音）+ 有界并发。
     await ensureWithinSendLimit(local);
-    final bytes = await local.readAsBytes();
     await _sendSlots.acquire();
     try {
+      final bytes = await local.readAsBytes();
       return await matrix.sendEncryptedMedia(roomId, bytes, mimeType,
+          txid: txid,
           extraContent: duration == null
               ? null
               : {

@@ -143,7 +143,23 @@ final class MatrixPusherService {
           appDisplayName: 'ChatFlow',
           deviceDisplayName: deviceDisplayName,
           lang: 'zh-CN',
-          data: PusherData(format: _pushFormat, url: url),
+          data: PusherData(
+            format: _pushFormat,
+            url: url,
+            additionalProperties: appId == appIdIOS
+                ? const {
+                    'default_payload': {
+                      'aps': {
+                        'alert': {
+                          'title': '畅聊 ChatFlow',
+                          'body': '您有一条新消息',
+                        },
+                        'sound': 'default',
+                      },
+                    },
+                  }
+                : const {},
+          ),
         ),
       );
       if (generation != _generation) {

@@ -8,8 +8,7 @@ final class WeChatPageScaffold extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
-    // Null falls back to the theme scaffold background so pages follow the
-    // active brightness; pages pinned by UI_DESIGN.md 2.1 pass fixed tokens.
+    // Null uses the theme; explicit product surfaces are resolved at build.
     this.backgroundColor,
   }) : navigationBar = null;
 
@@ -37,12 +36,20 @@ final class WeChatPageScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
-        backgroundColor: backgroundColor,
+        backgroundColor: backgroundColor == null
+            ? null
+            : switch (backgroundColor) {
+                WeChatColors.lightPageBackground ||
+                WeChatColors.lightSurface ||
+                WeChatColors.lightElevated =>
+                  WeChatColors.resolve(context, backgroundColor!),
+                _ => CupertinoDynamicColor.resolve(backgroundColor!, context),
+              },
         navigationBar: navigationBar ??
             (title == null
                 ? null
                 : CupertinoNavigationBar(
-                    backgroundColor: WeChatColors.chatNavigationBackground,
+                    backgroundColor: WeChatColors.navigationBackground(context),
                     automaticBackgroundVisibility: false,
                     enableBackgroundFilterBlur: false,
                     middle: Text(title!),

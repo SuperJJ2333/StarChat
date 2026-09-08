@@ -9,6 +9,8 @@ import '../../core/notification/notification_diagnostics.dart';
 import '../../core/notification/notification_event.dart';
 import '../contacts/user_display_name_resolver.dart';
 import 'conversation_preferences.dart';
+import 'group_announcement_service.dart';
+
 import 'conversation_presentation.dart';
 import 'conversation_read_state.dart';
 import 'matrix_room_timeline_adapter.dart'
@@ -18,6 +20,11 @@ import 'matrix_room_timeline_adapter.dart'
         changliaoTransferMessageType;
 import 'mute_exception_policy.dart';
 import 'nudge_service.dart' show changliaoNudgeEventType;
+
+// Only an already-decrypted document can enable the announcement exception.
+bool isGroupAnnouncementNotification(Event? event) =>
+    event?.originalSource?.type == EventTypes.Encrypted &&
+    event?.messageType == groupAnnouncementMessageType;
 
 /// Matrix 同步 → 通知事件源（PRD §22）。
 ///
@@ -151,7 +158,7 @@ final class MatrixNotificationEventSource implements NotificationEventSource {
         senderId: raw.senderId,
         mentionsMe: isMention,
         mentionsAll: _mentionsAll(decrypted),
-        isAnnouncement: false,
+        isAnnouncement: isGroupAnnouncementNotification(decrypted),
       ),
     );
 

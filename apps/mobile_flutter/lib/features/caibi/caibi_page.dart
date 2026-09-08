@@ -111,8 +111,8 @@ final class _CaibiPageState extends State<CaibiPage> {
               ),
               const SizedBox(height: 6),
               const Text('CAIBI · 两位小数 · 仅用于红包与转账',
-                  style:
-                      TextStyle(color: WeChatColors.textSecondary, fontSize: 12)),
+                  style: TextStyle(
+                      color: WeChatColors.textSecondary, fontSize: 12)),
             ],
           ),
         ),
@@ -206,5 +206,5 @@ final class _CaibiPageState extends State<CaibiPage> {
   Widget _divider() => Container(
       height: .5,
       margin: const EdgeInsets.only(left: 16),
-      color: WeChatColors.divider);
+      color: WeChatColors.resolve(context, WeChatColors.divider));
 }

@@ -98,7 +98,7 @@ final class FriendMomentsPreview extends StatelessWidget {
                   ((constraints.maxWidth - 100) / 3).clamp(0, 87).toDouble();
               return Row(
                 children: [
-                  const SizedBox(
+                  SizedBox(
                     width: 80,
                     child: Align(
                       alignment: Alignment.centerLeft,
@@ -106,7 +106,7 @@ final class FriendMomentsPreview extends StatelessWidget {
                         '朋友圈',
                         style: TextStyle(
                           fontSize: WeChatTypography.callout,
-                          color: CupertinoColors.label,
+                          color: WeChatColors.resolveTextPrimary(context),
                         ),
                       ),
                     ),
@@ -213,9 +213,9 @@ final class _FriendActionButton extends StatelessWidget {
               const SizedBox(width: 8),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: WeChatTypography.callout,
-                  color: CupertinoColors.label,
+                  color: WeChatColors.resolveTextPrimary(context),
                 ),
               ),
             ],

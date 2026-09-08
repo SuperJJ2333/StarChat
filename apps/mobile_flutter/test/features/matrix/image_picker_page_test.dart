@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:liuhetong_mobile/features/matrix/image_picker_page.dart';
@@ -107,6 +108,160 @@ final class FakePhoto {
 
 /// 选择逻辑（纯逻辑）验收：多选、上限 9、取消勾选、原图开关。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    GalleryAccessCache.invalidateAll();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('com.fluttercandies/photo_manager'),
+            (call) async {
+      if (call.method == 'getPermissionState' ||
+          call.method == 'requestPermissionExtend') {
+        return DeviceGallerySource.lastKnownPermissionScope == 'limited'
+            ? PermissionState.limited.index
+            : PermissionState.authorized.index;
+      }
+      if (call.method == 'notify') return true;
+      throw MissingPluginException();
+    });
+  });
+
+  testWidgets(
+      'reopen keeps cached preview while querying new media and clears old index',
+      (tester) async {
+    final cache = GalleryAccessCache.shared;
+    await cache.ensurePermission(() async => true, scope: 'full');
+    final permission = Completer<int>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('com.fluttercandies/photo_manager'),
+            (call) async {
+      if (call.method == 'getPermissionState') return permission.future;
+      if (call.method == 'notify') return true;
+      throw MissingPluginException();
+    });
+    cache.preview = [
+      GalleryPhoto(
+          id: 'cached',
+          thumbnail: tinyPng,
+          compressedBytes: () async => tinyPng,
+          originalBytes: () async => tinyPng)
+    ];
+    const old = GalleryAlbum(
+        id: 'old', name: 'Old', isRecent: false, isVideoOnly: false);
+    await cache.loadAlbums(() async => [old]);
+    var scans = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      albumsLoader: () => cache.loadAlbums(() async {
+        scans++;
+        return [];
+      }),
+      pagerBuilder: () => FakePager([
+        [
+          GalleryPhoto(
+              id: 'fresh',
+              thumbnail: tinyPng,
+              compressedBytes: () async => tinyPng,
+              originalBytes: () async => tinyPng)
+        ]
+      ]),
+    )));
+    await tester.pump();
+    expect(find.byKey(const Key('image-picker-item-cached')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('image-picker-check-cached')));
+    expect(
+        tester
+            .widget<CupertinoButton>(find.byKey(const Key('image-picker-send')))
+            .onPressed,
+        isNull);
+    permission.complete(PermissionState.authorized.index);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-fresh')), findsOneWidget);
+    expect(find.byKey(const Key('image-picker-item-cached')), findsNothing);
+    expect(scans, 1,
+        reason: 'Opening must bypass an index cached while closed');
+  });
+
+  testWidgets('system media change refreshes the mounted picker',
+      (tester) async {
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      albumsLoader: () async => [],
+      pagerBuilder: () => FakePager([
+        [
+          GalleryPhoto(
+              id: 'event-${++loads}',
+              thumbnail: tinyPng,
+              compressedBytes: () async => tinyPng,
+              originalBytes: () async => tinyPng)
+        ]
+      ]),
+    )));
+    await tester.pumpAndSettle();
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'com.fluttercandies/photo_manager/notify',
+        const StandardMethodCodec()
+            .encodeMethodCall(const MethodCall('change')),
+        (_) {});
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-event-2')), findsOneWidget);
+  });
+
+  testWidgets('revoked access removes cached photos and selection on resume',
+      (tester) async {
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      albumsLoader: () async => [],
+      pagerBuilder: () => ++loads == 1
+          ? FakePager([
+              [
+                GalleryPhoto(
+                    id: 'permitted',
+                    thumbnail: tinyPng,
+                    compressedBytes: () async => tinyPng,
+                    originalBytes: () async => tinyPng)
+              ]
+            ])
+          : _DeniedPager(),
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('image-picker-check-permitted')));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-permitted')), findsNothing);
+    expect(find.textContaining('未获得相册权限'), findsOneWidget);
+    expect(GalleryAccessCache.shared.preview, isEmpty);
+  });
+
+  testWidgets('resume refreshes newest media even when permission is unchanged',
+      (tester) async {
+    var opens = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+      albumsLoader: () async => [],
+      pagerBuilder: () => FakePager([
+        [
+          GalleryPhoto(
+            id: 'open-${++opens}',
+            thumbnail: tinyPng,
+            compressedBytes: () async => tinyPng,
+            originalBytes: () async => tinyPng,
+          )
+        ]
+      ]),
+    )));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-open-1')), findsOneWidget);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-item-open-2')), findsOneWidget);
+    expect(find.byKey(const Key('image-picker-item-open-1')), findsNothing);
+  });
   test('custom selection limit is reflected in overflow hint', () {
     final selection = GallerySelection(maxCount: 1);
     selection.toggle('first');
@@ -417,8 +572,7 @@ void main() {
         reason: '压缩模式正常发送并关闭选择页');
   });
 
-  testWidgets('验证11：快速切换相册后，旧请求不覆盖新相册的列表/加载态',
-      (tester) async {
+  testWidgets('验证11：快速切换相册后，旧请求不覆盖新相册的列表/加载态', (tester) async {
     final gate1 = Completer<void>();
     // 慢分页器（模拟弱网首屏加载），结果被门闩挂起。
     final gatedPager = _GatedPager(gate1.future);
@@ -459,21 +613,23 @@ void main() {
     await tester.tap(find.byKey(const Key('image-picker-album-videos')));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
+    expect(
+        find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
         reason: '新相册列表已展示');
 
     // 旧相册（common）的慢请求现在才返回：不得覆盖新相册结果。
     gate1.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byKey(const Key('image-picker-item-recent-stale-1')), findsNothing,
+    expect(
+        find.byKey(const Key('image-picker-item-recent-stale-1')), findsNothing,
         reason: '旧请求的结果必须被丢弃');
-    expect(find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
+    expect(
+        find.byKey(const Key('image-picker-item-video-fast-1')), findsOneWidget,
         reason: '新相册列表保持不变');
   });
 
-  testWidgets('验证12/UI：视频首帧失败显示占位与重试入口，选择不受影响',
-      (tester) async {
+  testWidgets('验证12/UI：视频首帧失败显示占位与重试入口，选择不受影响', (tester) async {
     var loads = 0;
     final video = GalleryPhoto(
       id: 'fail-video',
@@ -498,7 +654,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // 占位（非黑卡）+ 重试入口可见；条目仍在且可勾选（封面失败不删条目）。
-    expect(find.byKey(const Key('image-picker-item-fail-video')), findsOneWidget);
+    expect(
+        find.byKey(const Key('image-picker-item-fail-video')), findsOneWidget);
     expect(find.byKey(const Key('image-picker-frame-retry-fail-video')),
         findsOneWidget,
         reason: '失败后提供明确的重试入口');
@@ -507,49 +664,52 @@ void main() {
     expect(find.text('发送(1)'), findsOneWidget, reason: '封面失败不阻断选择');
 
     // 点重试：重新发起一次首帧加载（有限重试入口有效）。
-    await tester.tap(find.byKey(const Key('image-picker-frame-retry-fail-video')));
+    await tester
+        .tap(find.byKey(const Key('image-picker-frame-retry-fail-video')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(loads, 2, reason: '重试入口重新触发一次首帧加载');
   });
 // ── 审计 P2（gallery-call-review）：部分授权横幅 ─────────────
 
-testWidgets('P2：limited 授权显示"管理可见照片"横幅；full 不显示', (tester) async {
-  DeviceGallerySource.lastKnownPermissionScopeForTest = 'limited';
-  addTearDown(
-      () => DeviceGallerySource.lastKnownPermissionScopeForTest = null);
-  await tester.pumpWidget(CupertinoApp(
-    home: ImagePickerPage(
-      pagerBuilder: () => FakePager([
-        [
-          GalleryPhoto(
-            id: 'p1',
-            thumbnail: tinyPng,
-            compressedBytes: () async => Uint8List.fromList([1]),
-            originalBytes: () async => Uint8List.fromList([1]),
-          ),
-        ],
-      ]),
-    ),
-  ));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
-  expect(find.byKey(const Key('image-picker-limited-banner')), findsOneWidget,
-      reason: '部分授权时必须提供明确入口');
-  expect(find.byKey(const Key('image-picker-limited-manage')), findsOneWidget);
+  testWidgets('P2：limited 授权显示"管理可见照片"横幅；full 不显示', (tester) async {
+    DeviceGallerySource.lastKnownPermissionScopeForTest = 'limited';
+    addTearDown(
+        () => DeviceGallerySource.lastKnownPermissionScopeForTest = null);
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(
+        pagerBuilder: () => FakePager([
+          [
+            GalleryPhoto(
+              id: 'p1',
+              thumbnail: tinyPng,
+              compressedBytes: () async => Uint8List.fromList([1]),
+              originalBytes: () async => Uint8List.fromList([1]),
+            ),
+          ],
+        ]),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('image-picker-limited-banner')), findsOneWidget,
+        reason: '部分授权时必须提供明确入口');
+    expect(
+        find.byKey(const Key('image-picker-limited-manage')), findsOneWidget);
 
-  // full：不显示横幅。
-  DeviceGallerySource.lastKnownPermissionScopeForTest = 'full';
-  await tester.pumpWidget(CupertinoApp(
-    home: ImagePickerPage(
-      pagerBuilder: () => FakePager(const []),
-    ),
-  ));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 100));
-  expect(find.byKey(const Key('image-picker-limited-banner')), findsNothing);
-});
+    // full：不显示横幅。
+    DeviceGallerySource.lastKnownPermissionScopeForTest = 'full';
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(
+        pagerBuilder: () => FakePager(const []),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const Key('image-picker-limited-banner')), findsNothing);
+  });
 }
+
 /// 门闩分页器：首页结果挂起直至 gate 完成（模拟慢请求）。
 final class _GatedPager extends DeviceGalleryPager {
   _GatedPager(this.gate);
@@ -568,4 +728,10 @@ final class _GatedPager extends DeviceGalleryPager {
       ),
     ];
   }
+}
+
+final class _DeniedPager extends DeviceGalleryPager {
+  @override
+  Future<List<GalleryPhoto>> loadNextPage({int pageSize = 20}) async =>
+      throw GalleryPermissionDenied();
 }

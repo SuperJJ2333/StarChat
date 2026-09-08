@@ -23,10 +23,11 @@ final class MyQrCodePage extends StatelessWidget {
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
     final payload = buildFriendQrPayload(profile.username);
     return WeChatPageScaffold.navigation(
-      backgroundColor:
-          dark ? WeChatColors.darkPageBackground : WeChatColors.lightPageBackground,
+      backgroundColor: dark
+          ? WeChatColors.darkPageBackground
+          : WeChatColors.lightPageBackground,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const WeChatNavTitle('我的二维码'),
@@ -39,8 +40,9 @@ final class MyQrCodePage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
               decoration: BoxDecoration(
-                color:
-                    dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
+                color: dark
+                    ? WeChatColors.darkElevated
+                    : WeChatColors.lightElevated,
                 borderRadius: BorderRadius.circular(WeChatRadius.dialog),
               ),
               child: Column(
@@ -62,7 +64,9 @@ final class MyQrCodePage extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 17, fontWeight: FontWeight.w600, color: foreground),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: foreground),
                         ),
                       ),
                     ],

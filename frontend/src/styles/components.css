@@ -890,3 +890,5 @@
 .c-moment-reactions__likes {
   color: var(--color-social-link);
 }
+
+.ui-screen .c-message--outgoing .c-message__bubble { color: var(--color-outgoing-text); }

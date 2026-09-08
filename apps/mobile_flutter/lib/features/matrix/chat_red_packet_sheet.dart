@@ -296,25 +296,29 @@ final class _State extends State<ChatRedPacketSheet> {
         state.status == ChatRedPacketStatus.sharing;
     final exclusive = mode == 'EXCLUSIVE';
     return WeChatPageScaffold.navigation(
-      backgroundColor: WeChatColors.redPacketCreateGradientTop,
+      backgroundColor: WeChatColors.resolve(
+          context, WeChatColors.redPacketCreateGradientTop),
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.redPacketCreateGradientTop,
+        backgroundColor: WeChatColors.resolve(
+            context, WeChatColors.redPacketCreateGradientTop),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
-        middle: const Text('发红包',
+        middle: Text('发红包',
             style: TextStyle(
-                color: WeChatColors.lightTextPrimary,
+                color: WeChatColors.resolveTextPrimary(context),
                 fontSize: 17,
                 fontWeight: FontWeight.w600)),
       ),
       child: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              WeChatColors.redPacketCreateGradientTop,
-              WeChatColors.redPacketCreateGradientBottom
+              WeChatColors.resolve(
+                  context, WeChatColors.redPacketCreateGradientTop),
+              WeChatColors.resolve(
+                  context, WeChatColors.redPacketCreateGradientBottom)
             ],
           ),
         ),
@@ -334,8 +338,8 @@ final class _State extends State<ChatRedPacketSheet> {
                   onPressed: busy ? null : _pickType,
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Text(redPacketTypeLabel(mode),
-                        style: const TextStyle(
-                            color: WeChatColors.lightTextPrimary,
+                        style: TextStyle(
+                            color: WeChatColors.resolveTextPrimary(context),
                             fontSize: 14)),
                     const SizedBox(width: 4),
                     const Icon(CupertinoIcons.chevron_down,
@@ -346,7 +350,7 @@ final class _State extends State<ChatRedPacketSheet> {
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: CupertinoColors.white,
+                color: WeChatColors.elevatedSurface(context),
                 borderRadius: BorderRadius.circular(10),
               ),
               clipBehavior: Clip.antiAlias,
@@ -453,7 +457,7 @@ final class _State extends State<ChatRedPacketSheet> {
   Widget _divider() => Container(
       height: .5,
       margin: const EdgeInsets.only(left: 16),
-      color: WeChatColors.divider);
+      color: WeChatColors.resolve(context, WeChatColors.divider));
 
   Widget _field({
     required String label,
@@ -469,13 +473,14 @@ final class _State extends State<ChatRedPacketSheet> {
       Container(
         height: 54,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        color: CupertinoColors.white,
+        color: WeChatColors.elevatedSurface(context),
         child: Row(children: [
           SizedBox(
               width: 84,
               child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 16, color: WeChatColors.lightTextPrimary))),
+                  style: TextStyle(
+                      fontSize: 16,
+                      color: WeChatColors.resolveTextPrimary(context)))),
           Expanded(
             child: CupertinoTextField(
               key: key,
@@ -485,8 +490,9 @@ final class _State extends State<ChatRedPacketSheet> {
               keyboardType: keyboardType,
               placeholder: placeholder,
               inputFormatters: inputFormatters,
-              style: const TextStyle(
-                  fontSize: 16, color: WeChatColors.lightTextPrimary),
+              style: TextStyle(
+                  fontSize: 16,
+                  color: WeChatColors.resolveTextPrimary(context)),
               placeholderStyle: const TextStyle(
                   fontSize: 16, color: WeChatColors.textTertiary),
               decoration: const BoxDecoration(),
@@ -511,7 +517,7 @@ final class _State extends State<ChatRedPacketSheet> {
         key: key,
         height: 54,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        color: CupertinoColors.white,
+        color: WeChatColors.elevatedSurface(context),
         child: Row(children: [
           SizedBox(
               width: 84,
@@ -530,7 +536,7 @@ final class _State extends State<ChatRedPacketSheet> {
                             fontSize: 16,
                             color: value == null
                                 ? WeChatColors.textTertiary
-                                : CupertinoColors.black)),
+                                : WeChatColors.resolveTextPrimary(context))),
                     const SizedBox(width: 4),
                     const Icon(CupertinoIcons.chevron_right,
                         size: 14, color: WeChatColors.textTertiary),

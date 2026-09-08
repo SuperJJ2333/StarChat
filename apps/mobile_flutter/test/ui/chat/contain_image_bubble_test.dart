@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +77,105 @@ void main() {
     0x60,
     0x82,
   ]);
+
+  testWidgets('cold image waits for idle and reserves stable geometry',
+      (tester) async {
+    final scrolling = ValueNotifier(true);
+    final result = Completer<Uint8List>();
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: Center(
+            child: ContainImageBubble(
+      isScrolling: scrolling,
+      loadCached: () async => null,
+      sourceSize: const Size(640, 320),
+      load: () {
+        loads++;
+        return result.future;
+      },
+    ))));
+    expect(loads, 0);
+    final before = tester.getSize(find.byType(ContainImageBubble));
+    scrolling.value = false;
+    await tester.pump();
+    expect(loads, 1);
+    result.complete(png);
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getSize(find.byType(ContainImageBubble)), before);
+    expect(find.byType(Image), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    scrolling.dispose();
+  });
+
+  testWidgets('memory hit renders on first frame while scrolling',
+      (tester) async {
+    final scrolling = ValueNotifier(true);
+    var loads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: Center(
+            child: ContainImageBubble(
+      isScrolling: scrolling,
+      initialBytes: png,
+      load: () async {
+        loads++;
+        return png;
+      },
+    ))));
+    expect(loads, 0);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(CupertinoActivityIndicator), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    scrolling.dispose();
+  });
+
+  testWidgets(
+      'local echo defers SDK fetch and ACK metadata does not resize its frame',
+      (tester) async {
+    var loads = 0;
+    Widget bubble(bool acknowledged) => CupertinoApp(
+            home: Center(
+                child: ContainImageBubble(
+          deferLoading: !acknowledged,
+          sourceSize: acknowledged ? const Size(900, 100) : null,
+          load: () async {
+            loads++;
+            return png;
+          },
+        )));
+    await tester.pumpWidget(bubble(false));
+    final size = tester.getSize(find.byType(ContainImageBubble));
+    expect(loads, 0);
+    await tester.pumpWidget(bubble(true));
+    await tester.pump();
+    expect(loads, 1);
+    expect(tester.getSize(find.byType(ContainImageBubble)), size);
+  });
+
+  testWidgets('disk hit renders while scrolling without starting source',
+      (tester) async {
+    final scrolling = ValueNotifier(true);
+    var sourceLoads = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: Center(
+            child: ContainImageBubble(
+      isScrolling: scrolling,
+      loadCached: () async => png,
+      load: () async {
+        sourceLoads++;
+        return png;
+      },
+    ))));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(Image), findsOneWidget);
+    expect(sourceLoads, 0);
+    scrolling.value = false;
+    await tester.pump();
+    expect(sourceLoads, 0);
+    await tester.pumpWidget(const SizedBox());
+    scrolling.dispose();
+  });
 
   test('unsafe received GIF never reaches an image decoder', () {
     final huge = Uint8List.fromList(

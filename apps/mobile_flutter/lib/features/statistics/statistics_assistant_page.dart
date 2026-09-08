@@ -22,10 +22,12 @@ final class StatisticsAssistantPage extends StatefulWidget {
   final String roomId;
 
   @override
-  State<StatisticsAssistantPage> createState() => _StatisticsAssistantPageState();
+  State<StatisticsAssistantPage> createState() =>
+      _StatisticsAssistantPageState();
 }
 
-final class _StatisticsAssistantPageState extends State<StatisticsAssistantPage> {
+final class _StatisticsAssistantPageState
+    extends State<StatisticsAssistantPage> {
   late final WebViewController _controller;
   Brightness _brightness = Brightness.light;
   int _progress = 0;
@@ -85,7 +87,8 @@ final class _StatisticsAssistantPageState extends State<StatisticsAssistantPage>
     try {
       final decoded = jsonDecode(message.message);
       if (decoded is Map<String, Object?> && decoded['type'] != 'save') return;
-      final stateJson = decoded is Map<String, Object?> ? decoded['state'] : null;
+      final stateJson =
+          decoded is Map<String, Object?> ? decoded['state'] : null;
       if (stateJson is! String) return;
       _pendingJson = stateJson;
       _saveDebounce?.cancel();
@@ -107,8 +110,8 @@ final class _StatisticsAssistantPageState extends State<StatisticsAssistantPage>
   /// 页面销毁前尝试读回一次最新状态（运行期防抖保存为主，此为安全网）。
   Future<void> _finalReadback() async {
     try {
-      final result =
-          await _controller.runJavaScriptReturningResult('window.__statsGetState()');
+      final result = await _controller
+          .runJavaScriptReturningResult('window.__statsGetState()');
       final json = _unwrapJsString(result);
       if (json.isNotEmpty) {
         await StatisticsStateStore.write(widget.roomId, json);
@@ -142,7 +145,7 @@ final class _StatisticsAssistantPageState extends State<StatisticsAssistantPage>
   Widget build(BuildContext context) {
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: WeChatColors.chatNavigationBackground,
+        backgroundColor: WeChatColors.navigationBackground(context),
         automaticBackgroundVisibility: false,
         enableBackgroundFilterBlur: false,
         middle: const Text(

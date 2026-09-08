@@ -39,7 +39,7 @@ final class _MatrixSecurityPageState extends State<MatrixSecurityPage> {
   Widget build(BuildContext context) {
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.chatNavigationBackground,
+          backgroundColor: WeChatColors.navigationBackground(context),
           automaticBackgroundVisibility: false,
           enableBackgroundFilterBlur: false,
           middle: Text('设备安全')),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,13 +11,18 @@ import 'profile_controller.dart';
 const avatarMaxDimension = 1024;
 
 final class GalleryAvatarSource implements AvatarSource {
-  GalleryAvatarSource({ImagePicker? picker, ImageCropper? cropper})
+  GalleryAvatarSource(
+      {ImagePicker? picker, ImageCropper? cropper, this.brightnessProvider})
       : picker = picker ?? ImagePicker(),
         cropper = cropper ?? ImageCropper();
   final ImagePicker picker;
   final ImageCropper cropper;
+  final Brightness Function()? brightnessProvider;
   @override
   Future<AvatarCandidate?> selectCropAndCompress() async {
+    // Capture while the owning page is mounted, before the native picker can
+    // outlive it (for example when the account is signed out in the background).
+    final dark = brightnessProvider?.call() == Brightness.dark;
     final selected =
         await picker.pickImage(source: ImageSource.gallery, imageQuality: 92);
     if (selected == null) return null;
@@ -33,12 +39,16 @@ final class GalleryAvatarSource implements AvatarSource {
             lockAspectRatio: true,
             hideBottomControls: false,
             toolbarTitle: '裁剪头像',
-            toolbarColor: WeChatColors.chatNavigationBackground,
-            toolbarWidgetColor: WeChatColors.lightTextPrimary,
+            toolbarColor: dark
+                ? WeChatColors.darkSurface
+                : WeChatColors.chatNavigationBackground,
+            toolbarWidgetColor: dark
+                ? WeChatColors.darkTextPrimary
+                : WeChatColors.lightTextPrimary,
             // 9.x 在浅色系统栏下保证工具栏图标可见；insets 由插件处理，
             // 确认/退出控件不会被状态栏或手势条遮挡。
-            statusBarLight: true,
-            navBarLight: true,
+            statusBarLight: !dark,
+            navBarLight: !dark,
             activeControlsWidgetColor: WeChatColors.brandPrimary,
           ),
           IOSUiSettings(

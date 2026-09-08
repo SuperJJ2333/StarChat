@@ -383,7 +383,9 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
               ? WeChatColors.brandPrimary.withValues(alpha: .12)
               : CupertinoColors.tertiarySystemFill.resolveFrom(context),
           border: Border.all(
-            color: selected ? WeChatColors.brandPrimary : WeChatColors.divider,
+            color: selected
+                ? WeChatColors.brandPrimary
+                : WeChatColors.resolve(context, WeChatColors.divider),
           ),
           borderRadius: BorderRadius.circular(14),
         ),
@@ -396,7 +398,7 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
                 fontSize: 13,
                 color: selected
                     ? WeChatColors.brandPrimary
-                    : WeChatColors.lightTextPrimary,
+                    : WeChatColors.resolveTextPrimary(context),
               ),
             ),
             if (selected) ...[

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/contacts/request_friend_page.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 final class FakeGateway implements AddFriendGateway, ProfileGateway {
   @override
@@ -86,6 +87,31 @@ Future<void> _scrollToSubmit(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('unselected friend tags keep readable dark text and border',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+      theme: const CupertinoThemeData(brightness: Brightness.dark),
+      home: RequestFriendPage(
+          api: FakeGateway(), userId: 'u-bob', username: 'bob', nickname: '波仔'),
+    ));
+    await _settle(tester, 200);
+    final chip = find.byKey(const Key('request-friend-tag-同事'));
+    final label = tester
+        .widget<Text>(find.descendant(of: chip, matching: find.text('同事')));
+    expect(label.style!.color, WeChatColors.darkTextPrimary);
+    final panel = tester.widget<Container>(
+        find.descendant(of: chip, matching: find.byType(Container)).first);
+    expect(((panel.decoration! as BoxDecoration).border! as Border).top.color,
+        WeChatColors.darkDivider);
+    await tester.tap(chip);
+    await _settle(tester);
+    expect(
+        tester
+            .widget<Text>(find.descendant(of: chip, matching: find.text('同事')))
+            .style!
+            .color,
+        WeChatColors.brandPrimary);
+  });
   testWidgets('renders target identity, existing tags and default permission',
       (tester) async {
     final recorder = FakeAddRequestRecorder();

@@ -173,7 +173,7 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                 ],
                 Container(
                   height: .5,
-                  color: WeChatColors.divider,
+                  color: WeChatColors.resolve(context, WeChatColors.divider),
                   margin: const EdgeInsets.only(top: 8),
                 ),
                 const Padding(
@@ -208,7 +208,7 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                 CupertinoButton(
                   key: const Key('forward-picker-send'),
                   color: selected.isEmpty
-                      ? WeChatColors.divider
+                      ? WeChatColors.resolve(context, WeChatColors.divider)
                       : WeChatColors.brandPrimary,
                   borderRadius: BorderRadius.circular(6),
                   padding:
@@ -306,7 +306,8 @@ final class _ChatRow extends StatelessWidget {
         onPressed: enabled ? onTap : null,
         child: ColoredBox(
           color: selected && multiSelect
-              ? WeChatColors.divider.withValues(alpha: .4)
+              ? WeChatColors.resolve(context, WeChatColors.divider)
+                  .withValues(alpha: .4)
               : CupertinoColors.transparent,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

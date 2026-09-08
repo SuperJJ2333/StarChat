@@ -29,7 +29,9 @@ Future<BusinessApiClient> walletApi(
   Duration? latency,
 }) async {
   final store = SecureSessionStore(MemoryStore());
-  await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
+  await store.saveSession(
+      accessToken: 'e30.eyJzdWIiOiJ3YWxsZXQtdGVzdCJ9.test',
+      refreshToken: 'refresh');
   return BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),
     sessionStore: store,
@@ -48,8 +50,8 @@ http.Response _json(Object body, {int status = 200}) => http.Response(
 
 Future<void> _fillForm(WidgetTester tester) async {
   await tester.enterText(find.byKey(const Key('wallet-withdraw-amount')), '5');
-  await tester.enterText(find.byKey(const Key('wallet-withdraw-address')),
-      'T${'2' * 33}');
+  await tester.enterText(
+      find.byKey(const Key('wallet-withdraw-address')), 'T${'2' * 33}');
   await tester.pump();
 }
 
@@ -60,8 +62,38 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('U01：快速双击只创建一单（提交互斥 + loading 禁用）',
+  testWidgets('acknowledged withdrawal survives query failure and page restart',
       (tester) async {
+    var posts = 0;
+    final api = await walletApi((request) {
+      if (request.method == 'POST' &&
+          request.url.path.endsWith('/withdrawals')) {
+        posts++;
+        return _json({'id': 'retained-order', 'status': 'REQUESTED'},
+            status: 201);
+      }
+      if (request.url.path.endsWith('/withdrawals/retained-order')) {
+        throw Exception('query unavailable');
+      }
+      return _json({});
+    });
+    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
+    await _fillForm(tester);
+    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
+    await tester.pumpAndSettle();
+    expect(posts, 1,
+        reason: 'acknowledgment never authorizes another financial intent');
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+  });
+
+  testWidgets('U01：快速双击只创建一单（提交互斥 + loading 禁用）', (tester) async {
     var withdrawalRequests = 0;
     final api = await walletApi((request) {
       if (request.url.path.endsWith('/wallet/withdrawals')) {
@@ -89,8 +121,7 @@ void main() {
     expect(withdrawalRequests, 1, reason: '一次明确意图只创建一单');
   });
 
-  testWidgets('U02：提交期间退出页面不报错（mounted 保护 + 资源释放）',
-      (tester) async {
+  testWidgets('U02：提交期间退出页面不报错（mounted 保护 + 资源释放）', (tester) async {
     final api = await walletApi((request) {
       if (request.url.path.endsWith('/wallet/withdrawals')) {
         return _json({'id': 'wd-2', 'status': 'REQUESTED'}, status: 201);
@@ -123,6 +154,11 @@ void main() {
     await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 25));
-    expect(find.text('提现状态：CHAIN_CONFIRMED'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('提现状态：CHAIN_CONFIRMED'), findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((t) => t.data)
+            .join(' | '));
   });
 }

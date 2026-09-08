@@ -161,7 +161,7 @@ typedef GalleryPagerFactory = DeviceGalleryPager Function(GalleryAlbum? album);
 /// 左下角“原图”开关（默认关闭，发送压缩内容；勾选后视频超 20MB 拦截）、
 /// 最多 9 项。
 ///
-/// 加载策略：**分段懒加载**——首屏仅加载最新 20 张 200px 缩略图，
+/// 加载策略：首屏先返回最新 12 项元数据，可见单元格按需加载 200px 缩略图，
 /// 滚动接近末尾时按序追加一页并在底部展示“加载中…”提示，
 /// 避免一次性解码全部照片造成卡顿。
 final class ImagePickerPage extends StatefulWidget {
@@ -191,10 +191,10 @@ final class ImagePickerPage extends StatefulWidget {
 final class _ImagePickerPageState extends State<ImagePickerPage>
     with WidgetsBindingObserver {
   late final selection = GallerySelection(maxCount: widget.maxCount);
-  late DeviceGalleryPager pager =
-      widget.pagerBuilder?.call() ?? _pagerFor(null);
+  late DeviceGalleryPager pager;
   DeviceGalleryPager _pagerFor(GalleryAlbum? album) =>
       widget.pagerFactory?.call(album) ??
+      widget.pagerBuilder?.call() ??
       DeviceGallerySource.pagerFor(album, photosOnly: widget.photosOnly);
   final scrollController = ScrollController();
   List<GalleryPhoto> photos = const [];
@@ -214,7 +214,6 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
 
   /// 系统媒体库变化回调（挂载期间注册；变化即失效会话缓存并重载）。
   void _onGalleryChanged(MethodCall call) {
-    GalleryAccessCache.invalidateAll();
     if (mounted) unawaited(_reloadAfterExternalChange());
   }
 
@@ -222,8 +221,9 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _load();
-    unawaited(_loadAlbums());
+    photos = GalleryAccessCache.forMode(widget.photosOnly).preview;
+    loading = photos.isEmpty;
+    unawaited(_reloadAfterExternalChange());
     unawaited(_observeGalleryChanges());
   }
 
@@ -231,34 +231,87 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     try {
       PhotoManager.addChangeCallback(_onGalleryChanged);
       await PhotoManager.startChangeNotify();
+      if (!mounted) await _stopObservingGallery();
     } catch (_) {
       // 变更监听不可用（权限/平台差异）：不影响浏览，仅失去自动刷新。
     }
   }
 
-  /// 媒体库变化/权限范围变化后的重载：清空勾选避免跨集合误发。
-  Future<void> _reloadAfterExternalChange() async {
-    selection.clear();
-    pager = _pagerFor(selectedAlbum);
-    unawaited(_loadAlbums());
-    setState(() {}); // 仅刷勾选态；列表由 _load 重建
-    await _load();
-  }
+  int _refreshEpoch = 0;
+  bool refreshing = false;
 
-  Future<void> _loadAlbums() async {
+  /// Always refresh the media index, including changes made while the picker
+  /// was closed. Existing previews remain visible until fresh metadata arrives.
+  Future<void> _reloadAfterExternalChange() async {
+    final refresh = ++_refreshEpoch;
+    ++_loadEpoch;
+    selection.clear();
+    setState(() {
+      refreshing = true;
+      loadingMore = false;
+    });
+    final cache = GalleryAccessCache.forMode(widget.photosOnly);
     try {
-      final loaded = await (widget.albumsLoader?.call() ??
-          DeviceGallerySource.loadAlbums(photosOnly: widget.photosOnly));
-      if (!mounted) return;
-      setState(() => albums = loaded);
+      final changed = await DeviceGallerySource.permissionScopeChanged(
+          photosOnly: widget.photosOnly);
+      if (!mounted || refresh != _refreshEpoch) return;
+      if (changed) {
+        setState(() {
+          photos = const [];
+          albums = const [];
+        });
+      }
+      cache.invalidateIndex();
+      // A concrete folder entity can be stale too: resolve it from the new scan.
+      final selectedId = selectedAlbum?.id;
+      final albumLoad = widget.albumsLoader?.call() ??
+          DeviceGallerySource.loadAlbums(photosOnly: widget.photosOnly);
+      if (selectedId != null &&
+          selectedId != 'recent' &&
+          selectedId != 'videos') {
+        final loaded = await albumLoad;
+        if (!mounted || refresh != _refreshEpoch) return;
+        albums = loaded;
+        selectedAlbum = null;
+        for (final album in loaded) {
+          if (album.id == selectedId) selectedAlbum = album;
+        }
+      } else {
+        unawaited(albumLoad.then((loaded) {
+          if (mounted && refresh == _refreshEpoch) {
+            setState(() => albums = loaded);
+          }
+        }).catchError((Object _) {}));
+      }
+      pager = _pagerFor(selectedAlbum);
+      await _load(preservePreview: true);
+    } on GalleryPermissionDenied {
+      if (!mounted || refresh != _refreshEpoch) return;
+      cache.preview = const [];
+      setState(() {
+        photos = const [];
+        albums = const [];
+        permissionDenied = true;
+        loading = false;
+      });
     } catch (_) {
-      // 子列表加载失败不影响默认“最近图片”浏览。
+      if (!mounted || refresh != _refreshEpoch) return;
+      setState(() {
+        loadError = '相册加载失败，请重试';
+        loading = false;
+      });
+    } finally {
+      if (mounted && refresh == _refreshEpoch) {
+        setState(() => refreshing = false);
+      }
     }
   }
 
   /// 切换相册：重建分页器并重载（勾选清空，避免跨相册误发）。
   Future<void> _selectAlbum(GalleryAlbum album) async {
     if (album.id == (selectedAlbum?.id ?? 'recent')) return;
+    ++_refreshEpoch;
+    refreshing = false;
     selection.clear();
     setState(() {
       selectedAlbum = album;
@@ -272,49 +325,41 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     WidgetsBinding.instance.removeObserver(this);
     try {
       PhotoManager.removeChangeCallback(_onGalleryChanged);
-      PhotoManager.stopChangeNotify();
+      unawaited(_stopObservingGallery());
     } catch (_) {
       // 未注册成功时移除无害。
     }
+    selection.dispose();
     scrollController.dispose();
     super.dispose();
   }
 
-  // 用户从系统设置返回（授权/改选照片范围）后自动重新检查并加载：
-  // - 此前被拒/加载失败 → 直接重载；
-  // - 授权范围变化（部分照片 ↔ 全部照片 ↔ 撤销）→ 失效会话缓存后重载，
-  //   不得把有限授权的媒体集合当作完整媒体库继续展示。
+  Future<void> _stopObservingGallery() async {
+    try {
+      await PhotoManager.stopChangeNotify();
+    } catch (_) {
+      // Native notification shutdown can fail after permission revocation.
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) return;
-    if (permissionDenied || loadError != null) {
-      unawaited(_load());
-      return;
-    }
-    unawaited(_reloadIfScopeChanged());
-  }
-
-  Future<void> _reloadIfScopeChanged() async {
-    try {
-      if (await DeviceGallerySource.permissionScopeChanged(
-          photosOnly: widget.photosOnly)) {
-        await _reloadAfterExternalChange();
-      }
-    } catch (_) {
-      // 探测失败不阻塞浏览。
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_reloadAfterExternalChange());
     }
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool preservePreview = false}) async {
     final epoch = ++_loadEpoch;
     final activePager = pager;
     setState(() {
-      loading = true;
+      loading = !preservePreview || photos.isEmpty;
+      loadingMore = false;
       loadError = null;
       loadMoreFailed = false;
     });
     try {
-      photos = const [];
+      if (!preservePreview) photos = const [];
       final firstPage = <GalleryPhoto>[...await activePager.loadNextPage()];
       // 请求批次已变（用户切到其他相册）：旧结果直接丢弃。
       if (!mounted || epoch != _loadEpoch) return;
@@ -322,7 +367,10 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         photos = firstPage;
         loading = false;
         permissionDenied = false;
-        hasMore = pager.hasMore || firstPage.isNotEmpty;
+        hasMore = activePager.hasMore;
+        if (selectedAlbum == null || selectedAlbum!.isRecent) {
+          GalleryAccessCache.forMode(widget.photosOnly).preview = firstPage;
+        }
       });
       // 首屏若未填满一屏，立即预取下一页，保证滚动无缝。
       if (firstPage.length < 12) unawaited(_loadMore());
@@ -331,6 +379,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       setState(() {
         loading = false;
         permissionDenied = true;
+        albums = const [];
+        GalleryAccessCache.forMode(widget.photosOnly).preview = const [];
         photos = const [];
       });
     } catch (failure) {
@@ -346,7 +396,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   /// 滚动预取：可见范围接近已加载末尾时按序追加一页（20 张缩略图）。
   /// 失败时置 [loadMoreFailed]，页脚提供“点击重试”（弱网可恢复）。
   Future<void> _loadMore() async {
-    if (loadingMore || !hasMore || loading) return;
+    if (refreshing || loadingMore || !hasMore || loading) return;
     final epoch = _loadEpoch;
     final activePager = pager;
     setState(() {
@@ -393,12 +443,16 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   }
 
   bool _toggle(GalleryPhoto photo) {
+    if (!mounted || refreshing || !photos.any((item) => item.id == photo.id)) {
+      return false;
+    }
     final changed = selection.toggle(photo.id);
     setState(() {});
     return changed;
   }
 
   Future<void> _send() async {
+    if (refreshing) return;
     final chosen = [
       for (final id in selection.orderedIds)
         photos.firstWhere((photo) => photo.id == id),
@@ -480,7 +534,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   /// 顶部“最近图片(↓)”子列表：默认选中“最近图片”，
   /// 含“本地视频”与本地图库分类（Camera/Screenshots/Download…）。
   Future<void> _showAlbumPicker() async {
-    if (albums.isEmpty) await _loadAlbums();
+    if (albums.isEmpty) await _reloadAfterExternalChange();
     if (!mounted || albums.isEmpty) return;
     final picked = await showCupertinoModalPopup<GalleryAlbum>(
       context: context,
@@ -612,7 +666,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
                     fontSize: 13, color: WeChatColors.textSecondary)),
             const SizedBox(height: 12),
             CupertinoButton(
-              onPressed: _load,
+              onPressed: _reloadAfterExternalChange,
               child: const Text('重试',
                   style: TextStyle(color: WeChatColors.brandPrimary)),
             ),
@@ -649,12 +703,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
             if (photo.isVideo)
               _VideoFirstFrameCell(photo: photo)
             else
-              Image.memory(photo.thumbnail,
-                  key: Key('image-picker-thumb-${photo.id}'),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) =>
-                      const ColoredBox(color: WeChatColors.textTertiary)),
+              _GalleryImageCell(key: ValueKey(photo), photo: photo),
             if (photo.isVideo)
               Positioned(
                 left: 6,
@@ -735,6 +784,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   /// 点击缩略图 → 全屏预览；视频进入视频预览页（可播放），
   /// 图片进入图片预览页；预览页内可同步切换选中态。
   Future<void> _openPreview(GalleryPhoto photo) async {
+    if (refreshing) return;
     if (photo.isVideo) {
       final previewFile = photo.compressedPreviewFile;
       if (previewFile != null) {
@@ -935,5 +985,35 @@ final class _VideoFirstFrameCellState extends State<_VideoFirstFrameCell> {
               : const Icon(CupertinoIcons.videocam_fill,
                   size: 22, color: Color(0x80FFFFFF)),
         ),
+      );
+}
+
+final class _GalleryImageCell extends StatefulWidget {
+  const _GalleryImageCell({super.key, required this.photo});
+  final GalleryPhoto photo;
+  @override
+  State<_GalleryImageCell> createState() => _GalleryImageCellState();
+}
+
+final class _GalleryImageCellState extends State<_GalleryImageCell> {
+  late final Future<Uint8List?>? _thumbnail =
+      widget.photo.loadThumbnail?.call();
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
+        future: _thumbnail,
+        initialData:
+            widget.photo.thumbnail.isEmpty ? null : widget.photo.thumbnail,
+        builder: (context, snapshot) {
+          final bytes = snapshot.data;
+          if (bytes == null || bytes.isEmpty) {
+            return const ColoredBox(color: WeChatColors.textTertiary);
+          }
+          return Image.memory(bytes,
+              key: Key('image-picker-thumb-${widget.photo.id}'),
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) =>
+                  const ColoredBox(color: WeChatColors.textTertiary));
+        },
       );
 }
