@@ -51,7 +51,20 @@ jobs:
           PY
       - name: Resolve dependencies
         working-directory: apps/mobile_flutter
-        run: flutter pub get
+        run: |
+          # The shipped scanner's MLKit binary has no arm64 simulator slice.
+          # Exclude only scanning from this synthetic media/storage harness.
+          python3 <<'PY'
+          import pathlib
+          p = pathlib.Path('pubspec.yaml')
+          content = p.read_text()
+          assert content.count('  mobile_scanner: 5.2.3\n') == 1
+          p.write_text(content.replace('  mobile_scanner: 5.2.3\n', ''))
+          PY
+          echo 'Diagnostic-only exclusion: mobile_scanner 5.2.3 (MLKit lacks arm64 simulator); scanning and full production plugin combination not covered.' > "$RUNNER_TEMP/compatibility/limitations.txt"
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
+          flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_compatibility_test.dart --dart-define=COMPAT_PHASE=seed
       - name: Native media and seed encrypted history
         id: seed
         working-directory: apps/mobile_flutter
