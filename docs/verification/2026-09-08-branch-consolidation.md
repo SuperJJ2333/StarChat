@@ -33,10 +33,22 @@ Independent specification review approved these boundaries, followed by independ
 - `git diff --cached --check`: passed after whitespace cleanup.
 - Repository verification initially stopped because the new checkout lacked `.env`. A local copy of `.env.example` supplied synthetic render configuration; no production configuration was copied.
 
-Native diagnostic source revision `4b405bff` is running in GitHub Actions run `34241630843`. Native execution and true-device APNs/VoIP/permissions are not implied by the local tests. The iOS task owns completion of those diagnostics.
+`scripts/verify.ps1` completed successfully after supplying example configuration: infra 17 passed, Getui 28 passed, Matrix Bot 9 passed, Business API/Worker 349 passed and 19 skipped, mobile boundary 66 passed. Migration heads/offline SQL, OpenAPI contract, UI contract and Docker Compose render all passed. Skips include tests requiring isolated PostgreSQL (`RUN_POSTGRES_TESTS=1`); this run does not claim live PostgreSQL coverage. Existing FastAPI/httpx and Pydantic deprecation warnings remain outside the changed source.
+
+Native revision `4b405bff`, Actions run `34241630843`, failed at the Flutter loader despite 15 successful iOS 26 native assertions. The precise failure was custom-stream subscription `integration_test.VmServiceProxyGoldenFileComparator`, error `-32602`. Inspection of the exact Flutter 3.44.9 SDK confirmed that `--no-dds` bypasses the service that registers custom streams. Independent quality review approved removing that flag from both phases, retaining `--no-uninstall` and all assertions. Candidate `fc047fff` reruns native verification in Actions run `34244530760`. True-device APNs/VoIP/permissions are not implied by simulator results.
 
 ## Cleanup verification
 
 Inactive worktree archives include checkout content and verification materials. Dependency/build caches are recorded as exclusions; directories named `build` inside decoded evidence are preserved in supplementary archives. Before removal, the recorded HEAD, archive hash and every archived source file are checked again, including detection of added/deleted files. Branches may be removed only after proving ancestry to final main; active or newly divergent branches are retained.
 
-Final repository-gate results and exact cleanup outcomes are recorded below after execution.
+All 10 inactive worktrees were removed after verification, together with their branches; the already-merged local `codex/official-chat-update` ref was also removed. Total: 11 old local branches, 10 old worktrees. Obsolete R:/S: mappings to the deleted source checkouts were removed; active T:/U: mappings were retained.
+
+Seven old remote refs were atomically deleted using explicit expected-OID leases: `codex/chat-room-flow-fixes`, `codex/image-layout-mi6`, `codex/ios-0353-testflight`, `codex/ios-build-preflight-20260907`, `codex/ios-secrets-check-20260907-151818`, `codex/ios-startup-repair-20260907`, `codex/official-chat-update`. Intermittent TLS failures required retries; no certificate validation was disabled. `remote-deletions.json` records the exact removed OIDs.
+
+Archive coverage: 457,153 checkout/evidence files across 10 inactive directories. ZIPs total 7,834,857,845 bytes, including source and supplementary evidence archives. D: free space increased from 49,269,231,616 to 68,771,491,840 bytes at the recorded checkpoints. `archive-index.json` lists archive hashes; `cleanup-results.json` records 10 successful removals. Both pre- and post-cleanup Git bundles are retained locally.
+
+Corrected candidate `fc047fff7487f650dafe096d155330e97246ca0a` passed native Actions run `34244530760`: both iPhone 15 / iOS 18 and iOS 26 jobs completed successfully, including native media and retained encrypted history in a new app process. Run URL: https://github.com/SuperJJ2333/StarChat/actions/runs/34244530760.
+
+The active iOS task independently published equivalent DDS corrections as `f0e594525144a5f4f46379a7c86b13922ad00612`. Its history is incorporated; the workflow conflict was resolved by preserving main/PR/manual triggers and removing `--no-dds` and unnecessary `--verbose`. The temporary consolidation-branch trigger is removed after its successful verification. Application source, fixtures and tests are byte-identical to the verified candidate.
+
+Final local/remote refs, promotion commit and remaining worktrees are captured in the local `final-state.json` after promotion. Retained work includes the active root wallet/auth WIP and active iOS checkout. No production deployment, APK/IPA publication, financial-policy activation or real-device push acceptance is performed by this task.
