@@ -22,15 +22,15 @@ jobs:
         run: |
           python3 <<'PY'
           import json, os, urllib.request
-          req = urllib.request.Request('https://api.github.com/repos/SuperJJ2333/StarChat/actions/runs/34160519073', headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          req = urllib.request.Request('https://api.github.com/repos/SuperJJ2333/StarChat/actions/runs/34178150800', headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
           run = json.load(urllib.request.urlopen(req, timeout=20))
-          assert run['conclusion'] == 'success' and run['head_sha'] == '5d23aa80d390d48c2da5884060af440b91d752fc'
+          assert run['conclusion'] == 'success' and run['head_sha'] == '38a98b7a95509e260eb810a2aed0aa5066e4a5ed'
           PY
       - uses: actions/download-artifact@v4
         with:
           name: ChatFlow-iOS-signed
           path: candidate
-          run-id: 34160519073
+          run-id: 34178150800
           github-token: ${{ github.token }}
       - name: Verify exact reviewed IPA
         run: |
@@ -38,7 +38,7 @@ jobs:
           import hashlib, pathlib, plistlib, subprocess, zipfile, os
           ipas = list(pathlib.Path('candidate').glob('*.ipa'))
           assert len(ipas) == 1, 'Expected one exported IPA'
-          assert hashlib.sha256(ipas[0].read_bytes()).hexdigest() == '6428335ad38f7ecc24e25463b43f74bacf7626a65e63f032c1fca3c378c0778c'
+          assert hashlib.sha256(ipas[0].read_bytes()).hexdigest() == '9786f97d4778101ac1623468e2ad712b9ae73e397ad7a8677ac976fc3408819e'
           target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ipa-check'
           with zipfile.ZipFile(ipas[0]) as archive:
               archive.extractall(target)
