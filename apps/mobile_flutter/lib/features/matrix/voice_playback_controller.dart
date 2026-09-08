@@ -38,7 +38,23 @@ final class AudioplayersVoiceEngine implements VoiceAudioEngine {
       respectSilence: false,
     ).build());
     await _player.stop();
-    await _player.play(BytesSource(bytes));
+    // Darwin writes BytesSource to an extensionless temporary file. Supply the
+    // actual container type; older M4A messages were labeled audio/aac in Matrix.
+    await _player.play(BytesSource(bytes, mimeType: _containerMime(bytes)));
+  }
+
+  static String? _containerMime(Uint8List bytes) {
+    if (bytes.length >= 12 &&
+        bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70) {
+      return 'audio/mp4';
+    }
+    if (bytes.length >= 7 && bytes[0] == 0xff && (bytes[1] & 0xf6) == 0xf0) {
+      return 'audio/aac';
+    }
+    return null;
   }
 
   @override
@@ -69,9 +85,14 @@ final class VoicePlaybackController extends ChangeNotifier {
   })  : _loadAttachment = loadAttachment,
         engine = engine ?? AudioplayersVoiceEngine() {
     // 播放自然结束时复位气泡（QQ 式播放体验）。
-    _completedSubscription =
-        this.engine.completed.listen((_) => _handleCompleted());
-    _positionSubscription = this.engine.position.listen(_handlePosition);
+    _completedSubscription = this
+        .engine
+        .completed
+        .listen((_) => _handleCompleted(), onError: _handlePlaybackError);
+    _positionSubscription = this
+        .engine
+        .position
+        .listen(_handlePosition, onError: _handlePlaybackError);
   }
 
   StreamSubscription<void>? _completedSubscription;
@@ -111,11 +132,18 @@ final class VoicePlaybackController extends ChangeNotifier {
   }
 
   void _handleCompleted() {
+    if (_disposed) return;
     if (_playingIds.isEmpty && _pausedIds.isEmpty) return;
     _playingIds.clear();
     _pausedIds.clear();
     _positions.clear();
     notifyListeners();
+  }
+
+  void _handlePlaybackError(Object error, StackTrace stackTrace) {
+    // Native event errors are separate from the play() Future. Consume them
+    // here without logging a source that may contain decrypted audio bytes.
+    _handleCompleted();
   }
 
   Future<void> toggle(RoomMessageViewModel message) async {

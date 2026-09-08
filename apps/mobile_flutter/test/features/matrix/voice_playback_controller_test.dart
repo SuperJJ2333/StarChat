@@ -52,6 +52,20 @@ RoomMessageViewModel _voice(String id) => RoomMessageViewModel(
     );
 
 void main() {
+  test('native stream errors clear playback without an uncaught exception',
+      () async {
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+      loadAttachment: (_) async => Uint8List.fromList([1]),
+      engine: engine,
+    );
+    await controller.toggle(_voice('failed'));
+    engine.completedController.addError(StateError('native source failed'));
+    await Future<void>.delayed(Duration.zero);
+    expect(controller.isPlaying('failed'), isFalse);
+    controller.dispose();
+  });
+
   test('first tap downloads, plays and marks the message as playing', () async {
     final engine = FakeVoiceAudioEngine();
     final downloads = <String>[];
@@ -224,7 +238,8 @@ void main() {
     final gate = Completer<Uint8List>();
     var playCalls = 0;
     final played = <String>[];
-    final engine = _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
+    final engine =
+        _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
     final controller = VoicePlaybackController(
       loadAttachment: (_) => gate.future,
       engine: engine,
@@ -243,7 +258,8 @@ void main() {
     controller.addListener(() => notified = true);
     controller.dispose();
     final gate2 = Completer<Uint8List>();
-    final engine2 = _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
+    final engine2 =
+        _TaggingVoiceEngine(playCalls: () => playCalls++, played: played);
     final controller2 = VoicePlaybackController(
       loadAttachment: (_) => gate2.future,
       engine: engine2,
