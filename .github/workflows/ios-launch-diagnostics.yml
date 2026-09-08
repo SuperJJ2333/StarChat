@@ -1,0 +1,58 @@
+name: iOS launch diagnostics
+on:
+  push:
+    branches: [codex/ios-build-preflight-20260907]
+    paths: [.github/workflows/ios-launch-diagnostics.yml]
+permissions:
+  contents: read
+jobs:
+  launch:
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Build simulator app
+        working-directory: apps/mobile_flutter
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ios --simulator --debug --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/simulator-build.log"
+      - name: Launch on iPad simulator and collect startup evidence
+        run: |
+          python3 <<'PY'
+          import json,os,pathlib,subprocess,time
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          devices=json.loads(subprocess.check_output(['xcrun','simctl','list','devices','available','--json']))['devices']
+          candidates=[d for runtime,ds in devices.items() if 'iOS-26' in runtime for d in ds if d['name'].startswith('iPad')]
+          assert candidates, 'No iPad iOS26 simulator available'
+          device=candidates[0]
+          udid=device['udid']
+          print('SIMULATOR',device['name'],udid,flush=True)
+          subprocess.run(['xcrun','simctl','boot',udid],check=True)
+          subprocess.run(['xcrun','simctl','bootstatus',udid,'-b'],check=True)
+          subprocess.run(['xcrun','simctl','install',udid,'apps/mobile_flutter/build/ios/iphonesimulator/Runner.app'],check=True)
+          with (root/'startup.log').open('w') as output:
+              proc=subprocess.Popen(['xcrun','simctl','launch','--console',udid,'com.liuhetong.liuhetongMobile'],stdout=output,stderr=subprocess.STDOUT)
+              time.sleep(45)
+              subprocess.run(['xcrun','simctl','io',udid,'screenshot',str(root/'startup.png')],check=True)
+              proc.terminate()
+              try: proc.wait(timeout=10)
+              except subprocess.TimeoutExpired: proc.kill()
+          print((root/'startup.log').read_text()[-20000:])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-launch-evidence
+          path: |
+            ${{ runner.temp }}/simulator-build.log
+            ${{ runner.temp }}/startup.log
+            ${{ runner.temp }}/startup.png
+          retention-days: 7

@@ -1,0 +1,176 @@
+name: iOS 0.3.53 calls TestFlight
+on:
+  push:
+    branches: [codex/ios-0353-testflight]
+    paths:
+      - apps/mobile_flutter/**
+      - .github/workflows/ios-0353.yml
+permissions:
+  contents: read
+concurrency:
+  group: ios-0353-testflight
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Record toolchain
+        run: |
+          flutter --version
+          xcodebuild -version
+          pod --version
+      - name: Resolve Flutter dependencies
+        working-directory: apps/mobile_flutter
+        run: flutter pub get
+      - name: Test push integration
+        working-directory: apps/mobile_flutter
+        run: flutter test test/features/push test/core/ios_secure_session_test.dart test/features/matrix/ios_call_coordinator_test.dart test/features/matrix/call_wakeup_client_test.dart test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart
+      - name: Test native call and Keychain core
+        run: |
+          python3 <<'PY'
+          import os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'native-core-tests'
+          source = root / 'Sources/NativeCore'
+          tests = root / 'Tests/NativeCoreTests'
+          source.mkdir(parents=True)
+          tests.mkdir(parents=True)
+          ios = pathlib.Path('apps/mobile_flutter/ios')
+          for name in ['IOSCallState.swift', 'IOSSecureSession.swift']:
+              (source / name).write_bytes((ios / 'Runner' / name).read_bytes())
+          (tests / 'NativeCoreTests.swift').write_text((ios / 'RunnerTests/RunnerTests.swift').read_text().replace('@testable import Runner', '@testable import NativeCore'))
+          (root / 'Package.swift').write_text('// swift-tools-version: 5.9\nimport PackageDescription\nlet package = Package(name: "NativeCore", platforms: [.macOS(.v13)], targets: [.target(name: "NativeCore"), .testTarget(name: "NativeCoreTests", dependencies: ["NativeCore"])])\n')
+          PY
+          set -o pipefail
+          swift test --package-path "$RUNNER_TEMP/native-core-tests" 2>&1 | tee "$RUNNER_TEMP/native-tests.log"
+      - name: Install distribution signing identity
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+        run: |
+          python3 <<'PY'
+          import base64, os, pathlib, plistlib, secrets, subprocess
+          folder = pathlib.Path(os.environ['RUNNER_TEMP']) / 'signing'
+          folder.mkdir(mode=0o700)
+          keychain = folder / 'build.keychain-db'
+          def run(*args):
+              result = subprocess.run(args, capture_output=True)
+              if result.returncode:
+                  raise RuntimeError('Signing command failed: ' + args[1])
+              return result.stdout
+          p12 = folder / 'distribution.p12'
+          p12.write_bytes(base64.b64decode(os.environ['IOS_CERTIFICATE_BASE64'], validate=True))
+          profile = folder / 'app.mobileprovision'
+          profile.write_bytes(base64.b64decode(os.environ['IOS_PROFILE_BASE64'], validate=True))
+          p12.chmod(0o600)
+          profile.chmod(0o600)
+          data = plistlib.loads(run('security', 'cms', '-D', '-i', str(profile)))
+          assert data['TeamIdentifier'] == ['HY9Q7Q35S5']
+          assert data['Name'] == 'ChatFlow_AppStore'
+          assert data['Entitlements']['aps-environment'] == 'production'
+          assert data['Entitlements']['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          password = secrets.token_urlsafe(40)
+          run('security', 'create-keychain', '-p', password, str(keychain))
+          run('security', 'set-keychain-settings', '-lut', '21600', str(keychain))
+          run('security', 'unlock-keychain', '-p', password, str(keychain))
+          run('security', 'import', str(p12), '-k', str(keychain), '-P', os.environ['IOS_CERTIFICATE_PASSWORD'], '-T', '/usr/bin/codesign')
+          run('security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, str(keychain))
+          run('security', 'list-keychains', '-d', 'user', '-s', str(keychain), str(pathlib.Path.home() / 'Library/Keychains/login.keychain-db'))
+          for relative in ['Library/MobileDevice/Provisioning Profiles', 'Library/Developer/Xcode/UserData/Provisioning Profiles']:
+              target = pathlib.Path.home() / relative
+              target.mkdir(parents=True, exist_ok=True)
+              (target / (data['UUID'] + '.mobileprovision')).write_bytes(profile.read_bytes())
+          options = dict(method='app-store-connect', teamID='HY9Q7Q35S5', signingStyle='manual', signingCertificate='Apple Distribution', provisioningProfiles={'com.liuhetong.liuhetongMobile': data['Name']}, uploadSymbols=True, manageAppVersionAndBuildNumber=False)
+          (folder / 'ExportOptions.plist').write_bytes(plistlib.dumps(options))
+          print('Distribution identity and production APNs profile installed')
+          PY
+      - name: Build signed IPA
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
+          flutter build ipa --release --build-number="$((55 + GITHUB_RUN_NUMBER))" --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+      - name: Verify signed IPA
+        working-directory: apps/mobile_flutter
+        run: |
+          python3 <<'PY'
+          import hashlib, pathlib, plistlib, subprocess, zipfile, os
+          ipas = list(pathlib.Path('build/ios/ipa').glob('*.ipa'))
+          assert len(ipas) == 1, 'Expected one exported IPA'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ipa-check'
+          with zipfile.ZipFile(ipas[0]) as archive:
+              archive.extractall(target)
+          apps = list((target / 'Payload').glob('*.app'))
+          assert len(apps) == 1
+          app = apps[0]
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+          result = subprocess.run(['codesign', '-d', '--entitlements', ':-', str(app)], capture_output=True, check=True)
+          ent = plistlib.loads(result.stdout)
+          assert ent['aps-environment'] == 'production'
+          assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          assert not ent.get('get-task-allow', False)
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          linked = subprocess.check_output(['otool', '-L', str(app / info['CFBundleExecutable'])], text=True)
+          libraries = [line.strip().split(' (', 1)[0] for line in linked.splitlines()[1:]]
+          cipher = '@rpath/SQLCipher.framework/SQLCipher'
+          sqlite = '/usr/lib/libsqlite3.dylib'
+          assert (app / 'Frameworks/SQLCipher.framework/SQLCipher').is_file(), 'Bundled SQLCipher missing'
+          assert cipher in libraries, 'Runner does not load SQLCipher'
+          assert sqlite not in libraries or libraries.index(cipher) < libraries.index(sqlite), 'System SQLite shadows SQLCipher'
+          print('SQLCIPHER_LOAD_ORDER_PASS')
+          assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
+          assert 2 in info['UIDeviceFamily'], 'iPad support required'
+          assert info['CFBundleShortVersionString'] == '0.3.53'
+          assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
+          assert float(info['MinimumOSVersion']) >= 16.0
+          for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
+              assert info.get(key)
+          print('IPA signature, production APNs, iPad and permission declarations verified')
+          print('IPA_SHA256=' + hashlib.sha256(ipas[0].read_bytes()).hexdigest())
+          PY
+      - name: Preserve signed IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatFlow-iOS-signed
+          path: apps/mobile_flutter/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload to App Store Connect for TestFlight
+        if: false # Upload the verified candidate after release review.
+        working-directory: apps/mobile_flutter
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          chmod 700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          xcrun altool --upload-app --type ios -f build/ios/ipa/*.ipa --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/ios-upload.log"
+      - name: Remove temporary signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing/build.keychain-db" || true
+          rm -rf "$RUNNER_TEMP/signing" "$HOME/.appstoreconnect/private_keys"
+      - name: Preserve build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-preflight-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-build.log
+            ${{ runner.temp }}/ios-upload.log
+            ${{ runner.temp }}/native-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
+

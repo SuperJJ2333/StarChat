@@ -1,0 +1,94 @@
+name: Upload reviewed iOS 0.3.53
+on:
+  push:
+    branches: [codex/ios-0353-testflight]
+    paths: [.github/workflows/ios-0353-upload.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-0353-reviewed-upload
+  cancel-in-progress: false
+jobs:
+  upload:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - name: Verify source run succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 <<'PY'
+          import json, os, urllib.request
+          req = urllib.request.Request('https://api.github.com/repos/SuperJJ2333/StarChat/actions/runs/34178150800', headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          run = json.load(urllib.request.urlopen(req, timeout=20))
+          assert run['conclusion'] == 'success' and run['head_sha'] == '38a98b7a95509e260eb810a2aed0aa5066e4a5ed'
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ChatFlow-iOS-signed
+          path: candidate
+          run-id: 34178150800
+          github-token: ${{ github.token }}
+      - name: Verify exact reviewed IPA
+        run: |
+          python3 <<'PY'
+          import hashlib, pathlib, plistlib, subprocess, zipfile, os
+          ipas = list(pathlib.Path('candidate').glob('*.ipa'))
+          assert len(ipas) == 1, 'Expected one exported IPA'
+          assert hashlib.sha256(ipas[0].read_bytes()).hexdigest() == '9786f97d4778101ac1623468e2ad712b9ae73e397ad7a8677ac976fc3408819e'
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'ipa-check'
+          with zipfile.ZipFile(ipas[0]) as archive:
+              archive.extractall(target)
+          apps = list((target / 'Payload').glob('*.app'))
+          assert len(apps) == 1
+          app = apps[0]
+          subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+          result = subprocess.run(['codesign', '-d', '--entitlements', ':-', str(app)], capture_output=True, check=True)
+          ent = plistlib.loads(result.stdout)
+          assert ent['aps-environment'] == 'production'
+          assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
+          assert not ent.get('get-task-allow', False)
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          linked = subprocess.check_output(['otool', '-L', str(app / info['CFBundleExecutable'])], text=True)
+          libraries = [line.strip().split(' (', 1)[0] for line in linked.splitlines()[1:]]
+          cipher = '@rpath/SQLCipher.framework/SQLCipher'
+          sqlite = '/usr/lib/libsqlite3.dylib'
+          assert (app / 'Frameworks/SQLCipher.framework/SQLCipher').is_file(), 'Bundled SQLCipher missing'
+          assert cipher in libraries, 'Runner does not load SQLCipher'
+          assert sqlite not in libraries or libraries.index(cipher) < libraries.index(sqlite), 'System SQLite shadows SQLCipher'
+          print('SQLCIPHER_LOAD_ORDER_PASS')
+          assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
+          assert 2 in info['UIDeviceFamily'], 'iPad support required'
+          assert info['CFBundleShortVersionString'] == '0.3.53'
+          assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
+          assert float(info['MinimumOSVersion']) >= 16.0
+          for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:
+              assert info.get(key)
+          print('IPA signature, production APNs, iPad and permission declarations verified')
+          print('IPA_SHA256=' + hashlib.sha256(ipas[0].read_bytes()).hexdigest())
+          PY
+      - name: Upload to App Store Connect for TestFlight
+        env:
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          chmod 700 "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$APPSTORE_PRIVATE_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          chmod 600 "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          xcrun altool --upload-app --type ios -f candidate/*.ipa --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/ios-upload.log"
+      - name: Remove temporary upload credentials
+        if: always()
+        run: rm -rf "$HOME/.appstoreconnect/private_keys"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-reviewed-upload-log
+          path: ${{ runner.temp }}/ios-upload.log
+          if-no-files-found: ignore
+          retention-days: 7
