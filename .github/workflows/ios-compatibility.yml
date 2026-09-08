@@ -74,7 +74,7 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --no-dds --timeout=2m --dart-define=COMPAT_PHASE=seed --reporter expanded --verbose 2>&1 | tee "$RUNNER_TEMP/compatibility/seed.log"
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --timeout=2m --dart-define=COMPAT_PHASE=seed --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/seed.log"
       - name: Verify retained history in a new app process
         if: ${{ !cancelled() && (steps.seed.outcome == 'success' || steps.seed.outcome == 'failure') }}
         timeout-minutes: 10
@@ -89,7 +89,7 @@ jobs:
           print('Retained seed database exists: ' + str(exists))
           assert exists, 'Seed database absent before reinstall/verify; cannot claim persistence'
           PY
-          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --no-dds --timeout=2m --dart-define=COMPAT_PHASE=verify --reporter expanded --verbose 2>&1 | tee "$RUNNER_TEMP/compatibility/verify.log"
+          flutter test integration_test/ios_compatibility_test.dart -d "$SIMULATOR_ID" --no-uninstall --timeout=2m --dart-define=COMPAT_PHASE=verify --reporter expanded 2>&1 | tee "$RUNNER_TEMP/compatibility/verify.log"
       - name: Collect simulator launch diagnostics
         if: ${{ always() && env.SIMULATOR_ID != '' }}
         timeout-minutes: 2
@@ -109,3 +109,4 @@ jobs:
           name: iphone15-ios${{ matrix.ios }}-compatibility
           path: ${{ runner.temp }}/compatibility/
           retention-days: 14
+
