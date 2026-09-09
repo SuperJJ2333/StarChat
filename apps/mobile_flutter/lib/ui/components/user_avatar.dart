@@ -25,17 +25,12 @@ final class UserAvatar extends StatefulWidget {
 
 final class _UserAvatarState extends State<UserAvatar> {
   void _logLoadError(Object error, StackTrace? stackTrace) {
-    final sanitizedUrl = AvatarCache.sanitizedUrl(widget.avatarUrl ?? '');
-    final sanitizedError =
-        error.toString().replaceAll(RegExp(r'\?[^\s)\]}]+'), '');
     debugPrint(
       '[AvatarLoadError] source=${widget.diagnosticSource} '
-      'userId=${widget.fallbackSeed} url=$sanitizedUrl '
-      'errorType=${error.runtimeType} error=$sanitizedError',
+      'errorType=${error.runtimeType}',
     );
     debugPrintStack(
-      label: '[AvatarLoadErrorStack] source=${widget.diagnosticSource} '
-          'userId=${widget.fallbackSeed}',
+      label: '[AvatarLoadErrorStack] source=${widget.diagnosticSource}',
       stackTrace: stackTrace,
     );
   }
@@ -103,7 +98,9 @@ final class _UserAvatarState extends State<UserAvatar> {
                   if (wasSynchronouslyLoaded || frame != null) {
                     AvatarCache.rememberSuccessful(
                         widget.fallbackSeed, provider);
-                    if (wasSynchronouslyLoaded) return child;
+                    if (wasSynchronouslyLoaded || retained != null) {
+                      return child;
+                    }
                     // 首次展示从透明平滑淡入，避免默认占位与真实头像之间的
                     // 明显跳变；已有 retained 头像时保持无感替换。
                     return TweenAnimationBuilder<double>(

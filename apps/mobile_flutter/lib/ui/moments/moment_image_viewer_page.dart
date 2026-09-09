@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'moment_image_provider.dart';
 
 /// 朋友圈图片全屏查看页：网络大图 + 双指缩放 + 左右切换 + 点击关闭。
 final class MomentImageViewerPage extends StatefulWidget {
@@ -6,10 +7,14 @@ final class MomentImageViewerPage extends StatefulWidget {
     super.key,
     required this.imageUrls,
     required this.initialIndex,
+    this.imageCacheKeys = const [],
+    this.cacheNamespace = '',
   });
 
   final List<String> imageUrls;
   final int initialIndex;
+  final List<String> imageCacheKeys;
+  final String cacheNamespace;
 
   @override
   State<MomentImageViewerPage> createState() => _MomentImageViewerPageState();
@@ -17,6 +22,12 @@ final class MomentImageViewerPage extends StatefulWidget {
 
 final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
   late int index = widget.initialIndex.clamp(0, widget.imageUrls.length - 1);
+  late final controller = PageController(initialPage: index);
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
@@ -25,7 +36,7 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
           child: Stack(children: [
             PageView.builder(
               itemCount: widget.imageUrls.length,
-              controller: PageController(initialPage: index),
+              controller: controller,
               onPageChanged: (value) {
                 if (mounted) setState(() => index = value);
               },
@@ -34,13 +45,17 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                 child: InteractiveViewer(
                   maxScale: 4,
                   child: Center(
-                    child: Image.network(
-                      widget.imageUrls[i],
+                    child: Image(
+                      image: momentImageProvider(
+                          widget.imageUrls[i],
+                          momentImageKey(widget.imageCacheKeys, i),
+                          widget.cacheNamespace),
+                      gaplessPlayback: true,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Center(
                         child: Text('图片加载失败',
-                            style: TextStyle(
-                                color: CupertinoColors.systemGrey)),
+                            style:
+                                TextStyle(color: CupertinoColors.systemGrey)),
                       ),
                       loadingBuilder: (_, child, progress) {
                         if (progress == null) return child;

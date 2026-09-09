@@ -34,6 +34,38 @@ final class CacheRepository {
       '$momentsFeedKey.$accountKey';
 
   static CacheRepository? _instance;
+  static final _momentsGenerations = <String, int>{};
+  static int momentsGeneration(String accountKey) =>
+      _momentsGenerations[momentsFeedKeyFor(accountKey)] ?? 0;
+  static Map<String, dynamic>? peekMoments(String? accountKey) =>
+      accountKey == null ? null : _instance?.momentsFor(accountKey).loadSync();
+
+  static String? peekMomentCover(String? accountKey) => accountKey == null
+      ? null
+      : _instance?._preferences
+          .getString('${momentsFeedKeyFor(accountKey)}.cover');
+
+  static String? peekMomentCoverKey(String? accountKey) => accountKey == null
+      ? null
+      : _instance?._preferences
+          .getString('${momentsFeedKeyFor(accountKey)}.cover-key');
+
+  Future<void> saveMomentCover(String accountKey, String? url,
+      {String? cacheKey, int? expectedGeneration}) async {
+    if (expectedGeneration != null && expectedGeneration != momentsGeneration(accountKey)) return;
+    final key = '${momentsFeedKeyFor(accountKey)}.cover';
+    if (url == null) {
+      await _preferences.remove(key);
+    } else {
+      await _preferences.setString(key, url);
+    }
+    if (expectedGeneration != null && expectedGeneration != momentsGeneration(accountKey)) return;
+    if (cacheKey == null) {
+      await _preferences.remove('$key-key');
+    } else {
+      await _preferences.setString('$key-key', cacheKey);
+    }
+  }
 
   /// 进程级单例；测试可用 [inject] 注入 mock preferences。
   static Future<CacheRepository> instance() async =>
@@ -45,6 +77,7 @@ final class CacheRepository {
 
   static Future<void> resetForTest() async {
     _instance = null;
+    _momentsGenerations.clear();
   }
 
   final SharedPreferences _preferences;
@@ -68,7 +101,9 @@ final class MomentsCache {
   final SharedPreferences _preferences;
   final String _storageKey;
 
-  Future<Map<String, dynamic>?> load() async {
+  Future<Map<String, dynamic>?> load() async => loadSync();
+
+  Map<String, dynamic>? loadSync() {
     final raw = _preferences.getString(_storageKey);
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -78,11 +113,17 @@ final class MomentsCache {
     }
   }
 
-  Future<void> save(Map<String, dynamic> feed) async {
+  Future<void> save(Map<String, dynamic> feed, {int? expectedGeneration}) async {
+    if (expectedGeneration != null && expectedGeneration != (CacheRepository._momentsGenerations[_storageKey] ?? 0)) return;
     await _preferences.setString(_storageKey, jsonEncode(feed));
   }
 
-  Future<void> clear() => _preferences.remove(_storageKey);
+  Future<void> clear() async {
+    CacheRepository._momentsGenerations[_storageKey] = (CacheRepository._momentsGenerations[_storageKey] ?? 0) + 1;
+    await _preferences.remove(_storageKey);
+    await _preferences.remove('$_storageKey.cover');
+    await _preferences.remove('$_storageKey.cover-key');
+  }
 }
 
 /// ProfileCache 门面：实际持久化在 ProfileRepository 的 identity.* 键。

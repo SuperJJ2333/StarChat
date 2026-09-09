@@ -6,6 +6,57 @@ import '../foundation/wechat_tokens.dart';
 /// 会话通知模式（PRD §44 第一版三态）。
 enum ConversationNotificationMode { normal, muted, attention }
 
+/// The same expandable notification settings in direct and group chats.
+final class ConversationNotificationSection extends StatefulWidget {
+  const ConversationNotificationSection(
+      {super.key,
+      required this.muted,
+      required this.attention,
+      required this.onChanged});
+  final bool muted;
+  final bool attention;
+  final ValueChanged<ConversationNotificationMode> onChanged;
+  @override
+  State<ConversationNotificationSection> createState() =>
+      _NotificationSectionState();
+}
+
+final class _NotificationSectionState
+    extends State<ConversationNotificationSection> {
+  bool expanded = false;
+  @override
+  Widget build(BuildContext context) => Column(children: [
+        WeChatListTile(
+          title: const Text('消息通知'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(
+                widget.muted
+                    ? '静音'
+                    : widget.attention
+                        ? '特别关注'
+                        : '默认',
+                style: const TextStyle(
+                    fontSize: 14, color: WeChatColors.textSecondary)),
+            const CupertinoListTileChevron(),
+          ]),
+          onTap: () => setState(() => expanded = !expanded),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? ConversationNotificationModeTile(
+                  muted: widget.muted,
+                  attention: widget.attention,
+                  onChanged: (mode) {
+                    setState(() => expanded = false);
+                    widget.onChanged(mode);
+                  })
+              : const SizedBox(width: double.infinity),
+        ),
+      ]);
+}
+
 /// 会话级通知三态选择：默认 / 静音 / 特别关注（PRD §44）。
 /// 静音时仍可在各自的例外设置里允许 @我（既有 MuteException 页）。
 final class ConversationNotificationModeTile extends StatelessWidget {

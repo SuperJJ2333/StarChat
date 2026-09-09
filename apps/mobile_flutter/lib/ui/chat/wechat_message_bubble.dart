@@ -21,6 +21,7 @@ final class WeChatMessageBubble extends StatelessWidget {
     this.onLongPress,
     this.onRetry,
     this.senderBadge,
+    this.bubbleKey,
   });
 
   final MessageDirection direction;
@@ -37,6 +38,7 @@ final class WeChatMessageBubble extends StatelessWidget {
 
   /// 发送者头衔徽标（群主/管理员，QQ 式），显示在昵称前。
   final Widget? senderBadge;
+  final Key? bubbleKey;
 
   /// Green outgoing bubbles retain dark ink, including in night mode.
   static Color foregroundOf(BuildContext context) {
@@ -80,7 +82,7 @@ final class WeChatMessageBubble extends StatelessWidget {
               ),
             ),
           Flexible(
-            child: decorateContent
+            child: KeyedSubtree(key: bubbleKey, child: decorateContent
                 ? DecoratedBox(
                     decoration: BoxDecoration(
                       color: outgoing
@@ -106,7 +108,7 @@ final class WeChatMessageBubble extends StatelessWidget {
                       ),
                     ),
                   )
-                : content,
+                : content),
           ),
         ],
       ),

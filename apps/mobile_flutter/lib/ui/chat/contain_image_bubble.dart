@@ -47,6 +47,7 @@ final class ContainImageBubble extends StatefulWidget {
     this.availableWidth = 400,
     this.availableHeight = 800,
     this.onTap,
+    this.bubbleKey,
   });
 
   final Future<Uint8List> Function() load;
@@ -68,6 +69,7 @@ final class ContainImageBubble extends StatefulWidget {
 
   /// 点击回调（进入大图查看器由调用方组装）。
   final VoidCallback? onTap;
+  final Key? bubbleKey;
 
   @override
   State<ContainImageBubble> createState() => _ContainImageBubbleState();
@@ -177,6 +179,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
         : ImageContainLayout(
             width: constraints.maxWidth, height: constraints.maxHeight * .5);
     return SizedBox(
+      key: widget.bubbleKey,
       width: layout.width,
       height: layout.height,
       child: ClipRRect(

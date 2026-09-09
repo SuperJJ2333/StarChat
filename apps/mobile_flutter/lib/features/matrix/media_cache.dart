@@ -1,73 +1,108 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
-/// 解密媒体本地缓存：以 (roomId, eventId) 为键落盘于应用文档目录
-/// chat-media/。
-///
-/// 完整性与容量治理（审计 M03/M04）：
-/// - **原子写**：先写同目录唯一临时文件，校验长度元数据后 rename 到
-///   最终路径——进程中止/磁盘满不会留下"看似命中"的半文件；
-/// - **损坏检测**：`.len` 元数据记录字节数；命中时长度不符即判损坏，
-///   删除缓存与元数据按未命中处理（重下载闭环）；无元数据的旧条目
-///   （历史数据）按有效接受，不制造假未命中；
-/// - **写入合并**：同键并发写共享一次落盘；
-/// - **磁盘配额**：chat-media 仅存"可重新下载"的解密副本（键=事件 ID，
-///   永可重新拉取），超过硬配额按 LRU（最后修改时间）回收到软配额，
-///   不触碰用户唯一文件（相册原件不在本目录）。
+/// Device-only content objects. References and object identities never leave
+/// this device. Each account has a separate namespace, including memory.
 final class MediaCache {
   MediaCache._();
-
-  /// 磁盘软/硬配额（字节）：超硬回收至软以下。
   static const diskSoftQuotaBytes = 384 * 1024 * 1024;
   static const diskHardQuotaBytes = 512 * 1024 * 1024;
-
-  /// 同键在途写合并。
   static final _storeFlights = <String, Future<File>>{};
+  static final _objectFlights = <String, Future<File>>{};
+  static final _legacyCleanups = <String, Future<void>>{};
 
-  /// 文件系统安全段：Matrix ID 含 `!` `:` `$/` 等非法路径字符
-  /// （Windows 全平台禁止），清洗后追加短散列防不同 ID 清洗碰撞。
-  static String _safeSegment(String id) {
-    final safe = id.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-    final digest = md5.convert(id.codeUnits).toString().substring(0, 8);
-    return '${safe}_$digest';
-  }
-
-  static Future<Directory> _dirFor(String roomId) async {
+  /// Legacy entries have no account owner. Discard only that managed cache;
+  /// reusing them across accounts would cross the authorization boundary.
+  static Future<void> discardLegacyCache() async {
     final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory('${docs.path}${Platform.pathSeparator}chat-media'
-        '${Platform.pathSeparator}${_safeSegment(roomId)}');
-    await dir.create(recursive: true);
-    return dir;
+    final root = Directory('${docs.path}/chat-media');
+    return _legacyCleanups.putIfAbsent(root.path, () async {
+      if (!await root.exists()) return;
+      await for (final entry in root.list(followLinks: false)) {
+        if (entry is! Directory) continue;
+        final name = entry.uri.pathSegments.where((s) => s.isNotEmpty).last;
+        if (!RegExp(r'^[A-Za-z0-9._-]+_[a-f0-9]{8}$').hasMatch(name)) continue;
+        // list() returns only direct children, and links are never followed.
+        try {
+          await entry.delete(recursive: true);
+        } on FileSystemException { /* Retry on the next process start. */ }
+      }
+    });
   }
 
-  static Future<File> _fileFor(String roomId, String eventId) async {
-    final dir = await _dirFor(roomId);
-    final base =
-        File('${dir.path}${Platform.pathSeparator}${_safeSegment(eventId)}');
-    if (await base.exists()) return base;
-    for (final suffix in ['.mp4', '.mov']) {
-      final prepared = File('${base.path}$suffix');
-      if (await prepared.exists()) return prepared;
-    }
-    return base;
+  static String _digest(String value) =>
+      sha256.convert(utf8.encode(value)).toString();
+  static Future<Directory> _root(String accountId) async {
+    final docs = await getApplicationDocumentsDirectory();
+    return Directory('${docs.path}/chat-media/v2/${_digest(accountId)}')
+        .create(recursive: true);
   }
 
-  /// Give a validated cached video its native container suffix in place.
-  /// Only cache-owned paths and recognized signatures are used; no user
-  /// filename, extra media copy, or file outside quota management is involved.
-  static Future<File> preparePlaybackFile(String roomId, String eventId) async {
-    final flightKey = '$roomId\u0000$eventId';
-    // Finish an in-flight store before starting migration. The atomic worker
-    // calls cached(), never store(), so the shared flight cannot await itself.
-    while (_storeFlights.containsKey(flightKey)) {
-      await _storeFlights[flightKey]!;
+  static Future<File> _reference(
+      String accountId, String roomId, String eventId) async {
+    final root = await _root(accountId);
+    final dir = await Directory('${root.path}/refs').create(recursive: true);
+    return File('${dir.path}/${_digest(jsonEncode([roomId, eventId]))}.ref');
+  }
+
+  static Future<File?> cached(String roomId, String eventId,
+      {String accountId = ''}) async {
+    final ref = await _reference(accountId, roomId, eventId);
+    try {
+      if (!await ref.exists()) return null;
+      final name = await ref.readAsString();
+      if (!RegExp(r'^[a-f0-9]{64}(\.mp4|\.mov)?$').hasMatch(name)) return null;
+      final root = await _root(accountId);
+      final file = File('${root.path}/objects/$name');
+      if (!await _valid(file)) return null;
+      await file.setLastModified(DateTime.now());
+      return file;
+    } on FileSystemException {
+      return null;
     }
-    final flight = _preparePlaybackAtomic(roomId, eventId);
+  }
+
+  static Future<bool> _valid(File file) async {
+    try {
+      if (!await file.exists()) return false;
+      final expected =
+          int.tryParse(await File('${file.path}.len').readAsString());
+      if (expected != null && expected == await file.length()) return true;
+    } on FileSystemException {/* Interrupted writes are cache misses. */}
+    await _deleteQuietly(file);
+    await _deleteQuietly(File('${file.path}.len'));
+    return false;
+  }
+
+  static Future<void> _deleteQuietly(FileSystemEntity file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } on FileSystemException {/* Best effort cleanup. */}
+  }
+
+  static Future<void> _atomicBytes(File file, List<int> bytes) async {
+    final tmp = File('${file.path}.${const Uuid().v4()}.tmp');
+    try {
+      await tmp.writeAsBytes(bytes, flush: true);
+      if (await file.exists()) await file.delete();
+      await tmp.rename(file.path);
+    } finally {
+      await _deleteQuietly(tmp);
+    }
+  }
+
+  static Future<File> store(String roomId, String eventId, Uint8List bytes,
+      {String accountId = ''}) async {
+    final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
+    final existing = _storeFlights[flightKey];
+    if (existing != null) return existing;
+    final flight = _root(accountId)
+        .then((root) => _store(root, accountId, roomId, eventId, bytes));
     _storeFlights[flightKey] = flight;
     try {
       return await flight;
@@ -76,30 +111,43 @@ final class MediaCache {
     }
   }
 
-  static Future<File> _preparePlaybackAtomic(
-      String roomId, String eventId) async {
-    final file = await cached(roomId, eventId);
-    if (file == null) throw FileSystemException('Video cache is unavailable');
-    final handle = await file.open();
-    late Uint8List header;
+  static Future<File> _store(Directory root, String accountId, String roomId,
+      String eventId, Uint8List bytes) async {
+    final digest = sha256.convert(bytes).toString();
+    final name = '$digest${_videoContainerSuffix(bytes) ?? ''}';
+    final objectKey = '${root.path}/objects/$name';
+    final existing = _objectFlights[objectKey];
+    final flight = existing ?? _storeObject(File(objectKey), bytes);
+    if (existing == null) _objectFlights[objectKey] = flight;
+    late File file;
     try {
-      header = await handle.read(24);
+      file = await flight;
     } finally {
-      await handle.close();
+      if (existing == null) _objectFlights.remove(objectKey);
     }
-    final suffix = _videoContainerSuffix(header);
-    if (suffix == null || file.path.endsWith(suffix)) return file;
-    // _fileFor resolves only the extensionless or two known typed variants.
-    // A typed entry is already prepared; never append another extension.
-    if (file.path.endsWith('.mp4') || file.path.endsWith('.mov')) return file;
-    final target = File('${file.path}$suffix');
-    final meta = _metaFor(file);
-    // Write the tiny integrity sidecar first. A crash before the data rename
-    // leaves the original validated entry usable; no media bytes are copied.
-    await _metaFor(target).writeAsString('${await file.length()}', flush: true);
-    final prepared = await file.rename(target.path);
-    await _deleteQuietly(meta);
-    return prepared;
+    final ref = await _reference(accountId, roomId, eventId);
+    await _atomicBytes(ref, utf8.encode(name));
+    await _enforceDiskQuota(file);
+    return file;
+  }
+
+  static Future<File> _storeObject(File file, Uint8List bytes) async {
+    await file.parent.create(recursive: true);
+    if (await _valid(file)) return file;
+    await _atomicBytes(
+        File('${file.path}.len'), utf8.encode('${bytes.length}'));
+    await _atomicBytes(file, bytes);
+    return file;
+  }
+
+  static Future<File> preparePlaybackFile(String roomId, String eventId,
+      {String accountId = ''}) async {
+    final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
+    final flight = _storeFlights[flightKey];
+    if (flight != null) await flight;
+    final file = await cached(roomId, eventId, accountId: accountId);
+    if (file == null) throw FileSystemException('Video cache is unavailable');
+    return file;
   }
 
   static String? _videoContainerSuffix(Uint8List header) {
@@ -117,135 +165,50 @@ final class MediaCache {
     return null;
   }
 
-  /// 长度元数据（`.len`）：损坏检测依据。
-  static File _metaFor(File file) => File('${file.path}.len');
+  static bool _isData(File file) =>
+      !file.path.endsWith('.len') &&
+      !file.path.endsWith('.ref') &&
+      !file.path.endsWith('.tmp');
+  static Future<List<File>> _files() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final root = Directory('${docs.path}/chat-media');
+    if (!await root.exists()) return [];
+    return root
+        .list(recursive: true, followLinks: false)
+        .where((e) => e is File && _isData(e))
+        .cast<File>()
+        .toList();
+  }
 
-  /// 已缓存则返回本地文件（含完整性校验），否则返回 null。
-  ///
-  /// 损坏（长度不符）：删除数据与元数据，按未命中返回——调用方会重新
-  /// 下载解密并经 [store] 修复缓存。
-  static Future<File?> cached(String roomId, String eventId) async {
-    final file = await _fileFor(roomId, eventId);
-    if (!await file.exists()) return null;
-    final meta = _metaFor(file);
-    if (await meta.exists()) {
+  static Future<int> totalCachedBytes() async {
+    var total = 0;
+    for (final file in await _files()) {
       try {
-        final expected = int.tryParse(await meta.readAsString());
-        if (expected != null) {
-          final actual = await file.length();
-          if (actual != expected) {
-            // 半写入/截断/磁盘错：损坏项删除后可重新获取。
-            await _deleteQuietly(file);
-            await _deleteQuietly(meta);
-            return null;
-          }
-        }
-      } catch (_) {
-        // 元数据不可读：按未命中重下（保守），并清掉坏缓存。
-        await _deleteQuietly(file);
-        await _deleteQuietly(meta);
-        return null;
-      }
+        total += await file.length();
+      } on FileSystemException {/* Concurrent eviction. */}
     }
-    return file;
+    return total;
   }
 
-  static Future<void> _deleteQuietly(FileSystemEntity entity) async {
+  static Future<void> _enforceDiskQuota(File keep) async {
     try {
-      if (await entity.exists()) await entity.delete();
-    } catch (_) {}
-  }
-
-  /// 解密数据写入缓存并返回文件（同键并发写合并为一次落盘）。
-  static Future<File> store(
-      String roomId, String eventId, Uint8List bytes) async {
-    final flightKey = '$roomId\u0000$eventId';
-    final existing = _storeFlights[flightKey];
-    if (existing != null) return existing;
-    final flight = _storeAtomic(roomId, eventId, bytes);
-    _storeFlights[flightKey] = flight;
-    try {
-      return await flight;
-    } finally {
-      _storeFlights.remove(flightKey);
-    }
-  }
-
-  static Future<File> _storeAtomic(
-      String roomId, String eventId, Uint8List bytes) async {
-    final file = await _fileFor(roomId, eventId);
-    final tmp = File('${file.path}.${const Uuid().v4()}.tmp');
-    try {
-      // ① 同目录唯一临时文件写完并落盘（同目录 rename 具原子性）。
-      await tmp.writeAsBytes(bytes, flush: true);
-      // ② 元数据先行：rename 窗口内任何中断都会以"长度不符"暴露，
-      //    不会把半文件当命中。
-      await _metaFor(file).writeAsString('${bytes.length}', flush: true);
-      // ③ 原子替换（Windows rename 不覆盖已存在目标：先删旧再换，
-      //    窗口内旧条目缺失=未命中→重下，安全）。
-      try {
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
-      await tmp.rename(file.path);
-    } catch (_) {
-      await _deleteQuietly(tmp);
-      rethrow;
-    }
-    // ④ 磁盘配额治理（尽力而为，不影响写入结果）。
-    await _enforceDiskQuota(keep: file);
-    return file;
-  }
-
-  /// 超硬配额时按 LRU 回收可再下载副本至软配额以下。
-  static Future<void> _enforceDiskQuota({required File keep}) async {
-    try {
-      final docs = await getApplicationDocumentsDirectory();
-      final root = Directory('${docs.path}${Platform.pathSeparator}chat-media');
-      if (!await root.exists()) return;
-      final files = <File>[];
+      final files = await _files();
       var total = 0;
-      await for (final entity
-          in root.list(recursive: true, followLinks: false)) {
-        if (entity is! File) continue;
-        if (entity.path.endsWith('.len') || entity.path.endsWith('.tmp')) {
-          continue;
-        }
-        files.add(entity);
-        total += await entity.length();
+      for (final file in files) {
+        total += await file.length();
       }
       if (total <= diskHardQuotaBytes) return;
       files.sort((a, b) =>
           a.modifiedSyncOrDefault().compareTo(b.modifiedSyncOrDefault()));
-      for (final candidate in files) {
+      for (final file in files) {
         if (total <= diskSoftQuotaBytes) break;
-        if (candidate.path == keep.path) continue;
-        final length = await candidate.length();
-        await _deleteQuietly(candidate);
-        await _deleteQuietly(_metaFor(candidate));
-        total -= length;
+        if (file.path == keep.path) continue;
+        final size = await file.length();
+        await file.delete();
+        await _deleteQuietly(File('${file.path}.len'));
+        total -= size;
       }
-    } catch (_) {
-      // 配额治理失败不影响已完成的写入。
-    }
-  }
-
-  /// 当前缓存用量（字节；供设置页展示）。
-  static Future<int> totalCachedBytes() async {
-    try {
-      final docs = await getApplicationDocumentsDirectory();
-      final root = Directory('${docs.path}${Platform.pathSeparator}chat-media');
-      if (!await root.exists()) return 0;
-      var total = 0;
-      await for (final entity
-          in root.list(recursive: true, followLinks: false)) {
-        if (entity is File && !entity.path.endsWith('.len')) {
-          total += await entity.length();
-        }
-      }
-      return total;
-    } catch (_) {
-      return 0;
-    }
+    } on FileSystemException {/* Cache quota maintenance is best effort. */}
   }
 }
 
@@ -280,6 +243,13 @@ final class MediaMemoryCache {
   final _entries = <String, Uint8List>{};
   final _inFlight = <String, Future<Uint8List>>{};
   int _totalBytes = 0;
+  int _generation = 0;
+  void clear() {
+    _generation++;
+    _entries.clear();
+    _inFlight.clear();
+    _totalBytes = 0;
+  }
 
   /// 当前内存占用（字节；诊断/测试）。
   int get totalBytes => _totalBytes;
@@ -309,12 +279,14 @@ final class MediaMemoryCache {
     if (cached != null) return SynchronousFuture<Uint8List>(cached);
     final existing = _inFlight[eventId];
     if (existing != null) return existing;
+    final generation = _generation;
     final flight = load();
     _inFlight[eventId] = flight;
     // 成功转正式缓存并做字节加权 LRU 收缩；失败仅清除在途记录，允许
     // 后续重试（失败不占预算）。
     unawaited(flight.then(
       (bytes) {
+        if (generation != _generation) return;
         _inFlight.remove(eventId);
         final previous = _entries.remove(eventId);
         if (previous != null) _totalBytes -= previous.length;
@@ -323,6 +295,7 @@ final class MediaMemoryCache {
         _evictToBudget();
       },
       onError: (_) {
+        if (generation != _generation) return;
         _inFlight.remove(eventId);
       },
     ));
@@ -341,15 +314,69 @@ final class MediaMemoryCache {
 
 /// 解密并缓存媒体附件：优先命中本地缓存；未命中时调用 loader 解密、
 /// 落盘后返回字节。
+final _sharedMediaBytes = MediaMemoryCache();
+final _mediaLoads = <String, Future<Uint8List>>{};
+int _mediaGeneration = 0;
+
+/// Call when clearing cache or signing out. In-flight work cannot repopulate
+/// the shared memory cache after this boundary.
+void clearMediaMemoryCaches() {
+  _mediaGeneration++;
+  _sharedMediaBytes.clear();
+  videoMemoryCache.clear();
+  _mediaLoads.clear();
+}
+
 Future<Uint8List> loadMediaWithCache(
-  MediaCacheKey key,
-  Future<Uint8List> Function() decrypt,
-) async {
-  final cached = await MediaCache.cached(key.roomId, key.eventId);
-  if (cached != null) return await cached.readAsBytes();
-  final bytes = await decrypt();
-  await MediaCache.store(key.roomId, key.eventId, bytes);
-  return bytes;
+    MediaCacheKey key, Future<Uint8List> Function() decrypt) async {
+  final generation = _mediaGeneration;
+  final root = await MediaCache._root(key.accountId);
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
+  unawaited(MediaCache.discardLegacyCache().catchError((_) {}));
+  final identity = '${root.path}/${key.identity}';
+  final existing = _mediaLoads[identity];
+  final flight = existing ??
+      (() async {
+        var disk = await MediaCache.cached(key.roomId, key.eventId,
+            accountId: key.accountId);
+        if (disk == null && key.sourceIdentity != null) {
+          disk = await MediaCache.cached('source', key.sourceIdentity!,
+              accountId: key.accountId);
+        }
+        final bytes = disk == null ? await decrypt() : null;
+        if (generation != _mediaGeneration) {
+          throw StateError('Media cache session changed');
+        }
+        final file = disk ??
+            await MediaCache.store(key.roomId, key.eventId, bytes!,
+                accountId: key.accountId);
+        if (key.sourceIdentity != null) {
+          final ref = await MediaCache._reference(
+              key.accountId, 'source', key.sourceIdentity!);
+          await MediaCache._atomicBytes(
+              ref, utf8.encode(file.uri.pathSegments.last));
+        }
+        final messageRef =
+            await MediaCache._reference(key.accountId, key.roomId, key.eventId);
+        await MediaCache._atomicBytes(
+            messageRef, utf8.encode(file.uri.pathSegments.last));
+        if (generation != _mediaGeneration) return file.readAsBytes();
+        return _sharedMediaBytes.putIfAbsent(file.path, file.readAsBytes);
+      })();
+  if (existing == null) _mediaLoads[identity] = flight;
+  try {
+    final bytes = await flight;
+    // A source flight can serve a different message: persist its reference too.
+    if (existing != null && generation == _mediaGeneration) {
+      await MediaCache.store(key.roomId, key.eventId, bytes,
+          accountId: key.accountId);
+    }
+    return bytes;
+  } finally {
+    if (identical(_mediaLoads[identity], flight)) _mediaLoads.remove(identity);
+  }
 }
 
 /// 视频播放的页级共享内存缓存（在途去重 + LRU）；视频字节大，
@@ -368,29 +395,90 @@ Future<File> resolveCachedVideoFile({
   required Future<Uint8List> Function() decrypt,
   MediaMemoryCache? memoryCache,
 }) async {
-  final disk = await MediaCache.cached(key.roomId, key.eventId);
+  final disk = await MediaCache.cached(key.roomId, key.eventId,
+      accountId: key.accountId);
   if (disk != null) {
-    return MediaCache.preparePlaybackFile(key.roomId, key.eventId);
+    return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
+        accountId: key.accountId);
   }
   final bytes = await (memoryCache ?? videoMemoryCache)
-      .putIfAbsent(key.eventId, () => loadMediaWithCache(key, decrypt));
-  if (await MediaCache.cached(key.roomId, key.eventId) == null) {
-    await MediaCache.store(key.roomId, key.eventId, bytes);
+      .putIfAbsent(key.identity, () => loadMediaWithCache(key, decrypt));
+  if (await MediaCache.cached(key.roomId, key.eventId,
+          accountId: key.accountId) ==
+      null) {
+    await MediaCache.store(key.roomId, key.eventId, bytes,
+        accountId: key.accountId);
   }
-  return MediaCache.preparePlaybackFile(key.roomId, key.eventId);
+  return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
+      accountId: key.accountId);
 }
 
 final class MediaCacheKey {
-  const MediaCacheKey({required this.roomId, required this.eventId});
+  const MediaCacheKey(
+      {required this.roomId,
+      required this.eventId,
+      this.accountId = '',
+      this.sourceIdentity});
+  final String accountId;
+
+  /// Full authenticated source identity, including encryption descriptor.
+  final String? sourceIdentity;
+  String get identity => jsonEncode([
+        accountId,
+        sourceIdentity ?? [roomId, eventId]
+      ]);
   final String roomId;
   final String eventId;
 
   @override
   bool operator ==(Object other) =>
       other is MediaCacheKey &&
+      other.accountId == accountId &&
+      other.sourceIdentity == sourceIdentity &&
       other.roomId == roomId &&
       other.eventId == eventId;
 
   @override
-  int get hashCode => Object.hash(roomId, eventId);
+  int get hashCode => Object.hash(accountId, sourceIdentity, roomId, eventId);
+}
+
+/// Compute only from the already authorized event's attachment descriptor.
+/// Never transmit or log this identifier. An incomplete encrypted descriptor
+/// cannot be treated as a plain MXC URL or coalesced with another event.
+String? matrixMediaSourceIdentity(Map<String, dynamic> content,
+    {bool thumbnail = false}) {
+  final info = content['info'];
+  final Map data = thumbnail ? (info is Map ? info : const {}) : content;
+  final fileKey = thumbnail ? 'thumbnail_file' : 'file';
+  final urlKey = thumbnail ? 'thumbnail_url' : 'url';
+  final encrypted = data[fileKey];
+  Object? descriptor;
+  if (data.containsKey(fileKey)) {
+    if (encrypted is! Map ||
+        encrypted['url'] is! String ||
+        encrypted['key'] is! Map ||
+        (encrypted['key'] as Map)['k'] is! String ||
+        encrypted['iv'] is! String ||
+        encrypted['hashes'] is! Map ||
+        (encrypted['hashes'] as Map)['sha256'] is! String) {
+      return null;
+    }
+    descriptor = encrypted;
+  } else {
+    final url = data[urlKey];
+    if (url is! String || !url.startsWith('mxc://')) return null;
+    descriptor = url;
+  }
+  Object? canonical(Object? value) {
+    if (value is Map) {
+      final keys = value.keys.map((key) => key.toString()).toList()..sort();
+      return {for (final key in keys) key: canonical(value[key])};
+    }
+    if (value is List) return value.map(canonical).toList();
+    return value;
+  }
+
+  return sha256
+      .convert(utf8.encode(jsonEncode([thumbnail, canonical(descriptor)])))
+      .toString();
 }

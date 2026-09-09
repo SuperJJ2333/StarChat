@@ -27,12 +27,16 @@ final class MomentCommentView {
     required this.text,
     required this.author,
     this.parentAuthor,
+    this.images = const [],
+    this.imageCacheKeys = const [],
   });
 
   factory MomentCommentView.fromJson(Map<String, dynamic> json) =>
       MomentCommentView(
         id: json['id'].toString(),
         text: json['text']?.toString() ?? '',
+        images: List<String>.from(json['image_urls'] ?? const []),
+        imageCacheKeys: List<String>.from(json['image_cache_keys'] ?? const []),
         author: MomentAuthor.fromJson(
             Map<String, dynamic>.from(json['author'] as Map)),
         parentAuthor: json['parent_author'] is Map
@@ -44,7 +48,15 @@ final class MomentCommentView {
   final String id, text;
   final MomentAuthor author;
   final MomentAuthor? parentAuthor;
+  final List<String> images;
+  final List<String> imageCacheKeys;
 }
+
+List<MomentCommentView> mergeMomentComments(Iterable<MomentCommentView> existing,
+    MomentCommentView incoming) => <String, MomentCommentView>{
+      for (final comment in existing) comment.id: comment,
+      incoming.id: incoming,
+    }.values.toList(growable: false);
 
 final class MomentItem {
   const MomentItem(
@@ -53,6 +65,7 @@ final class MomentItem {
       required this.text,
       required this.images,
       required this.createdAt,
+      this.imageCacheKeys = const [],
       this.liked = false,
       this.likeCount = 0,
       this.likeUsers = const [],
@@ -82,6 +95,7 @@ final class MomentItem {
             Map<String, dynamic>.from(json['author'] as Map)),
         text: json['text']?.toString() ?? '',
         images: List<String>.from(json['image_urls'] ?? const []),
+        imageCacheKeys: List<String>.from(json['image_cache_keys'] ?? const []),
         createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
             DateTime.now(),
         liked: json['viewer_has_liked'] == true,
@@ -98,6 +112,7 @@ final class MomentItem {
   final String id, text, kind;
   final MomentAuthor author;
   final List<String> images;
+  final List<String> imageCacheKeys;
   final List<MomentAuthor> likeUsers;
   final List<MomentCommentView> comments;
   final DateTime createdAt;
@@ -114,6 +129,7 @@ final class MomentItem {
           author: author,
           text: text,
           images: images,
+          imageCacheKeys: imageCacheKeys,
           createdAt: createdAt,
           liked: liked ?? this.liked,
           likeCount: likeCount ?? this.likeCount,

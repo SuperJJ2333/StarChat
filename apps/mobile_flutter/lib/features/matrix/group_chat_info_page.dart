@@ -301,7 +301,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                   ),
                   // PRD §44：会话通知三态（默认 / 静音 / 特别关注）。
                   // 两次偏好写入必须串行：控制器在 saving 状态会丢弃并发保存。
-                  ConversationNotificationModeTile(
+                  ConversationNotificationSection(
                     muted: snapshot.muted,
                     attention: snapshot.attention,
                     onChanged: (mode) {

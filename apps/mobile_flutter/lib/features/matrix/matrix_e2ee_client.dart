@@ -15,6 +15,7 @@ import 'group_room_authority.dart';
 import 'group_announcement_service.dart';
 import 'group_join_notices.dart';
 import 'dart:async';
+import 'media_cache.dart';
 
 import 'package:matrix/matrix.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
@@ -1446,8 +1447,16 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
         final event = eventById(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
         if (!event.hasThumbnail) return null;
-        return (await event.downloadAndDecryptAttachment(getThumbnail: true))
-            .bytes;
+        return loadMediaWithCache(
+            MediaCacheKey(
+                accountId: _lease._activeRoom.client.userID ?? '',
+                roomId: _lease._activeRoom.id,
+                eventId: 'thumbnail:$eventId',
+                sourceIdentity:
+                    matrixMediaSourceIdentity(event.content, thumbnail: true)),
+            () async =>
+                (await event.downloadAndDecryptAttachment(getThumbnail: true))
+                    .bytes);
       });
 
   @override
@@ -1465,7 +1474,13 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
   Future<Uint8List> loadAttachment(String eventId) => _withOperation(() async {
         final event = eventById(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
-        return (await event.downloadAndDecryptAttachment()).bytes;
+        return loadMediaWithCache(
+            MediaCacheKey(
+                accountId: _lease._activeRoom.client.userID ?? '',
+                roomId: _lease._activeRoom.id,
+                eventId: 'attachment:$eventId',
+                sourceIdentity: matrixMediaSourceIdentity(event.content)),
+            () async => (await event.downloadAndDecryptAttachment()).bytes);
       });
 
   @override

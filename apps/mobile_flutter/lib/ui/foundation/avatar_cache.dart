@@ -3,13 +3,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
+import 'retained_image_cache_manager.dart';
+
 /// The sole remote-avatar cache. Keys vary by user, avatar version/URL and size.
 abstract final class AvatarCache {
   static const diskTtl = Duration(days: 30);
   static const maximumMemoryEntries = 200;
   static const maximumDiskEntries = 500;
 
-  static final CacheManager manager = CacheManager(
+  static final CacheManager manager = RetainedImageCacheManager(
     Config(
       'changliao-member-avatars-v1',
       stalePeriod: diskTtl,
@@ -103,9 +105,17 @@ abstract final class AvatarCache {
     );
   }
 
-  static Future<void> invalidateUser(String userId) async {
-    _lastSuccessfulByUser.remove(userId);
+  static Future<void> invalidateUser(String userId,
+      {bool retainLastSuccessful = false}) async {
+    if (!retainLastSuccessful) _lastSuccessfulByUser.remove(userId);
     final keys = _keysByUser.remove(userId) ?? const <String>{};
+    // A replacement URL gets its own key. Keep the previous file available to
+    // the retained provider while the replacement downloads; normal LRU evicts
+    // it later. Explicit removal continues to purge known avatar files.
+    if (retainLastSuccessful) {
+      (_keysByUser[userId] ??= <String>{}).addAll(keys);
+      return;
+    }
     for (final key in keys) {
       await manager.removeFile(key);
     }

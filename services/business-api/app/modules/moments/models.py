@@ -10,6 +10,7 @@ class MomentLike(Base):
     id:Mapped[str]=mapped_column(String(36),primary_key=True);moment_id:Mapped[str]=mapped_column(ForeignKey('moments.id'),index=True);user_id:Mapped[str]=mapped_column(ForeignKey('users.id'));idempotency_key:Mapped[str]=mapped_column(String(128));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
 class MomentComment(Base):
     __tablename__='moment_comments';__table_args__=(UniqueConstraint('user_id','idempotency_key',name='uq_moment_comment_idempotency'),)
+    image_object_keys:Mapped[list]=mapped_column(JSON,default=list,server_default='[]')
     id:Mapped[str]=mapped_column(String(36),primary_key=True);moment_id:Mapped[str]=mapped_column(ForeignKey('moments.id'),index=True);user_id:Mapped[str]=mapped_column(ForeignKey('users.id'));parent_id:Mapped[str|None]=mapped_column(String(36));text:Mapped[str]=mapped_column(Text);idempotency_key:Mapped[str]=mapped_column(String(128));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));deleted_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
 class MomentsPreference(Base):
     __tablename__='moments_preferences'

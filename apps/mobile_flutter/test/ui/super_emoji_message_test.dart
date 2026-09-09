@@ -8,11 +8,34 @@ FluentEmoji _emoji(String name) =>
     FluentEmoji(char: '😀', name: name, asset: 'assets/emoji/$name.webp');
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
-  await tester.pumpWidget(CupertinoApp(home: CupertinoPageScaffold(child: child)));
+  await tester
+      .pumpWidget(CupertinoApp(home: CupertinoPageScaffold(child: child)));
   await tester.pump();
 }
 
 void main() {
+  testWidgets('four super emojis stay inside a narrow message row',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pump(
+        tester,
+        SuperEmojiMessage(
+          emojis: List.generate(4, (_) => _emoji('smile')),
+          direction: MessageDirection.incoming,
+          avatar: const SizedBox(width: 40, height: 40),
+          senderName: 'Test sender',
+        ));
+    expect(tester.takeException(), isNull);
+    final rects = find
+        .byType(Image)
+        .evaluate()
+        .map((element) => tester.getRect(find.byWidget(element.widget)))
+        .toList();
+    expect(rects.every((rect) => rect.left >= 0 && rect.right <= 360), isTrue);
+  });
   testWidgets('single super emoji renders 96px with high quality filter',
       (tester) async {
     await _pump(

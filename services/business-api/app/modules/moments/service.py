@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import base64
+import hashlib
 import json
 from uuid import uuid4
 
@@ -233,21 +234,32 @@ class MomentsService:
                     notification.invalidated_at = datetime.now(timezone.utc)
             self._audit(session, actor, moment_id, "moment.unliked", "MOMENT_UNLIKE", key)
 
-    def comment(self, actor, moment_id, text, parent_id, key):
+    def comment(self, actor, moment_id, text, parent_id, key, *, image_upload_ids=None):
+        image_upload_ids = list(dict.fromkeys(image_upload_ids or []))
+        if len(image_upload_ids) > 9 or (not text.strip() and not image_upload_ids):
+            raise AppError(code="MOMENT_COMMENT_INVALID", message="请输入评论或选择最多9张图片", status_code=422)
         with self.factory.begin() as session:
             moment = session.get(Moment, moment_id)
             if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             existing = session.scalar(select(MomentComment).where(MomentComment.user_id == actor, MomentComment.idempotency_key == key))
             if existing:
+                if existing.moment_id != moment_id:
+                    raise AppError(code="IDEMPOTENCY_CONFLICT", message="幂等键已用于其他动态", status_code=409)
                 return existing
+            image_object_keys = []
+            for upload_id in image_upload_ids:
+                upload = session.get(MomentMediaUpload, upload_id)
+                if not upload or upload.owner_id != actor or upload.status != "COMPLETED" or upload.purpose != "MOMENT_IMAGE":
+                    raise AppError(code="MOMENT_COMMENT_MEDIA_INVALID", message="请选择自己已上传完成的图片", status_code=422)
+                image_object_keys.append(upload.object_key)
             if parent_id:
                 parent = session.get(MomentComment, parent_id)
                 if not parent or parent.moment_id != moment_id or parent.deleted_at:
                     raise AppError(code="COMMENT_PARENT_NOT_FOUND", message="回复的评论不存在", status_code=404)
             row = MomentComment(
                 id=str(uuid4()), moment_id=moment_id, user_id=actor, parent_id=parent_id,
-                text=text, idempotency_key=key, created_at=datetime.now(timezone.utc),
+                text=text, image_object_keys=image_object_keys, idempotency_key=key, created_at=datetime.now(timezone.utc),
             )
             session.add(row)
             self._notify(session, moment.author_id, moment_id, actor, "COMMENT", row.id)
@@ -329,7 +341,7 @@ class MomentsService:
                 cover_url = self.avatar_storage.signed_read_url(
                     row.cover_object_key, self.MOMENT_MEDIA_URL_TTL
                 )
-            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "cover_url": cover_url}
+            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "cover_url": cover_url, "cover_cache_key": self._media_cache_key(row.cover_object_key or row.cover_url)}
 
     def set_cover(self, actor, upload_id, key):
         with self.factory.begin() as session:
@@ -377,6 +389,7 @@ class MomentsService:
                 "history_range": row.history_range,
                 "personalized_recommendations": row.personalized_recommendations,
                 "cover_url": cover_url,
+                "cover_cache_key": self._media_cache_key(upload.object_key),
             }
 
     def report(self, actor, moment_id, reason, key):
@@ -394,6 +407,12 @@ class MomentsService:
     # 朋友圈媒体链接的有效期：feed 每次输出时动态重签，7 天内有效，
     # 旧动态（含历史上以 300s 短签持久化的链接）也会被重新签名救活。
     MOMENT_MEDIA_URL_TTL = 604800
+
+    @staticmethod
+    def _media_cache_key(reference):
+        # Hash the stored business-media reference, never the renewed signature
+        # or media bytes. Clients must still namespace caches by account.
+        return hashlib.sha256(reference.encode('utf-8')).hexdigest() if reference else None
 
     def _resign_media_url(self, url: str) -> str:
         # 对持久化的媒体链接重新签发长期签名。历史实现把上传完成时刻
@@ -439,7 +458,8 @@ class MomentsService:
 
     def comment_dto(self, session, row, viewer_id=None):
         parent = session.get(MomentComment, row.parent_id) if row.parent_id else None
-        return {'id': row.id, 'user_id': row.user_id, 'parent_id': row.parent_id, 'text': row.text, 'created_at': row.created_at, 'author': self._user_projection(session, row.user_id, viewer_id), 'parent_author': self._user_projection(session, parent.user_id, viewer_id) if parent else None}
+        image_urls = [self.avatar_storage.signed_read_url(key, self.MOMENT_MEDIA_URL_TTL) for key in (row.image_object_keys or [])] if self.avatar_storage else []
+        return {'id': row.id, 'user_id': row.user_id, 'parent_id': row.parent_id, 'text': row.text, 'image_urls': image_urls, 'image_cache_keys': [self._media_cache_key(key) for key in (row.image_object_keys or [])] if self.avatar_storage else [], 'created_at': row.created_at, 'author': self._user_projection(session, row.user_id, viewer_id), 'parent_author': self._user_projection(session, parent.user_id, viewer_id) if parent else None}
 
     def dto(self, session, moment, viewer_id=None):
         like_rows = session.scalars(select(MomentLike).where(MomentLike.moment_id == moment.id).order_by(MomentLike.created_at, MomentLike.id)).all()
@@ -460,6 +480,7 @@ class MomentsService:
             'image_urls': [
                 self._resign_media_url(url) for url in moment.image_urls
             ],
+            'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls],
             'include_user_ids': moment.include_user_ids,
             'exclude_user_ids': moment.exclude_user_ids,
             'include_tag_ids': moment.include_tag_ids,

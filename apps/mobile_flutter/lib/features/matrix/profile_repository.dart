@@ -342,6 +342,7 @@ final class ProfileRepository extends ChangeNotifier {
 
   final BusinessApiClient? api;
   final String? _accountKey;
+  String? get accountKey => _accountKey;
   final ProfileStore? _store;
   final Future<ProfileData> Function()? _loadProfile;
   final Future<List<ContactSummary>> Function()? _loadContacts;
@@ -555,7 +556,9 @@ final class ProfileRepository extends ChangeNotifier {
         final previousAvatar = previousByMatrixId[entry.key]?.avatarUrl;
         final currentAvatar = entry.value.avatarUrl;
         if (previousAvatar != currentAvatar) {
-          unawaited(AvatarCache.invalidateUser(entry.key).catchError((_) {}));
+          unawaited(AvatarCache.invalidateUser(entry.key,
+                  retainLastSuccessful: currentAvatar != null)
+              .catchError((_) {}));
         }
       }
     }
