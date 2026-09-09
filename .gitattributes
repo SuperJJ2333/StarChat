@@ -1,4 +1,6 @@
 *.sh text eol=lf
 # Preserve SDK provenance hashes.
 apps/mobile_flutter/third_party/matrix/** -text
+# Keep the published embedded statistics resource byte-identical on macOS/Windows.
+apps/mobile_flutter/assets/html/statistics_tools_combined_v2.html -text whitespace=cr-at-eol
 docs/verification/artifacts/2026-08-26/e2ee-session-capability-boundary/DIFF_FILE.patch -whitespace

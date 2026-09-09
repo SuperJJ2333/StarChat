@@ -35,3 +35,9 @@ The user selected the existing website enterprise channel. Current CI uses perso
 Android 2072 remains the published release until iOS distribution is complete and the successor passes the documented Android rebuild/alignment/stable-signer gates. No Android publication is implied by merging shared source.
 
 Remote Figma editing remains unavailable in this session; the existing component registry and explicitly deferred hotfix evidence are preserved. No remote design change is claimed.
+
+## Build reproducibility correction
+
+The first cloud build of `e02b9ad6` passed signature/native-library checks but local IPA inspection rejected its statistics asset hash. Git had normalized the CRLF Windows release resource to LF on macOS: source/Android bytes were 71,375 bytes with hash `89eab232...`; initial IPA bytes were 69,539 bytes with hash `9c3395dd14432313f4b0a60cb9c0ed7d3f59397c8de795a8b566e3ee7f1c673a`. Comparing normalized bytes proved line endings were the only difference. This candidate was not distributed.
+
+A targeted `.gitattributes` rule now preserves that resource's exact bytes (`-text`, with `cr-at-eol` for whitespace checks). Renormalizing only that file made the Git index match the already-tested Android asset, with no semantic HTML or Dart changes. CI now asserts the resource hash before building and inside the final IPA. The fixed candidate is rebuilt instead of modifying an already-signed package.
