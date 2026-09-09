@@ -1,7 +1,7 @@
 name: iPhone 15 native compatibility
 on:
   push:
-    branches: [main, codex/ios-compatibility]
+    branches: [main, codex/ios-compatibility, codex/mobile-parity-20260909]
     paths:
       - 'apps/mobile_flutter/**'
       - '.github/workflows/ios-compatibility.yml'

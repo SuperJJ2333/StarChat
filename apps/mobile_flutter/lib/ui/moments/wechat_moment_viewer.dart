@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 
 import '../components/wechat_scaffold.dart';
+import 'moment_media_cache.dart';
 
 final class WeChatMomentViewer extends StatelessWidget {
   const WeChatMomentViewer(
@@ -18,7 +19,8 @@ final class WeChatMomentViewer extends StatelessWidget {
             itemCount: urls.length,
             itemBuilder: (_, index) => InteractiveViewer(
                 child: Center(
-                    child: Image.network(urls[index],
+                    child: Image(
+                        image: MomentMediaCache.imageProvider(urls[index]),
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) =>
                             const Icon(CupertinoIcons.photo, size: 48))))),
@@ -99,8 +101,8 @@ final class _WeChatMomentCoverViewerState
                         : _url == null
                             ? const Icon(CupertinoIcons.photo,
                                 color: CupertinoColors.white, size: 56)
-                            : Image.network(
-                                _url!,
+                            : Image(
+                                image: MomentMediaCache.imageProvider(_url!),
                                 fit: BoxFit.contain,
                                 errorBuilder: (_, __, ___) => const Icon(
                                   CupertinoIcons.exclamationmark_triangle,

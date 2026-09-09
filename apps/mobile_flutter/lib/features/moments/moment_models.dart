@@ -19,6 +19,13 @@ final class MomentAuthor {
       avatarUrl: json['avatar_url']?.toString());
   final String userId, username, nickname, displayName;
   final String? avatarUrl;
+  Map<String, dynamic> toJson() => {
+        'user_id': userId,
+        'username': username,
+        'nickname': nickname,
+        'display_name': displayName,
+        'avatar_url': avatarUrl,
+      };
 }
 
 final class MomentCommentView {
@@ -44,6 +51,12 @@ final class MomentCommentView {
   final String id, text;
   final MomentAuthor author;
   final MomentAuthor? parentAuthor;
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'text': text,
+        'author': author.toJson(),
+        'parent_author': parentAuthor?.toJson(),
+      };
 }
 
 final class MomentItem {
@@ -107,6 +120,7 @@ final class MomentItem {
   MomentItem copyWith({
     bool? liked,
     int? likeCount,
+    List<MomentAuthor>? likeUsers,
     List<MomentCommentView>? comments,
   }) =>
       MomentItem(
@@ -117,7 +131,7 @@ final class MomentItem {
           createdAt: createdAt,
           liked: liked ?? this.liked,
           likeCount: likeCount ?? this.likeCount,
-          likeUsers: likeUsers,
+          likeUsers: likeUsers ?? this.likeUsers,
           comments: comments ?? this.comments,
           kind: kind,
           adLink: adLink);

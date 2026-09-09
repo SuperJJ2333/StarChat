@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
+import 'moment_media_cache.dart';
+
 /// 朋友圈图片全屏查看页：网络大图 + 双指缩放 + 左右切换 + 点击关闭。
 final class MomentImageViewerPage extends StatefulWidget {
   const MomentImageViewerPage({
@@ -34,13 +36,14 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                 child: InteractiveViewer(
                   maxScale: 4,
                   child: Center(
-                    child: Image.network(
-                      widget.imageUrls[i],
+                    child: Image(
+                      image:
+                          MomentMediaCache.imageProvider(widget.imageUrls[i]),
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Center(
                         child: Text('图片加载失败',
-                            style: TextStyle(
-                                color: CupertinoColors.systemGrey)),
+                            style:
+                                TextStyle(color: CupertinoColors.systemGrey)),
                       ),
                       loadingBuilder: (_, child, progress) {
                         if (progress == null) return child;

@@ -34,10 +34,17 @@ final class CacheRepository {
       '$momentsFeedKey.$accountKey';
 
   static CacheRepository? _instance;
+  static Future<CacheRepository>? _opening;
+
+  /// Available synchronously after the first initialization in this process.
+  static CacheRepository? get current => _instance;
 
   /// 进程级单例；测试可用 [inject] 注入 mock preferences。
-  static Future<CacheRepository> instance() async =>
-      _instance ??= CacheRepository._(await SharedPreferences.getInstance());
+  static Future<CacheRepository> instance() => _instance != null
+      ? Future.value(_instance)
+      : _opening ??= SharedPreferences.getInstance().then((preferences) {
+          return _instance ??= CacheRepository._(preferences);
+        }).whenComplete(() => _opening = null);
 
   /// 测试专用：注入 mock preferences 并重置单例。
   static CacheRepository inject(SharedPreferences preferences) =>
@@ -45,13 +52,15 @@ final class CacheRepository {
 
   static Future<void> resetForTest() async {
     _instance = null;
+    _opening = null;
   }
 
   final SharedPreferences _preferences;
+  final _moments = <String, MomentsCache>{};
 
   /// U04：按账号取朋友圈缓存（accountKey = 业务账号稳定标识）。
-  MomentsCache momentsFor(String accountKey) =>
-      MomentsCache(_preferences, momentsFeedKeyFor(accountKey));
+  MomentsCache momentsFor(String accountKey) => _moments.putIfAbsent(accountKey,
+      () => MomentsCache(_preferences, momentsFeedKeyFor(accountKey)));
 
   ProfileCache get profile => const ProfileCache();
   AvatarCache get avatar => const AvatarCache();
@@ -67,9 +76,43 @@ final class MomentsCache {
 
   final SharedPreferences _preferences;
   final String _storageKey;
+  Map<String, dynamic>? _snapshot;
+  Map<String, dynamic>? _preferencesSnapshot;
+  bool _loaded = false;
+  bool _preferencesLoaded = false;
+  int _feedRevision = 0;
+  int _preferencesRevision = 0;
+  Future<void> _writing = Future.value();
 
-  Future<Map<String, dynamic>?> load() async {
-    final raw = _preferences.getString(_storageKey);
+  /// Request tickets are shared across page instances for this account.
+  int beginRefresh() => ++_feedRevision;
+  bool isCurrent(int ticket) => ticket == _feedRevision;
+  int beginPreferencesRefresh() => ++_preferencesRevision;
+  bool preferencesAreCurrent(int ticket) => ticket == _preferencesRevision;
+
+  Map<String, dynamic>? get snapshot {
+    if (!_loaded) {
+      _snapshot = _decode(_storageKey);
+      _loaded = true;
+    }
+    return _copy(_snapshot);
+  }
+
+  Map<String, dynamic>? get preferencesSnapshot {
+    if (!_preferencesLoaded) {
+      _preferencesSnapshot = _decode('$_storageKey.preferences');
+      _preferencesLoaded = true;
+    }
+    return _copy(_preferencesSnapshot);
+  }
+
+  static Map<String, dynamic>? _copy(Map<String, dynamic>? value) =>
+      value == null
+          ? null
+          : jsonDecode(jsonEncode(value)) as Map<String, dynamic>;
+
+  Map<String, dynamic>? _decode(String key) {
+    final raw = _preferences.getString(key);
     if (raw == null || raw.isEmpty) return null;
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
@@ -78,11 +121,45 @@ final class MomentsCache {
     }
   }
 
-  Future<void> save(Map<String, dynamic> feed) async {
-    await _preferences.setString(_storageKey, jsonEncode(feed));
+  Future<Map<String, dynamic>?> load() async => snapshot;
+
+  Future<void> _persist(Future<void> Function() write) {
+    final result = _writing.then((_) => write());
+    _writing = result.catchError((Object _) {});
+    return result;
   }
 
-  Future<void> clear() => _preferences.remove(_storageKey);
+  Future<void> save(Map<String, dynamic> feed) async {
+    ++_feedRevision;
+    _snapshot = _copy(feed);
+    _loaded = true;
+    final encoded = jsonEncode(feed);
+    await _persist(() async {
+      await _preferences.setString(_storageKey, encoded);
+    });
+  }
+
+  Future<void> savePreferences(Map<String, dynamic> value) async {
+    ++_preferencesRevision;
+    _preferencesSnapshot = _copy(value);
+    _preferencesLoaded = true;
+    final encoded = jsonEncode(value);
+    await _persist(() async {
+      await _preferences.setString('$_storageKey.preferences', encoded);
+    });
+  }
+
+  Future<void> clear() async {
+    ++_feedRevision;
+    ++_preferencesRevision;
+    _snapshot = null;
+    _preferencesSnapshot = null;
+    _loaded = _preferencesLoaded = true;
+    await _persist(() async {
+      await _preferences.remove(_storageKey);
+      await _preferences.remove('$_storageKey.preferences');
+    });
+  }
 }
 
 /// ProfileCache 门面：实际持久化在 ProfileRepository 的 identity.* 键。

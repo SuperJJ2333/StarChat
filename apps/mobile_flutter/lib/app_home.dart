@@ -1954,15 +1954,14 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () {
+      onMoments: () async {
         final cache = widget.identityCache;
         if (cache == null) return;
+        final page = await MomentsPage.prepare(api: widget.api, identityCache: cache);
+        if (!context.mounted) return;
         Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
             fullscreenDialog: true,
-            builder: (_) => MomentsPage(
-                  api: widget.api,
-                  identityCache: cache,
-                )));
+            builder: (_) => page));
       },
       onCaibi: () => Navigator.push(
           context,

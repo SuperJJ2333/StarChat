@@ -1,14 +1,14 @@
-name: iOS 0.3.53 calls TestFlight
+name: iOS signed compatibility candidate
 on:
   push:
-    branches: [codex/ios-0353-testflight]
+    branches: [codex/ios-0353-testflight, codex/mobile-parity-20260909]
     paths:
       - apps/mobile_flutter/**
       - .github/workflows/ios-0353.yml
 permissions:
   contents: read
 concurrency:
-  group: ios-0353-testflight
+  group: ios-signed-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -97,7 +97,7 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ipa --release --build-number="$((55 + GITHUB_RUN_NUMBER))" --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Verify signed IPA
         working-directory: apps/mobile_flutter
         run: |
@@ -128,7 +128,8 @@ jobs:
           print('SQLCIPHER_LOAD_ORDER_PASS')
           assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
           assert 2 in info['UIDeviceFamily'], 'iPad support required'
-          assert info['CFBundleShortVersionString'] == '0.3.53'
+          assert info['CFBundleShortVersionString'] == '0.3.58'
+          assert info['CFBundleVersion'] == '61'
           assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
           assert float(info['MinimumOSVersion']) >= 16.0
           for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:

@@ -45,6 +45,12 @@
       "behavior": "Resolve at build; light/dark/system live updates; preserve photos, QR and accent contrast",
       "html": "frontend/src/styles/tokens.css",
       "figmaSync": "Deferred: Figma connector unavailable; no remote nodes modified"
+    },
+    "2026-09-09-mobile-parity": {
+      "figmaSync": "Deferred: remote Figma tooling unavailable; existing layout retained, local behavior record only",
+      "feed": "Account-scoped cached first paint; preserve content during background refresh",
+      "media": "Shared disk cache for thumbnails, cover and full-screen; retain layout and gestures",
+      "likes": "Immediate heart, count and people update with rollback and confirmed cache persistence"
     }
   },
   "figma": {

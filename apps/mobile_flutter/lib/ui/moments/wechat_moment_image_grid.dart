@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../foundation/wechat_tokens.dart';
 import 'moment_image_viewer_page.dart';
+import 'moment_media_cache.dart';
 
 final class WeChatMomentImageGrid extends StatelessWidget {
   const WeChatMomentImageGrid({super.key, required this.imageUrls});
@@ -38,7 +39,8 @@ final class WeChatMomentImageGrid extends StatelessWidget {
                 )),
             child: SizedBox(
                 key: const ValueKey('moment-image'),
-                child: Image.network(imageUrls[index],
+                child: Image(
+                    image: MomentMediaCache.imageProvider(imageUrls[index]),
                     width: size,
                     height: size,
                     fit: BoxFit.cover,

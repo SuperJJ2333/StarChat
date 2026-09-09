@@ -56,20 +56,20 @@ final class DiscoveryPage extends StatelessWidget {
                   builder: (sheetContext) => CupertinoActionSheet(
                     actions: [
                       CupertinoActionSheetAction(
-                        onPressed: () {
+                        onPressed: () async {
                           Navigator.pop(sheetContext);
                           final cache = identityCache;
                           if (cache == null) return;
+                          final page = await MomentsPage.prepare(
+                            api: api,
+                            identityCache: cache,
+                            onPostsDisplayed: unreadController?.markDisplayed,
+                            unreadChanges: unreadController,
+                          );
+                          if (!context.mounted) return;
                           Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
-                                fullscreenDialog: true,
-                                builder: (_) => MomentsPage(
-                                      api: api,
-                                      identityCache: cache,
-                                      onPostsDisplayed:
-                                          unreadController?.markDisplayed,
-                                      unreadChanges: unreadController,
-                                    )),
+                                fullscreenDialog: true, builder: (_) => page),
                           );
                         },
                         child: const Text('朋友圈'),
@@ -116,18 +116,20 @@ final class DiscoveryPage extends StatelessWidget {
                     const Icon(CupertinoIcons.chevron_right, size: 12),
                   ]),
                 ),
-                onTap: () {
+                onTap: () async {
                   final cache = identityCache;
                   if (cache == null) return;
+                  final page = await MomentsPage.prepare(
+                    api: api,
+                    identityCache: cache,
+                    onPostsDisplayed: unreadController?.markDisplayed,
+                    unreadChanges: unreadController,
+                  );
+                  if (!context.mounted) return;
                   Navigator.of(context, rootNavigator: true).push(
                     CupertinoPageRoute(
                       fullscreenDialog: true,
-                      builder: (_) => MomentsPage(
-                        api: api,
-                        identityCache: cache,
-                        onPostsDisplayed: unreadController?.markDisplayed,
-                        unreadChanges: unreadController,
-                      ),
+                      builder: (_) => page,
                     ),
                   );
                 },

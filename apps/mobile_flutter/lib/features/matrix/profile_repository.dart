@@ -342,6 +342,8 @@ final class ProfileRepository extends ChangeNotifier {
 
   final BusinessApiClient? api;
   final String? _accountKey;
+  /// Stable namespace of this account-scoped projection; never credentials.
+  String? get accountKey => _accountKey;
   final ProfileStore? _store;
   final Future<ProfileData> Function()? _loadProfile;
   final Future<List<ContactSummary>> Function()? _loadContacts;

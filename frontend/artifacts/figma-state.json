@@ -643,5 +643,13 @@
       "19:4",
       "19:5"
     ]
+  },
+  "momentsCompatibilityRevision": {
+    "date": "2026-09-09",
+    "node": "19:4",
+    "status": "Deferred: Figma tooling unavailable; runtime cache and reaction-state hotfix",
+    "remoteNodesModified": false,
+    "visualChange": "Existing geometry, typography and gestures retained",
+    "plan": "docs/superpowers/plans/2026-09-09-mobile-parity.md"
   }
 }
