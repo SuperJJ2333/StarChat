@@ -532,8 +532,17 @@ final class BusinessApiClient
   );
   Future<Map<String, dynamic>> redPacketLimits() =>
       getJson('/red-packets/limits');
-  Future<Map<String, dynamic>> latestAppUpdate() =>
-      getJson('/app-updates/latest');
+  Future<Map<String, dynamic>> latestAppUpdate() async {
+    final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final response = await getJson(
+        ios ? '/app-updates/latest?platform=ios' : '/app-updates/latest');
+    // Old servers ignore unknown query parameters and return Android releases.
+    // Require an explicit iOS projection before displaying any update link.
+    if (ios && response['platform'] != 'ios') {
+      return {'configured': false};
+    }
+    return response;
+  }
   Future<Map<String, dynamic>> createChatTransfer({
     required String receiverId,
     required String amount,

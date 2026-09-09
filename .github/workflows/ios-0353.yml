@@ -105,7 +105,7 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=true --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Verify signed IPA
         working-directory: apps/mobile_flutter
         run: |
@@ -138,8 +138,8 @@ jobs:
           print('SQLCIPHER_LOAD_ORDER_PASS')
           assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
           assert 2 in info['UIDeviceFamily'], 'iPad support required'
-          assert info['CFBundleShortVersionString'] == '0.3.69'
-          assert info['CFBundleVersion'] == '2073'
+          assert info['CFBundleShortVersionString'] == '0.3.70'
+          assert info['CFBundleVersion'] == '2074'
           assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
           assert float(info['MinimumOSVersion']) >= 16.0
           for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:

@@ -178,3 +178,93 @@ async def test_release_text_limits_and_long_values_round_trip(context):
         latest = (await client.get("/api/v1/app-updates/latest", headers=headers)).json()
         assert latest["notes"] == payload["notes"]
         assert latest["apk_url"] == payload["apk_url"]
+
+
+IOS_SETTINGS = {
+    "app_ios_latest_version": "0.3.69",
+    "app_ios_latest_build": "2074",
+    "app_ios_min_supported_build": "2073",
+    "app_ios_update_notes": "iOS enterprise update",
+    "app_ios_download_url": "https://example.com/ios/2074/",
+}
+IOS_RESPONSE = {
+    "platform": "ios",
+    "configured": True,
+    "latest_version": "0.3.69",
+    "latest_build": 2074,
+    "min_supported_build": 2073,
+    "notes": "iOS enterprise update",
+    "apk_url": "https://example.com/ios/2074/",
+}
+UNCONFIGURED_RESPONSE = {
+    "configured": False,
+    "latest_version": None,
+    "latest_build": None,
+    "min_supported_build": None,
+    "notes": None,
+    "apk_url": None,
+}
+
+
+@pytest.mark.asyncio
+async def test_platform_releases_are_isolated_and_android_default_is_unchanged(context):
+    from app.modules.settings.service import SettingService
+
+    app, factory, settings = context
+    SettingService(factory).set_many(IOS_SETTINGS, actor_id="admin-1")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = bearer(settings, "member-1")
+        admin_headers = {**bearer(settings, "admin-1"), "Idempotency-Key": "android-only"}
+        published = await client.put("/api/v1/admin/app-update-settings", headers=admin_headers, json=PAYLOAD)
+        assert published.status_code == 200
+        for suffix in ("", "?platform=android"):
+            response = await client.get(f"/api/v1/app-updates/latest{suffix}", headers=headers)
+            assert response.status_code == 200
+            assert response.json() == {"configured": True, **PAYLOAD}
+        ios = await client.get("/api/v1/app-updates/latest?platform=ios", headers=headers)
+        assert ios.status_code == 200
+        assert ios.json() == IOS_RESPONSE
+        assert SettingService(factory).get_many(IOS_SETTINGS) == IOS_SETTINGS
+
+
+@pytest.mark.asyncio
+async def test_unset_ios_does_not_fall_back_to_published_android(context):
+    app, _factory, settings = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        headers = {**bearer(settings, "admin-1"), "Idempotency-Key": "android-published"}
+        assert (await client.put("/api/v1/admin/app-update-settings", headers=headers, json=PAYLOAD)).status_code == 200
+        response = await client.get("/api/v1/app-updates/latest?platform=ios", headers=bearer(settings, "member-1"))
+    assert response.status_code == 200
+    assert response.json() == {"platform": "ios", **UNCONFIGURED_RESPONSE}
+
+
+@pytest.mark.asyncio
+async def test_ios_publication_does_not_configure_android(context):
+    from app.modules.settings.service import SettingService
+
+    app, factory, settings = context
+    SettingService(factory).set_many(IOS_SETTINGS, actor_id="admin-1")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for suffix in ("", "?platform=android"):
+            response = await client.get(f"/api/v1/app-updates/latest{suffix}", headers=bearer(settings, "member-1"))
+            assert response.status_code == 200
+            assert response.json() == UNCONFIGURED_RESPONSE
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["web", "IOS", ""])
+async def test_latest_rejects_unknown_platform(context, platform):
+    app, _factory, settings = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/app-updates/latest", params={"platform": platform}, headers=bearer(settings, "member-1"))
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("platform", ["android", "ios"])
+async def test_platform_latest_requires_authentication(context, platform):
+    app, _factory, _settings = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/app-updates/latest", params={"platform": platform})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"

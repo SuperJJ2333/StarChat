@@ -3846,7 +3846,22 @@
     "/api/v1/app-updates/latest": {
       "get": {
         "operationId": "latest_api_v1_app_updates_latest_get",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "required": false,
+            "schema": {
+              "default": "android",
+              "enum": [
+                "android",
+                "ios"
+              ],
+              "title": "Platform",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
