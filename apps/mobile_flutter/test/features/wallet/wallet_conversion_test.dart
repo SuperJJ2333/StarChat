@@ -149,8 +149,9 @@ void main() {
               200);
         }
         conversions++;
-        if (switchAtRefresh && conversions == 1)
+        if (switchAtRefresh && conversions == 1) {
           return http.Response('{}', 401);
+        }
         return http.Response(
             '{"id":"c1","status":"COMPLETED","target_amount":"2.00"}', 201);
       });

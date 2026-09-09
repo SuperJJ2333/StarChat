@@ -1022,6 +1022,8 @@ final class BusinessApiClient
       );
   Future<Map<String, dynamic>> personalMoments(String userId) =>
       getJson('/moments/users/$userId');
+  Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
+      getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
   Future<Map<String, dynamic>> momentNotifications() =>
       getJson('/moments/notifications');
   Future<Map<String, dynamic>> momentUnreadCount() =>
@@ -1041,11 +1043,16 @@ final class BusinessApiClient
     required String historyRange,
     required bool personalized,
     String? coverUrl,
+    bool? profileEntryEnabled,
+    List<String>? excludedUserIds,
   }) =>
       putJson('/moments/preferences', {
         'history_range': historyRange,
         'personalized_recommendations': personalized,
         if (coverUrl != null) 'cover_url': coverUrl,
+        if (profileEntryEnabled != null)
+          'profile_entry_enabled': profileEntryEnabled,
+        if (excludedUserIds != null) 'excluded_user_ids': excludedUserIds,
       });
   Future<Map<String, dynamic>> requestWithdrawal({
     required String amount,

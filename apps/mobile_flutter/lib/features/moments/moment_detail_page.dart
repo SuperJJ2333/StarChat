@@ -28,6 +28,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
   late MomentItem item = widget.initialItem;
   int revision = 0;
   bool liking = false;
+  bool unavailable = false;
   String? error;
   @override
   void initState() {
@@ -41,7 +42,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
   }
 
   void update(MomentItem value) {
-    if (!mounted) return;
+    if (!mounted || unavailable) return;
     setState(() {
       item = value;
       revision++;
@@ -56,14 +57,24 @@ class _MomentDetailState extends State<MomentDetailPage> {
       if (mounted && generation == revision) {
         update(MomentItem.fromJson(response));
       }
-    } catch (_) {/* Keep the already visible snapshot on transient failure. */}
+    } on BusinessApiException catch (failure) {
+      if (mounted && [401, 403, 404].contains(failure.statusCode)) {
+        setState(() {
+          unavailable = true;
+          error = '动态已不可见';
+          revision++;
+        });
+      }
+    } catch (_) {/* Preserve the snapshot only on transient network failure. */}
   }
 
   Future<void> comment([MomentCommentView? parent]) async {
+    if (unavailable) return;
     final result = await showMomentCommentComposer(context,
         api: widget.api, momentId: item.id, parent: parent);
     if (result != null && mounted) {
-      update(item.copyWith(comments: mergeMomentComments(item.comments, result)));
+      update(
+          item.copyWith(comments: mergeMomentComments(item.comments, result)));
     }
   }
 
@@ -98,7 +109,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
   }
 
   Future<void> like() async {
-    if (liking) return;
+    if (liking || unavailable) return;
     liking = true;
     final before = item;
     update(item.copyWith(
@@ -125,12 +136,13 @@ class _MomentDetailState extends State<MomentDetailPage> {
         navigationBar: const CupertinoNavigationBar(middle: Text('详情')),
         child: SafeArea(
             child: ListView(children: [
-          WeChatMomentTile(
-              item: item,
-              cacheNamespace: widget.cacheNamespace,
-              onLike: liking ? null : like,
-              onComment: comment,
-              onCommentTap: tapComment),
+          if (!unavailable)
+            WeChatMomentTile(
+                item: item,
+                cacheNamespace: widget.cacheNamespace,
+                onLike: liking ? null : like,
+                onComment: comment,
+                onCommentTap: tapComment),
           if (error != null)
             Padding(
                 padding: const EdgeInsets.all(12),

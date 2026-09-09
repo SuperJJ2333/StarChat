@@ -560,7 +560,10 @@
           "default",
           "loading",
           "error",
-          "empty"
+          "empty",
+          "cached-refresh",
+          "author-profile",
+          "privacy-settings"
         ]
       },
       "html": {
@@ -585,7 +588,11 @@
         "props": [
           "item",
           "onLike",
-          "onComment"
+          "onComment",
+          "onOpen",
+          "onAuthorTap",
+          "onCommentTap",
+          "onDelete"
         ],
         "variants": {},
         "states": [
@@ -593,7 +600,9 @@
           "liked",
           "loading",
           "error",
-          "commenting"
+          "commenting",
+          "copy-menu",
+          "author-delete-menu"
         ]
       },
       "html": {

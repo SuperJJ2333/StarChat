@@ -5,8 +5,17 @@
     "status": "implementation-tested; remote-design-sync-pending",
     "remoteNodesModified": false,
     "reason": "No callable Figma editor in this session; browser access timed out. Existing phase/step below describe the prior verified export only.",
-    "affectedPages": ["18:7", "19:3", "19:4"],
-    "changes": ["cached-first feed and contacts", "shared conversation notification section", "bounded bubble-anchored action grid and quote alignment", "Moments detail and image/emoji comments"]
+    "affectedPages": [
+      "18:7",
+      "19:3",
+      "19:4"
+    ],
+    "changes": [
+      "cached-first feed and contacts",
+      "shared conversation notification section",
+      "bounded bubble-anchored action grid and quote alignment",
+      "Moments detail and image/emoji comments"
+    ]
   },
   "galleryRefreshRevision": {
     "date": "2026-09-07",
@@ -651,6 +660,24 @@
       "19:3",
       "19:4",
       "19:5"
+    ]
+  },
+  "momentsPrivacyRevision": {
+    "date": "2026-09-09",
+    "plan": "docs/superpowers/plans/2026-09-09-moments-privacy-redmi.md",
+    "status": "local implementation; remote design sync pending",
+    "remoteNodesModified": false,
+    "affectedPages": [
+      "19:3",
+      "19:4",
+      "19:5"
+    ],
+    "reason": "Figma editing tools unavailable; continuation of previously deferred sync. No new remote design evidence claimed.",
+    "changes": [
+      "long-press copy/author delete",
+      "avatar profile navigation",
+      "authorized photo/text preview and personal timeline",
+      "author visibility range/exclusions/entry gate"
     ]
   }
 }

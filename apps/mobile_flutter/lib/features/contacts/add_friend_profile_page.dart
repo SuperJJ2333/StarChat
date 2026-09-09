@@ -5,6 +5,8 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'request_friend_page.dart';
+import '../../core/business_api_client.dart';
+import '../moments/moment_profile_preview.dart';
 
 /// 用户资料页（BUG 2 流程：搜索 → 用户资料 → 添加到通讯录 → 申请页）。
 ///
@@ -35,6 +37,7 @@ final class AddFriendProfilePage extends StatelessWidget {
       relationshipState == 'NONE' || relationshipState == 'REUSABLE';
 
   String get _stateLabel => switch (relationshipState) {
+        'SELF' => '我',
         'FRIEND' => '已是好友',
         'OUTGOING_PENDING' => '申请已发送，等待对方验证',
         _ => '',
@@ -64,7 +67,7 @@ final class AddFriendProfilePage extends StatelessWidget {
           : WeChatColors.lightPageBackground,
       navigationBar: const CupertinoNavigationBar(middle: Text('用户资料')),
       child: SafeArea(
-        child: Column(
+        child: ListView(
           children: [
             const SizedBox(height: 48),
             UserAvatar(
@@ -94,6 +97,11 @@ final class AddFriendProfilePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 36),
+            if (api is BusinessApiClient)
+              MomentProfilePreview(
+                  api: api as BusinessApiClient,
+                  userId: userId,
+                  displayName: nickname),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: SizedBox(

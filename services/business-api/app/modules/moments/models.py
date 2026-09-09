@@ -14,6 +14,8 @@ class MomentComment(Base):
     id:Mapped[str]=mapped_column(String(36),primary_key=True);moment_id:Mapped[str]=mapped_column(ForeignKey('moments.id'),index=True);user_id:Mapped[str]=mapped_column(ForeignKey('users.id'));parent_id:Mapped[str|None]=mapped_column(String(36));text:Mapped[str]=mapped_column(Text);idempotency_key:Mapped[str]=mapped_column(String(128));created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True));deleted_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
 class MomentsPreference(Base):
     __tablename__='moments_preferences'
+    profile_entry_enabled:Mapped[bool]=mapped_column(default=True,server_default='true')
+    excluded_user_ids:Mapped[list]=mapped_column(JSON,default=list,server_default='[]')
     user_id:Mapped[str]=mapped_column(ForeignKey('users.id'),primary_key=True);history_range:Mapped[str]=mapped_column(String(20),default='ALL');personalized_recommendations:Mapped[bool]=mapped_column(default=True);cover_url:Mapped[str|None]=mapped_column(String(2048));cover_object_key:Mapped[str|None]=mapped_column(String(512));updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
 class MomentReport(Base):
     __tablename__='moment_reports';__table_args__=(UniqueConstraint('reporter_id','idempotency_key',name='uq_moment_report_idempotency'),)

@@ -6,6 +6,7 @@ import '../foundation/wechat_tokens.dart';
 import 'wechat_moment_image_grid.dart';
 import 'moment_image_viewer_page.dart';
 import 'moment_image_provider.dart';
+import 'moment_action_menu.dart';
 
 final class WeChatMomentTile extends StatelessWidget {
   const WeChatMomentTile({
@@ -41,6 +42,12 @@ final class WeChatMomentTile extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: isAd ? onAdTap : onOpen,
+      onLongPressStart: isAd
+          ? null
+          : (details) => showMomentActionMenu(context,
+              position: details.globalPosition,
+              text: item.text,
+              onDelete: onDelete),
       child: Container(
         color: WeChatColors.elevatedSurface(context),
         padding: const EdgeInsets.all(12),

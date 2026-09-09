@@ -37,9 +37,22 @@ class Comment(Strict):
 
 
 class Preferences(Strict):
-    history_range: Literal["ALL", "SIX_MONTHS", "ONE_MONTH", "THREE_DAYS"]
+    history_range: Literal["ALL", "SIX_MONTHS", "ONE_MONTH", "THREE_DAYS"] = Field(description="Author's visibility range for other users, measured in UTC: unlimited, 183, 30, or 3 days. Self access is unaffected.")
     personalized_recommendations: bool
     cover_url: str | None = None
+    profile_entry_enabled: bool = Field(default=True, strict=True)
+    excluded_user_ids: list[Annotated[str, Field(min_length=1, max_length=36, strict=True)]] = Field(default_factory=list, max_length=1000)
+
+
+class MomentsPreferencesResponse(Preferences):
+    profile_entry_enabled: bool
+    excluded_user_ids: list[str]
+    cover_cache_key: str | None
+
+
+class MomentsProfilePreview(Strict):
+    entry_visible: bool
+    items: list[dict] = Field(max_length=4, description="Up to four authorized published Moment DTOs, newest first. Hidden entries never include content.")
 
 
 class Report(Strict):
@@ -124,13 +137,27 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     def personal_timeline(user_id: str, user=Depends(actor)):
         return {'items': service.personal_timeline(user, user_id)}
 
-    @router.get("/preferences")
+    @router.get('/users/{user_id}/preview', response_model=MomentsProfilePreview)
+    def profile_preview(user_id: str, user=Depends(actor)):
+        return service.profile_preview(user, user_id)
+
+    @router.get("/preferences", response_model=MomentsPreferencesResponse)
     def preferences(user=Depends(actor)):
         return service.preferences(user)
 
-    @router.put("/preferences")
+    @router.put("/preferences", response_model=MomentsPreferencesResponse)
     def update_preferences(body: Preferences, user=Depends(actor)):
-        return service.preferences(user, body.model_dump())
+        return service.preferences(user, body.model_dump(exclude_unset=True))
+
+    @router.get("/media/content/{token}", response_class=Response,
+                responses={200: {"description": "Authorized image bytes", "content": {
+                    mime: {"schema": {"type": "string", "format": "binary"}}
+                    for mime in ("image/jpeg", "image/png", "image/webp")}}},
+                description="Read a viewer-bound Moment image capability, rechecking current visibility on every request. Capabilities expire after 300 seconds.")
+    def read_media(token: str):
+        from app.modules.moments.media_access import read_content
+        content, mime = read_content(factory, avatar_storage, token)
+        return Response(content=content, media_type=mime, headers={"Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"})
 
     @router.post("/media/uploads", status_code=201)
     def begin_upload(body: BeginUpload, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
@@ -140,7 +167,8 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     @router.post("/media/uploads/{upload_id}/complete")
     def complete_upload(upload_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
         row = media.complete(user, upload_id)
-        media_url = avatar_storage.signed_read_url(row.object_key, 300) if row.status == "COMPLETED" and avatar_storage else f"media://{row.object_key}"
+        from app.modules.moments.media_access import upload_url
+        media_url = upload_url(avatar_storage, row) if row.status == "COMPLETED" else f"media://{row.object_key}"
         return {"id": row.id, "status": row.status, "media_url": media_url}
 
     @router.put("/media/uploads/{upload_id}/content", status_code=204)

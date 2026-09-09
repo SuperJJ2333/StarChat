@@ -193,7 +193,7 @@ def test_moments_respects_directional_contact_permissions(context, owner, permis
     with factory() as session:
         policy = VisibilityPolicy(session)
         for visibility in ("PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE"):
-            moment = SimpleNamespace(author_id="u-admin", visibility=visibility, include_user_ids=["u-bob"], exclude_user_ids=[])
+            moment = SimpleNamespace(author_id="u-admin", created_at=datetime.now(timezone.utc), visibility=visibility, include_user_ids=["u-bob"], exclude_user_ids=[])
             assert policy.can_view("u-bob", moment) is expected
             assert policy.can_view("u-admin", moment) is True
 

@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0057_merge_direct_room (head)"
+    assert _alembic("heads").strip() == "0058_moments_privacy (head)"
 
 
 def test_admin_session_migration_only_expands_identity() -> None:

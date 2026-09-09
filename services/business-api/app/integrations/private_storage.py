@@ -70,6 +70,15 @@ class LocalPrivateObjectStorage:
         object_key = self._fernet.decrypt(token.encode("ascii")).decode("utf-8")
         return self.signed_read_url(object_key, expires_in)
 
+    def decode_key(self, token: str, *, ttl: int | None = None) -> str:
+        try:
+            return self._fernet.decrypt(unquote(token).encode("ascii"), ttl=ttl).decode("utf-8")
+        except (InvalidToken, UnicodeError, ValueError):
+            self._invalid_signed_url()
+
+    def moment_read_url(self, payload: str) -> str:
+        return f"{self._public_base_url}/api/v1/moments/media/content/{quote(self.sign_key(payload), safe='')}"
+
     def read_signed(self, token: str, expires_in: int) -> tuple[bytes, str]:
         if expires_in not in self.allowed_read_ttls:
             self._invalid_signed_url()
@@ -79,6 +88,8 @@ class LocalPrivateObjectStorage:
                 ttl=expires_in,
             ).decode("utf-8")
         except (InvalidToken, UnicodeError):
+            self._invalid_signed_url()
+        if object_key.startswith("moments/") and not object_key.startswith("moments/covers/"):
             self._invalid_signed_url()
         mime_type = {
             ".jpg": "image/jpeg",

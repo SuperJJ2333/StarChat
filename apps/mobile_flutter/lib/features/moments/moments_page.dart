@@ -1,3 +1,8 @@
+export 'moments_settings_page.dart';
+import 'moments_settings_page.dart';
+import 'moments_privacy_changes.dart';
+import '../contacts/contacts_page.dart';
+import '../contacts/add_friend_profile_page.dart';
 import 'dart:typed_data';
 
 import 'dart:async';
@@ -62,6 +67,8 @@ final class _MomentsPageState extends State<MomentsPage> {
   final _deletedIds = <String>{};
   late Future<Map<String, dynamic>> _feed;
   bool _loadingMore = false;
+  int _feedGeneration = 0;
+  int _privacyRevision = 0;
 
   Future<void> _loadMorePosts() async {
     if (_loadingMore) return;
@@ -99,12 +106,14 @@ final class _MomentsPageState extends State<MomentsPage> {
   @override
   void initState() {
     super.initState();
-    _cacheGeneration = CacheRepository.momentsGeneration(_identityCache.accountKey ?? 'anonymous');
+    _cacheGeneration = CacheRepository.momentsGeneration(
+        _identityCache.accountKey ?? 'anonymous');
     _coverUrl = CacheRepository.peekMomentCover(_identityCache.accountKey);
     _coverCacheKey =
         CacheRepository.peekMomentCoverKey(_identityCache.accountKey);
     _feedScroll.addListener(_reportVisiblePosts);
     widget.unreadChanges?.addListener(_unreadChanged);
+    momentsPrivacyChanges.addListener(_privacyChanged);
     _identityCache.addListener(_identityChanged);
     _loadIdentity();
     _feed = _loadFeedWithCache();
@@ -145,8 +154,13 @@ final class _MomentsPageState extends State<MomentsPage> {
             onError: (_, __) => failed = true);
         if (failed) return;
       }
-      if (!mounted || await _accountCacheKey() != accountKey || CacheRepository.momentsGeneration(accountKey) != _cacheGeneration) return;
-      await repository.saveMomentCover(accountKey, url, cacheKey: cacheKey, expectedGeneration: _cacheGeneration);
+      if (!mounted ||
+          await _accountCacheKey() != accountKey ||
+          CacheRepository.momentsGeneration(accountKey) != _cacheGeneration) {
+        return;
+      }
+      await repository.saveMomentCover(accountKey, url,
+          cacheKey: cacheKey, expectedGeneration: _cacheGeneration);
       if (mounted) {
         setState(() {
           _coverUrl = url;
@@ -160,6 +174,16 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   void _identityChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _privacyChanged() {
+    if (!mounted) return;
+    setState(() {
+      _privacyRevision++;
+      _itemOverrides.clear();
+      _interactionError = null;
+      _feed = _loadFeedWithCache(forceRefresh: true);
+    });
   }
 
   void _reloadFeed() {
@@ -176,22 +200,32 @@ final class _MomentsPageState extends State<MomentsPage> {
   ///
   /// U04：缓存按账号命名空间——A 的快照绝不能作为 B 的首绘；请求期间
   /// 账号切换（页面重建）后，迟到的刷新只写入发起时的账号键。
-  Future<Map<String, dynamic>> _loadFeedWithCache() async {
+  Future<Map<String, dynamic>> _loadFeedWithCache(
+      {bool forceRefresh = false}) async {
+    final generation = ++_feedGeneration;
     final repository = await CacheRepository.instance();
     final accountKey = await _accountCacheKey();
     final moments = repository.momentsFor(accountKey);
     Map<String, dynamic>? cached;
     try {
-      cached = await moments.load();
+      if (forceRefresh) {
+        await moments.clear();
+        _cacheGeneration = CacheRepository.momentsGeneration(accountKey);
+      } else {
+        cached = await moments.load();
+      }
     } catch (_) {
       cached = null; // 缓存不可用（如测试环境无插件通道）绝不阻塞加载
     }
     if (cached != null) {
-      unawaited(_refreshFeedInBackground(moments, accountKey));
+      unawaited(_refreshFeedInBackground(moments, accountKey, generation));
       return cached;
     }
     final fresh = await widget.api.momentsFeed(mode: 'latest');
-    unawaited(_saveFeedCache(moments, fresh, accountKey));
+    if (generation == _feedGeneration) {
+      unawaited(
+          _saveFeedCache(moments, fresh, accountKey, generation: generation));
+    }
     return fresh;
   }
 
@@ -209,11 +243,16 @@ final class _MomentsPageState extends State<MomentsPage> {
     return 'anonymous';
   }
 
-  Future<void> _saveFeedCache(MomentsCache moments, Map<String, dynamic> feed,
-      String accountKey) async {
+  Future<void> _saveFeedCache(
+      MomentsCache moments, Map<String, dynamic> feed, String accountKey,
+      {int? generation}) async {
     try {
       // 迟到保护：写回前确认页面仍属于同一账号。
-      if (!mounted || await _accountCacheKey() != accountKey) return;
+      if (!mounted ||
+          await _accountCacheKey() != accountKey ||
+          (generation != null && generation != _feedGeneration)) {
+        return;
+      }
       await moments.save(feed, expectedGeneration: _cacheGeneration);
     } catch (_) {
       // 落盘失败不影响本次展示。
@@ -221,11 +260,16 @@ final class _MomentsPageState extends State<MomentsPage> {
   }
 
   Future<void> _refreshFeedInBackground(
-      MomentsCache moments, String accountKey) async {
+      MomentsCache moments, String accountKey, int generation) async {
     try {
       final fresh = await widget.api.momentsFeed(mode: 'latest');
-      await _saveFeedCache(moments, fresh, accountKey);
-      if (await _accountCacheKey() != accountKey || CacheRepository.momentsGeneration(accountKey) != _cacheGeneration) return;
+      if (generation != _feedGeneration) return;
+      await _saveFeedCache(moments, fresh, accountKey, generation: generation);
+      if (generation != _feedGeneration ||
+          await _accountCacheKey() != accountKey ||
+          CacheRepository.momentsGeneration(accountKey) != _cacheGeneration) {
+        return;
+      }
       if (mounted) setState(() => _feed = Future.value(fresh));
     } catch (_) {
       // 后台刷新失败保持缓存首绘内容，不打断浏览。
@@ -234,6 +278,7 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   @override
   void dispose() {
+    momentsPrivacyChanges.removeListener(_privacyChanged);
     _feedScroll.dispose();
     widget.unreadChanges?.removeListener(_unreadChanged);
     _identityCache.removeListener(_identityChanged);
@@ -346,8 +391,8 @@ final class _MomentsPageState extends State<MomentsPage> {
     if (comment == null || !mounted) return;
     setState(() {
       final current = _itemOverrides[item.id] ?? item;
-      _itemOverrides[item.id] =
-          current.copyWith(comments: mergeMomentComments(current.comments, comment));
+      _itemOverrides[item.id] = current.copyWith(
+          comments: mergeMomentComments(current.comments, comment));
     });
   }
 
@@ -368,6 +413,42 @@ final class _MomentsPageState extends State<MomentsPage> {
                     }
                   },
                 )));
+    if (mounted) _reloadFeed();
+  }
+
+  bool _openingAuthor = false;
+  Future<void> _openAuthor(MomentAuthor author) async {
+    if (_openingAuthor) return;
+    _openingAuthor = true;
+    try {
+      final own = author.userId == await widget.api.currentUserId();
+      var contact = _identityCache.contacts
+          .where((c) => c.userId == author.userId)
+          .firstOrNull;
+      if (contact == null && !own) {
+        final contacts = await widget.api.listContacts();
+        contact = contacts.where((c) => c.userId == author.userId).firstOrNull;
+      }
+      if (!mounted) return;
+      await Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => contact != null
+                  ? ContactProfilePage(
+                      api: widget.api, initialContact: contact.toDetails())
+                  : AddFriendProfilePage(
+                      api: widget.api,
+                      userId: author.userId,
+                      username: author.username,
+                      nickname: author.displayName,
+                      avatarUrl: author.avatarUrl,
+                      relationshipState: own ? 'SELF' : 'NONE')));
+      if (mounted) _reloadFeed();
+    } catch (_) {
+      if (mounted) setState(() => _interactionError = '资料加载失败，请重试');
+    } finally {
+      _openingAuthor = false;
+    }
   }
 
   @override
@@ -401,9 +482,11 @@ final class _MomentsPageState extends State<MomentsPage> {
             ])),
         child: SafeArea(
             child: FutureBuilder<Map<String, dynamic>>(
+                key: ValueKey(_privacyRevision),
                 future: _feed,
-                initialData:
-                    CacheRepository.peekMoments(_identityCache.accountKey),
+                initialData: _privacyRevision == 0
+                    ? CacheRepository.peekMoments(_identityCache.accountKey)
+                    : null,
                 builder: (_, snapshot) {
                   final items = (snapshot.data?['items'] as List?) ?? const [];
                   WidgetsBinding.instance
@@ -451,6 +534,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                           item: item,
                           cacheNamespace: _identityCache.accountKey ?? '',
                           onOpen: () => _openDetail(item),
+                          onAuthorTap: () => _openAuthor(item.author),
                           onCommentTap: (comment) => _openDetail(item, comment),
                           onLike: _pendingLikeIds.contains(item.id)
                               ? null
@@ -570,8 +654,9 @@ final class _MomentsPageState extends State<MomentsPage> {
     final coverUrl = saved['cover_url']?.toString();
     final coverKey = saved['cover_cache_key']?.toString();
     final accountKey = await _accountCacheKey();
-    await (await CacheRepository.instance())
-        .saveMomentCover(accountKey, coverUrl, cacheKey: coverKey, expectedGeneration: _cacheGeneration);
+    await (await CacheRepository.instance()).saveMomentCover(
+        accountKey, coverUrl,
+        cacheKey: coverKey, expectedGeneration: _cacheGeneration);
     if (mounted) {
       setState(() {
         _coverUrl = coverUrl;
@@ -580,74 +665,4 @@ final class _MomentsPageState extends State<MomentsPage> {
     }
     return coverUrl;
   }
-}
-
-final class MomentsSettingsPage extends StatefulWidget {
-  const MomentsSettingsPage({super.key, required this.api});
-  final BusinessApiClient api;
-  @override
-  State<MomentsSettingsPage> createState() => _MomentsSettingsState();
-}
-
-final class _MomentsSettingsState extends State<MomentsSettingsPage> {
-  String range = 'ALL';
-  bool personalized = true;
-  @override
-  void initState() {
-    super.initState();
-    widget.api.momentsPreferences().then((r) {
-      if (mounted) {
-        setState(() {
-          range = r['history_range'];
-          personalized = r['personalized_recommendations'];
-        });
-      }
-    });
-  }
-
-  Future<void> save() async {
-    await widget.api.updateMomentsPreferences(
-        historyRange: range, personalized: personalized);
-  }
-
-  @override
-  Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-      navigationBar: CupertinoNavigationBar(
-          backgroundColor: WeChatColors.navigationBackground(context),
-          automaticBackgroundVisibility: false,
-          enableBackgroundFilterBlur: false,
-          middle: Text('朋友圈权限')),
-      child: SafeArea(
-          child: ListView(children: [
-        CupertinoListSection.insetGrouped(
-            header: const Text('允许朋友查看朋友圈的范围'),
-            children: [
-              for (final item in const {
-                'ALL': '全部',
-                'SIX_MONTHS': '最近半年',
-                'ONE_MONTH': '最近一个月',
-                'THREE_DAYS': '最近三天'
-              }.entries)
-                CupertinoListTile(
-                    title: Text(item.value),
-                    trailing: range == item.key
-                        ? const Icon(CupertinoIcons.check_mark,
-                            color: Color(0xff07c160))
-                        : null,
-                    onTap: () {
-                      setState(() => range = item.key);
-                      save();
-                    })
-            ]),
-        CupertinoListSection.insetGrouped(children: [
-          CupertinoListTile(
-              title: const Text('个性化推荐'),
-              trailing: CupertinoSwitch(
-                  value: personalized,
-                  onChanged: (v) {
-                    setState(() => personalized = v);
-                    save();
-                  }))
-        ])
-      ])));
 }

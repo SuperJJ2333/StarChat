@@ -17,7 +17,7 @@ if BUSINESS_API.is_dir():
 from app.core.config import Settings  # noqa: E402
 from app.integrations.custody.factory import create_custody_provider  # noqa: E402
 
-EXPECTED_HEAD = '0057_merge_direct_room'
+EXPECTED_HEAD = '0058_moments_privacy'
 # Explicit release contract: do not derive this from the database being checked.
 REQUIRED_COLUMNS = {
     'direct_room_reservations': 'id user_low_id user_high_id owner_id attempt_id created_at',

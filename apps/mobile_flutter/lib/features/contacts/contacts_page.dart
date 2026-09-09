@@ -17,6 +17,7 @@ import 'contact_tag_pages.dart';
 import 'add_friend_profile_page.dart';
 import 'friend_request_review_page.dart';
 import 'contact_profile_sections.dart';
+import '../moments/moment_profile_preview.dart';
 import '../search/global_search_page.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
 import '../matrix/profile_repository.dart';
@@ -480,8 +481,13 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
           child: ListView(
             children: [
               FriendIdentityCard(contact: contact),
-              if (contact.momentsPermission == 'HAS_VISIBLE_MOMENTS')
-                const FriendMomentsPreview(),
+              if (widget.api is BusinessApiClient)
+                MomentProfilePreview(
+                    api: widget.api as BusinessApiClient,
+                    userId: contact.userId,
+                    displayName: contact.primaryDisplayName,
+                    key: ValueKey(
+                        'profile-moments-${contact.userId}-${contact.momentsPermission}')),
               FriendActionColumn(
                 onMessage: widget.onMessage == null
                     ? null

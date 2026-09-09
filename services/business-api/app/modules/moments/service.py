@@ -25,6 +25,7 @@ from app.modules.moments.models import (
 from app.modules.moments.visibility import VisibilityPolicy
 from app.modules.moments.recommendation import recommendation_score
 from app.modules.moments.media import MomentMediaUpload
+from app.modules.moments.media_access import owned_key, signed_url
 
 
 class MomentsService:
@@ -84,10 +85,11 @@ class MomentsService:
             exclude_ids, exclude_tags = self._resolve_audience(
                 session, actor, data.get('exclude_user_ids', []), data.get('exclude_tag_ids', []),
             )
+            image_urls = ["media://" + owned_key(session, self.avatar_storage, url, actor) for url in data.get("image_urls", [])]
             now = datetime.now(timezone.utc)
             row = Moment(
                 id=str(uuid4()), author_id=actor, text=data.get("text", ""), visibility=data["visibility"],
-                image_urls=data.get("image_urls", []), include_user_ids=include_ids,
+                image_urls=image_urls, include_user_ids=include_ids,
                 exclude_user_ids=exclude_ids, include_tag_ids=include_tags, exclude_tag_ids=exclude_tags, location=data.get("location"),
                 # 带图与纯文字一致直接发布：原 PENDING_REVIEW 队列没有任何
                 # 审核放行流程，导致带图动态永远不出现在 feed（产品缺陷）。
@@ -117,12 +119,6 @@ class MomentsService:
         marker = self._decode_cursor(cursor)
         with self.factory() as session:
             preference = session.get(MomentsPreference, actor)
-            cutoff = None
-            if preference and preference.history_range != "ALL":
-                cutoff = datetime.now(timezone.utc) - {
-                    "THREE_DAYS": timedelta(days=3), "ONE_MONTH": timedelta(days=30),
-                    "SIX_MONTHS": timedelta(days=183),
-                }[preference.history_range]
             statement = select(Moment).where(Moment.deleted_at.is_(None), Moment.status == "PUBLISHED", Moment.author_id.in_(self._friend_ids(session, actor) | {actor}))
             if marker and mode == 'latest':
                 from sqlalchemy import and_, or_
@@ -136,7 +132,6 @@ class MomentsService:
             visible_rows = []
             for moment in rows:
                 if (policy.can_view(actor, moment)
-                    and (cutoff is None or (moment.created_at if moment.created_at.tzinfo else moment.created_at.replace(tzinfo=timezone.utc)) >= cutoff)
                     and (not q or q.casefold() in f"{moment.text} {moment.location or ''}".casefold())):
                     visible_rows.append(moment)
                     if mode == 'latest' and len(visible_rows) > limit:
@@ -159,13 +154,9 @@ class MomentsService:
             return {'items': [], 'next_cursor': None, 'server_time': now.isoformat()}
         marker = self._decode_cursor(cursor)
         with self.factory() as session:
-            preference = session.get(MomentsPreference, actor)
-            cutoff = since
-            if preference and preference.history_range != 'ALL':
-                cutoff = max(cutoff, now - {'THREE_DAYS': timedelta(days=3), 'ONE_MONTH': timedelta(days=30), 'SIX_MONTHS': timedelta(days=183)}[preference.history_range])
             statement = select(Moment).where(
                 Moment.deleted_at.is_(None), Moment.status == 'PUBLISHED',
-                Moment.author_id != actor, Moment.created_at >= cutoff,
+                Moment.author_id != actor, Moment.created_at >= since,
                 Moment.author_id.in_(self._friend_ids(session, actor)),
             ).order_by(Moment.created_at.desc(), Moment.id.desc())
             if marker:
@@ -227,6 +218,9 @@ class MomentsService:
 
     def unlike(self, actor, moment_id, key):
         with self.factory.begin() as session:
+            moment = session.get(Moment, moment_id)
+            if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
+                raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             row = session.scalar(select(MomentLike).where(MomentLike.moment_id == moment_id, MomentLike.user_id == actor))
             if row:
                 session.delete(row)
@@ -273,6 +267,8 @@ class MomentsService:
                 raise AppError(code="COMMENT_NOT_FOUND", message="评论不存在", status_code=404)
             if actor not in (moment.author_id, comment.user_id):
                 raise AppError(code="COMMENT_DELETE_FORBIDDEN", message="无权删除该评论", status_code=403)
+            if moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
+                raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             comment.deleted_at = datetime.now(timezone.utc)
             for notification in session.scalars(select(MomentNotification).where(MomentNotification.comment_id == comment_id, MomentNotification.invalidated_at.is_(None))).all():
                 notification.invalidated_at = comment.deleted_at
@@ -281,6 +277,8 @@ class MomentsService:
     def notifications(self, actor):
         with self.factory() as session:
             rows = session.scalars(select(MomentNotification).where(MomentNotification.recipient_id == actor, MomentNotification.invalidated_at.is_(None)).order_by(MomentNotification.created_at.desc(), MomentNotification.id.desc())).all()
+            policy = VisibilityPolicy(session)
+            rows = [row for row in rows if (moment := session.get(Moment, row.moment_id)) and not moment.deleted_at and moment.status == 'PUBLISHED' and policy.can_view(actor, moment)]
             return [{'id': row.id, 'moment_id': row.moment_id, 'kind': row.kind, 'actor': self._user_projection(session, row.actor_id, actor), 'created_at': row.created_at, 'read_at': row.read_at} for row in rows]
 
     def notification_unread_count(self, actor):
@@ -324,15 +322,41 @@ class MomentsService:
             policy = VisibilityPolicy(session)
             return [self.dto(session, row, actor) for row in rows if (row.status == 'PUBLISHED' and policy.can_view(actor, row)) or actor == user_id]
 
+    def profile_preview(self, actor, user_id):
+        with self.factory() as session:
+            policy = VisibilityPolicy(session)
+            if session.get(User, user_id) is None or not policy.can_view_author(actor, user_id):
+                return {'entry_visible': False, 'items': []}
+            filters = [Moment.author_id == user_id, Moment.deleted_at.is_(None), Moment.status == 'PUBLISHED']
+            preference = session.get(MomentsPreference, user_id)
+            days = {'THREE_DAYS': 3, 'ONE_MONTH': 30, 'SIX_MONTHS': 183}.get(preference.history_range if preference else 'ALL')
+            if actor != user_id and days is not None:
+                filters.append(Moment.created_at >= policy.now - timedelta(days=days))
+            rows = session.scalars(select(Moment).where(*filters).order_by(Moment.created_at.desc(), Moment.id.desc()).execution_options(yield_per=100))
+            items = []
+            for row in rows:
+                if policy.can_view(actor, row):
+                    items.append(self.dto(session, row, actor))
+                    if len(items) == 4:
+                        break
+            return {'entry_visible': True, 'items': items}
+
     def preferences(self, actor, data=None):
         with self.factory.begin() as session:
             row = session.get(MomentsPreference, actor)
             if row is None:
-                row = MomentsPreference(user_id=actor, history_range="ALL", personalized_recommendations=True, updated_at=datetime.now(timezone.utc))
+                row = MomentsPreference(user_id=actor, history_range="ALL", personalized_recommendations=True, profile_entry_enabled=True, excluded_user_ids=[], updated_at=datetime.now(timezone.utc))
                 session.add(row)
             if data:
                 row.history_range = data["history_range"]
                 row.personalized_recommendations = data["personalized_recommendations"]
+                if 'profile_entry_enabled' in data:
+                    row.profile_entry_enabled = data['profile_entry_enabled']
+                if 'excluded_user_ids' in data:
+                    excluded = set(data['excluded_user_ids'])
+                    if not excluded.issubset(self._friend_ids(session, actor) | set(row.excluded_user_ids or [])):
+                        raise AppError(code='MOMENT_AUDIENCE_NOT_FRIEND', message='只能选择好友', status_code=422)
+                    row.excluded_user_ids = list(dict.fromkeys(data['excluded_user_ids']))
                 if data.get('cover_url') is not None:
                     row.cover_url = data['cover_url']
                 row.updated_at = datetime.now(timezone.utc)
@@ -341,7 +365,7 @@ class MomentsService:
                 cover_url = self.avatar_storage.signed_read_url(
                     row.cover_object_key, self.MOMENT_MEDIA_URL_TTL
                 )
-            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "cover_url": cover_url, "cover_cache_key": self._media_cache_key(row.cover_object_key or row.cover_url)}
+            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "profile_entry_enabled": row.profile_entry_enabled, "excluded_user_ids": row.excluded_user_ids, "cover_url": cover_url, "cover_cache_key": self._media_cache_key(row.cover_object_key or row.cover_url)}
 
     def set_cover(self, actor, upload_id, key):
         with self.factory.begin() as session:
@@ -394,7 +418,8 @@ class MomentsService:
 
     def report(self, actor, moment_id, reason, key):
         with self.factory.begin() as session:
-            if session.get(Moment, moment_id) is None:
+            moment = session.get(Moment, moment_id)
+            if not moment or moment.deleted_at or not VisibilityPolicy(session).can_view(actor, moment):
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             old = session.scalar(select(MomentReport).where(MomentReport.reporter_id == actor, MomentReport.idempotency_key == key))
             if old:
@@ -414,23 +439,12 @@ class MomentsService:
         # or media bytes. Clients must still namespace caches by account.
         return hashlib.sha256(reference.encode('utf-8')).hexdigest() if reference else None
 
-    def _resign_media_url(self, url: str) -> str:
-        # 对持久化的媒体链接重新签发长期签名。历史实现把上传完成时刻
-        # 签发的短时（300s）签名 URL 原样入库，feed 返回的必然是过期
-        # 链接，带图动态的图片因此永远无法显示。
-        marker = "/api/v1/profile/avatar/content/"
-        if not url or marker not in url:
-            return url
-        token = url.split(marker, 1)[1].split("?", 1)[0]
+    def _moment_media_url(self, session, moment, reference, viewer):
         try:
-            from urllib.parse import unquote
-
-            resign = getattr(self.avatar_storage, "resign_read_url", None)
-            if resign is None:
-                return url
-            return resign(unquote(token), self.MOMENT_MEDIA_URL_TTL)
-        except Exception:
-            return url
+            key = owned_key(session, self.avatar_storage, reference, moment.author_id)
+            return signed_url(self.avatar_storage, key, moment.id, viewer)
+        except AppError:
+            return ""
 
     def _user_projection(self, session, user_id, viewer_id=None):
         user = session.get(User, user_id)
@@ -458,7 +472,7 @@ class MomentsService:
 
     def comment_dto(self, session, row, viewer_id=None):
         parent = session.get(MomentComment, row.parent_id) if row.parent_id else None
-        image_urls = [self.avatar_storage.signed_read_url(key, self.MOMENT_MEDIA_URL_TTL) for key in (row.image_object_keys or [])] if self.avatar_storage else []
+        image_urls = [signed_url(self.avatar_storage, key, row.moment_id, viewer_id) for key in (row.image_object_keys or [])] if self.avatar_storage else []
         return {'id': row.id, 'user_id': row.user_id, 'parent_id': row.parent_id, 'text': row.text, 'image_urls': image_urls, 'image_cache_keys': [self._media_cache_key(key) for key in (row.image_object_keys or [])] if self.avatar_storage else [], 'created_at': row.created_at, 'author': self._user_projection(session, row.user_id, viewer_id), 'parent_author': self._user_projection(session, parent.user_id, viewer_id) if parent else None}
 
     def dto(self, session, moment, viewer_id=None):
@@ -478,13 +492,13 @@ class MomentsService:
             'text': moment.text,
             'visibility': moment.visibility,
             'image_urls': [
-                self._resign_media_url(url) for url in moment.image_urls
+                self._moment_media_url(session, moment, url, viewer_id) for url in moment.image_urls
             ],
             'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls],
-            'include_user_ids': moment.include_user_ids,
-            'exclude_user_ids': moment.exclude_user_ids,
-            'include_tag_ids': moment.include_tag_ids,
-            'exclude_tag_ids': moment.exclude_tag_ids,
+            'include_user_ids': moment.include_user_ids if viewer_id == moment.author_id else [],
+            'exclude_user_ids': moment.exclude_user_ids if viewer_id == moment.author_id else [],
+            'include_tag_ids': moment.include_tag_ids if viewer_id == moment.author_id else [],
+            'exclude_tag_ids': moment.exclude_tag_ids if viewer_id == moment.author_id else [],
             'location': moment.location,
             'link_url': moment.link_url,
             'status': moment.status,

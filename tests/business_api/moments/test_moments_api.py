@@ -19,6 +19,10 @@ class MomentAvatarStorage:
     def signed_read_url(self, object_key, expires_in):
         return f"https://media.example.test/{object_key}?signed=1"
 
+    def moment_read_url(self, payload):
+        self.revision = getattr(self, 'revision', 0) + 1
+        return f"https://media.example.test/api/v1/moments/media/content/{self.revision}"
+
     def resign_read_url(self, token, expires_in):
         return f"https://media.example.test/{token}?expires_in={expires_in}"
 
@@ -60,7 +64,7 @@ async def test_image_comment_upload_reply_visibility_and_delete(ctx):
         created = await client.post(route, headers={**commenter, 'Idempotency-Key': 'image-comment'}, json=payload)
         assert created.status_code == 201, created.text
         assert created.json()['text'] == ''
-        assert created.json()['image_urls'][0].startswith('https://media.example.test/moments/u2/')
+        assert created.json()['image_urls'][0].startswith('https://media.example.test/api/v1/moments/media/content/')
         replay = await client.post(route, headers={**commenter, 'Idempotency-Key': 'image-comment'}, json=payload)
         assert replay.json()['id'] == created.json()['id']
         reply = await client.post(route, headers={**owner, 'Idempotency-Key': 'emoji-reply'}, json={'text': '😊', 'parent_id': created.json()['id']})
@@ -68,7 +72,7 @@ async def test_image_comment_upload_reply_visibility_and_delete(ctx):
         assert reply.json()['image_urls'] == []
         assert reply.json()['parent_author']['user_id'] == 'u2'
         visible = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u1'))
-        assert visible.json()['comments'][0]['image_urls'] == created.json()['image_urls']
+        assert visible.json()['comments'][0]['image_cache_keys'] == created.json()['image_cache_keys']
         hidden = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u3'))
         assert hidden.status_code == 404
         hidden_comment = await client.post(route, headers={**auth(settings, 'u3'), 'Idempotency-Key': 'hidden-comment'}, json=payload)
@@ -143,7 +147,7 @@ async def test_media_cache_keys_survive_signature_rotation_and_cover_replacement
     app = create_app(settings, session_factory=factory, avatar_storage=RotatingStorage())
     async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
         headers = {**auth(settings, 'u1'), 'Idempotency-Key': 'cache-moment'}
-        moment = await client.post('/api/v1/moments', headers=headers, json={'text': 'test', 'visibility': 'SELF', 'image_urls': ['https://media.example.test/api/v1/profile/avatar/content/original-token?expires_in=300']})
+        moment = await client.post('/api/v1/moments', headers=headers, json={'text': 'test', 'visibility': 'SELF', 'image_urls': ['media://moments/u1/image.png']})
         route = f"/api/v1/moments/{moment.json()['id']}"
         await client.post(f'{route}/comments', headers={**headers, 'Idempotency-Key': 'cache-comment'}, json={'image_upload_ids': ['image']})
         first = (await client.get(route, headers=headers)).json()
@@ -152,7 +156,7 @@ async def test_media_cache_keys_survive_signature_rotation_and_cover_replacement
         assert first['image_cache_keys'] == second['image_cache_keys']
         assert len(first['image_cache_keys'][0]) == 64
         assert first['comments'][0]['image_urls'] != second['comments'][0]['image_urls']
-        assert first['comments'][0]['image_urls'][0].endswith('?expires_in=604800')
+        assert '/moments/media/content/' in first['comments'][0]['image_urls'][0]
         assert first['comments'][0]['image_cache_keys'] == second['comments'][0]['image_cache_keys']
         cover_first = (await client.get('/api/v1/moments/preferences', headers=headers)).json()
         cover_second = (await client.get('/api/v1/moments/preferences', headers=headers)).json()
@@ -374,56 +378,23 @@ async def test_draft_is_private_and_can_be_deleted(ctx):
 
 @pytest.mark.asyncio
 async def test_create_with_images_publishes_immediately_and_shows_in_feed(ctx):
-    """带图动态与纯文字一致直接 PUBLISHED 并出现在 feed（历史缺陷：
-    带图被置 PENDING_REVIEW 且无审核放行流程，导致永远不可见）。"""
-    app, settings = ctx
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        created = await client.post('/api/v1/moments', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'img-1'}, json={'text': '带图动态', 'visibility': 'PUBLIC', 'image_urls': ['https://media.example.test/p1.jpg']})
+    from app.modules.moments.media import MomentMediaUpload
+    original, settings = ctx
+    factory = original.state.session_factory
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(MomentMediaUpload(id='post-image', owner_id='u1', file_name='p.jpg', mime_type='image/jpeg', byte_size=3, status='COMPLETED', purpose='MOMENT_IMAGE', object_key='moments/u1/p.jpg', idempotency_key='post-image', created_at=now, expires_at=now+timedelta(minutes=30)))
+    app = create_app(settings, session_factory=factory, avatar_storage=MomentAvatarStorage())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        created = await client.post('/api/v1/moments', headers={**auth(settings,'u1'), 'Idempotency-Key':'img-1'}, json={'text':'带图动态','visibility':'PUBLIC','image_urls':['media://moments/u1/p.jpg']})
         assert created.status_code == 201
         body = created.json()
-        assert body['text'] == '带图动态'
         assert body['status'] == 'PUBLISHED'
-        assert body['image_urls'] == ['https://media.example.test/p1.jpg']
-
-        feed = await client.get('/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2'))
-        assert feed.status_code == 200
-        shown = [item for item in feed.json()['items'] if item['id'] == body['id']]
-        assert len(shown) == 1, '带图动态必须出现在好友 feed 中'
-        assert shown[0]['image_urls'] == ['https://media.example.test/p1.jpg']
-
-@pytest.mark.asyncio
-async def test_feed_resigns_moment_media_urls_to_long_ttl(ctx):
-    """X-媒体链接在 feed 输出时动态重签为 7 天长期签名：
-    上传完成时刻的 300s 短签 URL 持久化后必然过期，必须重签救活。"""
-    old_app, settings = ctx
-    app = create_app(
-        settings,
-        session_factory=old_app.state.session_factory,
-        avatar_storage=MomentAvatarStorage(),
-    )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        created = await client.post(
-            '/api/v1/moments',
-            headers={**auth(settings, 'u1'), 'Idempotency-Key': 'resign-1'},
-            json={
-                'text': '重签验证',
-                'visibility': 'PUBLIC',
-                'image_urls': [
-                    'https://liuhetong888.com/api/v1/profile/avatar/content/'
-                    'gAAAAABexpired?expires_in=300'
-                ],
-            },
-        )
-        assert created.status_code == 201
-        feed = await client.get(
-            '/api/v1/moments/feed?mode=latest', headers=auth(settings, 'u2')
-        )
-        item = next(
-            i for i in feed.json()['items'] if i['id'] == created.json()['id']
-        )
-        url = item['image_urls'][0]
-        assert '?expires_in=604800' in url, 'feed 必须以 7 天 TTL 重新签名'
-        assert 'gAAAAABexpired' in url, '内容令牌透传给存储层（旧数据救活）'
+        assert '/moments/media/content/' in body['image_urls'][0]
+        feed = (await client.get('/api/v1/moments/feed?mode=latest',headers=auth(settings,'u2'))).json()
+        item = next(item for item in feed['items'] if item['id'] == body['id'])
+        assert '/moments/media/content/' in item['image_urls'][0]
+        assert item['image_cache_keys'] == body['image_cache_keys']
 
 @pytest.mark.asyncio
 async def test_storage_resign_recovers_expired_tokens():
