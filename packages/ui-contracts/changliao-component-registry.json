@@ -599,7 +599,10 @@
           "onAuthorTap",
           "onCommentTap",
           "onDelete",
-          "identityCache"
+          "identityCache",
+          "detailMode",
+          "selectedCommentId",
+          "onPersonTap"
         ],
         "variants": {},
         "states": [
@@ -609,15 +612,25 @@
           "error",
           "commenting",
           "copy-menu",
-          "author-delete-menu"
+          "author-delete-menu",
+          "reply-selected",
+          "own-comment-copy-delete",
+          "optimistic-avatar-list",
+          "like-feedback",
+          "reduced-motion"
         ]
       },
       "html": {
-        "tag": "app-moment-reactions"
+        "tag": "app-moment-tile"
       },
       "figma": {
-        "name": "app-moment-reactions",
-        "key": "25:127"
+        "name": "app-moment-tile",
+        "key": "25:117"
+      },
+      "reactionTokenSource": {
+        "flutter": "apps/mobile_flutter/lib/ui/moments/moment_reaction_tokens.dart",
+        "html": "frontend/src/styles/tokens.css: --moment-reaction-*",
+        "remoteFigmaSync": "pending-tool-access"
       },
       "tokens": [
         "surface",
@@ -625,6 +638,24 @@
         "danger",
         "spacing"
       ]
+    },
+    {
+      "id": "moment-reactions",
+      "flutter": {
+        "name": "WeChatMomentReactions",
+        "file": "apps/mobile_flutter/lib/ui/moments/wechat_moment_reactions.dart",
+        "props": ["item", "resolveIdentity", "onPersonTap", "onCommentTap", "selectedCommentId", "detailMode", "cacheNamespace"],
+        "variants": {"mode": ["feed", "detail"]},
+        "states": ["default", "reply-selected", "own-comment-copy-delete", "empty", "liked"]
+      },
+      "html": {"tag": "app-moment-reactions"},
+      "figma": {"name": "app-moment-reactions", "key": "25:127"},
+      "tokens": ["surface", "spacing", "radius"],
+      "reactionTokenSource": {
+        "flutter": "apps/mobile_flutter/lib/ui/moments/moment_reaction_tokens.dart",
+        "html": "frontend/src/styles/tokens.css: --moment-reaction-*",
+        "remoteFigmaSync": "pending-tool-access"
+      }
     },
     {
       "id": "moment-personal-cover",

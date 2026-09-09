@@ -22,7 +22,7 @@ from app.modules.moments.models import (
     MomentDraft,
     NativeMomentAd,
 )
-from app.modules.moments.visibility import VisibilityPolicy
+from app.modules.moments.visibility import VisibilityPolicy, reaction_audience
 from app.modules.moments.recommendation import recommendation_score
 from app.modules.moments.media import MomentMediaUpload
 from app.modules.moments.media_access import owned_key, signed_url
@@ -249,7 +249,7 @@ class MomentsService:
                 image_object_keys.append(upload.object_key)
             if parent_id:
                 parent = session.get(MomentComment, parent_id)
-                if not parent or parent.moment_id != moment_id or parent.deleted_at:
+                if not parent or parent.moment_id != moment_id or parent.deleted_at or parent.user_id not in reaction_audience(session, actor):
                     raise AppError(code="COMMENT_PARENT_NOT_FOUND", message="回复的评论不存在", status_code=404)
             row = MomentComment(
                 id=str(uuid4()), moment_id=moment_id, user_id=actor, parent_id=parent_id,
@@ -470,21 +470,34 @@ class MomentsService:
             'avatar_url': avatar_url,
         }
 
-    def comment_dto(self, session, row, viewer_id=None):
-        parent = session.get(MomentComment, row.parent_id) if row.parent_id else None
+    def comment_dto(self, session, row, viewer_id=None, *, parents=None):
+        parent = (parents.get(row.parent_id) if parents is not None else session.get(MomentComment, row.parent_id)) if row.parent_id else None
+        if parent and (parent.deleted_at or parent.user_id not in reaction_audience(session, viewer_id)):
+            parent = None
         image_urls = [signed_url(self.avatar_storage, key, row.moment_id, viewer_id) for key in (row.image_object_keys or [])] if self.avatar_storage else []
-        return {'id': row.id, 'user_id': row.user_id, 'parent_id': row.parent_id, 'text': row.text, 'image_urls': image_urls, 'image_cache_keys': [self._media_cache_key(key) for key in (row.image_object_keys or [])] if self.avatar_storage else [], 'created_at': row.created_at, 'author': self._user_projection(session, row.user_id, viewer_id), 'parent_author': self._user_projection(session, parent.user_id, viewer_id) if parent else None}
+        created_at = row.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return {'id': row.id, 'user_id': row.user_id, 'parent_id': parent.id if parent else None, 'text': row.text, 'image_urls': image_urls, 'image_cache_keys': [self._media_cache_key(key) for key in (row.image_object_keys or [])] if self.avatar_storage else [], 'created_at': created_at.isoformat(), 'author': self._user_projection(session, row.user_id, viewer_id), 'parent_author': self._user_projection(session, parent.user_id, viewer_id) if parent else None}
 
     def dto(self, session, moment, viewer_id=None):
-        like_rows = session.scalars(select(MomentLike).where(MomentLike.moment_id == moment.id).order_by(MomentLike.created_at, MomentLike.id)).all()
+        audience = reaction_audience(session, viewer_id)
+        like_rows = session.scalars(select(MomentLike).where(MomentLike.moment_id == moment.id, MomentLike.user_id.in_(audience)).order_by(MomentLike.created_at, MomentLike.id)).all()
         comment_rows = session.scalars(
             select(MomentComment)
             .where(
                 MomentComment.moment_id == moment.id,
                 MomentComment.deleted_at.is_(None),
+                MomentComment.user_id.in_(audience),
             )
             .order_by(MomentComment.created_at, MomentComment.id)
         ).all()
+        parents = {row.id: row for row in comment_rows}
+        # Keep projections in the identity map for this DTO; repeated comments
+        # by one person and reply targets must not add per-comment queries.
+        _users = session.scalars(select(User).where(User.id.in_(
+            {moment.author_id} | {row.user_id for row in like_rows} | {row.user_id for row in comment_rows}
+        ))).all()
         return {
             'id': moment.id,
             'author_id': moment.author_id,
@@ -505,14 +518,14 @@ class MomentsService:
             'like_count': len(like_rows),
             'like_users': [
                 self._user_projection(session, row.user_id, viewer_id)
-                for row in like_rows[:20]
+                for row in like_rows
             ],
             'viewer_has_liked': bool(
                 viewer_id and any(row.user_id == viewer_id for row in like_rows)
             ),
             'comment_count': len(comment_rows),
             'comments': [
-                self.comment_dto(session, row, viewer_id) for row in comment_rows
+                self.comment_dto(session, row, viewer_id, parents=parents) for row in comment_rows
             ],
             'created_at': moment.created_at,
         }

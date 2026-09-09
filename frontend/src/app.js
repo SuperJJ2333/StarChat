@@ -152,6 +152,9 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   const action = target.dataset.action;
   if (action.startsWith("open:")) setQuery({ screen: action.slice(5), module: "", state: "", theme: "", q: "" });
+  else if (action.startsWith("moment:profile:")) setQuery({ screen: "friend-profile-default", module: "", state: "", theme: "", q: "" });
+  else if (action === "moment:reply") setQuery({ screen: "moments-detail-comment-reply", module: "", state: "", theme: "", q: "" });
+  else if (action === "moment:comment-actions") setQuery({ screen: "moments-detail-comment-delete", module: "", state: "", theme: "", q: "" });
   else if (action.startsWith("copy:")) await navigator.clipboard?.writeText(action.slice(5));
   else if (action === "gallery-back") window.location.search = "";
   else if (action === "gallery-theme") setQuery({ theme: params.get("theme") === "dark" ? "light" : "dark" });

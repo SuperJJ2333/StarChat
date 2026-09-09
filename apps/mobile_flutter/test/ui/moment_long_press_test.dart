@@ -52,7 +52,7 @@ void main() {
       onAuthorTap: () => avatars++,
       onCommentTap: (_) => replies++,
     )));
-    await tester.tap(find.byType(UserAvatar));
+    await tester.tap(find.byType(UserAvatar).first);
     await tester.tap(find.byKey(const ValueKey('moment-comment-c1')));
     expect(avatars, 1);
     expect(replies, 1);

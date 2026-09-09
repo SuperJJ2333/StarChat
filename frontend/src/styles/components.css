@@ -880,15 +880,37 @@
 
 .c-moment-reactions {
   margin-top: var(--space-sm);
-  padding: var(--space-sm);
-  border-radius: var(--radius-tag);
-  background: var(--color-surface-primary);
+  overflow: hidden;
+  border-radius: var(--moment-reaction-radius);
+  background: var(--moment-reaction-background);
+  color: var(--moment-reaction-text);
   font-size: var(--type-subhead-size);
   line-height: var(--type-subhead-line);
 }
 
 .c-moment-reactions__likes {
-  color: var(--color-social-link);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  overflow-x: auto;
+  padding: var(--moment-reaction-padding);
+  color: var(--moment-reaction-name);
 }
+
+.c-moment-reactions__comment {
+  padding: var(--moment-reaction-padding);
+  border-top: 1px solid var(--moment-reaction-divider);
+}
+.c-moment-reactions[data-detail="true"] .c-moment-reactions__comment { padding-block: var(--moment-reaction-detail-padding); }
+.c-moment-reactions__comment[data-selected="true"] { background: var(--moment-reaction-selected); }
+.c-moment-reactions__header { display: flex; align-items: start; gap: var(--space-sm); }
+.c-moment-reactions__profile { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; color: var(--moment-reaction-name); text-align: start; }
+.c-moment-reactions__profile, .c-moment-reactions__reply { border: 0; padding: 0; background: transparent; font: inherit; cursor: pointer; }
+.c-moment-reactions__profile app-avatar { flex: 0 0 var(--moment-reaction-avatar); }
+.c-moment-reactions__profile .c-avatar { width: var(--moment-reaction-avatar); height: var(--moment-reaction-avatar); border-radius: 5px; }
+.c-moment-reactions__name { overflow-wrap: anywhere; font-weight: 600; }
+.c-moment-reactions__time { margin-inline-start: auto; flex-shrink: 0; color: var(--moment-reaction-muted); font-size: 11px; line-height: 20px; }
+.c-moment-reactions__reply { display: block; width: calc(100% - var(--moment-reaction-avatar) - var(--space-sm)); margin-inline-start: calc(var(--moment-reaction-avatar) + var(--space-sm)); color: inherit; text-align: start; overflow-wrap: anywhere; line-height: 1.55; }
+.c-moment-reactions__profile:focus-visible, .c-moment-reactions__reply:focus-visible { outline: 2px solid var(--moment-reaction-name); outline-offset: 2px; }
 
 .ui-screen .c-message--outgoing .c-message__bubble { color: var(--color-outgoing-text); }

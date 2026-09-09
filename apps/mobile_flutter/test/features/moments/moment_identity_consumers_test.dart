@@ -213,11 +213,13 @@ void main() {
         remark: 'Local remark',
         avatarUrl: 'https://example.test/fresh.png'));
     await tester.pump();
-    expect(find.text('Local remark'), findsOneWidget);
-    expect(find.text('♡ Local remark'), findsOneWidget);
-    expect(find.text('Local remark 回复 Local remark：hello'), findsOneWidget);
-    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl,
-        'https://example.test/fresh.png');
+    expect(find.text('Local remark'), findsNWidgets(3));
+    expect(find.text('回复 '), findsOneWidget);
+    expect(
+        tester
+            .widgetList<UserAvatar>(find.byType(UserAvatar))
+            .map((avatar) => avatar.avatarUrl),
+        everyElement('https://example.test/fresh.png'));
     await cache.applyUpdatedContact(const ContactSummary(
         userId: 'friend',
         username: 'friend',
@@ -225,8 +227,11 @@ void main() {
         nickname: 'Cleared'));
     await tester.pump();
     expect(
-        tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl, isNull);
-    expect(find.text('Cleared'), findsOneWidget);
+        tester
+            .widgetList<UserAvatar>(find.byType(UserAvatar))
+            .map((avatar) => avatar.avatarUrl),
+        everyElement(isNull));
+    expect(find.text('Cleared'), findsNWidgets(3));
     expect(item.author.displayName, 'Old',
         reason: 'Local remark must never mutate serializable author snapshot');
     await tester.pumpWidget(const SizedBox());

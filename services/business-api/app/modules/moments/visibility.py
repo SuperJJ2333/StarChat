@@ -6,6 +6,38 @@ from app.modules.friendship.models import ContactProfile,Friendship,UserBlock
 from app.modules.moments.models import MomentsPreference
 
 
+def reaction_audience(session, viewer):
+    """Resolve live reaction visibility once per read session, in four queries."""
+    cache = session.info.setdefault('moments_reaction_audience', {})
+    if viewer in cache:
+        return cache[viewer]
+    if not viewer:
+        return set()
+    friends = session.scalars(select(Friendship).where(or_(
+        Friendship.user_low_id == viewer, Friendship.user_high_id == viewer,
+    )))
+    visible = {row.user_high_id if row.user_low_id == viewer else row.user_low_id for row in friends}
+    blocks = session.scalars(select(UserBlock).where(or_(
+        UserBlock.blocker_id == viewer, UserBlock.blocked_id == viewer,
+    )))
+    for row in blocks:
+        visible.discard(row.blocked_id if row.blocker_id == viewer else row.blocker_id)
+    profiles = session.scalars(select(ContactProfile).where(or_(
+        ContactProfile.owner_id == viewer, ContactProfile.contact_id == viewer,
+    )))
+    for row in profiles:
+        restricted = {'HIDE_BOTH', 'CHAT_ONLY', 'ONLY_CHAT'}
+        restricted.add('HIDE_THEIRS' if row.owner_id == viewer else 'HIDE_MINE')
+        if row.moments_permission in restricted:
+            visible.discard(row.contact_id if row.owner_id == viewer else row.owner_id)
+    for row in session.scalars(select(MomentsPreference).where(MomentsPreference.user_id.in_(visible))):
+        if not row.profile_entry_enabled or viewer in (row.excluded_user_ids or []):
+            visible.discard(row.user_id)
+    visible.add(viewer)
+    cache[viewer] = visible
+    return visible
+
+
 class VisibilityPolicy:
     def __init__(self, session, *, now=None):
         self.s = session

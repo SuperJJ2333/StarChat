@@ -97,6 +97,7 @@ void main() {
         .descendant(
             of: find.byType(WeChatMomentTile), matching: find.byType(Container))
         .first);
-    expect(container.color, WeChatColors.darkElevated);
+    expect((container.decoration as BoxDecoration).color,
+        WeChatColors.darkElevated);
   });
 }

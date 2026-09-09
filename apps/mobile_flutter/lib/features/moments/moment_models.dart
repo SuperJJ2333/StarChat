@@ -27,6 +27,7 @@ final class MomentCommentView {
     required this.text,
     required this.author,
     this.parentAuthor,
+    this.createdAt,
     this.images = const [],
     this.imageCacheKeys = const [],
   });
@@ -35,6 +36,7 @@ final class MomentCommentView {
       MomentCommentView(
         id: json['id'].toString(),
         text: json['text']?.toString() ?? '',
+        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
         images: List<String>.from(json['image_urls'] ?? const []),
         imageCacheKeys: List<String>.from(json['image_cache_keys'] ?? const []),
         author: MomentAuthor.fromJson(
@@ -48,12 +50,14 @@ final class MomentCommentView {
   final String id, text;
   final MomentAuthor author;
   final MomentAuthor? parentAuthor;
+  final DateTime? createdAt;
   final List<String> images;
   final List<String> imageCacheKeys;
 }
 
-List<MomentCommentView> mergeMomentComments(Iterable<MomentCommentView> existing,
-    MomentCommentView incoming) => <String, MomentCommentView>{
+List<MomentCommentView> mergeMomentComments(
+        Iterable<MomentCommentView> existing, MomentCommentView incoming) =>
+    <String, MomentCommentView>{
       for (final comment in existing) comment.id: comment,
       incoming.id: incoming,
     }.values.toList(growable: false);
@@ -122,6 +126,7 @@ final class MomentItem {
   MomentItem copyWith({
     bool? liked,
     int? likeCount,
+    List<MomentAuthor>? likeUsers,
     List<MomentCommentView>? comments,
   }) =>
       MomentItem(
@@ -133,7 +138,7 @@ final class MomentItem {
           createdAt: createdAt,
           liked: liked ?? this.liked,
           likeCount: likeCount ?? this.likeCount,
-          likeUsers: likeUsers,
+          likeUsers: likeUsers ?? this.likeUsers,
           comments: comments ?? this.comments,
           kind: kind,
           adLink: adLink);
@@ -145,5 +150,6 @@ String formatMomentTime(DateTime value, {DateTime? now}) {
   if (diff.inHours < 1) return '${diff.inMinutes}分钟前';
   if (diff.inDays == 0) return '${diff.inHours}小时前';
   if (diff.inDays == 1) return '昨天';
-  return '${value.month}月${value.day}日';
+  final local = value.toLocal();
+  return '${local.month}月${local.day}日';
 }

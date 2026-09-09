@@ -12,6 +12,7 @@ import '../features/profile/invite_controller.dart';
 import '../features/contacts/contact_models.dart';
 import '../features/profile/complaint_models.dart';
 import '../features/redpacket/red_packet_controller.dart';
+import '../features/moments/moments_privacy_changes.dart';
 
 export 'business_api_error.dart';
 
@@ -842,8 +843,12 @@ final class BusinessApiClient
     );
   }
 
-  Future<Map<String, dynamic>> blockUser(String id) =>
-      postJson('/blocks', {'user_id': id}, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> blockUser(String id) async {
+    final result = await postJson('/blocks', {'user_id': id},
+        idempotencyKey: newIdempotencyKey());
+    momentsPrivacyChanges.changed();
+    return result;
+  }
   @override
   Future<void> blockContact(String userId) async {
     await blockUser(userId);

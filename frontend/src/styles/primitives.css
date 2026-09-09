@@ -547,6 +547,7 @@ app-red-packet-card {
   gap: var(--space-sm);
   padding-bottom: var(--space-lg);
   border-bottom: var(--size-hairline) solid var(--color-divider);
+  box-shadow: 0 1px 2px var(--moment-reaction-shadow);
   background: var(--color-surface-elevated);
 }
 

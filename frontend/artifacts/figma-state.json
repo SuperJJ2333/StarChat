@@ -1,4 +1,19 @@
 {
+  "momentsReactionsRevision": {
+    "date": "2026-09-09",
+    "plan": "docs/superpowers/plans/2026-09-09-moments-reactions-ui.md",
+    "status": "local-implementation-tested; remote-design-sync-pending",
+    "remoteNodesModified": false,
+    "affectedPages": ["19:4"],
+    "affectedComponents": ["app-moment-reactions"],
+    "existingPageUrl": "https://www.figma.com/design/zpzwTbnj1hqx80tyRygX78?node-id=19-4",
+    "reason": "No callable Figma tools. Existing phase/step and variable IDs below describe the prior export, not this revision.",
+    "localReactionTokens": {
+      "background": "#333333", "selected": "#292929", "text": "#F2F2F2",
+      "name": "#C4D2EE", "muted": "#B3B3B3", "divider": "#FFFFFF1A",
+      "radius": 8, "avatar": 30, "padding": 10, "detailPadding": 14, "likeDurationMs": 700
+    }
+  },
   "sharedMediaIdentityRevision": {
     "date": "2026-09-09",
     "plan": "docs/superpowers/plans/2026-09-09-shared-media-identity.md",

@@ -125,6 +125,13 @@
           throw new Error("action button touch target is below 44px");
         }
 
+        const reactions = root.querySelector('[data-screen-id="moments-detail-default"] .c-moment-reactions');
+        if (!reactions || getComputedStyle(reactions).backgroundColor !== "rgb(51, 51, 51)") throw new Error("Moments reactions must share a dark rounded surface");
+        const commentRows = reactions.querySelectorAll('.c-moment-reactions__comment');
+        if (commentRows.length < 2 || !commentRows[0].querySelector('app-avatar') || !commentRows[0].querySelector('time')) throw new Error("Moment detail comments need avatars, timestamps and separate rows");
+        if (getComputedStyle(commentRows[0]).paddingTop !== "14px") throw new Error("Moment detail spacing is missing");
+        if (getComputedStyle(reactions.querySelector('.c-moment-reactions__reply')).backgroundColor !== "rgba(0, 0, 0, 0)") throw new Error("Comment controls must not obscure dark text contrast");
+        if (getComputedStyle(reactions.querySelector('.c-moment-reactions__likes')).overflowX !== "auto") throw new Error("Liker avatars need horizontal scrolling");
         document.body.dataset.testResult = "passed";
         document.body.dataset.screenCount = String(targets.length);
         document.title = "Screen contract passed";

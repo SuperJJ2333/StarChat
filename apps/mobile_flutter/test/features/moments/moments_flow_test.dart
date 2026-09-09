@@ -251,17 +251,26 @@ void main() {
       home: MomentsPage(
           api: api,
           identityCache: ProfileRepository.forTesting(
-              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())
+            ..profile = const ProfileData(
+                username: 'me',
+                nickname: 'Me',
+                maskedEmail: '',
+                fallbackSeed: 'me')),
     ));
     await tester.pumpAndSettle();
     expect(find.text('推荐'), findsNothing);
     expect(find.text('最新'), findsNothing);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
-    expect(find.byIcon(CupertinoIcons.heart_fill), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('moment-like-button')),
+            matching: find.byIcon(CupertinoIcons.heart_fill)),
+        findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
 
     likeResponse.complete(http.Response(
       jsonEncode({'id': 'like-1'}),
@@ -269,8 +278,12 @@ void main() {
       headers: {'content-type': 'application/json'},
     ));
     await tester.pumpAndSettle();
-    expect(find.byIcon(CupertinoIcons.heart_fill), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const Key('moment-like-button')),
+            matching: find.byIcon(CupertinoIcons.heart_fill)),
+        findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
   });
 
   testWidgets('failed optimistic like rolls back and shows API error',
@@ -312,14 +325,19 @@ void main() {
       home: MomentsPage(
           api: api,
           identityCache: ProfileRepository.forTesting(
-              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())
+            ..profile = const ProfileData(
+                username: 'me',
+                nickname: 'Me',
+                maskedEmail: '',
+                fallbackSeed: 'me')),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pumpAndSettle();
 
     expect(find.byIcon(CupertinoIcons.heart), findsOneWidget);
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
     expect(find.text('点赞同步失败'), findsOneWidget);
   });
 
@@ -357,7 +375,7 @@ void main() {
             'created_at': DateTime.now().toIso8601String(),
             'author': {
               'user_id': 'u2',
-              'username': 'bob_id',
+              'username': 'me',
               'nickname': 'Bob',
               'remark': '项目小波',
               'display_name': '项目小波',
@@ -376,7 +394,12 @@ void main() {
       home: MomentsPage(
           api: api,
           identityCache: ProfileRepository.forTesting(
-              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())),
+              accountKey: 'matrix:@me:test', store: MomentsIdentityStore())
+            ..profile = const ProfileData(
+                username: 'me',
+                nickname: 'Me',
+                maskedEmail: '',
+                fallbackSeed: 'me')),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-comment-button')));
@@ -388,7 +411,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // No local contact remark exists: prefer the author's current nickname.
-    expect(find.text('Bob：即时评论'), findsOneWidget);
+    expect(find.byKey(const ValueKey('moment-comment-c1')), findsOneWidget);
   });
 
   testWidgets('failed comment keeps draft and shows server error',

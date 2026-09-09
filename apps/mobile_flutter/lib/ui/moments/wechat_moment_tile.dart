@@ -3,13 +3,13 @@ import 'package:flutter/cupertino.dart';
 import '../../features/moments/moment_models.dart';
 import '../../features/matrix/profile_repository.dart';
 import '../../features/contacts/user_identity.dart';
-import '../chat/emoji_text.dart';
 import '../components/user_avatar.dart';
 import '../foundation/wechat_tokens.dart';
 import 'wechat_moment_image_grid.dart';
-import 'moment_image_viewer_page.dart';
-import 'moment_image_provider.dart';
 import 'moment_action_menu.dart';
+import 'wechat_moment_reactions.dart';
+import 'moment_reaction_tokens.dart';
+import 'moment_like_feedback.dart';
 
 final class WeChatMomentTile extends StatelessWidget {
   const WeChatMomentTile({
@@ -25,8 +25,14 @@ final class WeChatMomentTile extends StatelessWidget {
     this.onCommentTap,
     this.cacheNamespace = '',
     this.identityCache,
+    this.detailMode = false,
+    this.selectedCommentId,
+    this.onPersonTap,
   });
   final MomentItem item;
+  final bool detailMode;
+  final String? selectedCommentId;
+  final ValueChanged<MomentAuthor>? onPersonTap;
   final ProfileRepository? identityCache;
   final VoidCallback? onAuthorTap;
   final VoidCallback? onLike;
@@ -78,11 +84,27 @@ final class WeChatMomentTile extends StatelessWidget {
               text: item.text,
               onDelete: onDelete),
       child: Container(
-        color: WeChatColors.elevatedSurface(context),
+        decoration: BoxDecoration(
+          color: WeChatColors.elevatedSurface(context),
+          border: Border(
+              bottom: BorderSide(
+                  color: WeChatColors.resolve(context, WeChatColors.divider))),
+          boxShadow: const [
+            BoxShadow(
+                color: MomentReactionTokens.shadow,
+                offset: Offset(0, 1),
+                blurRadius: 2)
+          ],
+        ),
         padding: const EdgeInsets.all(12),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           GestureDetector(
-            onTap: isAd ? null : onAuthorTap,
+            onTap: isAd
+                ? null
+                : onAuthorTap ??
+                    (onPersonTap == null
+                        ? null
+                        : () => onPersonTap!(item.author)),
             child: UserAvatar(
               nickname: _identity(item.author).displayName,
               fallbackSeed: _identity(item.author).cacheKey,
@@ -96,7 +118,12 @@ final class WeChatMomentTile extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               GestureDetector(
-                onTap: isAd ? null : onAuthorTap,
+                onTap: isAd
+                    ? null
+                    : onAuthorTap ??
+                        (onPersonTap == null
+                            ? null
+                            : () => onPersonTap!(item.author)),
                 child: Text(_identity(item.author).displayName,
                     key: const Key('moment-author-name'),
                     style: TextStyle(
@@ -116,9 +143,10 @@ final class WeChatMomentTile extends StatelessWidget {
                       cacheNamespace: cacheNamespace),
                 ),
               Row(children: [
-                Text(formatMomentTime(item.createdAt),
-                    style: const TextStyle(
-                        color: WeChatColors.textSecondary, fontSize: 13)),
+                Flexible(
+                    child: Text(formatMomentTime(item.createdAt),
+                        style: const TextStyle(
+                            color: WeChatColors.textSecondary, fontSize: 13))),
                 const Spacer(),
                 if (isAd)
                   CupertinoButton(
@@ -134,12 +162,7 @@ final class WeChatMomentTile extends StatelessWidget {
                     key: const Key('moment-like-button'),
                     padding: EdgeInsets.zero,
                     onPressed: onLike,
-                    child: Icon(
-                        isLiked
-                            ? CupertinoIcons.heart_fill
-                            : CupertinoIcons.heart,
-                        color: isLiked ? WeChatColors.brandPrimary : null,
-                        size: 20),
+                    child: MomentLikeFeedback(liked: isLiked),
                   ),
                   Text(
                     '${item.likeCount}',
@@ -163,77 +186,16 @@ final class WeChatMomentTile extends StatelessWidget {
                     ),
                 ],
               ]),
-              if (!isAd && item.likeUsers.isNotEmpty)
-                Text(
-                    '♡ ${item.likeUsers.map((user) => _identity(user).displayName).join('、')}',
-                    style: TextStyle(
-                        color: WeChatColors.resolve(
-                            context, WeChatColors.socialLink),
-                        fontSize: 13)),
               if (!isAd)
-                for (final comment in item.comments)
-                  GestureDetector(
-                    key: ValueKey('moment-comment-${comment.id}'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onCommentTap == null
-                        ? null
-                        : () => onCommentTap!(comment),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Text.rich(
-                          TextSpan(children: [
-                            TextSpan(
-                                text: _identity(comment.author).displayName,
-                                style: TextStyle(
-                                    color: WeChatColors.resolve(
-                                        context, WeChatColors.socialLink))),
-                            if (comment.parentAuthor != null)
-                              TextSpan(
-                                  text:
-                                      ' 回复 ${_identity(comment.parentAuthor!).displayName}'),
-                            const TextSpan(text: '：'),
-                            ...?buildEmojiInlineSpans(comment.text,
-                                fontSize: 13),
-                            if (buildEmojiInlineSpans(comment.text,
-                                    fontSize: 13) ==
-                                null)
-                              TextSpan(text: comment.text),
-                            for (var i = 0; i < comment.images.length; i++)
-                              WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: GestureDetector(
-                                    onTap: () => Navigator.push(
-                                        context,
-                                        CupertinoPageRoute(
-                                            builder: (_) =>
-                                                MomentImageViewerPage(
-                                                    imageUrls: comment.images,
-                                                    initialIndex: i,
-                                                    imageCacheKeys:
-                                                        comment.imageCacheKeys,
-                                                    cacheNamespace:
-                                                        cacheNamespace))),
-                                    child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 2),
-                                        child: Image(
-                                            image: momentImageProvider(
-                                                comment.images[i],
-                                                momentImageKey(
-                                                    comment.imageCacheKeys, i),
-                                                cacheNamespace),
-                                            width: 22,
-                                            height: 22,
-                                            fit: BoxFit.cover,
-                                            gaplessPlayback: true,
-                                            errorBuilder: (_, __, ___) =>
-                                                const Icon(CupertinoIcons.photo,
-                                                    size: 22))),
-                                  )),
-                          ]),
-                          style: const TextStyle(fontSize: 13, height: 1.5)),
-                    ),
-                  ),
+                WeChatMomentReactions(
+                  item: item,
+                  resolveIdentity: _identity,
+                  onPersonTap: onPersonTap,
+                  onCommentTap: onCommentTap,
+                  selectedCommentId: selectedCommentId,
+                  detailMode: detailMode,
+                  cacheNamespace: cacheNamespace,
+                ),
             ]),
           ),
         ]),

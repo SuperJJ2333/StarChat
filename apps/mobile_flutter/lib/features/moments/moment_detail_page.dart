@@ -1,3 +1,7 @@
+import 'moments_privacy_changes.dart';
+import 'package:flutter/services.dart';
+import 'moment_reactions.dart';
+import 'moment_person_navigation.dart';
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../matrix/profile_repository.dart';
@@ -14,6 +18,7 @@ class MomentDetailPage extends StatefulWidget {
       required this.initialItem,
       required this.currentUsername,
       this.onChanged,
+      this.onReactionChanged,
       this.initialComment,
       this.cacheNamespace = ''});
   final BusinessApiClient api;
@@ -21,6 +26,7 @@ class MomentDetailPage extends StatefulWidget {
   final MomentItem initialItem;
   final String currentUsername;
   final ValueChanged<MomentItem>? onChanged;
+  final ValueChanged<MomentItem>? onReactionChanged;
   final MomentCommentView? initialComment;
   final String cacheNamespace;
   @override
@@ -33,10 +39,27 @@ class _MomentDetailState extends State<MomentDetailPage> {
   bool liking = false;
   bool unavailable = false;
   String? error;
+  String? selectedCommentId;
+  bool openingPerson = false;
   @override
   void initState() {
     super.initState();
-    refresh();
+    widget.identityCache?.addListener(identityChanged);
+    momentsPrivacyChanges.addListener(privacyChanged);
+    final pending = PendingMomentReaction.find(widget.api, item.id);
+    if (pending == null) {
+      refresh();
+    } else {
+      liking = true;
+      if (!pending.audienceIsCurrent) refresh();
+      pending.result.then((result) {
+        if (!mounted) return;
+        if (pending.audienceIsCurrent) {
+          update(restoreMomentReaction(item, result), reactionsOnly: true);
+        }
+        setState(() => liking = false);
+      });
+    }
     if (widget.initialComment != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) tapComment(widget.initialComment!);
@@ -44,13 +67,38 @@ class _MomentDetailState extends State<MomentDetailPage> {
     }
   }
 
-  void update(MomentItem value) {
+  void privacyChanged() {
+    if (!mounted) return;
+    setState(() {
+      unavailable = true;
+      error = '动态暂不可见，请重试';
+      revision++;
+    });
+    refresh();
+  }
+
+  void identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.identityCache?.removeListener(identityChanged);
+    momentsPrivacyChanges.removeListener(privacyChanged);
+    super.dispose();
+  }
+
+  void update(MomentItem value, {bool reactionsOnly = false}) {
     if (!mounted || unavailable) return;
     setState(() {
       item = value;
       revision++;
     });
-    widget.onChanged?.call(value);
+    if (reactionsOnly) {
+      (widget.onReactionChanged ?? widget.onChanged)?.call(value);
+    } else {
+      widget.onChanged?.call(value);
+    }
   }
 
   Future<void> refresh() async {
@@ -58,6 +106,8 @@ class _MomentDetailState extends State<MomentDetailPage> {
     try {
       final response = await widget.api.momentDetail(item.id);
       if (mounted && generation == revision) {
+        unavailable = false;
+        error = null;
         update(MomentItem.fromJson(response));
       }
     } on BusinessApiException catch (failure) {
@@ -85,15 +135,27 @@ class _MomentDetailState extends State<MomentDetailPage> {
   }
 
   Future<void> tapComment(MomentCommentView value) async {
-    if (widget.currentUsername.isEmpty ||
-        value.author.username != widget.currentUsername) {
-      await comment(value);
+    final ownUsername =
+        widget.identityCache?.profile?.username ?? widget.currentUsername;
+    if (ownUsername.isEmpty || value.author.username != ownUsername) {
+      setState(() => selectedCommentId = value.id);
+      try {
+        await comment(value);
+      } finally {
+        if (mounted) setState(() => selectedCommentId = null);
+      }
       return;
     }
     final remove = await showCupertinoModalPopup<bool>(
         context: context,
         builder: (context) => CupertinoActionSheet(
                 actions: [
+                  CupertinoActionSheetAction(
+                      onPressed: () {
+                        Navigator.pop(context, false);
+                        Clipboard.setData(ClipboardData(text: value.text));
+                      },
+                      child: const Text('复制')),
                   CupertinoActionSheetAction(
                       isDestructiveAction: true,
                       onPressed: () => Navigator.pop(context, true),
@@ -115,12 +177,21 @@ class _MomentDetailState extends State<MomentDetailPage> {
   }
 
   Future<void> like() async {
-    if (liking || unavailable) return;
+    if (liking ||
+        unavailable ||
+        PendingMomentReaction.find(widget.api, item.id) != null) {
+      return;
+    }
     liking = true;
     final before = item;
-    update(item.copyWith(
-        liked: !item.liked,
-        likeCount: (item.likeCount + (item.liked ? -1 : 1)).clamp(0, 1 << 30)));
+    final pending = PendingMomentReaction.begin(widget.api, item.id);
+    var succeeded = true;
+    update(
+        toggleMomentReaction(
+            item,
+            momentViewer(widget.identityCache,
+                username: widget.currentUsername)),
+        reactionsOnly: true);
     try {
       if (before.liked) {
         await widget.api.unlikeMoment(item.id);
@@ -128,12 +199,32 @@ class _MomentDetailState extends State<MomentDetailPage> {
         await widget.api.likeMoment(item.id);
       }
     } catch (_) {
+      succeeded = false;
+      if (!pending.audienceIsCurrent) return;
+      if (!mounted) {
+        (widget.onReactionChanged ?? widget.onChanged)
+            ?.call(restoreMomentReaction(item, before));
+      }
       if (mounted) {
-        update(item.copyWith(liked: before.liked, likeCount: before.likeCount));
+        update(restoreMomentReaction(item, before), reactionsOnly: true);
         setState(() => error = '点赞失败，请重试');
       }
     } finally {
+      pending.finish(widget.api, succeeded ? item : before);
       if (mounted) setState(() => liking = false);
+    }
+  }
+
+  Future<void> openPerson(MomentAuthor person) async {
+    if (openingPerson || unavailable) return;
+    openingPerson = true;
+    try {
+      await openMomentPerson(context,
+          api: widget.api, identityCache: widget.identityCache, person: person);
+    } catch (_) {
+      if (mounted) setState(() => error = '资料加载失败，请重试');
+    } finally {
+      openingPerson = false;
     }
   }
 
@@ -145,7 +236,12 @@ class _MomentDetailState extends State<MomentDetailPage> {
           if (!unavailable)
             WeChatMomentTile(
                 identityCache: widget.identityCache,
-                item: item,
+                item: visibleMomentReactions(item, widget.identityCache,
+                    username: widget.currentUsername),
+                detailMode: true,
+                selectedCommentId: selectedCommentId,
+                onPersonTap: openPerson,
+                onAuthorTap: () => openPerson(item.author),
                 cacheNamespace: widget.cacheNamespace,
                 onLike: liking ? null : like,
                 onComment: comment,
@@ -155,6 +251,8 @@ class _MomentDetailState extends State<MomentDetailPage> {
                 padding: const EdgeInsets.all(12),
                 child: Text(error!,
                     style: const TextStyle(color: CupertinoColors.systemRed))),
+          if (unavailable)
+            CupertinoButton(onPressed: refresh, child: const Text('重试')),
         ])),
       );
 }

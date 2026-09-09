@@ -51,10 +51,35 @@ export class AppMomentGrid extends StrictElement {
 export class AppMomentReactions extends StrictElement {
   render() {
     const root = element("section", "c-moment-reactions");
-    root.append(
-      element("p", "c-moment-reactions__likes", `♥ ${this.attr("likes", "林晓、陈默")}`),
-      element("p", "c-moment-reactions__comments", this.attr("comments", "林晓：下次一起走！"))
-    );
+    root.dataset.detail = String(this.boolAttr("detail"));
+    const profile = (name, avatarOnly = false) => {
+      const control = button("c-moment-reactions__profile", `查看${name}的资料`, `moment:profile:${name}`);
+      const avatar = element("app-avatar");
+      avatar.setAttribute("name", name);
+      avatar.setAttribute("size", "list");
+      control.append(avatar);
+      if (!avatarOnly) control.append(element("span", "c-moment-reactions__name", name));
+      return control;
+    };
+    const likes = element("div", "c-moment-reactions__likes");
+    likes.setAttribute("aria-label", "点赞好友");
+    likes.append(element("span", "c-moment-reactions__heart", "♥"));
+    for (const name of this.attr("likes", "林晓、陈默").split("、").filter(Boolean)) likes.append(profile(name, true));
+    const comments = element("div", "c-moment-reactions__comments");
+    for (const value of this.attr("comments", "林晓：下次一起走！").split("\n").filter(Boolean)) {
+      const separator = value.indexOf("：");
+      const name = separator >= 0 ? value.slice(0, separator) : "好友";
+      const text = separator >= 0 ? value.slice(separator + 1) : value;
+      const row = element("article", "c-moment-reactions__comment");
+      row.dataset.selected = String(this.boolAttr("selected"));
+      const header = element("div", "c-moment-reactions__header");
+      header.append(profile(name), element("time", "c-moment-reactions__time", this.attr("time", "12 分钟前")));
+      const reply = button("c-moment-reactions__reply", this.boolAttr("own") ? "评论操作：复制、删除" : `回复${name}`, this.boolAttr("own") ? "moment:comment-actions" : "moment:reply");
+      reply.textContent = text;
+      row.append(header, reply);
+      comments.append(row);
+    }
+    root.append(likes, comments);
     return root;
   }
 }

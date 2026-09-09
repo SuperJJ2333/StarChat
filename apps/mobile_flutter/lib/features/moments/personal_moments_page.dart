@@ -1,3 +1,5 @@
+import 'moment_reactions.dart';
+import 'moment_person_navigation.dart';
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../matrix/profile_repository.dart';
@@ -31,6 +33,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   String? _error;
   String _username = '';
   String? _viewerId;
+  bool _openingPerson = false;
   @override
   void initState() {
     super.initState();
@@ -106,11 +109,20 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                   identityCache: widget.identityCache,
                   api: widget.api,
                   initialItem: item,
-                  currentUsername: _username,
+                  currentUsername:
+                      widget.identityCache?.profile?.username ?? _username,
                   initialComment: comment,
+                  onChanged: _updateItem,
+                  onReactionChanged: (updated) {
+                    final current = _items
+                        .where((value) => value.id == updated.id)
+                        .firstOrNull;
+                    if (current != null) {
+                      _updateItem(restoreMomentReaction(current, updated));
+                    }
+                  },
                   cacheNamespace: 'profile:${widget.userId}',
                 )));
-    if (mounted) await _reload();
   }
 
   Future<void> _delete(MomentItem item) async {
@@ -135,6 +147,62 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     }
   }
 
+  void _updateItem(MomentItem updated) {
+    if (!mounted) return;
+    setState(() {
+      _generation++;
+      _items = [
+        for (final item in _items)
+          if (item.id == updated.id) updated else item
+      ];
+    });
+  }
+
+  Future<void> _like(MomentItem item) async {
+    if (PendingMomentReaction.find(widget.api, item.id) != null) return;
+    setState(() {
+      _pendingLikes.add(item.id);
+      _error = null;
+    });
+    final optimistic = toggleMomentReaction(
+        item,
+        momentViewer(widget.identityCache,
+            username: _username, userId: _viewerId ?? ''));
+    final pending = PendingMomentReaction.begin(widget.api, item.id);
+    var succeeded = true;
+    _updateItem(optimistic);
+    try {
+      if (item.liked) {
+        await widget.api.unlikeMoment(item.id);
+      } else {
+        await widget.api.likeMoment(item.id);
+      }
+    } catch (_) {
+      succeeded = false;
+      if (mounted && pending.audienceIsCurrent) {
+        final current = _items.where((i) => i.id == item.id).firstOrNull;
+        if (current != null) _updateItem(restoreMomentReaction(current, item));
+        setState(() => _error = '点赞失败，请重试');
+      }
+    } finally {
+      pending.finish(widget.api, succeeded ? optimistic : item);
+      if (mounted) setState(() => _pendingLikes.remove(item.id));
+    }
+  }
+
+  Future<void> _openPerson(MomentAuthor person) async {
+    if (_openingPerson) return;
+    _openingPerson = true;
+    try {
+      await openMomentPerson(context,
+          api: widget.api, identityCache: widget.identityCache, person: person);
+    } catch (_) {
+      if (mounted) setState(() => _error = '资料加载失败，请重试');
+    } finally {
+      _openingPerson = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
@@ -156,30 +224,16 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
           for (final item in _items)
             WeChatMomentTile(
               identityCache: widget.identityCache,
-              item: item,
+              item: visibleMomentReactions(item, widget.identityCache,
+                  username: _username),
               cacheNamespace: 'profile:${widget.userId}',
               onOpen: () => _open(item),
+              onAuthorTap: () => _openPerson(item.author),
+              onPersonTap: _openPerson,
               onComment: () => _open(item),
               onCommentTap: (c) => _open(item, c),
-              onLike: _pendingLikes.contains(item.id)
-                  ? null
-                  : () async {
-                      setState(() => _pendingLikes.add(item.id));
-                      try {
-                        if (item.liked) {
-                          await widget.api.unlikeMoment(item.id);
-                        } else {
-                          await widget.api.likeMoment(item.id);
-                        }
-                        if (mounted) await _reload();
-                      } catch (_) {
-                        if (mounted) setState(() => _error = '点赞失败，请重试');
-                      } finally {
-                        if (mounted) {
-                          setState(() => _pendingLikes.remove(item.id));
-                        }
-                      }
-                    },
+              onLike:
+                  _pendingLikes.contains(item.id) ? null : () => _like(item),
               onDelete:
                   _viewerId == item.author.userId ? () => _delete(item) : null,
             ),

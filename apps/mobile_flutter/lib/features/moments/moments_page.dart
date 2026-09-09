@@ -1,8 +1,8 @@
 export 'moments_settings_page.dart';
 import 'moments_settings_page.dart';
 import 'moments_privacy_changes.dart';
-import '../contacts/contacts_page.dart';
-import '../contacts/add_friend_profile_page.dart';
+import 'moment_person_navigation.dart';
+import 'moment_reactions.dart';
 import 'dart:typed_data';
 
 import 'dart:async';
@@ -286,13 +286,10 @@ final class _MomentsPageState extends State<MomentsPage> {
   }
 
   Future<void> _toggleLike(MomentItem item) async {
-    if (_pendingLikeIds.contains(item.id)) return;
-    final optimistic = item.copyWith(
-      liked: !item.liked,
-      likeCount: item.liked
-          ? (item.likeCount > 0 ? item.likeCount - 1 : 0)
-          : item.likeCount + 1,
-    );
+    if (PendingMomentReaction.find(widget.api, item.id) != null) return;
+    final optimistic = toggleMomentReaction(item, momentViewer(_identityCache));
+    final pending = PendingMomentReaction.begin(widget.api, item.id);
+    var succeeded = true;
     setState(() {
       _pendingLikeIds.add(item.id);
       _itemOverrides[item.id] = optimistic;
@@ -305,13 +302,16 @@ final class _MomentsPageState extends State<MomentsPage> {
         await widget.api.likeMoment(item.id);
       }
     } catch (error) {
-      if (!mounted) return;
+      succeeded = false;
+      if (!mounted || !pending.audienceIsCurrent) return;
       setState(() {
-        _itemOverrides[item.id] = item;
+        _itemOverrides[item.id] =
+            restoreMomentReaction(_itemOverrides[item.id] ?? item, item);
         _interactionError =
             error is BusinessApiException ? error.message : '点赞同步失败，请重试';
       });
     } finally {
+      pending.finish(widget.api, succeeded ? optimistic : item);
       if (mounted) setState(() => _pendingLikeIds.remove(item.id));
     }
   }
@@ -408,13 +408,19 @@ final class _MomentsPageState extends State<MomentsPage> {
                   currentUsername: _identityCache.profile?.username ?? '',
                   initialComment: comment,
                   cacheNamespace: _identityCache.accountKey ?? '',
+                  onReactionChanged: (updated) {
+                    if (mounted) {
+                      setState(() => _itemOverrides[item.id] =
+                          restoreMomentReaction(
+                              _itemOverrides[item.id] ?? item, updated));
+                    }
+                  },
                   onChanged: (updated) {
                     if (mounted) {
                       setState(() => _itemOverrides[item.id] = updated);
                     }
                   },
                 )));
-    if (mounted) _reloadFeed();
   }
 
   bool _openingAuthor = false;
@@ -422,34 +428,8 @@ final class _MomentsPageState extends State<MomentsPage> {
     if (_openingAuthor) return;
     _openingAuthor = true;
     try {
-      final own = author.userId == await widget.api.currentUserId();
-      var contact = _identityCache.contacts
-          .where((c) => c.userId == author.userId)
-          .firstOrNull;
-      if (contact == null && !own) {
-        final contacts = await widget.api.listContacts();
-        contact = contacts.where((c) => c.userId == author.userId).firstOrNull;
-      }
-      if (!mounted) return;
-      await Navigator.push(
-          context,
-          CupertinoPageRoute(
-              builder: (_) => contact != null
-                  ? ContactProfilePage(
-                      api: widget.api,
-                      identityCache: _identityCache,
-                      initialContact: contact.toDetails(),
-                      onContactUpdated: (updated) => _identityCache
-                          .applyUpdatedContact(updated.toSummary()),
-                      onContactDeleted: _identityCache.removeContact)
-                  : AddFriendProfilePage(
-                      identityCache: _identityCache,
-                      api: widget.api,
-                      userId: author.userId,
-                      username: author.username,
-                      nickname: author.displayName,
-                      avatarUrl: author.avatarUrl,
-                      relationshipState: own ? 'SELF' : 'NONE')));
+      await openMomentPerson(context,
+          api: widget.api, identityCache: _identityCache, person: author);
       if (mounted) _reloadFeed();
     } catch (_) {
       if (mounted) setState(() => _interactionError = '资料加载失败，请重试');
@@ -539,10 +519,11 @@ final class _MomentsPageState extends State<MomentsPage> {
                         return WeChatMomentTile(
                           identityCache: _identityCache,
                           key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
-                          item: item,
+                          item: visibleMomentReactions(item, _identityCache),
                           cacheNamespace: _identityCache.accountKey ?? '',
                           onOpen: () => _openDetail(item),
                           onAuthorTap: () => _openAuthor(item.author),
+                          onPersonTap: _openAuthor,
                           onCommentTap: (comment) => _openDetail(item, comment),
                           onLike: _pendingLikeIds.contains(item.id)
                               ? null

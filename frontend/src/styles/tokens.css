@@ -1,4 +1,16 @@
 :root {
+  --moment-reaction-background: #333333;
+  --moment-reaction-selected: #292929;
+  --moment-reaction-text: #f2f2f2;
+  --moment-reaction-name: #c4d2ee;
+  --moment-reaction-muted: #b3b3b3;
+  --moment-reaction-divider: rgba(255, 255, 255, 0.1);
+  --moment-reaction-shadow: rgba(0, 0, 0, 0.07);
+  --moment-reaction-radius: 8px;
+  --moment-reaction-avatar: 30px;
+  --moment-reaction-padding: 10px;
+  --moment-reaction-detail-padding: 14px;
+  --moment-reaction-like-duration: 700ms;
   --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
   --type-brand-size: 34px;
   --type-brand-weight: 700;
