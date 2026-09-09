@@ -19,6 +19,8 @@ final class ChatSearchPage extends StatefulWidget {
     required this.memberEntries,
     required this.onJumpToMessage,
     this.senderDisplayName,
+    this.identityChanges,
+    this.liveMemberEntries,
     this.memberAvatarBuilder,
     this.mediaThumbnailBuilder,
     this.onOpenMedia,
@@ -42,12 +44,14 @@ final class ChatSearchPage extends StatefulWidget {
 
   /// 群成员目录（成员筛选入口的数据；私聊传空）。
   final List<MemberDirectoryEntry> memberEntries;
+  final List<MemberDirectoryEntry> Function()? liveMemberEntries;
 
   /// 点击结果 → 定位原消息（统一走定位服务）。
   final void Function(String eventId) onJumpToMessage;
 
   /// 发送者显示名解析（结果行顶部：备注>昵称>用户名）。
   final String Function(String senderId)? senderDisplayName;
+  final Listenable? identityChanges;
 
   /// R6：月历数据——有消息日期集合（不再硬编码空集）。
   final Set<DateTime> datesWithMessages;
@@ -67,6 +71,8 @@ final class ChatSearchPage extends StatefulWidget {
 }
 
 final class _ChatSearchPageState extends State<ChatSearchPage> {
+  List<MemberDirectoryEntry> get memberEntries =>
+      widget.liveMemberEntries?.call() ?? widget.memberEntries;
   final _input = TextEditingController();
   final _scroll = ScrollController();
   ChatSearchQueryController? _controller;
@@ -79,6 +85,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   @override
   void initState() {
     super.initState();
+    widget.identityChanges?.addListener(_identityChanged);
     _controller = ChatSearchQueryController(
       search: widget.search,
       debounce: const Duration(milliseconds: 300),
@@ -86,7 +93,21 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   @override
+  void didUpdateWidget(covariant ChatSearchPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identityChanges != widget.identityChanges) {
+      oldWidget.identityChanges?.removeListener(_identityChanged);
+      widget.identityChanges?.addListener(_identityChanged);
+    }
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.identityChanges?.removeListener(_identityChanged);
     _debounce?.cancel();
     _input.dispose();
     _scroll.dispose();
@@ -227,11 +248,15 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Future<void> _pickMember() async {
+    Widget picker() => MemberPickerPage(
+        entries: memberEntries, avatarBuilder: widget.memberAvatarBuilder);
     final picked = await Navigator.of(context).push<MemberDirectoryEntry>(
       CupertinoPageRoute(
-        builder: (_) => MemberPickerPage(
-            entries: widget.memberEntries,
-            avatarBuilder: widget.memberAvatarBuilder),
+        builder: (_) => widget.identityChanges == null
+            ? picker()
+            : ListenableBuilder(
+                listenable: widget.identityChanges!,
+                builder: (context, _) => picker()),
       ),
     );
     if (picked != null && mounted) {
@@ -388,7 +413,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
             );
           }
           final message = page.items[index];
-          final member = widget.memberEntries
+          final member = memberEntries
                   .where((entry) => entry.userId == message.senderId)
                   .firstOrNull ??
               MemberDirectoryEntry(

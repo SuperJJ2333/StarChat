@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
+import '../matrix/profile_repository.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/moments/moment_image_provider.dart';
 import 'moment_models.dart';
@@ -11,10 +12,12 @@ class MomentProfilePreview extends StatefulWidget {
   const MomentProfilePreview(
       {super.key,
       required this.api,
+      this.identityCache,
       required this.userId,
       required this.displayName,
       this.refreshRevision = 0});
   final BusinessApiClient api;
+  final ProfileRepository? identityCache;
   final String userId, displayName;
   final int refreshRevision;
   @override
@@ -90,6 +93,7 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
                       context,
                       CupertinoPageRoute(
                           builder: (_) => PersonalMomentsPage(
+                              identityCache: widget.identityCache,
                               api: widget.api,
                               userId: widget.userId,
                               displayName: widget.displayName,

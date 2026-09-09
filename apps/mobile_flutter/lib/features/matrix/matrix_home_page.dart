@@ -325,20 +325,29 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
-  ConversationAvatarIdentity _personAvatar(
-          String matrixId, Uri? matrixAvatar) =>
-      conversationAvatarIdentity(
+  ConversationAvatarIdentity _personAvatar(String matrixId, Uri? matrixAvatar) {
+    final identity = _identityCache.resolveIdentity(
         matrixUserId: matrixId,
-        matrixAvatar: matrixAvatar,
-        contact: _identityCache.contactsByMatrixId[matrixId],
-        ownProfile:
-            matrixId == widget.matrix.userId ? _identityCache.profile : null,
-      );
+        username: matrixId == widget.matrix.userId
+            ? _identityCache.profile?.username
+            : null);
+    return (
+      seed: identity.cacheKey,
+      uri: identity.avatarIsKnown ? null : matrixAvatar,
+      profileUrl: identity.avatarUrl
+    );
+  }
 
   _RoomAvatarSnapshot _snapshotMemberAvatar(MatrixMemberSnapshot member) {
     final avatar = _personAvatar(member.id, member.avatar);
     return _RoomAvatarSnapshot(
-        member.displayName, avatar.seed, avatar.uri, avatar.profileUrl);
+        _identityCache
+            .resolveIdentity(
+                matrixUserId: member.id, displayName: member.displayName)
+            .displayName,
+        avatar.seed,
+        avatar.uri,
+        avatar.profileUrl);
   }
 
   @override
@@ -473,7 +482,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             () => Navigator.push(
               context,
               CupertinoPageRoute(
-                  builder: (_) => AddFriendPage(api: widget.api)),
+                  builder: (_) => AddFriendPage(
+                      api: widget.api, identityCache: _identityCache)),
             ),
           ),
           _action(
@@ -706,6 +716,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     builder: (_) => GlobalSearchPage(
                           api: widget.api,
                           matrix: widget.matrix,
+                          identityCache: _identityCache,
                         ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),

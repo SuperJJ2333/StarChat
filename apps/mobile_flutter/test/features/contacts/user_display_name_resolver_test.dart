@@ -16,6 +16,15 @@ ContactSummary _contact({
     );
 
 void main() {
+  test('whitespace identity fields use the shared fallback order', () {
+    final resolver = ContactBackedUserDisplayNameResolver(
+      contactFor: (_) =>
+          _contact(remark: '  ', nickname: '\t', username: ' bob '),
+    );
+    expect(resolver.resolveSync('@a:test', matrixDisplayName: '  '), 'bob');
+    expect(resolver.resolveSync('@a:test', matrixDisplayName: ' Matrix '),
+        'Matrix');
+  });
   test('优先级：备注 > 昵称 > Matrix displayName > username > Matrix ID', () {
     final withRemark = ContactBackedUserDisplayNameResolver(
       contactFor: (id) => _contact(remark: '张三', nickname: '阿三'),
@@ -53,7 +62,7 @@ void main() {
       warmContacts: () async => throw StateError('cache cold'),
     );
     expect(resolver.resolveSync('@a:matrix.localhost'), 'u1');
-    expect(await resolver.resolve('@a:matrix.localhost',
-        matrixDisplayName: ''), 'u1');
+    expect(await resolver.resolve('@a:matrix.localhost', matrixDisplayName: ''),
+        'u1');
   });
 }

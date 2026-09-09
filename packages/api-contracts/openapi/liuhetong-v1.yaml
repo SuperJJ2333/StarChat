@@ -15312,6 +15312,12 @@
         "responses": {
           "200": {
             "content": {
+              "image/gif": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "image/jpeg": {
                 "schema": {
                   "format": "binary",

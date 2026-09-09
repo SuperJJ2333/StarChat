@@ -60,6 +60,7 @@ import '../transfer/chat_transfer_detail_sheet.dart';
 import '../transfer/chat_transfer_sheet.dart';
 import 'matrix_e2ee_client.dart';
 import 'image_picker_page.dart';
+import 'gallery_media_payload.dart';
 import 'voice_recording_controller.dart';
 import 'voice_playback_controller.dart' hide VoicePlaybackState;
 import 'voice_transcriber.dart';
@@ -150,6 +151,7 @@ Future<void> openGroupMemberProfile(
       lookupByMatrixId,
   required GroupChatMember member,
   String? selfMatrixUserId,
+  ProfileRepository? identityCache,
   ContactDetails? friendContact,
   void Function(ContactDetails contact)? onOpenFriendContact,
 }) async {
@@ -165,6 +167,7 @@ Future<void> openGroupMemberProfile(
       CupertinoPageRoute(
         builder: (_) => AddFriendProfilePage(
           api: api,
+          identityCache: identityCache,
           userId: profile['user_id']?.toString() ?? '',
           username: profile['username']?.toString() ?? member.matrixUserId,
           nickname: (profile['nickname']?.toString() ?? '').isNotEmpty
@@ -491,12 +494,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final options = <MentionOption>[];
     for (final member in _joinedMembers) {
       if (member.id == selfId) continue;
-      final nickname =
-          contactsByMatrixId[member.id]?.nickname ?? member.displayName;
+      final identity = _identityCache.resolveIdentity(
+          matrixUserId: member.id, displayName: member.displayName);
+      final nickname = identity.publicDisplayName;
       final remark = contactsByMatrixId[member.id]?.remark?.trim() ?? '';
       options.add(MentionOption(
         id: member.id,
-        primaryName: remark.isNotEmpty ? remark : nickname,
+        primaryName: identity.displayName,
         nickname: nickname,
         hasRemark: remark.isNotEmpty,
       ));
@@ -519,7 +523,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final cursor = input.selection.baseOffset;
     final caret = option.isAll
         ? mentionComposer.replaceTrigger(
-            displayName: option.primaryName,
+            displayName: option.publicName,
             userId: '@all',
             cursor: cursor < 0 ? null : cursor,
             mentionAllUserIds: [
@@ -528,7 +532,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             ],
           )
         : mentionComposer.replaceTrigger(
-            displayName: option.primaryName,
+            displayName: option.publicName,
             userId: option.id,
             cursor: cursor < 0 ? null : cursor,
           );
@@ -746,7 +750,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final original =
             session.vault.items.firstWhere((entry) => entry.id == item.id);
         final bytes = await session.loadBytes(original);
-        validateGifForSend(bytes);
+        validateGifStructureForSend(bytes);
         roomImagePreviewCache.seed(txid, bytes);
         final result = await _cacheSentImage(
             bytes,
@@ -1051,6 +1055,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       context,
       api: widget.api,
       lookupByMatrixId: widget.api.lookupUserByMatrixId,
+      identityCache: _identityCache,
       member: GroupChatMember(
         matrixUserId: matrixUserId,
         displayName: member.displayName,
@@ -1159,11 +1164,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             roomImagePreviewCache.seed(transactionId, photo.thumbnail);
           }
           return _enqueueMedia(() async {
-            final bytes = await (result.original
-                ? photo.originalBytes()
-                : photo.compressedBytes());
-            validateGifForSend(bytes);
-            final mimeType = isGifBytes(bytes) ? 'image/gif' : photo.mimeType;
+            final prepared =
+                await prepareGalleryMedia(photo, original: result.original);
+            final bytes = prepared.bytes;
+            final mimeType = prepared.mimeType;
             if (!photo.isVideo) {
               roomImagePreviewCache.seed(
                   transactionId,
@@ -1627,15 +1631,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await _showError('好友资料尚未加载，暂时无法发送定向红包');
       return;
     }
-    final members = <ChatRoomMember>[
-      for (final participant in roomInfo.members)
-        if (participant.id != roomInfo.currentUserId)
-          ChatRoomMember(
-            participant.id,
-            contactsByMatrixId[participant.id]?.displayName ??
-                participant.displayName,
-          ),
-    ];
+    List<ChatRoomMember> members() => <ChatRoomMember>[
+          for (final participant in roomInfo.members)
+            if (participant.id != roomInfo.currentUserId)
+              ChatRoomMember(
+                participant.id,
+                _identityCache
+                    .resolveIdentity(
+                        matrixUserId: participant.id,
+                        displayName: participant.displayName)
+                    .displayName,
+              ),
+        ];
     final payment = await _preparePayment();
     if (payment == null || !mounted) return;
     final redPacketController = ChatRedPacketController(
@@ -1647,12 +1654,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     await Navigator.push<void>(
       context,
       CupertinoPageRoute(
-        builder: (pageContext) => ChatRedPacketSheet(
-          controller: redPacketController,
-          isGroup: isGroup,
-          support: BusinessChatRedPacketSupport(widget.api),
-          members: members,
-          onSent: () => Navigator.pop(pageContext),
+        builder: (pageContext) => ListenableBuilder(
+          listenable: _identityCache,
+          builder: (context, child) => ChatRedPacketSheet(
+            controller: redPacketController,
+            isGroup: isGroup,
+            support: BusinessChatRedPacketSupport(widget.api),
+            members: members(),
+            onSent: () => Navigator.pop(pageContext),
+          ),
         ),
       ),
     );
@@ -1734,6 +1744,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         CupertinoPageRoute(
           builder: (_) => ContactProfilePage(
             api: widget.api,
+            identityCache: _identityCache,
             initialContact: contact,
             onMessage: widget.onMessage,
             onVoice: widget.onVoice,
@@ -1787,6 +1798,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               context,
               api: widget.api,
               lookupByMatrixId: widget.api.lookupUserByMatrixId,
+              identityCache: _identityCache,
               member: member,
               selfMatrixUserId: roomInfo.currentUserId,
               friendContact: contactsById[member.matrixUserId],
@@ -1852,6 +1864,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         CupertinoPageRoute(
           builder: (_) => GroupMemberPickerPage(
             contacts: contacts,
+            identityCache: _identityCache,
             existingMemberIds: existing,
             onInvite: (matrixUserId, businessUserId) => infoController
                 .invite(matrixUserId, businessUserId: businessUserId),
@@ -1942,17 +1955,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
     ]..sort((a, b) => b.timelineOrder.compareTo(a.timelineOrder));
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
-    final memberEntries = <MemberDirectoryEntry>[
-      for (final member in _joinedMembers)
-        MemberDirectoryEntry(
-          userId: member.id,
-          remark: contactsByMatrixId[member.id]?.remark,
-          nickname:
-              contactsByMatrixId[member.id]?.nickname ?? member.displayName,
-          username:
-              contactsByMatrixId[member.id]?.username ?? localPart(member.id),
-        ),
-    ];
+    List<MemberDirectoryEntry> memberEntries() => <MemberDirectoryEntry>[
+          for (final member in _joinedMembers)
+            MemberDirectoryEntry(
+              userId: member.id,
+              remark: contactsByMatrixId[member.id]?.remark,
+              nickname:
+                  contactsByMatrixId[member.id]?.nickname ?? member.displayName,
+              username: contactsByMatrixId[member.id]?.username ??
+                  localPart(member.id),
+            ),
+        ];
     // 有消息日期（从当前消息集构建；月历不再硬编码——R6）。
     final datesWithMessages = <DateTime>{
       for (final message in searchMessages)
@@ -1970,6 +1983,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (_) => ChatSearchPage(
           isGroup: isGroup,
+          identityChanges: _identityCache,
+          senderDisplayName: (id) => _identityCache
+              .resolveIdentity(
+                  matrixUserId: id, displayName: _member(id).displayName)
+              .displayName,
           search: (filters, {cursor, limit = 50}) async {
             // 数据源检索（已解密可访问消息）。
             final matched = searchMessages.where(filters.matches).toList();
@@ -1983,25 +2001,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             final end = (start + limit).clamp(0, matched.length);
             return matched.sublist(start, end);
           },
-          memberEntries: memberEntries,
-          memberAvatarBuilder: (context, entry) => MatrixUserAvatar(
-            avatarMedia: widget.roomLease,
-            nickname: entry.displayName,
-            fallbackSeed: entry.userId,
-            matrixAvatarUri: (entry.userId == roomInfo.currentUserId
-                            ? ownProfile?.avatarUrl
-                            : contactsByMatrixId[entry.userId]?.avatarUrl)
-                        ?.trim()
-                        .isNotEmpty ==
-                    true
-                ? null
-                : _member(entry.userId).avatarUri,
-            fallbackAvatarUrl: entry.userId == roomInfo.currentUserId
-                ? ownProfile?.avatarUrl
-                : contactsByMatrixId[entry.userId]?.avatarUrl,
-            diagnosticSource: 'search-member-picker',
-            size: 36,
-          ),
+          memberEntries: memberEntries(),
+          liveMemberEntries: memberEntries,
+          memberAvatarBuilder: (context, entry) {
+            final identity = _identityCache.resolveIdentity(
+                matrixUserId: entry.userId, displayName: entry.displayName);
+            return MatrixUserAvatar(
+              avatarMedia: widget.roomLease,
+              nickname: identity.displayName,
+              fallbackSeed: identity.cacheKey,
+              matrixAvatarUri: identity.avatarIsKnown
+                  ? null
+                  : _member(entry.userId).avatarUri,
+              fallbackAvatarUrl: identity.avatarUrl,
+              diagnosticSource: 'search-member-picker',
+              size: 36,
+            );
+          },
           mediaThumbnailBuilder: (context, message) =>
               FutureBuilder<Uint8List?>(
             future: message.isVideo
@@ -2114,29 +2130,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   String _displayName(String matrixUserId, bool own) {
-    if (own) return ownProfile?.nickname ?? '我';
-    final memberName = _member(matrixUserId).displayName;
-    final contact = contactsByMatrixId[matrixUserId];
-    // 优先级（需求 3）：私聊 备注>昵称；群聊 群昵称>备注>昵称。
-    return resolveChatSenderDisplayName(
-      isDirectChat: roomInfo.isDirect,
-      memberName: memberName,
-      contactNickname: contact?.nickname,
-      remark: contact?.remark,
-    );
+    return _identityCache
+        .resolveIdentity(
+          matrixUserId: matrixUserId,
+          username: own ? ownProfile?.username : null,
+          displayName: own
+              ? (ownProfile?.nickname ?? '我')
+              : _member(matrixUserId).displayName,
+        )
+        .displayName;
   }
 
   Widget _avatar(RoomMessageViewModel message) {
-    final contact = contactsByMatrixId[message.senderId];
     final member = _member(message.senderId);
+    final identity = _identityCache.resolveIdentity(
+      matrixUserId: message.senderId,
+      username: message.isOwn ? ownProfile?.username : null,
+      displayName: member.displayName,
+      avatarUrl: message.isOwn ? ownProfile?.avatarUrl : null,
+    );
     return MatrixUserAvatar(
       avatarMedia: widget.roomLease,
       diagnosticSource: 'room-message',
       nickname: _displayName(message.senderId, message.isOwn),
-      fallbackSeed: message.senderId.isEmpty ? 'me' : message.senderId,
-      matrixAvatarUri: message.isOwn ? null : member.avatarUri,
-      fallbackAvatarUrl:
-          message.isOwn ? ownProfile?.avatarUrl : contact?.avatarUrl,
+      fallbackSeed: identity.cacheKey,
+      matrixAvatarUri: identity.avatarIsKnown ? null : member.avatarUri,
+      fallbackAvatarUrl: identity.avatarUrl,
       size: WeChatDimensions.messageAvatar,
     );
   }
@@ -2309,7 +2328,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   String _senderDisplayName(RoomMessageViewModel message) {
-    final contact = contactsByMatrixId[message.senderId];
     MatrixRoomMemberSnapshot? member;
     for (final participant in roomInfo.members) {
       if (participant.id == message.senderId) {
@@ -2318,11 +2336,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       }
     }
     // 联系人投影属于当前账号；自己的备注只在本机呈现，不写入消息。
-    return resolveMessageSenderDisplayName(
-      senderId: message.senderId,
-      contactDisplayName: contact?.displayName,
-      matrixDisplayName: member?.displayName,
-    );
+    return _identityCache
+        .resolveIdentity(
+          matrixUserId: message.senderId,
+          displayName: member?.displayName,
+        )
+        .displayName;
   }
 
   Future<void> _openMessageSender(RoomMessageViewModel message) =>
@@ -2784,16 +2803,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final recentIds = store.load();
     final destinations = await widget.roomLease.forwardingDestinations();
     if (!mounted) return;
-    final candidates = <ChatForwardCandidate>[
-      for (final room in destinations)
-        ChatForwardCandidate(
-            roomId: room.id,
-            title: _forwardTitleFor(room),
-            avatar: _forwardRoomAvatar(room),
-            isGroup: !room.isDirect,
-            memberCount: room.memberCount),
-    ];
-    if (candidates.isEmpty) {
+    List<ChatForwardCandidate> candidates() => <ChatForwardCandidate>[
+          for (final room in destinations)
+            ChatForwardCandidate(
+                roomId: room.id,
+                title: _forwardTitleFor(room),
+                avatar: _forwardRoomAvatar(room),
+                isGroup: !room.isDirect,
+                memberCount: room.memberCount),
+        ];
+    if (candidates().isEmpty) {
       if (mounted) setState(() => mediaMessage = '没有可用的端到端加密会话');
       return;
     }
@@ -2801,31 +2820,36 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final forwarded =
         await Navigator.of(context, rootNavigator: true).push<bool>(
       CupertinoPageRoute<bool>(
-        builder: (_) => ChatForwardPickerPage(
-          candidates: candidates,
-          contentPreview: messages
-              .map((message) => switch (message.kind) {
-                    RoomMessageKind.image => '[图片]',
-                    RoomMessageKind.video => '[视频]',
-                    RoomMessageKind.voice => '[语音]',
-                    RoomMessageKind.file => '[文件] ${message.text}',
-                    _ => message.text,
-                  })
-              .join('\n'),
-          recentRoomIds: [
-            for (final id in recentIds)
-              if (candidates.any((c) => c.roomId == id)) id,
-          ],
-          onForward: (roomIds) async {
-            for (final roomId in roomIds) {
-              for (final message in messages) {
-                if (completed.contains((message.id, roomId))) continue;
-                await interaction.forward(message.id, roomId);
-                completed.add((message.id, roomId));
+        builder: (_) => ListenableBuilder(
+          listenable: _identityCache,
+          builder: (context, child) => ChatForwardPickerPage(
+            identityChanges: _identityCache,
+            resolveCandidates: candidates,
+            candidates: candidates(),
+            contentPreview: messages
+                .map((message) => switch (message.kind) {
+                      RoomMessageKind.image => '[图片]',
+                      RoomMessageKind.video => '[视频]',
+                      RoomMessageKind.voice => '[语音]',
+                      RoomMessageKind.file => '[文件] ${message.text}',
+                      _ => message.text,
+                    })
+                .join('\n'),
+            recentRoomIds: [
+              for (final id in recentIds)
+                if (destinations.any((room) => room.id == id)) id,
+            ],
+            onForward: (roomIds) async {
+              for (final roomId in roomIds) {
+                for (final message in messages) {
+                  if (completed.contains((message.id, roomId))) continue;
+                  await interaction.forward(message.id, roomId);
+                  completed.add((message.id, roomId));
+                }
               }
-            }
-            await store.record(roomIds);
-          },
+              await store.record(roomIds);
+            },
+          ),
         ),
       ),
     );
@@ -2839,21 +2863,29 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   String _forwardTitleFor(MatrixForwardDestinationSnapshot room) {
     final peer = room.directPeerId;
     if (peer != null) {
-      final contact = contactsByMatrixId[peer];
-      if (contact != null) return contact.displayName;
+      return _identityCache
+          .resolveIdentity(matrixUserId: peer, displayName: room.displayName)
+          .displayName;
     }
     return room.displayName;
   }
 
   Widget _forwardRoomAvatar(MatrixForwardDestinationSnapshot room) {
-    Widget avatar(String id, String name, Uri? uri) => MatrixUserAvatar(
-        avatarMedia: widget.roomLease,
-        nickname: name,
-        fallbackSeed: id,
-        matrixAvatarUri: uri,
-        size: 52);
+    Widget avatar(String id, String name, Uri? uri) {
+      final identity =
+          _identityCache.resolveIdentity(matrixUserId: id, displayName: name);
+      return MatrixUserAvatar(
+          avatarMedia: widget.roomLease,
+          nickname: identity.displayName,
+          fallbackSeed: identity.cacheKey,
+          matrixAvatarUri: identity.avatarIsKnown ? null : uri,
+          fallbackAvatarUrl: identity.avatarUrl,
+          size: 52);
+    }
+
     if (room.isDirect || room.avatarUri != null || room.members.isEmpty) {
-      return avatar(room.id, room.displayName, room.avatarUri);
+      return avatar(room.isDirect ? (room.directPeerId ?? room.id) : room.id,
+          room.displayName, room.avatarUri);
     }
     return GroupAvatarMosaic(size: 52, avatars: [
       for (final member in room.members.take(9))
@@ -3225,22 +3257,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   if (composerPanel == ComposerPanel.mention)
                     WeChatMentionPanel(
                       options: _mentionMembers(),
-                      avatarBuilder: (context, option) => MatrixUserAvatar(
-                        avatarMedia: widget.roomLease,
-                        nickname: option.primaryName,
-                        fallbackSeed: option.id,
-                        matrixAvatarUri: contactsByMatrixId[option.id]
-                                    ?.avatarUrl
-                                    ?.trim()
-                                    .isNotEmpty ==
-                                true
-                            ? null
-                            : _member(option.id).avatarUri,
-                        fallbackAvatarUrl:
-                            contactsByMatrixId[option.id]?.avatarUrl,
-                        diagnosticSource: 'mention-member-picker',
-                        size: 36,
-                      ),
+                      avatarBuilder: (context, option) {
+                        final identity = _identityCache.resolveIdentity(
+                            matrixUserId: option.id,
+                            displayName: option.primaryName);
+                        return MatrixUserAvatar(
+                          avatarMedia: widget.roomLease,
+                          nickname: identity.displayName,
+                          fallbackSeed: identity.cacheKey,
+                          matrixAvatarUri: identity.avatarIsKnown
+                              ? null
+                              : _member(option.id).avatarUri,
+                          fallbackAvatarUrl: identity.avatarUrl,
+                          diagnosticSource: 'mention-member-picker',
+                          size: 36,
+                        );
+                      },
                       canMentionAll: _canMentionAll,
                       onSelect: _insertMention,
                     ),

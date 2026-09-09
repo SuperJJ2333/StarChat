@@ -15,6 +15,45 @@ ChatForwardCandidate _candidate(String id, String title,
     );
 
 void main() {
+  testWidgets('confirmation uses current identity while open', (tester) async {
+    final identity = ValueNotifier<String>('昵称');
+    await tester.pumpWidget(CupertinoApp(
+        home: ValueListenableBuilder<String>(
+      valueListenable: identity,
+      builder: (_, name, child) => ChatForwardPickerPage(
+        candidates: [_candidate('a', name)],
+        recentRoomIds: const [],
+        identityChanges: identity,
+        onForward: (_) async {},
+        resolveCandidates: () => [_candidate('a', identity.value)],
+      ),
+    )));
+    await tester.tap(find.byKey(const Key('forward-chat-a')));
+    await tester.pumpAndSettle();
+    identity.value = '更新备注';
+    await tester.pump();
+    final sheet = find.byKey(const Key('forward-confirmation-sheet'));
+    expect(find.descendant(of: sheet, matching: find.text('更新备注')),
+        findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    identity.dispose();
+  });
+
+  testWidgets('open picker refreshes names in recent and main rows',
+      (tester) async {
+    Widget build(String name) => CupertinoApp(
+            home: ChatForwardPickerPage(
+          candidates: [_candidate('a', name)],
+          recentRoomIds: const ['a'],
+          onForward: (_) async {},
+        ));
+    await tester.pumpWidget(build('旧昵称'));
+    expect(find.text('旧昵称'), findsNWidgets(2));
+    await tester.pumpWidget(build('新备注'));
+    expect(find.text('新备注'), findsNWidgets(2));
+    expect(find.text('旧昵称'), findsNothing);
+  });
+
   testWidgets('confirmation disables duplicate sends while request is pending',
       (tester) async {
     final pending = Completer<void>();

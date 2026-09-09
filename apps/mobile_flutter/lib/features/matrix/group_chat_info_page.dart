@@ -18,11 +18,39 @@ import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/notification/conversation_notification_mode_tile.dart';
 
 /// 成员展示名：备注（查看者本人可见）→ 控制器解析名（Matrix 昵称）。
-String _resolvedMemberName(ProfileRepository? cache, GroupChatMember member) {
-  final contact = cache?.contactsByMatrixId[member.matrixUserId];
-  return contact?.displayName.isNotEmpty == true
-      ? contact!.displayName
-      : member.displayName;
+String _resolvedMemberName(ProfileRepository? cache, GroupChatMember member) =>
+    cache
+        ?.resolveIdentity(
+            matrixUserId: member.matrixUserId, displayName: member.displayName)
+        .displayName ??
+    member.displayName;
+
+Widget _memberAvatar(ProfileRepository? cache, GroupChatMember member,
+    {double size = 40, AvatarMediaCapability? media}) {
+  final identity = cache?.resolveIdentity(
+      matrixUserId: member.matrixUserId,
+      displayName: member.displayName,
+      avatarUrl: member.avatarUrl);
+  final name = identity?.displayName ?? member.displayName;
+  final seed = identity?.cacheKey ?? member.matrixUserId;
+  if (!(identity?.avatarIsKnown ?? false) &&
+      media != null &&
+      member.matrixAvatarUri != null) {
+    return MatrixUserAvatar(
+        avatarMedia: media,
+        matrixAvatarUri: member.matrixAvatarUri,
+        nickname: name,
+        fallbackSeed: seed,
+        fallbackAvatarUrl: identity?.avatarUrl ?? member.avatarUrl,
+        size: size);
+  }
+  return UserAvatar(
+      nickname: name,
+      fallbackSeed: seed,
+      avatarUrl: identity == null ? member.avatarUrl : identity.avatarUrl,
+      avatarHeaders:
+          (identity?.avatarIsKnown ?? false) ? null : member.avatarHeaders,
+      size: size);
 }
 
 final class GroupChatInfoPage extends StatefulWidget {
@@ -220,7 +248,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                       child: Text(
                         '等待加入（${snapshot.invitedMembers.length}）：'
-                        '${snapshot.invitedMembers.map((member) => member.displayName).join('、')}',
+                        '${snapshot.invitedMembers.map((member) => _resolvedMemberName(widget.identityCache, member)).join('、')}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: WeChatColors.textSecondary,
@@ -288,6 +316,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         context,
                         CupertinoPageRoute(
                           builder: (_) => GroupManagementPage(
+                            identityCache: widget.identityCache,
                             controller: widget.controller,
                             onDissolved: widget.onLeft,
                           ),
@@ -520,7 +549,12 @@ final class _FollowedGroupMemberPickerPageState
       widget.controller.state.snapshot!.followedMemberIds.toSet();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => widget.identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: widget.identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
       navigationBar: CupertinoNavigationBar(
@@ -548,13 +582,7 @@ final class _FollowedGroupMemberPickerPageState
           ),
           for (final member in snapshot.members)
             WeChatListTile(
-              leading: UserAvatar(
-                nickname: _resolvedMemberName(widget.identityCache, member),
-                fallbackSeed: member.matrixUserId,
-                avatarUrl: member.avatarUrl,
-                avatarHeaders: member.avatarHeaders,
-                size: 40,
-              ),
+              leading: _memberAvatar(widget.identityCache, member),
               title: Text(_resolvedMemberName(widget.identityCache, member)),
               trailing: Icon(
                 selected.contains(member.matrixUserId)
@@ -658,7 +686,11 @@ final class _RemoveMemberCell extends StatelessWidget {
 
 final class GroupManagementPage extends StatelessWidget {
   const GroupManagementPage(
-      {super.key, required this.controller, this.onDissolved});
+      {super.key,
+      required this.controller,
+      this.onDissolved,
+      this.identityCache});
+  final ProfileRepository? identityCache;
   final GroupChatInfoController controller;
   final VoidCallback? onDissolved;
   @override
@@ -746,11 +778,15 @@ final class GroupManagementPage extends StatelessWidget {
           context,
           CupertinoPageRoute<void>(
               builder: (_) => _GroupRolePicker(
-                  controller: controller, transfer: transfer)));
+                  controller: controller,
+                  transfer: transfer,
+                  identityCache: identityCache)));
 }
 
 final class _GroupRolePicker extends StatefulWidget {
-  const _GroupRolePicker({required this.controller, required this.transfer});
+  const _GroupRolePicker(
+      {required this.controller, required this.transfer, this.identityCache});
+  final ProfileRepository? identityCache;
   final GroupChatInfoController controller;
   final bool transfer;
   @override
@@ -794,7 +830,12 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => widget.identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: widget.identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
     return WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
@@ -815,7 +856,7 @@ final class _GroupRolePickerState extends State<_GroupRolePicker> {
           for (final member in snapshot.members
               .where((m) => m.matrixUserId != snapshot.ownerId))
             WeChatListTile(
-                title: Text(member.displayName),
+                title: Text(_resolvedMemberName(widget.identityCache, member)),
                 trailing: Icon(selected.contains(member.matrixUserId)
                     ? CupertinoIcons.check_mark_circled_solid
                     : CupertinoIcons.circle),
@@ -843,14 +884,19 @@ final class GroupMemberSearchPage extends StatefulWidget {
 final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
   String query = '';
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => widget.identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: widget.identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
     // R12 修复：成员搜索统一走拼音排序/过滤服务（A-Z 分组+全拼/首字母
     // 匹配），替换旧的展示名 contains 过滤。
     final entries = [
       for (final member in widget.snapshot.members)
         MemberDirectoryEntry(
           userId: member.matrixUserId,
-          nickname: member.displayName,
+          nickname: _resolvedMemberName(widget.identityCache, member),
         ),
     ];
     final sorted = sortAndFilterMemberEntries(entries, query);
@@ -879,11 +925,10 @@ final class _GroupMemberSearchPageState extends State<GroupMemberSearchPage> {
                 : ListView(children: [
                     for (final entry in sorted)
                       WeChatListTile(
-                        leading: UserAvatar(
-                          nickname: entry.displayName,
-                          fallbackSeed: entry.userId,
-                          size: 40,
-                        ),
+                        leading: _memberAvatar(
+                            widget.identityCache,
+                            widget.snapshot.members.firstWhere((member) =>
+                                member.matrixUserId == entry.userId)),
                         title: Text(entry.displayName),
                         subtitle: Text(entry.userId == widget.snapshot.ownerId
                             ? '群主'
@@ -911,7 +956,12 @@ final class GroupMemberRemovalPage extends StatefulWidget {
 final class _GroupMemberRemovalPageState extends State<GroupMemberRemovalPage> {
   final selected = <String>{};
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => widget.identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: widget.identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
     final snapshot = widget.controller.state.snapshot!;
     final removable = snapshot.members.where((member) =>
         member.matrixUserId != snapshot.ownerId &&
@@ -1001,22 +1051,7 @@ final class _MemberCell extends StatelessWidget {
       onPressed: onTap,
       child: Column(
         children: [
-          avatarMedia != null && member.matrixAvatarUri != null
-              ? MatrixUserAvatar(
-                  avatarMedia: avatarMedia!,
-                  matrixAvatarUri: member.matrixAvatarUri,
-                  nickname: _resolvedMemberName(identityCache, member),
-                  fallbackSeed: member.matrixUserId,
-                  fallbackAvatarUrl: member.avatarUrl,
-                  size: 48,
-                )
-              : UserAvatar(
-                  nickname: _resolvedMemberName(identityCache, member),
-                  fallbackSeed: member.matrixUserId,
-                  avatarUrl: member.avatarUrl,
-                  avatarHeaders: member.avatarHeaders,
-                  size: 48,
-                ),
+          _memberAvatar(identityCache, member, size: 48, media: avatarMedia),
           const SizedBox(height: 5),
           Text(
             _resolvedMemberName(identityCache, member),
@@ -1112,11 +1147,13 @@ final class GroupMemberPickerPage extends StatefulWidget {
   const GroupMemberPickerPage({
     super.key,
     required this.contacts,
+    this.identityCache,
     required this.existingMemberIds,
     required this.onInvite,
   });
 
   final List<ContactSummary> contacts;
+  final ProfileRepository? identityCache;
   final Set<String> existingMemberIds;
 
   /// matrixUserId（Matrix invite）+ userId（业务 id，服务端自动入群）。
@@ -1145,7 +1182,12 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => widget.identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: widget.identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
     final available = widget.contacts
         .where(
           (contact) => !widget.existingMemberIds.contains(contact.matrixUserId),
@@ -1169,12 +1211,33 @@ final class _GroupMemberPickerPageState extends State<GroupMemberPickerPage> {
             for (final contact in available)
               WeChatListTile(
                 leading: UserAvatar(
-                  nickname: contact.displayName,
-                  fallbackSeed: contact.username,
-                  avatarUrl: contact.avatarUrl,
+                  nickname: widget.identityCache
+                          ?.resolveIdentity(
+                              userId: contact.userId,
+                              nickname: contact.nickname,
+                              username: contact.username)
+                          .displayName ??
+                      contact.displayName,
+                  fallbackSeed: widget.identityCache
+                          ?.resolveIdentity(userId: contact.userId)
+                          .cacheKey ??
+                      contact.username,
+                  avatarUrl: widget.identityCache == null
+                      ? contact.avatarUrl
+                      : widget.identityCache!
+                          .resolveIdentity(
+                              userId: contact.userId,
+                              avatarUrl: contact.avatarUrl)
+                          .avatarUrl,
                   size: 40,
                 ),
-                title: Text(contact.displayName),
+                title: Text(widget.identityCache
+                        ?.resolveIdentity(
+                            userId: contact.userId,
+                            nickname: contact.nickname,
+                            username: contact.username)
+                        .displayName ??
+                    contact.displayName),
                 trailing: Icon(
                   selected.contains(contact.matrixUserId)
                       ? CupertinoIcons.check_mark_circled_solid

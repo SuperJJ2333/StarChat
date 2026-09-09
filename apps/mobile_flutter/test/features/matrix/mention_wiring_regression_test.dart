@@ -1,11 +1,27 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/mention_composer_model.dart';
+import 'package:liuhetong_mobile/ui/chat/wechat_mention_panel.dart';
 
 /// GLM 审查 R1/R2/R3 回归：用真实 TextEditingController 驱动
 /// RoomPage 同款事件顺序（最小复现，非完整 RoomPage E2E）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('mention body uses public name while picker keeps private remark', () {
+    const option = MentionOption(
+        id: '@friend:test',
+        primaryName: '私密备注',
+        nickname: '公开昵称',
+        hasRemark: true);
+    final draft = MentionComposerModel(text: '@');
+    draft.triggerAt(0);
+    draft.replaceTrigger(
+        displayName: option.publicName, userId: option.id, cursor: 1);
+    expect(option.primaryName, '私密备注');
+    expect(draft.text, contains('公开昵称'));
+    expect(draft.text, isNot(contains('私密备注')));
+    expect(draft.recipientUserIds(), ['@friend:test']);
+  });
 
   /// 复刻 RoomPage 的监听器接线（含 R1/R3 修复后的顺序与守卫）。
   late TextEditingController input;
@@ -20,7 +36,8 @@ void main() {
       final (start, removed, inserted) =
           MentionComposerModel.diffEdit(lastComposerText, next);
       mentionComposer.text = next; // R1：先更新文本。
-      mentionComposer.applyEdit(start: start, removed: removed, inserted: inserted);
+      mentionComposer.applyEdit(
+          start: start, removed: removed, inserted: inserted);
       final cursor = input.selection.baseOffset;
       if (inserted > 0 && cursor > 0 && cursor <= next.length) {
         final insertedEnd = start + inserted;

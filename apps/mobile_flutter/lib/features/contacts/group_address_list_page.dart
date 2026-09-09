@@ -7,12 +7,15 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
 import '../matrix/matrix_user_avatar.dart';
+import '../matrix/profile_repository.dart';
 
 /// BUG4：群聊通讯录——只显示当前用户已 join、非私聊、且开了
 /// 「保存到通讯录」（room account data `saved=true`，个人设置不泄露给
 /// 其他成员）的群聊；按最近活跃倒序；随 Matrix 同步与保存状态即时刷新。
 final class GroupAddressListPage extends StatefulWidget {
-  const GroupAddressListPage({super.key, required this.matrix, this.onOpen});
+  const GroupAddressListPage(
+      {super.key, required this.matrix, this.onOpen, this.identityCache});
+  final ProfileRepository? identityCache;
 
   final MatrixSdkE2eeClient matrix;
 
@@ -29,6 +32,7 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
   @override
   void initState() {
     super.initState();
+    widget.identityCache?.addListener(_identityChanged);
     _subscription =
         widget.matrix.syncEvents.listen((_) => unawaited(_refresh()));
     unawaited(_refresh());
@@ -37,7 +41,12 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
   @override
   void dispose() {
     _subscription?.cancel();
+    widget.identityCache?.removeListener(_identityChanged);
     super.dispose();
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
   }
 
   List<MatrixConversationRoomSnapshot> _rooms = [];
@@ -118,6 +127,7 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
         final name =
             room.displayName.trim().isEmpty ? '未命名群聊' : room.displayName.trim();
         return _GroupAddressTile(
+          identityCache: widget.identityCache,
           room: room,
           avatarMedia: widget.matrix,
           name: name,
@@ -132,6 +142,7 @@ final class _GroupAddressListPageState extends State<GroupAddressListPage> {
 final class _GroupAddressTile extends StatelessWidget {
   const _GroupAddressTile({
     required this.room,
+    this.identityCache,
     required this.avatarMedia,
     required this.name,
     required this.memberCount,
@@ -139,6 +150,7 @@ final class _GroupAddressTile extends StatelessWidget {
   });
 
   final MatrixConversationRoomSnapshot room;
+  final ProfileRepository? identityCache;
   final AvatarMediaCapability avatarMedia;
   final String name;
   final int memberCount;
@@ -161,9 +173,25 @@ final class _GroupAddressTile extends StatelessWidget {
                   for (final member in room.members.take(9))
                     MatrixUserAvatar(
                       avatarMedia: avatarMedia,
-                      nickname: member.displayName,
-                      fallbackSeed: member.id,
-                      matrixAvatarUri: member.avatar,
+                      nickname: identityCache
+                              ?.resolveIdentity(
+                                  matrixUserId: member.id,
+                                  displayName: member.displayName)
+                              .displayName ??
+                          member.displayName,
+                      fallbackSeed: identityCache
+                              ?.resolveIdentity(matrixUserId: member.id)
+                              .cacheKey ??
+                          member.id,
+                      matrixAvatarUri: (identityCache
+                                  ?.resolveIdentity(matrixUserId: member.id)
+                                  .avatarIsKnown ??
+                              false)
+                          ? null
+                          : member.avatar,
+                      fallbackAvatarUrl: identityCache
+                          ?.resolveIdentity(matrixUserId: member.id)
+                          .avatarUrl,
                     ),
                 ],
               ),

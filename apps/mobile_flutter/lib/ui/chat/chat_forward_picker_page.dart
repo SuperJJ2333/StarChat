@@ -32,32 +32,38 @@ final class ChatForwardPickerPage extends StatefulWidget {
     required this.recentRoomIds,
     required this.onForward,
     this.contentPreview = '转发消息',
+    this.identityChanges,
+    this.resolveCandidates,
   });
 
   final List<ChatForwardCandidate> candidates;
   final List<String> recentRoomIds;
   final Future<void> Function(List<String> roomIds) onForward;
   final String contentPreview;
+  final Listenable? identityChanges;
+  final List<ChatForwardCandidate> Function()? resolveCandidates;
 
   @override
   State<ChatForwardPickerPage> createState() => _ChatForwardPickerPageState();
 }
 
 final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
+  List<ChatForwardCandidate> get candidates =>
+      widget.resolveCandidates?.call() ?? widget.candidates;
   String query = '';
   bool multiSelect = false;
   final Set<String> selected = <String>{};
   bool sending = false;
 
-  late final recentCandidates = [
-    for (final id in widget.recentRoomIds)
-      if (widget.candidates.any((c) => c.roomId == id))
-        widget.candidates.firstWhere((c) => c.roomId == id),
-  ];
+  List<ChatForwardCandidate> get recentCandidates => [
+        for (final id in widget.recentRoomIds)
+          if (candidates.any((c) => c.roomId == id))
+            candidates.firstWhere((c) => c.roomId == id),
+      ];
 
-  late final List<ChatForwardCandidate> sortedCandidates = [
-    ...widget.candidates, // 保持调用方最近活动顺序，不修改输入集合。
-  ];
+  List<ChatForwardCandidate> get sortedCandidates => [
+        ...candidates, // 保持调用方最近活动顺序，不修改输入集合。
+      ];
 
   List<ChatForwardCandidate> get visibleCandidates {
     final keyword = query.trim();
@@ -71,17 +77,22 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
   Future<void> _forward(List<String> roomIds) async {
     if (sending || roomIds.isEmpty) return;
     setState(() => sending = true);
+    Widget confirmation() => _ForwardConfirmation(
+          recipients: [
+            for (final id in roomIds)
+              candidates.firstWhere((candidate) => candidate.roomId == id),
+          ],
+          contentPreview: widget.contentPreview,
+          onForward: () => widget.onForward(List.unmodifiable(roomIds)),
+        );
     final sent = await showCupertinoModalPopup<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _ForwardConfirmation(
-        recipients: [
-          for (final id in roomIds)
-            widget.candidates.firstWhere((candidate) => candidate.roomId == id),
-        ],
-        contentPreview: widget.contentPreview,
-        onForward: () => widget.onForward(List.unmodifiable(roomIds)),
-      ),
+      builder: (_) => widget.identityChanges == null
+          ? confirmation()
+          : ListenableBuilder(
+              listenable: widget.identityChanges!,
+              builder: (context, child) => confirmation()),
     );
     if (!mounted) return;
     setState(() => sending = false);

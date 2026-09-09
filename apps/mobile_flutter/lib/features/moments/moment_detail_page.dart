@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
+import '../matrix/profile_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
@@ -9,12 +10,14 @@ class MomentDetailPage extends StatefulWidget {
   const MomentDetailPage(
       {super.key,
       required this.api,
+      this.identityCache,
       required this.initialItem,
       required this.currentUsername,
       this.onChanged,
       this.initialComment,
       this.cacheNamespace = ''});
   final BusinessApiClient api;
+  final ProfileRepository? identityCache;
   final MomentItem initialItem;
   final String currentUsername;
   final ValueChanged<MomentItem>? onChanged;
@@ -71,7 +74,10 @@ class _MomentDetailState extends State<MomentDetailPage> {
   Future<void> comment([MomentCommentView? parent]) async {
     if (unavailable) return;
     final result = await showMomentCommentComposer(context,
-        api: widget.api, momentId: item.id, parent: parent);
+        identityCache: widget.identityCache,
+        api: widget.api,
+        momentId: item.id,
+        parent: parent);
     if (result != null && mounted) {
       update(
           item.copyWith(comments: mergeMomentComments(item.comments, result)));
@@ -138,6 +144,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
             child: ListView(children: [
           if (!unavailable)
             WeChatMomentTile(
+                identityCache: widget.identityCache,
                 item: item,
                 cacheNamespace: widget.cacheNamespace,
                 onLike: liking ? null : like,

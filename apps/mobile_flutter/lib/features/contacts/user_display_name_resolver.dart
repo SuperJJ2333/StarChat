@@ -1,4 +1,5 @@
 import 'contact_models.dart';
+import 'user_identity.dart';
 
 /// 用户显示名称统一解析（规格#2）：来电页/通话记录/通知栏共用。
 ///
@@ -40,23 +41,20 @@ final class ContactBackedUserDisplayNameResolver
   @override
   String resolveSync(String matrixUserId, {String? matrixDisplayName}) {
     final contact = contactFor(matrixUserId);
-    final remark = contact?.remark;
-    if (remark != null && remark.isNotEmpty) return remark;
-    final nickname = contact?.nickname;
-    if (nickname != null && nickname.isNotEmpty) return nickname;
-    final matrixName = matrixDisplayName?.trim();
-    if (matrixName != null && matrixName.isNotEmpty) return matrixName;
-    final username = contact?.username;
-    if (username != null && username.isNotEmpty) return username;
-    return matrixUserId.startsWith('@')
-        ? matrixUserId.substring(1).split(':').first
-        : matrixUserId;
+    return identityDisplayName(
+      remark: contact?.remark,
+      nickname: contact?.nickname,
+      displayName: matrixDisplayName,
+      username: contact?.username,
+      matrixUserId: matrixUserId,
+    );
   }
 
   @override
   Future<String> resolve(String matrixUserId,
       {String? matrixDisplayName}) async {
-    final syncResult = resolveSync(matrixUserId, matrixDisplayName: matrixDisplayName);
+    final syncResult =
+        resolveSync(matrixUserId, matrixDisplayName: matrixDisplayName);
     final warm = warmContacts;
     if (warm == null) return syncResult;
     try {

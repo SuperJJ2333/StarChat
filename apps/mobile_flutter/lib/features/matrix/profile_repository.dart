@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/foundation/avatar_cache.dart';
 import '../contacts/contact_models.dart';
+import '../contacts/user_identity.dart';
 import '../profile/profile_controller.dart';
 
 /// 好友资料统一投影（BUG 1）：头像按 `avatar:{userId}:{avatarVersion}` 键控，
@@ -81,7 +82,7 @@ final class ProfileSnapshot {
               'matrix_user_id': contact.matrixUserId,
               'nickname': contact.nickname,
               'remark': contact.remark,
-              'avatar_url': contact.avatarUrl,
+              if (contact.avatarIsKnown) 'avatar_url': contact.avatarUrl,
               'moments_permission': contact.momentsPermission,
               'tags': contact.tags,
               'starred': contact.starred,
@@ -352,12 +353,68 @@ final class ProfileRepository extends ChangeNotifier {
   DateTime? _lastContactsRefreshAt;
   // Local successful mutations supersede reads started before those mutations.
   int _contactsMutation = 0;
+  // Shared across full and quiet reads: the latest initiated request owns the
+  // next remote snapshot, even if it fails or older requests finish later.
+  int _remoteReadGeneration = 0;
 
   ProfileData? profile;
   List<ContactSummary> contacts = const [];
   Map<String, ContactDetails> contactsByMatrixId = const {};
+  Map<String, ContactSummary> contactsByUserId = const {};
   bool wasHydratedFromDisk = false;
   int contactsRevision = 0;
+
+  /// Resolve at paint time and subscribe to this repository for later changes.
+  /// Incoming public names are fallbacks, never a replacement for a local remark.
+  UserIdentity resolveIdentity({
+    String? userId,
+    String? matrixUserId,
+    String? username,
+    String? nickname,
+    String? displayName,
+    String? avatarUrl,
+  }) {
+    final contact = contactsByUserId[nonBlankIdentityValue(userId)] ??
+        contactsByMatrixId[nonBlankIdentityValue(matrixUserId)]?.toSummary();
+    final own = profile;
+    final ownerMatrixId = _accountKey?.startsWith('matrix:') == true
+        ? _accountKey!.substring(7)
+        : _accountKey;
+    final isOwn = contact == null &&
+        own != null &&
+        ((nonBlankIdentityValue(username) != null &&
+                username!.trim() == own.username) ||
+            (nonBlankIdentityValue(matrixUserId) != null &&
+                matrixUserId == ownerMatrixId));
+    final knownNickname = isOwn ? own.nickname : contact?.nickname;
+    final knownUsername = isOwn ? own.username : contact?.username;
+    final publicName = identityDisplayName(
+      nickname: nonBlankIdentityValue(knownNickname) ?? nickname,
+      displayName: displayName,
+      username: knownUsername ?? username,
+      matrixUserId: matrixUserId,
+      userId: userId,
+    );
+    final hasAvatar = isOwn || (contact?.avatarIsKnown ?? false);
+    final stableId = contact?.userId ??
+        (isOwn ? own.username : null) ??
+        nonBlankIdentityValue(userId) ??
+        nonBlankIdentityValue(matrixUserId) ??
+        nonBlankIdentityValue(username) ??
+        'unknown';
+    return UserIdentity(
+      displayName:
+          identityDisplayName(remark: contact?.remark, nickname: publicName),
+      publicDisplayName: publicName,
+      avatarUrl: nonBlankIdentityValue(
+          hasAvatar ? (isOwn ? own.avatarUrl : contact?.avatarUrl) : avatarUrl),
+      avatarIsKnown: hasAvatar,
+      cacheKey: _scopedIdentityKey(stableId),
+    );
+  }
+
+  String _scopedIdentityKey(String userId) =>
+      'identity:${Uri.encodeComponent(_accountKey ?? 'memory-${identityHashCode(this)}')}:${Uri.encodeComponent(userId)}';
 
   Future<void> hydrate() => _hydrate ??= _hydrateNow();
 
@@ -394,12 +451,27 @@ final class ProfileRepository extends ChangeNotifier {
     final last = _lastContactsRefreshAt;
     if (last != null && clock().difference(last) < minInterval) return;
     _lastContactsRefreshAt = clock();
+    if (profile == null) {
+      // A contacts-only read cannot initialize the owner snapshot. Join the
+      // existing preload before claiming a generation, otherwise both reads
+      // can discard their result and permanently leave the cache cold.
+      try {
+        await preload();
+      } catch (_) {
+        // Keep quiet refresh non-blocking; preload resets itself for retry.
+      }
+      return;
+    }
     final loadContacts = _loadContacts;
     if (loadContacts == null) return;
+    final generation = ++_remoteReadGeneration;
     final mutation = _contactsMutation;
     try {
-      final fresh = await loadContacts();
-      if (mutation != _contactsMutation) return;
+      final fresh = _mergeMissingAvatars(await loadContacts());
+      if (generation != _remoteReadGeneration ||
+          mutation != _contactsMutation) {
+        return;
+      }
       if (_contactsEqual(contacts, fresh)) return;
       final currentProfile = profile;
       if (currentProfile == null) return;
@@ -414,7 +486,9 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> _load({required String operation}) async {
+    final generation = ++_remoteReadGeneration;
     await hydrate();
+    if (generation != _remoteReadGeneration) return;
     final loadProfile = _loadProfile;
     final loadContacts = _loadContacts;
     if (loadProfile == null || loadContacts == null) return;
@@ -424,14 +498,16 @@ final class ProfileRepository extends ChangeNotifier {
         loadProfile(),
         loadContacts(),
       ]);
+      if (generation != _remoteReadGeneration) return;
+      final freshContacts =
+          _mergeMissingAvatars(results[1] as List<ContactSummary>);
       await _applyAndPersist(_preserveContactMutations(
           ProfileSnapshot(
             profile: results[0] as ProfileData,
-            contacts: results[1] as List<ContactSummary>,
-            contactsRevision:
-                _contactsEqual(contacts, results[1] as List<ContactSummary>)
-                    ? contactsRevision
-                    : contactsRevision + 1,
+            contacts: freshContacts,
+            contactsRevision: _contactsEqual(contacts, freshContacts)
+                ? contactsRevision
+                : contactsRevision + 1,
           ),
           mutation));
     } catch (error, stackTrace) {
@@ -443,14 +519,26 @@ final class ProfileRepository extends ChangeNotifier {
   /// BUG 3：accept 后乐观写入（也用于备注/标签等单点更新）。
   Future<void> applyUpdatedContact(ContactSummary updated) async {
     _contactsMutation += 1;
+    updated = _mergeMissingAvatars([updated]).single;
     final currentProfile = profile;
     if (currentProfile == null) {
       // 尚无 profile 快照：仅更新内存并通知（与旧实现一致，不落库）。
-      contacts = List.unmodifiable([updated]);
+      final previous = contacts;
+      contacts = List.unmodifiable([
+        for (final contact in contacts)
+          if (contact.userId != updated.userId &&
+              contact.matrixUserId != updated.matrixUserId)
+            contact,
+        updated,
+      ]);
+      contactsByUserId = {
+        for (final contact in contacts) contact.userId: contact
+      };
       contactsByMatrixId = {
         for (final contact in contacts)
           contact.matrixUserId: contact.toDetails(),
       };
+      _invalidateChangedContactAvatars(previous, contacts);
       contactsRevision += 1;
       notifyListeners();
       return;
@@ -484,6 +572,9 @@ final class ProfileRepository extends ChangeNotifier {
     if (next.length == contacts.length) return;
     if (currentProfile == null) {
       contacts = List.unmodifiable(next);
+      contactsByUserId = {
+        for (final contact in contacts) contact.userId: contact
+      };
       contactsByMatrixId = {
         for (final contact in contacts)
           contact.matrixUserId: contact.toDetails(),
@@ -517,6 +608,18 @@ final class ProfileRepository extends ChangeNotifier {
     );
   }
 
+  List<ContactSummary> _mergeMissingAvatars(List<ContactSummary> incoming) => [
+        for (final contact in incoming)
+          if (!contact.avatarIsKnown &&
+              (contactsByUserId[contact.userId]?.avatarIsKnown ?? false))
+            contact.copyWith(
+              avatarUrl: contactsByUserId[contact.userId]!.avatarUrl,
+              avatarIsKnown: true,
+            )
+          else
+            contact,
+      ];
+
   Future<void> _applyAndPersist(ProfileSnapshot snapshot) async {
     _apply(snapshot);
     await _persist(operation: 'profile.persist');
@@ -544,28 +647,40 @@ final class ProfileRepository extends ChangeNotifier {
   void _apply(ProfileSnapshot snapshot,
       {bool invalidateChangedAvatars = true}) {
     final previous = contacts;
-    final previousByMatrixId = contactsByMatrixId;
     profile = snapshot.profile;
     contacts = snapshot.contacts;
+    contactsByUserId = {
+      for (final contact in contacts) contact.userId: contact
+    };
     contactsByMatrixId = {
       for (final contact in contacts) contact.matrixUserId: contact.toDetails(),
     };
     if (invalidateChangedAvatars) {
-      // 头像 URL/版本变化 → 逐出旧缓存（BUG 1：通讯录不得滞留旧头像）。
-      for (final entry in contactsByMatrixId.entries) {
-        final previousAvatar = previousByMatrixId[entry.key]?.avatarUrl;
-        final currentAvatar = entry.value.avatarUrl;
-        if (previousAvatar != currentAvatar) {
-          unawaited(AvatarCache.invalidateUser(entry.value.username,
-                  retainLastSuccessful: currentAvatar != null)
-              .catchError((_) {}));
-        }
-      }
+      _invalidateChangedContactAvatars(previous, contacts);
     }
     if (!_contactsEqual(previous, contacts)) {
       contactsRevision = snapshot.contactsRevision;
     }
     notifyListeners();
+  }
+
+  void _invalidateChangedContactAvatars(
+      List<ContactSummary> previous, List<ContactSummary> current) {
+    final old = {for (final contact in previous) contact.userId: contact};
+    for (final contact in current) {
+      final before = old[contact.userId];
+      if (before?.avatarUrl != contact.avatarUrl ||
+          before?.avatarIsKnown != contact.avatarIsKnown) {
+        for (final key in [
+          contact.username,
+          _scopedIdentityKey(contact.userId)
+        ]) {
+          unawaited(AvatarCache.invalidateUser(key,
+                  retainLastSuccessful: contact.avatarUrl != null)
+              .catchError((_) {}));
+        }
+      }
+    }
   }
 
   void _report(String operation, Object error, StackTrace stackTrace) {
@@ -589,9 +704,11 @@ final class ProfileRepository extends ChangeNotifier {
   Future<void> precacheAvatarImages(BuildContext context,
       {double size = 40}) async {
     final images = <(String, String)>[
-      if (profile?.avatarUrl case final url?) (profile!.fallbackSeed, url),
+      if (profile?.avatarUrl case final url?)
+        (resolveIdentity(username: profile!.username).cacheKey, url),
       for (final contact in contacts)
-        if (contact.avatarUrl case final url?) (contact.username, url),
+        if (contact.avatarUrl case final url?)
+          (resolveIdentity(userId: contact.userId).cacheKey, url),
     ];
     for (final image in images) {
       try {
@@ -620,6 +737,7 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
         a[i].nickname != b[i].nickname ||
         a[i].remark != b[i].remark ||
         a[i].avatarUrl != b[i].avatarUrl ||
+        a[i].avatarIsKnown != b[i].avatarIsKnown ||
         a[i].momentsPermission != b[i].momentsPermission ||
         a[i].starred != b[i].starred) {
       return false;

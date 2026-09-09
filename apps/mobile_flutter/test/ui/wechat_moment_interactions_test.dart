@@ -5,9 +5,7 @@ import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_tile.dart';
 
 void main() {
-  test(
-      'moment author ignores remark field and uses primary nickname only',
-      () {
+  test('moment author ignores remark field and uses primary nickname only', () {
     // 备注隐私红线：服务端即使误发 remark，客户端也绝不读取或展示。
     final author = MomentAuthor.fromJson({
       'user_id': 'u1',
@@ -25,8 +23,7 @@ void main() {
         reason: 'display_name 由服务端投影保证为主昵称，客户端直接信任');
   });
 
-  test('moment author falls back to nickname when display_name missing',
-      () {
+  test('moment author falls back to nickname when display_name missing', () {
     final author = MomentAuthor.fromJson({
       'user_id': 'u1',
       'username': 'alice_id',
@@ -38,7 +35,7 @@ void main() {
   });
 
   testWidgets(
-      'moment tile renders display name and diagnoses avatar as feed source',
+      'moment tile prefers public nickname over untrusted snapshot display name',
       (tester) async {
     final item = MomentItem.fromJson({
       'id': 'm1',
@@ -63,10 +60,11 @@ void main() {
       CupertinoApp(home: WeChatMomentTile(item: item)),
     );
 
-    expect(find.text('项目小爱'), findsOneWidget);
-    expect(find.text('Alice'), findsNothing);
+    // Local remarks come only from the viewing account's repository.
+    expect(find.text('项目小爱'), findsNothing);
+    expect(find.text('Alice'), findsOneWidget);
     final avatar = tester.widget<UserAvatar>(find.byType(UserAvatar));
-    expect(avatar.nickname, '项目小爱');
+    expect(avatar.nickname, 'Alice');
     expect(avatar.diagnosticSource, 'moments-feed');
   });
 }

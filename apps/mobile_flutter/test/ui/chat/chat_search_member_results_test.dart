@@ -16,6 +16,70 @@ ChatSearchMessage message({String sender = '@a:x', String? summary}) =>
     );
 
 void main() {
+  testWidgets(
+      'open member picker refreshes live remarks without losing search text',
+      (tester) async {
+    final identity = ValueNotifier<String>('旧备注');
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: true,
+      memberEntries: const [
+        MemberDirectoryEntry(userId: '@a:x', remark: '旧备注')
+      ],
+      liveMemberEntries: () =>
+          [MemberDirectoryEntry(userId: '@a:x', remark: identity.value)],
+      identityChanges: identity,
+      search: (filters, {cursor, limit = 50}) async => [message()],
+      onJumpToMessage: (_) {},
+    )));
+    await tester.tap(find.byKey(const Key('chat-search-filter-member')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const Key('member-picker-search')), '新备注');
+    await tester.pump();
+    expect(find.byKey(const Key('member-picker-empty')), findsOneWidget);
+    identity.value = '新备注';
+    await tester.pump();
+    expect(find.byKey(const Key('member-picker-@a:x')), findsOneWidget);
+    expect(find.byKey(const Key('member-picker-empty')), findsNothing);
+    final field = tester.widget<EditableText>(find.descendant(
+        of: find.byKey(const Key('member-picker-search')),
+        matching: find.byType(EditableText)));
+    expect(field.controller.text, '新备注');
+    await tester.tap(find.byKey(const Key('member-picker-@a:x')));
+    await tester.pumpAndSettle();
+    expect(find.text('新备注'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    identity.dispose();
+  });
+  testWidgets('visible result labels refresh without querying messages again',
+      (tester) async {
+    final identity = ValueNotifier<String>('旧备注');
+    var searches = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatSearchPage(
+      isGroup: false,
+      memberEntries: const [],
+      identityChanges: identity,
+      senderDisplayName: (_) => identity.value,
+      search: (filters, {cursor, limit = 50}) async {
+        searches++;
+        return [message()];
+      },
+      onJumpToMessage: (_) {},
+    )));
+    await tester.enterText(find.byKey(const Key('chat-search-input')), 'hello');
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.text('旧备注'), findsOneWidget);
+    identity.value = '新备注';
+    await tester.pump();
+    expect(find.text('新备注'), findsOneWidget);
+    expect(searches, 1);
+    await tester.pumpWidget(const SizedBox());
+    identity.dispose();
+  });
+
   testWidgets('member-only results show full body and the real sender avatar',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(

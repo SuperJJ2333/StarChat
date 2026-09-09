@@ -43,8 +43,10 @@ final class DiscoveryPage extends StatelessWidget {
                 onPressed: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                      builder: (_) =>
-                          GlobalSearchPage(api: api, matrix: matrix)),
+                      builder: (_) => GlobalSearchPage(
+                          api: api,
+                          matrix: matrix,
+                          identityCache: identityCache)),
                 ),
                 child: const Icon(CupertinoIcons.search, size: 22),
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
+import '../matrix/profile_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
@@ -10,10 +11,12 @@ class PersonalMomentsPage extends StatefulWidget {
   const PersonalMomentsPage(
       {super.key,
       required this.api,
+      this.identityCache,
       required this.userId,
       required this.displayName,
       this.initialItems = const []});
   final BusinessApiClient api;
+  final ProfileRepository? identityCache;
   final String userId, displayName;
   final List<MomentItem> initialItems;
   @override
@@ -31,6 +34,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   @override
   void initState() {
     super.initState();
+    widget.identityCache?.addListener(_identityChanged);
     momentsPrivacyChanges.addListener(_privacyChanged);
     _reload();
     widget.api.currentUserId().then((id) {
@@ -44,7 +48,21 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   @override
   void dispose() {
     momentsPrivacyChanges.removeListener(_privacyChanged);
+    widget.identityCache?.removeListener(_identityChanged);
     super.dispose();
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant PersonalMomentsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identityCache != widget.identityCache) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+    }
   }
 
   void _privacyChanged() {
@@ -85,6 +103,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
         context,
         CupertinoPageRoute(
             builder: (_) => MomentDetailPage(
+                  identityCache: widget.identityCache,
                   api: widget.api,
                   initialItem: item,
                   currentUsername: _username,
@@ -118,8 +137,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        navigationBar:
-            CupertinoNavigationBar(middle: Text('${widget.displayName}的朋友圈')),
+        navigationBar: CupertinoNavigationBar(
+            middle: Text(
+                '${widget.identityCache?.resolveIdentity(userId: widget.userId, displayName: widget.displayName).displayName ?? widget.displayName}的朋友圈')),
         child: SafeArea(
             child: ListView(children: [
           if (_error != null)
@@ -135,6 +155,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                                 TextStyle(color: CupertinoColors.systemGrey)))),
           for (final item in _items)
             WeChatMomentTile(
+              identityCache: widget.identityCache,
               item: item,
               cacheNamespace: 'profile:${widget.userId}',
               onOpen: () => _open(item),

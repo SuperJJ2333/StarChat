@@ -4,69 +4,81 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
+import '../matrix/profile_repository.dart';
 
 final class FriendIdentityCard extends StatelessWidget {
-  const FriendIdentityCard({super.key, required this.contact});
+  const FriendIdentityCard(
+      {super.key, required this.contact, this.identityCache});
+  final ProfileRepository? identityCache;
   final ContactDetails contact;
 
   @override
-  Widget build(BuildContext context) => Container(
-        key: const Key('friend-identity-card'),
-        height: 126,
-        color: CupertinoTheme.of(context).brightness == Brightness.dark
-            ? WeChatColors.darkElevated
-            : WeChatColors.lightElevated,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: Row(
-          children: [
-            UserAvatar(
-              nickname: contact.displayName,
-              fallbackSeed: contact.username,
-              avatarUrl: contact.avatarUrl,
-              size: 72,
+  Widget build(BuildContext context) {
+    final identity = identityCache?.resolveIdentity(
+        userId: contact.userId,
+        matrixUserId: contact.matrixUserId,
+        username: contact.username,
+        nickname: contact.nickname,
+        avatarUrl: contact.avatarUrl);
+    return Container(
+      key: const Key('friend-identity-card'),
+      height: 126,
+      color: CupertinoTheme.of(context).brightness == Brightness.dark
+          ? WeChatColors.darkElevated
+          : WeChatColors.lightElevated,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Row(
+        children: [
+          UserAvatar(
+            nickname: identity?.displayName ?? contact.displayName,
+            fallbackSeed: identity?.cacheKey ?? contact.username,
+            avatarUrl:
+                identity == null ? contact.avatarUrl : identity.avatarUrl,
+            size: 72,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  identity?.displayName ?? contact.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: WeChatTypography.title1,
+                    fontWeight: FontWeight.w700,
+                    height: 30 / 22,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '畅聊号：${contact.username}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: WeChatColors.textSecondary,
+                    fontSize: WeChatTypography.subhead,
+                    height: 20 / 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '刚刚在线',
+                  style: TextStyle(
+                    color: WeChatColors.textSecondary,
+                    fontSize: WeChatTypography.subhead,
+                    height: 20 / 14,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    contact.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: WeChatTypography.title1,
-                      fontWeight: FontWeight.w700,
-                      height: 30 / 22,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '畅聊号：${contact.username}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: WeChatTypography.subhead,
-                      height: 20 / 14,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    '刚刚在线',
-                    style: TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: WeChatTypography.subhead,
-                      height: 20 / 14,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 final class FriendActionColumn extends StatelessWidget {

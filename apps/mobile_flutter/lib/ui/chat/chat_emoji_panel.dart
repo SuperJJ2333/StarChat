@@ -41,6 +41,7 @@ final class ChatEmojiPanel extends StatefulWidget {
     required this.onCustomSelected,
     this.initialTab = ChatEmojiTab.superEmoji,
     this.onCustomRemoved,
+    this.customEmptyState,
   });
 
   final ValueChanged<String> onEmojiSelected;
@@ -48,6 +49,7 @@ final class ChatEmojiPanel extends StatefulWidget {
   final ValueChanged<CustomEmojiItem> onCustomSelected;
   final ChatEmojiTab initialTab;
   final Future<void> Function(CustomEmojiItem)? onCustomRemoved;
+  final Widget? customEmptyState;
 
   @override
   State<ChatEmojiPanel> createState() => _ChatEmojiPanelState();
@@ -98,6 +100,7 @@ final class _ChatEmojiPanelState extends State<ChatEmojiPanel> {
         Expanded(
           child: switch (tab) {
             ChatEmojiTab.custom => _CustomEmojiGrid(
+                emptyState: widget.customEmptyState,
                 items: widget.customItems,
                 onSelected: widget.onCustomSelected,
                 onRemoved: widget.onCustomRemoved,
@@ -200,11 +203,15 @@ final class _VectorEmojiGrid extends StatelessWidget {
 
 final class _CustomEmojiGrid extends StatefulWidget {
   const _CustomEmojiGrid(
-      {required this.items, required this.onSelected, this.onRemoved});
+      {required this.items,
+      required this.onSelected,
+      this.onRemoved,
+      this.emptyState});
 
   final List<CustomEmojiItem> items;
   final ValueChanged<CustomEmojiItem> onSelected;
   final Future<void> Function(CustomEmojiItem)? onRemoved;
+  final Widget? emptyState;
 
   @override
   State<_CustomEmojiGrid> createState() => _CustomEmojiGridState();
@@ -253,7 +260,8 @@ final class _CustomEmojiGridState extends State<_CustomEmojiGrid> {
     final items =
         widget.items.where((item) => !_removed.contains(item.id)).toList();
     if (items.isEmpty) {
-      return const Center(child: Text('长按聊天中的图片或 GIF 添加表情'));
+      return widget.emptyState ??
+          const Center(child: Text('长按聊天中的图片或 GIF 添加表情'));
     }
     return GridView.builder(
       padding: const EdgeInsets.all(16),

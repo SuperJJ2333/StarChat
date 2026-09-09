@@ -8,7 +8,16 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
 from app.modules.moments.service import MomentsService
-from app.modules.moments.media import MomentMediaService
+from app.modules.moments.media import MAX_IMAGE_BYTES, MomentMediaService
+
+
+async def read_moment_upload_content(request: Request):
+    content = bytearray()
+    async for chunk in request.stream():
+        if len(chunk) > MAX_IMAGE_BYTES - len(content):
+            raise AppError(code="MOMENT_MEDIA_INVALID", message="图片不能超过20MiB", status_code=422)
+        content.extend(chunk)
+    return bytes(content)
 
 
 class Strict(BaseModel):
@@ -152,7 +161,7 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
     @router.get("/media/content/{token}", response_class=Response,
                 responses={200: {"description": "Authorized image bytes", "content": {
                     mime: {"schema": {"type": "string", "format": "binary"}}
-                    for mime in ("image/jpeg", "image/png", "image/webp")}}},
+                    for mime in ("image/jpeg", "image/png", "image/webp", "image/gif")}}},
                 description="Read a viewer-bound Moment image capability, rechecking current visibility on every request. Capabilities expire after 300 seconds.")
     def read_media(token: str):
         from app.modules.moments.media_access import read_content
@@ -173,10 +182,8 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
 
     @router.put("/media/uploads/{upload_id}/content", status_code=204)
     async def put_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):
-        content = bytearray()
-        async for chunk in request.stream():
-            content.extend(chunk)
-        media.put_content(user, upload_id, bytes(content), (content_type or "").partition(";")[0].strip().casefold())
+        content = await read_moment_upload_content(request)
+        media.put_content(user, upload_id, content, (content_type or "").partition(";")[0].strip().casefold())
         return Response(status_code=204)
 
     @router.post("/cover/uploads", status_code=201)
@@ -186,10 +193,8 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
 
     @router.put("/cover/uploads/{upload_id}/content", status_code=204)
     async def put_cover_upload_content(upload_id: str, request: Request, content_type: Annotated[str | None, Header(alias="Content-Type")] = None, user=Depends(actor)):
-        content = bytearray()
-        async for chunk in request.stream():
-            content.extend(chunk)
-        media.put_content(user, upload_id, bytes(content), (content_type or "").partition(";")[0].strip().casefold())
+        content = await read_moment_upload_content(request)
+        media.put_content(user, upload_id, content, (content_type or "").partition(";")[0].strip().casefold())
         return Response(status_code=204)
 
     @router.post("/cover/uploads/{upload_id}/complete")

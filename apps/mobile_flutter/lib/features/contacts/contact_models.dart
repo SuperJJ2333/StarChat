@@ -1,3 +1,5 @@
+import 'user_identity.dart';
+
 final class ContactSummary {
   const ContactSummary({
     required this.userId,
@@ -6,6 +8,7 @@ final class ContactSummary {
     this.nickname,
     this.remark,
     this.avatarUrl,
+    this.avatarIsKnown = true,
     this.nudgeSuffix,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
@@ -19,6 +22,7 @@ final class ContactSummary {
         nickname: json['nickname']?.toString(),
         remark: json['remark']?.toString(),
         avatarUrl: json['avatar_url']?.toString(),
+        avatarIsKnown: json.containsKey('avatar_url'),
         nudgeSuffix: json['nudge_suffix']?.toString(),
         momentsPermission: json['moments_permission']?.toString() ?? 'DEFAULT',
         tags: (json['tags'] as List? ?? const [])
@@ -33,6 +37,7 @@ final class ContactSummary {
   final String? nickname;
   final String? remark;
   final String? avatarUrl;
+  final bool avatarIsKnown;
   final String? nudgeSuffix;
   final String momentsPermission;
   final List<String> tags;
@@ -41,29 +46,33 @@ final class ContactSummary {
   bool get isStarred =>
       starred || tags.any((tag) => tag == 'starred' || tag == '星标好友');
 
-  String get displayName {
-    for (final value in [remark, nickname, username]) {
-      if (value != null && value.trim().isNotEmpty) return value.trim();
-    }
-    return username;
-  }
+  String get displayName => identityDisplayName(
+      remark: remark,
+      nickname: nickname,
+      username: username,
+      matrixUserId: matrixUserId,
+      userId: userId);
 
-  /// 主昵称（用户自设昵称），绝不包含备注。聊天/群聊/朋友圈等
-  /// 他人可见或本人聊天场景的展示必须使用该值（备注隐私红线）。
-  String get primaryDisplayName {
-    for (final value in [nickname, username]) {
-      if (value != null && value.trim().isNotEmpty) return value.trim();
-    }
-    return username;
-  }
+  /// Public identity for outgoing payloads. Local presentation uses displayName.
+  String get primaryDisplayName => identityDisplayName(
+      nickname: nickname,
+      username: username,
+      matrixUserId: matrixUserId,
+      userId: userId);
 
-  ContactSummary copyWith({String? remark, String? nickname}) => ContactSummary(
+  ContactSummary copyWith(
+          {String? remark,
+          String? nickname,
+          String? avatarUrl,
+          bool? avatarIsKnown}) =>
+      ContactSummary(
         userId: userId,
         username: username,
         matrixUserId: matrixUserId,
         nickname: nickname ?? this.nickname,
         remark: remark ?? this.remark,
-        avatarUrl: avatarUrl,
+        avatarUrl: avatarUrl ?? this.avatarUrl,
+        avatarIsKnown: avatarIsKnown ?? this.avatarIsKnown,
         nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission,
         tags: tags,
@@ -77,6 +86,7 @@ final class ContactSummary {
         nickname: nickname,
         remark: remark,
         avatarUrl: avatarUrl,
+        avatarIsKnown: avatarIsKnown,
         nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission,
         tags: tags,
@@ -92,6 +102,7 @@ final class ContactDetails {
     this.nickname,
     this.remark,
     this.avatarUrl,
+    this.avatarIsKnown = true,
     this.nudgeSuffix,
     this.momentsPermission = 'DEFAULT',
     this.tags = const [],
@@ -104,6 +115,7 @@ final class ContactDetails {
   final String? nickname;
   final String? remark;
   final String? avatarUrl;
+  final bool avatarIsKnown;
   final String? nudgeSuffix;
   final String momentsPermission;
   final List<String> tags;
@@ -117,7 +129,7 @@ final class ContactDetails {
         remark: remark,
       ).displayName;
 
-  /// 主昵称（不含备注），供聊天等场景展示（备注隐私红线）。
+  /// Public identity for outgoing payloads, without the viewer's private remark.
   String get primaryDisplayName => ContactSummary(
         userId: userId,
         username: username,
@@ -132,6 +144,7 @@ final class ContactDetails {
         nickname: nickname,
         remark: remark,
         avatarUrl: avatarUrl,
+        avatarIsKnown: avatarIsKnown,
         nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission,
         tags: List.unmodifiable(tags),
@@ -151,6 +164,7 @@ final class ContactDetails {
         nickname: nickname,
         remark: clearRemark ? null : remark ?? this.remark,
         avatarUrl: avatarUrl,
+        avatarIsKnown: avatarIsKnown,
         nudgeSuffix: nudgeSuffix,
         momentsPermission: momentsPermission ?? this.momentsPermission,
         tags: tags ?? this.tags,

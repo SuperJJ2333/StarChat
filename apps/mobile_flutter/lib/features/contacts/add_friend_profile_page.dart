@@ -4,6 +4,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
+import '../matrix/profile_repository.dart';
 import 'request_friend_page.dart';
 import '../../core/business_api_client.dart';
 import '../moments/moment_profile_preview.dart';
@@ -22,9 +23,11 @@ final class AddFriendProfilePage extends StatelessWidget {
     required this.nickname,
     required this.relationshipState,
     this.avatarUrl,
+    this.identityCache,
   });
 
   final AddFriendGateway api;
+  final ProfileRepository? identityCache;
   final String userId;
   final String username;
   final String nickname;
@@ -59,7 +62,17 @@ final class AddFriendProfilePage extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: identityCache!,
+          builder: (context, _) => _buildContent(context));
+  Widget _buildContent(BuildContext context) {
+    final identity = identityCache?.resolveIdentity(
+        userId: userId,
+        username: username,
+        nickname: nickname,
+        avatarUrl: avatarUrl);
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return WeChatPageScaffold.navigation(
       backgroundColor: dark
@@ -71,15 +84,15 @@ final class AddFriendProfilePage extends StatelessWidget {
           children: [
             const SizedBox(height: 48),
             UserAvatar(
-              nickname: nickname,
-              fallbackSeed: userId,
-              avatarUrl: avatarUrl,
+              nickname: identity?.displayName ?? nickname,
+              fallbackSeed: identity?.cacheKey ?? userId,
+              avatarUrl: identity == null ? avatarUrl : identity.avatarUrl,
               size: 96,
               diagnosticSource: 'add-friend-profile',
             ),
             const SizedBox(height: 16),
             Text(
-              nickname,
+              identity?.displayName ?? nickname,
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.w600,
@@ -99,6 +112,7 @@ final class AddFriendProfilePage extends StatelessWidget {
             const SizedBox(height: 36),
             if (api is BusinessApiClient)
               MomentProfilePreview(
+                  identityCache: identityCache,
                   api: api as BusinessApiClient,
                   userId: userId,
                   displayName: nickname),

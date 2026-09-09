@@ -194,6 +194,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                     context,
                     CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
+                        identityCache: widget.identityCache,
                         api: businessApi,
                         matrix: widget.matrix,
                       ),
@@ -221,7 +222,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                             Navigator.push(
                               context,
                               CupertinoPageRoute(
-                                builder: (_) => AddFriendPage(api: businessApi),
+                                builder: (_) => AddFriendPage(
+                                    api: businessApi,
+                                    identityCache: widget.identityCache),
                               ),
                             );
                           },
@@ -331,7 +334,10 @@ final class _ContactsPageState extends State<ContactsPage> {
                         for (final contact in grouped[label]!)
                           WeChatContactTile(
                             nickname: contact.displayName,
-                            fallbackSeed: contact.username,
+                            fallbackSeed: widget.identityCache
+                                    ?.resolveIdentity(userId: contact.userId)
+                                    .cacheKey ??
+                                contact.username,
                             avatarUrl: contact.avatarUrl,
                             onTap: () async {
                               final changed = await Navigator.of(context,
@@ -339,6 +345,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                                   .push<bool>(
                                 CupertinoPageRoute(
                                   builder: (_) => ContactProfilePage(
+                                    identityCache: widget.identityCache,
                                     api: widget.api,
                                     initialContact: contact.toDetails(),
                                     onMessage: widget.onMessage,
@@ -422,6 +429,7 @@ final class ContactProfilePage extends StatefulWidget {
     super.key,
     required this.api,
     required this.initialContact,
+    this.identityCache,
     this.onMessage,
     this.onVoice,
     this.onVideo,
@@ -430,6 +438,7 @@ final class ContactProfilePage extends StatefulWidget {
   });
 
   final ContactsGateway api;
+  final ProfileRepository? identityCache;
   final ContactDetails initialContact;
   final ContactAction? onMessage;
   final ContactAction? onVoice;
@@ -443,6 +452,49 @@ final class ContactProfilePage extends StatefulWidget {
 
 final class _ContactProfilePageState extends State<ContactProfilePage> {
   late ContactDetails contact = widget.initialContact;
+  @override
+  void initState() {
+    super.initState();
+    widget.identityCache?.addListener(_identityChanged);
+    _readIdentity();
+  }
+
+  void _readIdentity() {
+    final updated = widget.identityCache?.contacts
+        .where((c) => c.userId == contact.userId)
+        .firstOrNull;
+    if (updated != null) contact = updated.toDetails();
+  }
+
+  void _identityChanged() {
+    if (mounted) setState(_readIdentity);
+  }
+
+  @override
+  void didUpdateWidget(covariant ContactProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identityCache != widget.identityCache) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+      _readIdentity();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.identityCache?.removeListener(_identityChanged);
+    super.dispose();
+  }
+
+  Future<void> _contactUpdated(ContactDetails updated) async {
+    await widget.identityCache?.applyUpdatedContact(updated.toSummary());
+    await widget.onContactUpdated?.call(updated);
+  }
+
+  Future<void> _contactDeleted(String userId) async {
+    await widget.identityCache?.removeContact(userId);
+    await widget.onContactDeleted?.call(userId);
+  }
 
   Future<void> _openMore() async {
     final result = await Navigator.push<ContactMoreResult>(
@@ -451,8 +503,8 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
         builder: (_) => ContactMorePage(
           api: widget.api,
           contact: contact,
-          onContactUpdated: widget.onContactUpdated,
-          onContactDeleted: widget.onContactDeleted,
+          onContactUpdated: _contactUpdated,
+          onContactDeleted: _contactDeleted,
         ),
       ),
     );
@@ -480,9 +532,11 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
         child: SafeArea(
           child: ListView(
             children: [
-              FriendIdentityCard(contact: contact),
+              FriendIdentityCard(
+                  contact: contact, identityCache: widget.identityCache),
               if (widget.api is BusinessApiClient)
                 MomentProfilePreview(
+                    identityCache: widget.identityCache,
                     api: widget.api as BusinessApiClient,
                     userId: contact.userId,
                     displayName: contact.primaryDisplayName,
@@ -991,7 +1045,8 @@ final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
 }
 
 final class AddFriendPage extends StatefulWidget {
-  const AddFriendPage({super.key, required this.api});
+  const AddFriendPage({super.key, required this.api, this.identityCache});
+  final ProfileRepository? identityCache;
   final AddFriendGateway api;
   @override
   State<AddFriendPage> createState() => _AddFriendState();
@@ -1009,6 +1064,7 @@ final class _AddFriendState extends State<AddFriendPage> {
   @override
   void initState() {
     super.initState();
+    widget.identityCache?.addListener(_identityChanged);
     q.addListener(_onChanged);
   }
 
@@ -1017,8 +1073,36 @@ final class _AddFriendState extends State<AddFriendPage> {
     q.removeListener(_onChanged);
     _debounce?.cancel();
     q.dispose();
+    widget.identityCache?.removeListener(_identityChanged);
     super.dispose();
   }
+
+  void _identityChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didUpdateWidget(covariant AddFriendPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identityCache != widget.identityCache) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+    }
+  }
+
+  String _displayName(Map user) =>
+      widget.identityCache
+          ?.resolveIdentity(
+              userId: user['user_id']?.toString(),
+              username: user['username']?.toString(),
+              nickname: user['nickname']?.toString())
+          .displayName ??
+      ContactSummary(
+              userId: user['user_id'].toString(),
+              username: user['username'].toString(),
+              matrixUserId: '',
+              nickname: user['nickname']?.toString())
+          .displayName;
 
   void _onChanged() {
     _debounce?.cancel();
@@ -1069,6 +1153,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => AddFriendProfilePage(
+          identityCache: widget.identityCache,
           api: widget.api,
           userId: user['user_id'].toString(),
           username: user['username'].toString(),
@@ -1124,15 +1209,22 @@ final class _AddFriendState extends State<AddFriendPage> {
                       key: Key('add-friend-${user['user_id']}'),
                       onTap: () => _openRequestPage(user as Map),
                       leading: UserAvatar(
-                        nickname:
-                            (user['nickname']?.toString().isNotEmpty ?? false)
-                                ? user['nickname'].toString()
-                                : user['username'].toString(),
-                        fallbackSeed: user['user_id'].toString(),
-                        avatarUrl: user['avatar_url']?.toString(),
+                        nickname: _displayName(user),
+                        fallbackSeed: widget.identityCache
+                                ?.resolveIdentity(
+                                    userId: user['user_id'].toString())
+                                .cacheKey ??
+                            user['user_id'].toString(),
+                        avatarUrl: widget.identityCache == null
+                            ? user['avatar_url']?.toString()
+                            : widget.identityCache!
+                                .resolveIdentity(
+                                    userId: user['user_id'].toString(),
+                                    avatarUrl: user['avatar_url']?.toString())
+                                .avatarUrl,
                         diagnosticSource: 'add-friend-search',
                       ),
-                      title: Text(user['nickname']?.toString() ?? ''),
+                      title: Text(_displayName(user)),
                       subtitle: Text('畅聊号：${user['username']}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,

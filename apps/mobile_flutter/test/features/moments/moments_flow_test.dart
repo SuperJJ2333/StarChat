@@ -162,7 +162,9 @@ void main() {
       find.byKey(const Key('moment-owner-avatar')),
     );
     expect(avatar.nickname, '我的昵称');
-    expect(avatar.fallbackSeed, 'me-seed');
+    expect(avatar.fallbackSeed,
+        identityCache.resolveIdentity(username: 'me-login').cacheKey,
+        reason: 'Owner avatar shares the account-scoped repository identity');
     expect(avatar.avatarUrl, 'https://cdn.example.test/me.jpg');
     expect(avatar.diagnosticSource, 'moments-owner');
   });
@@ -385,7 +387,8 @@ void main() {
     await tester.tap(find.byKey(const Key('moment-comment-submit')));
     await tester.pumpAndSettle();
 
-    expect(find.text('项目小波：即时评论'), findsOneWidget);
+    // No local contact remark exists: prefer the author's current nickname.
+    expect(find.text('Bob：即时评论'), findsOneWidget);
   });
 
   testWidgets('failed comment keeps draft and shows server error',

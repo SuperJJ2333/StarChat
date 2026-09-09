@@ -87,9 +87,7 @@ final class _UserAvatarState extends State<UserAvatar> {
         width: widget.size,
         height: widget.size,
         child: provider == null
-            ? (retained == null
-                ? _fallback()
-                : Image(image: retained, fit: BoxFit.cover))
+            ? _fallback()
             : Image(
                 image: provider,
                 fit: BoxFit.cover,

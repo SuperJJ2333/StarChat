@@ -7,6 +7,9 @@ import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
+import '../contacts/contacts_page.dart';
+import '../matrix/profile_repository.dart';
+import '../../ui/components/user_avatar.dart';
 
 /// Local-first global search. It searches authoritative contacts while the
 /// caller may add encrypted room/message matches without exposing plaintext.
@@ -15,11 +18,13 @@ final class GlobalSearchPage extends StatefulWidget {
     super.key,
     required this.api,
     this.matrix,
+    this.identityCache,
     this.contactsLoader,
     this.rooms = const [],
     this.messages = const [],
   });
   final BusinessApiClient api;
+  final ProfileRepository? identityCache;
 
   /// 搜索入口统一数据源：提供 Matrix 客户端时页面自行加载群聊与最后一条
   /// 消息摘要，保证「消息 / 通讯录 / 发现」三个入口进入完全相同的搜索页。
@@ -41,9 +46,51 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   @override
   void initState() {
     super.initState();
-    contacts = widget.contactsLoader?.call() ?? widget.api.listContacts();
+    widget.identityCache?.addListener(_identityChanged);
+    contacts = widget.contactsLoader?.call() ??
+        (widget.identityCache == null
+            ? widget.api.listContacts()
+            : Future.value(widget.identityCache!.contacts));
+    widget.identityCache?.refreshContactsQuietly();
     _loadMatrixScope();
   }
+
+  void _identityChanged() {
+    if (mounted) {
+      setState(() {
+        contacts = Future.value(widget.identityCache!.contacts);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.identityCache?.removeListener(_identityChanged);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant GlobalSearchPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.identityCache != widget.identityCache) {
+      oldWidget.identityCache?.removeListener(_identityChanged);
+      widget.identityCache?.addListener(_identityChanged);
+      contacts = widget.contactsLoader?.call() ??
+          (widget.identityCache == null
+              ? widget.api.listContacts()
+              : Future.value(widget.identityCache!.contacts));
+    }
+  }
+
+  String _name(ContactSummary item) =>
+      widget.identityCache
+          ?.resolveIdentity(
+              userId: item.userId,
+              matrixUserId: item.matrixUserId,
+              username: item.username,
+              nickname: item.nickname)
+          .displayName ??
+      item.displayName;
 
   Future<void> _loadMatrixScope() async {
     final matrix = widget.matrix;
@@ -93,8 +140,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 builder: (_, snapshot) {
                   final q = query.toLowerCase();
                   final friends = (snapshot.data ?? const <ContactSummary>[])
-                      .where(
-                          (item) => item.displayName.toLowerCase().contains(q))
+                      .where((item) =>
+                          _name(item).toLowerCase().contains(q) ||
+                          item.username.toLowerCase().contains(q) ||
+                          (item.nickname?.toLowerCase().contains(q) ?? false))
                       .toList();
                   final rooms = [
                     ...widget.rooms,
@@ -109,7 +158,27 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                       const _Section('朋友'),
                     for (final item in friends)
                       WeChatListTile(
-                          title: Text(item.displayName),
+                          title: Text(_name(item)),
+                          leading: UserAvatar(
+                              nickname: _name(item),
+                              fallbackSeed: widget.identityCache
+                                      ?.resolveIdentity(userId: item.userId)
+                                      .cacheKey ??
+                                  item.userId,
+                              avatarUrl: widget.identityCache == null
+                                  ? item.avatarUrl
+                                  : widget.identityCache!
+                                      .resolveIdentity(
+                                          userId: item.userId,
+                                          avatarUrl: item.avatarUrl)
+                                      .avatarUrl),
+                          onTap: () => Navigator.push(
+                              context,
+                              CupertinoPageRoute(
+                                  builder: (_) => ContactProfilePage(
+                                      api: widget.api,
+                                      initialContact: item.toDetails(),
+                                      identityCache: widget.identityCache))),
                           subtitle: Text('畅聊号：${item.username}')),
                     if (query.isNotEmpty && rooms.isNotEmpty)
                       const _Section('群聊'),

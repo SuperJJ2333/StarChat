@@ -387,7 +387,7 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   Future<void> _showComment(BuildContext context, MomentItem item) async {
     final comment = await showMomentCommentComposer(context,
-        api: widget.api, momentId: item.id);
+        identityCache: _identityCache, api: widget.api, momentId: item.id);
     if (comment == null || !mounted) return;
     setState(() {
       final current = _itemOverrides[item.id] ?? item;
@@ -402,6 +402,7 @@ final class _MomentsPageState extends State<MomentsPage> {
         context,
         CupertinoPageRoute(
             builder: (_) => MomentDetailPage(
+                  identityCache: _identityCache,
                   api: widget.api,
                   initialItem: _itemOverrides[item.id] ?? item,
                   currentUsername: _identityCache.profile?.username ?? '',
@@ -435,8 +436,14 @@ final class _MomentsPageState extends State<MomentsPage> {
           CupertinoPageRoute(
               builder: (_) => contact != null
                   ? ContactProfilePage(
-                      api: widget.api, initialContact: contact.toDetails())
+                      api: widget.api,
+                      identityCache: _identityCache,
+                      initialContact: contact.toDetails(),
+                      onContactUpdated: (updated) => _identityCache
+                          .applyUpdatedContact(updated.toSummary()),
+                      onContactDeleted: _identityCache.removeContact)
                   : AddFriendProfilePage(
+                      identityCache: _identityCache,
                       api: widget.api,
                       userId: author.userId,
                       username: author.username,
@@ -530,6 +537,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                         }
                         final item = _itemOverrides[parsed.id] ?? parsed;
                         return WeChatMomentTile(
+                          identityCache: _identityCache,
                           key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
                           item: item,
                           cacheNamespace: _identityCache.accountKey ?? '',
@@ -611,7 +619,9 @@ final class _MomentsPageState extends State<MomentsPage> {
           child: UserAvatar(
             key: const Key('moment-owner-avatar'),
             nickname: nickname,
-            fallbackSeed: profile.fallbackSeed,
+            fallbackSeed: _identityCache
+                .resolveIdentity(username: profile.username)
+                .cacheKey,
             avatarUrl: profile.avatarUrl,
             diagnosticSource: 'moments-owner',
             size: 64,

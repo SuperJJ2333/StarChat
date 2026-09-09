@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../features/contacts/member_directory_service.dart';
+import '../../features/contacts/user_identity.dart';
 import '../foundation/wechat_tokens.dart';
 import '../components/user_avatar.dart';
 
@@ -29,6 +30,10 @@ final class MentionOption {
   final bool hasRemark;
 
   bool get isAll => id == all.id;
+
+  /// The token enters outgoing text; never include the viewer's private remark.
+  String get publicName =>
+      identityDisplayName(nickname: nickname, matrixUserId: id);
 }
 
 /// 统一拼音排序服务适配（规格 #6：@选择器与成员列表共用同一排序，

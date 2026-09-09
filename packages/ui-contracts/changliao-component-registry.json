@@ -1,6 +1,12 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-09-shared-media-identity": {
+      "comments": "Reuse ChatEmojiPanel and ImagePickerPage; prepareGalleryMedia shared with chat; preserve GIF animation and actual MIME",
+      "identity": "ProfileRepository.resolveIdentity; local remark before public nickname; known avatar deletion distinct from absent metadata; account-scoped cacheKey",
+      "refresh": "Open Moments, profile, search and share consumers subscribe to identity changes",
+      "figmaSync": "pending; existing components reused; no remote nodes modified"
+    },
     "2026-09-09-redmi-polish": {
       "feed": "account-scoped cached first paint; fresh network projection on entry; stable business-media object keys across signed URL renewal",
       "notifications": "direct and group chats share ConversationNotificationSection",
@@ -592,7 +598,8 @@
           "onOpen",
           "onAuthorTap",
           "onCommentTap",
-          "onDelete"
+          "onDelete",
+          "identityCache"
         ],
         "variants": {},
         "states": [

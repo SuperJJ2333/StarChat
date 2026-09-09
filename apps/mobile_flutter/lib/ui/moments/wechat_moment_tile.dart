@@ -1,6 +1,9 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../features/moments/moment_models.dart';
+import '../../features/matrix/profile_repository.dart';
+import '../../features/contacts/user_identity.dart';
+import '../chat/emoji_text.dart';
 import '../components/user_avatar.dart';
 import '../foundation/wechat_tokens.dart';
 import 'wechat_moment_image_grid.dart';
@@ -21,8 +24,10 @@ final class WeChatMomentTile extends StatelessWidget {
     this.onOpen,
     this.onCommentTap,
     this.cacheNamespace = '',
+    this.identityCache,
   });
   final MomentItem item;
+  final ProfileRepository? identityCache;
   final VoidCallback? onAuthorTap;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
@@ -36,7 +41,31 @@ final class WeChatMomentTile extends StatelessWidget {
   final bool? likedOverride;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => identityCache == null
+      ? _buildContent(context)
+      : ListenableBuilder(
+          listenable: identityCache!,
+          builder: (context, _) => _buildContent(context));
+
+  UserIdentity _identity(MomentAuthor author) =>
+      identityCache?.resolveIdentity(
+          userId: author.userId,
+          username: author.username,
+          nickname: author.nickname,
+          displayName: author.displayName,
+          avatarUrl: author.avatarUrl) ??
+      UserIdentity(
+          displayName: identityDisplayName(
+              nickname: author.nickname,
+              displayName: author.displayName,
+              username: author.username,
+              userId: author.userId),
+          publicDisplayName: author.displayName,
+          avatarUrl: author.avatarUrl,
+          avatarIsKnown: author.avatarUrl != null,
+          cacheKey: author.userId);
+
+  Widget _buildContent(BuildContext context) {
     final isAd = item.kind == 'AD';
     final isLiked = likedOverride ?? item.liked;
     return GestureDetector(
@@ -55,11 +84,9 @@ final class WeChatMomentTile extends StatelessWidget {
           GestureDetector(
             onTap: isAd ? null : onAuthorTap,
             child: UserAvatar(
-              nickname: item.author.displayName,
-              fallbackSeed: item.author.username.isEmpty
-                  ? item.author.userId
-                  : item.author.username,
-              avatarUrl: item.author.avatarUrl,
+              nickname: _identity(item.author).displayName,
+              fallbackSeed: _identity(item.author).cacheKey,
+              avatarUrl: _identity(item.author).avatarUrl,
               diagnosticSource: 'moments-feed',
               size: 42,
             ),
@@ -70,7 +97,7 @@ final class WeChatMomentTile extends StatelessWidget {
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               GestureDetector(
                 onTap: isAd ? null : onAuthorTap,
-                child: Text(item.author.displayName,
+                child: Text(_identity(item.author).displayName,
                     key: const Key('moment-author-name'),
                     style: TextStyle(
                         color: WeChatColors.resolve(
@@ -138,7 +165,7 @@ final class WeChatMomentTile extends StatelessWidget {
               ]),
               if (!isAd && item.likeUsers.isNotEmpty)
                 Text(
-                    '♡ ${item.likeUsers.map((user) => user.displayName).join('、')}',
+                    '♡ ${item.likeUsers.map((user) => _identity(user).displayName).join('、')}',
                     style: TextStyle(
                         color: WeChatColors.resolve(
                             context, WeChatColors.socialLink),
@@ -156,15 +183,21 @@ final class WeChatMomentTile extends StatelessWidget {
                       child: Text.rich(
                           TextSpan(children: [
                             TextSpan(
-                                text: comment.author.displayName,
+                                text: _identity(comment.author).displayName,
                                 style: TextStyle(
                                     color: WeChatColors.resolve(
                                         context, WeChatColors.socialLink))),
                             if (comment.parentAuthor != null)
                               TextSpan(
                                   text:
-                                      ' 回复 ${comment.parentAuthor!.displayName}'),
-                            TextSpan(text: '：${comment.text}'),
+                                      ' 回复 ${_identity(comment.parentAuthor!).displayName}'),
+                            const TextSpan(text: '：'),
+                            ...?buildEmojiInlineSpans(comment.text,
+                                fontSize: 13),
+                            if (buildEmojiInlineSpans(comment.text,
+                                    fontSize: 13) ==
+                                null)
+                              TextSpan(text: comment.text),
                             for (var i = 0; i < comment.images.length; i++)
                               WidgetSpan(
                                   alignment: PlaceholderAlignment.middle,

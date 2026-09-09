@@ -12,9 +12,14 @@ def test_room_profile_injects_message_action():
 
 def test_bubble_uses_viewer_owned_remark():
     source = ROOM.read_text(encoding="utf-8")
-    sender = source.split("String _senderDisplayName", 1)[1].split("Widget _messageRow", 1)[0]
-    assert "contact?.displayName" in sender
-    assert "contact?.primaryDisplayName" not in sender
+    sender = source.split("String _senderDisplayName", 1)[1].split("Future<void> _openMessageSender", 1)[0]
+    # The shared account-owned repository now owns remark priority. Keep this
+    # production wiring guard alongside runtime identity/remark widget tests.
+    compact = "".join(sender.split())
+    assert "_identityCache.resolveIdentity(" in compact
+    assert "matrixUserId: message.senderId" in sender
+    assert ").displayName" in compact
+    assert "publicDisplayName" not in sender
 
 
 def test_all_bubble_avatar_branches_allow_stranger_profile():
@@ -37,3 +42,6 @@ def test_private_display_remark_is_not_used_for_outgoing_avatar_actions():
     assert "_sendNudge(message, displayName)" not in row
     mention = row.split("void appendMentionDraft()", 1)[1].split("// 即时反馈", 1)[0]
     assert "displayName: displayName" not in mention
+    selection = source.split("void _insertMention", 1)[1].split("Future<void> _refreshJoinedMemberCount", 1)[0]
+    assert "displayName: option.publicName" in selection
+    assert "displayName: option.primaryName" not in selection

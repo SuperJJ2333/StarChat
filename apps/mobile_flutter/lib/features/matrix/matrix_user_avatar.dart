@@ -53,8 +53,14 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   void didUpdateWidget(covariant MatrixUserAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.matrixAvatarUri != widget.matrixAvatarUri ||
+        oldWidget.fallbackSeed != widget.fallbackSeed ||
         oldWidget.size != widget.size ||
         oldWidget.avatarMedia != widget.avatarMedia) {
+      if (oldWidget.fallbackSeed != widget.fallbackSeed ||
+          widget.matrixAvatarUri == null ||
+          oldWidget.avatarMedia != widget.avatarMedia) {
+        resolved = null;
+      }
       _resolve();
     }
   }

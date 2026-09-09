@@ -1364,6 +1364,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (_) => GroupAddressListPage(
           matrix: widget.matrix,
+          identityCache: _chatIdentityCache,
           onOpen: (room) {
             Navigator.pop(context);
             unawaited(_openRoomFromAddressList(room));

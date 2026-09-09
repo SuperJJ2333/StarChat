@@ -90,7 +90,7 @@ def read_content(factory, storage, token):
             attached = any(key in (comment.image_object_keys or []) for comment in comments)
         if not attached:
             invalid()
-        mime = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png", ".webp":"image/webp"}.get(Path(key).suffix.lower())
+        mime = {".jpg":"image/jpeg", ".jpeg":"image/jpeg", ".png":"image/png", ".webp":"image/webp", ".gif":"image/gif"}.get(Path(key).suffix.lower())
         if not mime:
             invalid()
         return storage.get(key), mime
