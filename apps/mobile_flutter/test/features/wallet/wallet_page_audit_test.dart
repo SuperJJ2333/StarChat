@@ -1,164 +1,108 @@
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
-import 'package:liuhetong_mobile/core/business_api_client.dart';
-import 'package:liuhetong_mobile/core/session_store.dart';
-import 'package:liuhetong_mobile/features/wallet/wallet_page.dart';
+import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
+import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 审计 U01/U02：提现按钮提交互斥 + 页面生命周期保护。
-/// 经真实 BusinessApiClient + MockClient 驱动（覆盖完整请求路径）。
-final class MemoryStore implements SecureKeyValueStore {
-  final _data = <String, String>{};
-
-  @override
-  Future<String?> read(String key) async => _data[key];
-
-  @override
-  Future<void> write(String key, String value) async => _data[key] = value;
-
-  @override
-  Future<void> delete(String key) async => _data.remove(key);
-}
-
-Future<BusinessApiClient> walletApi(
-  http.Response Function(http.Request) handler, {
-  Duration? latency,
-}) async {
-  final store = SecureSessionStore(MemoryStore());
-  await store.saveSession(
-      accessToken: 'e30.eyJzdWIiOiJ3YWxsZXQtdGVzdCJ9.test',
-      refreshToken: 'refresh');
-  return BusinessApiClient(
-    baseUri: Uri.parse('https://business.example'),
-    sessionStore: store,
-    client: MockClient((request) async {
-      if (latency != null) await Future<void>.delayed(latency);
-      return handler(request);
-    }),
-  );
-}
-
-http.Response _json(Object body, {int status = 200}) => http.Response(
-      jsonEncode(body),
-      status,
-      headers: {'content-type': 'application/json'},
-    );
-
-Future<void> _fillForm(WidgetTester tester) async {
-  await tester.enterText(find.byKey(const Key('wallet-withdraw-amount')), '5');
-  await tester.enterText(
-      find.byKey(const Key('wallet-withdraw-address')), 'T${'2' * 33}');
-  await tester.pump();
-}
+import 'manual_wallet_api_test.dart' as fixtures;
+import 'manual_wallet_flow_test.dart' as flow;
+export 'manual_wallet_api_test.dart' show MemoryStore;
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  setUp(() {
-    SharedPreferences.setMockInitialValues({});
-  });
-
-  testWidgets('acknowledged withdrawal survives query failure and page restart',
+  testWidgets(
+      'acknowledged manual withdrawal survives failed status and restart',
       (tester) async {
-    var posts = 0;
-    final api = await walletApi((request) {
-      if (request.method == 'POST' &&
-          request.url.path.endsWith('/withdrawals')) {
-        posts++;
-        return _json({'id': 'retained-order', 'status': 'REQUESTED'},
-            status: 201);
+    var writes = 0;
+    final api = await flow.client((request) async {
+      if (request.method == 'POST') {
+        writes++;
+        return flow.json(fixtures.payout);
       }
-      if (request.url.path.endsWith('/withdrawals/retained-order')) {
-        throw Exception('query unavailable');
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
       }
-      return _json({});
+      throw Exception('status unavailable');
     });
-    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-    await _fillForm(tester);
-    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
-    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
-    await tester.pumpAndSettle();
-    expect(posts, 1,
-        reason: 'acknowledgment never authorizes another financial intent');
-    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    await store.begin('payout', {'quote_id': 'quote', 'id': 'order'});
+    for (var i = 0; i < 2; i++) {
+      await tester
+          .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+      await tester.pumpAndSettle();
+      await flow.tap(tester, find.text('提现'));
+      expect(find.byKey(const Key('manual-payout-confirm')), findsNothing);
+      await flow.tap(tester, find.byKey(const Key('manual-refresh')));
+      await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    }
+    expect(writes, 0);
   });
 
-  testWidgets('U01：快速双击只创建一单（提交互斥 + loading 禁用）', (tester) async {
-    var withdrawalRequests = 0;
-    final api = await walletApi((request) {
-      if (request.url.path.endsWith('/wallet/withdrawals')) {
-        withdrawalRequests++;
-        return _json({'id': 'wd-1', 'status': 'REQUESTED'}, status: 201);
+  testWidgets('manual payout double tap sends one request', (tester) async {
+    var writes = 0;
+    final completion = Completer<void>();
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
       }
-      if (request.url.path.endsWith('/wallet/withdrawals/wd-1')) {
-        return _json({'id': 'wd-1', 'status': 'CHAIN_CONFIRMED'});
-      }
-      if (request.url.path.endsWith('/wallet/balances/me')) {
-        return _json({'asset': 'USDT-TRC20', 'balance': '10.000000'});
-      }
-      return _json({});
-    }, latency: const Duration(milliseconds: 200));
-    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-    await _fillForm(tester);
-
-    final button = find.byKey(const Key('wallet-withdraw-submit'));
+      writes++;
+      await completion.future;
+      return flow.json(fixtures.payout);
+    });
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    await store.begin('payout', {'quote_id': 'quote'});
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpAndSettle();
+    await flow.tap(tester, find.text('提现'));
+    await tester.enterText(
+        find.byKey(const Key('manual-payout-otp')), '654321');
+    final button = find.byKey(const Key('manual-payout-confirm'));
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
     await tester.tap(button);
-    await tester.pump(const Duration(milliseconds: 50));
-    // 第二次点击命中提交中禁用态。
-    await tester.tap(button, warnIfMissed: false);
-    await tester.pumpAndSettle(const Duration(milliseconds: 100));
-
-    expect(withdrawalRequests, 1, reason: '一次明确意图只创建一单');
-  });
-
-  testWidgets('U02：提交期间退出页面不报错（mounted 保护 + 资源释放）', (tester) async {
-    final api = await walletApi((request) {
-      if (request.url.path.endsWith('/wallet/withdrawals')) {
-        return _json({'id': 'wd-2', 'status': 'REQUESTED'}, status: 201);
-      }
-      return _json({});
-    }, latency: const Duration(milliseconds: 200));
-    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-    await _fillForm(tester);
-    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
-    // 推进足够时间：在途请求及其超时定时器全部收敛。
-    await tester.pumpAndSettle(const Duration(milliseconds: 100));
-    await tester.pump(const Duration(seconds: 10));
-    expect(tester.takeException(), isNull, reason: '页面销毁后不得有未捕获异常');
-  });
-
-  testWidgets('U02：轮询串行、终态自动停止并展示状态', (tester) async {
-    final api = await walletApi((request) {
-      if (request.url.path.endsWith('/wallet/withdrawals')) {
-        return _json({'id': 'wd-3', 'status': 'REQUESTED'}, status: 201);
-      }
-      if (request.url.path.endsWith('/wallet/withdrawals/wd-3')) {
-        return _json({'id': 'wd-3', 'status': 'CHAIN_CONFIRMED'});
-      }
-      return _json({});
-    });
-    await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-    await _fillForm(tester);
-    await tester.tap(find.byKey(const Key('wallet-withdraw-submit')));
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(seconds: 25));
+    await tester.pump();
+    await tester.tap(button);
+    await tester.pump();
+    completion.complete();
     await tester.pumpAndSettle();
-    expect(find.text('提现状态：CHAIN_CONFIRMED'), findsOneWidget,
-        reason: tester
-            .widgetList<Text>(find.byType(Text))
-            .map((t) => t.data)
-            .join(' | '));
+    expect(writes, 1);
+  });
+
+  testWidgets(
+      'leaving manual wallet during request does not touch disposed fields',
+      (tester) async {
+    final completion = Completer<void>();
+    final api = await flow.client((request) async {
+      await completion.future;
+      return flow.json(fixtures.binding);
+    });
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pump();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    completion.complete();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('claimed payout shows server state without cancellation action',
+      (tester) async {
+    final api = await flow.client((request) async => flow.json(
+        request.url.path.endsWith('/binding')
+            ? fixtures.binding
+            : {...fixtures.payout, 'status': 'CLAIMED'}));
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    await store.begin('payout', {'quote_id': 'quote', 'id': 'order'});
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpAndSettle();
+    await flow.tap(tester, find.text('提现'));
+    expect(find.text('状态：claimed'), findsOneWidget);
+    expect(find.text('取消提现申请'), findsNothing);
+    expect(find.byKey(const Key('manual-payout-confirm')), findsNothing);
   });
 }

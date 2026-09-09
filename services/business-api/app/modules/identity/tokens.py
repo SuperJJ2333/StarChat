@@ -8,7 +8,9 @@ from sqlalchemy import select
 
 from app.core.errors import AppError
 from app.modules.identity.invitations import hash_opaque_token
-from app.modules.identity.models import Device, RefreshToken, RefreshTokenFamily, User
+from app.modules.identity.models import AdminSession, Device, RefreshToken, RefreshTokenFamily, User
+from app.modules.identity.passwords import PasswordHasher
+from app.modules.identity.rbac import RbacService
 
 
 @dataclass(frozen=True)
@@ -77,10 +79,62 @@ class TokenService:
             session.add(self._refresh_record(family.id, refresh_value, now))
             return self._pair(user_id, device.id, family.id, refresh_value, now)
 
-    def rotate(self, refresh_token: str) -> TokenPair:
+    def issue_admin_pair(self, *, user_id: str, display_name: str, password: str | None = None) -> TokenPair:
+        now = self._now_factory()
+        with self._session_factory.begin() as session:
+            # Stable existing user row serializes competing successful logins across workers.
+            user = session.scalar(select(User).where(User.id == user_id).with_for_update())
+            if user is None or user.status.value != 'ACTIVE':
+                self._invalid('ACCOUNT_NOT_ACTIVE', '账号不可用', 403)
+            if password is not None and not PasswordHasher().verify(user.password_hash, password):
+                self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
+            if not RbacService(self._session_factory).permissions_for(user_id):
+                self._invalid('PERMISSION_DENIED', '无权访问管理后台', 403)
+            current = session.get(AdminSession, user_id)
+            if current is not None:
+                old_family = session.get(RefreshTokenFamily, current.family_id)
+                if old_family.revoked_at is None:
+                    old_family.revoked_at = now
+                    old_family.revoke_reason = 'ADMIN_SESSION_REPLACED'
+            # Never reuse a supplied device key: mobile issue_pair can reactivate its device.
+            device = Device(id=str(uuid4()), user_id=user_id, device_key=str(uuid4()),
+                display_name=display_name, last_seen_at=now, created_at=now)
+            session.add(device)
+            session.flush()
+            family = RefreshTokenFamily(id=str(uuid4()), user_id=user_id,
+                device_id=device.id, created_at=now)
+            session.add(family)
+            session.flush()
+            deadline = now + timedelta(hours=48)
+            if current is None:
+                current = AdminSession(user_id=user_id, family_id=family.id,
+                    expires_at=deadline, authenticated_at=now, created_at=now)
+                session.add(current)
+            else:
+                current.family_id = family.id
+                current.expires_at = deadline
+                current.authenticated_at = now
+                current.created_at = now
+            value = self._new_refresh_token()
+            record = self._refresh_record(family.id, value, now)
+            record.expires_at = deadline
+            session.add(record)
+            return self._pair(user_id, device.id, family.id, value, now,
+                admin_deadline=deadline)
+
+    def rotate_admin(self, refresh_token: str, *, expected_session_id: str | None = None) -> TokenPair:
+        return self.rotate(refresh_token, _admin=True, _expected_session_id=expected_session_id)
+
+    def rotate(self, refresh_token: str, *, _admin: bool = False, _expected_session_id: str | None = None) -> TokenPair:
         now = self._now_factory()
         session = self._session_factory()
         try:
+            if _admin:
+                owner = session.scalar(select(RefreshTokenFamily.user_id).join(
+                    RefreshToken, RefreshToken.family_id == RefreshTokenFamily.id).where(
+                    RefreshToken.token_hash == hash_opaque_token(refresh_token)))
+                if owner is not None:
+                    session.scalar(select(User).where(User.id == owner).with_for_update())
             record = session.scalar(
                 select(RefreshToken)
                 .where(RefreshToken.token_hash == hash_opaque_token(refresh_token))
@@ -93,6 +147,19 @@ class TokenService:
                 .where(RefreshTokenFamily.id == record.family_id)
                 .with_for_update()
             )
+            admin = session.get(AdminSession, family.user_id)
+            is_admin = admin is not None and admin.family_id == family.id
+            if _admin and _expected_session_id is not None and family.id != _expected_session_id:
+                self._invalid('ADMIN_SESSION_REPLACED', '管理会话已切换，请重新加载页面', 401)
+            if _admin and family.revoke_reason == 'ADMIN_SESSION_REPLACED':
+                self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
+            if is_admin != _admin:
+                self._invalid('REFRESH_TOKEN_INVALID', '刷新令牌无效', 401)
+            if is_admin and self._utc(admin.expires_at) <= now:
+                family.revoked_at = now
+                family.revoke_reason = 'ADMIN_SESSION_EXPIRED'
+                session.commit()
+                self._invalid('ADMIN_SESSION_EXPIRED', '管理会话已到期，请重新登录', 401)
             if record.consumed_at is not None:
                 family.revoked_at = now
                 family.revoke_reason = "TOKEN_REUSE"
@@ -101,7 +168,7 @@ class TokenService:
             record_expires_at = record.expires_at
             if record_expires_at.tzinfo is None:
                 record_expires_at = record_expires_at.replace(tzinfo=timezone.utc)
-            if family.revoked_at is not None or record_expires_at < now:
+            if family.revoked_at is not None or record_expires_at <= now:
                 self._invalid("REFRESH_TOKEN_INVALID", "刷新令牌无效", 401)
             device = session.get(Device, family.device_id)
             if device is None or device.revoked_at is not None:
@@ -111,13 +178,16 @@ class TokenService:
                 self._invalid("ACCOUNT_NOT_ACTIVE", "账号不可用", 403)
             replacement_value = self._new_refresh_token()
             replacement = self._refresh_record(family.id, replacement_value, now)
+            if is_admin:
+                replacement.expires_at = admin.expires_at
             record.consumed_at = now
             record.replaced_by_id = replacement.id
             device.last_seen_at = now
             session.add(replacement)
             session.commit()
             return self._pair(
-                family.user_id, device.id, family.id, replacement_value, now
+                family.user_id, device.id, family.id, replacement_value, now,
+                admin_deadline=self._utc(admin.expires_at) if is_admin else None,
             )
         finally:
             session.close()
@@ -192,6 +262,15 @@ class TokenService:
                 user = session.get(User, claims["sub"])
                 device = session.get(Device, claims["device_id"])
                 family = session.get(RefreshTokenFamily, claims["family_id"])
+                admin = session.get(AdminSession, claims['sub'])
+                is_admin = admin is not None and admin.family_id == claims['family_id']
+                if claims.get('session_scope') == 'admin':
+                    if not is_admin:
+                        self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
+                    if self._utc(admin.expires_at) <= self._now_factory():
+                        self._invalid('ADMIN_SESSION_EXPIRED', '管理会话已到期，请重新登录', 401)
+                elif is_admin:
+                    raise jwt.InvalidTokenError('admin family requires management scope')
                 if (
                     user is None
                     or user.status.value != "ACTIVE"
@@ -208,8 +287,30 @@ class TokenService:
         except jwt.PyJWTError as exc:
             raise AppError(code="ACCESS_TOKEN_INVALID", message="访问令牌无效", status_code=401) from exc
 
+    def require_recent_login(self, token: str, *, max_age: timedelta = timedelta(minutes=5)) -> dict:
+        """Require a recently created server session; refresh does not renew login age."""
+        if max_age <= timedelta(0):
+            raise ValueError("max_age must be positive")
+        claims = self.decode_access_token(token)
+        if not claims.get("family_id") or not claims.get("device_id"):
+            self._invalid("RECENT_LOGIN_REQUIRED", "请重新登录后再执行此操作", 403)
+        with self._session_factory() as session:
+            family = session.get(RefreshTokenFamily, claims["family_id"])
+            if (family is None or family.revoked_at is not None
+                    or family.user_id != claims["sub"] or family.device_id != claims["device_id"]):
+                self._invalid("RECENT_LOGIN_REQUIRED", "请重新登录后再执行此操作", 403)
+            admin = session.get(AdminSession, claims['sub'])
+            created_at = (admin.authenticated_at if admin is not None and
+                admin.family_id == family.id else family.created_at)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if not timedelta(0) <= self._now_factory() - created_at <= max_age:
+                self._invalid("RECENT_LOGIN_REQUIRED", "请重新登录后再执行此操作", 403)
+        return claims
+
     def _pair(
-        self, user_id: str, device_id: str, family_id: str, refresh_value: str, now: datetime
+        self, user_id: str, device_id: str, family_id: str, refresh_value: str, now: datetime,
+        *, admin_deadline: datetime | None = None,
     ) -> TokenPair:
         access = jwt.encode(
             {
@@ -218,13 +319,73 @@ class TokenService:
                 "family_id": family_id,
                 "iss": self._jwt_issuer,
                 "iat": now,
-                "exp": now + self._access_lifetime,
+                "exp": min(now + self._access_lifetime, admin_deadline) if admin_deadline else now + self._access_lifetime,
                 "jti": str(uuid4()),
+                **({'session_scope': 'admin'} if admin_deadline else {}),
             },
             self._jwt_secret,
             algorithm="HS256",
         )
         return TokenPair(access, refresh_value, family_id, device_id)
+
+    def admin_session(self, token: str) -> dict:
+        claims = self.decode_access_token(token)
+        if claims.get('session_scope') != 'admin':
+            self._invalid('ADMIN_SESSION_REQUIRED', '请登录管理后台', 401)
+        with self._session_factory() as session:
+            admin = session.get(AdminSession, claims['sub'])
+            if admin is None or admin.family_id != claims['family_id']:
+                self._invalid('ADMIN_SESSION_REPLACED', '账号已在其他设备登录', 401)
+            return {'session_expires_at': self._utc(admin.expires_at),
+                'authenticated_at': self._utc(admin.authenticated_at),
+                'user_id': claims['sub'], 'session_id': admin.family_id}
+
+    def require_admin_cookie(self, token: str, cookie: str) -> None:
+        claims = self.decode_access_token(token)
+        self.admin_session(token)
+        with self._session_factory() as session:
+            record = session.scalar(select(RefreshToken).where(
+                RefreshToken.token_hash == hash_opaque_token(cookie)))
+            if record is None or record.family_id != claims['family_id'] or record.consumed_at is not None:
+                self._invalid('ADMIN_SESSION_REQUIRED', '请登录管理后台', 401)
+
+    def revoke_admin_refresh(self, cookie: str, *, expected_session_id: str | None = None) -> None:
+        with self._session_factory.begin() as session:
+            owner = session.scalar(select(RefreshTokenFamily.user_id).join(
+                RefreshToken, RefreshToken.family_id == RefreshTokenFamily.id).where(
+                RefreshToken.token_hash == hash_opaque_token(cookie)))
+            if owner is None:
+                return
+            session.scalar(select(User).where(User.id == owner).with_for_update())
+            record = session.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_opaque_token(cookie)))
+            admin = session.get(AdminSession, owner)
+            if admin is None or record.family_id != admin.family_id:
+                return
+            if expected_session_id is not None and admin.family_id != expected_session_id:
+                self._invalid('ADMIN_SESSION_REPLACED', '管理会话已切换，请重新加载页面', 401)
+            family = session.get(RefreshTokenFamily, admin.family_id)
+            if family.revoked_at is None:
+                family.revoked_at = self._now_factory()
+                family.revoke_reason = 'ADMIN_LOGOUT'
+
+    def step_up_admin(self, token: str, password: str) -> dict:
+        claims = self.decode_access_token(token)
+        self.admin_session(token)
+        with self._session_factory.begin() as session:
+            user = session.scalar(select(User).where(User.id == claims['sub']).with_for_update())
+            admin = session.get(AdminSession, claims['sub'])
+            family = session.get(RefreshTokenFamily, claims['family_id'])
+            if (admin is None or admin.family_id != claims['family_id'] or
+                family.revoked_at is not None or self._utc(admin.expires_at) <= self._now_factory()):
+                self._invalid('ADMIN_SESSION_REQUIRED', '请登录管理后台', 401)
+            if user.status.value != 'ACTIVE' or not PasswordHasher().verify(user.password_hash, password):
+                self._invalid('CREDENTIALS_INVALID', '账号或密码错误', 401)
+            admin.authenticated_at = self._now_factory()
+        return self.admin_session(token)
+
+    @staticmethod
+    def _utc(value: datetime) -> datetime:
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
     def _refresh_record(self, family_id: str, value: str, now: datetime) -> RefreshToken:
         return RefreshToken(

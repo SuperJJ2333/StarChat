@@ -32,7 +32,8 @@ def create_custody_provider(settings: Settings):
         return (
             SandboxCustodyProvider(
                 secret=settings.wallet_webhook_secret
-                or "development-wallet-webhook-secret"
+                or "development-wallet-webhook-secret",
+                store_path=settings.wallet_sandbox_store_path,
             ),
             "sandbox",
         )

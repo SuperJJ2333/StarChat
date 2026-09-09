@@ -1,0 +1,57 @@
+# Apply after existing reviewed deployment layers; preserve their image, command,
+# network and private-media mounts. Never pair active funds with the historical
+# disabled-funds release_preflight startup command. This overlay starts no observer.
+x-manual-wallet-environment: &manual-wallet-environment
+  BUSINESS_WALLET_REAL_MODE: manual_tron
+  BUSINESS_WALLET_REAL_FUNDS_ENABLED: "${BUSINESS_WALLET_REAL_FUNDS_ENABLED:?explicit legacy gate required}"
+  BUSINESS_WALLET_DEPOSITS_ENABLED: "${BUSINESS_WALLET_DEPOSITS_ENABLED:?explicit deposits gate required}"
+  BUSINESS_WALLET_PAYOUT_REQUESTS_ENABLED: "${BUSINESS_WALLET_PAYOUT_REQUESTS_ENABLED:?explicit payout request gate required}"
+  BUSINESS_WALLET_PAYOUT_EXECUTION_ENABLED: "${BUSINESS_WALLET_PAYOUT_EXECUTION_ENABLED:?explicit payout execution gate required}"
+  BUSINESS_WALLET_CONVERSIONS_ENABLED: "${BUSINESS_WALLET_CONVERSIONS_ENABLED:?explicit conversion gate required}"
+  BUSINESS_WALLET_USER_AUTH_MODE: "${BUSINESS_WALLET_USER_AUTH_MODE:?explicit user authentication mode required}"
+  BUSINESS_WALLET_ADMIN_AUTH_MODE: "${BUSINESS_WALLET_ADMIN_AUTH_MODE:?explicit administrator authentication mode required}"
+  BUSINESS_WALLET_RESERVE_POLICY: "${BUSINESS_WALLET_RESERVE_POLICY:?explicit reserve policy required}"
+  BUSINESS_WALLET_HANDOVER_PREPARATION_MODE: "${BUSINESS_WALLET_HANDOVER_PREPARATION_MODE:?explicit handover mode required}"
+  BUSINESS_WALLET_HANDOVER_DEPLOYMENT_RECORD_PATH: /data/wallet-handover.json
+  BUSINESS_WALLET_TOTP_ENCRYPTION_KEY: "${BUSINESS_WALLET_TOTP_ENCRYPTION_KEY:?wallet MFA encryption key required}"
+  BUSINESS_WALLET_BINDING_DOMAIN: "${BUSINESS_WALLET_BINDING_DOMAIN:?wallet signing domain required}"
+  BUSINESS_WALLET_OFFICIAL_ADDRESS: "${BUSINESS_WALLET_OFFICIAL_ADDRESS:?official address required}"
+  BUSINESS_WALLET_OFFICIAL_CONFIG_VERSION: "${BUSINESS_WALLET_OFFICIAL_CONFIG_VERSION:?official configuration version required}"
+  BUSINESS_WALLET_MANUAL_OWNER_ADMIN_ID: "${BUSINESS_WALLET_MANUAL_OWNER_ADMIN_ID:?verified wallet owner administrator required}"
+  BUSINESS_WALLET_MANUAL_POLICY_VERSION: "${BUSINESS_WALLET_MANUAL_POLICY_VERSION:?manual payout policy version required}"
+  BUSINESS_WALLET_MANUAL_MAX_PER: "${BUSINESS_WALLET_MANUAL_MAX_PER:?per payout limit required}"
+  BUSINESS_WALLET_MANUAL_USER_24H: "${BUSINESS_WALLET_MANUAL_USER_24H:?per user rolling limit required}"
+  BUSINESS_WALLET_MANUAL_GLOBAL_24H: "${BUSINESS_WALLET_MANUAL_GLOBAL_24H:?platform rolling limit required}"
+  BUSINESS_WALLET_MANUAL_QUOTE_TTL_SECONDS: "${BUSINESS_WALLET_MANUAL_QUOTE_TTL_SECONDS:-300}"
+  BUSINESS_WALLET_DEPOSIT_INTENT_TTL_SECONDS: "${BUSINESS_WALLET_DEPOSIT_INTENT_TTL_SECONDS:-1200}"
+  BUSINESS_WALLET_FUNDING_BASELINE_AT: "${BUSINESS_WALLET_FUNDING_BASELINE_AT:?verified activation time required}"
+  BUSINESS_WALLET_FUNDING_BASELINE_HEIGHT: "${BUSINESS_WALLET_FUNDING_BASELINE_HEIGHT:?verified activation height required}"
+  BUSINESS_WALLET_TRONGRID_API_KEY: "${BUSINESS_WALLET_TRONGRID_API_KEY:-}"
+  BUSINESS_WALLET_ALERT_RECIPIENT: "${BUSINESS_WALLET_ALERT_RECIPIENT:?wallet alert recipient required}"
+  BUSINESS_TRON_OBSERVER_DATABASE_PATH: /data/tron-watch/observations.sqlite3
+  WALLET_DIAGNOSTIC_LOG_LEVEL: "${WALLET_DIAGNOSTIC_LOG_LEVEL:-INFO}"
+services:
+  business-api:
+    environment: *manual-wallet-environment
+    volumes: &wallet-evidence-volumes
+      - type: bind
+        source: "${TRON_WATCH_DATA_DIR:?existing protected observer directory required}"
+        target: /data/tron-watch
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${WALLET_HANDOVER_RECORD:?existing verified handover record required}"
+        target: /data/wallet-handover.json
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "10"}
+  business-worker:
+    environment: *manual-wallet-environment
+    logging:
+      driver: json-file
+      options: {max-size: 20m, max-file: "10"}
+    volumes: *wallet-evidence-volumes

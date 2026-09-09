@@ -202,12 +202,12 @@ async def test_direct_conversation_resolve_and_register(friend_components) -> No
             },
             json={"peer_user_id": "alice", "matrix_room_id": "!room-b:test"})
         assert conflict.status_code == 200
-        assert conflict.json() == {"matrix_room_id": "!room-b:test", "existing": True}
-    # 数据库：每对好友仅一行（以 bob 的更新为准）。
+        assert conflict.json() == {"matrix_room_id": "!room-a:test", "existing": True}
+    # 每对好友仅一行；并发注册不能替换已确定的规范房间。
     with factory() as session:
         rows = list(session.scalars(select(DirectConversation)).all())
         assert len(rows) == 1
-        assert rows[0].matrix_room_id == "!room-b:test"
+        assert rows[0].matrix_room_id == "!room-a:test"
         assert {rows[0].user_low_id, rows[0].user_high_id} == {"alice", "bob"}
 
 

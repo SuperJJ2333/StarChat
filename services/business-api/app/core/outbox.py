@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.core.database import Base
 from app.core.errors import AppError
+from app.core.outbox_handover_models import OutboxHandoverDisposition  # noqa: F401
 
 
 class OutboxEvent(Base):
@@ -84,10 +85,12 @@ class OutboxConsumer:
         session_factory,
         now_factory=None,
         lease_timeout: timedelta = timedelta(minutes=5),
+        wallet_handover_preparation_mode: bool = False,
     ) -> None:
         self._session_factory = session_factory
         self._now_factory = now_factory or (lambda: datetime.now(timezone.utc))
         self._lease_timeout = lease_timeout
+        self._wallet_handover_preparation_mode = wallet_handover_preparation_mode
 
     def claim_batch(self, *, worker_id: str, limit: int, topics: list[str] | None = None) -> list[OutboxMessage]:
         """领取待处理事件。
@@ -99,11 +102,13 @@ class OutboxConsumer:
         if limit < 1:
             return []
         now = self._now_factory()
+        from app.core.outbox_handover import OutboxHandover, SUMMARY_EVENT
         stale_before = now - self._lease_timeout
         with self._session_factory.begin() as session:
             statement = (
                 select(OutboxEvent)
                 .where(
+                    OutboxHandover.not_superseded_predicate(),
                     or_(
                         and_(
                             OutboxEvent.status.in_(("PENDING", "FAILED")),
@@ -121,6 +126,8 @@ class OutboxConsumer:
             )
             if topics is not None:
                 statement = statement.where(OutboxEvent.topic.in_(topics))
+            if self._wallet_handover_preparation_mode:
+                statement = statement.where(or_(OutboxEvent.topic != 'wallet.alert', OutboxEvent.event_type == SUMMARY_EVENT))
             events = list(session.scalars(statement))
             for event in events:
                 event.status = "PROCESSING"
@@ -172,12 +179,17 @@ class OutboxConsumer:
         人工重放：将 status 重置 PENDING 即可（事件本体未删除）。
         """
         now = self._now_factory()
+        from app.core.outbox_handover import OutboxHandover
         cutoff = now - (max_age if max_age is not None else timedelta(minutes=10))
         with self._session_factory.begin() as session:
             events = list(
                 session.scalars(
                     select(OutboxEvent)
                     .where(
+                        OutboxHandover.not_superseded_predicate(),
+                        or_(not self._wallet_handover_preparation_mode,
+                            OutboxEvent.topic != 'wallet.alert',
+                            OutboxEvent.event_type == 'wallet.handover.summary'),
                         OutboxEvent.status.in_(("PENDING", "FAILED")),
                         OutboxEvent.topic.not_in(handled_topics),
                         OutboxEvent.created_at <= cutoff,

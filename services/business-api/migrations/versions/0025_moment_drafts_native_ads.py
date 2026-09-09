@@ -8,6 +8,10 @@ depends_on=None
 def upgrade():
  op.create_table('moment_drafts',sa.Column('owner_id',sa.String(36),sa.ForeignKey('users.id'),primary_key=True),sa.Column('payload',sa.JSON(),nullable=False),sa.Column('updated_at',sa.DateTime(timezone=True),nullable=False))
  op.create_table('native_moment_ads',sa.Column('id',sa.String(36),primary_key=True),sa.Column('advertiser_name',sa.String(128),nullable=False),sa.Column('avatar_url',sa.String(2048)),sa.Column('text',sa.Text(),nullable=False),sa.Column('image_urls',sa.JSON(),nullable=False),sa.Column('link_url',sa.String(2048),nullable=False),sa.Column('status',sa.String(20),nullable=False),sa.Column('created_at',sa.DateTime(timezone=True),nullable=False))
- op.add_column('moments_preferences',sa.Column('cover_url',sa.String(2048),nullable=True))
+ # 0014 owns this column; retain compatibility with legacy schemas missing it.
+ # Database-side conditional DDL also works for offline Alembic generation.
+ op.execute('ALTER TABLE moments_preferences ADD COLUMN IF NOT EXISTS cover_url VARCHAR(2048)')
 def downgrade():
- op.drop_column('moments_preferences','cover_url');op.drop_table('native_moment_ads');op.drop_table('moment_drafts')
+ # Never remove the 0014-owned column (or any existing cover values).
+ op.drop_table('native_moment_ads')
+ op.drop_table('moment_drafts')

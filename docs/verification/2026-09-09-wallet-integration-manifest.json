@@ -1,0 +1,1901 @@
+{
+  "production_api_image": "sha256:c76be88a7e5bef06405bdf6d8b7b5f65109ae8660f9da114ea5b378a2d5dee2f",
+  "production_worker_image": "sha256:27bc9f7de31fb5803e3180e6817e319cced9fc1462379146ddf1dc4350925eb5",
+  "schema_head": "0057_merge_direct_room",
+  "production_api_python_files": 229,
+  "reviewed_python_deltas": [
+    "app/integrations/tron/reader.py"
+  ],
+  "imports": [
+    {
+      "path": "services/business-api/requirements.lock",
+      "origin": "running-production-api",
+      "sha256": "ab4a683b6b33148f42623f33cfda708d07f0adb238e026fce80249e2c433ad84",
+      "final_normalized_sha256": "8028648a381fa90b554fa242f04e5a0507d7ea6da641da4e1b6efa9c861f335d"
+    },
+    {
+      "path": "services/business-api/app/main.py",
+      "origin": "running-production-api",
+      "sha256": "d6b1a1b694f684b47902256d874872c59868ce1fd8b400337c353c2b4d258ae1",
+      "final_normalized_sha256": "d6b1a1b694f684b47902256d874872c59868ce1fd8b400337c353c2b4d258ae1"
+    },
+    {
+      "path": "services/business-api/migrations/env.py",
+      "origin": "running-production-api",
+      "sha256": "2879b8f13f66dd91b48a0cfcbfc275292e1758921e32c71d3109facbf23ae13a",
+      "final_normalized_sha256": "a617308f913fb897e34e48dee2aa1ffd8c7155e0880d8f2805d99c57c518ac23"
+    },
+    {
+      "path": "services/business-api/app/api/admin.py",
+      "origin": "running-production-api",
+      "sha256": "a9a09965cd5ccc498af89610ad54b6ac820ff3a6d159dad8a3259356e9b03947",
+      "final_normalized_sha256": "a9a09965cd5ccc498af89610ad54b6ac820ff3a6d159dad8a3259356e9b03947"
+    },
+    {
+      "path": "services/business-api/app/api/admin_report_contracts.py",
+      "origin": "running-production-api",
+      "sha256": "9f5c930887409ec04e606beb17722665b3ac09483467c89870a4434603718863",
+      "final_normalized_sha256": "9f5c930887409ec04e606beb17722665b3ac09483467c89870a4434603718863"
+    },
+    {
+      "path": "services/business-api/app/api/admin_session_boundary.py",
+      "origin": "running-production-api",
+      "sha256": "75259331225de8f479b851b243f7623b3e29ae99e53afdba7afaddf51ca60a9b",
+      "final_normalized_sha256": "75259331225de8f479b851b243f7623b3e29ae99e53afdba7afaddf51ca60a9b"
+    },
+    {
+      "path": "services/business-api/app/api/admin_wallet_auth.py",
+      "origin": "running-production-api",
+      "sha256": "01ab83412267b1f3cd5c41a729fe020322a3b88c5c3ab8f7e6ccf36ca910370b",
+      "final_normalized_sha256": "01ab83412267b1f3cd5c41a729fe020322a3b88c5c3ab8f7e6ccf36ca910370b"
+    },
+    {
+      "path": "services/business-api/app/api/admin_wallet_security.py",
+      "origin": "running-production-api",
+      "sha256": "b9d22f7298c49f52efe2ea58fc2f7124b61e365ee8948f59e06d0afb5193a810",
+      "final_normalized_sha256": "b9d22f7298c49f52efe2ea58fc2f7124b61e365ee8948f59e06d0afb5193a810"
+    },
+    {
+      "path": "services/business-api/app/api/identity.py",
+      "origin": "running-production-api",
+      "sha256": "564b7ba157cd8b6384d41be0ec76d2835154db3ae3a88a94cbca443848edc472",
+      "final_normalized_sha256": "564b7ba157cd8b6384d41be0ec76d2835154db3ae3a88a94cbca443848edc472"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet.py",
+      "origin": "running-production-api",
+      "sha256": "501a4ebc581d47471580559333ba5299246fe2ce16e7745bb5536b9d142e4304",
+      "final_normalized_sha256": "501a4ebc581d47471580559333ba5299246fe2ce16e7745bb5536b9d142e4304"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet_admin.py",
+      "origin": "running-production-api",
+      "sha256": "ca14e072227242485a3bbb8a4274e98092400f0f24baf6025781de7b7f90d400",
+      "final_normalized_sha256": "ca14e072227242485a3bbb8a4274e98092400f0f24baf6025781de7b7f90d400"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet_handover.py",
+      "origin": "running-production-api",
+      "sha256": "8e96bbe939d2f121ebcef7f03f31701f1ec389121aca2554efa93eab97662de5",
+      "final_normalized_sha256": "38d1f77fceb3413226a1233bb8967ec50e43567b7cd879cf0339795bc8b1ddc9"
+    },
+    {
+      "path": "services/business-api/app/api/manual_wallet_operations.py",
+      "origin": "running-production-api",
+      "sha256": "2698b7eada58d3ab87f486f06d45da80e7ca9bcefdf88e51578ef28a9fa1327f",
+      "final_normalized_sha256": "a99b6ac6f67f899d73b7e773fee9f73029a1b4a740af4bd5fce8e0c916289dc3"
+    },
+    {
+      "path": "services/business-api/app/api/media.py",
+      "origin": "running-production-api",
+      "sha256": "008576b8e4ffb574bf77068036329ad723166528bfe3e873622e1b49de726bf3",
+      "final_normalized_sha256": "008576b8e4ffb574bf77068036329ad723166528bfe3e873622e1b49de726bf3"
+    },
+    {
+      "path": "services/business-api/app/api/official_wallet.py",
+      "origin": "running-production-api",
+      "sha256": "fbcd300fe50d59044b617af19c2717cf36b087960731809b0847775100daff6d",
+      "final_normalized_sha256": "fbcd300fe50d59044b617af19c2717cf36b087960731809b0847775100daff6d"
+    },
+    {
+      "path": "services/business-api/app/api/transfer.py",
+      "origin": "running-production-api",
+      "sha256": "dc4cfa1c2d2e3c9ab59589079abca978dcff21a64a02c1ad63f900cd387aa590",
+      "final_normalized_sha256": "dc4cfa1c2d2e3c9ab59589079abca978dcff21a64a02c1ad63f900cd387aa590"
+    },
+    {
+      "path": "services/business-api/app/api/wallet.py",
+      "origin": "running-production-api",
+      "sha256": "8153ecf6bbe3a272b7e12c7329654252386f2876bd8c5085538e48b792bfdb58",
+      "final_normalized_sha256": "33a5d663ef3c36bff74b414de09047d6e2c4f2cd9250bb8d2d5f7b794d42b33b"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_binding.py",
+      "origin": "running-production-api",
+      "sha256": "9906b16142c4f14e2e3d07c71f6b81fee0b759f0d7113c2ca43057dc64fe831f",
+      "final_normalized_sha256": "9906b16142c4f14e2e3d07c71f6b81fee0b759f0d7113c2ca43057dc64fe831f"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_chain.py",
+      "origin": "running-production-api",
+      "sha256": "4abf6274d21de457e4e9aefecf60c73ff0f769812d692b82ae9f6967d79b90c8",
+      "final_normalized_sha256": "4abf6274d21de457e4e9aefecf60c73ff0f769812d692b82ae9f6967d79b90c8"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_mfa.py",
+      "origin": "running-production-api",
+      "sha256": "9ee2a7cbf70e844e5fb901744ee314d760eaddbc268d6cdb0dd2b418d1043d28",
+      "final_normalized_sha256": "9ee2a7cbf70e844e5fb901744ee314d760eaddbc268d6cdb0dd2b418d1043d28"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_operations.py",
+      "origin": "running-production-api",
+      "sha256": "19edc6f0b5952b29e8b8257836e83e8770611c8e15e0e1999999282909a17505",
+      "final_normalized_sha256": "19edc6f0b5952b29e8b8257836e83e8770611c8e15e0e1999999282909a17505"
+    },
+    {
+      "path": "services/business-api/app/api/wallet_report_contracts.py",
+      "origin": "running-production-api",
+      "sha256": "e38edaad700e9d136640fe1e8d61d2e950849fc7b78ede6f6b9bfd971fa567af",
+      "final_normalized_sha256": "e38edaad700e9d136640fe1e8d61d2e950849fc7b78ede6f6b9bfd971fa567af"
+    },
+    {
+      "path": "services/business-api/app/cli/generate_invitation.py",
+      "origin": "running-production-api",
+      "sha256": "99a018c1f8a0aa235ff2d7be8f8f20b9c0a1e2770ec8d40421c6309815ca2507",
+      "final_normalized_sha256": "99a018c1f8a0aa235ff2d7be8f8f20b9c0a1e2770ec8d40421c6309815ca2507"
+    },
+    {
+      "path": "services/business-api/app/cli/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "6d025183111fd2e73dbd71a61c1860e56659906081ec3f8426bf11d1e1eb562c",
+      "final_normalized_sha256": "6d025183111fd2e73dbd71a61c1860e56659906081ec3f8426bf11d1e1eb562c"
+    },
+    {
+      "path": "services/business-api/app/core/config.py",
+      "origin": "running-production-api",
+      "sha256": "c156c7310fa81fc96a8d647b78aa76f6031edadb0c32d2c4bea872801fde6527",
+      "final_normalized_sha256": "c64ddd2d41e41303459f6f16331edc19ee2ae450adbf5b5fd850f0faae459669"
+    },
+    {
+      "path": "services/business-api/app/core/errors.py",
+      "origin": "running-production-api",
+      "sha256": "8ace6ca8bb7c573eb30d65410ce10f0f26f7569710ec3e608c53b49bf4cb1e72",
+      "final_normalized_sha256": "6d5b39a08c721261669e765edeeec2dba866a1f469fa74018036ab81c658804f"
+    },
+    {
+      "path": "services/business-api/app/core/outbox.py",
+      "origin": "running-production-api",
+      "sha256": "c0c5f9ccb17d5e4ec66124fc2cedf7964156e2ded958be85aa3ccb4ba63a77a0",
+      "final_normalized_sha256": "ed8b556ae4ba19e18e1a098a042b6ef7ce7ce868e989275f89844fef58b61e27"
+    },
+    {
+      "path": "services/business-api/app/core/outbox_handover.py",
+      "origin": "running-production-api",
+      "sha256": "2b98dc5d02d630c64adc62fbd6d16d96a1aa4c87caa10b4ed231bbb86dcd932d",
+      "final_normalized_sha256": "2b98dc5d02d630c64adc62fbd6d16d96a1aa4c87caa10b4ed231bbb86dcd932d"
+    },
+    {
+      "path": "services/business-api/app/core/outbox_handover_models.py",
+      "origin": "running-production-api",
+      "sha256": "ddddb09214a964fb8f988e012c8a29b0de9e7fa4a42104ba4323bf16eb7c8223",
+      "final_normalized_sha256": "ddddb09214a964fb8f988e012c8a29b0de9e7fa4a42104ba4323bf16eb7c8223"
+    },
+    {
+      "path": "services/business-api/app/integrations/custody/base.py",
+      "origin": "running-production-api",
+      "sha256": "5406c61ecfdbbcae170a367e1ad91de3ad8cbf5ee04009bf40342d62e953f993",
+      "final_normalized_sha256": "9542cf37ddab4ea83637c81c749114d2e64f8b6679d279b2ca658595f54075d9"
+    },
+    {
+      "path": "services/business-api/app/integrations/custody/factory.py",
+      "origin": "running-production-api",
+      "sha256": "c083d19ec8072d94c67be5e5a88077d570927dec35ed4decaead03081bcd0973",
+      "final_normalized_sha256": "c083d19ec8072d94c67be5e5a88077d570927dec35ed4decaead03081bcd0973"
+    },
+    {
+      "path": "services/business-api/app/integrations/custody/sandbox.py",
+      "origin": "running-production-api",
+      "sha256": "ed6acabeb905b197bf71d80e48f5e96911cab15c68661cbe66ed7deee32fc904",
+      "final_normalized_sha256": "5dfc93627fdcc0c37c88dc0276bf1c3acd4eed99c6808aa6d549e6a2cf434a0c"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/admin_query.py",
+      "origin": "running-production-api",
+      "sha256": "c90c1a4e7a6a4bbc4f84dc953b30b36e7e7794687601ca2d3286b71a8960a347",
+      "final_normalized_sha256": "c90c1a4e7a6a4bbc4f84dc953b30b36e7e7794687601ca2d3286b71a8960a347"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/cli.py",
+      "origin": "running-production-api",
+      "sha256": "f3fc63c9672637bdc1b90758a968a6d55df2741d13ec1802cc4c0ce30dcc3768",
+      "final_normalized_sha256": "f3fc63c9672637bdc1b90758a968a6d55df2741d13ec1802cc4c0ce30dcc3768"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/diagnostics.py",
+      "origin": "running-production-api",
+      "sha256": "b60a23733294757629bfd460d78a199511b39c2b00c6c676c37dcaed8e63beec",
+      "final_normalized_sha256": "b60a23733294757629bfd460d78a199511b39c2b00c6c676c37dcaed8e63beec"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/finality.py",
+      "origin": "running-production-api",
+      "sha256": "e411434496e62cab736388f3e78cf3169765e3cd7973422073bfb74b3039bf1b",
+      "final_normalized_sha256": "e411434496e62cab736388f3e78cf3169765e3cd7973422073bfb74b3039bf1b"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/funding_source.py",
+      "origin": "running-production-api",
+      "sha256": "ab11fad446db2d2d98c6ce4d5ca470501ff9625103297e228ac8f9626feb1f1b",
+      "final_normalized_sha256": "ab11fad446db2d2d98c6ce4d5ca470501ff9625103297e228ac8f9626feb1f1b"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/message_signature.py",
+      "origin": "running-production-api",
+      "sha256": "ff4713242d3468ab9b0516aaad25ef1a53084c79777e649384ee00af29e1dcdb",
+      "final_normalized_sha256": "ff4713242d3468ab9b0516aaad25ef1a53084c79777e649384ee00af29e1dcdb"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/observer.py",
+      "origin": "running-production-api",
+      "sha256": "f599d0901e9c6de9633fbb555befcc03185c6e706c6e4ea74c9b5b7dcc3c757c",
+      "final_normalized_sha256": "f599d0901e9c6de9633fbb555befcc03185c6e706c6e4ea74c9b5b7dcc3c757c"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/reader.py",
+      "origin": "reviewed-development-complete-snapshot-retry",
+      "sha256": "2f38e62cc5915f3fa7a4fac796f48f63086d03578ada2ce615020699f1c722c0",
+      "final_normalized_sha256": "2f38e62cc5915f3fa7a4fac796f48f63086d03578ada2ce615020699f1c722c0"
+    },
+    {
+      "path": "services/business-api/app/integrations/tron/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "f00156b7a84e587ad90789afee604faba50a3dfb0ac6cb73d69b3feef2ddc876",
+      "final_normalized_sha256": "f00156b7a84e587ad90789afee604faba50a3dfb0ac6cb73d69b3feef2ddc876"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/dashboard_reports.py",
+      "origin": "running-production-api",
+      "sha256": "2495ed46b7eee3e2c4258bfc0a7184baa4cec9d5ca51a269ad29397f2b2fb382",
+      "final_normalized_sha256": "2495ed46b7eee3e2c4258bfc0a7184baa4cec9d5ca51a269ad29397f2b2fb382"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/models.py",
+      "origin": "running-production-api",
+      "sha256": "9801c9ad8cea2b8dd7bc974c08eab214eea9dc99b9d70b92d8a7accce59e3fe0",
+      "final_normalized_sha256": "9801c9ad8cea2b8dd7bc974c08eab214eea9dc99b9d70b92d8a7accce59e3fe0"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/service.py",
+      "origin": "running-production-api",
+      "sha256": "7632dafc19f8bb791661eaf58c90e6dd26abcfc82d96421e5fe930b9e5c34ebf",
+      "final_normalized_sha256": "7632dafc19f8bb791661eaf58c90e6dd26abcfc82d96421e5fe930b9e5c34ebf"
+    },
+    {
+      "path": "services/business-api/app/modules/admin/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "e896928b14caafd66c8006efdcefe5dbccf84cd8979b8f47b071286a59384abb",
+      "final_normalized_sha256": "e896928b14caafd66c8006efdcefe5dbccf84cd8979b8f47b071286a59384abb"
+    },
+    {
+      "path": "services/business-api/app/modules/friendship/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "9525da9c5a3918c29697f0f89c7018c7150aa8f96ecab763ea39d1b23ab769ae",
+      "final_normalized_sha256": "9525da9c5a3918c29697f0f89c7018c7150aa8f96ecab763ea39d1b23ab769ae"
+    },
+    {
+      "path": "services/business-api/app/modules/groups/models.py",
+      "origin": "running-production-api",
+      "sha256": "a45aa2685617eb5903a41a074a2556012cb22f70ae05cfb80bfe5a8d9ddddcf4",
+      "final_normalized_sha256": "a45aa2685617eb5903a41a074a2556012cb22f70ae05cfb80bfe5a8d9ddddcf4"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/invitations.py",
+      "origin": "running-production-api",
+      "sha256": "bd2061d9a07099b125e5cd61f63b8f2fa918a04a424ac9e68da729e0c5084857",
+      "final_normalized_sha256": "bd2061d9a07099b125e5cd61f63b8f2fa918a04a424ac9e68da729e0c5084857"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/login_captcha.py",
+      "origin": "running-production-api",
+      "sha256": "a67c0c77e217bfc2333e6f71b19cc8619157e95592ff70b1de8e643ebd91923d",
+      "final_normalized_sha256": "a67c0c77e217bfc2333e6f71b19cc8619157e95592ff70b1de8e643ebd91923d"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/models.py",
+      "origin": "running-production-api",
+      "sha256": "ac791fb68a293c4dca582b463ae560ebc140aa809f465c5b2646c8065e7121dc",
+      "final_normalized_sha256": "ac791fb68a293c4dca582b463ae560ebc140aa809f465c5b2646c8065e7121dc"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/operation_password.py",
+      "origin": "running-production-api",
+      "sha256": "300a229ae3a9d3948622d1eb7353aff14e880ff1aed8fe2eafbbcaa3dbc6ba1a",
+      "final_normalized_sha256": "300a229ae3a9d3948622d1eb7353aff14e880ff1aed8fe2eafbbcaa3dbc6ba1a"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/operation_password_models.py",
+      "origin": "running-production-api",
+      "sha256": "34c5f7514cafe3c7137b852100b6e25707e2782f6a7e1297f9bf58488ad5d8ce",
+      "final_normalized_sha256": "34c5f7514cafe3c7137b852100b6e25707e2782f6a7e1297f9bf58488ad5d8ce"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/referral.py",
+      "origin": "running-production-api",
+      "sha256": "0e06e834d3c6063def05e7e4a6ac8930e26555e3912bb300b144a3711c6bd0da",
+      "final_normalized_sha256": "0e06e834d3c6063def05e7e4a6ac8930e26555e3912bb300b144a3711c6bd0da"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/tokens.py",
+      "origin": "running-production-api",
+      "sha256": "7d1226bc892da24c98c6e76abb71e77e5fc60e793371756e72b9101bd66e9727",
+      "final_normalized_sha256": "7d1226bc892da24c98c6e76abb71e77e5fc60e793371756e72b9101bd66e9727"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/totp.py",
+      "origin": "running-production-api",
+      "sha256": "6e9c6262021cbb462169405049c45ff698f73bf577ed0ef47cf4851b95ee46e2",
+      "final_normalized_sha256": "96bc51886794be7a8a35ea82075883e65ced8e39342da5c1b863765dd2cf95a1"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/wallet_access.py",
+      "origin": "running-production-api",
+      "sha256": "7d68a5530f3c32ad6b90df419d1d97eddf81baf8044d60e38340933645c90850",
+      "final_normalized_sha256": "7d68a5530f3c32ad6b90df419d1d97eddf81baf8044d60e38340933645c90850"
+    },
+    {
+      "path": "services/business-api/app/modules/identity/wallet_mfa.py",
+      "origin": "running-production-api",
+      "sha256": "2c26b25fd637bdb8b52791562b52385d1ef22382e7fdf78848efaa01ce5363db",
+      "final_normalized_sha256": "2c26b25fd637bdb8b52791562b52385d1ef22382e7fdf78848efaa01ce5363db"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/account_locks.py",
+      "origin": "running-production-api",
+      "sha256": "acf4a2b2293977f752b3db2d205601e162cac82c5282a1a655ecbb09b64aa745",
+      "final_normalized_sha256": "acf4a2b2293977f752b3db2d205601e162cac82c5282a1a655ecbb09b64aa745"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/adjustment_models.py",
+      "origin": "running-production-api",
+      "sha256": "f269dbdeeea20792e84b8d41f6e66edd1f949616c72ca1c70018ec0952e80e58",
+      "final_normalized_sha256": "6a03e74373e7b2f3689ffadc82d9e27bd908d25ec13c864dcb159edeb999c393"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/handover.py",
+      "origin": "running-production-api",
+      "sha256": "358c3a65b812555b0bfeb413fbc63d2ee082d7cbdb122468731aecaf5730062a",
+      "final_normalized_sha256": "358c3a65b812555b0bfeb413fbc63d2ee082d7cbdb122468731aecaf5730062a"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/manual_payout_reserve.py",
+      "origin": "running-production-api",
+      "sha256": "c1c69e1c3184451b81301ee988d325aaf24266c2e139755368340f4c93c68cc0",
+      "final_normalized_sha256": "c1c69e1c3184451b81301ee988d325aaf24266c2e139755368340f4c93c68cc0"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/manual_reserve.py",
+      "origin": "running-production-api",
+      "sha256": "77f6bdac35f7d236d96775e183a37235239d1757383afacf67c99742f3a7f5a6",
+      "final_normalized_sha256": "77f6bdac35f7d236d96775e183a37235239d1757383afacf67c99742f3a7f5a6"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/manual_reserve_models.py",
+      "origin": "running-production-api",
+      "sha256": "df1e88413ac7c9724d3fffa670cc9eeb67ee908e4657167668097e338ad239ec",
+      "final_normalized_sha256": "df1e88413ac7c9724d3fffa670cc9eeb67ee908e4657167668097e338ad239ec"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/models.py",
+      "origin": "running-production-api",
+      "sha256": "590956d7284acf25001e26d16f20590de1c44feb522bb7df175bb57b772c4ffd",
+      "final_normalized_sha256": "de436f73617892be1c87eccacc6a8dd9a452c8872f7024ce2d95bee3d5a8e6b3"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/reporting.py",
+      "origin": "running-production-api",
+      "sha256": "d99218ee1c31299619ffb6f6809bd12ed1b1e8720ae857f5a25af5b14e532fce",
+      "final_normalized_sha256": "d99218ee1c31299619ffb6f6809bd12ed1b1e8720ae857f5a25af5b14e532fce"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/reserve.py",
+      "origin": "running-production-api",
+      "sha256": "6cebfce7f7fbd95b3a79dd8172121cf90c0771a3ecade4f0a0a770d50c4ec9e8",
+      "final_normalized_sha256": "6cebfce7f7fbd95b3a79dd8172121cf90c0771a3ecade4f0a0a770d50c4ec9e8"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/restrictions.py",
+      "origin": "running-production-api",
+      "sha256": "493b52dfe0645427e08dcb2226c751281aa48ef9234a84a9f23852d40ce2784d",
+      "final_normalized_sha256": "493b52dfe0645427e08dcb2226c751281aa48ef9234a84a9f23852d40ce2784d"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/restriction_models.py",
+      "origin": "running-production-api",
+      "sha256": "5b168d05e5081f3ae8fd0c13b33e0be5dca04827a7b2f8e38153d3c6cb9fe836",
+      "final_normalized_sha256": "5b168d05e5081f3ae8fd0c13b33e0be5dca04827a7b2f8e38153d3c6cb9fe836"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/service.py",
+      "origin": "running-production-api",
+      "sha256": "3d5080b78e92a16ca176b3924dc7d609a585f2789c53b82103676d6abb062d38",
+      "final_normalized_sha256": "e8741abc7772cb35f95e8e1711f27bd4b9a911940148c1f82a2149425563845f"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/supply_reports.py",
+      "origin": "running-production-api",
+      "sha256": "45c7002b061dccc1caef27e1a146d7247307de9327263173b19a522c48718e1b",
+      "final_normalized_sha256": "45c7002b061dccc1caef27e1a146d7247307de9327263173b19a522c48718e1b"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/wallet_obligations.py",
+      "origin": "running-production-api",
+      "sha256": "2e0f4d2c233d6a4fcb6fc13f83d4659b3ac4c5f12f9fdc13dff10560bf592910",
+      "final_normalized_sha256": "2e0f4d2c233d6a4fcb6fc13f83d4659b3ac4c5f12f9fdc13dff10560bf592910"
+    },
+    {
+      "path": "services/business-api/app/modules/ledger/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "966c117eb7277e3029f6a76f4c6c1c62862e177b0b76b66e020aa12b9fe7d50c",
+      "final_normalized_sha256": "87e11c8ade1f7416b78df68dac2c5ef5b88ccab38741123c4db742c3a91abe67"
+    },
+    {
+      "path": "services/business-api/app/modules/media/images.py",
+      "origin": "running-production-api",
+      "sha256": "73a622e3fc8dce4d2caa654951a7b7a0b46df092ef9ec66b1122942b2bd202f0",
+      "final_normalized_sha256": "73a622e3fc8dce4d2caa654951a7b7a0b46df092ef9ec66b1122942b2bd202f0"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/media.py",
+      "origin": "running-production-api",
+      "sha256": "61d9139d353e82d2deba94709381d5c6cc82808fae657c5532bce1d6a488a065",
+      "final_normalized_sha256": "f53db6fbae0350872e4359c56675561b94711c4fd7af35b95cb222eb54cdb13c"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/recommendation.py",
+      "origin": "running-production-api",
+      "sha256": "f6e3f8756b81a71445ff12d4d0c7155f76e9c54db7fd6448c4b21fc74c245f18",
+      "final_normalized_sha256": "f6e3f8756b81a71445ff12d4d0c7155f76e9c54db7fd6448c4b21fc74c245f18"
+    },
+    {
+      "path": "services/business-api/app/modules/moments/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "7761fc0b935a72c12b119c8df5dc23d006d7bf4893a6aef1eb3341660fce8b39",
+      "final_normalized_sha256": "7761fc0b935a72c12b119c8df5dc23d006d7bf4893a6aef1eb3341660fce8b39"
+    },
+    {
+      "path": "services/business-api/app/modules/redpacket/claims.py",
+      "origin": "running-production-api",
+      "sha256": "74ca90f76dbf6ea71ff9c4e0b0be69a2e36e561ca1426b8846f23c3d929cab2c",
+      "final_normalized_sha256": "bfc4f553848650b76bea9cccc56ab5a76757a50fcf58ed62bddaaebb07fd149b"
+    },
+    {
+      "path": "services/business-api/app/modules/redpacket/membership.py",
+      "origin": "running-production-api",
+      "sha256": "0bdc1aebe8536061f84c61659dc3c8b47174d769bfb3340f454e3b14f51f1d94",
+      "final_normalized_sha256": "0bdc1aebe8536061f84c61659dc3c8b47174d769bfb3340f454e3b14f51f1d94"
+    },
+    {
+      "path": "services/business-api/app/modules/redpacket/models.py",
+      "origin": "running-production-api",
+      "sha256": "0b4362fb4583afd3057a1e68633ab0c5d07d24873751488bda1035a8cad220b5",
+      "final_normalized_sha256": "5b72c559c943fbd70220b83aa015c34c564a71b5500e533a68f3351b170112e7"
+    },
+    {
+      "path": "services/business-api/app/modules/redpacket/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "2ba335d87e041c186ed60fcc1396758abb411224b5ad117a4e1d5ebdd52cab04",
+      "final_normalized_sha256": "e35ae3eb8a820e0a1eff7a37a1d9a09e6d2b0646b0d5a1cd80eeab6b5748c076"
+    },
+    {
+      "path": "services/business-api/app/modules/support/enums.py",
+      "origin": "running-production-api",
+      "sha256": "454c8f7815a5a8b5bf81235d897c6d54275ff3133ca38be71dab637f0b29f688",
+      "final_normalized_sha256": "fdc2011ce164813ddf89bfde4240de70eba51e600daaee1e9e3759af0df12f03"
+    },
+    {
+      "path": "services/business-api/app/modules/transfer/exports.py",
+      "origin": "running-production-api",
+      "sha256": "a22dbfefaef3ab2126434fae8edbd9c55a5ce22eaf87af7b76c5fcd90a33ed91",
+      "final_normalized_sha256": "a22dbfefaef3ab2126434fae8edbd9c55a5ce22eaf87af7b76c5fcd90a33ed91"
+    },
+    {
+      "path": "services/business-api/app/modules/transfer/models.py",
+      "origin": "running-production-api",
+      "sha256": "4495cb120bf64c234304910bc529d3ccb4ac466c73af8b863d901af076dfa8b5",
+      "final_normalized_sha256": "4495cb120bf64c234304910bc529d3ccb4ac466c73af8b863d901af076dfa8b5"
+    },
+    {
+      "path": "services/business-api/app/modules/transfer/service.py",
+      "origin": "running-production-api",
+      "sha256": "2c9bf52686ec44c88b04bb5dd73348c2b6902f63f76c2d26b546fbf59889c54b",
+      "final_normalized_sha256": "2c9bf52686ec44c88b04bb5dd73348c2b6902f63f76c2d26b546fbf59889c54b"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/alert_delivery.py",
+      "origin": "running-production-api",
+      "sha256": "642412a90f88a6d0324573dba9669c43538115c599a30696f0384d49c3dc18cc",
+      "final_normalized_sha256": "642412a90f88a6d0324573dba9669c43538115c599a30696f0384d49c3dc18cc"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/binding.py",
+      "origin": "running-production-api",
+      "sha256": "42a71dcebecac485bc6069f8ed3da6a595df8cbada56043640530965ae4feb6b",
+      "final_normalized_sha256": "42a71dcebecac485bc6069f8ed3da6a595df8cbada56043640530965ae4feb6b"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/binding_adapters.py",
+      "origin": "running-production-api",
+      "sha256": "dd2ca12a3162b2902c2906dad58555e37cfae7d3516405c3165c57c6589e2d78",
+      "final_normalized_sha256": "dd2ca12a3162b2902c2906dad58555e37cfae7d3516405c3165c57c6589e2d78"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/binding_models.py",
+      "origin": "running-production-api",
+      "sha256": "3729a4a9508e5047da9580276ff991b4683f9b956e2793869cac98e528ec69f5",
+      "final_normalized_sha256": "3729a4a9508e5047da9580276ff991b4683f9b956e2793869cac98e528ec69f5"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/closing.py",
+      "origin": "running-production-api",
+      "sha256": "a1460cc0d34961e0708aa5b7523c5b3c31654f8a383aaeb12a21c146898f6123",
+      "final_normalized_sha256": "a1460cc0d34961e0708aa5b7523c5b3c31654f8a383aaeb12a21c146898f6123"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/closing_models.py",
+      "origin": "running-production-api",
+      "sha256": "eb29b4766810950d466e7deda81e0ae09de7d6bac9f0ebd14c7c7265103749d6",
+      "final_normalized_sha256": "eb29b4766810950d466e7deda81e0ae09de7d6bac9f0ebd14c7c7265103749d6"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/finance_queries.py",
+      "origin": "running-production-api",
+      "sha256": "6ec5d0109f72a3331a28a5ccd4a641cec6118b64ce3d8a68f76596bcf9920a96",
+      "final_normalized_sha256": "6ec5d0109f72a3331a28a5ccd4a641cec6118b64ce3d8a68f76596bcf9920a96"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding.py",
+      "origin": "running-production-api",
+      "sha256": "a97de6b263e911bd390d91d60a4d9d654f37cdd6c4d18be0811af7d8ff10b836",
+      "final_normalized_sha256": "a97de6b263e911bd390d91d60a4d9d654f37cdd6c4d18be0811af7d8ff10b836"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding_coverage.py",
+      "origin": "running-production-api",
+      "sha256": "4a663a0e6986252da68b6fe95fac8503d3c952ce0f97dad3a2aafc5d83d91d1f",
+      "final_normalized_sha256": "4a663a0e6986252da68b6fe95fac8503d3c952ce0f97dad3a2aafc5d83d91d1f"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding_coverage_models.py",
+      "origin": "running-production-api",
+      "sha256": "a92638fc274b8918eb368499c50bf64f5103b74213c07409c0b3b1ff58e0cb89",
+      "final_normalized_sha256": "a92638fc274b8918eb368499c50bf64f5103b74213c07409c0b3b1ff58e0cb89"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding_models.py",
+      "origin": "running-production-api",
+      "sha256": "e84642239a1568f3119101b0f5e2b00263955ca13978b2f1d6e5801f15094c30",
+      "final_normalized_sha256": "e84642239a1568f3119101b0f5e2b00263955ca13978b2f1d6e5801f15094c30"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding_scan.py",
+      "origin": "running-production-api",
+      "sha256": "1c1067547978c246b528c0f677cabf61be99c615df55395cbaabf53d1ecaf8f3",
+      "final_normalized_sha256": "1c1067547978c246b528c0f677cabf61be99c615df55395cbaabf53d1ecaf8f3"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/funding_scan_models.py",
+      "origin": "running-production-api",
+      "sha256": "727de4103fd4a90527fde9fc4339ee9cdaee744eca158d0840ac71ff77c0e3e3",
+      "final_normalized_sha256": "727de4103fd4a90527fde9fc4339ee9cdaee744eca158d0840ac71ff77c0e3e3"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/handover.py",
+      "origin": "running-production-api",
+      "sha256": "bbc612dbcd91109180152bf8638d52d2ef82b4b583efd3aa0a5ba92b941f7bbd",
+      "final_normalized_sha256": "bbc612dbcd91109180152bf8638d52d2ef82b4b583efd3aa0a5ba92b941f7bbd"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/handover_deployment.py",
+      "origin": "running-production-api",
+      "sha256": "7428c18833df4fa8475d0233270775a5794cc3123a935e0bf722d1791c7d8557",
+      "final_normalized_sha256": "7428c18833df4fa8475d0233270775a5794cc3123a935e0bf722d1791c7d8557"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/handover_models.py",
+      "origin": "running-production-api",
+      "sha256": "478427f899e27d138312c6ccfda34a9b43f429253858c9800fe31de83823be20",
+      "final_normalized_sha256": "478427f899e27d138312c6ccfda34a9b43f429253858c9800fe31de83823be20"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/handover_ownership.py",
+      "origin": "running-production-api",
+      "sha256": "745361719bb2bef5b5e1d9aa8b176c1c8b7288969b75213ff4b9df1bcf81c73c",
+      "final_normalized_sha256": "745361719bb2bef5b5e1d9aa8b176c1c8b7288969b75213ff4b9df1bcf81c73c"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/incidents.py",
+      "origin": "running-production-api",
+      "sha256": "1885d3092194643e1d2de14e9ef4227bd031e12e9a2b49db0696f2449f2c7161",
+      "final_normalized_sha256": "1885d3092194643e1d2de14e9ef4227bd031e12e9a2b49db0696f2449f2c7161"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/incident_models.py",
+      "origin": "running-production-api",
+      "sha256": "838ede892454c61eaf0f25a505a7d7bbb144002ff4f7a9aa998ff4f5dd4a6a9c",
+      "final_normalized_sha256": "838ede892454c61eaf0f25a505a7d7bbb144002ff4f7a9aa998ff4f5dd4a6a9c"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/ledger_integrity.py",
+      "origin": "running-production-api",
+      "sha256": "b6ee1e5e3be7b8937829d53b600edf1665bba486fdcaffada1d35245d8c1bf84",
+      "final_normalized_sha256": "b6ee1e5e3be7b8937829d53b600edf1665bba486fdcaffada1d35245d8c1bf84"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_control.py",
+      "origin": "running-production-api",
+      "sha256": "7bad43802e232bf3016b7695359de14952213907231abf84b9df130bc8ddabf4",
+      "final_normalized_sha256": "7bad43802e232bf3016b7695359de14952213907231abf84b9df130bc8ddabf4"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_control_models.py",
+      "origin": "running-production-api",
+      "sha256": "8dfeeae62fbea3ffa6a733ec875dd52837099e2cd26f560f06db78135068ba32",
+      "final_normalized_sha256": "8dfeeae62fbea3ffa6a733ec875dd52837099e2cd26f560f06db78135068ba32"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_diagnostics.py",
+      "origin": "running-production-api",
+      "sha256": "1bb8fd02a431eb23900c143dcd9d2989f7a6bb0257690a5e9278f03ed9747859",
+      "final_normalized_sha256": "1bb8fd02a431eb23900c143dcd9d2989f7a6bb0257690a5e9278f03ed9747859"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_discovery_sync.py",
+      "origin": "running-production-api",
+      "sha256": "1b3bbacebd9c3c50f6f1531e3e65c4eaf443a5d7035d6dc82e3a93b88af8b284",
+      "final_normalized_sha256": "1b3bbacebd9c3c50f6f1531e3e65c4eaf443a5d7035d6dc82e3a93b88af8b284"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_payouts.py",
+      "origin": "running-production-api",
+      "sha256": "a5cb323e132a8135735e47cf95d8ae988e0ad594d3c32fce4fb115124a77506b",
+      "final_normalized_sha256": "a5cb323e132a8135735e47cf95d8ae988e0ad594d3c32fce4fb115124a77506b"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_payout_models.py",
+      "origin": "running-production-api",
+      "sha256": "239df45b1b13a1aacd775a3ba341007d02a4fb9d330a57b06dbd426eb57e0193",
+      "final_normalized_sha256": "239df45b1b13a1aacd775a3ba341007d02a4fb9d330a57b06dbd426eb57e0193"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/manual_reserve_monitor.py",
+      "origin": "running-production-api",
+      "sha256": "e61c94b188232989ae4cdcbca8bea64ab853f1765bf0b3fd18b700f1a0fa5453",
+      "final_normalized_sha256": "e61c94b188232989ae4cdcbca8bea64ab853f1765bf0b3fd18b700f1a0fa5453"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/models.py",
+      "origin": "running-production-api",
+      "sha256": "259c848f3e374c0679ae283e0aec2a5b8f79d06c77943d5bcd8defaddf6a6cee",
+      "final_normalized_sha256": "259c848f3e374c0679ae283e0aec2a5b8f79d06c77943d5bcd8defaddf6a6cee"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/monitoring.py",
+      "origin": "running-production-api",
+      "sha256": "4f87f5be705c7bfaa3bac4c700c16f649a4ba62b81c18a7ec57e5ff8b51bbe5c",
+      "final_normalized_sha256": "4f87f5be705c7bfaa3bac4c700c16f649a4ba62b81c18a7ec57e5ff8b51bbe5c"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/monitor_lock.py",
+      "origin": "running-production-api",
+      "sha256": "9505c13cc56dd193f7491f35fd183dec5437326739f25f5c4be85730ca04f854",
+      "final_normalized_sha256": "9505c13cc56dd193f7491f35fd183dec5437326739f25f5c4be85730ca04f854"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/receipts.py",
+      "origin": "running-production-api",
+      "sha256": "2e25bb687e6e32756223270d3fdc189bd8d6f3615335e95b4fbfc2cfc6812f91",
+      "final_normalized_sha256": "2e25bb687e6e32756223270d3fdc189bd8d6f3615335e95b4fbfc2cfc6812f91"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/receipt_models.py",
+      "origin": "running-production-api",
+      "sha256": "0c9785544180561edcfc1fbaf6b34913a01315147214415119a9120ecbd41d18",
+      "final_normalized_sha256": "0c9785544180561edcfc1fbaf6b34913a01315147214415119a9120ecbd41d18"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/reporting.py",
+      "origin": "running-production-api",
+      "sha256": "0f71d14cb0479c3be34874f62ff2157238431e11fe8a613132ea2f774d903c3c",
+      "final_normalized_sha256": "0f71d14cb0479c3be34874f62ff2157238431e11fe8a613132ea2f774d903c3c"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/runtime.py",
+      "origin": "running-production-api",
+      "sha256": "dfd090c2d8b1fb5861010f821c85e0a1e08c73e1c12c45844ffc87ed50e1c352",
+      "final_normalized_sha256": "dfd090c2d8b1fb5861010f821c85e0a1e08c73e1c12c45844ffc87ed50e1c352"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/safety.py",
+      "origin": "running-production-api",
+      "sha256": "55f708b72ce5bfd503b907bb3818a30de3934a06667b2e4ab69d49af0b8dba7d",
+      "final_normalized_sha256": "55f708b72ce5bfd503b907bb3818a30de3934a06667b2e4ab69d49af0b8dba7d"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/service.py",
+      "origin": "running-production-api",
+      "sha256": "870a53893eacb17ae8119dd8687759744844ad12b551cabd413efead49761e2d",
+      "final_normalized_sha256": "99d44e1932db5ac26fced6e0028dbc5ec10f31aafd277e249ae60303a0b495de"
+    },
+    {
+      "path": "services/business-api/app/modules/wallet/__init__.py",
+      "origin": "running-production-api",
+      "sha256": "28545198d493b124de4bca4229d37c194a724748a176b568225e16d2a1749f33",
+      "final_normalized_sha256": "be29ad7015c7944107b751a807c620e34046bfc697c5a5c268b9d4eae23c2b2c"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0006_support_queue.py",
+      "origin": "running-production-api",
+      "sha256": "11345c342eeb8c88bdb6af9762e9f38be234b671c0770a4b4376c4dc55a192ff",
+      "final_normalized_sha256": "5a93ae6cdf4743054f0ebdc8032b9ac672aca24da8f9d3cf060627b42a9b2b24"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0007_caibi_ledger.py",
+      "origin": "running-production-api",
+      "sha256": "d79299bb15496571b750940c2c52692cd4a6ad510ba87342401a55d12f341711",
+      "final_normalized_sha256": "77fa0eb5030bb61f8611eb69d9a1f091662acd4c07f648a34bd51017033360b0"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0008_caibi_red_packets.py",
+      "origin": "running-production-api",
+      "sha256": "5a1ff065c53b33e219af6fb8e6e670685c4319a3d26c494157c15c24d88cad03",
+      "final_normalized_sha256": "e1444eec19debd6982f2fea71b153c92d4120b269e9530d2499901beb11934c0"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0009_red_packet_claims.py",
+      "origin": "running-production-api",
+      "sha256": "c036b427fbcccfa9451782c6916b8dad99d8bcc2f14fe44026012502c9e5d7cc",
+      "final_normalized_sha256": "136b4d169418b4577abfb405dbb9250d385ab41eebc74455554e69d87ff4d1ff"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0010_usdt_wallet.py",
+      "origin": "running-production-api",
+      "sha256": "f99be1b2a32911585fa6dbc99cd5ee88f8860bef85f9d719955af4855cc91f42",
+      "final_normalized_sha256": "33a5ea2613df7fd93beb6338be8d00788d761c1f05ca065eb4b4ac994cb3e5e2"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0011_wallet_webhook_events.py",
+      "origin": "running-production-api",
+      "sha256": "c6dd4b7c84b7be83b79bbc4b5697565c4f50e2884ba18075440c14041eecc212",
+      "final_normalized_sha256": "07fd0d050fb5ac97f07f0d69926e5fa8975775fe3b91c99a7f3eda211b4ba589"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0012_friendship.py",
+      "origin": "running-production-api",
+      "sha256": "5fd271c1a1577fd0bc5c098514b1d59d25047e61c9ae1352e7f49e77c23571ff",
+      "final_normalized_sha256": "5fd271c1a1577fd0bc5c098514b1d59d25047e61c9ae1352e7f49e77c23571ff"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0013_moments.py",
+      "origin": "running-production-api",
+      "sha256": "c0feb1a1d30b96e1dfb04aadc53b1917b6407d4695142504f4a079f43f1b85cb",
+      "final_normalized_sha256": "c0feb1a1d30b96e1dfb04aadc53b1917b6407d4695142504f4a079f43f1b85cb"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0014_moments_preferences_moderation.py",
+      "origin": "running-production-api",
+      "sha256": "70d7e9c57f74c8a006db9856dd8e2a45c511e6aef44a13c89ee724de48d55a63",
+      "final_normalized_sha256": "70d7e9c57f74c8a006db9856dd8e2a45c511e6aef44a13c89ee724de48d55a63"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0015_contact_tags.py",
+      "origin": "running-production-api",
+      "sha256": "707aeedc5c0fa9e642edd6856b479017052ea21643b7cb731d316056e76e7322",
+      "final_normalized_sha256": "707aeedc5c0fa9e642edd6856b479017052ea21643b7cb731d316056e76e7322"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0016_moment_media.py",
+      "origin": "running-production-api",
+      "sha256": "ad20ff9f1dbb738d034b14d90990524378f54b7b09661ee480dba720723ffb27",
+      "final_normalized_sha256": "ad20ff9f1dbb738d034b14d90990524378f54b7b09661ee480dba720723ffb27"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0020_friend_request_reuse.py",
+      "origin": "running-production-api",
+      "sha256": "999acfd9777e55e66bc23c1eae72546efae84bd17f009d7feeff6200c64d20ec",
+      "final_normalized_sha256": "999acfd9777e55e66bc23c1eae72546efae84bd17f009d7feeff6200c64d20ec"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0021_group_auto_join.py",
+      "origin": "running-production-api",
+      "sha256": "a1d697418f23daa8ac649be0a141fbcbdee7da132e2fe0aa67cb42ad004377da",
+      "final_normalized_sha256": "2216002807fc4b8e7884830b8e8ccbedca9da65a802d04c84fba9896185012b5"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0022_profile_nudge_suffix.py",
+      "origin": "running-production-api",
+      "sha256": "3aacd0fa7540a061a18c849f8d5d55662bafe866d0dc958ec972ff0ef28669dc",
+      "final_normalized_sha256": "3aacd0fa7540a061a18c849f8d5d55662bafe866d0dc958ec972ff0ef28669dc"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0023_moments_social_completion.py",
+      "origin": "running-production-api",
+      "sha256": "e76ea6c0f91957d0aff7cead5726ab50af5fbf45d00ae16c6cbc48925ef178d2",
+      "final_normalized_sha256": "e76ea6c0f91957d0aff7cead5726ab50af5fbf45d00ae16c6cbc48925ef178d2"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0024_moment_notifications.py",
+      "origin": "running-production-api",
+      "sha256": "05baf7bf71f079a3d830094dca249ab1d9b558496a17a84158c5941b20bcd63e",
+      "final_normalized_sha256": "05baf7bf71f079a3d830094dca249ab1d9b558496a17a84158c5941b20bcd63e"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0025_moment_drafts_native_ads.py",
+      "origin": "running-production-api",
+      "sha256": "5ef996f633f61dd3547000b5ea62a46e1dc3fbe88636b59a48ccc17438fe93be",
+      "final_normalized_sha256": "5ef996f633f61dd3547000b5ea62a46e1dc3fbe88636b59a48ccc17438fe93be"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0026_moment_cover_media.py",
+      "origin": "running-production-api",
+      "sha256": "ffdb51cbd86d3bcddc3d756ad3917e74a826864377cc1ba3dfa4dac1ab4ae7b8",
+      "final_normalized_sha256": "ffdb51cbd86d3bcddc3d756ad3917e74a826864377cc1ba3dfa4dac1ab4ae7b8"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0027_admin_controls.py",
+      "origin": "running-production-api",
+      "sha256": "561ab60dec3f9e512a10bd4186eb686b452a72e2e9e3dafd70bfcd677ea722f0",
+      "final_normalized_sha256": "561ab60dec3f9e512a10bd4186eb686b452a72e2e9e3dafd70bfcd677ea722f0"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0028_notice_receipts_ad_campaigns.py",
+      "origin": "running-production-api",
+      "sha256": "66baf7fa93c8f5895f9af50817f61e88c34ed393b02f674d53cd61186f47404d",
+      "final_normalized_sha256": "66baf7fa93c8f5895f9af50817f61e88c34ed393b02f674d53cd61186f47404d"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0029_chat_transfers.py",
+      "origin": "running-production-api",
+      "sha256": "0ea0b036fb01841b50f1c37877ae4e43e81d3b5a5042cbab112ec1f1e3eb274a",
+      "final_normalized_sha256": "0ea0b036fb01841b50f1c37877ae4e43e81d3b5a5042cbab112ec1f1e3eb274a"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0030_app_settings.py",
+      "origin": "running-production-api",
+      "sha256": "781b3b64828fde6f1b2c7cd97e4f86313fa2be3b5afb2135db5cf56895674f45",
+      "final_normalized_sha256": "781b3b64828fde6f1b2c7cd97e4f86313fa2be3b5afb2135db5cf56895674f45"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0031_friend_request_requested_at.py",
+      "origin": "running-production-api",
+      "sha256": "1b5a99e5863d1237bf6c2d5baa0cb9df5bea62316fd474c43664da8ebb01b429",
+      "final_normalized_sha256": "1b5a99e5863d1237bf6c2d5baa0cb9df5bea62316fd474c43664da8ebb01b429"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0032_friend_request_prefs.py",
+      "origin": "running-production-api",
+      "sha256": "4a4b40fea8cf62e8d57b0c8aa7c61f46407446177f475e59d71313546d95221f",
+      "final_normalized_sha256": "4a4b40fea8cf62e8d57b0c8aa7c61f46407446177f475e59d71313546d95221f"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0033_complaints.py",
+      "origin": "running-production-api",
+      "sha256": "d9a5b94414cc7c37189d520fc06a4cf6781e2444dff96a0a59cfac0f32e2dd4e",
+      "final_normalized_sha256": "d9a5b94414cc7c37189d520fc06a4cf6781e2444dff96a0a59cfac0f32e2dd4e"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0034_referral_bindings.py",
+      "origin": "running-production-api",
+      "sha256": "979860771cd1f6ab828377058f00bb41b58acd62f13921bb36e040251cf44ebd",
+      "final_normalized_sha256": "979860771cd1f6ab828377058f00bb41b58acd62f13921bb36e040251cf44ebd"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0035_direct_conversations.py",
+      "origin": "running-production-api",
+      "sha256": "b8c2e2d4e1caa125303c6ab7e3e7586e4a59fb2acf80fc707cc9f9d02ba77983",
+      "final_normalized_sha256": "b8c2e2d4e1caa125303c6ab7e3e7586e4a59fb2acf80fc707cc9f9d02ba77983"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0036_group_join_tokens.py",
+      "origin": "running-production-api",
+      "sha256": "d60e554ec69f3db3aae934e1844a90506baf690e19bf86d296b766518501774a",
+      "final_normalized_sha256": "d60e554ec69f3db3aae934e1844a90506baf690e19bf86d296b766518501774a"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0037_wallet_deposit_address.py",
+      "origin": "running-production-api",
+      "sha256": "1ba123cc4bcc15f1596f50e8dc12653b696403bc81e2edea0d03a4548f9a5edf",
+      "final_normalized_sha256": "1ba123cc4bcc15f1596f50e8dc12653b696403bc81e2edea0d03a4548f9a5edf"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0040_wallet_safety.py",
+      "origin": "running-production-api",
+      "sha256": "768177e64840a20589171ab3a12e6b2a3d0b280ffa0638588737612a006ae7bb",
+      "final_normalized_sha256": "768177e64840a20589171ab3a12e6b2a3d0b280ffa0638588737612a006ae7bb"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0041_wallet_operations.py",
+      "origin": "running-production-api",
+      "sha256": "aab9fbcd3a5f2fe22130989e055f100631ee3b2a1571e56df5801847286f9caf",
+      "final_normalized_sha256": "aab9fbcd3a5f2fe22130989e055f100631ee3b2a1571e56df5801847286f9caf"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0042_wallet_binding.py",
+      "origin": "running-production-api",
+      "sha256": "6f3c4a6ae7dc25e04b3ca657e29c55e36a0735bebb381d98168c927e47e4f0d8",
+      "final_normalized_sha256": "6f3c4a6ae7dc25e04b3ca657e29c55e36a0735bebb381d98168c927e47e4f0d8"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0043_funding_intents.py",
+      "origin": "running-production-api",
+      "sha256": "675f1004a2a08b80ce0fb138824df76bb7a1011cf5428f0cc1c791ced56f2c0d",
+      "final_normalized_sha256": "675f1004a2a08b80ce0fb138824df76bb7a1011cf5428f0cc1c791ced56f2c0d"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0044_binding_policy.py",
+      "origin": "running-production-api",
+      "sha256": "a29dc7efb643cc11982f3a40c208926f944c71d1ccb1f5c57eb74712d9b596e2",
+      "final_normalized_sha256": "a29dc7efb643cc11982f3a40c208926f944c71d1ccb1f5c57eb74712d9b596e2"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0045_deposit_receipts.py",
+      "origin": "running-production-api",
+      "sha256": "94cdf44cb833d8e3ac6b1ab2e9bc7fc103da53aa411191cae3653d652c9a490d",
+      "final_normalized_sha256": "94cdf44cb833d8e3ac6b1ab2e9bc7fc103da53aa411191cae3653d652c9a490d"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0046_manual_payouts.py",
+      "origin": "running-production-api",
+      "sha256": "79b42e34105ca7b58fd81078ab71e282b97972f6131a5ad94b41146487379ed5",
+      "final_normalized_sha256": "79b42e34105ca7b58fd81078ab71e282b97972f6131a5ad94b41146487379ed5"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0047_payout_candidates.py",
+      "origin": "running-production-api",
+      "sha256": "ffde0eb99e6f951e78d33a9d2f64f18e088872ce22685e8838c194982d5355de",
+      "final_normalized_sha256": "ffde0eb99e6f951e78d33a9d2f64f18e088872ce22685e8838c194982d5355de"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0048_funding_scan.py",
+      "origin": "running-production-api",
+      "sha256": "a64438c03db192a08a2d4f600179e8e414b0035af71f86474a84e47beb55ecf3",
+      "final_normalized_sha256": "a64438c03db192a08a2d4f600179e8e414b0035af71f86474a84e47beb55ecf3"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0049_funding_coverage.py",
+      "origin": "running-production-api",
+      "sha256": "8980073df6daf5df69bfca2ce88616ca1833d237d947fa0621654cce02855e2f",
+      "final_normalized_sha256": "8980073df6daf5df69bfca2ce88616ca1833d237d947fa0621654cce02855e2f"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0050_manual_reserve.py",
+      "origin": "running-production-api",
+      "sha256": "a42a1d52f8153255ad93d1fea9cbadfb40353aa9e608a950cc0d8e67438fa8eb",
+      "final_normalized_sha256": "a42a1d52f8153255ad93d1fea9cbadfb40353aa9e608a950cc0d8e67438fa8eb"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0051_monitor_delivery.py",
+      "origin": "running-production-api",
+      "sha256": "96994e2f8d3d70f632fb4711cdd4acf5aadeefbabe1247726f7bfd14eb4883bd",
+      "final_normalized_sha256": "96994e2f8d3d70f632fb4711cdd4acf5aadeefbabe1247726f7bfd14eb4883bd"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0052_manual_control.py",
+      "origin": "running-production-api",
+      "sha256": "ff1bd2c865777a948057264de25c4930d535dd4614b508e7265dfb6613ed4d61",
+      "final_normalized_sha256": "ff1bd2c865777a948057264de25c4930d535dd4614b508e7265dfb6613ed4d61"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0053_handover.py",
+      "origin": "running-production-api",
+      "sha256": "114f88d5820c76abd32fde8b34f7430eb1824a2d477ab2419f723cb7d9464987",
+      "final_normalized_sha256": "114f88d5820c76abd32fde8b34f7430eb1824a2d477ab2419f723cb7d9464987"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0054_admin_operation_password.py",
+      "origin": "running-production-api",
+      "sha256": "f8264abb622c1c783403bc9548a0b72c88787b49e76695ec0759056681fe3cb7",
+      "final_normalized_sha256": "f8264abb622c1c783403bc9548a0b72c88787b49e76695ec0759056681fe3cb7"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0055_admin_sessions.py",
+      "origin": "running-production-api",
+      "sha256": "515d6270f2b867e4a190601ec9ad7deedc2f1ae7a83739c0ad117fc53adae2d4",
+      "final_normalized_sha256": "515d6270f2b867e4a190601ec9ad7deedc2f1ae7a83739c0ad117fc53adae2d4"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0056_merge_moment_comments.py",
+      "origin": "running-production-api",
+      "sha256": "657d0fa97aa18cf0a8b61b233bae387fcd6bbdde7ba7ef28248c051bf4cff30d",
+      "final_normalized_sha256": "657d0fa97aa18cf0a8b61b233bae387fcd6bbdde7ba7ef28248c051bf4cff30d"
+    },
+    {
+      "path": "services/business-worker/app/main.py",
+      "origin": "running-production-worker",
+      "sha256": "268c74987bc1a9a25700ee2e881ab5ce0b20fb17620ab24dec74e74fb2ce508d",
+      "final_normalized_sha256": "268c74987bc1a9a25700ee2e881ab5ce0b20fb17620ab24dec74e74fb2ce508d"
+    },
+    {
+      "path": "services/business-worker/app/worker.py",
+      "origin": "running-production-worker",
+      "sha256": "8e3fdce74308418ec88f4314d3954c1237acbae692e0f0b001ad6eb9dfcf7b5b",
+      "final_normalized_sha256": "e4166427233d489ab7f7e483373546417c54a5c4dddd194153e1dfad38dd1638"
+    },
+    {
+      "path": "services/business-worker/app/integrations/email_sender.py",
+      "origin": "running-production-worker",
+      "sha256": "48f796ed6eee5819e84bc416516c56417daf727abdd74b0dcad7988f174c35ef",
+      "final_normalized_sha256": "48f796ed6eee5819e84bc416516c56417daf727abdd74b0dcad7988f174c35ef"
+    },
+    {
+      "path": "services/business-worker/app/tasks/admin_operation_observation.py",
+      "origin": "running-production-worker",
+      "sha256": "52aafa0e3b57cae13bd99493ca33c3c034bc465aa97ceeacc033d4348098310c",
+      "final_normalized_sha256": "52aafa0e3b57cae13bd99493ca33c3c034bc465aa97ceeacc033d4348098310c"
+    },
+    {
+      "path": "services/business-worker/app/tasks/chat_transfer_expiry.py",
+      "origin": "running-production-worker",
+      "sha256": "bac87c0b717bbb6c459014f5e1f7f34187b03069125ac65366f60102aded3cd8",
+      "final_normalized_sha256": "bac87c0b717bbb6c459014f5e1f7f34187b03069125ac65366f60102aded3cd8"
+    },
+    {
+      "path": "services/business-worker/app/tasks/manual_wallet.py",
+      "origin": "running-production-worker",
+      "sha256": "b5a0097aa3767b6834d1681b52e42f218b33b62f323d38d00a69108c0a4bad13",
+      "final_normalized_sha256": "b5a0097aa3767b6834d1681b52e42f218b33b62f323d38d00a69108c0a4bad13"
+    },
+    {
+      "path": "services/business-worker/app/tasks/moments.py",
+      "origin": "running-production-worker",
+      "sha256": "027f311bce12828b44c0288516f589ad46137bb4a93ea4e716d3f3461547f45b",
+      "final_normalized_sha256": "027f311bce12828b44c0288516f589ad46137bb4a93ea4e716d3f3461547f45b"
+    },
+    {
+      "path": "services/business-worker/app/tasks/redpacket_expiry.py",
+      "origin": "running-production-worker",
+      "sha256": "2ab7790a419b98411f306c098c706e2875d8e41b00d1a9078d8e0701542d564e",
+      "final_normalized_sha256": "613455732d82df4467aeaaa76bbdd1d20e2fc7b7f1f941e0ab61df41e02891b2"
+    },
+    {
+      "path": "services/business-worker/app/tasks/wallet.py",
+      "origin": "running-production-worker",
+      "sha256": "912663c7d833b97257ab9f0363806b7dd0e9faf542b7deba5b74ed5f0f7e6806",
+      "final_normalized_sha256": "c65d108283f22a1d72af7d917a062470eae3ed1616e312eff251723cb4f6317a"
+    },
+    {
+      "path": "services/business-worker/app/tasks/wallet_alert_email.py",
+      "origin": "running-production-worker",
+      "sha256": "ad4fb94a6929c9e41797a5344e7a3889f5a4358e7272523ad38c51c23e56bd92",
+      "final_normalized_sha256": "ad4fb94a6929c9e41797a5344e7a3889f5a4358e7272523ad38c51c23e56bd92"
+    },
+    {
+      "path": "tests/business_api/test_complaints.py",
+      "origin": "development-existing-tests",
+      "sha256": "3765206588e3f53b66bbc27bdc08e3ccfd9da757819783798f87728d723267b5",
+      "final_normalized_sha256": "3765206588e3f53b66bbc27bdc08e3ccfd9da757819783798f87728d723267b5"
+    },
+    {
+      "path": "tests/business_api/test_group_auto_join_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "d706ad284d78847b2fd3d55ea934df724e569da64b877c5a1fafd846fa9d9eb3",
+      "final_normalized_sha256": "2c220b0d11c86f51fc2f26cc0511165fc908c54821ca6a4016d27dbe11b62898"
+    },
+    {
+      "path": "tests/business_api/test_health.py",
+      "origin": "development-existing-tests",
+      "sha256": "0d29c8b9bdc529691a4687b6c1326f94ff1af77613697b4ba3296423751ad26f",
+      "final_normalized_sha256": "0d29c8b9bdc529691a4687b6c1326f94ff1af77613697b4ba3296423751ad26f"
+    },
+    {
+      "path": "tests/business_api/test_migrations.py",
+      "origin": "development-existing-tests",
+      "sha256": "8fe2682cf082f4deb80fad7f2d1ce5bd84003cea89271f304dc014aff42ee902",
+      "final_normalized_sha256": "60bb8d582ab75dcf06c67bfdcc6871f7b7db79d88179ee581fd1dc65d9bf9510"
+    },
+    {
+      "path": "tests/business_api/test_openapi_contract.py",
+      "origin": "development-existing-tests",
+      "sha256": "156d9fa5b017a590c9cc59f590492b35c02a1e6b194214e75d8257e35257c074",
+      "final_normalized_sha256": "2af8af02733d5d4557d8ee9035afb2353c396b8b2811204c4055624ab0fa77cf"
+    },
+    {
+      "path": "tests/business_api/test_outbox_handover.py",
+      "origin": "development-existing-tests",
+      "sha256": "70dbcde8170b623decfa0dc564af559cc643f9e1052be6bb58775224d0badd0c",
+      "final_normalized_sha256": "70dbcde8170b623decfa0dc564af559cc643f9e1052be6bb58775224d0badd0c"
+    },
+    {
+      "path": "tests/business_api/test_production_migration_chain.py",
+      "origin": "development-existing-tests",
+      "sha256": "550ed7c2da9cd9eec8f81fe47006b49394a5a62fff27b12708569438fdfe0b9b",
+      "final_normalized_sha256": "550ed7c2da9cd9eec8f81fe47006b49394a5a62fff27b12708569438fdfe0b9b"
+    },
+    {
+      "path": "tests/business_api/test_user_search.py",
+      "origin": "development-existing-tests",
+      "sha256": "ce1168cb6fba8c2974490e89e9afffe090a64bfc8b5b79aef4efbea98632951d",
+      "final_normalized_sha256": "ce1168cb6fba8c2974490e89e9afffe090a64bfc8b5b79aef4efbea98632951d"
+    },
+    {
+      "path": "tests/business_api/test_wallet_operations_routes.py",
+      "origin": "development-existing-tests",
+      "sha256": "d0cd967a903b8125f047942fca51fc3754fc7a1dbc255fd817f35e619367881a",
+      "final_normalized_sha256": "d0cd967a903b8125f047942fca51fc3754fc7a1dbc255fd817f35e619367881a"
+    },
+    {
+      "path": "tests/business_api/test_wallet_reporting_routes.py",
+      "origin": "development-existing-tests",
+      "sha256": "3b2a195aeb2c0195e7e6bc74192484aa4246989a80be6c88e5381ad79e5340a5",
+      "final_normalized_sha256": "3b2a195aeb2c0195e7e6bc74192484aa4246989a80be6c88e5381ad79e5340a5"
+    },
+    {
+      "path": "tests/business_api/test_wallet_safety_routes.py",
+      "origin": "development-existing-tests",
+      "sha256": "726b6752f04daac0ab11c39b774c1f769cde74937e2f7fa5e4ec17bae344ec42",
+      "final_normalized_sha256": "726b6752f04daac0ab11c39b774c1f769cde74937e2f7fa5e4ec17bae344ec42"
+    },
+    {
+      "path": "tests/business_api/admin/test_admin_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "ec501ff126bcc5bdb8fb93c3d80590bb3738ab729ff48f9af5a7e2975865c11c",
+      "final_normalized_sha256": "6f75fb815ade2ed340077fa0be960ca2ed84dc9eb6b41fc93cfda4e7dc8120b0"
+    },
+    {
+      "path": "tests/business_api/admin/test_dashboard_reports.py",
+      "origin": "development-existing-tests",
+      "sha256": "e76843f9481d61f88d6eb500f85f0b4c820fed086f8e64b48f0da70590f1bb8c",
+      "final_normalized_sha256": "e76843f9481d61f88d6eb500f85f0b4c820fed086f8e64b48f0da70590f1bb8c"
+    },
+    {
+      "path": "tests/business_api/admin/test_dashboard_report_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "ee3b9bd460a95de1df644d34117e88ab0bb53dea2b8e822d760489652849c59c",
+      "final_normalized_sha256": "ee3b9bd460a95de1df644d34117e88ab0bb53dea2b8e822d760489652849c59c"
+    },
+    {
+      "path": "tests/business_api/audit_pg/test_f01_f02_transactions.py",
+      "origin": "development-existing-tests",
+      "sha256": "1121f750e224f1cba7404316e576f8e0ad412ddd7efe279f63c431be51ffee8e",
+      "final_normalized_sha256": "1121f750e224f1cba7404316e576f8e0ad412ddd7efe279f63c431be51ffee8e"
+    },
+    {
+      "path": "tests/business_api/audit_pg/test_wallet_pg.py",
+      "origin": "development-existing-tests",
+      "sha256": "ea035e1218b87cfe0cf2991b94f6799e462d24f0bdea6c1a24af63c3a6fe4cc5",
+      "final_normalized_sha256": "ea035e1218b87cfe0cf2991b94f6799e462d24f0bdea6c1a24af63c3a6fe4cc5"
+    },
+    {
+      "path": "tests/business_api/friendship/test_member_lookup.py",
+      "origin": "development-existing-tests",
+      "sha256": "473bc1ec2f87401845d8d47197ac5719ff356ec8c653d71e1c79f40560555c69",
+      "final_normalized_sha256": "473bc1ec2f87401845d8d47197ac5719ff356ec8c653d71e1c79f40560555c69"
+    },
+    {
+      "path": "tests/business_api/groups/test_qr_matrix_invite.py",
+      "origin": "development-existing-tests",
+      "sha256": "a4e01314172de6eb7b6b84977e4bc67a80aa971fc17ac1b854e648de0f61326f",
+      "final_normalized_sha256": "a4e01314172de6eb7b6b84977e4bc67a80aa971fc17ac1b854e648de0f61326f"
+    },
+    {
+      "path": "tests/business_api/identity/test_admin_sessions.py",
+      "origin": "development-existing-tests",
+      "sha256": "1d63a59586892cea0fabbb038f40c2ccf498308f5fe946ca32f947f6c1e5ff62",
+      "final_normalized_sha256": "1d63a59586892cea0fabbb038f40c2ccf498308f5fe946ca32f947f6c1e5ff62"
+    },
+    {
+      "path": "tests/business_api/identity/test_admin_sessions_pg.py",
+      "origin": "development-existing-tests",
+      "sha256": "de10da83c3cc60e91c7ee97f4621696bce0202fe9b5aa6f28777cad8410e3482",
+      "final_normalized_sha256": "de10da83c3cc60e91c7ee97f4621696bce0202fe9b5aa6f28777cad8410e3482"
+    },
+    {
+      "path": "tests/business_api/identity/test_admin_wallet_security_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "410678cb698a1958d649cd7e331a6b8d6222c14fc5f4e46fa46a98aef4bf2908",
+      "final_normalized_sha256": "410678cb698a1958d649cd7e331a6b8d6222c14fc5f4e46fa46a98aef4bf2908"
+    },
+    {
+      "path": "tests/business_api/identity/test_identity_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "4179f30082fe46c5f1ed73ac870b206e2e7383081a9b9f5e5002f1d229a6f494",
+      "final_normalized_sha256": "909da75525dd47eae1f5c9ccdceff9dbe469e2cbb577523689ebd14e066cb7db"
+    },
+    {
+      "path": "tests/business_api/identity/test_invitation_generation_script.py",
+      "origin": "development-existing-tests",
+      "sha256": "705652e7a636c69fdf508773fb73a34cea8778b0cbd3e290d7d5edf7a9770d75",
+      "final_normalized_sha256": "705652e7a636c69fdf508773fb73a34cea8778b0cbd3e290d7d5edf7a9770d75"
+    },
+    {
+      "path": "tests/business_api/identity/test_invitation_validate_reasons.py",
+      "origin": "development-existing-tests",
+      "sha256": "0e3dfcb46fe870cc976744d9905c491bc4362950792cddd4ce85b61b7c3ccd09",
+      "final_normalized_sha256": "0e3dfcb46fe870cc976744d9905c491bc4362950792cddd4ce85b61b7c3ccd09"
+    },
+    {
+      "path": "tests/business_api/identity/test_login_captcha.py",
+      "origin": "development-existing-tests",
+      "sha256": "6334b1e1d17e8eda3670b67fe317fcaa386d7d8c774980db4d735b1009eefe5d",
+      "final_normalized_sha256": "0515944ffd46a7777ddc87e0b502261c4871655127ef23485d2a78a1407b231c"
+    },
+    {
+      "path": "tests/business_api/identity/test_matrix_login_token.py",
+      "origin": "development-existing-tests",
+      "sha256": "62d946e2eb861d24b78f263a7b467a6364aab33a3b9344a8cdc567fb708a79f7",
+      "final_normalized_sha256": "21b93a7605bfce1a84e9b5d5d003eb52e19f565c444fbf0a518156e805b43bb0"
+    },
+    {
+      "path": "tests/business_api/identity/test_operation_password.py",
+      "origin": "development-existing-tests",
+      "sha256": "c53a7cedfae496f851d083e3556cfb655c4a225c48f945b3b8bb9c7311fc71bc",
+      "final_normalized_sha256": "c53a7cedfae496f851d083e3556cfb655c4a225c48f945b3b8bb9c7311fc71bc"
+    },
+    {
+      "path": "tests/business_api/identity/test_personal_invitation.py",
+      "origin": "development-existing-tests",
+      "sha256": "6e2e6cd65f93f6c701cca2a17bbea121282d8f2e38ccc7f9689434e5c0aa60b8",
+      "final_normalized_sha256": "6e2e6cd65f93f6c701cca2a17bbea121282d8f2e38ccc7f9689434e5c0aa60b8"
+    },
+    {
+      "path": "tests/business_api/identity/test_profile_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "5e83e1108320779e6e5da2b823dfac4b405b8d8e21f6a511032c6efa08120943",
+      "final_normalized_sha256": "02504efd8dbad763b666b742c37c84e1898e3a70c75a8a87e86bcea08b091f4e"
+    },
+    {
+      "path": "tests/business_api/identity/test_referral_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "f3ac998effb234a366e45d174093e8e766fc601c2716c68349f99a185738a7f5",
+      "final_normalized_sha256": "f3ac998effb234a366e45d174093e8e766fc601c2716c68349f99a185738a7f5"
+    },
+    {
+      "path": "tests/business_api/identity/test_registration.py",
+      "origin": "development-existing-tests",
+      "sha256": "2c040cf522f627fcb93a90364fae34d603a8e40d403aefe2dec9a32393bc688c",
+      "final_normalized_sha256": "2f0028b1eb0787e2ebd59c2ce006c0f7376fd43c228fb348ca0933af56a8a3e2"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_access.py",
+      "origin": "development-existing-tests",
+      "sha256": "37d2c50e484f4b8c7813627d4dc4746b2e3bcef0a4d698825cd1252dbde90e8b",
+      "final_normalized_sha256": "37d2c50e484f4b8c7813627d4dc4746b2e3bcef0a4d698825cd1252dbde90e8b"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_mfa.py",
+      "origin": "development-existing-tests",
+      "sha256": "43e7b32e4fdf2079f18fa354d3ce0ea0ef8fa953233cd4a1994334745b5850cf",
+      "final_normalized_sha256": "43e7b32e4fdf2079f18fa354d3ce0ea0ef8fa953233cd4a1994334745b5850cf"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_mfa_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "4558a6e2ab65c3eebccac8a9336427cf8ffdd2898310e8952b67421f1bffdd51",
+      "final_normalized_sha256": "4558a6e2ab65c3eebccac8a9336427cf8ffdd2898310e8952b67421f1bffdd51"
+    },
+    {
+      "path": "tests/business_api/identity/test_wallet_recent_login.py",
+      "origin": "development-existing-tests",
+      "sha256": "649e7b55842de2642725a671bc60b4cc1110bfa337859b20a32f193c5efd5c62",
+      "final_normalized_sha256": "649e7b55842de2642725a671bc60b4cc1110bfa337859b20a32f193c5efd5c62"
+    },
+    {
+      "path": "tests/business_api/ledger/test_ledger.py",
+      "origin": "development-existing-tests",
+      "sha256": "93492cb0c7c9d5700234c718b3bb9769e8135074a7b0669d677bdb48e45631a2",
+      "final_normalized_sha256": "6e3b15bda12e267076543ac1bd2f546a102c6a206b22b9561051700669c1fab8"
+    },
+    {
+      "path": "tests/business_api/ledger/test_supply_invariant.py",
+      "origin": "development-existing-tests",
+      "sha256": "842cbb09ec395bcc6a9f76fb3d7e3899ca9693219601fcc412b3524ce4f9302f",
+      "final_normalized_sha256": "842cbb09ec395bcc6a9f76fb3d7e3899ca9693219601fcc412b3524ce4f9302f"
+    },
+    {
+      "path": "tests/business_api/media/test_media_images.py",
+      "origin": "development-existing-tests",
+      "sha256": "d9616f8d3d22d83a06c710ac1aa82f8642c6afa5d9aa54cf0f62488d9d4b71f2",
+      "final_normalized_sha256": "d9616f8d3d22d83a06c710ac1aa82f8642c6afa5d9aa54cf0f62488d9d4b71f2"
+    },
+    {
+      "path": "tests/business_api/redpacket/test_redpacket.py",
+      "origin": "development-existing-tests",
+      "sha256": "a76486a2874f6ec4daa9e915d48d73082b14798620849b581ecf404798a8441f",
+      "final_normalized_sha256": "a76486a2874f6ec4daa9e915d48d73082b14798620849b581ecf404798a8441f"
+    },
+    {
+      "path": "tests/business_api/redpacket/test_redpacket_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "b30b9a4f384c754e720af6e2e49acef1e362227d574d11706f3276a3f9d4fd5f",
+      "final_normalized_sha256": "b30b9a4f384c754e720af6e2e49acef1e362227d574d11706f3276a3f9d4fd5f"
+    },
+    {
+      "path": "tests/business_api/redpacket/test_red_packet_settings_and_limits.py",
+      "origin": "development-existing-tests",
+      "sha256": "e62346c9e78068468231d715eb9d76ff610ac190c2bc5522320503584fc27dfc",
+      "final_normalized_sha256": "e62346c9e78068468231d715eb9d76ff610ac190c2bc5522320503584fc27dfc"
+    },
+    {
+      "path": "tests/business_api/support/test_support_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "926c1e08f445ca6eb70c2150ef515e1ef5b05dec54405a95ced6fb75fba2edcb",
+      "final_normalized_sha256": "56c34162e848af725d4f3d4693eb1a64c14f9bd8cfcd0ba00f7a1fc6994198ed"
+    },
+    {
+      "path": "tests/business_api/support/test_support_service.py",
+      "origin": "development-existing-tests",
+      "sha256": "09c8c0a4b04bd7c6553a7caff287c12158e20545eae2f7b07ff3fe7c7ce79171",
+      "final_normalized_sha256": "71e7e4cab3e45b6328e125a5d935ffb38e27279439df3ba746aa76c1711b519b"
+    },
+    {
+      "path": "tests/business_api/transfer/test_chat_transfer.py",
+      "origin": "development-existing-tests",
+      "sha256": "800d996ed052a54a6e1eefe0ecfbcdb01357344d8b2a12e3d00f255eb5e26892",
+      "final_normalized_sha256": "800d996ed052a54a6e1eefe0ecfbcdb01357344d8b2a12e3d00f255eb5e26892"
+    },
+    {
+      "path": "tests/business_api/transfer/test_chat_transfer_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "bef1c6942bdb680dd53d060c4cff5204e03949fc967e5825dc68102c60c9661f",
+      "final_normalized_sha256": "bef1c6942bdb680dd53d060c4cff5204e03949fc967e5825dc68102c60c9661f"
+    },
+    {
+      "path": "tests/business_api/tron/test_admin_query.py",
+      "origin": "development-existing-tests",
+      "sha256": "59763de2adafbe952f5c26a63039ed67bf1e15829b1b81d061ee488b87f80772",
+      "final_normalized_sha256": "59763de2adafbe952f5c26a63039ed67bf1e15829b1b81d061ee488b87f80772"
+    },
+    {
+      "path": "tests/business_api/tron/test_admin_routes.py",
+      "origin": "development-existing-tests",
+      "sha256": "475eace4c4795129d6b2e9651c74f31467511597a3c0562b40ec1e664619a8b6",
+      "final_normalized_sha256": "db810022bb0d1bd89569bdc432fed6580d14c5bc42383aa69df90ef8dc47bbfe"
+    },
+    {
+      "path": "tests/business_api/tron/test_cli.py",
+      "origin": "development-existing-tests",
+      "sha256": "6c79f0d72ebb0ecb846317dcd34f06a687708e5d8050ef6431cec7438cc5848b",
+      "final_normalized_sha256": "6c79f0d72ebb0ecb846317dcd34f06a687708e5d8050ef6431cec7438cc5848b"
+    },
+    {
+      "path": "tests/business_api/tron/test_diagnostics.py",
+      "origin": "development-existing-tests",
+      "sha256": "2f506d1df89956bf0197cf2fa8890cbf0c4aa06ad60e5bdf3e380e209a604c44",
+      "final_normalized_sha256": "2f506d1df89956bf0197cf2fa8890cbf0c4aa06ad60e5bdf3e380e209a604c44"
+    },
+    {
+      "path": "tests/business_api/tron/test_observer.py",
+      "origin": "development-existing-tests",
+      "sha256": "ceb102bf934029331033846173a50933c86a6fe19ed28f722bfedd5effd5f0e7",
+      "final_normalized_sha256": "ceb102bf934029331033846173a50933c86a6fe19ed28f722bfedd5effd5f0e7"
+    },
+    {
+      "path": "tests/business_api/tron/test_reader.py",
+      "origin": "development-existing-tests",
+      "sha256": "79f6de8c1bdc4bced90d03531652f5d07909e93159af7e05469377d508d023b9",
+      "final_normalized_sha256": "79f6de8c1bdc4bced90d03531652f5d07909e93159af7e05469377d508d023b9"
+    },
+    {
+      "path": "tests/business_api/wallet/test_admin_password_handover.py",
+      "origin": "development-existing-tests",
+      "sha256": "b28f27eebb45a013a8ebcd0542ef8ec7173df07a6fca34a23457decfea276d35",
+      "final_normalized_sha256": "b28f27eebb45a013a8ebcd0542ef8ec7173df07a6fca34a23457decfea276d35"
+    },
+    {
+      "path": "tests/business_api/wallet/test_admin_password_operations.py",
+      "origin": "development-existing-tests",
+      "sha256": "bc87f9a1b653b4138f6e655b09461717843554e64bf028ee042f161ad1c3777e",
+      "final_normalized_sha256": "bc87f9a1b653b4138f6e655b09461717843554e64bf028ee042f161ad1c3777e"
+    },
+    {
+      "path": "tests/business_api/wallet/test_admin_password_payouts.py",
+      "origin": "development-existing-tests",
+      "sha256": "69e197e07fb7aaac398b8d2330ef3d3fc2cc72cccad44fcdbbfcf18510148913",
+      "final_normalized_sha256": "69e197e07fb7aaac398b8d2330ef3d3fc2cc72cccad44fcdbbfcf18510148913"
+    },
+    {
+      "path": "tests/business_api/wallet/test_binding_adapters.py",
+      "origin": "development-existing-tests",
+      "sha256": "183ba4ec4092ffe5eba873640a18b958efa69aea7ad5bdc48535b355075f7cc4",
+      "final_normalized_sha256": "183ba4ec4092ffe5eba873640a18b958efa69aea7ad5bdc48535b355075f7cc4"
+    },
+    {
+      "path": "tests/business_api/wallet/test_current_deposit_intent.py",
+      "origin": "development-existing-tests",
+      "sha256": "d11e3f35f0eaf96871d90eb8e605cb782b9ed7822c9bc983c4c63a52a88571fb",
+      "final_normalized_sha256": "d11e3f35f0eaf96871d90eb8e605cb782b9ed7822c9bc983c4c63a52a88571fb"
+    },
+    {
+      "path": "tests/business_api/wallet/test_custody_contract.py",
+      "origin": "development-existing-tests",
+      "sha256": "6db25066deee0f48a4dbbfe58669d7b141a5912d60af8cf915bbcc82d8da003c",
+      "final_normalized_sha256": "b075dfc6d3b13dfcbe030574fe90fc174ae95a893919d792315f1bb168c5d224"
+    },
+    {
+      "path": "tests/business_api/wallet/test_deposit_receipts.py",
+      "origin": "development-existing-tests",
+      "sha256": "8bf75ecec55d877c1adf64adb167772e7c772658b43e24c9f743397149aa5084",
+      "final_normalized_sha256": "8bf75ecec55d877c1adf64adb167772e7c772658b43e24c9f743397149aa5084"
+    },
+    {
+      "path": "tests/business_api/wallet/test_finance_queries.py",
+      "origin": "development-existing-tests",
+      "sha256": "f52aecffae5201323b4fd1cccee0b8fc193fd23af5e7ad8cc17b2fdf1e230163",
+      "final_normalized_sha256": "f52aecffae5201323b4fd1cccee0b8fc193fd23af5e7ad8cc17b2fdf1e230163"
+    },
+    {
+      "path": "tests/business_api/wallet/test_funding_coverage.py",
+      "origin": "development-existing-tests",
+      "sha256": "9af43712e34e606d493e3b4ee1af06e6f302d6d3fbad2cfbf401b39792dfd1e0",
+      "final_normalized_sha256": "9af43712e34e606d493e3b4ee1af06e6f302d6d3fbad2cfbf401b39792dfd1e0"
+    },
+    {
+      "path": "tests/business_api/wallet/test_funding_intents.py",
+      "origin": "development-existing-tests",
+      "sha256": "bd79db8a868abf193e57d3e99e1a1f6219d374a347ace3aee3f4a0a6bb6601a1",
+      "final_normalized_sha256": "bd79db8a868abf193e57d3e99e1a1f6219d374a347ace3aee3f4a0a6bb6601a1"
+    },
+    {
+      "path": "tests/business_api/wallet/test_funding_migration.py",
+      "origin": "development-existing-tests",
+      "sha256": "55353f4afab12b186eba0de6c8ccd402aab3ae3a11da22078781578282e3b149",
+      "final_normalized_sha256": "55353f4afab12b186eba0de6c8ccd402aab3ae3a11da22078781578282e3b149"
+    },
+    {
+      "path": "tests/business_api/wallet/test_funding_scan.py",
+      "origin": "development-existing-tests",
+      "sha256": "b32b961281a52bdb61c9789bb39bab1464126b8e14feb13ac192c380a005e718",
+      "final_normalized_sha256": "b32b961281a52bdb61c9789bb39bab1464126b8e14feb13ac192c380a005e718"
+    },
+    {
+      "path": "tests/business_api/wallet/test_handover_caibi_history.py",
+      "origin": "development-existing-tests",
+      "sha256": "11a8aa9ce2930682cdc25aa2a34a815e5799ce62ca1726695b2152dfc1312650",
+      "final_normalized_sha256": "11a8aa9ce2930682cdc25aa2a34a815e5799ce62ca1726695b2152dfc1312650"
+    },
+    {
+      "path": "tests/business_api/wallet/test_handover_evidence_retry.py",
+      "origin": "development-existing-tests",
+      "sha256": "fb3ac9229d1466b1e1b8a85cd54001455304db0c4a7fed0098c5b289001d4266",
+      "final_normalized_sha256": "fb3ac9229d1466b1e1b8a85cd54001455304db0c4a7fed0098c5b289001d4266"
+    },
+    {
+      "path": "tests/business_api/wallet/test_independent_policy_controls.py",
+      "origin": "development-existing-tests",
+      "sha256": "6f2261eefea220598ff0b923aa1e61270854164804bcfa2f2f2102908621e39c",
+      "final_normalized_sha256": "7807c80f28867da0b223b414f1071984fec09fa5ea35f11e2f3b2eb95ef4fcc9"
+    },
+    {
+      "path": "tests/business_api/wallet/test_legacy_handover.py",
+      "origin": "development-existing-tests",
+      "sha256": "aa4c134b6ac2de5b647690eaedebc18cb1ee51f8c43573c335d4b92a8504b0af",
+      "final_normalized_sha256": "aa4c134b6ac2de5b647690eaedebc18cb1ee51f8c43573c335d4b92a8504b0af"
+    },
+    {
+      "path": "tests/business_api/wallet/test_legacy_handover_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "63b1963e06f7fbae7e24fe81dbeae8550eb2450007d2e11ccf6ffc844500ca86",
+      "final_normalized_sha256": "63b1963e06f7fbae7e24fe81dbeae8550eb2450007d2e11ccf6ffc844500ca86"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_control.py",
+      "origin": "development-existing-tests",
+      "sha256": "4e53f52dc4bf273706f49a9b4258351a8553587a20e8d7074b5af395c3675438",
+      "final_normalized_sha256": "4e53f52dc4bf273706f49a9b4258351a8553587a20e8d7074b5af395c3675438"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_control_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "bf0528a85f800b5287e1e9ddf846b4d14ae058f32cf752cedf921ac4917c9aba",
+      "final_normalized_sha256": "bf0528a85f800b5287e1e9ddf846b4d14ae058f32cf752cedf921ac4917c9aba"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_control_evidence_retry.py",
+      "origin": "development-existing-tests",
+      "sha256": "893fe4aeae3048c7615713fbd45dd51724fb37da1a8233a6f66b0845a24b72b6",
+      "final_normalized_sha256": "893fe4aeae3048c7615713fbd45dd51724fb37da1a8233a6f66b0845a24b72b6"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_conversions.py",
+      "origin": "development-existing-tests",
+      "sha256": "d723972f83b404c3a392e93317bbd73608a2646221ff9ed031e3fb95ce219681",
+      "final_normalized_sha256": "d723972f83b404c3a392e93317bbd73608a2646221ff9ed031e3fb95ce219681"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_idempotency_recovery.py",
+      "origin": "development-existing-tests",
+      "sha256": "5507be54374d3f5297a27264d44e74df32ff8aa84540f7f02df8cbac97a3c373",
+      "final_normalized_sha256": "5507be54374d3f5297a27264d44e74df32ff8aa84540f7f02df8cbac97a3c373"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_ledger_integrity.py",
+      "origin": "development-existing-tests",
+      "sha256": "0c6c0796cadae9c6a6aadda33cc42fee77b86caab72c08cf474a0ff59601486a",
+      "final_normalized_sha256": "0c6c0796cadae9c6a6aadda33cc42fee77b86caab72c08cf474a0ff59601486a"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_monitor_commit_expiry.py",
+      "origin": "development-existing-tests",
+      "sha256": "c12c9e7d4a49367a93361e4fdb79df2a9f4d2e707d231e52092d692b88b637a4",
+      "final_normalized_sha256": "c12c9e7d4a49367a93361e4fdb79df2a9f4d2e707d231e52092d692b88b637a4"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_monitor_recovery.py",
+      "origin": "development-existing-tests",
+      "sha256": "5390ade0a587dd0a62eb2b7e805491fa7fb610ca30eaff31dd4d750b8de45dcf",
+      "final_normalized_sha256": "5390ade0a587dd0a62eb2b7e805491fa7fb610ca30eaff31dd4d750b8de45dcf"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_operations_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "b380964ee656b294ccb0036c406ae47b944c03247be5fb5ecc6a7389e1be4df8",
+      "final_normalized_sha256": "b380964ee656b294ccb0036c406ae47b944c03247be5fb5ecc6a7389e1be4df8"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_payouts.py",
+      "origin": "development-existing-tests",
+      "sha256": "306473e6239acda9a80cb98df5f3939a9b75fbb35a2180fb8315f959a81b94c7",
+      "final_normalized_sha256": "306473e6239acda9a80cb98df5f3939a9b75fbb35a2180fb8315f959a81b94c7"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_payout_binding.py",
+      "origin": "development-existing-tests",
+      "sha256": "840ea371ce1f3ad1a80b67a640d1413a7236e1495b47c51dd593acc0fec6d8c7",
+      "final_normalized_sha256": "840ea371ce1f3ad1a80b67a640d1413a7236e1495b47c51dd593acc0fec6d8c7"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_reserve_monitor.py",
+      "origin": "development-existing-tests",
+      "sha256": "6cc694d07ceed18a1b685318d2067cb4e41bbb0cf353788bbf6904ce03211adb",
+      "final_normalized_sha256": "6cc694d07ceed18a1b685318d2067cb4e41bbb0cf353788bbf6904ce03211adb"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_reserve_publish.py",
+      "origin": "development-existing-tests",
+      "sha256": "9972d1301cffdd8b89f002f4d9e8cc3d4056dad09c5a290f863c74448fb457d4",
+      "final_normalized_sha256": "9972d1301cffdd8b89f002f4d9e8cc3d4056dad09c5a290f863c74448fb457d4"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_runtime.py",
+      "origin": "development-existing-tests",
+      "sha256": "8bb39142f57bf4e71e8bf875ad02d25782e69caee204e6404a28202e0130431e",
+      "final_normalized_sha256": "8bb39142f57bf4e71e8bf875ad02d25782e69caee204e6404a28202e0130431e"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_source_wait.py",
+      "origin": "development-existing-tests",
+      "sha256": "9bcb8c53dc1c6b66d095f44b9c978a05add287d7916cd3787ea542e4e60aee1f",
+      "final_normalized_sha256": "9bcb8c53dc1c6b66d095f44b9c978a05add287d7916cd3787ea542e4e60aee1f"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_wallet_admin_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "c1ecbf71f042aa697bbc240c982410da1ad31a905e5a5cf004bc42a5aa8c0589",
+      "final_normalized_sha256": "c1ecbf71f042aa697bbc240c982410da1ad31a905e5a5cf004bc42a5aa8c0589"
+    },
+    {
+      "path": "tests/business_api/wallet/test_manual_wallet_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "46dbe88e821f556a698dedc4b1abafa295806155f2d6cad42655a2c22c99ab53",
+      "final_normalized_sha256": "46dbe88e821f556a698dedc4b1abafa295806155f2d6cad42655a2c22c99ab53"
+    },
+    {
+      "path": "tests/business_api/wallet/test_monitor_delivery_migration.py",
+      "origin": "development-existing-tests",
+      "sha256": "df79567886f4f5080e718bbddf0ad18bf14a2ebb0957daf6c61b982c5a4233c7",
+      "final_normalized_sha256": "df79567886f4f5080e718bbddf0ad18bf14a2ebb0957daf6c61b982c5a4233c7"
+    },
+    {
+      "path": "tests/business_api/wallet/test_official_wallet_api.py",
+      "origin": "development-existing-tests",
+      "sha256": "82ea4ebd2bb869da9625ae23c7f361d1768a91d3758e159bbd0e3319881a1e14",
+      "final_normalized_sha256": "82ea4ebd2bb869da9625ae23c7f361d1768a91d3758e159bbd0e3319881a1e14"
+    },
+    {
+      "path": "tests/business_api/wallet/test_receipt_deferred_credit.py",
+      "origin": "development-existing-tests",
+      "sha256": "2a8237f1928427ca115af4c8bda4b5cfaa3046edc1adc32594dabc6522af935b",
+      "final_normalized_sha256": "2a8237f1928427ca115af4c8bda4b5cfaa3046edc1adc32594dabc6522af935b"
+    },
+    {
+      "path": "tests/business_api/wallet/test_tron_account_control.py",
+      "origin": "development-existing-tests",
+      "sha256": "f19f7560470c3442f7922e54a6eb9c07030883d36061d0e04d60635a2e0b0c41",
+      "final_normalized_sha256": "f19f7560470c3442f7922e54a6eb9c07030883d36061d0e04d60635a2e0b0c41"
+    },
+    {
+      "path": "tests/business_api/wallet/test_tron_finality.py",
+      "origin": "development-existing-tests",
+      "sha256": "33d02c54287eca36fa2c47ddd7f24f07c85bb49219d405fa1105447770e0233a",
+      "final_normalized_sha256": "33d02c54287eca36fa2c47ddd7f24f07c85bb49219d405fa1105447770e0233a"
+    },
+    {
+      "path": "tests/business_api/wallet/test_tron_freshness_boundaries.py",
+      "origin": "development-existing-tests",
+      "sha256": "bcf2502dafa4f171f21b28c0f9c08760e218f18c94bffc072138055c369119dc",
+      "final_normalized_sha256": "bcf2502dafa4f171f21b28c0f9c08760e218f18c94bffc072138055c369119dc"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_api_audit.py",
+      "origin": "development-existing-tests",
+      "sha256": "0fd90149f6ce1e19abe02c14e2b44731bb81b3705f29c7c040ca14511d7add82",
+      "final_normalized_sha256": "0fd90149f6ce1e19abe02c14e2b44731bb81b3705f29c7c040ca14511d7add82"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_binding.py",
+      "origin": "development-existing-tests",
+      "sha256": "e21a3347766d7066af68b7814a276d8f5215915551e49d82541f326405901df7",
+      "final_normalized_sha256": "e21a3347766d7066af68b7814a276d8f5215915551e49d82541f326405901df7"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_binding_migration.py",
+      "origin": "development-existing-tests",
+      "sha256": "643800d15fe3d9a3330eb20c40ed6c7aa3524173138971a084cb4284b111891b",
+      "final_normalized_sha256": "643800d15fe3d9a3330eb20c40ed6c7aa3524173138971a084cb4284b111891b"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_binding_pg.py",
+      "origin": "development-existing-tests",
+      "sha256": "2a69a3bd6cfe52725eddd2d4ed54fbe49b1e41fb0c43d90aa85862a65e3c74e6",
+      "final_normalized_sha256": "2a69a3bd6cfe52725eddd2d4ed54fbe49b1e41fb0c43d90aa85862a65e3c74e6"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_binding_routes.py",
+      "origin": "development-existing-tests",
+      "sha256": "1ebc60fe23a11995e35a16db68f825090ad833b2d54c5379082d90ac258cacdd",
+      "final_normalized_sha256": "1ebc60fe23a11995e35a16db68f825090ad833b2d54c5379082d90ac258cacdd"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_closing.py",
+      "origin": "development-existing-tests",
+      "sha256": "d3986c1bbb83008f53d3bb65e62167bc252df5225bb977e981120073466ee79c",
+      "final_normalized_sha256": "d3986c1bbb83008f53d3bb65e62167bc252df5225bb977e981120073466ee79c"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_evidence_expiry.py",
+      "origin": "development-existing-tests",
+      "sha256": "f94ca51d3150d27f9718019b68251a74e9bb2bfaffe87691af157f72609edd6b",
+      "final_normalized_sha256": "f94ca51d3150d27f9718019b68251a74e9bb2bfaffe87691af157f72609edd6b"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_incidents.py",
+      "origin": "development-existing-tests",
+      "sha256": "aa3c62570c4bdd229218667f2753e9ef67c7d2d669c4a635ffd5e9a95614ba1e",
+      "final_normalized_sha256": "aa3c62570c4bdd229218667f2753e9ef67c7d2d669c4a635ffd5e9a95614ba1e"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_incident_transaction.py",
+      "origin": "development-existing-tests",
+      "sha256": "3bf3dc9fdc0f4643de0519ee82cbcd31dd5f90f735f83d398bcb316a0a9a6c0b",
+      "final_normalized_sha256": "3bf3dc9fdc0f4643de0519ee82cbcd31dd5f90f735f83d398bcb316a0a9a6c0b"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_minimum_policy.py",
+      "origin": "development-existing-tests",
+      "sha256": "b2c738af46ee6bc976fb0069a372ceca9804dbc617db8a41f1a72d2f5e368b45",
+      "final_normalized_sha256": "b2c738af46ee6bc976fb0069a372ceca9804dbc617db8a41f1a72d2f5e368b45"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_monitoring.py",
+      "origin": "development-existing-tests",
+      "sha256": "3af237faedeed7ea5bc613824a23fa4bdc38019e5a2538a5a53ba57d3c389a8e",
+      "final_normalized_sha256": "3af237faedeed7ea5bc613824a23fa4bdc38019e5a2538a5a53ba57d3c389a8e"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_monitor_lock.py",
+      "origin": "development-existing-tests",
+      "sha256": "1d677d6fe171d705536b830c26886afd4d821ac31bc3116f0d82b2f6678ea621",
+      "final_normalized_sha256": "1d677d6fe171d705536b830c26886afd4d821ac31bc3116f0d82b2f6678ea621"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_operations_migration.py",
+      "origin": "development-existing-tests",
+      "sha256": "446b1e357bb880871ca02db0c7833c0ee93a17452bf170c59c056cab49883044",
+      "final_normalized_sha256": "446b1e357bb880871ca02db0c7833c0ee93a17452bf170c59c056cab49883044"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_remaining.py",
+      "origin": "development-existing-tests",
+      "sha256": "b36f2d16c06756846caa408627b8affd06dcbc49d335e00ac21aabd4adb591ef",
+      "final_normalized_sha256": "341a11a04748c704e643ee817fb3431677eb18057335400ab7071f909d7b5ad8"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_reporting.py",
+      "origin": "development-existing-tests",
+      "sha256": "e68c66154d8478a85011e4fc1e683d9e0911ee7ef19c6b692f2228628226ee19",
+      "final_normalized_sha256": "e68c66154d8478a85011e4fc1e683d9e0911ee7ef19c6b692f2228628226ee19"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_safety_core.py",
+      "origin": "development-existing-tests",
+      "sha256": "7608b26e66ec24b489386c037392270745cbf79ee33e8ec9a77884bd07377111",
+      "final_normalized_sha256": "7608b26e66ec24b489386c037392270745cbf79ee33e8ec9a77884bd07377111"
+    },
+    {
+      "path": "tests/business_api/wallet/test_wallet_service.py",
+      "origin": "development-existing-tests",
+      "sha256": "445cef885777f2e62656d902aaab1449318b9bed46508ddcd2779586e1e96e21",
+      "final_normalized_sha256": "4f0c52511ef28febe4999773735847d44838c1b264fd2c9ed0803d57ae5e544e"
+    },
+    {
+      "path": "tests/business_worker/test_admin_operation_observation.py",
+      "origin": "development-existing-tests",
+      "sha256": "f997c79466726511001d65086aae628d8e1143a8ddbdad806afbca24f8a9293e",
+      "final_normalized_sha256": "f997c79466726511001d65086aae628d8e1143a8ddbdad806afbca24f8a9293e"
+    },
+    {
+      "path": "tests/business_worker/test_chat_transfer_expiry.py",
+      "origin": "development-existing-tests",
+      "sha256": "cbd813d202f2c405c51209e7fd356e85585780f8708373d0da7210f18f894adc",
+      "final_normalized_sha256": "cbd813d202f2c405c51209e7fd356e85585780f8708373d0da7210f18f894adc"
+    },
+    {
+      "path": "tests/business_worker/test_email_sender.py",
+      "origin": "development-existing-tests",
+      "sha256": "08809e73c212c4fca4208250be29d434fedeb2f97cad104eea6a970bb62254ec",
+      "final_normalized_sha256": "08809e73c212c4fca4208250be29d434fedeb2f97cad104eea6a970bb62254ec"
+    },
+    {
+      "path": "tests/business_worker/test_manual_wallet_task.py",
+      "origin": "development-existing-tests",
+      "sha256": "4df6e34b5bfc074d43badfd1ae89fbf5f3f190024c61498a0e1189ce23ceacbd",
+      "final_normalized_sha256": "4df6e34b5bfc074d43badfd1ae89fbf5f3f190024c61498a0e1189ce23ceacbd"
+    },
+    {
+      "path": "tests/business_worker/test_moments_task.py",
+      "origin": "development-existing-tests",
+      "sha256": "2a1e5cc357c7cb183a3e7a9318ee35d061f2d67e9e8bdae11e416cb655715e06",
+      "final_normalized_sha256": "2a1e5cc357c7cb183a3e7a9318ee35d061f2d67e9e8bdae11e416cb655715e06"
+    },
+    {
+      "path": "tests/business_worker/test_redpacket_expiry.py",
+      "origin": "development-existing-tests",
+      "sha256": "1c7036e739c55ce861e54f1382f7d88e2d0bb1eabacb6a7e20bf57e26ad7f6e2",
+      "final_normalized_sha256": "6f7d00765e430393ff0a540fcc286bd1d6688b0560a03c8762e37c37685d62ba"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_alert_delivery.py",
+      "origin": "development-existing-tests",
+      "sha256": "2c1d9d2b9eb632557737e3dc2ab0c4f43e69a658bbab2d997e00c3b28f39f033",
+      "final_normalized_sha256": "2c1d9d2b9eb632557737e3dc2ab0c4f43e69a658bbab2d997e00c3b28f39f033"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_alert_email.py",
+      "origin": "development-existing-tests",
+      "sha256": "3a676ffe7cc8df748db9a83bcd209a8186bf57d4b80a2d94c8e301c87d9e098a",
+      "final_normalized_sha256": "3a676ffe7cc8df748db9a83bcd209a8186bf57d4b80a2d94c8e301c87d9e098a"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_operations_wiring.py",
+      "origin": "development-existing-tests",
+      "sha256": "5eec87a318cf8563ae80d3eb8fa38fe9a1f58adbd55ef02617620707f9c92b8f",
+      "final_normalized_sha256": "5eec87a318cf8563ae80d3eb8fa38fe9a1f58adbd55ef02617620707f9c92b8f"
+    },
+    {
+      "path": "tests/business_worker/test_wallet_task.py",
+      "origin": "development-existing-tests",
+      "sha256": "db75dd8b2461ae832cbedf42f910a99cc2abe8b4881e9a2fe6857928c20788b8",
+      "final_normalized_sha256": "db75dd8b2461ae832cbedf42f910a99cc2abe8b4881e9a2fe6857928c20788b8"
+    },
+    {
+      "path": "tests/business_worker/test_worker.py",
+      "origin": "development-existing-tests",
+      "sha256": "c6966b012e2632a3b11cf78412d56ba49ac8f187fa693d573acf3e91f15b4464",
+      "final_normalized_sha256": "abc6e6df222545b6638c9b91c513d07b1f0fd8ce8df9b862590e410115fd8887"
+    },
+    {
+      "path": "tests/business_worker/test_worker_contract.py",
+      "origin": "development-existing-tests",
+      "sha256": "1d4535394b6ab6fb347c684b471b7d41cf80906b56b0513c827db42cc071ed4b",
+      "final_normalized_sha256": "1d4535394b6ab6fb347c684b471b7d41cf80906b56b0513c827db42cc071ed4b"
+    },
+    {
+      "path": "services/business-api/Dockerfile",
+      "origin": "development-build-support",
+      "sha256": "547285cf64aa12bae8e690969bcb4463656d54e17a351e64a7aed723aafc253f",
+      "final_normalized_sha256": "547285cf64aa12bae8e690969bcb4463656d54e17a351e64a7aed723aafc253f"
+    },
+    {
+      "path": "services/business-api/pyproject.toml",
+      "origin": "development-build-support",
+      "sha256": "1d681be0650d3e991d158f10621b8702781c88cce2398f9d7babdd6244e107e3",
+      "final_normalized_sha256": "066b46f1ad674e7efbde35be0891aee8cdb316b1c7b537da989cac7ab716e964"
+    },
+    {
+      "path": "services/business-worker/Dockerfile",
+      "origin": "development-build-support",
+      "sha256": "ffbd31b756d0aa0f6df7fbcf55618bfc6ba54a52cbf169549918020ce0c0796a",
+      "final_normalized_sha256": "ffbd31b756d0aa0f6df7fbcf55618bfc6ba54a52cbf169549918020ce0c0796a"
+    },
+    {
+      "path": "scripts/wallet_release_preflight.py",
+      "origin": "development-build-support",
+      "sha256": "8fdde7c950673db00d0d1b27a00f4b2f5db6c299c32de42792eb2eba8692e14e",
+      "final_normalized_sha256": "a4045cd8db10cb2e28e51854b5cd8611deb47ecf34c17a0689df5c8c4048c41f"
+    },
+    {
+      "path": "docs/adr/0010-usdt-dianzhuan-convertible-custody-wallet.md",
+      "origin": "existing-policy-context",
+      "sha256": "700e57024618a73de3d9650fda1bc8687fc9f56949f3acf6ac1423c604c515af",
+      "final_normalized_sha256": "7d41597e877a6da22cdc0057038c809a8ddbfa21a29e4af604fbdf19c7d1a118"
+    },
+    {
+      "path": "docs/adr/0012-user-owned-tron-wallet-binding.md",
+      "origin": "existing-policy-context",
+      "sha256": "df20b984f5f4959a98c7c384ba54d5aefc7574acc0e4dcb53f6c8877eaff0a7f",
+      "final_normalized_sha256": "cec6eaa64d7f3bd6905dc36abb46ae2bafa9103c313f794c63559fa3b37898e9"
+    },
+    {
+      "path": "docs/adr/0013-trongrid-single-source-manual-payout.md",
+      "origin": "existing-policy-context",
+      "sha256": "2eb7c0511002c5077a371f1c95b97d447d4975d4e164e7e6673d39f82fecbd1f",
+      "final_normalized_sha256": "2eb7c0511002c5077a371f1c95b97d447d4975d4e164e7e6673d39f82fecbd1f"
+    },
+    {
+      "path": "docs/adr/0014-admin-wallet-operation-password.md",
+      "origin": "existing-policy-context",
+      "sha256": "e7dda06755cdbc7c277cf8cfb2c5811d0227b4fde842bbbc4d5cbfbb54343ca2",
+      "final_normalized_sha256": "126bf2730ccee025de80e38deccb54cf7f695b83f19dd7e84eb4fdad64bb03e5"
+    },
+    {
+      "path": "docs/adr/0056-wallet-independent-manual-liquidity.md",
+      "origin": "existing-policy-context",
+      "sha256": "bb9c92bee6f55486e7f0ae5a2ba9539ee1722e0b31782ab4cad7e708346e06a1",
+      "final_normalized_sha256": "bb9c92bee6f55486e7f0ae5a2ba9539ee1722e0b31782ab4cad7e708346e06a1"
+    },
+    {
+      "path": "docs/adr/0057-wallet-mfa-scoped-reauth.md",
+      "origin": "existing-policy-context",
+      "sha256": "473bc25e9ee9de55c79d0dac8cd491e31790d2c653cdb2e572b41ac1b518b184",
+      "final_normalized_sha256": "473bc25e9ee9de55c79d0dac8cd491e31790d2c653cdb2e572b41ac1b518b184"
+    },
+    {
+      "path": "docs/adr/0058-address-registration-production.md",
+      "origin": "existing-policy-context",
+      "sha256": "5c69119e0c9aa657aca1ecd77b8b38ec2f7e615ae9a4d72cbb3bc71f94c6e96f",
+      "final_normalized_sha256": "5c69119e0c9aa657aca1ecd77b8b38ec2f7e615ae9a4d72cbb3bc71f94c6e96f"
+    },
+    {
+      "path": "docs/adr/0059-admin-session-lifetime-single-device.md",
+      "origin": "existing-policy-context",
+      "sha256": "e81f2685480e6242615f40b18484672b0478b874e2a954f9e0bf296d8f4625a2",
+      "final_normalized_sha256": "07157586fad4082e6e62a7735abeb2e0f46624a39b8da956b3eb182059a3296a"
+    },
+    {
+      "path": "services/business-api/app/api/friendship.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "895c607be2525fee5c3b260ab53a08ae56239777ae5859f3df2f4bbcb886550e",
+      "final_normalized_sha256": "4fc01eecea0d0da418d8f48387746019bccdff576d3f31fb32730f9fa9f122b2"
+    },
+    {
+      "path": "services/business-api/app/modules/friendship/direct_room_coordinator.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "6a3eae1312aceab9b80c102ca8d7bf1c09900ddf2eaff94388a0731117ad274c",
+      "final_normalized_sha256": "6a3eae1312aceab9b80c102ca8d7bf1c09900ddf2eaff94388a0731117ad274c"
+    },
+    {
+      "path": "services/business-api/app/modules/friendship/models.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "47cf09b412e2f48415ccb2d3104ea4c06a010ddd3e3dcbebe7021b2da5acd4a1",
+      "final_normalized_sha256": "69c56f0c2e40956a5c7e2917c600075eee27447999e8f2a9488f14f3370d28a0"
+    },
+    {
+      "path": "services/business-api/app/modules/friendship/service.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "7cf42a08306285a263bf7db9865a3a91a8dedfbe413d07d47ea6f35aa4bc5437",
+      "final_normalized_sha256": "aa7a7af88326adc9ea978ba98ce72658023fab014cd6ad3fdbc5810fc6451767"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0040_direct_room_reservations.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "e6b77a5d41b96cf18aa906873ca73a07664db5cf33392faef3b7b4a4d62d4d62",
+      "final_normalized_sha256": "e6b77a5d41b96cf18aa906873ca73a07664db5cf33392faef3b7b4a4d62d4d62"
+    },
+    {
+      "path": "services/business-api/migrations/versions/0057_merge_direct_room.py",
+      "origin": "running-production-api-c76be88",
+      "sha256": "aa46366158115913f50ad0436f85e92719feaf4393152fb874c3cb2a95675371",
+      "final_normalized_sha256": "180950b3cca1b495dbcd1a516a0fc0ff07bd4f60604746d776466ceb00eb28de"
+    }
+  ]
+}

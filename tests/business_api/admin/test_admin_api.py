@@ -33,7 +33,7 @@ def admin_app():
     settings = Settings(_env_file=None, environment="test", database_url="sqlite+pysqlite:///:memory:", jwt_secret="test-jwt-secret-at-least-thirty-two-bytes")
     app = create_app(settings, session_factory=factory)
     tokens = TokenService(factory, jwt_secret=settings.jwt_secret, jwt_issuer=settings.jwt_issuer, require_session_claims=False)
-    return app, tokens.issue_pair(user_id="admin-1", device_key="admin-device", display_name="admin").access_token, tokens.issue_pair(user_id="finance-1", device_key="finance-device", display_name="finance").access_token
+    return app, tokens.issue_admin_pair(user_id="admin-1", display_name="admin").access_token, tokens.issue_admin_pair(user_id="finance-1", display_name="finance").access_token
 
 @pytest.mark.asyncio
 async def test_admin_session_returns_permissions_and_brand(admin_app):

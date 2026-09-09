@@ -24,6 +24,37 @@ class RecordingRateLimiter:
 
 
 @pytest.mark.asyncio
+async def test_admin_browser_captcha_login_and_legacy_contract(api_components, monkeypatch):
+    records = {}
+    monkeypatch.setattr('app.modules.identity.login_captcha.secrets.choice', lambda alphabet: 'A')
+    monkeypatch.setattr('redis.Redis.set', lambda self, key, value, ex: records.update({key: value}))
+    monkeypatch.setattr('redis.Redis.getdel', lambda self, key: records.pop(key, None))
+    app, factory = api_components
+    from app.modules.identity.models import UserRole
+    from app.modules.identity.enums import RoleCode
+    with factory.begin() as session:
+        session.add(UserRole(id='admin-role', user_id='active-user', role_code=RoleCode.SUPER_ADMIN,
+            assigned_by='active-user', assigned_at=datetime.now(timezone.utc)))
+    body = dict(username='active', password='correct horse battery staple', device_key='browser-test', device_name='Browser test')
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='https://test',
+        headers={'Origin': 'https://test', 'X-Admin-CSRF': '1'}) as client:
+        assert (await client.post('/api/v1/auth/admin-login', json=body)).status_code == 422
+        image = await client.get('/api/v1/auth/admin-captcha')
+        assert image.headers['cache-control'] == 'no-store'
+        challenge = image.json()['challenge_id']
+        bad = await client.post('/api/v1/auth/admin-login', json={**body, 'challenge_id': challenge, 'captcha_answer': 'WRONG'})
+        assert bad.json()['error']['code'] == 'CAPTCHA_INVALID'
+        replay = await client.post('/api/v1/auth/admin-login', json={**body, 'challenge_id': challenge, 'captcha_answer': 'AAAAAA'})
+        assert replay.status_code == 400
+        challenge = (await client.get('/api/v1/auth/admin-captcha')).json()['challenge_id']
+        success = await client.post('/api/v1/auth/admin-login', json={**body, 'challenge_id': challenge, 'captcha_answer': 'aaaaaa'})
+        assert success.status_code == 200
+        assert success.json()['access_token']
+        assert success.headers['cache-control'] == 'no-store'
+        assert (await client.post('/api/v1/auth/login', json=body)).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_invalid_or_taken_registration_email_does_not_consume_rate_limit(api_components) -> None:
     limiter = RecordingRateLimiter()
     _, factory = api_components

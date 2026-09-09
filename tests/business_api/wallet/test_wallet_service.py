@@ -25,22 +25,22 @@ def test_duplicate_signed_deposit_webhook_credits_once(wallet):
     assert service.handle_deposit_webhook(event.payload, event.signature) == "CREDITED"
     assert service.usdt_balance("user-1") == Decimal("12.345678")
 
-def test_withdrawal_submits_after_the_admin_direct_review(wallet):
+def test_withdrawal_submits_after_two_independent_reviews(wallet):
     service, provider = wallet
-    service.credit_for_test("user-1", Decimal("2000.000000"))
-    request = service.request_withdrawal(user_id="user-1", amount=Decimal("1500.000000"), address="TTEST", client_order_id="wd-1", reason_code="USER_WITHDRAWAL")
+    provider.custody_balance = Decimal('100')
+    service.credit_for_test("user-1", Decimal("100.000000"))
+    request = service.request_withdrawal(user_id="user-1", amount=Decimal("100.000000"), address="TTEST", client_order_id="wd-1", reason_code="USER_WITHDRAWAL")
     service.finance_approve(request.id, approver_id="admin-1")
+    service.admin_approve(request.id, approver_id="admin-2")
     submitted = service.submit_to_custody(request.id, actor_id="admin-1")
     assert submitted.status == "PROVIDER_SUBMITTED"
 
-def test_admin_can_approve_requested_withdrawal_without_finance_step(wallet):
+def test_admin_cannot_skip_finance_step(wallet):
     service, provider = wallet
     service.credit_for_test("user-direct", Decimal("20.000000"))
-    request = service.request_withdrawal(user_id="user-direct", amount=Decimal("2.000000"), address="TDIRECT", client_order_id="wd-direct", reason_code="ADMIN_DIRECT")
-    approved = service.admin_approve(request.id, approver_id="admin-1")
-    assert approved.status == "ADMIN_APPROVED"
-    submitted = service.submit_to_custody(request.id, actor_id="admin-1")
-    assert submitted.status == "PROVIDER_SUBMITTED"
+    request = service.request_withdrawal(user_id="user-direct", amount=Decimal("10.000000"), address="TDIRECT", client_order_id="wd-direct", reason_code="ADMIN_DIRECT")
+    with pytest.raises(ValueError, match='transition'):
+        service.admin_approve(request.id, approver_id="admin-1")
 
 def test_reconciliation_mismatch_pauses_withdrawals(wallet):
     service, provider = wallet

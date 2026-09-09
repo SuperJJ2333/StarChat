@@ -46,8 +46,11 @@ class MomentMediaService:
             session.add(row); return row
     def complete(self, actor, upload_id):
         with self.factory.begin() as session:
-            row = session.get(MomentMediaUpload, upload_id)
+            row = session.scalar(select(MomentMediaUpload).where(
+                MomentMediaUpload.id == upload_id).with_for_update())
             if not row or row.owner_id != actor: raise AppError(code="MOMENT_MEDIA_NOT_FOUND", message="上传不存在", status_code=404)
+            if row.status == "COMPLETED":
+                return row
             if row.expires_at.replace(tzinfo=row.expires_at.tzinfo or timezone.utc) <= datetime.now(timezone.utc): raise AppError(code="MOMENT_MEDIA_EXPIRED", message="上传已过期", status_code=409)
             if row.status != "UPLOADED":
                 row.status = "SCANNING"
@@ -57,9 +60,12 @@ class MomentMediaService:
 
     def put_content(self, actor, upload_id, content, content_type):
         with self.factory.begin() as session:
-            row = session.get(MomentMediaUpload, upload_id)
+            row = session.scalar(select(MomentMediaUpload).where(
+                MomentMediaUpload.id == upload_id).with_for_update())
             if not row or row.owner_id != actor:
                 raise AppError(code="MOMENT_MEDIA_NOT_FOUND", message="上传不存在", status_code=404)
+            if row.status == "COMPLETED":
+                raise AppError(code="MOMENT_MEDIA_COMPLETED", message="已完成的媒体不可覆盖，请重新上传", status_code=409)
             if content_type != row.mime_type or len(content) != row.byte_size:
                 raise AppError(code="MOMENT_MEDIA_INVALID", message="媒体内容校验失败", status_code=422)
             if self.storage:

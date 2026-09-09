@@ -86,7 +86,14 @@ class Worker:
         return sorted(self._handlers)
 
     def add_maintenance_task(self, name: str, task: Callable[[], Any]) -> None:
-        self._maintenance.append((name, task, MaintenanceHealth(name)))
+        # Bound methods and lambdas often share a name; schedules must not collide.
+        existing = {item[0] for item in self._maintenance}
+        unique_name = name
+        suffix = 2
+        while unique_name in existing:
+            unique_name = f"{name}-{suffix}"
+            suffix += 1
+        self._maintenance.append((unique_name, task, MaintenanceHealth(unique_name)))
 
     def maintenance_status(self) -> list[dict[str, Any]]:
         return [health.as_dict() for _, _, health in self._maintenance]

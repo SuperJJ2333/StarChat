@@ -11,12 +11,14 @@ class WalletMaintenanceTask:
     def run_once(self, *, actor_id: str = "business-worker"):
         resolved = 0
         with self.factory() as session:
-            ids = list(session.scalars(select(Withdrawal.id).where(Withdrawal.status == "PROVIDER_SUBMITTED").limit(100)))
+            ids = list(session.scalars(select(Withdrawal.id).where(Withdrawal.status.in_(
+                ["PROVIDER_SUBMITTED", "SUBMITTING", "UNKNOWN"])).limit(100)))
         for withdrawal_id in ids:
             try:
                 self.service.resolve_unknown_withdrawal(withdrawal_id, actor_id=actor_id)
                 resolved += 1
             except ValueError:
                 pass
+        self.service.detect_orphan_external_orders(actor_id=actor_id)
         reconciliation = self.service.reconcile_incremental(actor_id=actor_id)
         return {"resolved": resolved, "reconciliation": reconciliation}

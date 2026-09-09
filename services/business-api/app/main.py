@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from app.api.admin_session_boundary import create_admin_session_boundary
+from app.integrations.tron import diagnostics as wallet_diagnostics
 
 from app.api.health import create_health_router
 from app.api.identity import create_identity_router
@@ -8,6 +10,8 @@ from app.api.redpacket import create_redpacket_router
 from app.api.app_update import create_app_update_router
 from app.api.transfer import create_transfer_router
 from app.api.wallet import create_wallet_router
+from app.api.wallet_mfa import create_wallet_mfa_router
+from app.modules.wallet.runtime import create_manual_wallet_runtime
 from app.api.friendship import create_friendship_router
 from app.api.moments import create_moments_router
 from app.api.media import create_media_router
@@ -30,6 +34,8 @@ def create_app(
     matrix_gateway=None,
     avatar_storage=None,
 ) -> FastAPI:
+    wallet_diagnostics.configure('business-api')
+    wallet_diagnostics.emit('INFO', 'service_starting', component='api')
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -44,6 +50,7 @@ def create_app(
         session_factory = create_session_factory(engine)
         app.state.engine = engine
     app.state.session_factory = session_factory
+    app.router.dependencies.append(Depends(create_admin_session_boundary(settings, session_factory)))
     if rate_limiter is None:
         rate_limiter = (
             NoopRateLimiter()
@@ -51,6 +58,10 @@ def create_app(
             else RedisRateLimiter.from_url(settings.redis_url)
         )
     app.state.rate_limiter = rate_limiter
+    manual_wallet_runtime = create_manual_wallet_runtime(settings, session_factory, rate_limiter)
+    app.state.manual_wallet_runtime = manual_wallet_runtime
+    if manual_wallet_runtime is not None:
+        app.router.on_shutdown.append(manual_wallet_runtime.close)
     if matrix_gateway is None:
         matrix_gateway = SynapseMatrixAdminGateway(
             homeserver_url=settings.matrix_homeserver_url,
@@ -90,7 +101,8 @@ def create_app(
     app.include_router(create_redpacket_router(settings, session_factory, avatar_storage=avatar_storage, matrix_gateway=matrix_gateway), prefix="/api/v1")
     app.include_router(create_app_update_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_transfer_router(settings, session_factory), prefix="/api/v1")
-    app.include_router(create_wallet_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_wallet_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
+    app.include_router(create_wallet_mfa_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     app.include_router(
         create_friendship_router(
             settings,

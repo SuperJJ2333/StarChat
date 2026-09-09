@@ -124,7 +124,8 @@ final class _WalletConversionCardState extends State<WalletConversionCard> {
       final result = await widget.api.convertWallet(
           direction: intent['direction']!,
           amount: intent['amount']!,
-          idempotencyKey: intent['key']!);
+          idempotencyKey: intent['key']!,
+          expectedWalletScope: scope);
       if (result['status'] != 'COMPLETED') {
         if (mounted) setState(() => _message = '订单处理中，请重试查询原结果');
         return;

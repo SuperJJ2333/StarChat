@@ -33,11 +33,13 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture()
 def wallet():
     engine = create_engine(PG_URL)
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    tables = [table for table in Base.metadata.sorted_tables if table.name.startswith(('wallet_', 'ledger_')) or table.name in {'audit_events', 'outbox_events'}]
+    Base.metadata.drop_all(engine, tables=tables)
+    Base.metadata.create_all(engine, tables=tables)
     factory = create_session_factory(engine)
     provider = SandboxCustodyProvider(secret="audit-secret")
-    service = WalletService(factory, provider, confirmation_threshold=12)
+    provider.custody_balance = Decimal('1000')
+    service = WalletService(factory, provider, confirmation_threshold=20)
     yield service, provider, factory
     engine.dispose()
 
@@ -47,10 +49,12 @@ def _deposit_event(provider, *, event_id, txid, confirmations, user="u1", amount
         "event_id": event_id, "type": "DEPOSIT_CONFIRMED", "asset": "USDT-TRC20",
         "user_id": user, "amount": amount, "confirmations": confirmations, "txid": txid,
     }
+    provider.deposits[txid] = {**payload, **provider._evidence(confirmations)}
     return payload, provider.sign(payload)
 
 
 def _withdrawal_event(provider, *, event_id, order_reference, status, txid=None):
+    provider.withdrawal_event(client_order_id=order_reference, status=status, confirmations=20, event_id=event_id)
     payload = {
         "event_id": event_id, "type": "WITHDRAWAL_STATUS", "asset": "USDT-TRC20",
         "client_order_id": order_reference, "txid": txid or f"chain-{event_id}",
@@ -67,7 +71,7 @@ def test_f03_low_confirmations_then_threshold_credits_exactly_once(wallet):
     assert service.handle_deposit_webhook(low, sig) == "PENDING"
     assert service.usdt_balance("u1") == Decimal("0.000000")
     # 同一链上交易的新事件（不同 event_id）：确认数推进 → 入账。
-    confirmed, sig2 = _deposit_event(provider, event_id="e2", txid="tx-1", confirmations=15)
+    confirmed, sig2 = _deposit_event(provider, event_id="e2", txid="tx-1", confirmations=20)
     assert service.handle_deposit_webhook(confirmed, sig2) == "CREDITED"
     assert service.usdt_balance("u1") == Decimal("5.000000")
     # 已入账后：同/异事件重放都不再入账。
@@ -88,11 +92,11 @@ def test_f03_event_replay_resumes_incomplete_credit(wallet):
     事件 → 补记账并置 CREDITED。
     """
     service, provider, factory = wallet
-    event, sig = _deposit_event(provider, event_id="e1", txid="tx-1", confirmations=15)
+    event, sig = _deposit_event(provider, event_id="e1", txid="tx-1", confirmations=20)
     # 崩溃模拟：预插一条已过阈值但未入账的充值记录（同 txid）。
     with factory.begin() as session:
         session.add(Deposit(id="d-1", event_id="e1", user_id="u1", txid="tx-1",
-                            amount=Decimal("5.000000"), confirmations=15,
+                            amount=Decimal("5.000000"), confirmations=20,
                             status="CONFIRMED", created_at=datetime.now(timezone.utc)))
     assert service.handle_deposit_webhook(event, sig) == "CREDITED"
     assert service.usdt_balance("u1") == Decimal("5.000000")
@@ -110,7 +114,7 @@ def test_f03_out_of_order_confirmations_never_regress(wallet):
 
 # ── F04：提现订单唯一范围 ────────────────────────────────────
 
-def _request(service, user, order, amount="2.000000", address="TUser"):
+def _request(service, user, order, amount="10.000000", address="TUser"):
     return service.request_withdrawal(user_id=user, amount=Decimal(amount), address=address, client_order_id=order, reason_code="USER_WITHDRAWAL")
 
 
@@ -125,22 +129,24 @@ def test_f04_same_client_order_id_across_users_isolated(wallet):
 
     for row, user in ((a, "u1"), (b, "u2")):
         service.finance_approve(row.id, "finance")
+        service.admin_approve(row.id, 'admin')
         service.submit_to_custody(row.id, "finance")
     # 各自独立扣款（全局执行键 withdraw:{id}）。
-    assert service.usdt_balance("u1") == Decimal("8.000000")
-    assert service.usdt_balance("u2") == Decimal("8.000000")
+    assert service.usdt_balance("u1") == Decimal("0.000000")
+    assert service.usdt_balance("u2") == Decimal("0.000000")
     with factory() as session:
-        submit_txs = session.scalars(select(WalletLedgerTransaction).where(WalletLedgerTransaction.reason_code == "WITHDRAWAL_SUBMIT")).all()
+        submit_txs = session.scalars(select(WalletLedgerTransaction).where(WalletLedgerTransaction.reason_code == "USER_WITHDRAWAL")).all()
     assert len(submit_txs) == 2, "执行键按全局订单 ID：跨用户不冲突"
 
 
 def test_f04_same_user_same_key_different_payload_conflict(wallet):
     service, _, _ = wallet
-    _request(service, "u1", "order-y", amount="2.000000")
+    service.credit_for_test('u1', Decimal('20'))
+    _request(service, "u1", "order-y", amount="10.000000")
     with pytest.raises(ValueError, match="different payload"):
-        _request(service, "u1", "order-y", amount="3.000000")
+        _request(service, "u1", "order-y", amount="11.000000")
     with pytest.raises(ValueError, match="different payload"):
-        _request(service, "u1", "order-y", amount="2.000000", address="TOther")
+        _request(service, "u1", "order-y", amount="10.000000", address="TOther")
 
 
 def test_f04_webhook_locates_order_by_global_id_never_other_user(wallet):
@@ -152,13 +158,14 @@ def test_f04_webhook_locates_order_by_global_id_never_other_user(wallet):
     b = _request(service, "u2", "order-z")
     for row in (a, b):
         service.finance_approve(row.id, "finance")
+        service.admin_approve(row.id, 'admin')
         service.submit_to_custody(row.id, "finance")
 
     # 新载荷：client_order_id 即全局订单 ID。
     event, sig = _withdrawal_event(provider, event_id="w1", order_reference=a.id, status="FAILED")
     assert service.handle_withdrawal_webhook(event, sig) == "FAILED_COMPENSATED"
     assert service.usdt_balance("u1") == Decimal("10.000000"), "失败恢复余额"
-    assert service.usdt_balance("u2") == Decimal("8.000000"), "u2 订单不受影响"
+    assert service.usdt_balance("u2") == Decimal("0.000000"), "u2 订单不受影响"
 
     # legacy 载荷（客户端键）且跨用户歧义 → 拒绝（不能更新错误订单）。
     ambiguous, sig2 = _withdrawal_event(provider, event_id="w2", order_reference="order-z", status="CHAIN_CONFIRMED")
@@ -173,8 +180,9 @@ def test_f05_failed_compensates_once_and_repeats_do_not_double_refund(wallet):
     service.credit_for_test("u1", Decimal("10.000000"))
     row = _request(service, "u1", "order-f")
     service.finance_approve(row.id, "finance")
+    service.admin_approve(row.id, 'admin')
     service.submit_to_custody(row.id, "finance")
-    assert service.usdt_balance("u1") == Decimal("8.000000")
+    assert service.usdt_balance("u1") == Decimal("0.000000")
 
     first, sig = _withdrawal_event(provider, event_id="wf-1", order_reference=row.id, status="FAILED")
     assert service.handle_withdrawal_webhook(first, sig) == "FAILED_COMPENSATED"
@@ -199,12 +207,12 @@ def test_f05_unknown_custody_result_never_refunds(wallet):
     service.credit_for_test("u1", Decimal("10.000000"))
     row = _request(service, "u1", "order-u")
     service.finance_approve(row.id, "finance")
+    service.admin_approve(row.id, 'admin')
     service.submit_to_custody(row.id, "finance")
     # 托管侧查无此单（UNKNOWN——如提交请求丢失）。
     provider.withdrawals.pop(row.id, None)
-    with pytest.raises(ValueError, match="custody result unknown"):
-        service.resolve_unknown_withdrawal(row.id, actor_id="worker")
-    assert service.usdt_balance("u1") == Decimal("8.000000"), "UNKNOWN 不退款"
+    assert service.resolve_unknown_withdrawal(row.id, actor_id="worker").status == 'UNKNOWN'
+    assert service.usdt_balance("u1") == Decimal("0.000000"), "UNKNOWN 不退款"
 
 
 def test_f05_resolve_unknown_failed_compensates_idempotently(wallet):
@@ -212,8 +220,9 @@ def test_f05_resolve_unknown_failed_compensates_idempotently(wallet):
     service.credit_for_test("u1", Decimal("10.000000"))
     row = _request(service, "u1", "order-r")
     service.finance_approve(row.id, "finance")
+    service.admin_approve(row.id, 'admin')
     service.submit_to_custody(row.id, "finance")
-    provider.withdrawals[row.id]["status"] = "FAILED"
+    provider.withdrawal_event(client_order_id=row.id, status='FAILED', confirmations=20, event_id='resolve-failed')
     result = service.resolve_unknown_withdrawal(row.id, actor_id="worker")
     assert result.status == "FAILED_COMPENSATED"
     assert service.usdt_balance("u1") == Decimal("10.000000")
@@ -227,12 +236,15 @@ def test_f05_resolve_unknown_failed_compensates_idempotently(wallet):
 
 def test_f07_history_cursor_pagination_no_dup_or_gap(wallet):
     service, _, _ = wallet
-    # 构造交错历史：u1 60 充值 + 60 提现（REQUESTED 不扣款）。
+    # Construct history through the real hold/cancel path; cancelled requests
+    # release holds and do not consume rolling payout allowance.
+    service.credit_for_test('u1', Decimal('10'))
     for i in range(60):
         payload = {"event_id": f"hist-{i}", "type": "DEPOSIT_CONFIRMED", "asset": "USDT-TRC20",
                    "user_id": "u1", "amount": "1.000000", "confirmations": 20, "txid": f"hist-tx-{i}"}
         service.handle_deposit_webhook(payload, service.provider.sign(payload))
-        _request(service, "u1", f"hist-order-{i}", amount="0.000001")
+        row = _request(service, "u1", f"hist-order-{i}", amount="10.000000")
+        service.cancel_withdrawal(row.id, 'u1')
     seen: set[str] = set()
     cursor = None
     pages = 0
@@ -266,3 +278,49 @@ def test_f07_history_is_user_scoped(wallet):
     service.handle_deposit_webhook(payload, service.provider.sign(payload))
     items, _ = service.history("u2", None)
     assert items == [], "历史按用户隔离"
+
+
+def test_safety_concurrent_issuance_cannot_consume_same_reserve(wallet):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from app.modules.ledger.service import LedgerService
+    service, provider, factory = wallet
+    provider.custody_balance = Decimal('50')
+    service.refresh_reserve_evidence(actor_id='operator')
+    gate = Barrier(2)
+    def issue(user):
+        gate.wait(timeout=5)
+        try:
+            LedgerService(factory).adjust(user_id=user, amount=Decimal('40'), actor_id='operator', reason_code='ISSUE', idempotency_key=user)
+            return 'posted'
+        except ValueError as exc:
+            assert 'reserve' in str(exc)
+            return 'rejected'
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(issue, ['u1', 'u2']))
+    assert sorted(results) == ['posted', 'rejected']
+    assert service.snapshot_report('operator')['caibi_liability'] == '40.00'
+
+
+def test_safety_concurrent_submission_claim_calls_provider_once(wallet):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+    service, provider, _ = wallet
+    service.credit_for_test('u1', Decimal('20'))
+    row = _request(service, 'u1', 'concurrent')
+    service.finance_approve(row.id, 'finance')
+    service.admin_approve(row.id, 'admin')
+    gate, lock, calls = Barrier(2), Lock(), []
+    submit = provider.submit_withdrawal
+    def counted(**kwargs):
+        with lock:
+            calls.append(kwargs['client_order_id'])
+        return submit(**kwargs)
+    provider.submit_withdrawal = counted
+    def run(_):
+        gate.wait(timeout=5)
+        return service.submit_to_custody(row.id, 'worker').status
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(run, [1, 2]))
+    assert calls == [row.id]
+    assert service.balances('u1')['usdt_held'] == '10.000000'

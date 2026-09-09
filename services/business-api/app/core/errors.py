@@ -72,6 +72,7 @@ def install_error_handlers(app) -> None:
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
             content=_payload(
                 code=exc.code,
                 message=exc.message,
@@ -92,6 +93,7 @@ def install_error_handlers(app) -> None:
             fields.append(FieldError(loc=location, msg=message, type=error_type))
         return JSONResponse(
             status_code=422,
+            headers={"Cache-Control": "no-store"},
             content=_payload(
                 code="VALIDATION_ERROR",
                 message="请求参数校验失败",
@@ -105,6 +107,7 @@ def install_error_handlers(app) -> None:
         message = exc.detail if isinstance(exc.detail, str) else "请求失败"
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
             content=_payload(code="HTTP_ERROR", message=message, trace_id=_trace_id(request)),
         )
 
@@ -112,6 +115,7 @@ def install_error_handlers(app) -> None:
     async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(
             status_code=500,
+            headers={"Cache-Control": "no-store"},
             content=_payload(
                 code="INTERNAL_ERROR", message="服务内部错误", trace_id=_trace_id(request)
             ),

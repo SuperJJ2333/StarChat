@@ -37,7 +37,7 @@ class User(Base):
     )
     signature: Mapped[str | None] = mapped_column(String(140))
     nudge_suffix: Mapped[str | None] = mapped_column(String(32))
-    auto_allow_group_join: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('1'))
+    auto_allow_group_join: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     avatar_object_key: Mapped[str | None] = mapped_column(String(512))
     matrix_avatar_source_key: Mapped[str | None] = mapped_column(String(512))
     matrix_avatar_mxc_uri: Mapped[str | None] = mapped_column(String(512))
@@ -173,6 +173,20 @@ class RefreshToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     replaced_by_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AdminSession(Base):
+    """One current management family per user; ordinary sessions are independent."""
+
+    __tablename__ = "identity_admin_sessions"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    family_id: Mapped[str] = mapped_column(
+        ForeignKey("refresh_token_families.id"), nullable=False, unique=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    authenticated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

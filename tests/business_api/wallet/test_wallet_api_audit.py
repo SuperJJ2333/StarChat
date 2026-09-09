@@ -77,16 +77,18 @@ def test_a02_webhook_dispatches_withdrawal_events(api):
     from app.modules.wallet.service import WalletService
 
     service = WalletService(factory, SandboxCustodyProvider(secret="development-wallet-webhook-secret"))
+    service.provider.custody_balance = Decimal('10')
     service.credit_for_test("u1", Decimal("10.000000"))
-    row = service.request_withdrawal(user_id="u1", amount=Decimal("2.000000"), address="T9", client_order_id="o1", reason_code="USER_WITHDRAWAL")
+    row = service.request_withdrawal(user_id="u1", amount=Decimal("10.000000"), address="T9", client_order_id="o1", reason_code="USER_WITHDRAWAL")
     service.finance_approve(row.id, "finance")
+    service.admin_approve(row.id, "admin")
     service.submit_to_custody(row.id, "finance")
 
     provider = SandboxCustodyProvider(secret="development-wallet-webhook-secret")
     event = provider.withdrawal_event(client_order_id=row.id, status="FAILED", confirmations=1, event_id="wh-failed")
     resp = client.post("/api/v1/wallet/webhooks/custody", json=event.payload, headers={"X-Custody-Signature": event.signature})
     assert resp.status_code == 200
-    assert resp.json() == {"status": "FAILED_COMPENSATED"}, "提现失败事件推进状态并补偿"
+    assert resp.json() == {"status": "UNKNOWN"}, "仅签名回调不证明未执行；冻结保持"
 
 
 def test_a02_webhook_unsupported_type_and_bad_signature(api):
@@ -108,7 +110,7 @@ def test_u03_config_endpoint_returns_server_threshold(api):
     resp = client.get("/api/v1/wallet/config", headers=_bearer(settings, "u1"))
     assert resp.status_code == 200
     payload = resp.json()
-    assert payload["confirmation_threshold"] == 12, "阈值来自服务端设置（客户端展示统一来源）"
+    assert payload["confirmation_threshold"] == 20, "最低业务确认阈值为20"
     assert payload["funding_enabled"] is True
 
 
@@ -151,8 +153,8 @@ def test_a04_production_sandbox_mode_disables_funding_but_keeps_reads():
     assert deposit.json()["error"]["code"] == "WALLET_CUSTODY_NOT_CONFIGURED"
     withdraw = client.post(
         "/api/v1/wallet/withdrawals",
-        headers=_bearer(settings, "u1"),
-        json={"amount": "1.000000", "address": "T9", "client_order_id": "x", "reason_code": "R"},
+        headers={**_bearer(settings, "u1"), 'Idempotency-Key': 'x'},
+        json={"amount": "10.000000", "address": "T9", "client_order_id": "x", "reason_code": "R"},
     )
     assert withdraw.status_code == 503
     balance = client.get("/api/v1/wallet/balances/me", headers=_bearer(settings, "u1"))

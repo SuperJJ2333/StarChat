@@ -80,9 +80,10 @@ class TotpService:
         with self._session_factory() as session:
             credential = session.scalar(select(TotpCredential).where(TotpCredential.user_id == user_id))
             if credential is None:
-                return {"enabled": False, "enrolled_at": None}
+                return {"enabled": False, "enrolled_at": None, "pending_credential_id": None}
             enrolled_at = credential.created_at if credential.created_at.tzinfo else credential.created_at.replace(tzinfo=timezone.utc)
-            return {"enabled": credential.enabled, "enrolled_at": enrolled_at.isoformat()}
+            return {"enabled": credential.enabled, "enrolled_at": enrolled_at.isoformat(),
+                    "pending_credential_id": None if credential.enabled else credential.id}
 
     def disable(self, user_id: str, code: str) -> None:
         self.verify(user_id, code)

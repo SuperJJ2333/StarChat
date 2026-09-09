@@ -36,14 +36,17 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
     assert "down_revision = '0020_friend_request_reuse'" in revision
 
 
-def test_admin_controls_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0040_moment_comment_images (head)"
+def test_wallet_and_moments_merge_is_the_only_head() -> None:
+    assert _alembic("heads").strip() == "0057_merge_direct_room (head)"
 
 
-def test_comment_image_migration_expands_with_empty_existing_comments() -> None:
-    sql = _normalized_sql(_alembic("upgrade", "0039_merge_settings_wallet:0040_moment_comment_images", "--sql"))
-    assert "alter table moment_comments add column image_object_keys json default '[]' not null" in sql
-    assert "drop " not in sql
+def test_admin_session_migration_only_expands_identity() -> None:
+    sql = _normalized_sql(_alembic('upgrade', '0054_admin_password:0055_admin_sessions', '--sql'))
+    assert 'create table identity_admin_sessions' in sql
+    assert 'unique (family_id)' in sql
+    assert 'expires_at timestamp with time zone not null' in sql
+    assert 'drop ' not in sql
+    assert 'update refresh_token_families' not in sql
 
 
 def test_settings_migration_deploys_without_wallet_branch_and_preserves_values() -> None:

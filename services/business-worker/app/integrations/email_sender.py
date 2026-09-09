@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from email.message import EmailMessage
+import hashlib
 import os
+import re
 import smtplib
 import ssl
 from typing import Protocol
@@ -21,6 +23,12 @@ class DisabledEmailSender:
     def send_password_reset(self, **_kwargs) -> None:
         raise EmailDeliveryError("email delivery is disabled")
 
+    def send_wallet_alert(self, **_kwargs) -> None:
+        raise EmailDeliveryError("email delivery is disabled")
+
+    def send_wallet_handover(self, **_kwargs) -> None:
+        raise EmailDeliveryError("email delivery is disabled")
+
 
 class EmailSender(Protocol):
     def send_email_verification(
@@ -32,6 +40,21 @@ class EmailSender(Protocol):
     ) -> None: ...
 
     def send_password_reset(self, *, recipient: str, link: str) -> None: ...
+
+    def send_wallet_alert(self, *, recipient: str, event_id: str, code: str, severity: str) -> None: ...
+
+    def send_wallet_handover(self, *, recipient: str, event_id: str, manifest_digest: str, incident_count: int, alert_count: int) -> None: ...
+
+
+def validate_wallet_alert_recipient(recipient):
+    """A configured single ASCII mailbox; no display names, lists or headers."""
+    if (not isinstance(recipient,str) or len(recipient)>254
+            or re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z]{2,63}",recipient) is None):
+        raise ValueError('single wallet alert mailbox required')
+    local,domain=recipient.rsplit('@',1)
+    if len(local)>64 or local.startswith('.') or local.endswith('.') or '..' in recipient or any(
+            len(label)>63 or label.startswith('-') or label.endswith('-') for label in domain.split('.')):
+        raise ValueError('single wallet alert mailbox required')
 
 
 @dataclass(frozen=True)
@@ -132,18 +155,61 @@ class SmtpEmailSender:
         )
         self._send(message)
 
+    def send_wallet_alert(self, *, recipient: str, event_id: str, code: str, severity: str) -> None:
+        try:
+            validate_wallet_alert_recipient(recipient)
+            if (not self._config.use_starttls and not self._config.use_ssl
+                    or not isinstance(event_id,str) or re.fullmatch('[A-Za-z0-9-]{1,36}',event_id) is None
+                    or not isinstance(code,str) or re.fullmatch('[A-Z][A-Z0-9_]{0,99}',code) is None
+                    or severity not in ('P0','P1')):
+                raise ValueError('invalid wallet alert')
+            message=EmailMessage()
+            message['Subject']='畅聊 ChatFlow 钱包告警'
+            message['From']=self._config.from_address
+            message['To']=recipient
+            digest=hashlib.sha256(('wallet-alert:'+event_id).encode('ascii')).hexdigest()
+            message['Message-ID']=f'<wallet-alert-{digest}@chatflow.invalid>'
+            message.set_content(f'事件 ID：{event_id}\n事件码：{code}\n等级：{severity}\n\n请登录管理后台查看并处理。\n')
+            self._send(message)
+        except Exception:
+            raise EmailDeliveryError('SMTP wallet alert delivery failed') from None
+
+    def send_wallet_handover(self, *, recipient: str, event_id: str, manifest_digest: str, incident_count: int, alert_count: int) -> None:
+        try:
+            validate_wallet_alert_recipient(recipient)
+            if (not self._config.use_starttls and not self._config.use_ssl
+                    or re.fullmatch('[A-Za-z0-9-]{1,36}', event_id) is None
+                    or re.fullmatch('[a-f0-9]{64}', manifest_digest) is None
+                    or type(incident_count) is not int or incident_count != 3
+                    or type(alert_count) is not int or not 1 <= alert_count <= 10000):
+                raise ValueError('invalid handover notice')
+            message = EmailMessage()
+            message['Subject'] = '畅聊 ChatFlow 旧钱包监控交接清单'
+            message['From'], message['To'] = self._config.from_address, recipient
+            message['Message-ID'] = '<wallet-handover-'+hashlib.sha256(event_id.encode()).hexdigest()+'@chatflow.invalid>'
+            message.set_content(f'交接清单摘要：{manifest_digest}\n旧监控事件：{incident_count} 项\n历史通知：{alert_count} 条\n\n'
+                '本通知汇总上述历史告警；原记录保留，不标记为已投递。\n'
+                '资金继续暂停。请登录管理后台核对清单，确认没有未登记或未核清付款后，以动态验证码确认交接。\n')
+            self._send(message)
+        except Exception:
+            raise EmailDeliveryError('SMTP wallet handover delivery failed') from None
+
     def _send(self, message: EmailMessage) -> None:
         factory = self._smtp_ssl_factory if self._config.use_ssl else self._smtp_factory
         try:
+            tls_options = {'context': ssl.create_default_context()} if self._config.use_ssl else {}
             with factory(
                 self._config.host,
                 self._config.port,
                 timeout=self._config.timeout_seconds,
+                **tls_options,
             ) as client:
                 if self._config.use_starttls:
                     client.starttls(context=ssl.create_default_context())
                 if self._config.username and self._config.password:
                     client.login(self._config.username, self._config.password)
-                client.send_message(message)
+                refused = client.send_message(message)
+                if refused:
+                    raise EmailDeliveryError('SMTP recipient refused')
         except Exception:
             raise EmailDeliveryError("SMTP delivery failed") from None

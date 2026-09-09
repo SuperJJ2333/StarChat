@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, Header, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
+from redis import Redis
+from app.modules.identity.login_captcha import LoginCaptcha
 
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -90,6 +92,11 @@ class LoginRequest(StrictModel):
 class RefreshRequest(StrictModel):
     refresh_token: str
 
+
+class AdminLoginRequest(LoginRequest):
+    challenge_id: str = Field(min_length=32, max_length=128)
+    captcha_answer: str = Field(min_length=1, max_length=16)
+
 class PresenceHeartbeatRequest(StrictModel):
     client_version: str | None = Field(default=None, max_length=64)
 
@@ -110,6 +117,19 @@ class TokenResponse(BaseModel):
     expires_in: int = 900
 
 
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    user_id: str
+    session_id: str
+    token_type: str = 'bearer'
+    expires_in: int = 900
+    session_expires_at: datetime
+
+
+class AdminStepUpRequest(StrictModel):
+    password: str = Field(min_length=1, max_length=256)
+
+
 class MatrixLoginTokenResponse(BaseModel):
     login_token: str
     homeserver: str
@@ -125,6 +145,7 @@ def create_identity_router(
     matrix_gateway,
 ) -> APIRouter:
     router = APIRouter(tags=["identity"])
+    captcha_service = LoginCaptcha(Redis.from_url(settings.redis_url, decode_responses=True))
     password_hasher = PasswordHasher()
     invitation_service = InvitationService(session_factory)
     verification_codec = VerificationTokenCodec(
@@ -415,6 +436,106 @@ def create_identity_router(
             "status": result.status,
             "resend_after_seconds": result.resend_after_seconds,
         }
+
+    @router.get("/auth/admin-captcha")
+    async def admin_captcha(request: Request, response: Response) -> dict:
+        response.headers['Cache-Control'] = 'no-store'
+        def issue():
+            rate_limiter.hit(public_rate_limit_key('auth:admin-captcha', request.client.host if request.client else 'unknown'), limit=30, window_seconds=60)
+            return captcha_service.issue()
+        return await anyio.to_thread.run_sync(issue)
+
+    admin_cookie = '__Secure-starchat_admin_refresh'
+    admin_cookie_path = '/api/v1/auth/admin-session'
+
+    def admin_origin(request: Request) -> None:
+        origin = request.headers.get('origin')
+        expected = str(request.base_url).rstrip('/')
+        # TLS terminates at nginx; production uvicorn sees an HTTP upstream URL.
+        # Trust the preserved Host, never an arbitrary forwarded-proto header.
+        if settings.environment == 'production':
+            expected = 'https://' + request.url.netloc
+        if origin != expected or request.headers.get('x-admin-csrf') != '1':
+            raise AppError(code='ADMIN_CSRF_REJECTED', message='管理认证请求来源无效', status_code=403)
+
+    def admin_response(pair, response: Response) -> AdminTokenResponse:
+        view = tokens.admin_session(pair.access_token)
+        remaining = max(0, int((view['session_expires_at'] - datetime.now(timezone.utc)).total_seconds()))
+        response.headers['Cache-Control'] = 'no-store'
+        response.set_cookie(admin_cookie, pair.refresh_token, max_age=remaining,
+            expires=view['session_expires_at'], path=admin_cookie_path,
+            secure=True, httponly=True, samesite='strict')
+        return AdminTokenResponse(access_token=pair.access_token,
+            user_id=view['user_id'], session_id=view['session_id'],
+            expires_in=min(900, remaining), session_expires_at=view['session_expires_at'])
+
+    @router.post("/auth/admin-login", response_model=AdminTokenResponse)
+    async def admin_login(body: AdminLoginRequest, request: Request, response: Response) -> AdminTokenResponse:
+        response.headers['Cache-Control'] = 'no-store'
+        admin_origin(request)
+        def verify():
+            rate_limiter.hit(public_rate_limit_key('auth:admin-login', request.client.host if request.client else 'unknown'), limit=20, window_seconds=900)
+            captcha_service.verify(body.challenge_id, body.captcha_answer)
+            normalized = body.username.strip().casefold()
+            rate_limiter.hit(public_rate_limit_key('auth:admin-password', request.client.host if request.client else 'unknown', normalized), limit=10, window_seconds=900)
+            with session_factory() as session:
+                user = session.scalar(select(User).where(
+                    User.email_normalized == normalized if '@' in normalized else User.username_normalized == normalized))
+                if user is None or user.status != AccountStatus.ACTIVE or not password_hasher.verify(user.password_hash, body.password):
+                    raise AppError(code='CREDENTIALS_INVALID', message='账号或密码错误', status_code=401)
+                return user.id, tokens.issue_admin_pair(user_id=user.id, display_name=body.device_name,
+                    password=body.password)
+        actor_id, pair = await anyio.to_thread.run_sync(verify)
+        record_audit(request, actor_id=actor_id, subject_id=actor_id,
+            action='identity.admin_session.created', reason_code='ADMIN_PASSWORD_LOGIN')
+        return admin_response(pair, response)
+
+    @router.post('/auth/admin-session/refresh', response_model=AdminTokenResponse)
+    async def admin_refresh(request: Request, response: Response) -> AdminTokenResponse:
+        admin_origin(request)
+        value = request.cookies.get(admin_cookie, '')
+        def rotate():
+            rate_limiter.hit(public_rate_limit_key('auth:admin-refresh', request.client.host if request.client else 'unknown', value), limit=60, window_seconds=60)
+            return tokens.rotate_admin(value, expected_session_id=request.headers.get('x-admin-session'))
+        pair = await anyio.to_thread.run_sync(rotate)
+        return admin_response(pair, response)
+
+    @router.get('/auth/admin-session')
+    async def admin_session_check(response: Response, authorization: Annotated[str | None, Header()] = None) -> dict:
+        response.headers['Cache-Control'] = 'no-store'
+        if not authorization or not authorization.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        return await anyio.to_thread.run_sync(lambda: tokens.admin_session(authorization[7:]))
+
+    @router.post('/auth/admin-session/logout', status_code=204)
+    async def admin_logout(request: Request, response: Response):
+        admin_origin(request)
+        await anyio.to_thread.run_sync(lambda: tokens.revoke_admin_refresh(
+            request.cookies.get(admin_cookie, ''), expected_session_id=request.headers.get('x-admin-session')))
+        response.delete_cookie(admin_cookie, path=admin_cookie_path, secure=True,
+            httponly=True, samesite='strict')
+        response.headers['Cache-Control'] = 'no-store'
+
+    @router.post('/auth/admin-session/step-up', response_model=AdminTokenResponse)
+    async def admin_step_up(body: AdminStepUpRequest, request: Request, response: Response,
+        authorization: Annotated[str | None, Header()] = None) -> AdminTokenResponse:
+        admin_origin(request)
+        if not authorization or not authorization.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        def step_up():
+            claims = tokens.decode_access_token(authorization[7:])
+            tokens.require_admin_cookie(authorization[7:], request.cookies.get(admin_cookie, ''))
+            rate_limiter.hit(public_rate_limit_key('auth:admin-step-up', request.client.host if request.client else 'unknown', claims['sub']), limit=5, window_seconds=900)
+            return tokens.step_up_admin(authorization[7:], body.password)
+        view = await anyio.to_thread.run_sync(step_up)
+        claims = tokens.decode_access_token(authorization[7:])
+        record_audit(request, actor_id=claims['sub'], subject_id=claims['sub'],
+            action='identity.admin_session.reauthenticated', reason_code='ADMIN_STEP_UP')
+        response.headers['Cache-Control'] = 'no-store'
+        return AdminTokenResponse(access_token=authorization[7:],
+            user_id=view['user_id'], session_id=view['session_id'],
+            expires_in=max(0, int(claims['exp'] - datetime.now(timezone.utc).timestamp())),
+            session_expires_at=view['session_expires_at'])
 
     @router.post("/auth/login", response_model=TokenResponse)
     async def login(body: LoginRequest, request: Request) -> TokenResponse:

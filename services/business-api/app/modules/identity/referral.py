@@ -12,6 +12,7 @@
 """
 
 import hmac
+from math import ceil
 from datetime import datetime, timezone
 from hashlib import sha256
 from uuid import uuid4
@@ -146,7 +147,7 @@ class ReferralService:
         return {
             "code": code,
             "rotates_at": rotates_at.isoformat(),
-            "rotates_in_seconds": max(0, int((rotates_at - now).total_seconds())),
+            "rotates_in_seconds": max(0, ceil((rotates_at - now).total_seconds())),
             "window_index": window_index,
         }
 

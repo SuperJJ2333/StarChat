@@ -28,3 +28,16 @@ class DirectConversation(Base):
 class Complaint(Base):
     __tablename__='complaints'
     id:Mapped[str]=mapped_column(String(36),primary_key=True);user_id:Mapped[str]=mapped_column(ForeignKey('users.id'),index=True);category:Mapped[str]=mapped_column(String(30));description:Mapped[str]=mapped_column(Text);created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True))
+
+
+class DirectRoomReservation(Base):
+    """Durable creation authority. Never expire after an uncertain Matrix request."""
+    __tablename__ = 'direct_room_reservations'
+    __table_args__ = (UniqueConstraint('user_low_id', 'user_high_id', name='uq_direct_room_reservation_pair'),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_low_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    user_high_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    owner_id: Mapped[str] = mapped_column(ForeignKey('users.id'))
+    attempt_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

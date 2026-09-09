@@ -156,7 +156,12 @@ async def test_referral_current_code_requires_auth(referral_components) -> None:
 
 
 @pytest.mark.asyncio
-async def test_current_code_shape_and_short_term_stability(referral_components) -> None:
+async def test_current_code_shape_and_short_term_stability(referral_components, monkeypatch) -> None:
+    class ReferralClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 2, 12, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr('app.modules.identity.referral.datetime', ReferralClock)
     app, factory = referral_components
     auth = {"Authorization": f"Bearer {_token(factory, 'inviter-user')}"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -172,6 +177,24 @@ async def test_current_code_shape_and_short_term_stability(referral_components) 
     assert code in body["share_url"]
     # 同一窗口内两次获取返回同一码。
     assert second.json()["code"] == code
+
+
+def test_countdown_remains_positive_until_rotation(referral_components) -> None:
+    _, factory = referral_components
+    boundary = datetime(2026, 9, 2, 12, 30, tzinfo=timezone.utc)
+    clock = [boundary - timedelta(microseconds=1)]
+    service = ReferralService(
+        factory,
+        codec=ReferralCodec(secret=REFERRAL_SECRET),
+        now_factory=lambda: clock[0],
+    )
+    before = service.current_code("inviter-user")
+    assert before["rotates_in_seconds"] == 1
+    assert before["rotates_at"] == boundary.isoformat()
+    clock[0] = boundary
+    after = service.current_code("inviter-user")
+    assert after["rotates_in_seconds"] == 1800
+    assert after["code"] != before["code"]
 
 
 def test_codec_rotates_and_old_window_code_stops_validating() -> None:

@@ -73,3 +73,40 @@ class WalletWebhookEvent(Base):
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WalletConversion(Base):
+    __tablename__ = "wallet_conversions"
+    __table_args__ = (UniqueConstraint("user_id", "idempotency_key", name="uq_wallet_conversion_intent"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    direction: Mapped[str] = mapped_column(String(20), nullable=False)
+    requested_amount: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
+    source_amount: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
+    target_amount: Mapped[Decimal] = mapped_column(Numeric(30, 6), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WalletPayoutIntent(Base):
+    """Local committed intent; explicitly not an independent disaster-recovery log."""
+    __tablename__ = "wallet_payout_intents"
+    withdrawal_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    epoch: Mapped[int] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WalletSafetyState(Base):
+    __tablename__ = "wallet_safety_states"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    restricted: Mapped[bool] = mapped_column(nullable=False, default=False)
+    epoch: Mapped[int] = mapped_column(nullable=False, default=0)
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class WalletWithdrawalAuthorization(Base):
+    __tablename__ = 'wallet_withdrawal_authorizations'
+    withdrawal_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)

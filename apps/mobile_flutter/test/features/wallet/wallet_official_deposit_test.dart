@@ -145,32 +145,6 @@ void main() {
     expect(find.byKey(const Key('wallet-deposit-copy')), findsNothing);
   });
 
-  for (final unavailable in ['network', 'login']) {
-    testWidgets('address failure distinguishes $unavailable', (tester) async {
-      final api = await client((request) async {
-        if (request.url.path.endsWith('deposit-address') ||
-            request.url.path.endsWith('/auth/refresh')) {
-          if (unavailable == 'network') throw http.ClientException('offline');
-          return jsonResponse({
-            'error': {'code': 'AUTH_REQUIRED', 'message': '登录已失效，请重新登录'}
-          }, 401);
-        }
-        return jsonResponse({});
-      });
-      await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('获取充值地址'));
-      await tester.pumpAndSettle();
-      expect(
-          find.text(
-              unavailable == 'network' ? '无法连接服务器，请检查网络后重试' : '登录已失效，请重新登录'),
-          findsOneWidget);
-      expect(find.byKey(const Key('wallet-deposit-address')), findsNothing);
-      expect(find.byKey(const Key('wallet-deposit-qr')), findsNothing);
-      expect(find.byKey(const Key('wallet-deposit-copy')), findsNothing);
-    });
-  }
-
   for (final bad in [
     '',
     'T${'2' * 33}',

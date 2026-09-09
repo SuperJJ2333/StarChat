@@ -266,14 +266,14 @@ final class BusinessApiClient
   }
 
   ProfileData _profile(Map<String, dynamic> body) => ProfileData(
-    username: body['username'] as String,
-    nickname: body['nickname'] as String,
-    maskedEmail: body['masked_email'] as String,
-    fallbackSeed: body['avatar_fallback_seed'] as String,
-    signature: body['signature']?.toString(),
-    nudgeSuffix: body['nudge_suffix']?.toString(),
-    avatarUrl: body['avatar_url']?.toString(),
-  );
+        username: body['username'] as String,
+        nickname: body['nickname'] as String,
+        maskedEmail: body['masked_email'] as String,
+        fallbackSeed: body['avatar_fallback_seed'] as String,
+        signature: body['signature']?.toString(),
+        nudgeSuffix: body['nudge_suffix']?.toString(),
+        avatarUrl: body['avatar_url']?.toString(),
+      );
   @override
   Future<ProfileData> loadProfile() async =>
       _profile(await getJson('/profile/me'));
@@ -282,22 +282,29 @@ final class BusinessApiClient
     required String nickname,
     String? signature,
     String? nudgeSuffix,
-  }) async => _profile(
-    await patchJson('/profile/me', {
-      'nickname': nickname,
-      'signature': signature,
-      'nudge_suffix': nudgeSuffix,
-    }, idempotencyKey: newIdempotencyKey()),
-  );
+  }) async =>
+      _profile(
+        await patchJson(
+            '/profile/me',
+            {
+              'nickname': nickname,
+              'signature': signature,
+              'nudge_suffix': nudgeSuffix,
+            },
+            idempotencyKey: newIdempotencyKey()),
+      );
   @override
   Future<AvatarUploadSession> createAvatarUpload({
     required String mimeType,
     required int byteSize,
   }) async {
-    final body = await postJson('/profile/avatar/uploads', {
-      'mime_type': mimeType,
-      'byte_size': byteSize,
-    }, idempotencyKey: newIdempotencyKey());
+    final body = await postJson(
+        '/profile/avatar/uploads',
+        {
+          'mime_type': mimeType,
+          'byte_size': byteSize,
+        },
+        idempotencyKey: newIdempotencyKey());
     return AvatarUploadSession(
       uploadId: body['upload_id'] as String,
       uploadUrl: body['upload_url'] as String,
@@ -321,12 +328,12 @@ final class BusinessApiClient
 
   @override
   Future<ProfileData> completeAvatar(String uploadId) async => _profile(
-    await postJson(
-      '/profile/avatar/uploads/$uploadId/complete',
-      {},
-      idempotencyKey: newIdempotencyKey(),
-    ),
-  );
+        await postJson(
+          '/profile/avatar/uploads/$uploadId/complete',
+          {},
+          idempotencyKey: newIdempotencyKey(),
+        ),
+      );
   @override
   Future<void> cancelAvatar(String uploadId) async {
     final response = await _authorized(
@@ -501,35 +508,43 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> transferCaibi(
     String receiverId,
     String amount,
-  ) => postJson('/ledger/transfers', {
-    'receiver_id': receiverId,
-    'amount': amount,
-  }, idempotencyKey: newIdempotencyKey());
+  ) =>
+      postJson(
+          '/ledger/transfers',
+          {
+            'receiver_id': receiverId,
+            'amount': amount,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> createRedPacket({
     required String mode,
     required String total,
     required int shareCount,
     String? roomId,
     String? recipientId,
-  }) => postJson('/red-packets', {
-    'mode': mode,
-    'total': total,
-    'share_count': shareCount,
-    if (roomId != null) 'room_id': roomId,
-    if (recipientId != null) 'recipient_id': recipientId,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/red-packets',
+          {
+            'mode': mode,
+            'total': total,
+            'share_count': shareCount,
+            if (roomId != null) 'room_id': roomId,
+            if (recipientId != null) 'recipient_id': recipientId,
+          },
+          idempotencyKey: newIdempotencyKey());
   @override
   Future<Map<String, dynamic>> claimRedPacket(String id) => postJson(
-    '/red-packets/$id/claims',
-    {},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/red-packets/$id/claims',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
   @override
   Future<Map<String, dynamic>> redPacketDetail(String id) =>
       getJson('/red-packets/$id');
   Future<Map<String, dynamic>> listRedPackets({String? roomId}) => getJson(
-    '/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}',
-  );
+        '/red-packets${roomId == null ? '' : '?room_id=${Uri.encodeQueryComponent(roomId)}'}',
+      );
   Future<Map<String, dynamic>> redPacketLimits() =>
       getJson('/red-packets/limits');
   Future<Map<String, dynamic>> latestAppUpdate() =>
@@ -539,22 +554,26 @@ final class BusinessApiClient
     required String amount,
     String? note,
     String? roomId,
-  }) => postJson('/chat-transfers', {
-    'receiver_id': receiverId,
-    'amount': amount,
-    if (note != null && note.isNotEmpty) 'note': note,
-    if (roomId != null) 'room_id': roomId,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/chat-transfers',
+          {
+            'receiver_id': receiverId,
+            'amount': amount,
+            if (note != null && note.isNotEmpty) 'note': note,
+            if (roomId != null) 'room_id': roomId,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> acceptChatTransfer(String id) => postJson(
-    '/chat-transfers/$id/accept',
-    {},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/chat-transfers/$id/accept',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
   Future<Map<String, dynamic>> declineChatTransfer(String id) => postJson(
-    '/chat-transfers/$id/decline',
-    {},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/chat-transfers/$id/decline',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
   Future<Map<String, dynamic>> chatTransferDetail(String id) =>
       getJson('/chat-transfers/$id');
   Future<Map<String, dynamic>> walletBalance() =>
@@ -572,16 +591,26 @@ final class BusinessApiClient
     required String direction,
     required String amount,
     required String idempotencyKey,
-  }) => postJson('/wallet/conversions', {
-    'direction': direction,
-    'amount': amount,
-  }, idempotencyKey: idempotencyKey);
+    String? expectedWalletScope,
+  }) =>
+      postJson(
+          '/wallet/conversions',
+          {
+            'direction': direction,
+            'amount': amount,
+          },
+          idempotencyKey: idempotencyKey,
+          expectedWalletScope: expectedWalletScope);
   Future<Map<String, dynamic>> walletConversionStatus(String id) =>
       getJson('/wallet/conversions/$id');
 
   /// Local storage namespace only. Authentication remains server-authoritative.
   Future<String> walletIntentScope() async {
     final session = await sessionStore.session();
+    return _walletSessionScope(session);
+  }
+
+  String _walletSessionScope(StoredBusinessSession? session) {
     if (session == null) throw StateError('需要登录');
     final parts = session.accessToken.split('.');
     if (parts.length != 3) throw StateError('无法识别当前账户');
@@ -622,9 +651,12 @@ final class BusinessApiClient
 
   /// 兑换令牌入群（直加或转审批，服务端校验）。
   Future<Map<String, dynamic>> redeemGroupJoinToken({required String token}) =>
-      postJson('/groups/join-tokens/redeem', {
-        'token': token,
-      }, idempotencyKey: newIdempotencyKey());
+      postJson(
+          '/groups/join-tokens/redeem',
+          {
+            'token': token,
+          },
+          idempotencyKey: newIdempotencyKey());
 
   /// 撤销令牌（轮换 = 新签发 + 撤销旧）。
   Future<Map<String, dynamic>> revokeGroupJoinToken({required String token}) =>
@@ -637,10 +669,14 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> requestServerGroupAutoJoin({
     required String roomId,
     required List<String> inviteeUserIds,
-  }) => postJson('/groups/auto-join', {
-    'room_id': roomId,
-    'invitee_user_ids': inviteeUserIds,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/groups/auto-join',
+          {
+            'room_id': roomId,
+            'invitee_user_ids': inviteeUserIds,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> friends() => getJson('/friends');
   @override
   Future<List<ContactSummary>> listContacts() async {
@@ -655,23 +691,30 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> submitComplaint({
     required String category,
     required String description,
-  }) => postJson('/support/complaints', {
-    'category': category,
-    'description': description,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/support/complaints',
+          {
+            'category': category,
+            'description': description,
+          },
+          idempotencyKey: newIdempotencyKey());
   @override
   Future<Map<String, dynamic>> contactTags() => getJson('/contact-tags');
   @override
   Future<Map<String, dynamic>> createContactTag(String name) => postJson(
-    '/contact-tags',
-    {'name': name},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/contact-tags',
+        {'name': name},
+        idempotencyKey: newIdempotencyKey(),
+      );
   @override
   Future<Map<String, dynamic>> renameContactTag(String id, String name) =>
-      patchJson('/contact-tags/$id', {
-        'name': name,
-      }, idempotencyKey: newIdempotencyKey());
+      patchJson(
+          '/contact-tags/$id',
+          {
+            'name': name,
+          },
+          idempotencyKey: newIdempotencyKey());
   @override
   Future<void> deleteContactTag(String id) async {
     final response = await _authorized(
@@ -705,11 +748,15 @@ final class BusinessApiClient
     String? remark,
     List<String> tags = const [],
     String momentsPermission = 'DEFAULT',
-  }) => patchJson('/friends/$id', {
-    'remark': remark,
-    'tags': tags,
-    'moments_permission': momentsPermission,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      patchJson(
+          '/friends/$id',
+          {
+            'remark': remark,
+            'tags': tags,
+            'moments_permission': momentsPermission,
+          },
+          idempotencyKey: newIdempotencyKey());
   @override
   Future<ContactDetails> updateContactDetails(
     ContactDetails contact, {
@@ -760,9 +807,10 @@ final class BusinessApiClient
   /// 不存在/拉黑/自己时服务端返回 404（抛 BusinessApiException）。
   Future<Map<String, dynamic>> lookupUserByMatrixId(
     String matrixUserId,
-  ) => getJson(
-    '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}',
-  );
+  ) =>
+      getJson(
+        '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}',
+      );
 
   @override
   Future<Map<String, dynamic>> requestFriend(
@@ -771,23 +819,27 @@ final class BusinessApiClient
     String? remark,
     List<String> tags = const [],
     String momentsPermission = 'DEFAULT',
-  }) => postJson('/friends/requests', {
-    'target_user_id': userId,
-    'message': message,
-    if (remark != null && remark.isNotEmpty) 'remark': remark,
-    if (tags.isNotEmpty) 'tags': tags,
-    'moments_permission': momentsPermission,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/friends/requests',
+          {
+            'target_user_id': userId,
+            'message': message,
+            if (remark != null && remark.isNotEmpty) 'remark': remark,
+            if (tags.isNotEmpty) 'tags': tags,
+            'moments_permission': momentsPermission,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> acceptFriendRequest(String id) => postJson(
-    '/friends/requests/$id/accept',
-    {},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/friends/requests/$id/accept',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
   Future<Map<String, dynamic>> rejectFriendRequest(String id) => postJson(
-    '/friends/requests/$id/reject',
-    {},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/friends/requests/$id/reject',
+        {},
+        idempotencyKey: newIdempotencyKey(),
+      );
 
   /// Canonical Direct Conversation（好友系统重构 Phase E）：
   /// 创建私聊前先查询规范房间，存在即复用。
@@ -803,10 +855,13 @@ final class BusinessApiClient
     String peerUserId,
     String matrixRoomId,
   ) async {
-    final body = await postJson('/direct-conversations', {
-      'peer_user_id': peerUserId,
-      'matrix_room_id': matrixRoomId,
-    }, idempotencyKey: newIdempotencyKey());
+    final body = await postJson(
+        '/direct-conversations',
+        {
+          'peer_user_id': peerUserId,
+          'matrix_room_id': matrixRoomId,
+        },
+        idempotencyKey: newIdempotencyKey());
     return body['matrix_room_id']?.toString() ?? matrixRoomId;
   }
 
@@ -824,16 +879,24 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> momentsFeed({
     String mode = 'recommended',
     String? cursor,
-  }) => getJson(
-    '/moments/feed${Uri(queryParameters: {'mode': mode, if (cursor != null) 'cursor': cursor})}',
-  );
+  }) =>
+      getJson(
+        '/moments/feed${Uri(queryParameters: {
+              'mode': mode,
+              if (cursor != null) 'cursor': cursor
+            })}',
+      );
 
   Future<Map<String, dynamic>> momentNewPosts({
     String? since,
     String? cursor,
-  }) => getJson(
-    '/moments/new-posts${Uri(queryParameters: {if (since != null) 'since': since, if (cursor != null) 'cursor': cursor}).toString()}',
-  );
+  }) =>
+      getJson(
+        '/moments/new-posts${Uri(queryParameters: {
+              if (since != null) 'since': since,
+              if (cursor != null) 'cursor': cursor
+            }).toString()}',
+      );
   Future<Map<String, dynamic>> searchMoments(String query) =>
       getJson('/moments/search?q=${Uri.encodeQueryComponent(query)}');
   Future<Map<String, dynamic>> publishMoment({
@@ -845,16 +908,20 @@ final class BusinessApiClient
     List<String> includeTagIds = const [],
     List<String> excludeTagIds = const [],
     String? linkUrl,
-  }) => postJson('/moments', {
-    'text': text,
-    'visibility': visibility,
-    'image_urls': imageUrls,
-    'include_user_ids': includeUserIds,
-    'exclude_user_ids': excludeUserIds,
-    'include_tag_ids': includeTagIds,
-    'exclude_tag_ids': excludeTagIds,
-    'link_url': linkUrl,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/moments',
+          {
+            'text': text,
+            'visibility': visibility,
+            'image_urls': imageUrls,
+            'include_user_ids': includeUserIds,
+            'exclude_user_ids': excludeUserIds,
+            'include_tag_ids': includeTagIds,
+            'exclude_tag_ids': excludeTagIds,
+            'link_url': linkUrl,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
       postJson('/moments/$id/likes', {}, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> commentMoment(String id, String text,
@@ -884,11 +951,15 @@ final class BusinessApiClient
     required String fileName,
     required String mimeType,
     required int byteSize,
-  }) => postJson('/moments/media/uploads', {
-    'file_name': fileName,
-    'mime_type': mimeType,
-    'byte_size': byteSize,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/moments/media/uploads',
+          {
+            'file_name': fileName,
+            'mime_type': mimeType,
+            'byte_size': byteSize,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<void> putMomentUpload(
     String uploadId,
     List<int> bytes,
@@ -914,11 +985,15 @@ final class BusinessApiClient
     required String fileName,
     required String mimeType,
     required int byteSize,
-  }) => postJson('/moments/cover/uploads', {
-    'file_name': fileName,
-    'mime_type': mimeType,
-    'byte_size': byteSize,
-  }, idempotencyKey: newIdempotencyKey());
+  }) =>
+      postJson(
+          '/moments/cover/uploads',
+          {
+            'file_name': fileName,
+            'mime_type': mimeType,
+            'byte_size': byteSize,
+          },
+          idempotencyKey: newIdempotencyKey());
   Future<void> putMomentCoverUpload(
     String uploadId,
     List<int> bytes,
@@ -941,10 +1016,10 @@ final class BusinessApiClient
         idempotencyKey: newIdempotencyKey(),
       );
   Future<Map<String, dynamic>> setMomentCover(String uploadId) => putJson(
-    '/moments/cover',
-    {'upload_id': uploadId},
-    idempotencyKey: newIdempotencyKey(),
-  );
+        '/moments/cover',
+        {'upload_id': uploadId},
+        idempotencyKey: newIdempotencyKey(),
+      );
   Future<Map<String, dynamic>> personalMoments(String userId) =>
       getJson('/moments/users/$userId');
   Future<Map<String, dynamic>> momentNotifications() =>
@@ -952,9 +1027,12 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> momentUnreadCount() =>
       getJson('/moments/notifications/unread-count');
   Future<void> markMomentNotificationsRead(List<String> ids) async {
-    await postJson('/moments/notifications/read', {
-      'ids': ids,
-    }, idempotencyKey: newIdempotencyKey());
+    await postJson(
+        '/moments/notifications/read',
+        {
+          'ids': ids,
+        },
+        idempotencyKey: newIdempotencyKey());
   }
 
   Future<Map<String, dynamic>> momentsPreferences() =>
@@ -963,25 +1041,34 @@ final class BusinessApiClient
     required String historyRange,
     required bool personalized,
     String? coverUrl,
-  }) => putJson('/moments/preferences', {
-    'history_range': historyRange,
-    'personalized_recommendations': personalized,
-    if (coverUrl != null) 'cover_url': coverUrl,
-  });
+  }) =>
+      putJson('/moments/preferences', {
+        'history_range': historyRange,
+        'personalized_recommendations': personalized,
+        if (coverUrl != null) 'cover_url': coverUrl,
+      });
   Future<Map<String, dynamic>> requestWithdrawal({
     required String amount,
     required String address,
     required String clientOrderId,
     required String reasonCode,
-  }) => postJson('/wallet/withdrawals', {
-    'amount': amount,
-    'address': address,
-    'client_order_id': clientOrderId,
-    'reason_code': reasonCode,
-  }, idempotencyKey: clientOrderId);
-  Future<Map<String, dynamic>> getJson(String path) async {
+  }) =>
+      postJson(
+          '/wallet/withdrawals',
+          {
+            'amount': amount,
+            'address': address,
+            'client_order_id': clientOrderId,
+            'reason_code': reasonCode,
+          },
+          idempotencyKey: clientOrderId);
+  Future<Map<String, dynamic>> getJson(
+    String path, {
+    String? expectedWalletScope,
+  }) async {
     final response = await _authorized(
       (headers) => _client.get(_uri(path), headers: headers),
+      expectedWalletScope: expectedWalletScope,
     );
     return _decode(response);
   }
@@ -990,6 +1077,7 @@ final class BusinessApiClient
     String path,
     Map<String, dynamic> body, {
     required String idempotencyKey,
+    String? expectedWalletScope,
   }) async {
     final response = await _authorized(
       (headers) => _client.post(
@@ -1001,6 +1089,7 @@ final class BusinessApiClient
         },
         body: jsonEncode(body),
       ),
+      expectedWalletScope: expectedWalletScope,
     );
     return _decode(response);
   }
@@ -1072,12 +1161,17 @@ final class BusinessApiClient
   Future<http.Response> _authorized(
     Future<http.Response> Function(Map<String, String>) operation, {
     Duration timeout = _httpTimeout,
+    String? expectedWalletScope,
   }) async {
     // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
     // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
     final deadline = DateTime.now().add(_authorizedTotalTimeout);
     Future<Duration> remaining() async => deadline.difference(DateTime.now());
     final initial = await sessionStore.session();
+    if (expectedWalletScope != null &&
+        _walletSessionScope(initial) != expectedWalletScope) {
+      throw StateError('账户已切换，请重新打开钱包');
+    }
     final requestUrl = _lastRequestUrl;
     http.Response response;
     try {
@@ -1093,6 +1187,10 @@ final class BusinessApiClient
     }
     if (response.statusCode != 401 || initial == null) return response;
     final replacement = await refreshSession();
+    if (expectedWalletScope != null &&
+        _walletSessionScope(replacement) != expectedWalletScope) {
+      throw StateError('账户已切换，请重新打开钱包');
+    }
     final budget = await remaining();
     if (budget.isNegative) {
       throw TimeoutException('authorized request budget exhausted');

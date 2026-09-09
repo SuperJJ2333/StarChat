@@ -11,6 +11,8 @@ from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.ledger.account_locks import lock_accounts
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
+from app.modules.ledger.reserve import caibi_liability, lock_budget, require_coverage
+from app.modules.ledger.restriction_models import LedgerOutgoingRestriction  # noqa: F401
 
 CENT = Decimal("0.01")
 
@@ -18,6 +20,7 @@ def money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(CENT, rounding=ROUND_HALF_UP)
 
 class LedgerService:
+    reserve_policy = 'full_backing'
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
@@ -25,6 +28,21 @@ class LedgerService:
         with self.session_factory() as session:
             value = session.scalar(select(func.coalesce(func.sum(LedgerEntry.amount), 0)).where(LedgerEntry.account_id == account_id, LedgerEntry.asset == "CAIBI"))
             return money(Decimal(value))
+
+    def redeemable_liability(self, *, session):
+        return caibi_liability(session)
+
+    def restrict_redeemable_outgoing(self, *, session, actor_id, reason_code, scope='legacy_unknown'):
+        from app.modules.ledger.restrictions import restrict
+        return restrict(session, actor_id=actor_id, reason_code=reason_code, scope=scope)
+
+    def restriction_snapshot(self, *, session):
+        from app.modules.ledger.restrictions import snapshot
+        return snapshot(session)
+
+    def release_manual_restriction(self, *, session, actor_id, reason_code, expected_epoch):
+        from app.modules.ledger.restrictions import release_manual
+        return release_manual(session, actor_id=actor_id, reason_code=reason_code, expected_epoch=expected_epoch)
 
     def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None, session=None) -> LedgerTransaction:
         if session is None:
@@ -36,12 +54,20 @@ class LedgerService:
         if not normalized or sum(normalized.values(), Decimal("0.00")) != Decimal("0.00"):
             raise ValueError("ledger entries must be balanced")
         now = datetime.now(timezone.utc)
+        reserve = lock_budget(session)
         existing = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(LedgerTransaction.scope == scope, LedgerTransaction.idempotency_key == idempotency_key))
         if existing:
             persisted = {entry.account_id: money(entry.amount) for entry in existing.entries}
             if persisted != normalized or existing.actor_id != actor_id or existing.reason_code != reason_code or existing.reversal_of_id != reversal_of_id:
                 raise ValueError("idempotency key reused with different payload")
             return existing
+        if reserve is not None and reserve.outgoing_restricted and any(delta < 0 and account not in {'PLATFORM_CLEARING', 'PLATFORM_FEE'} for account, delta in normalized.items()):
+            raise ValueError('redeemable outgoing globally restricted')
+        liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CLEARING', 'PLATFORM_FEE'}), Decimal('0'))
+        if liability_delta > 0:
+            require_coverage(session, reserve, caibi_delta=liability_delta, policy=self.reserve_policy)
+        if reserve is not None:
+            reserve.version += 1
         # 并发扣减防护：先对被扣账户取事务级锁再做余额校验，
         # 否则两个并发事务会读到同一余额并双双提交（超扣/双花）。
         lock_accounts(
