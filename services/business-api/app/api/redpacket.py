@@ -9,6 +9,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.service import LedgerService, money
 from app.modules.redpacket.service import RedPacketService
 from app.modules.settings.service import RED_PACKET_MAX_TOTAL_KEY, SettingService
@@ -21,6 +22,7 @@ class CreateRedPacketRequest(StrictModel):
     total: Decimal = Field(gt=0, decimal_places=2)
     share_count: int = Field(ge=1, le=500)
     room_id: str | None = Field(default=None, max_length=255)
+    payment_authorization: str | None = Field(default=None, min_length=20, max_length=256, repr=False)
     recipient_id: str | None = Field(default=None, max_length=36)
 
     @model_validator(mode="after")
@@ -43,7 +45,7 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
     # F06：群红包房间成员授权权威（Matrix join 成员；gateway 可用时启用，
     # 不可用时 fail closed——群红包仅发起人本人可见/可领）。
     room_membership = MatrixRoomMembershipAuthority(session_factory, matrix_gateway) if matrix_gateway is not None else None
-    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total, room_membership=room_membership)
+    service = RedPacketService(session_factory, LedgerService(session_factory), max_total=settings.red_packet_max_total, room_membership=room_membership, payment_pin=PaymentPinService(session_factory, require_all=settings.payment_pin_require_all))
     if avatar_storage is not None:
         from app.modules.identity.profile import ProfileService
 
@@ -61,11 +63,17 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return str(tokens.decode_access_token(authorization[7:])["sub"])
 
+    def payment_actor(authorization: Annotated[str | None, Header()] = None):
+        if not authorization or not authorization.startswith("Bearer "):
+            raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+        return tokens.decode_access_token(authorization[7:])
+
     @router.post("", status_code=201)
-    def create(body: CreateRedPacketRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
+    def create(body: CreateRedPacketRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], claims=Depends(payment_actor)):
+        user_id = str(claims["sub"])
         max_total = resolve_max_total()
         service.max_total = money(max_total)
-        kwargs = dict(sender_id=user_id, total=body.total, share_count=body.share_count, room_id=body.room_id, recipient_id=body.recipient_id, idempotency_key=idempotency_key, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+        kwargs = dict(sender_id=user_id, payment_claims=claims, payment_authorization=body.payment_authorization, total=body.total, share_count=body.share_count, room_id=body.room_id, recipient_id=body.recipient_id, idempotency_key=idempotency_key, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
         try:
             packet = service.create_equal(**kwargs) if body.mode == "EQUAL" else service.create_random(**kwargs) if body.mode == "RANDOM" else service.create_exclusive(**kwargs)
         except ValueError as error:

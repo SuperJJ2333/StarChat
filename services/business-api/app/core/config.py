@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/1"
     jwt_issuer: str = "liuhetong"
     jwt_secret: str | None = None
+    # Compatibility rollout only: configured accounts always require a PIN.
+    payment_pin_require_all: bool = False
     totp_issuer: str | None = None
     wallet_totp_encryption_key: SecretStr | None = None
 

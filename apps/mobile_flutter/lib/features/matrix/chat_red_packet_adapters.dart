@@ -1,12 +1,14 @@
 import '../../core/business_api_client.dart';
+import '../../core/chat_payment_intent.dart';
 import 'chat_red_packet_controller.dart';
 import 'room_timeline_controller.dart';
 
 final class BusinessChatRedPacketGateway
     implements ChatRedPacketBusinessGateway {
-  const BusinessChatRedPacketGateway(this.api);
+  const BusinessChatRedPacketGateway(this.api, {required this.payment});
 
   final BusinessApiClient api;
+  final ChatPaymentIntent payment;
 
   @override
   Future<String> create({
@@ -16,13 +18,13 @@ final class BusinessChatRedPacketGateway
     String? roomId,
     String? recipientId,
   }) async =>
-      (await api.createRedPacket(
-        mode: mode,
-        total: total,
-        shareCount: shareCount,
-        roomId: roomId,
-        recipientId: recipientId,
-      ))['id'] as String;
+      (await payment.create('red_packet.create', {
+        'mode': mode,
+        'total': total,
+        'share_count': shareCount,
+        if (roomId != null) 'room_id': roomId,
+        if (recipientId != null) 'recipient_id': recipientId,
+      }))['id'] as String;
 }
 
 final class TimelineRedPacketReferenceGateway

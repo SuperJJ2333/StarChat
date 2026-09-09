@@ -10,6 +10,8 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/chat_payment_intent.dart';
+import 'chat_payment_flow.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/add_friend_profile_page.dart';
 import '../contacts/contacts_page.dart';
@@ -193,6 +195,36 @@ Future<void> openGroupMemberProfile(
 }
 
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  bool _paymentEntryBusy = false;
+
+  Future<ChatPaymentIntent?> _preparePayment() async {
+    if (_paymentEntryBusy) return null;
+    _paymentEntryBusy = true;
+    try {
+      return await prepareChatPayment(context, api: widget.api,
+          recipient: (payload) {
+        final id = payload['receiver_id'] ?? payload['recipient_id'];
+        if (id != null) {
+          for (final contact in contactsByMatrixId.values) {
+            if (contact.userId == id || contact.matrixUserId == id) {
+              return contact.displayName;
+            }
+          }
+          return id.toString();
+        }
+        return roomInfo.name;
+      });
+    } on BusinessApiException catch (error) {
+      if (mounted) await _showError(error.message);
+      return null;
+    } catch (_) {
+      if (mounted) await _showError('支付设置暂时无法加载，请稍后重试');
+      return null;
+    } finally {
+      _paymentEntryBusy = false;
+    }
+  }
+
   late MatrixRoomInfoSnapshot roomInfo;
   final Completer<void> _disposed = Completer<void>();
   final Set<Future<void>> _pendingMatrixOperations = {};
@@ -1604,8 +1636,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 participant.displayName,
           ),
     ];
+    final payment = await _preparePayment();
+    if (payment == null || !mounted) return;
     final redPacketController = ChatRedPacketController(
-      business: BusinessChatRedPacketGateway(widget.api),
+      business: BusinessChatRedPacketGateway(widget.api, payment: payment),
       references: TimelineRedPacketReferenceGateway(timeline),
       roomId: isGroup ? roomInfo.id : null,
       recipientId: isGroup ? null : peer!.userId,
@@ -1623,6 +1657,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ),
     );
     redPacketController.dispose();
+    payment.clear();
   }
 
   Future<void> _showTransfer() async {
@@ -1631,8 +1666,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // Direct chats preselect the peer; group chats and chats without a
     // loaded profile require picking a specific user inside the sheet.
     final hasPeer = !isGroup && peer != null;
+    final payment = await _preparePayment();
+    if (payment == null || !mounted) return;
     final transferController = ChatTransferController(
-      business: BusinessChatTransferGateway(widget.api),
+      business: BusinessChatTransferGateway(widget.api, payment: payment),
       references: TimelineChatTransferReferenceGateway(timeline),
     );
     await Navigator.push<void>(
@@ -1650,6 +1687,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ),
     );
     transferController.dispose();
+    payment.clear();
   }
 
   Future<void> _openTransferDetail(String transferId) async {
@@ -2380,7 +2418,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // 纯动效表情（超级表情）：微信式无气泡大图渲染，但与普通消息
           // 同布局展示头像与昵称/备注，消息来源可识别，长按可操作。
           SuperEmojiMessage(
-            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            bubbleKey:
+                menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             key: ValueKey('animated-emoji-${message.stableId}'),
             emojis: animatedEmojis,
             direction: message.isOwn
@@ -2402,7 +2441,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // 点击全屏播放；头像/昵称与图片消息一致。
           WeChatMessageBubble(
             key: ValueKey('video-message-${message.stableId}'),
-            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            bubbleKey:
+                menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             decorateContent: false,
             content: VideoMessageCard(
               posterIdentity: message.id,
@@ -2436,7 +2476,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             content: LayoutBuilder(
               builder: (context, constraints) {
                 return ContainImageBubble(
-                  bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
+                  bubbleKey: menuAnchorKeys.putIfAbsent(
+                      message.stableId, GlobalKey.new),
                   key: ValueKey('image-${message.stableId}'),
                   initialBytes: roomImagePreviewCache.get(message.stableId),
                   loadCached: () =>
@@ -2473,7 +2514,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         else
           WeChatMessageBubble(
             content: _messageContent(message),
-            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            bubbleKey:
+                menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             onRetry: () =>
                 unawaited(_trackAction(() => _retryMessage(message))),
             decorateContent: messageBubbleIsDecorated(message.kind),
@@ -2617,22 +2659,27 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             rect: placement.rect,
             child: TweenAnimationBuilder<double>(
               tween: Tween(begin: 0, end: 1),
-              duration: MediaQuery.disableAnimationsOf(overlayContext) ? Duration.zero : const Duration(milliseconds: 120),
-              builder: (_, value, child) => Opacity(opacity: value,
-                child: Transform.scale(scale: .96 + .04 * value, child: child)),
+              duration: MediaQuery.disableAnimationsOf(overlayContext)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 120),
+              builder: (_, value, child) => Opacity(
+                  opacity: value,
+                  child:
+                      Transform.scale(scale: .96 + .04 * value, child: child)),
               child: SingleChildScrollView(
-              child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
-              child: MessageBubbleMenu(
-                arrowAtTop: placement.arrowAtTop,
-                arrowX: placement.arrowX,
-                actions: actions,
-                onSelected: (action) {
-                  dismissActionMenu();
-                  unawaited(_trackAction(
-                      () => _handleMessageAction(message, action)));
-                },
-              ),
-              ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: MessageBubbleMenu(
+                    arrowAtTop: placement.arrowAtTop,
+                    arrowX: placement.arrowX,
+                    actions: actions,
+                    onSelected: (action) {
+                      dismissActionMenu();
+                      unawaited(_trackAction(
+                          () => _handleMessageAction(message, action)));
+                    },
+                  ),
+                ),
               ),
             ),
           ),

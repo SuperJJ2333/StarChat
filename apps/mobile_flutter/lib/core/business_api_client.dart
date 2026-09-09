@@ -516,12 +516,54 @@ final class BusinessApiClient
             'amount': amount,
           },
           idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> paymentPinStatus(
+          {String? expectedWalletScope, String? expectedPaymentScope}) =>
+      getJson('/payment-pin/status',
+          expectedWalletScope: expectedWalletScope,
+          expectedPaymentScope: expectedPaymentScope);
+
+  Future<Map<String, dynamic>> setupPaymentPin({
+    required String pin,
+    required String loginPassword,
+    required String idempotencyKey,
+    required String expectedWalletScope,
+    String? expectedPaymentScope,
+  }) =>
+      postJson(
+          '/payment-pin/setup', {'pin': pin, 'login_password': loginPassword},
+          idempotencyKey: idempotencyKey,
+          expectedWalletScope: expectedWalletScope,
+          expectedPaymentScope: expectedPaymentScope);
+
+  Future<Map<String, dynamic>> authorizePaymentPin({
+    required String pin,
+    required String action,
+    required Map<String, dynamic> payload,
+    required String idempotencyKey,
+    required String expectedWalletScope,
+    String? expectedPaymentScope,
+  }) =>
+      postJson(
+          '/payment-pin/authorize',
+          {
+            'pin': pin,
+            'action': action,
+            'payload': payload,
+            'idempotency_key': idempotencyKey,
+          },
+          idempotencyKey: newIdempotencyKey(),
+          expectedWalletScope: expectedWalletScope,
+          expectedPaymentScope: expectedPaymentScope);
+
   Future<Map<String, dynamic>> createRedPacket({
     required String mode,
     required String total,
     required int shareCount,
     String? roomId,
     String? recipientId,
+    String? idempotencyKey,
+    String? paymentAuthorization,
+    String? expectedWalletScope,
   }) =>
       postJson(
           '/red-packets',
@@ -531,8 +573,11 @@ final class BusinessApiClient
             'share_count': shareCount,
             if (roomId != null) 'room_id': roomId,
             if (recipientId != null) 'recipient_id': recipientId,
+            if (paymentAuthorization != null)
+              'payment_authorization': paymentAuthorization,
           },
-          idempotencyKey: newIdempotencyKey());
+          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+          expectedWalletScope: expectedWalletScope);
   @override
   Future<Map<String, dynamic>> claimRedPacket(String id) => postJson(
         '/red-packets/$id/claims',
@@ -554,6 +599,9 @@ final class BusinessApiClient
     required String amount,
     String? note,
     String? roomId,
+    String? idempotencyKey,
+    String? paymentAuthorization,
+    String? expectedWalletScope,
   }) =>
       postJson(
           '/chat-transfers',
@@ -562,8 +610,11 @@ final class BusinessApiClient
             'amount': amount,
             if (note != null && note.isNotEmpty) 'note': note,
             if (roomId != null) 'room_id': roomId,
+            if (paymentAuthorization != null)
+              'payment_authorization': paymentAuthorization,
           },
-          idempotencyKey: newIdempotencyKey());
+          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+          expectedWalletScope: expectedWalletScope);
   Future<Map<String, dynamic>> acceptChatTransfer(String id) => postJson(
         '/chat-transfers/$id/accept',
         {},
@@ -608,6 +659,16 @@ final class BusinessApiClient
   Future<String> walletIntentScope() async {
     final session = await sessionStore.session();
     return _walletSessionScope(session);
+  }
+
+  Future<String> paymentIntentScope() async =>
+      _paymentSessionScope(await sessionStore.session());
+
+  String _paymentSessionScope(StoredBusinessSession? session) {
+    final account = _walletSessionScope(session);
+    final claims = jsonDecode(utf8.decode(base64Url.decode(
+        base64Url.normalize(session!.accessToken.split('.')[1])))) as Map;
+    return '$account:${claims['family_id'] ?? ''}:${claims['device_id'] ?? ''}';
   }
 
   String _walletSessionScope(StoredBusinessSession? session) {
@@ -1072,10 +1133,12 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> getJson(
     String path, {
     String? expectedWalletScope,
+    String? expectedPaymentScope,
   }) async {
     final response = await _authorized(
       (headers) => _client.get(_uri(path), headers: headers),
       expectedWalletScope: expectedWalletScope,
+      expectedPaymentScope: expectedPaymentScope,
     );
     return _decode(response);
   }
@@ -1085,6 +1148,7 @@ final class BusinessApiClient
     Map<String, dynamic> body, {
     required String idempotencyKey,
     String? expectedWalletScope,
+    String? expectedPaymentScope,
   }) async {
     final response = await _authorized(
       (headers) => _client.post(
@@ -1097,6 +1161,7 @@ final class BusinessApiClient
         body: jsonEncode(body),
       ),
       expectedWalletScope: expectedWalletScope,
+      expectedPaymentScope: expectedPaymentScope,
     );
     return _decode(response);
   }
@@ -1169,12 +1234,21 @@ final class BusinessApiClient
     Future<http.Response> Function(Map<String, String>) operation, {
     Duration timeout = _httpTimeout,
     String? expectedWalletScope,
+    String? expectedPaymentScope,
   }) async {
     // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
     // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
     final deadline = DateTime.now().add(_authorizedTotalTimeout);
     Future<Duration> remaining() async => deadline.difference(DateTime.now());
     final initial = await sessionStore.session();
+    void guardPayment(StoredBusinessSession? session) {
+      if (expectedPaymentScope != null &&
+          _paymentSessionScope(session) != expectedPaymentScope) {
+        throw StateError('支付会话已变化，请重新打开支付页面');
+      }
+    }
+
+    guardPayment(initial);
     if (expectedWalletScope != null &&
         _walletSessionScope(initial) != expectedWalletScope) {
       throw StateError('账户已切换，请重新打开钱包');
@@ -1192,8 +1266,14 @@ final class BusinessApiClient
     if (response.statusCode >= 400) {
       _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
     }
-    if (response.statusCode != 401 || initial == null) return response;
+    if (response.statusCode != 401 || initial == null) {
+      if (expectedPaymentScope != null) {
+        guardPayment(await sessionStore.session());
+      }
+      return response;
+    }
     final replacement = await refreshSession();
+    guardPayment(replacement);
     if (expectedWalletScope != null &&
         _walletSessionScope(replacement) != expectedWalletScope) {
       throw StateError('账户已切换，请重新打开钱包');
@@ -1202,9 +1282,13 @@ final class BusinessApiClient
     if (budget.isNegative) {
       throw TimeoutException('authorized request budget exhausted');
     }
-    return operation({
+    final retried = await operation({
       'Authorization': 'Bearer ${replacement.accessToken}',
     }).timeout(budget < timeout ? budget : timeout);
+    if (expectedPaymentScope != null) {
+      guardPayment(await sessionStore.session());
+    }
+    return retried;
   }
 
   Uri? _lastRequestUrl;

@@ -343,6 +343,46 @@
         "title": "AppUpdateSettingsBody",
         "type": "object"
       },
+      "AuthorizePaymentPinRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "chat_transfer.create",
+              "red_packet.create"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "pin": {
+            "format": "password",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Pin",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "pin",
+          "action",
+          "payload",
+          "idempotency_key"
+        ],
+        "title": "AuthorizePaymentPinRequest",
+        "type": "object"
+      },
       "AutoJoinPreference": {
         "additionalProperties": false,
         "properties": {
@@ -1536,6 +1576,19 @@
             ],
             "title": "Note"
           },
+          "payment_authorization": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Authorization"
+          },
           "receiver_id": {
             "maxLength": 36,
             "minLength": 1,
@@ -1661,6 +1714,19 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "payment_authorization": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Authorization"
           },
           "recipient_id": {
             "anyOf": [
@@ -4015,6 +4081,48 @@
         "title": "OperationPasswordBody",
         "type": "object"
       },
+      "PaymentPinAuthorizationView": {
+        "properties": {
+          "authorization": {
+            "title": "Authorization",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authorization",
+          "expires_in"
+        ],
+        "title": "PaymentPinAuthorizationView",
+        "type": "object"
+      },
+      "PaymentPinStatus": {
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "locked_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Until"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "PaymentPinStatus",
+        "type": "object"
+      },
       "PayoutBody": {
         "additionalProperties": false,
         "properties": {
@@ -5441,6 +5549,33 @@
           "upload_id"
         ],
         "title": "SetCover",
+        "type": "object"
+      },
+      "SetupPaymentPinRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "login_password": {
+            "format": "password",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Login Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "pin": {
+            "format": "password",
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Pin",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "pin",
+          "login_password"
+        ],
+        "title": "SetupPaymentPinRequest",
         "type": "object"
       },
       "SetupProofView": {
@@ -16588,6 +16723,209 @@
         "summary": "Report",
         "tags": [
           "moments"
+        ]
+      }
+    },
+    "/api/v1/payment-pin/authorize": {
+      "post": {
+        "operationId": "authorize_api_v1_payment_pin_authorize_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizePaymentPinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentPinAuthorizationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Authorize",
+        "tags": [
+          "payment-pin"
+        ]
+      }
+    },
+    "/api/v1/payment-pin/setup": {
+      "post": {
+        "operationId": "setup_api_v1_payment_pin_setup_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupPaymentPinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentPinStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Setup",
+        "tags": [
+          "payment-pin"
+        ]
+      }
+    },
+    "/api/v1/payment-pin/status": {
+      "get": {
+        "operationId": "status_api_v1_payment_pin_status_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentPinStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Status",
+        "tags": [
+          "payment-pin"
         ]
       }
     },

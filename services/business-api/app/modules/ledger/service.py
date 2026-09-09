@@ -114,12 +114,12 @@ class PointTransferService:
     def __init__(self, ledger: LedgerService):
         self.ledger = ledger
 
-    def transfer(self, *, sender_id: str, receiver_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str) -> TransferResult:
+    def transfer(self, *, sender_id: str, receiver_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str, session=None) -> TransferResult:
         amount = money(amount)
         if amount <= 0 or sender_id == receiver_id:
             raise ValueError("invalid transfer")
         fee = max(CENT, money(amount * Decimal("0.005")))
-        tx = self.ledger.post(entries={sender_id: -(amount + fee), receiver_id: amount, "PLATFORM_FEE": fee}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="caibi.transfer")
+        tx = self.ledger.post(entries={sender_id: -(amount + fee), receiver_id: amount, "PLATFORM_FEE": fee}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="caibi.transfer", session=session)
         return TransferResult(tx, fee)
 
 

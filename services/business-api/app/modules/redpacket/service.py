@@ -10,11 +10,13 @@ from sqlalchemy.orm import selectinload
 from app.modules.ledger.service import LedgerService, money
 from app.modules.redpacket.models import RedPacket, RedPacketShare
 from app.modules.redpacket.claims import RedPacketClaim
+from app.modules.identity.payment_pin import PaymentPinService
 
 class RedPacketService:
-    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None):
+    def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None, payment_pin=None):
         self.session_factory = session_factory
         self.ledger = ledger
+        self.payment_pin = payment_pin or PaymentPinService(session_factory)
         self.max_total = money(max_total)
         # 可选的公开资料服务（ProfileService）：为领取详情补充
         # 领取人/发送人的用户名、昵称与自定义头像。
@@ -109,7 +111,7 @@ class RedPacketService:
             raise ValueError("RED_PACKET_LIMIT_EXCEEDED")
         return total, count
 
-    def _create(self, *, sender_id, total, amounts, mode, idempotency_key, expires_at, room_id=None, recipient_id=None):
+    def _create(self, *, sender_id, total, amounts, mode, idempotency_key, expires_at, room_id=None, recipient_id=None, payment_claims=None, payment_authorization=None):
         if mode == "EXCLUSIVE":
             if not room_id or not recipient_id:
                 raise ValueError("exclusive red packet requires room and recipient")
@@ -123,9 +125,13 @@ class RedPacketService:
         # 红包"的中间态。并发同键：账本与单据唯一约束互证，败者回滚后
         # 由幂等路径返回同一单据。
         with self.session_factory.begin() as session:
+            self.payment_pin.lock_account(session, sender_id)
             existing = session.scalar(select(RedPacket).options(selectinload(RedPacket.shares)).where(RedPacket.sender_id == sender_id, RedPacket.idempotency_key == idempotency_key))
+            self.payment_pin.consume(session, user_id=sender_id, claims=payment_claims, action="red_packet.create",
+                payload=dict(mode=mode, total=total, share_count=len(amounts), room_id=room_id, recipient_id=recipient_id),
+                idempotency_key=idempotency_key, authorization=payment_authorization, existing=existing is not None)
             if existing:
-                if existing.total != total or existing.mode != mode or existing.room_id != room_id or existing.recipient_id != recipient_id:
+                if existing.total != total or existing.mode != mode or existing.room_id != room_id or existing.recipient_id != recipient_id or existing.share_count != len(amounts):
                     raise ValueError("idempotency key reused with different payload")
                 return existing
             self.ledger.post(entries={sender_id: -total, escrow: total}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)

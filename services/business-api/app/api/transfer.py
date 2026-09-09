@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.service import LedgerService
 from app.modules.transfer.service import ChatTransferService
 
@@ -21,11 +22,12 @@ class CreateChatTransferRequest(StrictModel):
     amount: Decimal = Field(gt=0, decimal_places=2)
     note: str | None = Field(default=None, max_length=64)
     room_id: str | None = Field(default=None, max_length=255)
+    payment_authorization: str | None = Field(default=None, min_length=20, max_length=256, repr=False)
 
 
 def create_transfer_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/chat-transfers", tags=["chat-transfers"])
-    service = ChatTransferService(session_factory, LedgerService(session_factory))
+    service = ChatTransferService(session_factory, LedgerService(session_factory), payment_pin=PaymentPinService(session_factory, require_all=settings.payment_pin_require_all))
     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -33,10 +35,16 @@ def create_transfer_router(settings: Settings, session_factory) -> APIRouter:
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return str(tokens.decode_access_token(authorization[7:])["sub"])
 
+    def payment_actor(authorization: Annotated[str | None, Header()] = None):
+        if not authorization or not authorization.startswith("Bearer "):
+            raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
+        return tokens.decode_access_token(authorization[7:])
+
     @router.post("", status_code=201)
-    def create(body: CreateChatTransferRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
+    def create(body: CreateChatTransferRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], claims=Depends(payment_actor)):
+        user_id = str(claims["sub"])
         try:
-            transfer = service.create(sender_id=user_id, receiver_id=body.receiver_id, amount=body.amount, note=body.note, room_id=body.room_id, idempotency_key=idempotency_key, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+            transfer = service.create(sender_id=user_id, payment_claims=claims, payment_authorization=body.payment_authorization, receiver_id=body.receiver_id, amount=body.amount, note=body.note, room_id=body.room_id, idempotency_key=idempotency_key, expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
         except ValueError as error:
             if str(error) == "insufficient balance":
                 raise AppError(code="CHAT_TRANSFER_BALANCE_INSUFFICIENT", message="转账失败，账户余额不足", status_code=422) from error

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../core/business_api_client.dart';
+import '../../core/chat_payment_intent.dart';
 
 abstract interface class ChatTransferBusinessGateway {
   Future<Map<String, dynamic>> create(
@@ -54,6 +55,8 @@ final class ChatTransferController extends ChangeNotifier {
           amount: amount,
           note: note));
       await _share(transferId, amount, note);
+    } on ChatPaymentCancelled {
+      _set(const ChatTransferState());
     } catch (error) {
       if (state.transferId == null) {
         _set(ChatTransferState(
@@ -93,6 +96,10 @@ final class ChatTransferController extends ChangeNotifier {
   }
 
   String _error(Object error) {
+    if (error is BusinessApiException &&
+        error.code.startsWith('PAYMENT_PIN_')) {
+      return error.message;
+    }
     if (error is BusinessApiException &&
         error.code == 'CHAT_TRANSFER_BALANCE_INSUFFICIENT') {
       return '转账失败，账户余额不足';

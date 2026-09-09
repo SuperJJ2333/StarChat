@@ -1,10 +1,19 @@
 {
   "schema_version": 1,
   "figma_file_key": "zpzwTbnj1hqx80tyRygX78",
-  "last_checked": "2026-08-25",
+  "last_checked": "2026-09-09",
   "tool_status": "unavailable",
   "tool_status_detail": "No callable Figma read or write tool was exposed in this Codex session. Existing node references are retained; no remote update is claimed.",
   "surfaces": [
+    {
+      "id": "chat-payment-pin-six-digit",
+      "title": "红包与转账支付密码",
+      "flutter_widget": "PaymentPinPage",
+      "flutter_file": "apps/mobile_flutter/lib/features/payment_pin/payment_pin_dialog.dart",
+      "test_file": "apps/mobile_flutter/test/payment_pin_dialog_test.dart",
+      "approved_spec": "docs/superpowers/specs/2026-09-09-chat-payment-pin-design.md",
+      "remote_sync": "blocked_tool_unavailable"
+    },
     {
       "id": "moments-composer-wechat-v2",
       "title": "朋友圈发表",

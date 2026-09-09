@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
+from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.adjustments import AdjustmentWorkflow
 from app.modules.ledger.service import LedgerService, PointTransferService
 
@@ -35,6 +36,7 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/ledger", tags=["ledger"])
     ledger = LedgerService(session_factory)
     transfers = PointTransferService(ledger)
+    payment_pin = PaymentPinService(session_factory, require_all=settings.payment_pin_require_all)
     workflow = AdjustmentWorkflow(session_factory, ledger, admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
     rbac = RbacService(session_factory)
     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
@@ -50,7 +52,9 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
 
     @router.post("/transfers", status_code=201)
     def transfer(body: TransferRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
-        result = transfers.transfer(sender_id=user_id, receiver_id=body.receiver_id, amount=body.amount, actor_id=user_id, reason_code="USER_TRANSFER", idempotency_key=idempotency_key)
+        with session_factory.begin() as session:
+            payment_pin.reject_legacy(session, user_id=user_id)
+            result = transfers.transfer(sender_id=user_id, receiver_id=body.receiver_id, amount=body.amount, actor_id=user_id, reason_code="USER_TRANSFER", idempotency_key=idempotency_key, session=session)
         return {"transaction_id": result.transaction.id, "asset": "CAIBI", "amount": str(body.amount), "fee": str(result.fee)}
 
     @router.put("/adjustment-policies/{actor_id}", status_code=204)

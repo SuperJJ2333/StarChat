@@ -8,6 +8,7 @@ from app.api.support import create_support_router
 from app.api.ledger import create_ledger_router
 from app.api.redpacket import create_redpacket_router
 from app.api.app_update import create_app_update_router
+from app.api.payment_pin import create_payment_pin_router
 from app.api.transfer import create_transfer_router
 from app.api.wallet import create_wallet_router
 from app.api.wallet_mfa import create_wallet_mfa_router
@@ -101,6 +102,7 @@ def create_app(
     app.include_router(create_redpacket_router(settings, session_factory, avatar_storage=avatar_storage, matrix_gateway=matrix_gateway), prefix="/api/v1")
     app.include_router(create_app_update_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_transfer_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_payment_pin_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     app.include_router(create_wallet_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
     app.include_router(create_wallet_mfa_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     app.include_router(

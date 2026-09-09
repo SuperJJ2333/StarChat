@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../core/business_api_client.dart';
+import '../../core/chat_payment_intent.dart';
 
 abstract interface class ChatRedPacketBusinessGateway {
   Future<String> create(
@@ -67,6 +68,8 @@ final class ChatRedPacketController extends ChangeNotifier {
           packetId: id,
           greeting: greeting));
       await _share(id, greeting);
+    } on ChatPaymentCancelled {
+      _set(const ChatRedPacketState());
     } catch (error) {
       if (state.packetId == null) {
         _set(ChatRedPacketState(
@@ -99,6 +102,7 @@ final class ChatRedPacketController extends ChangeNotifier {
 
   String _error(Object error) {
     if (error is BusinessApiException) {
+      if (error.code.startsWith('PAYMENT_PIN_')) return error.message;
       if (error.code == 'RED_PACKET_BALANCE_INSUFFICIENT') {
         return '红包创建失败，账户余额不足';
       }

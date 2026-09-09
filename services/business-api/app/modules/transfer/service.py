@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.modules.ledger.service import CENT, LedgerService, money
 from app.modules.transfer.models import ChatTransfer
+from app.modules.identity.payment_pin import PaymentPinService
 
 TRANSFER_FEE_RATE = Decimal("0.005")
 
@@ -15,11 +16,12 @@ def transfer_fee(amount: Decimal) -> Decimal:
 
 
 class ChatTransferService:
-    def __init__(self, session_factory, ledger: LedgerService):
+    def __init__(self, session_factory, ledger: LedgerService, *, payment_pin=None):
         self.session_factory = session_factory
         self.ledger = ledger
+        self.payment_pin = payment_pin or PaymentPinService(session_factory)
 
-    def create(self, *, sender_id: str, receiver_id: str, amount: Decimal, idempotency_key: str, expires_at: datetime, note: str | None = None, room_id: str | None = None) -> ChatTransfer:
+    def create(self, *, sender_id: str, receiver_id: str, amount: Decimal, idempotency_key: str, expires_at: datetime, note: str | None = None, room_id: str | None = None, payment_claims=None, payment_authorization=None) -> ChatTransfer:
         amount = money(amount)
         if amount <= 0 or sender_id == receiver_id or not receiver_id:
             raise ValueError("invalid transfer")
@@ -33,9 +35,13 @@ class ChatTransferService:
         # F01：幂等检查、账本（扣款+手续费+入托管）、业务单据在同一
         # 事务提交——记账后、单据插入前崩溃即整体回滚。
         with self.session_factory.begin() as session:
+            self.payment_pin.lock_account(session, sender_id)
             existing = session.scalar(select(ChatTransfer).where(ChatTransfer.sender_id == sender_id, ChatTransfer.idempotency_key == idempotency_key))
+            self.payment_pin.consume(session, user_id=sender_id, claims=payment_claims, action="chat_transfer.create",
+                payload=dict(receiver_id=receiver_id, amount=amount, note=note, room_id=room_id),
+                idempotency_key=idempotency_key, authorization=payment_authorization, existing=existing is not None)
             if existing:
-                if existing.amount != amount or existing.receiver_id != receiver_id or (existing.note or None) != note:
+                if existing.amount != amount or existing.receiver_id != receiver_id or (existing.note or None) != note or existing.room_id != room_id:
                     raise ValueError("idempotency key reused with different payload")
                 return existing
             self.ledger.post(
