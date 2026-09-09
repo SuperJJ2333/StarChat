@@ -16,6 +16,13 @@ import 'group_announcement_service.dart';
 import 'group_join_notices.dart';
 import 'dart:async';
 import 'media_cache.dart';
+import 'local_hidden_events.dart';
+import 'video_transcode.dart'
+    show
+        validateGroupVideoSize,
+        maxOriginalVideoBytes,
+        GroupVideoTooLargeException;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:matrix/matrix.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
@@ -520,6 +527,9 @@ final class MatrixConversationCapability {
 
   Future<MatrixConversationSnapshot> snapshot() =>
       _owner._withClient((client) async {
+        final localHistory = client.userID == null
+            ? null
+            : await _owner._loadLocalHistory(client);
         return MatrixConversationSnapshot(
           vaultRoomId: client
               .accountData[emojiVaultAccountDataType]?.content['room_id']
@@ -529,7 +539,8 @@ final class MatrixConversationCapability {
               ?.toString(),
           rooms: [
             for (final room in client.rooms)
-              if (room.membership == Membership.join) _snapshotRoom(room)
+              if (room.membership == Membership.join)
+                _snapshotRoom(room, localHistory)
           ],
         );
       });
@@ -613,8 +624,17 @@ final class MatrixConversationCapability {
       });
 
   Future<int> totalUnreadCount() => _owner._withClient((client) async {
+        final localHistory = client.userID == null
+            ? null
+            : await _owner._loadLocalHistory(client);
         var count = 0;
         for (final room in client.rooms) {
+          final cutoff = localHistory?.clearedThrough(room.id);
+          if (cutoff != null &&
+              (room.lastEvent == null ||
+                  !room.lastEvent!.originServerTs.isAfter(cutoff))) {
+            continue;
+          }
           final preference = preferenceForRoom(room);
           count += preference.manualUnread ? 1 : room.notificationCount;
         }
@@ -657,13 +677,35 @@ final class MatrixConversationCapability {
               hideConversation(preference, DateTime.now().toUtc()),
             );
           case MatrixConversationMutation.delete:
-            await room.leave();
-            await room.forget();
+            final localHistory = await _owner._loadLocalHistory(client);
+            final now = DateTime.now().toUtc();
+            final lastEvent = room.lastEvent;
+            final latest = lastEvent?.originServerTs;
+            if (lastEvent != null) {
+              await room.setReadMarker(lastEvent.eventId,
+                  mRead: lastEvent.eventId, public: false);
+            }
+            if (preference.manualUnread) {
+              await writeConversationPreference(
+                  room, clearUnreadOnOpen(preference));
+            }
+            await localHistory.clearThrough(
+                roomId, latest != null && latest.isAfter(now) ? latest : now);
+            await RoomMentionStore.shared.clearForLocalHistory(room,
+                boundaryEventId: room.lastEvent?.eventId,
+                shouldContinue: () => !_owner._accessRevoked);
+            _owner._decryptedTimelineEvents.removeWhere(
+                (key, _) => key.$1 == client.userID && key.$2 == roomId);
         }
       });
 
-  MatrixConversationRoomSnapshot _snapshotRoom(Room room) {
+  MatrixConversationRoomSnapshot _snapshotRoom(
+      Room room, SharedPreferencesLocalHiddenEvents? localHistory) {
     final originalEvent = room.lastEvent;
+    final cutoff = localHistory?.clearedThrough(room.id);
+    final locallyDeleted = cutoff != null &&
+        (originalEvent == null ||
+            !originalEvent.originServerTs.isAfter(cutoff));
     final cachedEvent = originalEvent == null
         ? null
         : _owner._decryptedTimelineEvents[(
@@ -671,8 +713,14 @@ final class MatrixConversationCapability {
             room.id,
             originalEvent.eventId
           )];
-    final event =
+    final candidate =
         cachedEvent == null ? originalEvent : Event.fromJson(cachedEvent, room);
+    final event = candidate != null &&
+            (localHistory?.isEventHidden(room.id, candidate.eventId,
+                    eventTimestamp: candidate.originServerTs) ??
+                false)
+        ? null
+        : candidate;
     final joined = room.getParticipants([Membership.join]);
     final membersById = {for (final user in joined) user.id: user};
     final memberOrder = reconcileMemberOrder(
@@ -716,8 +764,10 @@ final class MatrixConversationCapability {
                           : MessageDecryptionState.decrypting)
                       : MessageDecryptionState.decrypted,
             ),
-      preference: preferenceForRoom(room),
-      notificationCount: room.notificationCount,
+      preference: locallyDeleted
+          ? preferenceForRoom(room).copyWith(hidden: true, manualUnread: false)
+          : preferenceForRoom(room),
+      notificationCount: locallyDeleted ? 0 : room.notificationCount,
       notificationsEnabled: room.pushRuleState == PushRuleState.notify,
     );
   }
@@ -1151,14 +1201,6 @@ final class MatrixRoomLease
           MessageTypes.Audio,
           MessageTypes.Video
         }.contains(event.messageType)) {
-          final hashes = TrustedMediaHashes.fromEvent(event);
-          final bytes = await loadMediaWithCache(
-              MediaCacheKey(
-                  accountId: source.client.userID ?? '',
-                  roomId: source.id,
-                  eventId: event.eventId,
-                  contentSha256: hashes?.contentSha256),
-              () => downloadMediaContent(event));
           final info = event.content['info'] is Map
               ? event.content['info'] as Map
               : const <String, dynamic>{};
@@ -1169,6 +1211,25 @@ final class MatrixRoomLease
                 MessageTypes.Image => 'image/jpeg',
                 _ => 'application/octet-stream',
               };
+          final groupVideo = !target.isDirectChat &&
+              (event.messageType == MessageTypes.Video ||
+                  mimeType.startsWith('video/'));
+          final declaredSize = info['size'];
+          if (groupVideo &&
+              declaredSize is num &&
+              declaredSize.isFinite &&
+              declaredSize > maxOriginalVideoBytes) {
+            throw const GroupVideoTooLargeException();
+          }
+          final hashes = TrustedMediaHashes.fromEvent(event);
+          final bytes = await loadMediaWithCache(
+              MediaCacheKey(
+                  accountId: source.client.userID ?? '',
+                  roomId: source.id,
+                  eventId: event.eventId,
+                  contentSha256: hashes?.contentSha256),
+              () => downloadMediaContent(event));
+          if (groupVideo) validateGroupVideoSize(bytes.length);
           Uint8List? thumbnail;
           if (hashes?.thumbnailSha256 != null || event.isThumbnailEncrypted) {
             thumbnail = await loadMediaWithCache(
@@ -1185,7 +1246,11 @@ final class MatrixRoomLease
                   .bytes;
             });
           }
-          await owner._sendMedia(target, bytes, mimeType,
+          await owner._sendMedia(target, bytes, mimeType, validateLease: () {
+            if (!identical(_activeRoom, source)) {
+              throw StateError('Matrix source room lease is no longer active');
+            }
+          },
               filename: event.body,
               extraContent: {'info': Map<String, dynamic>.from(info)},
               thumbnailBytes: thumbnail,
@@ -1395,8 +1460,14 @@ final class _SdkRoomTimelineCapability
                 .unsafeGetUserFromMemoryOrFallback(matrixUserId)
                 .calcDisplayname(),
           );
-    if (notices.isEmpty) return viewModels;
-    return mergeNoticesIntoTimeline(viewModels, notices);
+    final messages = notices.isEmpty
+        ? viewModels
+        : mergeNoticesIntoTimeline(viewModels, notices);
+    return _lease.owner._localHistoryStore?.visibleItems(
+            _lease.roomId, messages,
+            eventId: (message) => message.id,
+            eventTimestamp: (message) => message.timestamp) ??
+        messages;
   }
 
   RoomMessageViewModel _message(Event event) {
@@ -2269,6 +2340,18 @@ final class MatrixSdkE2eeClient
         MatrixTokenLoginGateway,
         AvatarMediaCapability {
   Future<void>? _memberRefresh;
+  SharedPreferencesLocalHiddenEvents? _localHistoryStore;
+
+  Future<SharedPreferencesLocalHiddenEvents> _loadLocalHistory(
+      Client client) async {
+    final accountId = client.userID;
+    if (accountId == null) throw StateError('Matrix client is not logged in');
+    final store = SharedPreferencesLocalHiddenEvents(
+        preferences: await SharedPreferences.getInstance(),
+        accountId: accountId);
+    _localHistoryStore = store;
+    return store;
+  }
 
   MatrixSdkE2eeClient(
     Client client, {
@@ -2781,6 +2864,7 @@ final class MatrixSdkE2eeClient
       _serializeLifecycle(() async {
         _requireLifecycleAccess();
         final active = await _resumeWithinLifecycle();
+        if (active.userID != null) await _loadLocalHistory(active);
         final lease = MatrixRoomLease._(this, roomId);
         await lease.attach(active);
         _managedResources.add(lease);
@@ -3048,7 +3132,11 @@ final class MatrixSdkE2eeClient
         if (!identical(room.client, active)) {
           throw StateError('Matrix room lease client mismatch');
         }
-        return _sendMedia(room, plaintext, mimeType,
+        return _sendMedia(room, plaintext, mimeType, validateLease: () {
+          if (!identical(lease._activeRoom, room)) {
+            throw StateError('Matrix room lease is no longer active');
+          }
+        },
             extraContent: extraContent,
             txid: txid,
             filename: filename,
@@ -3058,14 +3146,28 @@ final class MatrixSdkE2eeClient
       });
 
   Future<String> _sendMedia(Room room, List<int> plaintext, String mimeType,
-      {Map<String, dynamic>? extraContent,
+      {void Function()? validateLease,
+      Map<String, dynamic>? extraContent,
       String? txid,
       String? filename,
       Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
-    if (!room.encrypted || !room.client.fileEncryptionEnabled) {
-      throw StateError('Encrypted media requires E2EE attachments');
+    void validateSendAccess() {
+      if (_accessRevoked ||
+          !identical(_client, room.client) ||
+          !identical(_client?.getRoomById(room.id), room)) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+      validateLease?.call();
+      if (!room.encrypted || !room.client.fileEncryptionEnabled) {
+        throw StateError('Encrypted media requires E2EE attachments');
+      }
+    }
+
+    validateSendAccess();
+    if (!room.isDirectChat && mimeType.startsWith('video/')) {
+      validateGroupVideoSize(plaintext.length);
     }
     MatrixImageFile? thumbnail;
     if (thumbnailBytes != null) {
@@ -3101,6 +3203,9 @@ final class MatrixSdkE2eeClient
         file: media.file,
         thumbnail: thumbnail,
         extraContent: media.extraContent);
+    // Preparation yields to worker isolates. Revoke/room replacement can happen
+    // meanwhile; check both owner and originating lease before any SDK upload.
+    validateSendAccess();
     final eventId = await room.sendFileEvent(prepared.file,
         thumbnail: prepared.thumbnail,
         extraContent: prepared.extraContent,

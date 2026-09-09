@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'unread_mention_tracker.dart';
+import 'local_hidden_events.dart';
 
 /// Device-local event identities only; never stores message content.
 final class RoomMentionStore extends ChangeNotifier {
@@ -57,11 +58,17 @@ final class RoomMentionStore extends ChangeNotifier {
       if (room.isDirectChat) return;
       final state = await open(room, shouldContinue: shouldContinue);
       _check(shouldContinue);
+      final localHistory = SharedPreferencesLocalHiddenEvents(
+          preferences: await SharedPreferences.getInstance(),
+          accountId: room.client.userID ?? '');
+      _check(shouldContinue);
       final before = state.encode();
       final ordered = events.toList();
       state.registerTimeline(ordered.map((event) => event.eventId).toList());
       for (final event in ordered) {
-        if (event.redacted) {
+        if (event.redacted ||
+            localHistory.isEventHidden(room.id, event.eventId,
+                eventTimestamp: event.originServerTs)) {
           state.onRedacted(event.eventId);
           continue;
         }
@@ -85,6 +92,21 @@ final class RoomMentionStore extends ChangeNotifier {
     } on _MentionScanCanceled {
       // Revoked sessions do not publish or persist further mention updates.
     }
+  }
+
+  Future<void> clearForLocalHistory(Room room,
+      {String? boundaryEventId, bool Function()? shouldContinue}) async {
+    if (room.isDirectChat) return;
+    final state = await open(room, shouldContinue: shouldContinue);
+    _check(shouldContinue);
+    for (final eventId in state.pendingEventIdsNewestFirst()) {
+      state.onRedacted(eventId);
+    }
+    // The timestamp cutoff also rejects older events not loaded at deletion.
+    // Keep the scan head so the scanner need not revisit the cleared interval.
+    state.boundaryEventId = boundaryEventId ?? '';
+    state.completedScanHead = boundaryEventId;
+    await save(room, shouldContinue: shouldContinue);
   }
 
   Future<void> save(Room room, {bool Function()? shouldContinue}) async {

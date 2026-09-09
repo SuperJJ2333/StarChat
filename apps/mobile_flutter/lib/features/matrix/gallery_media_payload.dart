@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'device_gallery_source.dart';
 import 'gif_image_policy.dart';
+import 'video_transcode.dart';
 
 /// Shared local preparation only. Each domain retains its own upload gateway.
 const maxGalleryImageBytes = 20 * 1024 * 1024;
@@ -14,7 +15,12 @@ final class GalleryMediaPayload {
 }
 
 Future<GalleryMediaPayload> prepareGalleryMedia(GalleryPhoto photo,
-    {required bool original}) async {
+    {required bool original, bool isGroup = false}) async {
+  if (isGroup && photo.isVideo) {
+    final size = await photo.originalSizeBytes?.call();
+    if (size == null || size <= 0) throw StateError('无法读取视频大小，请重新选择');
+    validateGroupVideoSize(size);
+  }
   if (!photo.isVideo &&
       original &&
       (await photo.originalSizeBytes?.call() ?? 0) > maxGalleryImageBytes) {

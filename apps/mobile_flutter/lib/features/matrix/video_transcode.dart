@@ -7,6 +7,20 @@ import 'package:video_compress/video_compress.dart';
 /// （压缩发送不受该限制，压缩本身即为减轻服务器负担）。
 const maxOriginalVideoBytes = 20 * 1024 * 1024;
 
+final class GroupVideoTooLargeException implements Exception {
+  const GroupVideoTooLargeException();
+  @override
+  String toString() => '视频大小不能超过20MB';
+}
+
+/// Check original metadata before reading, transcoding or extracting a poster.
+void validateGroupVideoSize(int size) {
+  if (size > maxOriginalVideoBytes) throw const GroupVideoTooLargeException();
+}
+
+Future<void> validateGroupVideoFile(File file) async =>
+    validateGroupVideoSize(await file.length());
+
 /// 视频压缩策略常量：
 /// - 目标减量 ≥50%（体积降为原件一半以下），以 480p 可接受画质为前提；
 /// - 未达 50% 且原件较大（>2MB）时允许降档重试一次，仍取更小者；

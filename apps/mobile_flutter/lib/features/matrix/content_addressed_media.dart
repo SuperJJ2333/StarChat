@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:matrix/matrix.dart';
+import 'package:flutter/foundation.dart' show compute;
 import '../../core/app_config.dart';
 
 /// Cold loader only: a declared content hash cannot opt out of attachment E2EE.
@@ -72,14 +73,20 @@ final class MediaEnvelope {
   final EncryptedFile encrypted;
   static final _flights = <String, Future<MediaEnvelope>>{};
 
-  static Future<MediaEnvelope> forBytes(Uint8List bytes) {
-    final digest = crypto.sha256.convert(bytes);
+  static Future<MediaEnvelope> forBytes(Uint8List bytes) async {
+    final digest = await compute(crypto.sha256.convert, bytes);
     final hash = digest.toString();
     return _flights[hash] ??=
-        _derive(bytes, digest.bytes, hash).whenComplete(() {
+        compute(_deriveInBackground, (bytes, digest.bytes, hash))
+            .whenComplete(() {
       _flights.remove(hash);
     });
   }
+
+  // The worker receives only byte data, never a room/client/session/cache.
+  static Future<MediaEnvelope> _deriveInBackground(
+          (Uint8List, List<int>, String) input) =>
+      _derive(input.$1, input.$2, input.$3);
 
   static Future<MediaEnvelope> _derive(
       Uint8List bytes, List<int> digest, String hash) async {

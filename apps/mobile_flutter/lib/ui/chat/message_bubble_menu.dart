@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+import '../components/anchored_action_menu.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -43,110 +43,19 @@ final class MessageBubbleMenu extends StatelessWidget {
     final ordered = MessageActionPolicy.ordered(
       actions.where(_presentation.containsKey),
     );
-    // 每行最多 4 项（微信式），超出换行。
-    final rows = <List<MessageAction>>[];
-    for (var i = 0; i < ordered.length; i += 4) {
-      rows.add(ordered.sublist(i, (i + 4).clamp(0, ordered.length)));
-    }
-    return Container(
-      width: 272,
+    return WeChatAnchoredActionMenu<MessageAction>(
       key: const Key('message-bubble-menu'),
-      // 底部小三角凸起允许溢出绘制，指向目标气泡。
-      clipBehavior: Clip.none,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xE64C4C4C),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (var r = 0; r < rows.length; r++) ...[
-                if (r > 0)
-                  Container(
-                    height: .5,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    color: CupertinoColors.white.withValues(alpha: .24),
-                  ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    for (var c = 0; c < 4; c++)
-                      Expanded(child: c >= rows[r].length ? const SizedBox() : _MenuItem(
-                        action: rows[r][c],
-                        presentation: _presentation[rows[r][c]]!,
-                        onPressed: () => onSelected(rows[r][c]),
-                      )),
-                  ],
-                ),
-                if (r < rows.length - 1) const SizedBox(height: 4),
-              ],
-            ],
-          ),
-          // 下边框中央的小三角凸起：指向对应的气泡（视觉引导）。
-          Positioned(
-            left: arrowX == null ? 0 : arrowX! - 11,
-            right: arrowX == null ? 0 : null,
-            top: arrowAtTop ? -9 : null,
-            bottom: arrowAtTop ? null : -5,
-            child: Center(
-              child: Transform.rotate(
-                angle: math.pi / 4,
-                child: Container(
-                  width: 11,
-                  height: 11,
-                  color: const Color(0xE64C4C4C),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-final class _MenuItem extends StatelessWidget {
-  const _MenuItem({
-    required this.action,
-    required this.presentation,
-    required this.onPressed,
-  });
-
-  final MessageAction action;
-  final (IconData, String) presentation;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final (icon, label) = presentation;
-    return Semantics(
-      button: true,
-      label: label,
-      child: CupertinoButton(
-        key: Key('message-action-${action.name}'),
-        // 最小宽度 32（原 64）：四项行宽约减半（需求 4a），
-        // 实际宽度由图标/标签内容自然撑开。
-        minimumSize: const Size(32, 44),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        onPressed: onPressed,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: CupertinoColors.white),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style:
-                  const TextStyle(fontSize: 11, color: CupertinoColors.white),
-            ),
-          ],
-        ),
-      ),
+      items: [
+        for (final action in ordered)
+          AnchoredMenuItem(
+              value: action,
+              icon: _presentation[action]!.$1,
+              label: _presentation[action]!.$2,
+              key: Key('message-action-${action.name}'))
+      ],
+      onSelected: onSelected,
+      arrowAtTop: arrowAtTop,
+      arrowX: arrowX,
     );
   }
 }

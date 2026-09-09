@@ -1,3 +1,5 @@
+import '../../features/matrix/video_transcode.dart'
+    show GroupVideoTooLargeException;
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
@@ -371,6 +373,7 @@ final class _ForwardConfirmation extends StatefulWidget {
 final class _ForwardConfirmationState extends State<_ForwardConfirmation> {
   bool sending = false;
   bool failed = false;
+  String failureMessage = '转发失败，请重试';
 
   Future<void> _send() async {
     if (sending) return;
@@ -381,11 +384,14 @@ final class _ForwardConfirmationState extends State<_ForwardConfirmation> {
     try {
       await widget.onForward();
       if (mounted) Navigator.pop(context, true);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           sending = false;
           failed = true;
+          failureMessage = error is GroupVideoTooLargeException
+              ? error.toString()
+              : '转发失败，请重试';
         });
       }
     }
@@ -450,10 +456,10 @@ final class _ForwardConfirmationState extends State<_ForwardConfirmation> {
                             ),
                           ]))),
                       if (failed)
-                        const Padding(
-                            padding: EdgeInsets.only(top: 12),
-                            child: Text('转发失败，请重试',
-                                style: TextStyle(
+                        Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(failureMessage,
+                                style: const TextStyle(
                                     color: CupertinoColors.systemRed,
                                     fontSize: 14))),
                       const SizedBox(height: 24),

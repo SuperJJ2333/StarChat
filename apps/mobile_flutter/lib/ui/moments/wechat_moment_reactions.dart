@@ -15,6 +15,7 @@ final class WeChatMomentReactions extends StatelessWidget {
       required this.resolveIdentity,
       this.onPersonTap,
       this.onCommentTap,
+      this.onCommentLongPress,
       this.selectedCommentId,
       this.detailMode = false,
       this.mediaAccountKey,
@@ -24,6 +25,7 @@ final class WeChatMomentReactions extends StatelessWidget {
   final UserIdentity Function(MomentAuthor) resolveIdentity;
   final ValueChanged<MomentAuthor>? onPersonTap;
   final ValueChanged<MomentCommentView>? onCommentTap;
+  final void Function(MomentCommentView, Rect)? onCommentLongPress;
   final String? selectedCommentId;
   final bool detailMode;
   final String cacheNamespace;
@@ -126,6 +128,12 @@ final class WeChatMomentReactions extends StatelessWidget {
       GestureDetector(
           key: ValueKey('moment-comment-${comment.id}'),
           behavior: HitTestBehavior.opaque,
+          onLongPressStart: onCommentLongPress == null
+              ? null
+              : (details) => onCommentLongPress!(
+                  comment,
+                  Rect.fromCenter(
+                      center: details.globalPosition, width: 1, height: 1)),
           onTap: onCommentTap == null ? null : () => onCommentTap!(comment),
           child: Container(
               key: ValueKey('moment-comment-surface-${comment.id}'),

@@ -101,7 +101,8 @@ abstract interface class RoomPickedMediaSender {
 }
 
 final class MediaMessageService implements RoomPickedMediaSender {
-  MediaMessageService(this.matrix);
+  MediaMessageService(this.matrix, {this.isGroup = false});
+  final bool isGroup;
   final MatrixEncryptedMediaGateway matrix;
   final ImagePicker _imagePicker = ImagePicker();
   final AudioRecorder _recorder = AudioRecorder();
@@ -145,6 +146,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
   Future<String?> captureVideoToFile() async {
     final video = await _imagePicker.pickVideo(source: ImageSource.camera);
     if (video == null) return null;
+    if (isGroup) await validateGroupVideoFile(File(video.path));
     return video.path;
   }
 
@@ -177,11 +179,19 @@ final class MediaMessageService implements RoomPickedMediaSender {
 
   Future<XFile?> pickFileForSend() => openFile();
 
+  Future<void> validateSelectedFile(XFile file) async {
+    final mime = file.mimeType;
+    final isVideo = (mime?.startsWith('video/') ?? false) ||
+        mimeFromFileName(file.name).startsWith('video/');
+    if (isGroup && isVideo) await validateGroupVideoFile(File(file.path));
+    await ensureWithinSendLimit(File(file.path));
+  }
+
   Future<String> sendSelectedFile(String roomId, XFile file,
       {String? txid}) async {
     final local = File(file.path);
     // 读取前预检（大小/存在性），再进入有界并发槽上传。
-    await ensureWithinSendLimit(local);
+    await validateSelectedFile(file);
     await _sendSlots.acquire();
     try {
       final selectedMime = file.mimeType;

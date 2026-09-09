@@ -50,9 +50,23 @@ class _MomentDetailState extends State<MomentDetailPage> {
   String? error;
   String? selectedCommentId;
   bool openingPerson = false;
+  void _commentDeleted() {
+    final change = momentCommentDeletions.value;
+    if (change == null ||
+        !change.appliesTo(
+            widget.api,
+            widget.identityCache?.profile?.username ??
+                widget.currentUsername) ||
+        change.momentId != item.id) {
+      return;
+    }
+    update(change.apply(item));
+  }
+
   @override
   void initState() {
     super.initState();
+    momentCommentDeletions.addListener(_commentDeleted);
     widget.identityCache?.addListener(identityChanged);
     momentsPrivacyChanges.addListener(privacyChanged);
     final pending = PendingMomentReaction.find(widget.api, item.id);
@@ -94,6 +108,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
   void dispose() {
     widget.identityCache?.removeListener(identityChanged);
     momentsPrivacyChanges.removeListener(privacyChanged);
+    momentCommentDeletions.removeListener(_commentDeleted);
     super.dispose();
   }
 
@@ -132,7 +147,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
     }
   }
 
-  Future<void> comment([MomentCommentView? parent]) =>
+  Future<void> comment([MomentCommentView? parent, Rect? anchor]) =>
       interactWithMomentComment(
         context,
         api: widget.api,
@@ -140,6 +155,8 @@ class _MomentDetailState extends State<MomentDetailPage> {
         currentUsername: widget.currentUsername,
         identityCache: widget.identityCache,
         comment: parent,
+        longPress: anchor != null,
+        anchor: anchor,
         currentItem: () => unavailable ? null : item,
         onChanged: update,
         onConfirmed: (value) async {
@@ -247,6 +264,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
                   mediaOrigin: widget.mediaOrigin,
                   onLike: liking ? null : like,
                   onComment: comment,
+                  onCommentLongPress: (c, anchor) => comment(c, anchor),
                   onCommentTap: tapComment,
                 ),
               if (error != null)

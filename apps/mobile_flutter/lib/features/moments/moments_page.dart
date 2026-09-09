@@ -171,9 +171,44 @@ final class _MomentsPageState extends State<MomentsPage> {
   String? _identityError;
   ProfileRepository get _identityCache => widget.identityCache;
 
+  void _commentDeleted() {
+    final change = momentCommentDeletions.value;
+    if (change == null ||
+        !change.appliesTo(widget.api, _identityCache.profile?.username ?? '')) {
+      return;
+    }
+    setState(() {
+      _mutation++;
+      final override = _itemOverrides[change.momentId];
+      if (override != null) {
+        _itemOverrides[change.momentId] = change.apply(override);
+      }
+      final data = _feedData;
+      if (data != null) {
+        _feedData = {
+          ...data,
+          'items': [
+            for (final raw in data['items'] as List? ?? [])
+              if (raw is Map && raw['id'] == change.momentId)
+                {
+                  ...raw,
+                  'comments': [
+                    for (final c in raw['comments'] as List? ?? [])
+                      if (c is! Map || c['id'] != change.commentId) c
+                  ]
+                }
+              else
+                raw
+          ]
+        };
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    momentCommentDeletions.addListener(_commentDeleted);
     _feedScroll.addListener(_reportVisiblePosts);
     widget.unreadChanges?.addListener(_unreadChanged);
     _identityCache.addListener(_identityChanged);
@@ -462,6 +497,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     _feedScroll.dispose();
     widget.unreadChanges?.removeListener(_unreadChanged);
     _identityCache.removeListener(_identityChanged);
+    momentCommentDeletions.removeListener(_commentDeleted);
     super.dispose();
   }
 
@@ -588,6 +624,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     BuildContext context,
     MomentItem item, [
     MomentCommentView? comment,
+    Rect? anchor,
   ]) {
     final epoch = _accountEpoch;
     return interactWithMomentComment(
@@ -597,6 +634,8 @@ final class _MomentsPageState extends State<MomentsPage> {
       currentUsername: _identityCache.profile?.username ?? '',
       identityCache: _identityCache,
       comment: comment,
+      longPress: anchor != null,
+      anchor: anchor,
       currentItem: () => epoch != _accountEpoch || _deletedIds.contains(item.id)
           ? null
           : _itemOverrides[item.id] ?? item,
@@ -780,6 +819,8 @@ final class _MomentsPageState extends State<MomentsPage> {
                           selectedCommentId: _selectedComments[item.id],
                           cacheNamespace: _identityCache.accountKey ?? '',
                           onOpen: () => _openDetail(item),
+                          onCommentLongPress: (comment, anchor) =>
+                              _showComment(context, item, comment, anchor),
                           onCommentTap: (comment) =>
                               _showComment(context, item, comment),
                           mediaAccountKey: _accountKey,

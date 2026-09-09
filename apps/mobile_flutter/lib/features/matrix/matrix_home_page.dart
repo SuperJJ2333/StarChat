@@ -1,3 +1,4 @@
+import '../../ui/components/anchored_action_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -476,90 +477,42 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
-  Future<void> _showMore() async {
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: const Text('新建会话'),
-        actions: [
-          _action(
-            sheetContext,
-            CupertinoIcons.group_solid,
-            '发起群聊',
-            widget.onCreateGroup,
-          ),
-          _action(
-            sheetContext,
-            CupertinoIcons.person_add_solid,
-            '添加朋友',
-            () => Navigator.push(
-              context,
-              CupertinoPageRoute(
-                  builder: (_) => AddFriendPage(
-                      api: widget.api, identityCache: _identityCache)),
-            ),
-          ),
-          _action(
-            sheetContext,
-            CupertinoIcons.qrcode_viewfinder,
-            '扫一扫',
-            // 扫码统一入口：好友码 → 申请页；群码 → 群确认页（BUG2）。
-            () => Navigator.of(context, rootNavigator: true).push(
-              CupertinoPageRoute(
-                fullscreenDialog: true,
-                builder: (_) => ScanQrPage(
-                  api: widget.api,
-                  groupJoinApi: widget.api,
-                  onGroupJoined: (roomId) => unawaited(_openRoomById(roomId)),
-                ),
-              ),
-            ),
-          ),
-          CupertinoActionSheetAction(
-            key: const Key('messages-appearance'),
-            onPressed: () {
-              Navigator.pop(sheetContext);
+  Future<void> _showMore() => showAnchoredCallbackMenu(context, items: [
+        AnchoredMenuItem(
+            value: () => widget.onCreateGroup(),
+            icon: CupertinoIcons.group_solid,
+            label: '发起群聊'),
+        AnchoredMenuItem(
+            value: () {
+              Navigator.push(
+                  context,
+                  CupertinoPageRoute(
+                      builder: (_) => AddFriendPage(
+                          api: widget.api, identityCache: _identityCache)));
+            },
+            icon: CupertinoIcons.person_add_solid,
+            label: '添加朋友'),
+        AnchoredMenuItem(
+            value: () {
+              Navigator.of(context, rootNavigator: true).push(
+                  CupertinoPageRoute(
+                      fullscreenDialog: true,
+                      builder: (_) => ScanQrPage(
+                          api: widget.api,
+                          groupJoinApi: widget.api,
+                          onGroupJoined: (roomId) =>
+                              unawaited(_openRoomById(roomId)))));
+            },
+            icon: CupertinoIcons.qrcode_viewfinder,
+            label: '扫一扫'),
+        AnchoredMenuItem(
+            value: () {
               showThemePickerSheet(context, widget.themeController);
             },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.circle_lefthalf_fill, size: 20),
-                SizedBox(width: 10),
-                Text('外观'),
-              ],
-            ),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: const Text('取消'),
-        ),
-      ),
-    );
-  }
-
-  Widget _action(
-    BuildContext context,
-    IconData icon,
-    String label, [
-    VoidCallback? action,
-  ]) {
-    return CupertinoActionSheetAction(
-      onPressed: () {
-        Navigator.pop(context);
-        action?.call();
-      },
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 10),
-          Text(label),
-        ],
-      ),
-    );
-  }
+            icon: CupertinoIcons.circle_lefthalf_fill,
+            label: '外观',
+            key: const Key('messages-appearance')),
+      ]);
 
   Future<void> _openRoomById(String roomId) async {
     if (roomId.isEmpty || widget.previewOnly) return;
@@ -635,10 +588,18 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
-  Future<void> _conversationActions(_RoomSnapshot snapshot) async {
+  final Map<String, GlobalKey> _conversationKeys = {};
+  Rect? _conversationAnchor(String roomId) {
+    final box = _conversationKeys[roomId]?.currentContext?.findRenderObject();
+    return box is RenderBox ? box.localToGlobal(Offset.zero) & box.size : null;
+  }
+
+  Future<void> _conversationActions(_RoomSnapshot snapshot,
+      [Rect? anchor]) async {
     final action = await showConversationActionSheet(
       context,
       pinned: snapshot.preference.pinned,
+      anchor: anchor,
       onAction: (_) {},
     );
     if (!mounted || action == null) return;
@@ -648,6 +609,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             context: context,
             builder: (dialogContext) => CupertinoAlertDialog(
               title: const Text('确定删除该聊天？'),
+              content: const Text('删除此设备上的聊天记录，不会退出群聊'),
               actions: [
                 CupertinoDialogAction(
                   onPressed: () => Navigator.pop(dialogContext, false),
@@ -670,11 +632,23 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       ConversationAction.hide => MatrixConversationMutation.hide,
       ConversationAction.delete => MatrixConversationMutation.delete,
     };
-    await widget.matrix.conversations.mutate(snapshot.id, mutation);
-    if (action == ConversationAction.delete) {
-      await StatisticsStateStore.clear(snapshot.id);
+    try {
+      await widget.matrix.conversations.mutate(snapshot.id, mutation);
+      if (action == ConversationAction.delete) {
+        await StatisticsStateStore.clear(snapshot.id);
+      }
+      await _refreshClientSnapshot();
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) =>
+              CupertinoAlertDialog(title: const Text('操作失败，请重试'), actions: [
+                CupertinoDialogAction(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('好'))
+              ]));
     }
-    await _refreshClientSnapshot();
   }
 
   @override
@@ -814,42 +788,47 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                     final room = rooms[roomIndex];
                     final roomName = room.title;
                     final preference = room.preference;
-                    return ConversationListTile(
-                      key: ValueKey<String>('conversation-${room.id}'),
-                      title: roomName,
-                      subtitle: room.subtitle,
-                      hasPendingMention:
-                          widget.matrix.hasPendingMentions(room.id),
-                      timeLabel: room.timeLabel,
-                      avatar: room.isDirect || room.avatar != null
-                          ? MatrixUserAvatar(
-                              avatarMedia: widget.matrix,
-                              nickname: roomName,
-                              fallbackSeed: room.avatarSeed,
-                              matrixAvatarUri: room.avatar,
-                              fallbackAvatarUrl: room.avatarProfileUrl,
-                              diagnosticSource: 'messages-conversation',
-                              size: WeChatDimensions.conversationAvatar,
-                            )
-                          : GroupAvatarMosaic(
-                              avatars: [
-                                for (final member in room.groupAvatars)
-                                  MatrixUserAvatar(
-                                    avatarMedia: widget.matrix,
-                                    nickname: member.nickname,
-                                    fallbackSeed: member.fallbackSeed,
-                                    matrixAvatarUri: member.uri,
-                                    fallbackAvatarUrl: member.profileUrl,
-                                    diagnosticSource: 'messages-group-member',
-                                  ),
-                              ],
-                            ),
-                      unreadCount: room.unread,
-                      muted: room.muted,
-                      pinnedGroup: !room.isDirect && preference.pinned,
-                      onTap: () => _openRoom(room),
-                      onLongPress: () => _conversationActions(room),
-                    );
+                    return KeyedSubtree(
+                        key: _conversationKeys.putIfAbsent(
+                            room.id, () => GlobalKey()),
+                        child: ConversationListTile(
+                          key: ValueKey<String>('conversation-${room.id}'),
+                          title: roomName,
+                          subtitle: room.subtitle,
+                          hasPendingMention:
+                              widget.matrix.hasPendingMentions(room.id),
+                          timeLabel: room.timeLabel,
+                          avatar: room.isDirect || room.avatar != null
+                              ? MatrixUserAvatar(
+                                  avatarMedia: widget.matrix,
+                                  nickname: roomName,
+                                  fallbackSeed: room.avatarSeed,
+                                  matrixAvatarUri: room.avatar,
+                                  fallbackAvatarUrl: room.avatarProfileUrl,
+                                  diagnosticSource: 'messages-conversation',
+                                  size: WeChatDimensions.conversationAvatar,
+                                )
+                              : GroupAvatarMosaic(
+                                  avatars: [
+                                    for (final member in room.groupAvatars)
+                                      MatrixUserAvatar(
+                                        avatarMedia: widget.matrix,
+                                        nickname: member.nickname,
+                                        fallbackSeed: member.fallbackSeed,
+                                        matrixAvatarUri: member.uri,
+                                        fallbackAvatarUrl: member.profileUrl,
+                                        diagnosticSource:
+                                            'messages-group-member',
+                                      ),
+                                  ],
+                                ),
+                          unreadCount: room.unread,
+                          muted: room.muted,
+                          pinnedGroup: !room.isDirect && preference.pinned,
+                          onTap: () => _openRoom(room),
+                          onLongPress: () => _conversationActions(
+                              room, _conversationAnchor(room.id)),
+                        ));
                   },
                 );
           return Column(

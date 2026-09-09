@@ -1,3 +1,4 @@
+import '../../ui/components/anchored_action_menu.dart';
 import 'package:flutter/cupertino.dart';
 import '../contacts/scan_qr_page.dart';
 
@@ -53,36 +54,24 @@ final class DiscoveryPage extends StatelessWidget {
               CupertinoButton(
                 key: const Key('discovery-more'),
                 padding: EdgeInsets.zero,
-                onPressed: () => showCupertinoModalPopup<void>(
-                  context: context,
-                  builder: (sheetContext) => CupertinoActionSheet(
-                    actions: [
-                      CupertinoActionSheetAction(
-                        onPressed: () async {
-                          Navigator.pop(sheetContext);
-                          final cache = identityCache;
-                          if (cache == null) return;
-                          final page = await MomentsPage.prepare(
+                onPressed: () => showAnchoredCallbackMenu(context, items: [
+                  AnchoredMenuItem(
+                      value: () async {
+                        final cache = identityCache;
+                        if (cache == null) return;
+                        final page = await MomentsPage.prepare(
                             api: api,
                             identityCache: cache,
                             onPostsDisplayed: unreadController?.markDisplayed,
-                            unreadChanges: unreadController,
-                          );
-                          if (!context.mounted) return;
-                          Navigator.of(context, rootNavigator: true).push(
+                            unreadChanges: unreadController);
+                        if (!context.mounted) return;
+                        Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
-                                fullscreenDialog: true, builder: (_) => page),
-                          );
-                        },
-                        child: const Text('朋友圈'),
-                      ),
-                    ],
-                    cancelButton: CupertinoActionSheetAction(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      child: const Text('取消'),
-                    ),
-                  ),
-                ),
+                                fullscreenDialog: true, builder: (_) => page));
+                      },
+                      icon: CupertinoIcons.photo_on_rectangle,
+                      label: '朋友圈'),
+                ]),
                 child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
               ),
             ])),

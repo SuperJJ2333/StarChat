@@ -81,6 +81,53 @@ void main() {
         .setMockMethodCallHandler(channel, null);
     await dir.delete(recursive: true);
   });
+  for (final size in [20971519, 20971520, 20971521]) {
+    test(
+        'group captured video original $size checked before returning preview file',
+        () async {
+      final handle = await video.open(mode: FileMode.write);
+      await handle.truncate(size);
+      await handle.close();
+      const camera = MethodChannel('plugins.flutter.io/image_picker');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(camera, (_) async => video.path);
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(camera, null));
+      final service = MediaMessageService(_Matrix(), isGroup: true);
+      if (size > 20971520) {
+        await expectLater(service.captureVideoToFile(),
+            throwsA(predicate((e) => e.toString() == '视频大小不能超过20MB')));
+      } else {
+        expect(await service.captureVideoToFile(), video.path);
+      }
+    });
+  }
+  for (final size in [20971519, 20971520, 20971521]) {
+    test('group file video original $size checked before transcode/upload',
+        () async {
+      final handle = await video.open(mode: FileMode.write);
+      await handle.truncate(size);
+      await handle.close();
+      var calls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+        calls++;
+        return null;
+      });
+      final matrix = _Matrix();
+      final service = MediaMessageService(matrix, isGroup: true);
+      final selected = XFile(video.path, mimeType: 'application/octet-stream');
+      if (size > 20971520) {
+        await expectLater(service.sendSelectedFile('group', selected),
+            throwsA(predicate((e) => e.toString() == '视频大小不能超过20MB')));
+        expect(matrix.sentBytes, isNull);
+        expect(calls, 0);
+      } else {
+        await service.validateSelectedFile(selected);
+      }
+    });
+  }
   for (final mime in ['video/mp4', 'application/octet-stream']) {
     test('文件入口视频保留时长和媒体类型：$mime', () async {
       FileSelectorPlatform.instance = _Picker(video.path, mime);

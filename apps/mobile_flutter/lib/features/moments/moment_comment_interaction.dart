@@ -1,10 +1,30 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import '../../core/business_api_client.dart';
+import '../../core/cache/cache_repository.dart';
 import '../matrix/profile_repository.dart';
 import 'moment_comment_composer.dart';
 import 'moment_models.dart';
+import '../../ui/components/anchored_action_menu.dart';
+
 import 'moments_privacy_changes.dart';
+
+final momentCommentDeletions = ValueNotifier<ConfirmedCommentDeletion?>(null);
+
+final class ConfirmedCommentDeletion {
+  const ConfirmedCommentDeletion(
+      this.api, this.username, this.momentId, this.commentId);
+  final BusinessApiClient api;
+  final String username, momentId, commentId;
+  bool appliesTo(BusinessApiClient candidate, String viewer) =>
+      identical(api, candidate) && username == viewer;
+  MomentItem apply(MomentItem item) => item.id != momentId
+      ? item
+      : item.copyWith(
+          comments: item.comments.where((c) => c.id != commentId).toList());
+}
+
+final _pendingCommentDeletes = Expando<Set<String>>();
 
 /// Apply comment changes to the latest post, preserving concurrent reactions.
 Future<void> interactWithMomentComment(
@@ -14,52 +34,101 @@ Future<void> interactWithMomentComment(
   required String currentUsername,
   ProfileRepository? identityCache,
   MomentCommentView? comment,
+  bool longPress = false,
+  Rect? anchor,
   required MomentItem? Function() currentItem,
   required ValueChanged<MomentItem> onChanged,
   Future<void> Function(MomentItem)? onConfirmed,
   required ValueChanged<String?> onSelectionChanged,
   required ValueChanged<String> onError,
 }) async {
+  final account = identityCache?.profile?.username ?? currentUsername;
   final privacyRevision = momentsPrivacyChanges.revision;
-  bool active() =>
-      context.mounted &&
+  bool audienceCurrent() =>
+      (identityCache?.profile?.username ?? currentUsername) == account &&
       privacyRevision == momentsPrivacyChanges.revision &&
       currentItem() != null;
+  bool active() => context.mounted && audienceCurrent();
   if (!active()) return;
   final own = identityCache?.profile?.username ?? currentUsername;
-  if (comment != null && own.isNotEmpty && comment.author.username == own) {
-    final remove = await showCupertinoModalPopup<bool>(
-        context: context,
-        builder: (sheetContext) => CupertinoActionSheet(
-                actions: [
-                  CupertinoActionSheetAction(
-                      onPressed: () {
-                        Navigator.pop(sheetContext, false);
-                        Clipboard.setData(ClipboardData(text: comment.text));
-                      },
-                      child: const Text('复制')),
-                  CupertinoActionSheetAction(
-                      isDestructiveAction: true,
-                      onPressed: () => Navigator.pop(sheetContext, true),
-                      child: const Text('删除')),
-                ],
-                cancelButton: CupertinoActionSheetAction(
-                    onPressed: () => Navigator.pop(sheetContext, false),
-                    child: const Text('取消'))));
-    if (remove != true || !active()) return;
+  if (comment != null &&
+      (longPress || (own.isNotEmpty && comment.author.username == own))) {
+    final canDelete = own.isNotEmpty &&
+        (comment.author.username == own ||
+            currentItem()?.author.username == own);
+    final selected =
+        await showAnchoredActionMenu<String>(context, anchor: anchor, items: [
+      const AnchoredMenuItem(
+          value: 'copy', icon: CupertinoIcons.doc_on_doc, label: '复制'),
+      if (canDelete)
+        const AnchoredMenuItem(
+            value: 'delete', icon: CupertinoIcons.trash, label: '删除'),
+    ]);
+    if (!active()) return;
+    if (selected == 'copy') {
+      await Clipboard.setData(ClipboardData(text: comment.text));
+      return;
+    }
+    if (selected != 'delete' || !canDelete) return;
+    final pending = _pendingCommentDeletes[api] ??= <String>{};
+    final pendingKey = '$account/$momentId/${comment.id}';
+    if (!pending.add(pendingKey)) return;
+    var serverConfirmed = false;
+    var persistenceFailed = false;
     try {
       await api.deleteMomentComment(momentId, comment.id);
+      serverConfirmed = true;
       final current = currentItem();
-      if (privacyRevision == momentsPrivacyChanges.revision &&
-          current != null) {
+      if (audienceCurrent() && current != null) {
         final updated = current.copyWith(
             comments:
                 current.comments.where((c) => c.id != comment.id).toList());
+        final deletion =
+            ConfirmedCommentDeletion(api, own, momentId, comment.id);
+        momentCommentDeletions.value = deletion;
         if (active()) onChanged(updated);
-        await onConfirmed?.call(updated);
+        try {
+          await onConfirmed?.call(updated);
+        } catch (_) {
+          persistenceFailed = true;
+        }
+        if (!audienceCurrent()) return;
+        final accountKey = identityCache?.accountKey;
+        if (accountKey != null) {
+          final repository = await CacheRepository.instance();
+          if (!audienceCurrent()) return;
+          final cache = repository.momentsFor(accountKey);
+          final snapshot = cache.snapshot;
+          if (snapshot != null) {
+            cache.beginRefresh();
+            await cache.save({
+              ...snapshot,
+              'items': [
+                for (final raw in snapshot['items'] as List? ?? [])
+                  if (raw is Map && raw['id'] == momentId)
+                    {
+                      ...raw,
+                      'comments': [
+                        for (final c in raw['comments'] as List? ?? [])
+                          if (c is! Map || c['id'] != comment.id) c
+                      ]
+                    }
+                  else
+                    raw
+              ]
+            });
+          }
+        }
+        if (persistenceFailed && active()) {
+          onError('评论已删除，请刷新页面');
+        }
       }
     } catch (_) {
-      if (active()) onError('删除失败，请重试');
+      if (active()) {
+        onError(serverConfirmed ? '评论已删除，请刷新页面' : '删除失败，请重试');
+      }
+    } finally {
+      pending.remove(pendingKey);
     }
     return;
   }

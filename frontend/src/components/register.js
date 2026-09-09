@@ -1,3 +1,4 @@
+import { AppAnchoredActionMenu } from "./anchored-menu.js";
 import { componentContracts } from "../catalog/contracts.js";
 import { AppActionButton, AppComposer } from "./actions.js";
 import { AppAttachmentTile, AppMessageBubble, AppTimestamp, AppUnreadBadge, AppVoiceBubble } from "./chat.js";
@@ -8,6 +9,7 @@ import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagMan
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
 
 const implementations = new Map([
+  ["app-anchored-action-menu", AppAnchoredActionMenu],
   ["app-status-bar", AppStatusBar],
   ["app-navigation-bar", AppNavigationBar],
   ["app-tab-bar", AppTabBar],

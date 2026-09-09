@@ -17,6 +17,7 @@ function defineContract({
 }
 
 export const componentContracts = Object.freeze([
+  defineContract({ tagName: "app-anchored-action-menu", rootClass: "c-anchored-menu", allowedAttributes: ["options", "arrow-at-top"], allowedStates: ["default", "disabled", "pressed"], domSignature: [".c-anchored-menu", ".c-anchored-menu>.c-anchored-menu__grid"] }),
   defineContract({ tagName: "app-status-bar", rootClass: "c-status-bar", allowedAttributes: ["time"], domSignature: [".c-status-bar", ".c-status-bar>.c-status-bar__time", ".c-status-bar>.c-status-bar__indicators"] }),
   defineContract({ tagName: "app-navigation-bar", rootClass: "c-navigation-bar", allowedAttributes: ["title", "leading", "action", "heading"], domSignature: [".c-navigation-bar", ".c-navigation-bar>.c-navigation-bar__leading", ".c-navigation-bar>.c-navigation-bar__title", ".c-navigation-bar>.c-navigation-bar__actions"] }),
   defineContract({ tagName: "app-tab-bar", rootClass: "c-tab-bar", allowedAttributes: ["active"], allowedStates: ["messages", "contacts", "discovery", "profile"], domSignature: [".c-tab-bar", ".c-tab-bar>.c-tab-bar__item"] }),

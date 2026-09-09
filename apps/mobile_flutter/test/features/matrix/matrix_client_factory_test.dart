@@ -15,6 +15,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SnapshotClient extends LogoutTrackingClient {
   SnapshotClient() : super('snapshot', matrixUserId: '@me:test');
@@ -328,6 +329,7 @@ Future<MatrixClientContinuityMetadata> testContinuityMetadata(
 }
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   test('uses a stable encrypted database path and secure key', () async {
     final secureStore = SecureSessionStore(MemoryStore());
     String? openedName;

@@ -1026,7 +1026,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
     final matrix = widget.roomLease;
-    final service = MediaMessageService(matrix);
+    final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final captured = await service.captureToFile();
       final timeline = controller;
@@ -1073,11 +1073,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await _pickAndSendImages();
       return;
     }
-    final service = MediaMessageService(widget.roomLease);
+    final service = MediaMessageService(widget.roomLease, isGroup: isGroup);
     try {
       final file = await service.pickFileForSend();
       final timeline = controller;
       if (file == null || timeline == null || !mounted) return;
+      await service.validateSelectedFile(file);
       final mime =
           file.mimeType == null || file.mimeType == 'application/octet-stream'
               ? mimeFromFileName(file.name)
@@ -1093,6 +1094,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         send: (txid) => _enqueueMedia(
             () => service.sendSelectedFile(roomInfo.id, file, txid: txid)),
       );
+    } on GroupVideoTooLargeException catch (error) {
+      if (mounted) _showMediaMessage(error.toString());
     } catch (_) {
       if (mounted) _showMediaMessage('文件选择失败，请重试');
     } finally {
@@ -1266,7 +1269,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final matrix = widget.roomLease;
     final result = await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
-        builder: (_) => ImagePickerPage(),
+        builder: (_) => ImagePickerPage(isGroup: isGroup),
       ),
     ) as ({List<GalleryPhoto> photos, bool original})?;
     if (result == null || result.photos.isEmpty) return;
@@ -1289,8 +1292,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             roomImagePreviewCache.seed(transactionId, photo.thumbnail);
           }
           return _enqueueMedia(() async {
-            final prepared =
-                await prepareGalleryMedia(photo, original: result.original);
+            final prepared = await prepareGalleryMedia(photo,
+                original: result.original, isGroup: isGroup);
             final bytes = prepared.bytes;
             final mimeType = prepared.mimeType;
             if (!photo.isVideo) {
@@ -1356,7 +1359,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _outgoingMediaQueue = Future<void>.value();
   Future<String> _enqueueMedia(Future<String> Function() send) {
-    final task = _outgoingMediaQueue.then((_) => send());
+    final task = _outgoingMediaQueue.then((_) async {
+      try {
+        return await send();
+      } on GroupVideoTooLargeException catch (error) {
+        if (mounted && !_disposing) _showMediaMessage(error.toString());
+        rethrow;
+      }
+    });
     _outgoingMediaQueue =
         task.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return task;
@@ -1452,7 +1462,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 发送区域，用户确认后再压缩并发送，无需从相册/文件中二次选择。
   Future<void> _startVideoCapture() async {
     final matrix = widget.roomLease;
-    final service = MediaMessageService(matrix);
+    final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final path = await service.captureVideoToFile();
       if (path == null || !mounted) return; // 用户取消
@@ -1462,6 +1472,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         pendingVideoSend = (path: path, originalBytes: size);
         videoSend = const VideoSendState();
       });
+    } on GroupVideoTooLargeException catch (error) {
+      if (mounted) _showMediaMessage(error.toString());
     } catch (_) {
       if (mounted) _showMediaMessage('录像启动失败，请重试');
     } finally {
@@ -1493,6 +1505,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       kind: RoomMessageKind.video,
       mimeType: 'video/mp4',
       send: (txid) => _enqueueMedia(() async {
+        if (isGroup) await validateGroupVideoFile(File(pending.path));
         final rendition = await transcodeForChat(File(pending.path));
         if (!rendition.usedCompressed &&
             await rendition.file.length() > maxOriginalVideoBytes) {
@@ -2031,7 +2044,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       final allMessages =
           controller?.messages ?? const <RoomMessageViewModel>[];
       final messages = (hiddenEvents?.visibleItems(roomInfo.id, allMessages,
-                  eventId: (message) => message.id) ??
+                  eventId: (message) => message.id,
+                  eventTimestamp: (message) => message.timestamp) ??
               allMessages)
           .where((message) => !message.isRecalled)
           .toList();
@@ -2254,10 +2268,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _clearLocalHistory() async {
     final store = hiddenEvents;
     if (store == null) return;
+    if (store is LocalClearedHistory) {
+      var cutoff = DateTime.now();
+      for (final message
+          in controller?.messages ?? const <RoomMessageViewModel>[]) {
+        if (message.timestamp.isAfter(cutoff)) cutoff = message.timestamp;
+      }
+      await (store as LocalClearedHistory).clearThrough(roomInfo.id, cutoff);
+    }
     for (final message
         in controller?.messages ?? const <RoomMessageViewModel>[]) {
       await store.hide(roomInfo.id, message.id);
-      unreadMentions?.onRedacted(message.id);
+    }
+    for (final id
+        in unreadMentions?.pendingEventIdsNewestFirst() ?? <String>[]) {
+      unreadMentions?.onRedacted(id);
     }
     await widget.roomLease.saveMentions();
     if (mounted) setState(() {});
@@ -2286,7 +2311,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await WidgetsBinding.instance.endOfFrame;
       final all = controller?.messages ?? const <RoomMessageViewModel>[];
       final visible = hiddenEvents?.visibleItems(roomInfo.id, all,
-              eventId: (message) => message.id) ??
+              eventId: (message) => message.id,
+              eventTimestamp: (message) => message.timestamp) ??
           all;
       found = await revealLazyMessage(
         controller: messageScrollController,
@@ -3192,6 +3218,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           roomInfo.id,
           allMessages,
           eventId: (message) => message.id,
+          eventTimestamp: (message) => message.timestamp,
         ) ??
         allMessages;
     return WeChatPageScaffold.navigation(

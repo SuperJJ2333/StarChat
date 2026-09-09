@@ -1,3 +1,4 @@
+import '../../ui/components/anchored_action_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -205,38 +206,23 @@ final class _ContactsPageState extends State<ContactsPage> {
                 CupertinoButton(
                   key: const Key('contacts-more'),
                   padding: EdgeInsets.zero,
-                  onPressed: () => showCupertinoModalPopup<void>(
-                    context: context,
-                    builder: (sheetContext) => CupertinoActionSheet(
-                      actions: [
-                        CupertinoActionSheetAction(
-                          onPressed: () {
-                            Navigator.pop(sheetContext);
-                            widget.onGroupChat?.call();
-                          },
-                          child: const Text('发起群聊'),
-                        ),
-                        CupertinoActionSheetAction(
-                          onPressed: () {
-                            Navigator.pop(sheetContext);
-                            Navigator.push(
+                  onPressed: () => showAnchoredCallbackMenu(context, items: [
+                    AnchoredMenuItem(
+                        value: () => widget.onGroupChat?.call(),
+                        icon: CupertinoIcons.group_solid,
+                        label: '发起群聊'),
+                    AnchoredMenuItem(
+                        value: () {
+                          Navigator.push(
                               context,
                               CupertinoPageRoute(
-                                builder: (_) => AddFriendPage(
-                                    api: businessApi,
-                                    identityCache: widget.identityCache),
-                              ),
-                            );
-                          },
-                          child: const Text('添加朋友'),
-                        ),
-                      ],
-                      cancelButton: CupertinoActionSheetAction(
-                        onPressed: () => Navigator.pop(sheetContext),
-                        child: const Text('取消'),
-                      ),
-                    ),
-                  ),
+                                  builder: (_) => AddFriendPage(
+                                      api: businessApi,
+                                      identityCache: widget.identityCache)));
+                        },
+                        icon: CupertinoIcons.person_add_solid,
+                        label: '添加朋友'),
+                  ]),
                   child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
                 ),
               ]),

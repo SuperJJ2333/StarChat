@@ -169,6 +169,7 @@ final class ImagePickerPage extends StatefulWidget {
     super.key,
     this.pagerBuilder,
     this.photosOnly = false,
+    this.isGroup = false,
     this.confirmLabel = '发送',
     this.showOriginalToggle = true,
     this.maxCount = 9,
@@ -178,6 +179,7 @@ final class ImagePickerPage extends StatefulWidget {
 
   final DeviceGalleryPager Function()? pagerBuilder;
   final bool photosOnly;
+  final bool isGroup;
   final String confirmLabel;
   final bool showOriginalToggle;
   final int maxCount;
@@ -459,7 +461,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     ];
     // “原图”模式下单个视频不得超过 20MB：拦截发送并提示
     //（关闭“原图”走压缩发送不受此限）。
-    if (selection.original) {
+    if (selection.original || widget.isGroup) {
       for (final item in chosen) {
         if (!item.isVideo) continue;
         final size = await item.originalSizeBytes?.call() ?? 0;
@@ -470,8 +472,10 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
             builder: (dialogContext) => CupertinoAlertDialog(
               key: const Key('image-picker-video-limit-dialog'),
               title: const Text('视频过大'),
-              content: const Text('单个视频超过20MB，无法以原图发送。请关闭“原图”后重试'
-                  '（将自动压缩后发送）。'),
+              content: Text(widget.isGroup
+                  ? '视频大小不能超过20MB'
+                  : '单个视频超过20MB，无法以原图发送。请关闭“原图”后重试'
+                      '（将自动压缩后发送）。'),
               actions: [
                 CupertinoDialogAction(
                   onPressed: () => Navigator.pop(dialogContext),
@@ -786,6 +790,23 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   Future<void> _openPreview(GalleryPhoto photo) async {
     if (refreshing) return;
     if (photo.isVideo) {
+      if (widget.isGroup &&
+          (await photo.originalSizeBytes?.call() ?? 0) >
+              maxOriginalVideoBytes) {
+        if (!mounted) return;
+        await showCupertinoDialog<void>(
+            context: context,
+            builder: (dialogContext) => CupertinoAlertDialog(
+                  content: const Text('视频大小不能超过20MB'),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: const Text('知道了'))
+                  ],
+                ));
+        return;
+      }
+      if (!mounted) return;
       final previewFile = photo.compressedPreviewFile;
       if (previewFile != null) {
         await Navigator.of(context, rootNavigator: true).push(
@@ -806,6 +827,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
         return;
       }
     }
+    if (!mounted) return;
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         fullscreenDialog: true,

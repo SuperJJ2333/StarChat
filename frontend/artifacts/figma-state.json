@@ -908,5 +908,23 @@
       "filterText": "resolveTextPrimary",
       "selectedSurface": "brandPrimary alpha 0.15"
     }
+  },
+  "videoMenuRevision": {
+    "date": "2026-09-10",
+    "plan": "docs/superpowers/plans/2026-09-10-video-unified-menu-redmi.md",
+    "remoteNodesModified": false,
+    "status": "local implementation; remote menu variant sync pending tool access",
+    "referenceComponent": {
+      "name": "app-message-bubble",
+      "key": "25:47"
+    },
+    "affectedPages": [
+      "18:7",
+      "19:3",
+      "19:4"
+    ],
+    "sharedComponent": "WeChatAnchoredActionMenu",
+    "htmlTag": "app-anchored-action-menu",
+    "uiDesign": "UI_DESIGN.md#16-共享锚定操作菜单2026-09-10"
   }
 }

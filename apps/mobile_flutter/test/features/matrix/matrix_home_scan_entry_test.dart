@@ -11,6 +11,7 @@ import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/components/conversation_list_tile.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 首页加号「扫一扫」入口：此前是无动作空项，点击只收起菜单；
 /// 现在必须跳转 ScanQrPage(api: widget.api)（与发现页同款入口）。
@@ -18,6 +19,7 @@ void main() {
   late BusinessApiClient api;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     final store = SecureSessionStore(_MemoryStore());
     await store.saveSession(accessToken: 'access', refreshToken: 'refresh');
     api = BusinessApiClient(

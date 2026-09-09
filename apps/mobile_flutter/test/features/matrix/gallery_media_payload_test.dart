@@ -5,6 +5,47 @@ import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
 import 'package:liuhetong_mobile/features/matrix/gallery_media_payload.dart';
 
 void main() {
+  for (final original in [false, true]) {
+    for (final size in [
+      20 * 1024 * 1024 - 1,
+      20 * 1024 * 1024,
+      20 * 1024 * 1024 + 1
+    ]) {
+      test(
+          'group video original size $size original=$original gates before read/compress',
+          () async {
+        var reads = 0;
+        Future<Uint8List> read() async {
+          reads++;
+          return Uint8List.fromList([1]);
+        }
+
+        final photo = GalleryPhoto(
+            id: 'video',
+            thumbnail: Uint8List(0),
+            isVideo: true,
+            mimeType: 'video/mp4',
+            originalSizeBytes: () async => size,
+            originalBytes: read,
+            compressedBytes: read);
+        final send = Function.apply(prepareGalleryMedia, [
+          photo
+        ], {
+          #original: original,
+          #isGroup: true
+        }) as Future<GalleryMediaPayload>;
+        if (size > 20 * 1024 * 1024) {
+          await expectLater(
+              send, throwsA(predicate((e) => e.toString() == '视频大小不能超过20MB')));
+          expect(reads, 0);
+        } else {
+          await send;
+          expect(reads, 1);
+        }
+      });
+    }
+  }
+
   test('original images above 20MiB are rejected before reading bytes',
       () async {
     var read = false;

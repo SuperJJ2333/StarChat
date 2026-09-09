@@ -36,9 +36,23 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   String _username = '';
   String? _viewerId;
   bool _openingPerson = false;
+  void _commentDeleted() {
+    final change = momentCommentDeletions.value;
+    if (change == null ||
+        !change.appliesTo(
+            widget.api, widget.identityCache?.profile?.username ?? _username)) {
+      return;
+    }
+    setState(() {
+      _generation++;
+      _items = _items.map(change.apply).toList();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
+    momentCommentDeletions.addListener(_commentDeleted);
     widget.identityCache?.addListener(_identityChanged);
     momentsPrivacyChanges.addListener(_privacyChanged);
     _reload();
@@ -54,6 +68,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   void dispose() {
     momentsPrivacyChanges.removeListener(_privacyChanged);
     widget.identityCache?.removeListener(_identityChanged);
+    momentCommentDeletions.removeListener(_commentDeleted);
     super.dispose();
   }
 
@@ -126,13 +141,16 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                 )));
   }
 
-  Future<void> _comment(MomentItem item, [MomentCommentView? comment]) =>
+  Future<void> _comment(MomentItem item,
+          [MomentCommentView? comment, Rect? anchor]) =>
       interactWithMomentComment(context,
           api: widget.api,
           momentId: item.id,
           currentUsername: _username,
           identityCache: widget.identityCache,
           comment: comment,
+          longPress: anchor != null,
+          anchor: anchor,
           currentItem: () =>
               _items.where((value) => value.id == item.id).firstOrNull,
           onChanged: _updateItem,
@@ -252,6 +270,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
               onPersonTap: _openPerson,
               selectedCommentId: _selectedComments[item.id],
               onComment: () => _comment(item),
+              onCommentLongPress: (c, anchor) => _comment(item, c, anchor),
               onCommentTap: (c) => _comment(item, c),
               onLike:
                   _pendingLikes.contains(item.id) ? null : () => _like(item),

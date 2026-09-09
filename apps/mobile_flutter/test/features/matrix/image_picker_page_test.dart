@@ -508,6 +508,49 @@ void main() {
     expect(find.text('1:05'), findsOneWidget, reason: '视频项显示时长角标');
   });
 
+  testWidgets(
+      'group compressed video selection and preview reject original over 20MiB',
+      (tester) async {
+    var work = 0;
+    final oversized = GalleryPhoto(
+        id: 'group-large',
+        thumbnail: tinyPng,
+        isVideo: true,
+        originalSizeBytes: () async => 20971521,
+        compressedBytes: () async {
+          work++;
+          return Uint8List(1);
+        },
+        originalBytes: () async {
+          work++;
+          return Uint8List(1);
+        },
+        compressedPreviewFile: () async {
+          work++;
+          throw StateError('must not transcode');
+        });
+    await tester.pumpWidget(CupertinoApp(
+        home: ImagePickerPage(
+            isGroup: true,
+            pagerBuilder: () => FakePager([
+                  [oversized]
+                ]))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.byKey(const Key('image-picker-check-group-large')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('image-picker-send')));
+    await tester.pumpAndSettle();
+    expect(find.text('视频大小不能超过20MB'), findsOneWidget);
+    expect(work, 0);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('image-picker-item-group-large')));
+    await tester.pumpAndSettle();
+    expect(find.text('视频大小不能超过20MB'), findsOneWidget);
+    expect(work, 0);
+  });
+
   testWidgets('original mode blocks videos above 20MB with a prompt',
       (tester) async {
     final oversized = GalleryPhoto(

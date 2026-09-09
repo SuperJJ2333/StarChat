@@ -23,6 +23,7 @@ final class WeChatMomentTile extends StatelessWidget {
     this.onDelete,
     this.onOpen,
     this.onCommentTap,
+    this.onCommentLongPress,
     this.cacheNamespace = '',
     this.mediaAccountKey,
     this.mediaOrigin,
@@ -43,6 +44,7 @@ final class WeChatMomentTile extends StatelessWidget {
   final VoidCallback? onAdTap;
   final VoidCallback? onOpen;
   final ValueChanged<MomentCommentView>? onCommentTap;
+  final void Function(MomentCommentView, Rect)? onCommentLongPress;
   final String cacheNamespace;
 
   /// 删除入口：仅当当前用户是作者时由页面传入（非 null 才渲染按钮）。
@@ -231,6 +233,7 @@ final class WeChatMomentTile extends StatelessWidget {
                       resolveIdentity: _identity,
                       onPersonTap: onPersonTap,
                       onCommentTap: onCommentTap,
+                      onCommentLongPress: onCommentLongPress,
                       selectedCommentId: selectedCommentId,
                       detailMode: detailMode,
                       mediaAccountKey: mediaAccountKey,

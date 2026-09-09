@@ -1,3 +1,4 @@
+import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -15,6 +16,27 @@ ChatForwardCandidate _candidate(String id, String title,
     );
 
 void main() {
+  testWidgets('oversized group forwarding shows exact video size guidance',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatForwardPickerPage(
+      candidates: [_candidate('group', '测试群', isGroup: true)],
+      recentRoomIds: const [],
+      onForward: (_) async => throw const GroupVideoTooLargeException(),
+    )));
+    await tester.tap(find.byKey(const Key('forward-chat-group')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('forward-confirm-send')));
+    await tester.pumpAndSettle();
+    expect(find.text('视频大小不能超过20MB'), findsOneWidget);
+    expect(find.text('转发失败，请重试'), findsNothing);
+    expect(
+        tester
+            .widget<CupertinoButton>(find.widgetWithText(CupertinoButton, '取消'))
+            .onPressed,
+        isNotNull);
+  });
+
   testWidgets('confirmation uses current identity while open', (tester) async {
     final identity = ValueNotifier<String>('昵称');
     await tester.pumpWidget(CupertinoApp(

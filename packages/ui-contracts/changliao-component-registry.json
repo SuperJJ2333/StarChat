@@ -129,6 +129,11 @@
       },
       "mentionOrder": "Matrix event-relative rank; persisted boundary event identity and completed scan head",
       "figmaSync": "tool unavailable; no remote node modified"
+    },
+    "2026-09-10-video-unified-menu": {
+      "menus": "All four contexts consume WeChatAnchoredActionMenu; top pages retain their own actions per user clarification.",
+      "comments": "Author can delete friend comments on own moments; server authorization required.",
+      "video": "Group original <=20971520 bytes; check before preparation; background hash/encryption and independent upload."
     }
   },
   "figma": {
@@ -672,7 +677,8 @@
           "identityCache",
           "detailMode",
           "selectedCommentId",
-          "onPersonTap"
+          "onPersonTap",
+          "onCommentLongPress"
         ],
         "variants": {},
         "states": [
@@ -687,7 +693,8 @@
           "own-comment-copy-delete",
           "optimistic-avatar-list",
           "like-feedback",
-          "reduced-motion"
+          "reduced-motion",
+          "post-owner-comment-copy-delete"
         ]
       },
       "html": {
@@ -721,7 +728,8 @@
           "onCommentTap",
           "selectedCommentId",
           "detailMode",
-          "cacheNamespace"
+          "cacheNamespace",
+          "onCommentLongPress"
         ],
         "variants": {
           "mode": [
@@ -734,7 +742,8 @@
           "reply-selected",
           "own-comment-copy-delete",
           "empty",
-          "liked"
+          "liked",
+          "post-owner-comment-copy-delete"
         ]
       },
       "html": {
@@ -825,6 +834,48 @@
         "spacing",
         "radius"
       ]
+    },
+    {
+      "id": "anchored-action-menu",
+      "flutter": {
+        "name": "WeChatAnchoredActionMenu",
+        "file": "apps/mobile_flutter/lib/ui/components/anchored_action_menu.dart",
+        "props": [
+          "items",
+          "onSelected",
+          "arrowAtTop",
+          "arrowX"
+        ],
+        "variants": {
+          "context": [
+            "message",
+            "comment",
+            "conversation",
+            "page-actions"
+          ]
+        },
+        "states": [
+          "default",
+          "pressed",
+          "reduced-motion"
+        ]
+      },
+      "html": {
+        "tag": "app-anchored-action-menu"
+      },
+      "figma": {
+        "name": "app-message-bubble",
+        "key": "25:47"
+      },
+      "figmaReferenceOnly": true,
+      "remoteVariantSync": "pending-tool-access; existing source node only",
+      "tokens": [
+        "AnchoredMenuTokens"
+      ],
+      "tokenSource": {
+        "flutter": "apps/mobile_flutter/lib/ui/components/anchored_action_menu.dart",
+        "html": "frontend/src/styles/tokens.css: --anchored-menu-*"
+      }
     }
   ],
   "tokenParity": [

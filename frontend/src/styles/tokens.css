@@ -225,3 +225,16 @@
 :root{--wallet-accent:#0066cc;--wallet-canvas:#f5f5f7;--wallet-paper:#fff;--wallet-ink:#1d1d1f;--wallet-secondary:#63636a;--wallet-line:#e5e5ea;--wallet-on-accent:#fff;--wallet-shadow:0 2px 8px #00000003;--wallet-alert-border:#d5b46a;--wallet-alert-surface:#fff8e8;--wallet-alert-ink:#5d451d;--wallet-unknown-ink:#865900;--wallet-unknown-surface:#fff5dc} html[data-theme=dark]{--wallet-canvas:#161618;--wallet-paper:#222225;--wallet-ink:#f5f5f7;--wallet-secondary:#acacb5;--wallet-line:#39393f;--wallet-accent:#0a84ff}
 
 .admin-modern{--admin-modern-color-1:#0071e3;--admin-modern-color-2:#005bb5;--admin-modern-color-3:#f5f5f7;--admin-modern-color-4:#fff;--admin-modern-color-5:#1d1d1f;--admin-modern-color-6:#64646b;--admin-modern-color-7:#e5e5ea;--admin-modern-color-8:#fafafc;--admin-modern-color-9:#eeeef2;--admin-modern-color-10:#e6f0ff;--admin-modern-color-11:rgba(255,255,255,.9);--admin-modern-color-12:#0071e32b;--admin-modern-color-13:#0071e388;--admin-modern-color-14:#1d1d1f03;--admin-modern-color-15:#e8e8ed;--admin-modern-color-16:#004c99;--admin-modern-color-17:#fff4ed;--admin-modern-color-18:#ffd7ba;--admin-modern-color-19:#823a0b;--admin-modern-color-20:#0002;--admin-modern-color-21:#0003;}
+
+/* Shared message/comment/conversation/top-action menu; mirrors Flutter menu tokens. */
+:root {
+  --anchored-menu-surface: rgba(76, 76, 76, .9019607843);
+  --anchored-menu-text: #FFFFFF;
+  --anchored-menu-divider: rgba(255, 255, 255, .24);
+  --anchored-menu-width: 272px;
+  --anchored-menu-radius: 8px;
+  --anchored-menu-icon: 20px;
+  --anchored-menu-font: 11px;
+  --anchored-menu-hit: 44px;
+  --anchored-menu-motion: 120ms;
+}

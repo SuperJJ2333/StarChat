@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -145,12 +147,21 @@ void main() {
   final bytes = Uint8List.fromList(utf8.encode('abc'));
   final hash = sha256.convert(bytes).toString();
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     final root = Directory(
         '../../docs/verification/artifacts/2026-09-09/media-dedup-implementation/mobile/cache');
     await root.create(recursive: true);
     final scratch = await root.createTemp('case-');
     PathProviderPlatform.instance = _Paths(scratch.absolute.path);
     addTearDown(() => scratch.delete(recursive: true));
+  });
+  test('20MiB encryption leaves the event loop responsive', () async {
+    var eventLoopRan = false;
+    final tick = Timer(Duration.zero, () => eventLoopRan = true);
+    await MediaEnvelope.forBytes(Uint8List(20 * 1024 * 1024));
+    tick.cancel();
+    expect(eventLoopRan, isTrue,
+        reason: 'Hash and AES work must run outside the UI isolate');
   });
   test('ADR raw digest HKDF vector and standard Matrix decryption', () async {
     final envelope = await MediaEnvelope.forBytes(bytes);
@@ -242,8 +253,7 @@ void main() {
         bytes);
     final file =
         await MediaCache.cached(b.roomId, b.eventId, contentSha256: hash);
-    expect(file!.path.replaceAll('\\', '/'),
-        contains('/objects/$hash'));
+    expect(file!.path.replaceAll('\\', '/'), contains('/objects/$hash'));
     await file.writeAsBytes([3, 2, 1]);
     var downloads = 0;
     expect(
