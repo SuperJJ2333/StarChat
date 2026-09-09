@@ -28,13 +28,43 @@ const changliaoCallMessageType = 'com.changliao.call';
 const changliaoTransferMessageType = 'com.changliao.transfer';
 
 /// BUG 3 好友接受系统消息：accept 方在私聊房间发送，双端渲染为
-/// 居中灰字系统消息（"你已添加了 XXX，现在可以开始聊天了。"），
+/// 居中灰字系统消息，双方看到语义一致的好友关系和申请说明，
 /// 不得伪装成对方名义的普通气泡消息。
 const changliaoFriendAcceptedEventType = 'com.changliao.friend_accepted';
 
 /// 组装好友接受系统消息正文（双端语义一致：互为好友）。
 String friendAcceptedSystemMessage(String friendDisplayName) =>
-    '你已添加了 $friendDisplayName，现在可以开始聊天了。';
+    '你们已成为好友，现在可以开始聊天了。';
+
+Map<String, dynamic> friendAcceptedEventContent({
+  required String requesterMatrixUserId,
+  required String requesterDisplayName,
+  String? requestId,
+  String? requestMessage,
+}) {
+  final message = requestMessage?.trim() ?? '';
+  final name = requesterDisplayName.trim().isEmpty
+      ? requesterMatrixUserId
+      : requesterDisplayName;
+  return {
+    'body': '${friendAcceptedSystemMessage(name)}'
+        '${message.isEmpty ? '' : '\n好友申请说明（申请人：$name）：$message'}',
+    'friend_user_id': requesterMatrixUserId,
+    'friend_display_name': requesterDisplayName,
+    if (requestId != null && requestId.isNotEmpty) 'request_id': requestId,
+    'requester_matrix_user_id': requesterMatrixUserId,
+    if (message.isNotEmpty) 'request_message': message,
+  };
+}
+
+String friendAcceptedTransactionId({
+  required String roomId,
+  required String acceptingUserId,
+  String? requestId,
+}) =>
+    requestId != null && requestId.isNotEmpty
+        ? 'friend-accepted-request-$requestId'
+        : 'friend-accepted-$roomId-$acceptingUserId';
 
 final class MatrixRoomTimelineAdapter
     implements RoomTimelineAdapter, RoomOptimisticTextAdapter {

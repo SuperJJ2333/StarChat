@@ -1165,6 +1165,7 @@ final class FriendRequestsPage extends StatefulWidget {
     this.onRequestsChanged,
     this.identityCache,
     this.onEstablishDirectChat,
+    this.onEstablishDirectChatWithRequest,
   });
   final BusinessApiClient api;
   final ValueNotifier<int>? pendingRequests;
@@ -1184,6 +1185,9 @@ final class FriendRequestsPage extends StatefulWidget {
           String matrixUserId, String friendUserId, String friendDisplayName)?
       onEstablishDirectChat;
 
+  final Future<void> Function(String matrixUserId, String friendUserId,
+      String friendDisplayName, Map request)? onEstablishDirectChatWithRequest;
+
   @override
   State<FriendRequestsPage> createState() => _FriendRequestsPageState();
 }
@@ -1191,7 +1195,9 @@ final class FriendRequestsPage extends StatefulWidget {
 final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   late Future<Map<String, dynamic>> requests = widget.api.friendRequests();
 
-  void _reload() => setState(() => requests = widget.api.friendRequests());
+  void _reload() => setState(() {
+        requests = widget.api.friendRequests();
+      });
 
   /// BUG 2：点击申请进入"通过朋友验证"页；accept/reject 只在该页触发。
   Future<void> _openReview(Map request) async {
@@ -1202,6 +1208,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
           request: request,
           onAccept: () => _resolve(request, true),
           onReject: () => _resolve(request, false),
+          onOpenAccepted: () => _openAcceptedRequest(request),
         ),
       ),
     );
@@ -1214,6 +1221,42 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   /// 系统消息 → 会话列表刷新。任何后续步骤失败都不回滚好友关系，
   /// 禁止要求用户退出 APP 才能看到好友。
   bool _resolving = false;
+
+  Future<void> _openAcceptedRequest(Map request) async {
+    if (_resolving || request['status'] != 'ACCEPTED') return;
+    _resolving = true;
+    try {
+      // Historical acceptance is not current friendship authority. A removed
+      // friend must not be reinserted merely by reopening an old request.
+      final body = await widget.api.friends();
+      final current = ((body['items'] as List?) ?? const []).whereType<Map>();
+      if (!current.any((friend) =>
+          friend['user_id'] == request['user_id'] &&
+          friend['matrix_user_id'] == request['matrix_user_id'])) {
+        throw StateError('当前好友关系不可用');
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _initializeAcceptedRequest(request);
+    } catch (_) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('暂时无法打开聊天'),
+          content: const Text('请检查网络及当前好友关系后重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('好的'),
+            )
+          ],
+        ),
+      );
+    } finally {
+      _resolving = false;
+    }
+  }
 
   Future<void> _resolve(Map request, bool accept) async {
     if (_resolving) return;
@@ -1230,7 +1273,9 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
       Navigator.of(context).pop();
       final pending = widget.pendingRequests;
       if (pending != null && pending.value > 0) pending.value -= 1;
-      if (accept) await _onFriendAccepted({...request, 'status': 'ACCEPTED'});
+      if (accept) {
+        await _initializeAcceptedRequest({...request, 'status': 'ACCEPTED'});
+      }
       widget.onRequestsChanged?.call();
       if (mounted) _reload();
     } catch (_) {
@@ -1251,19 +1296,47 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
     }
   }
 
+  Future<void> _initializeAcceptedRequest(Map request) async {
+    while (mounted) {
+      try {
+        await _onFriendAccepted(request);
+        return;
+      } catch (_) {
+        if (!mounted) return;
+        final retry = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('已添加好友'),
+            content: const Text('聊天和好友申请说明尚未准备好，请重试。好友关系已保存。'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('稍后'),
+              ),
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('重试'),
+              ),
+            ],
+          ),
+        );
+        if (retry != true) return;
+      }
+    }
+  }
+
   Future<void> _onFriendAccepted(Map request) async {
     final cache = widget.identityCache;
     if (cache == null) return;
     // BUG 3 编排：乐观插入 + 私聊建立 + 好友接受系统消息。
     final coordinator = FriendAcceptanceCoordinator(
       identityCache: cache,
+      establishDirectChatWithRequest: widget.onEstablishDirectChatWithRequest,
       establishDirectChat: widget.onEstablishDirectChat ??
           (matrixUserId, friendUserId, friendDisplayName) async {
             final directChats = widget.directChats;
             if (directChats != null) {
-              try {
-                await directChats.open(matrixUserId);
-              } catch (_) {}
+              await directChats.open(matrixUserId);
             }
           },
     );

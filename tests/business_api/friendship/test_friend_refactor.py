@@ -202,12 +202,12 @@ async def test_direct_conversation_resolve_and_register(friend_components) -> No
             },
             json={"peer_user_id": "alice", "matrix_room_id": "!room-b:test"})
         assert conflict.status_code == 200
-        assert conflict.json() == {"matrix_room_id": "!room-b:test", "existing": True}
-    # 数据库：每对好友仅一行（以 bob 的更新为准）。
+        assert conflict.json() == {"matrix_room_id": "!room-a:test", "existing": True}
+    # 数据库：每对好友仅一行，首次登记后不可替换。
     with factory() as session:
         rows = list(session.scalars(select(DirectConversation)).all())
         assert len(rows) == 1
-        assert rows[0].matrix_room_id == "!room-b:test"
+        assert rows[0].matrix_room_id == "!room-a:test"
         assert {rows[0].user_low_id, rows[0].user_high_id} == {"alice", "bob"}
 
 
@@ -223,3 +223,29 @@ async def test_direct_conversation_self_and_auth(friend_components) -> None:
             params={"peer_user_id": "alice"},
             headers={"Authorization": f"Bearer {_token(factory, 'alice')}"})
         assert self_query.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_coordinated_room_api_owner_replay_and_validation(friend_components):
+    app, factory = friend_components
+    alice = {'Authorization': f'Bearer {_token(factory, "alice")}'}
+    bob = {'Authorization': f'Bearer {_token(factory, "bob")}'}
+    body = {'peer_user_id': 'bob', 'attempt_id': str(uuid4())}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        assert (await client.post('/api/v1/direct-conversations/claim', json=body)).status_code == 401
+        assert (await client.post('/api/v1/direct-conversations/claim', headers=alice,
+                                  json={**body, 'attempt_id': 'invalid'})).status_code == 422
+        assert (await client.post('/api/v1/direct-conversations/claim', headers=alice,
+                                  json={**body, 'peer_user_id': 'missing'})).status_code == 404
+        first = await client.post('/api/v1/direct-conversations/claim', headers=alice, json=body)
+        assert first.status_code == 200
+        assert first.json() == {'matrix_room_id': None, 'may_create': True, 'can_publish': True}
+        replay = await client.post('/api/v1/direct-conversations/claim', headers=alice, json=body)
+        assert replay.json() == {'matrix_room_id': None, 'may_create': False, 'can_publish': True}
+        published = {**body, 'matrix_room_id': '!canonical:example.test'}
+        assert (await client.post('/api/v1/direct-conversations/publish', headers=bob,
+                                  json={**published, 'peer_user_id': 'alice'})).status_code == 409
+        assert (await client.post('/api/v1/direct-conversations/publish', headers=alice,
+                                  json={**published, 'matrix_room_id': 'bad'})).status_code == 422
+        assert (await client.post('/api/v1/direct-conversations/publish', headers=alice, json=published)).json() == {
+            'matrix_room_id': '!canonical:example.test'}

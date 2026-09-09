@@ -644,6 +644,14 @@
       "19:5"
     ]
   },
+  "friendRequestContextRevision": {
+    "date": "2026-09-09",
+    "nodes": ["19:3", "18:7"],
+    "status": "Deferred: Figma tooling unavailable; friend-acceptance hotfix uses existing system notice style",
+    "remoteNodesModified": false,
+    "behavior": "Show labeled friend request context on acceptance; no delayed ordinary greeting replay; explicit initialization retry",
+    "plan": "docs/superpowers/plans/2026-09-09-direct-room-coordination.md"
+  },
   "momentsCompatibilityRevision": {
     "date": "2026-09-09",
     "node": "19:4",

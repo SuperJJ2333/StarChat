@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/friendship/friend_acceptance_coordinator.dart';
@@ -5,6 +7,38 @@ import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 
 /// BUG 3：accept 编排——乐观插入 + 私聊建立系统消息回调。
 void main() {
+  test('acceptance passes original request context and awaits initialization',
+      () async {
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'matrix:@me:test', store: MemoryProfileStore());
+    Map? captured;
+    final ready = Completer<void>();
+    var completed = false;
+    final coordinator = FriendAcceptanceCoordinator(
+      identityCache: cache,
+      establishDirectChat: null,
+      establishDirectChatWithRequest: (matrixId, userId, name, request) async {
+        captured = request;
+        expect(matrixId, '@bob:test');
+        await ready.future;
+      },
+    );
+    final acceptance = coordinator.onAccepted({
+      'id': 'r1',
+      'user_id': 'bob-id',
+      'matrix_user_id': '@bob:test',
+      'nickname': 'Bob',
+      'message': 'Hello'
+    }).then((_) => completed = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse);
+    expect(captured?['id'], 'r1');
+    expect(captured?['message'], 'Hello');
+    expect(() => captured!['message'] = 'changed', throwsUnsupportedError);
+    ready.complete();
+    await acceptance;
+    expect(completed, isTrue);
+  });
   test('onAccepted 乐观插入好友并建立私聊（携带正确参数）', () async {
     final store = MemoryProfileStore();
     final cache = ProfileRepository.forTesting(
@@ -70,7 +104,7 @@ void main() {
     expect(contact.starred, isTrue);
   });
 
-  test('私聊建立失败不影响已插入的好友（不回滚）', () async {
+  test('私聊建立失败保留好友并向调用方报告以便重试', () async {
     final cache = ProfileRepository.forTesting(
       accountKey: 'matrix:@me:test',
       store: MemoryProfileStore(),
@@ -82,12 +116,14 @@ void main() {
       },
     );
 
-    await coordinator.onAccepted({
-      'user_id': 'bob-id',
-      'username': 'bob',
-      'nickname': 'Bob',
-      'matrix_user_id': '@bob:test',
-    });
+    await expectLater(
+        coordinator.onAccepted({
+          'user_id': 'bob-id',
+          'username': 'bob',
+          'nickname': 'Bob',
+          'matrix_user_id': '@bob:test',
+        }),
+        throwsStateError);
 
     expect(cache.contacts, hasLength(1), reason: '建房失败不回滚好友显示');
   });
@@ -95,7 +131,7 @@ void main() {
   test('系统招呼文案规范（不伪装为对方名义消息）', () {
     expect(
       friendAcceptedGreeting('张三'),
-      '你已添加了 张三，现在可以开始聊天了。',
+      '你们已成为好友，现在可以开始聊天了。',
     );
   });
 }

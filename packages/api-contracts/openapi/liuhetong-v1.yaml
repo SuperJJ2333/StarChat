@@ -638,6 +638,105 @@
         "title": "DirectConversationBody",
         "type": "object"
       },
+      "DirectConversationClaimBody": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "peer_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Peer User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "peer_user_id",
+          "attempt_id"
+        ],
+        "title": "DirectConversationClaimBody",
+        "type": "object"
+      },
+      "DirectConversationClaimResponse": {
+        "properties": {
+          "can_publish": {
+            "title": "Can Publish",
+            "type": "boolean"
+          },
+          "matrix_room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Room Id"
+          },
+          "may_create": {
+            "title": "May Create",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "matrix_room_id",
+          "may_create",
+          "can_publish"
+        ],
+        "title": "DirectConversationClaimResponse",
+        "type": "object"
+      },
+      "DirectConversationPublishBody": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "matrix_room_id": {
+            "maxLength": 255,
+            "minLength": 3,
+            "pattern": "^![^\\s:]+:[^\\s]+$",
+            "title": "Matrix Room Id",
+            "type": "string"
+          },
+          "peer_user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Peer User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "peer_user_id",
+          "attempt_id",
+          "matrix_room_id"
+        ],
+        "title": "DirectConversationPublishBody",
+        "type": "object"
+      },
+      "DirectConversationPublishResponse": {
+        "properties": {
+          "matrix_room_id": {
+            "title": "Matrix Room Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_room_id"
+        ],
+        "title": "DirectConversationPublishResponse",
+        "type": "object"
+      },
       "DraftPayload": {
         "additionalProperties": false,
         "properties": {
@@ -5620,6 +5719,140 @@
           }
         ],
         "summary": "Register Direct Conversation",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/api/v1/direct-conversations/claim": {
+      "post": {
+        "operationId": "claim_direct_conversation_api_v1_direct_conversations_claim_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationClaimBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationClaimResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Claim Direct Conversation",
+        "tags": [
+          "friends"
+        ]
+      }
+    },
+    "/api/v1/direct-conversations/publish": {
+      "post": {
+        "operationId": "publish_direct_conversation_api_v1_direct_conversations_publish_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectConversationPublishBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectConversationPublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Publish Direct Conversation",
         "tags": [
           "friends"
         ]

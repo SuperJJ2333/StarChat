@@ -34,9 +34,7 @@ void main() {
     expect(arguments!['payload'], 'friend-requests');
   });
 
-  test(
-      'outgoing accepted greeting retries then completes once and excludes outgoing badge',
-      () async {
+  test('accepted requests never send delayed ordinary greetings', () async {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
     var accepted = false;
@@ -69,8 +67,12 @@ void main() {
             headers: {'content-type': 'application/json'})));
     final prefs = await SharedPreferences.getInstance();
     var sends = 0;
+    var refreshes = 0;
     final watch = FriendRequestWatch(api, prefs, accountKey: '@alice:test',
-        onOutgoingAccepted: (request) async {
+        onOutgoingAcceptedChanged: (_) async {
+      refreshes++;
+      if (refreshes == 1) throw StateError('contact refresh offline');
+    }, onOutgoingAccepted: (request) async {
       sends++;
       expect(request['message'], '你好，我是Alice');
       if (sends == 1) throw StateError('offline');
@@ -81,15 +83,19 @@ void main() {
     expect(await watch.poll(), 1);
     expect(await watch.poll(), 1);
     expect(await watch.poll(), 1);
-    expect(sends, 2);
+    expect(sends, 0);
+    expect(refreshes, 2);
     final restarted = FriendRequestWatch(api, prefs,
-        accountKey: '@alice:test', onOutgoingAccepted: (_) async => sends++);
+        accountKey: '@alice:test',
+        onOutgoingAcceptedChanged: (_) async => refreshes++,
+        onOutgoingAccepted: (_) async => sends++);
     await restarted.poll();
-    expect(sends, 2);
+    expect(sends, 0);
+    expect(refreshes, 2, reason: 'successful contact refresh survives restart');
     final freshDevice = FriendRequestWatch(api, prefs,
         accountKey: '@fresh:test', onOutgoingAccepted: (_) async => sends++);
     await freshDevice.poll();
-    expect(sends, 2,
+    expect(sends, 0,
         reason:
             'historical accepted requests must not replay on a fresh device');
   });

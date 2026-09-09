@@ -14,6 +14,17 @@ class TagPatchBody(Strict):name:str=Field(min_length=1,max_length=64)
 class TagDeleteBatchBody(Strict):tag_ids:list[str]=Field(min_length=1,max_length=30)
 class ContactBody(Strict):remark:str|None=Field(default=None,max_length=128);tags:list[str]=Field(default_factory=list,max_length=30);moments_permission:str='DEFAULT'
 class DirectConversationBody(Strict):peer_user_id:str=Field(min_length=1,max_length=36);matrix_room_id:str=Field(min_length=1,max_length=255)
+class DirectConversationClaimBody(Strict):
+    peer_user_id:str=Field(min_length=1,max_length=36)
+    attempt_id:str=Field(min_length=1,max_length=128,pattern=r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+class DirectConversationPublishBody(DirectConversationClaimBody):
+    matrix_room_id:str=Field(min_length=3,max_length=255,pattern=r'^![^\s:]+:[^\s]+$')
+class DirectConversationClaimResponse(BaseModel):
+    matrix_room_id:str|None
+    may_create:bool
+    can_publish:bool
+class DirectConversationPublishResponse(BaseModel):
+    matrix_room_id:str
 class FriendProjection(BaseModel):
     user_id:str;username:str;nickname:str;remark:str|None;avatar_url:str|None;matrix_user_id:str|None;nudge_suffix:str|None;moments_permission:str;tags:list[str]
 class FriendListResponse(BaseModel):items:list[FriendProjection];next_cursor:str|None=None
@@ -98,4 +109,10 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
         if body.peer_user_id==user:raise AppError(code='INVALID_FRIEND_TARGET',message='不能注册自己',status_code=422)
         if not body.matrix_room_id.strip():raise AppError(code='VALIDATION_ERROR',message='matrix_room_id 不能为空',status_code=422)
         return service.register_direct_conversation(user,body.peer_user_id,body.matrix_room_id.strip(),idempotency_key)
+    @router.post('/direct-conversations/claim',response_model=DirectConversationClaimResponse)
+    def claim_direct_conversation(body:DirectConversationClaimBody,user=Depends(actor)):
+        return service.claim_direct_conversation(user,body.peer_user_id,body.attempt_id)
+    @router.post('/direct-conversations/publish',response_model=DirectConversationPublishResponse)
+    def publish_direct_conversation(body:DirectConversationPublishBody,user=Depends(actor)):
+        return service.publish_direct_conversation(user,body.peer_user_id,body.attempt_id,body.matrix_room_id)
     return router

@@ -795,7 +795,36 @@ final class BusinessApiClient
     final body = await getJson(
       '/direct-conversations?peer_user_id=$peerUserId',
     );
-    return body['matrix_room_id']?.toString();
+    if (!body.containsKey('matrix_room_id')) {
+      throw StateError('规范私聊查询响应不完整');
+    }
+    final roomId = body['matrix_room_id'];
+    if (roomId != null && (roomId is! String || roomId.isEmpty)) {
+      throw StateError('规范私聊查询响应无效');
+    }
+    return roomId as String?;
+  }
+
+  Future<Map<String, dynamic>> claimDirectConversation(
+    String peerUserId, String attemptId,
+  ) => postJson('/direct-conversations/claim', {
+    'peer_user_id': peerUserId,
+    'attempt_id': attemptId,
+  }, idempotencyKey: attemptId);
+
+  Future<String> publishDirectConversation(
+    String peerUserId, String attemptId, String roomId,
+  ) async {
+    final body = await postJson('/direct-conversations/publish', {
+      'peer_user_id': peerUserId,
+      'attempt_id': attemptId,
+      'matrix_room_id': roomId,
+    }, idempotencyKey: attemptId);
+    final published = body['matrix_room_id'];
+    if (published is! String || published.isEmpty) {
+      throw StateError('规范私聊登记响应不完整');
+    }
+    return published;
   }
 
   /// 客户端创建 Matrix Direct Chat 后注册；并发冲突时服务端返回既有行。

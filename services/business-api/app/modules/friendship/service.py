@@ -8,6 +8,7 @@ from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.friendship.models import ContactProfile,ContactTag,DirectConversation,FriendRequest,Friendship,UserBlock
+from app.modules.friendship.direct_room_coordinator import lock_pair
 
 class FriendshipService:
     def __init__(self,factory,profile_reader):self.factory=factory;self.profile_reader=profile_reader
@@ -188,18 +189,59 @@ class FriendshipService:
         if profile is None or profile.user_id in blocked or profile.user_id==actor:raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
         return {'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'relationship_state':'FRIEND' if profile.user_id in friends else 'OUTGOING_PENDING' if profile.user_id in pending else 'REUSABLE' if profile.user_id in reusable else 'NONE'}
     def direct_conversation(self,actor,peer):
+        self._validate_direct_peer(actor,peer)
         # Canonical Direct Conversation：创建私聊前先查询复用（Phase E）。
         low,high=sorted((actor,peer))
         with self.factory() as s:
             row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
             return {'matrix_room_id':row.matrix_room_id} if row else {'matrix_room_id':None}
     def register_direct_conversation(self,actor,peer,matrix_room_id,key):
-        # 客户端创建 Matrix Direct Chat 后注册；并发双开以 UNIQUE 约束
-        # 的既有行为准（existing=True，客户端弃用自己的房间）。
+        self._validate_direct_peer(actor,peer)
         low,high=sorted((actor,peer))
         with self.factory.begin() as s:
-            if self._idempotency(s,f'friend.direct.register:{actor}',key,{'peer':peer,'matrix_room_id':matrix_room_id}):
-                row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high));return {'matrix_room_id':row.matrix_room_id if row else matrix_room_id,'existing':True}
+            _,inserted=lock_pair(s,actor,peer,key)
             row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
-            if row:row.matrix_room_id=matrix_room_id;self._audit(s,actor,row.id,'friend.direct_room_updated','DIRECT_ROOM_UPDATE',key);return {'matrix_room_id':row.matrix_room_id,'existing':True}
+            if row is None and not inserted:
+                raise AppError(code='DIRECT_ROOM_PENDING',message='私聊房间正在创建，请稍后重试',status_code=409)
+            if self._idempotency(s,f'friend.direct.register:{actor}',key,{'peer':peer,'matrix_room_id':matrix_room_id}):
+                return {'matrix_room_id':row.matrix_room_id,'existing':True}
+            if row:return {'matrix_room_id':row.matrix_room_id,'existing':True}
             row=DirectConversation(id=str(uuid4()),user_low_id=low,user_high_id=high,matrix_room_id=matrix_room_id,created_at=datetime.now(timezone.utc));s.add(row);self._audit(s,actor,row.id,'friend.direct_room_registered','DIRECT_ROOM_REGISTER',key);return {'matrix_room_id':matrix_room_id,'existing':False}
+
+    def _validate_direct_peer(self,actor,peer):
+        if actor==peer:
+            raise AppError(code='INVALID_FRIEND_TARGET',message='不能与自己创建私聊',status_code=422)
+        if peer not in self.profile_reader.read_public_profiles([peer]):
+            raise AppError(code='USER_NOT_FOUND',message='用户不存在',status_code=404)
+
+    def claim_direct_conversation(self,actor,peer,attempt_id):
+        self._validate_direct_peer(actor,peer)
+        low,high=sorted((actor,peer))
+        with self.factory.begin() as s:
+            reservation,inserted=lock_pair(s,actor,peer,attempt_id)
+            row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
+            if row:
+                return {'matrix_room_id':row.matrix_room_id,'may_create':False,'can_publish':False}
+            if inserted:
+                self._audit(s,actor,reservation.id,'friend.direct_room_claimed','DIRECT_ROOM_CLAIM',attempt_id)
+            # A replay never grants create again, even to the original owner.
+            return {'matrix_room_id':None,'may_create':inserted,
+                    'can_publish':reservation.owner_id==actor and reservation.attempt_id==attempt_id}
+
+    def publish_direct_conversation(self,actor,peer,attempt_id,matrix_room_id):
+        self._validate_direct_peer(actor,peer)
+        low,high=sorted((actor,peer))
+        with self.factory.begin() as s:
+            reservation,inserted=lock_pair(s,actor,peer,attempt_id)
+            if inserted or reservation.owner_id!=actor or reservation.attempt_id!=attempt_id:
+                raise AppError(code='DIRECT_ROOM_NOT_OWNER',message='只有创建预约持有人可以发布房间',status_code=409)
+            row=s.scalar(select(DirectConversation).where(DirectConversation.user_low_id==low,DirectConversation.user_high_id==high))
+            if row:
+                if row.matrix_room_id!=matrix_room_id:
+                    raise AppError(code='DIRECT_ROOM_CONFLICT',message='规范私聊房间不可替换',status_code=409)
+                return {'matrix_room_id':row.matrix_room_id}
+            row=DirectConversation(id=str(uuid4()),user_low_id=low,user_high_id=high,
+                                   matrix_room_id=matrix_room_id,created_at=datetime.now(timezone.utc))
+            s.add(row)
+            self._audit(s,actor,row.id,'friend.direct_room_published','DIRECT_ROOM_PUBLISH',attempt_id)
+            return {'matrix_room_id':matrix_room_id}

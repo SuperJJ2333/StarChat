@@ -1,6 +1,15 @@
 {
   "schemaVersion": 1,
   "feedbackContracts": {
+    "2026-09-09-friend-request-context": {
+      "flutter": "apps/mobile_flutter/lib/features/friendship/friend_acceptance_coordinator.dart; apps/mobile_flutter/lib/features/contacts/contacts_page.dart; apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "acceptance": "Labeled original request context in existing system notice; authenticated acceptor is sender, never impersonates requester",
+      "ordering": "Acceptance context send completes before accepting route opens composer; outgoing polling never sends ordinary greeting",
+      "failure": "Friendship remains saved; explicit retry initializes same request, without another accept API call",
+      "tokens": "Existing system notice typography, spacing and colors retained",
+      "figmaPageNodes": ["19:3", "18:7"],
+      "figmaSync": "Deferred: Figma tooling unavailable; no remote nodes modified"
+    },
     "2026-09-07-gallery-refresh": {
       "query": "Fresh creation/update date bounds for every native album query; never pin cutoff to process startup",
       "ordering": "Creation date descending remains unchanged",

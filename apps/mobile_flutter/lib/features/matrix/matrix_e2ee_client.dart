@@ -3008,30 +3008,39 @@ final class MatrixSdkE2eeClient
 
   Future<DirectChatRoom> openCanonicalDirectRoom(String id) => _withClient(
       (client) => MatrixDirectChatBackend(client).openCanonicalRoom(id));
+
+  /// Recovery after an uncertain create may only reuse an existing room.
+  Future<DirectChatRoom?> findExistingDirectChat(String peer) => _withClient(
+      (client) => MatrixDirectChatBackend(client).findJoinedDirectRoom(peer));
+
+  /// The caller owns one durable creation grant. Never repair an uncertain
+  /// existing room or retry a Matrix create inside this operation.
+  Future<DirectChatRoom> createDirectChatOnce(String peer) =>
+      _withClient((client) async {
+        final backend = MatrixDirectChatBackend(client);
+        final roomId = await backend.createEncryptedDirectRoom(peer);
+        return backend.waitForRoom(roomId);
+      });
   Future<MatrixRoomInfoSnapshot> waitForRoom(String id) =>
       conversations.waitForJoinedRoom(id);
   Future<void> sendFriendAccepted(
-          String roomId, String peerId, String displayName) =>
-      _withClient((client) async {
-        final room = client.getRoomById(roomId);
-        if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
-        final id = await room.sendEvent({
-          'body': friendAcceptedSystemMessage(displayName),
-          'friend_user_id': peerId,
-          'friend_display_name': displayName
-        },
-            type: changliaoFriendAcceptedEventType,
-            txid: 'friend-accepted-$roomId-${client.userID}');
-        if (id == null) throw StateError('好友招呼尚未发送');
-      });
-  Future<void> sendFriendRequestGreeting(
-          String roomId, String greeting, String requestId) =>
+          String roomId, String peerId, String displayName,
+          {String? requestId, String? requestMessage}) =>
       _withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
         final id = await room.sendEvent(
-            {'msgtype': MessageTypes.Text, 'body': greeting},
-            txid: 'friend-request-greeting-$requestId');
+            friendAcceptedEventContent(
+              requesterMatrixUserId: peerId,
+              requesterDisplayName: displayName,
+              requestId: requestId,
+              requestMessage: requestMessage,
+            ),
+            type: changliaoFriendAcceptedEventType,
+            txid: friendAcceptedTransactionId(
+                roomId: roomId,
+                acceptingUserId: client.userID ?? '',
+                requestId: requestId));
         if (id == null) throw StateError('好友招呼尚未发送');
       });
 

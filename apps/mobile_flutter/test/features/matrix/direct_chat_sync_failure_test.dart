@@ -100,7 +100,7 @@ void main() {
     _room(_canonicalId, encrypted: false),
   ]) {
     test(
-        'verified unsafe canonical room still uses validated recovery '
+        'unsafe canonical room fails closed without replacement '
         '(encrypted=${unsafe.encrypted}, participants=${unsafe.participantIds})',
         () async {
       final backend = _LaggingBackend()..existing = unsafe;
@@ -112,14 +112,11 @@ void main() {
         openExistingRoom: (_) async => unsafe,
       );
 
-      final recovered = await gateway.openOrCreateDirectChat(_peer);
-
-      expect(recovered.roomId, '!replacement:example.test');
-      expect(recovered.encrypted, isTrue);
-      expect(recovered.participantIds, {'@self:example.test', _peer});
-      expect(backend.repairs, 1);
-      expect(backend.creates, 1);
-      expect(backend.avoidedRoomId, _canonicalId);
+      await expectLater(
+          gateway.openOrCreateDirectChat(_peer), throwsStateError);
+      expect(backend.repairs, 0);
+      expect(backend.creates, 0);
+      expect(backend.avoidedRoomId, isNull);
     });
   }
 }
