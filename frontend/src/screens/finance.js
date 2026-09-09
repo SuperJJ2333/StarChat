@@ -82,22 +82,23 @@ function wallet(definition) {
   const content = element("div", "p-finance__content");
   if (definition.page === "home") {
     content.append(component("app-amount-summary", { label: "USDT-TRC20 余额", amount: fixtures.finance.usdtBalance, asset: "USDT", hint: "六位小数 · 与点钻严格隔离" }));
-    content.append(component("app-list-tile", { title: "充值", subtitle: "获取专属测试充值地址", leading: "wallet" }), component("app-list-tile", { title: "提现", subtitle: "提交后进入财务审核", leading: "send" }), component("app-list-tile", { title: "交易记录", leading: "document" }));
+    content.append(component("app-list-tile", { title: "私人钱包与动态验证", subtitle: "验证钱包控制权 · 30 天内仅可改绑一次", leading: "wallet" }), component("app-list-tile", { title: "充值", subtitle: "创建充值意图后转入官方固定地址", leading: "wallet" }), component("app-list-tile", { title: "提现", subtitle: "仅到已绑定钱包 · 官方管理员人工付款", leading: "send" }), component("app-list-tile", { title: "点钻与 USDT 兑换", subtitle: "1 USDT = 1 点钻 · 兑换免手续费 · 开放状态以服务端为准", leading: "wallet" }), component("app-list-tile", { title: "交易记录", leading: "document" }));
   } else if (definition.page === "history") {
     if (definition.state === "empty") content.append(component("app-empty-state", { title: "暂无交易记录", message: "充值和提现记录会显示在这里" }));
     else content.append(...historyRows("USDT"));
   } else if (definition.page === "deposit") {
-    content.append(component("app-amount-summary", { label: "充值网络", amount: "TRC20", asset: "USDT", hint: "最低充值 1 USDT，达到 20 个确认后到账" }));
+    content.append(component("app-amount-summary", { label: "官方钱包网络", amount: "TRC20", asset: "USDT", hint: "最低充值 10.000000 USDT · 入账开放状态以服务端为准" }));
+    content.append(component("app-status-chip", { status: "warning", label: "充值入账尚未开放，请勿转账。此处仅展示官方钱包地址。" }));
     content.append(element("p", "c-wallet-address", definition.state === "address" || definition.state === "copied" ? fixtures.finance.walletAddressFull : fixtures.finance.walletAddress));
-    const labels = { allocating: "正在分配充值地址", copied: "地址已复制", "allocation-failed": "地址分配失败", "below-minimum": "低于最低金额，将进入人工处理", detected: "已检测到充值", confirming: "链上确认中", credited: "充值已入账", "manual-review": "充值进入人工复核" };
-    content.append(component("app-status-chip", { status: definition.state.includes("failed") ? "error" : definition.state === "credited" || definition.state === "copied" ? "success" : "processing", label: labels[definition.state] ?? "充值地址已生成" }));
+    const labels = { allocating: "正在获取官方地址", copied: "地址已复制", "allocation-failed": "官方地址获取失败", "below-minimum": "低于最低金额，将进入人工处理", detected: "已检测到充值", confirming: "链上确认中", credited: "充值已入账", "manual-review": "充值进入人工复核" };
+    content.append(component("app-status-chip", { status: definition.state.includes("failed") ? "error" : definition.state === "credited" || definition.state === "copied" ? "success" : "processing", label: labels[definition.state] ?? "官方钱包地址" }));
   } else if (definition.page === "withdrawal") {
-    content.append(field("提现金额", fixtures.finance.usdtWithdrawalAmount, "六位小数"), field("TRC20 地址", definition.state === "address-invalid" ? "invalid-address" : fixtures.finance.walletAddress, "输入提现地址"));
-    content.append(element("section", "c-fee-summary", `提现 ${fixtures.finance.usdtWithdrawalAmount} + 费用 ${fixtures.finance.usdtFee} USDT`));
-  const labels = { "address-invalid": "TRC20 地址格式错误", "amount-invalid": "提现金额必须保留六位小数", insufficient: "USDT 余额不足", reviewing: "管理员处理中", "direct-execution": "管理员已直接提交", "provider-processing": "托管方处理中", broadcast: "已广播到 TRON 网络", confirmed: "链上已确认", "failed-refunded": "提现失败，资金已退款", "unknown-result": "请求结果未知，只能查询原订单", unavailable: "钱包服务暂不可用" };
+    content.append(field("提现金额", fixtures.finance.usdtWithdrawalAmount, "最低 10.000000 USDT"), element("p", "c-wallet-address", `收款地址由服务端绑定锁定：${fixtures.finance.walletAddress}`));
+    content.append(element("section", "c-fee-summary", `本金 ${fixtures.finance.usdtWithdrawalAmount} · 服务费 0.000000 USDT · 到账与冻结等于本金`));
+  const labels = { "address-invalid": "请先完成私人钱包绑定", "amount-invalid": "提现金额必须保留六位小数", insufficient: "USDT 余额不足", reviewing: "等待官方管理员领取", "direct-execution": "管理员已领取，请等待人工付款", "provider-processing": "等待人工付款与链上核验", broadcast: "已发现交易，等待固化核验", confirmed: "链上固化匹配，已结算", "failed-refunded": "未领取订单已取消，冻结已释放", "unknown-result": "请求结果未知，只能查询原订单，禁止重复付款", unavailable: "钱包服务暂不可用" };
     if (labels[definition.state]) content.append(component("app-status-chip", { status: definition.state.includes("invalid") || definition.state === "insufficient" || definition.state === "unavailable" ? "error" : definition.state === "confirmed" ? "success" : "processing", label: labels[definition.state] }));
     content.append(component("app-action-button", { icon: definition.state === "unknown-result" ? "search" : "send", label: definition.state === "unknown-result" ? "查询原订单" : "提交提现申请", disabled: definition.state === "unknown-result", action: "wallet:withdrawal" }));
-    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认提现", message: "提交后将进入财务审核，托管方提交后不可取消。", cancel: "取消", confirm: "确认提交" }));
+    if (definition.state === "confirm") root.append(component("app-dialog", { title: "确认提现", message: "核对锁定地址、金额和零服务费，输入动态验证码。管理员领取后不可取消；回填交易哈希不代表已结算。", cancel: "取消", confirm: "确认提交" }));
   } else if (definition.page === "transaction") {
     content.append(component("app-status-chip", { status: "success", label: "链上已确认" }), element("p", "c-wallet-address", definition.state === "detail" ? fixtures.finance.walletAddressFull : fixtures.finance.walletAddress), component("app-action-button", { kind: "secondary", icon: "document", label: "复制完整地址", action: "wallet:copy-address" }));
   } else {
@@ -111,5 +112,3 @@ export function renderScreen(definition) {
   const root = definition.module === "caibi" ? caibi(definition) : definition.module === "redpacket" ? redpacket(definition) : wallet(definition);
   return createDeviceScreen(definition, root);
 }
-
-

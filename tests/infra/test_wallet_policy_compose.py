@@ -31,7 +31,8 @@ def render(missing=None):
     env.update(TRON_WATCH_DATA_DIR='/synthetic/tron',
                WALLET_HANDOVER_RECORD='/synthetic/handover.json')
     if missing:
-        env.pop(missing)
+        # Empty process value overrides .env.example; :? rejects unset or empty.
+        env[missing] = ''
     return subprocess.run(['docker', 'compose', '--env-file', '.env.example',
         '-f', 'docker-compose.yml', '-f', 'docker-compose.production.yml',
         '-f', 'docker-compose.wallet-manual.yml', 'config', '--format', 'json'],

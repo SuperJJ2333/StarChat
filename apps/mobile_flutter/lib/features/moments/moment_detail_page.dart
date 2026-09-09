@@ -9,18 +9,28 @@ import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
 import 'moment_comment_interaction.dart';
 
+enum MomentDetailChange { likes, comments }
+
 class MomentDetailPage extends StatefulWidget {
-  const MomentDetailPage(
-      {super.key,
-      required this.api,
-      this.identityCache,
-      required this.initialItem,
-      required this.currentUsername,
-      this.onChanged,
-      this.onReactionChanged,
-      this.initialComment,
-      this.cacheNamespace = ''});
+  const MomentDetailPage({
+    super.key,
+    required this.api,
+    this.identityCache,
+    required this.initialItem,
+    required this.currentUsername,
+    this.onChanged,
+    this.onConfirmed,
+    this.viewerUserId,
+    this.mediaAccountKey,
+    this.mediaOrigin,
+    this.onReactionChanged,
+    this.initialComment,
+    this.cacheNamespace = '',
+  });
   final BusinessApiClient api;
+  final Future<void> Function(MomentItem, MomentDetailChange)? onConfirmed;
+  final String? mediaAccountKey, mediaOrigin;
+  final String? viewerUserId;
   final ProfileRepository? identityCache;
   final MomentItem initialItem;
   final String currentUsername;
@@ -117,20 +127,27 @@ class _MomentDetailState extends State<MomentDetailPage> {
           revision++;
         });
       }
-    } catch (_) {/* Preserve the snapshot only on transient network failure. */}
+    } catch (_) {
+      /* Preserve the snapshot only on transient network failure. */
+    }
   }
 
   Future<void> comment([MomentCommentView? parent]) =>
-      interactWithMomentComment(context,
-          api: widget.api,
-          momentId: item.id,
-          currentUsername: widget.currentUsername,
-          identityCache: widget.identityCache,
-          comment: parent,
-          currentItem: () => unavailable ? null : item,
-          onChanged: update,
-          onSelectionChanged: (id) => setState(() => selectedCommentId = id),
-          onError: (message) => setState(() => error = message));
+      interactWithMomentComment(
+        context,
+        api: widget.api,
+        momentId: item.id,
+        currentUsername: widget.currentUsername,
+        identityCache: widget.identityCache,
+        comment: parent,
+        currentItem: () => unavailable ? null : item,
+        onChanged: update,
+        onConfirmed: (value) async {
+          await widget.onConfirmed?.call(value, MomentDetailChange.comments);
+        },
+        onSelectionChanged: (id) => setState(() => selectedCommentId = id),
+        onError: (message) => setState(() => error = message),
+      );
 
   Future<void> tapComment(MomentCommentView value) => comment(value);
 
@@ -145,23 +162,40 @@ class _MomentDetailState extends State<MomentDetailPage> {
     final pending = PendingMomentReaction.begin(widget.api, item.id);
     var succeeded = true;
     update(
-        toggleMomentReaction(
-            item,
-            momentViewer(widget.identityCache,
-                username: widget.currentUsername)),
-        reactionsOnly: true);
+      toggleMomentReaction(
+        item,
+        momentViewer(widget.identityCache,
+            username: widget.currentUsername,
+            userId: widget.viewerUserId ?? ''),
+      ),
+      reactionsOnly: true,
+    );
     try {
       if (before.liked) {
         await widget.api.unlikeMoment(item.id);
       } else {
         await widget.api.likeMoment(item.id);
       }
+      if (pending.audienceIsCurrent && !unavailable) {
+        if (widget.viewerUserId == null) {
+          try {
+            final confirmed =
+                MomentItem.fromJson(await widget.api.momentDetail(item.id));
+            if (pending.audienceIsCurrent && !unavailable) {
+              item = restoreMomentReaction(item, confirmed);
+              update(item, reactionsOnly: true);
+            }
+          } catch (_) {/* The write succeeded; keep the current projection. */}
+        }
+        await widget.onConfirmed?.call(item, MomentDetailChange.likes);
+      }
     } catch (_) {
       succeeded = false;
       if (!pending.audienceIsCurrent) return;
       if (!mounted) {
-        (widget.onReactionChanged ?? widget.onChanged)
-            ?.call(restoreMomentReaction(item, before));
+        (widget.onReactionChanged ?? widget.onChanged)?.call(
+          restoreMomentReaction(item, before),
+        );
       }
       if (mounted) {
         update(restoreMomentReaction(item, before), reactionsOnly: true);
@@ -177,8 +211,12 @@ class _MomentDetailState extends State<MomentDetailPage> {
     if (openingPerson || unavailable) return;
     openingPerson = true;
     try {
-      await openMomentPerson(context,
-          api: widget.api, identityCache: widget.identityCache, person: person);
+      await openMomentPerson(
+        context,
+        api: widget.api,
+        identityCache: widget.identityCache,
+        person: person,
+      );
     } catch (_) {
       if (mounted) setState(() => error = '资料加载失败，请重试');
     } finally {
@@ -190,27 +228,39 @@ class _MomentDetailState extends State<MomentDetailPage> {
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: const CupertinoNavigationBar(middle: Text('详情')),
         child: SafeArea(
-            child: ListView(children: [
-          if (!unavailable)
-            WeChatMomentTile(
-                identityCache: widget.identityCache,
-                item: visibleMomentReactions(item, widget.identityCache,
-                    username: widget.currentUsername),
-                detailMode: true,
-                selectedCommentId: selectedCommentId,
-                onPersonTap: openPerson,
-                onAuthorTap: () => openPerson(item.author),
-                cacheNamespace: widget.cacheNamespace,
-                onLike: liking ? null : like,
-                onComment: comment,
-                onCommentTap: tapComment),
-          if (error != null)
-            Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(error!,
-                    style: const TextStyle(color: CupertinoColors.systemRed))),
-          if (unavailable)
-            CupertinoButton(onPressed: refresh, child: const Text('重试')),
-        ])),
+          child: ListView(
+            children: [
+              if (!unavailable)
+                WeChatMomentTile(
+                  identityCache: widget.identityCache,
+                  item: visibleMomentReactions(
+                    item,
+                    widget.identityCache,
+                    username: widget.currentUsername,
+                  ),
+                  detailMode: true,
+                  selectedCommentId: selectedCommentId,
+                  onPersonTap: openPerson,
+                  onAuthorTap: () => openPerson(item.author),
+                  cacheNamespace: widget.cacheNamespace,
+                  mediaAccountKey: widget.mediaAccountKey,
+                  mediaOrigin: widget.mediaOrigin,
+                  onLike: liking ? null : like,
+                  onComment: comment,
+                  onCommentTap: tapComment,
+                ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    error!,
+                    style: const TextStyle(color: CupertinoColors.systemRed),
+                  ),
+                ),
+              if (unavailable)
+                CupertinoButton(onPressed: refresh, child: const Text('重试')),
+            ],
+          ),
+        ),
       );
 }

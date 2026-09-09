@@ -1,18 +1,21 @@
 import 'package:flutter/cupertino.dart';
-import 'moment_image_provider.dart';
 
 import '../foundation/wechat_tokens.dart';
 import 'moment_image_viewer_page.dart';
+import 'moment_media_cache.dart';
 
 final class WeChatMomentImageGrid extends StatelessWidget {
   const WeChatMomentImageGrid(
       {super.key,
       required this.imageUrls,
       this.imageCacheKeys = const [],
+      this.mediaAccountKey,
+      this.mediaOrigin,
       this.cacheNamespace = ''});
-  final List<String> imageUrls;
-  final List<String> imageCacheKeys;
   final String cacheNamespace;
+  final List<String> imageUrls;
+  final List<String?> imageCacheKeys;
+  final String? mediaAccountKey, mediaOrigin;
   @override
   Widget build(BuildContext context) {
     final count = imageUrls.length.clamp(0, 9);
@@ -42,16 +45,29 @@ final class WeChatMomentImageGrid extends StatelessWidget {
                   fullscreenDialog: true,
                   builder: (_) => MomentImageViewerPage(
                       imageUrls: imageUrls,
-                      initialIndex: index,
                       imageCacheKeys: imageCacheKeys,
-                      cacheNamespace: cacheNamespace),
+                      mediaAccountKey: mediaAccountKey,
+                      mediaOrigin: mediaOrigin,
+                      cacheNamespace: cacheNamespace,
+                      initialIndex: index),
                 )),
             child: SizedBox(
                 key: const ValueKey('moment-image'),
                 child: Image(
-                    image: momentImageProvider(imageUrls[index],
-                        momentImageKey(imageCacheKeys, index), cacheNamespace),
+                    key: ValueKey(MomentMediaCache.imageIdentity(
+                        imageUrls[index],
+                        accountKey: mediaAccountKey ?? cacheNamespace,
+                        trustedOrigin: mediaOrigin,
+                        cacheKey: index < imageCacheKeys.length
+                            ? imageCacheKeys[index]
+                            : null)),
                     gaplessPlayback: true,
+                    image: MomentMediaCache.imageProvider(imageUrls[index],
+                        accountKey: mediaAccountKey ?? cacheNamespace,
+                        trustedOrigin: mediaOrigin,
+                        cacheKey: index < imageCacheKeys.length
+                            ? imageCacheKeys[index]
+                            : null),
                     width: size,
                     height: size,
                     fit: BoxFit.cover,

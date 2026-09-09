@@ -33,6 +33,9 @@ log:
     loggers:
       sygnal:
         level: INFO
+      # Upstream APNs INFO logs include device tokens: suppress those records.
+      sygnal.apnspushkin:
+        level: WARNING
     root:
       level: INFO
       handlers: [console]
@@ -53,7 +56,10 @@ apps:
 #  # iOS（APNs，Token-based .p8 认证）：
 #  com.liuhetong.mobile.ios:
 #    type: apns
-#    keyfile: /data/sygnal/apns/AuthKey_XXXXXXXXXX.p8
+#    keyfile: /data/apns/AuthKey_XXXXXXXXXX.p8
 #    key_id: XXXXXXXXXX
 #    team_id: YYYYYYYYYY
-#    platform: production   # 开发构建用 development（沙盒 APNs）
+#    topic: com.liuhetong.liuhetongMobile
+#    platform: production   # 开发构建使用 sandbox
+#    push_type: alert
+#    convert_device_token_to_hex: false  # 原生 Swift 已返回十六进制 token

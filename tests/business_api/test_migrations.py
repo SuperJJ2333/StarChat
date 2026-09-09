@@ -37,7 +37,17 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0059_chat_payment_pin (head)"
+    assert _alembic("heads").strip() == "0060_merge_release_parity (head)"
+
+
+def test_direct_room_reservation_upgrade_preserves_canonical_rooms() -> None:
+    sql = _normalized_sql(_alembic("upgrade", "0039_merge_settings_wallet:0040_direct_room_reservations", "--sql"))
+    assert "create table direct_room_reservations" in sql
+    assert "unique (user_low_id, user_high_id)" in sql
+    assert "attempt_id varchar(128) not null" in sql
+    assert "drop " not in sql
+    assert "alter table direct_conversations" not in sql
+    assert "update direct_conversations" not in sql
 
 
 def test_admin_session_migration_only_expands_identity() -> None:

@@ -1,6 +1,7 @@
 services:
   postgres:
     image: "${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}"
+    command: ["postgres", "-N", "250"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-synapse}
@@ -17,17 +18,62 @@ services:
 
   synapse:
     image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    build:
+      context: ./third_party/synapse
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      matrix-redis:
+        condition: service_healthy
     environment:
       SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      CHATFLOW_MEDIA_DEDUP: "${CHATFLOW_MEDIA_DEDUP:-true}"
+      CHATFLOW_MEDIA_RETENTION_MS: "${CHATFLOW_MEDIA_RETENTION_MS:-604800000}"
     volumes:
       - ./data/synapse:/data
       - ./infra/synapse:/scripts:ro
     ports:
       - "${SYNAPSE_HTTP_PORT:-8008}:8008"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+
+  matrix-redis:
+    image: redis:7.4.2-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  synapse-sync-worker:
+    image: "${SYNAPSE_IMAGE:?SYNAPSE_IMAGE is required}"
+    build:
+      context: ./third_party/synapse
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "synapse.app.generic_worker"]
+    command: ["--config-path", "/data/homeserver.yaml", "--config-path", "/data/worker-sync.yaml"]
+    depends_on:
+      synapse:
+        condition: service_healthy
+      matrix-redis:
+        condition: service_healthy
+    volumes:
+      - ./data/synapse:/data
+    ports:
+      - "127.0.0.1:${SYNAPSE_SYNC_HTTP_PORT:-18081}:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
 
   # 个推桥接网关（自建 Matrix Push Gateway → 个推 REST v2）：
   # 丢弃一切业务内容，只按 CID 下发通用文案；密钥仅在环境变量

@@ -34,13 +34,20 @@ class MatrixFile {
   final String name;
   final String mimeType;
 
+  /// Prepared after all transformations; bytes remain the plaintext preview.
+  final EncryptedFile? preEncrypted;
+
   /// Encrypts this file and returns the
   /// encryption information as an [EncryptedFile].
   Future<EncryptedFile> encrypt() async {
-    return await encryptFile(bytes);
+    return preEncrypted ?? await encryptFile(bytes);
   }
 
-  MatrixFile({required this.bytes, required String name, String? mimeType})
+  MatrixFile(
+      {required this.bytes,
+      required String name,
+      String? mimeType,
+      this.preEncrypted})
       : mimeType = mimeType ??
             lookupMimeType(name, headerBytes: bytes) ??
             'application/octet-stream',
@@ -95,6 +102,7 @@ class MatrixImageFile extends MatrixFile {
     required super.bytes,
     required super.name,
     super.mimeType,
+    super.preEncrypted,
     int? width,
     int? height,
     this.blurhash,
@@ -358,6 +366,7 @@ class MatrixVideoFile extends MatrixFile {
       {required super.bytes,
       required super.name,
       super.mimeType,
+      super.preEncrypted,
       this.width,
       this.height,
       this.duration});
@@ -381,6 +390,7 @@ class MatrixAudioFile extends MatrixFile {
       {required super.bytes,
       required super.name,
       super.mimeType,
+      super.preEncrypted,
       this.duration});
 
   @override

@@ -1,0 +1,12 @@
+# Apply after the existing reviewed release overlays. No observer restart/reset.
+services:
+  business-api:
+    environment:
+      BUSINESS_TRON_OBSERVER_DATABASE_PATH: /data/tron-watch/observations.sqlite3
+    volumes:
+      - type: bind
+        source: "${TRON_WATCH_DATA_DIR:?TRON_WATCH_DATA_DIR must point to the existing protected observer directory}"
+        target: /data/tron-watch
+        read_only: true
+        bind:
+          create_host_path: false

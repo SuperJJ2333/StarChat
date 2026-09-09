@@ -47,6 +47,10 @@ void main() {
       }
       return _response({});
     });
+    await api.sessionStore.saveSession(
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        matrixUserId: '@privacy:test');
     final identity = ProfileRepository.forTesting(
         accountKey: account, store: MomentsIdentityStore());
     await tester.pumpWidget(
@@ -81,6 +85,10 @@ void main() {
       }
       return _response({});
     });
+    await api.sessionStore.saveSession(
+        accessToken: 'access',
+        refreshToken: 'refresh',
+        matrixUserId: '@privacy:test');
     final identity = ProfileRepository.forTesting(
         accountKey: account, store: MomentsIdentityStore());
     await tester.pumpWidget(

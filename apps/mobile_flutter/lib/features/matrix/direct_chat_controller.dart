@@ -94,9 +94,8 @@ abstract interface class CanonicalDirectRoomDirectory {
   Future<String?> registerRoom(String peerUserId, String roomId);
 }
 
-/// Canonical Direct Chat 包装网关：创建私聊前先查规范房间复用，
-/// 不存在才走 inner（startDirectChat 路径）创建并注册。
-/// 目录/注册失败静默回落 inner（弱网不阻断私聊）。
+/// Legacy directory adapter retained for compatibility tests. AppHome uses
+/// CoordinatedDirectChatGateway for cross-device creation arbitration.
 final class CanonicalDirectChatGateway implements DirectChatGateway {
   CanonicalDirectChatGateway({
     required DirectChatGateway inner,
@@ -127,44 +126,21 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) async {
     final peerUserId = _businessUserIdOf(matrixUserId);
     if (peerUserId == null || peerUserId.isEmpty) {
-      return _inner.openOrCreateDirectChat(matrixUserId);
+      throw StateError('好友身份尚未就绪');
     }
-    String? canonical;
-    try {
-      canonical = await _directory.canonicalRoomId(peerUserId);
-    } catch (_) {
-      canonical = null;
-    }
+    final canonical = await _directory.canonicalRoomId(peerUserId);
     if (canonical != null && canonical.isNotEmpty) {
-      try {
-        return _forPeer(await _openExistingRoom(canonical), matrixUserId);
-      } on TimeoutException {
-        // 同步超时不能证明旧房间已失效；等待重试，避免误建重复私聊。
-        rethrow;
-      } catch (_) {
-        // 规范房间不可用（如对端重建）：回落新建并重新注册。
-      }
+      return _forPeer(await _openExistingRoom(canonical), matrixUserId);
     }
     final room = await _inner.openOrCreateDirectChat(matrixUserId);
-    String? effective;
-    try {
-      effective = await _directory.registerRoom(peerUserId, room.roomId);
-    } catch (_) {
-      // 保留目录注册异常时使用本次有效房间的既有行为。
-      return room;
+    final effective = await _directory.registerRoom(peerUserId, room.roomId);
+    if (effective == null || effective.isEmpty) {
+      throw StateError('规范私聊登记未完成');
     }
-    if (effective != null && effective.isNotEmpty && effective != room.roomId) {
-      try {
-        // 并发双开：弃用本次房间，采用规范房间。
-        return _forPeer(await _openExistingRoom(effective), matrixUserId);
-      } on TimeoutException {
-        // 已确认规范房间存在；暂未同步时不能展示另一个房间。
-        rethrow;
-      } catch (_) {
-        // 规范房间失效时，保留使用本次有效房间的恢复路径。
-      }
+    if (effective != room.roomId) {
+      return _forPeer(await _openExistingRoom(effective), matrixUserId);
     }
-    return room;
+    return _forPeer(room, matrixUserId);
   }
 }
 

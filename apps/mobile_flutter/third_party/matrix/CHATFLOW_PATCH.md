@@ -2,7 +2,8 @@
 
 Upstream package: matrix 0.34.0, existing locked dependency from pub.dev mirror.
 Original LICENSE and attribution retained. Vendored lib tree is unchanged except
-`lib/src/voip/call_session.dart` and `lib/src/timeline.dart`; see the source hashes
+`lib/src/voip/call_session.dart`, `lib/src/timeline.dart`, and the attachment
+preparation changes documented below; see the source hashes
 in the verification records.
 
 Incoming 1:1 invite initialization used to acquire camera/microphone before
@@ -31,3 +32,24 @@ before the HTTP send acknowledgement. Ignore those lower-authority updates;
 subsequent synced updates still apply normally. The change does not modify
 transport, encryption or outgoing payloads. Real Timeline stream regressions:
 `test/features/matrix/sdk_ack_order_test.dart`.
+
+2026-09-09 content-addressed attachments (ADR-0060):
+
+- `lib/src/utils/crypto/encrypted_file.dart` exports `encryptFileWithKey` with
+  explicit 32-byte AES key and 16-byte IV validation, standard Matrix v2
+  unpadded encodings and SHA-256 of ciphertext. Random `encryptFile` remains.
+- `lib/src/utils/matrix_file.dart` accepts an optional `preEncrypted` envelope
+  on every concrete media type. `bytes`, MIME, size, image dimensions, blurhash,
+  video dimensions/duration and audio duration remain plaintext preview metadata;
+  `encrypt()` returns the same prepared envelope on retries.
+- `lib/src/room.dart` refuses prepared attachments without file E2EE and skips
+  image/thumbnail transformation for a prepared original. The application must
+  finish body transformations and thumbnail generation before preparation.
+  Upload uses only the envelope ciphertext, filename `crypt`, and octet-stream
+  MIME; content hashes exist only in the subsequently encrypted room event.
+
+Application regressions: `test/features/matrix/content_addressed_media_test.dart`
+exercises independent HKDF vectors, standard SDK decryption, actual
+`Room.sendFileEvent` ciphertext uploads, retry identity, media metadata,
+preprocessing order, decrypted-event authority and validated content caches.
+This patch does not change Megolm rotation, room encryption or avatar uploads.

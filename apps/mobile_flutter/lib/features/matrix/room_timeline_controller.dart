@@ -166,6 +166,10 @@ abstract interface class RoomOptimisticTextAdapter {
   Future<String> sendTextWithTransaction(String text, String transactionId);
 }
 
+abstract interface class RoomHistoryStatus {
+  bool get canLoadHistory;
+}
+
 final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter, {this.canSendNow})
       : messages = adapter.snapshot();
@@ -299,7 +303,9 @@ final class RoomTimelineController extends ChangeNotifier {
       await adapter.loadHistory();
       if (_disposed) return;
       messages = _snapshot();
-      if (messages.length <= before) historyExhausted = true;
+      historyExhausted = adapter is RoomHistoryStatus
+          ? !(adapter as RoomHistoryStatus).canLoadHistory
+          : messages.length <= before;
     } finally {
       historyLoading = false;
       if (!_disposed) notifyListeners();

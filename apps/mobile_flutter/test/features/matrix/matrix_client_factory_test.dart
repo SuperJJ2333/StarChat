@@ -252,8 +252,17 @@ final class _NeverLogoutClient extends LogoutTrackingClient {
   Future<void> logout() => neverCompletes.future;
 }
 
+final class EncryptedMediaTrackingClient extends LogoutTrackingClient {
+  EncryptedMediaTrackingClient(super.name);
+  @override
+  bool get fileEncryptionEnabled => true;
+}
+
 final class MediaTrackingRoom extends Room {
   MediaTrackingRoom({required super.id, required super.client});
+
+  @override
+  bool get encrypted => true;
 
   MatrixFile? sentFile;
   MatrixImageFile? sentThumbnail;
@@ -1431,7 +1440,7 @@ void main() {
 
   test('owned media bytes and thumbnails preserve Uint8List identity',
       () async {
-    final client = LogoutTrackingClient('bytes');
+    final client = EncryptedMediaTrackingClient('bytes');
     final room = MediaTrackingRoom(id: '!room:test', client: client);
     client.roomOverride = room;
     final matrix =
@@ -1648,7 +1657,7 @@ void main() {
 
   test('room lease owns encrypted media sends and rejects them after revoke',
       () async {
-    final client = LogoutTrackingClient('old');
+    final client = EncryptedMediaTrackingClient('old');
     final room = MediaTrackingRoom(
       id: '!room:matrix.test',
       client: client,
@@ -1857,7 +1866,8 @@ void main() {
 
     await expectLater(
       service.login('alice', 'password'),
-      throwsA(isA<MatrixException>()),
+      throwsA(isA<LoginStageException>()
+          .having((e) => e.diagnosticCode, 'stage', 'L05')),
     );
 
     expect(events, ['dispose:old']);

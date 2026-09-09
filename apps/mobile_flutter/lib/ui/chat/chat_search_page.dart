@@ -29,6 +29,9 @@ final class ChatSearchPage extends StatefulWidget {
     this.earliestMonth,
     this.latestMonth,
     this.onJumpToDate,
+    this.loadCalendarMonth,
+    this.onCalendarClosed,
+    this.onSearchInvalidated,
   });
 
   /// 是否群聊（决定是否显示"群成员"筛选入口）。
@@ -65,6 +68,9 @@ final class ChatSearchPage extends StatefulWidget {
 
   /// 日期定位回调（选中日期后直接定位，不再只弹说明——R6 修复）。
   final void Function(DateTime date)? onJumpToDate;
+  final Future<Set<DateTime>> Function(DateTime month)? loadCalendarMonth;
+  final VoidCallback? onCalendarClosed;
+  final VoidCallback? onSearchInvalidated;
 
   @override
   State<ChatSearchPage> createState() => _ChatSearchPageState();
@@ -115,12 +121,14 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   void _onChanged(String value) {
+    widget.onSearchInvalidated?.call();
     setState(() => _controller!.setKeyword(value));
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), _execute);
   }
 
   Future<void> _execute() async {
+    widget.onSearchInvalidated?.call();
     _debounce?.cancel();
     _queryGeneration++;
     setState(() => _loadingMore = false);
@@ -190,12 +198,15 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           key: const Key('chat-search-filter-date'), onTap: _openCalendar),
       _chip('图片与视频', ChatSearchFilterKind.media,
           key: const Key('chat-search-filter-media'),
+          media: ChatSearchMediaCategory.imageVideo,
           onTap: () => _toggleMedia(ChatSearchMediaCategory.imageVideo)),
       _chip('文件', ChatSearchFilterKind.media,
           key: const Key('chat-search-filter-file'),
+          media: ChatSearchMediaCategory.file,
           onTap: () => _toggleMedia(ChatSearchMediaCategory.file)),
       _chip('链接', ChatSearchFilterKind.media,
           key: const Key('chat-search-filter-link'),
+          media: ChatSearchMediaCategory.link,
           onTap: () => _toggleMedia(ChatSearchMediaCategory.link)),
       if (widget.isGroup)
         _chip('群成员', ChatSearchFilterKind.sender,
@@ -212,9 +223,10 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Widget _chip(String label, ChatSearchFilterKind kind,
-      {required Key key, VoidCallback? onTap}) {
-    final active = _controller!.activeFilters.any(
-        (f) => f.kind == kind && (kind != ChatSearchFilterKind.media || true));
+      {required Key key, VoidCallback? onTap, ChatSearchMediaCategory? media}) {
+    final active = _controller!.activeFilters.any((f) =>
+        f.kind == kind &&
+        (kind != ChatSearchFilterKind.media || f.value == media?.name));
     return Padding(
       key: key,
       padding: const EdgeInsets.only(right: 8),
@@ -222,16 +234,13 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         color: active
             ? WeChatColors.brandPrimary.withValues(alpha: .15)
-            : WeChatColors.darkSurface.withValues(alpha: .5),
+            : WeChatColors.elevatedSurface(context),
         borderRadius: BorderRadius.circular(16),
         minimumSize: const Size(0, 30),
         onPressed: onTap,
         child: Text(label,
             style: TextStyle(
-                fontSize: 13,
-                color: active
-                    ? WeChatColors.brandPrimary
-                    : WeChatColors.resolveTextPrimary(context))),
+                fontSize: 13, color: WeChatColors.resolveTextPrimary(context))),
       ),
     );
   }
@@ -279,9 +288,11 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           latest: latest,
           datesWithMessages: widget.datesWithMessages,
           scanningDates: widget.scanningDates,
+          loadMonth: widget.loadCalendarMonth,
         ),
       ),
     );
+    widget.onCalendarClosed?.call();
     if (picked != null && mounted) {
       // R6 修复：日期选择后**直接调用定位回调**（不再只弹说明框）。
       if (widget.onJumpToDate != null) {
@@ -692,6 +703,7 @@ final class CalendarPickerPage extends StatefulWidget {
     this.datesWithMessages = const {},
     this.scanningDates = const {},
     this.onDateTap,
+    this.loadMonth,
   });
 
   final logic.CalendarMonth earliest;
@@ -699,6 +711,7 @@ final class CalendarPickerPage extends StatefulWidget {
   final Set<DateTime> datesWithMessages;
   final Set<DateTime> scanningDates;
   final void Function(DateTime date)? onDateTap;
+  final Future<Set<DateTime>> Function(DateTime month)? loadMonth;
 
   @override
   State<CalendarPickerPage> createState() => _CalendarPickerPageState();
@@ -706,11 +719,48 @@ final class CalendarPickerPage extends StatefulWidget {
 
 final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   late logic.CalendarMonth _current;
+  Set<DateTime> _dates = {};
+  int _generation = 0;
+  bool _loading = false;
+  bool _failed = false;
+  bool _picked = false;
+
+  Future<void> _loadMonth() async {
+    final loader = widget.loadMonth;
+    if (loader == null) return;
+    final generation = ++_generation;
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    try {
+      final dates = await loader(DateTime(_current.year, _current.month));
+      if (!mounted || generation != _generation) return;
+      setState(() {
+        _dates = dates;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+        });
+      }
+    }
+  }
+
+  void _navigate(logic.CalendarMonth month) {
+    setState(() => _current = month);
+    unawaited(_loadMonth());
+  }
 
   @override
   void initState() {
     super.initState();
     _current = widget.latest;
+    _dates = widget.datesWithMessages;
+    unawaited(_loadMonth());
   }
 
   @override
@@ -741,9 +791,8 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                   key: const Key('calendar-prev-month'),
                   minimumSize: Size.zero,
                   padding: const EdgeInsets.all(8),
-                  onPressed: canPrev
-                      ? () => setState(() => _current = _current.previous)
-                      : null,
+                  onPressed:
+                      canPrev ? () => _navigate(_current.previous) : null,
                   child: const Icon(CupertinoIcons.chevron_left, size: 20),
                 ),
                 Text(_current.title,
@@ -753,9 +802,7 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                   key: const Key('calendar-next-month'),
                   minimumSize: Size.zero,
                   padding: const EdgeInsets.all(8),
-                  onPressed: canNext
-                      ? () => setState(() => _current = _current.next)
-                      : null,
+                  onPressed: canNext ? () => _navigate(_current.next) : null,
                   child: const Icon(CupertinoIcons.chevron_right, size: 20),
                 ),
               ],
@@ -778,6 +825,16 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
             ),
           ),
           const SizedBox(height: 4),
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(8), child: Text('正在查找历史日期…')),
+          if (_failed)
+            CupertinoButton(
+                onPressed: _loadMonth, child: const Text('历史加载失败，点击重试')),
+          if (!_loading &&
+              !_failed &&
+              !_dates.any(
+                  (d) => d.year == _current.year && d.month == _current.month))
+            const Padding(padding: EdgeInsets.all(8), child: Text('本月暂无聊天记录')),
           // 日期网格。
           Expanded(
             child: GridView.builder(
@@ -792,7 +849,7 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                 final day = index - _leadingBlanks() + 1;
                 final date = DateTime(_current.year, _current.month, day);
                 final status = logic.dayStatus(date,
-                    datesWithMessages: widget.datesWithMessages,
+                    datesWithMessages: _dates,
                     scanningDates: widget.scanningDates);
                 final enabled = status == logic.CalendarDayStatus.hasMessages;
                 return GestureDetector(
@@ -833,6 +890,8 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   int _leadingBlanks() => _current.firstWeekdayMondayBased - 1;
 
   void _pick(DateTime date) {
+    if (_picked) return;
+    _picked = true;
     if (widget.onDateTap != null) {
       widget.onDateTap!(date);
       return;

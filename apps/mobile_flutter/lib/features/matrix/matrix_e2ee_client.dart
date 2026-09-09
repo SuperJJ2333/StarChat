@@ -32,6 +32,9 @@ import 'group_chat_info_controller.dart';
 import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'matrix_media_file.dart';
+import 'content_addressed_media.dart';
+import 'room_mention_store.dart';
+import 'unread_mention_tracker.dart';
 import 'matrix_call_adapter.dart' hide changliaoCallMessageType;
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
@@ -879,6 +882,62 @@ final class MatrixRoomLease
   /// A non-SDK snapshot valid only while this lease is active.
   MatrixRoomInfoSnapshot get roomInfo => _snapshotRoomInfo(_activeRoom);
 
+  bool get _mentionsActive => !canceled && !owner._accessRevoked;
+  Future<UnreadMentionTracker> openMentions() =>
+      _withLeaseOperation((room) => RoomMentionStore.shared
+          .open(room, shouldContinue: () => _mentionsActive));
+  Future<void> saveMentions() =>
+      _withLeaseOperation((room) => RoomMentionStore.shared
+          .save(room, shouldContinue: () => _mentionsActive));
+  Future<void> scanMentions() =>
+      _withLeaseOperation((room) => RoomMentionStore.shared
+          .scan(room, shouldContinue: () => _mentionsActive));
+  Future<void> ingestMentions() => _withLeaseOperation((room) async {
+        for (final timeline in _timelines.toList()) {
+          if (!timeline._disposed) {
+            await RoomMentionStore.shared.ingest(
+                room, timeline._timeline.events,
+                shouldContinue: () => _mentionsActive);
+          }
+        }
+      });
+  String? get historyToken => _activeRoom.prev_batch;
+  String? get oldestTimelineEventId =>
+      _timelines.lastOrNull?._timeline.events.lastOrNull?.eventId;
+  DateTime? get oldestTimelineEventDate =>
+      _timelines.lastOrNull?._timeline.events.lastOrNull?.originServerTs;
+  DateTime? get creationDate {
+    final event = _activeRoom.getState(EventTypes.RoomCreate);
+    return event is Event ? event.originServerTs.toLocal() : null;
+  }
+
+  Event? _loadedMediaEvent(String eventId) {
+    for (final timeline in _timelines.reversed) {
+      final event = timeline.eventById(eventId);
+      if (event != null) return event;
+    }
+    return null;
+  }
+
+  TrustedMediaHashes? mediaHashes(String eventId) {
+    final event = _loadedMediaEvent(eventId);
+    return event == null ? null : TrustedMediaHashes.fromEvent(event);
+  }
+
+  MediaCacheKey mediaCacheKey(String eventId, {bool thumbnail = false}) {
+    final event = _loadedMediaEvent(eventId);
+    final hashes = mediaHashes(eventId);
+    return MediaCacheKey(
+        accountId: _activeRoom.client.userID ?? '',
+        roomId: roomId,
+        eventId: thumbnail ? 'thumb:$eventId' : eventId,
+        contentSha256:
+            thumbnail ? hashes?.thumbnailSha256 : hashes?.contentSha256,
+        sourceIdentity: event == null
+            ? null
+            : matrixMediaSourceIdentity(event.content, thumbnail: thumbnail));
+  }
+
   Future<MatrixRoomInfoSnapshot> refreshRoomInfo() =>
       _withLeaseOperation((room) async {
         await room.requestParticipants([Membership.join]);
@@ -1092,34 +1151,50 @@ final class MatrixRoomLease
           MessageTypes.Audio,
           MessageTypes.Video
         }.contains(event.messageType)) {
-          final attachment = await event.downloadAndDecryptAttachment();
+          final hashes = TrustedMediaHashes.fromEvent(event);
+          final bytes = await loadMediaWithCache(
+              MediaCacheKey(
+                  accountId: source.client.userID ?? '',
+                  roomId: source.id,
+                  eventId: event.eventId,
+                  contentSha256: hashes?.contentSha256),
+              () => downloadMediaContent(event));
           final info = event.content['info'] is Map
               ? event.content['info'] as Map
               : const <String, dynamic>{};
-          final mimeType = info['mimetype']?.toString();
-          final MatrixFile file;
-          if (event.messageType == MessageTypes.Video) {
-            file = MatrixVideoFile(
-              bytes: attachment.bytes,
-              name: event.body,
-              mimeType: mimeType ?? 'video/mp4',
-              width: info['w'] is int ? info['w'] as int : null,
-              height: info['h'] is int ? info['h'] as int : null,
-              duration:
-                  info['duration'] is int ? info['duration'] as int : null,
-            );
-          } else {
-            file = MatrixFile.fromMimeType(
-              bytes: attachment.bytes,
-              name: event.body,
-              mimeType: mimeType,
-            );
+          final mimeType = info['mimetype']?.toString() ??
+              switch (event.messageType) {
+                MessageTypes.Video => 'video/mp4',
+                MessageTypes.Audio => 'audio/mp4',
+                MessageTypes.Image => 'image/jpeg',
+                _ => 'application/octet-stream',
+              };
+          Uint8List? thumbnail;
+          if (hashes?.thumbnailSha256 != null || event.isThumbnailEncrypted) {
+            thumbnail = await loadMediaWithCache(
+                MediaCacheKey(
+                    accountId: source.client.userID ?? '',
+                    roomId: source.id,
+                    eventId: 'thumb:${event.eventId}',
+                    contentSha256: hashes?.thumbnailSha256), () async {
+              if (!event.isThumbnailEncrypted) {
+                throw const FormatException('Missing encrypted thumbnail');
+              }
+              return (await event.downloadAndDecryptAttachment(
+                      getThumbnail: true))
+                  .bytes;
+            });
           }
-          // The encrypted room SDK re-encrypts local bytes and generates fresh
-          // attachment keys/URLs. Never reuse source file or thumbnail descriptors.
-          await target.sendFileEvent(
-            file,
-          );
+          await owner._sendMedia(target, bytes, mimeType,
+              filename: event.body,
+              extraContent: {'info': Map<String, dynamic>.from(info)},
+              thumbnailBytes: thumbnail,
+              thumbnailWidth: (info['thumbnail_info'] is Map)
+                  ? info['thumbnail_info']['w'] as int?
+                  : null,
+              thumbnailHeight: (info['thumbnail_info'] is Map)
+                  ? info['thumbnail_info']['h'] as int?
+                  : null);
           return;
         }
         if (event.messageType != MessageTypes.Text) {
@@ -1264,7 +1339,8 @@ final class _LeaseAnnouncementService implements GroupAnnouncementService {
       _lease.uploadAnnouncementImage(bytes, name);
 }
 
-final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
+final class _SdkRoomTimelineCapability
+    implements RoomTimelineCapability, RoomHistoryStatus {
   _SdkRoomTimelineCapability(this._lease, this._timeline);
 
   final MatrixRoomLease _lease;
@@ -1446,17 +1522,11 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
   Future<Uint8List?> loadThumbnail(String eventId) => _withOperation(() async {
         final event = eventById(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
-        if (!event.hasThumbnail) return null;
+        final hashes = TrustedMediaHashes.fromEvent(event);
+        if (hashes?.thumbnailSha256 == null && !event.hasThumbnail) return null;
         return loadMediaWithCache(
-            MediaCacheKey(
-                accountId: _lease._activeRoom.client.userID ?? '',
-                roomId: _lease._activeRoom.id,
-                eventId: 'thumbnail:$eventId',
-                sourceIdentity:
-                    matrixMediaSourceIdentity(event.content, thumbnail: true)),
-            () async =>
-                (await event.downloadAndDecryptAttachment(getThumbnail: true))
-                    .bytes);
+            _lease.mediaCacheKey(eventId, thumbnail: true),
+            () => downloadMediaContent(event, thumbnail: true));
       });
 
   @override
@@ -1475,12 +1545,7 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
         final event = eventById(eventId) ??
             (throw StateError('Matrix timeline event is unavailable'));
         return loadMediaWithCache(
-            MediaCacheKey(
-                accountId: _lease._activeRoom.client.userID ?? '',
-                roomId: _lease._activeRoom.id,
-                eventId: 'attachment:$eventId',
-                sourceIdentity: matrixMediaSourceIdentity(event.content)),
-            () async => (await event.downloadAndDecryptAttachment()).bytes);
+            _lease.mediaCacheKey(eventId), () => downloadMediaContent(event));
       });
 
   @override
@@ -1534,7 +1599,11 @@ final class _SdkRoomTimelineCapability implements RoomTimelineCapability {
       });
 
   @override
-  Future<void> loadHistory() => _withOperation(_timeline.requestHistory);
+  Future<void> loadHistory() =>
+      _withOperation(() => _timeline.requestHistory(historyCount: 60));
+
+  @override
+  bool get canLoadHistory => !_disposed && _timeline.canRequestHistory;
 
   @override
   Future<void> markRead() => _withOperation(_timeline.setReadMarker);
@@ -2995,6 +3064,9 @@ final class MatrixSdkE2eeClient
       Uint8List? thumbnailBytes,
       int? thumbnailWidth,
       int? thumbnailHeight}) async {
+    if (!room.encrypted || !room.client.fileEncryptionEnabled) {
+      throw StateError('Encrypted media requires E2EE attachments');
+    }
     MatrixImageFile? thumbnail;
     if (thumbnailBytes != null) {
       thumbnail = MatrixImageFile(
@@ -3004,16 +3076,34 @@ final class MatrixSdkE2eeClient
           width: thumbnailWidth,
           height: thumbnailHeight);
     }
-    final eventId = await room.sendFileEvent(
-        buildMediaFileForSend(
-                bytes: plaintext is Uint8List
-                    ? plaintext
-                    : Uint8List.fromList(plaintext),
-                name: filename ?? '畅聊附件',
-                mimeType: mimeType,
-                extraContent: extraContent)
-            .file,
+    final media = buildMediaFileForSend(
+      bytes: plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext),
+      name: filename ?? '畅聊附件',
+      mimeType: mimeType,
+      extraContent: extraContent,
+    );
+    // The original is already processed by the image/video picker. Generate
+    // only a missing thumbnail before hashing; the SDK must not transform a
+    // prepared envelope after this point.
+    final image = media.file;
+    if (image is MatrixImageFile && thumbnail == null) {
+      try {
+        thumbnail = await image.generateThumbnail(
+          nativeImplementations: room.client.nativeImplementations,
+          customImageResizer: room.client.customImageResizer,
+        );
+      } catch (_) {
+        /* An unavailable optional thumbnail preserves the original. */
+      }
+      if (thumbnail != null && thumbnail.size > image.size) thumbnail = null;
+    }
+    final prepared = await prepareContentAddressedMedia(
+        file: media.file,
         thumbnail: thumbnail,
+        extraContent: media.extraContent);
+    final eventId = await room.sendFileEvent(prepared.file,
+        thumbnail: prepared.thumbnail,
+        extraContent: prepared.extraContent,
         txid: txid);
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');
@@ -3021,32 +3111,58 @@ final class MatrixSdkE2eeClient
     return eventId;
   }
 
+  bool hasPendingMentions(String roomId) {
+    final room = _client?.getRoomById(roomId);
+    return !_accessRevoked &&
+        room != null &&
+        RoomMentionStore.shared.hasPending(room);
+  }
+
+  Future<void> scanMentions() => _withClient((client) async {
+        await Future.wait([
+          for (final room in client.rooms)
+            if (!room.isDirectChat && room.membership == Membership.join)
+              RoomMentionStore.shared.scan(room,
+                  shouldContinue: () =>
+                      !_accessRevoked && identical(client, _client))
+        ]);
+      });
+
   Future<DirectChatRoom> openCanonicalDirectRoom(String id) => _withClient(
       (client) => MatrixDirectChatBackend(client).openCanonicalRoom(id));
+
+  /// Recovery after an uncertain create may only reuse an existing room.
+  Future<DirectChatRoom?> findExistingDirectChat(String peer) => _withClient(
+      (client) => MatrixDirectChatBackend(client).findJoinedDirectRoom(peer));
+
+  /// The caller owns one durable creation grant. Never repair an uncertain
+  /// existing room or retry a Matrix create inside this operation.
+  Future<DirectChatRoom> createDirectChatOnce(String peer) =>
+      _withClient((client) async {
+        final backend = MatrixDirectChatBackend(client);
+        final roomId = await backend.createEncryptedDirectRoom(peer);
+        return backend.waitForRoom(roomId);
+      });
   Future<MatrixRoomInfoSnapshot> waitForRoom(String id) =>
       conversations.waitForJoinedRoom(id);
   Future<void> sendFriendAccepted(
-          String roomId, String peerId, String displayName) =>
-      _withClient((client) async {
-        final room = client.getRoomById(roomId);
-        if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
-        final id = await room.sendEvent({
-          'body': friendAcceptedSystemMessage(displayName),
-          'friend_user_id': peerId,
-          'friend_display_name': displayName
-        },
-            type: changliaoFriendAcceptedEventType,
-            txid: 'friend-accepted-$roomId-${client.userID}');
-        if (id == null) throw StateError('好友招呼尚未发送');
-      });
-  Future<void> sendFriendRequestGreeting(
-          String roomId, String greeting, String requestId) =>
+          String roomId, String peerId, String displayName,
+          {String? requestId, String? requestMessage}) =>
       _withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null || !room.encrypted) throw StateError('加密私聊尚未就绪');
         final id = await room.sendEvent(
-            {'msgtype': MessageTypes.Text, 'body': greeting},
-            txid: 'friend-request-greeting-$requestId');
+            friendAcceptedEventContent(
+              requesterMatrixUserId: peerId,
+              requesterDisplayName: displayName,
+              requestId: requestId,
+              requestMessage: requestMessage,
+            ),
+            type: changliaoFriendAcceptedEventType,
+            txid: friendAcceptedTransactionId(
+                roomId: roomId,
+                acceptingUserId: client.userID ?? '',
+                requestId: requestId));
         if (id == null) throw StateError('好友招呼尚未发送');
       });
 

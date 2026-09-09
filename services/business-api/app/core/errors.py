@@ -42,12 +42,14 @@ class AppError(Exception):
         message: str,
         status_code: int = 400,
         fields: list[FieldError] | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.fields = fields or []
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _payload(
@@ -70,9 +72,12 @@ def _trace_id(request: Request) -> str:
 def install_error_handlers(app) -> None:
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+        headers = {"Cache-Control": "no-store"}
+        if exc.retry_after_seconds is not None:
+            headers["Retry-After"] = str(exc.retry_after_seconds)
         return JSONResponse(
             status_code=exc.status_code,
-            headers={"Cache-Control": "no-store"},
+            headers=headers,
             content=_payload(
                 code=exc.code,
                 message=exc.message,

@@ -28,6 +28,7 @@ export 'conversation_presentation.dart'
 export 'room_page.dart' show RoomPage;
 import '../search/global_search_page.dart';
 import 'room_page.dart';
+import 'room_mention_store.dart';
 import 'matrix_control_rooms.dart';
 import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
@@ -219,7 +220,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       return;
     }
     _identityCache.addListener(_identityChanged);
+    RoomMentionStore.shared.addListener(_mentionsChanged);
+    _scanMentions();
     syncSubscription = widget.matrix.syncEvents.listen((_) {
+      _scanMentions();
       unawaited(_refreshClientSnapshot());
       unawaited(_refreshMembers());
       unawaited(_restoreHiddenConversations().catchError((_) {}));
@@ -350,8 +354,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         avatar.profileUrl);
   }
 
+  void _mentionsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _scanMentions() {
+    unawaited(widget.matrix.scanMentions().catchError((_) {}));
+  }
+
   @override
   void dispose() {
+    RoomMentionStore.shared.removeListener(_mentionsChanged);
     _identityCache.removeListener(_identityChanged);
     syncSubscription?.cancel();
     _presenceTimer?.cancel();
@@ -781,6 +794,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           context,
                           CupertinoPageRoute(
                             builder: (_) => _FoldedGroupChatsPage(
+                              hasPendingMention:
+                                  widget.matrix.hasPendingMentions,
                               rooms: foldedRooms,
                               avatarMedia: widget.matrix,
                               onOpen: (room) {
@@ -803,6 +818,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                       key: ValueKey<String>('conversation-${room.id}'),
                       title: roomName,
                       subtitle: room.subtitle,
+                      hasPendingMention:
+                          widget.matrix.hasPendingMentions(room.id),
                       timeLabel: room.timeLabel,
                       avatar: room.isDirect || room.avatar != null
                           ? MatrixUserAvatar(
@@ -966,12 +983,14 @@ final class _MessagesEmptyState extends StatelessWidget {
 
 final class _FoldedGroupChatsPage extends StatelessWidget {
   const _FoldedGroupChatsPage({
+    required this.hasPendingMention,
     required this.rooms,
     required this.avatarMedia,
     required this.onOpen,
   });
   final List<_RoomSnapshot> rooms;
   final AvatarMediaCapability avatarMedia;
+  final bool Function(String) hasPendingMention;
   final ValueChanged<_RoomSnapshot> onOpen;
 
   @override
@@ -989,6 +1008,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
               return ConversationListTile(
                 title: room.title,
                 subtitle: room.subtitle,
+                hasPendingMention: hasPendingMention(room.id),
                 timeLabel: '',
                 muted: true,
                 avatar: room.avatar != null

@@ -130,6 +130,7 @@ def main():
 
     rendered_targets = [
         ("infra/synapse/homeserver.yaml.template", "data/synapse/homeserver.yaml"),
+        ("infra/synapse/worker-sync.yaml.template", "data/synapse/worker-sync.yaml"),
         ("infra/nginx/nginx.conf.template", "data/nginx/nginx.conf"),
         ("infra/element/config.json.template", "data/element/config.json"),
     ]

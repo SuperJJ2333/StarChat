@@ -77,7 +77,6 @@ final class BusinessApiClient
     required String deviceKey,
     required String deviceName,
   }) async {
-    final previous = await sessionStore.session();
     final response = await _client.post(
       _uri('/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -95,7 +94,7 @@ final class BusinessApiClient
       refreshToken: body['refresh_token'] as String,
       deviceKey: deviceKey,
       matrixUserId: returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
-          ? previous?.matrixUserId
+          ? null
           : returnedMatrixUserId,
     );
     return body;
@@ -116,19 +115,49 @@ final class BusinessApiClient
     );
   }
 
+  Future<MatrixLoginGrant>? _matrixGrantFlight;
+  DateTime? _matrixGrantRetryAt;
+
   @override
-  Future<MatrixLoginGrant> issueMatrixLoginToken() async {
-    final response = await _authorized(
-      (headers) =>
-          _client.post(_uri('/auth/matrix-login-token'), headers: headers),
-    );
-    final body = _decode(response);
-    return MatrixLoginGrant(
-      loginToken: body['login_token'] as String,
-      homeserver: body['homeserver'] as String,
-      expiresIn: body['expires_in'] as int,
-      matrixUserId: body['matrix_user_id'] as String,
-    );
+  Future<MatrixLoginGrant> issueMatrixLoginToken() {
+    final existing = _matrixGrantFlight;
+    if (existing != null) return existing;
+    final retryAt = _matrixGrantRetryAt;
+    if (retryAt != null && retryAt.isAfter(DateTime.now())) {
+      final seconds = (retryAt.difference(DateTime.now()).inMilliseconds / 1000)
+          .ceil()
+          .clamp(1, 86400);
+      return Future.error(BusinessApiException(
+          statusCode: 429,
+          code: 'MATRIX_LOGIN_RATE_LIMITED',
+          message: '聊天登录请求较频繁，请等待 $seconds 秒后重试',
+          retryAfterSeconds: seconds));
+    }
+    late final Future<MatrixLoginGrant> flight;
+    flight = _requestMatrixLoginToken().whenComplete(() {
+      if (identical(_matrixGrantFlight, flight)) _matrixGrantFlight = null;
+    });
+    _matrixGrantFlight = flight;
+    return flight;
+  }
+
+  Future<MatrixLoginGrant> _requestMatrixLoginToken() async {
+    try {
+      final response = await _authorized((headers) =>
+          _client.post(_uri('/auth/matrix-login-token'), headers: headers));
+      final body = _decode(response);
+      return MatrixLoginGrant(
+          loginToken: body['login_token'] as String,
+          homeserver: body['homeserver'] as String,
+          expiresIn: body['expires_in'] as int,
+          matrixUserId: body['matrix_user_id'] as String);
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 429) {
+        _matrixGrantRetryAt = DateTime.now()
+            .add(Duration(seconds: error.retryAfterSeconds ?? 60));
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -593,8 +622,17 @@ final class BusinessApiClient
       );
   Future<Map<String, dynamic>> redPacketLimits() =>
       getJson('/red-packets/limits');
-  Future<Map<String, dynamic>> latestAppUpdate() =>
-      getJson('/app-updates/latest');
+  Future<Map<String, dynamic>> latestAppUpdate() async {
+    final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    final response = await getJson(
+        ios ? '/app-updates/latest?platform=ios' : '/app-updates/latest');
+    // Old servers ignore unknown query parameters and return Android releases.
+    // Require an explicit iOS projection before displaying any update link.
+    if (ios && response['platform'] != 'ios') {
+      return {'configured': false};
+    }
+    return response;
+  }
   Future<Map<String, dynamic>> createChatTransfer({
     required String receiverId,
     required String amount,
@@ -913,7 +951,36 @@ final class BusinessApiClient
     final body = await getJson(
       '/direct-conversations?peer_user_id=$peerUserId',
     );
-    return body['matrix_room_id']?.toString();
+    if (!body.containsKey('matrix_room_id')) {
+      throw StateError('规范私聊查询响应不完整');
+    }
+    final roomId = body['matrix_room_id'];
+    if (roomId != null && (roomId is! String || roomId.isEmpty)) {
+      throw StateError('规范私聊查询响应无效');
+    }
+    return roomId as String?;
+  }
+
+  Future<Map<String, dynamic>> claimDirectConversation(
+    String peerUserId, String attemptId,
+  ) => postJson('/direct-conversations/claim', {
+    'peer_user_id': peerUserId,
+    'attempt_id': attemptId,
+  }, idempotencyKey: attemptId);
+
+  Future<String> publishDirectConversation(
+    String peerUserId, String attemptId, String roomId,
+  ) async {
+    final body = await postJson('/direct-conversations/publish', {
+      'peer_user_id': peerUserId,
+      'attempt_id': attemptId,
+      'matrix_room_id': roomId,
+    }, idempotencyKey: attemptId);
+    final published = body['matrix_room_id'];
+    if (published is! String || published.isEmpty) {
+      throw StateError('规范私聊登记响应不完整');
+    }
+    return published;
   }
 
   /// 客户端创建 Matrix Direct Chat 后注册；并发冲突时服务端返回既有行。
@@ -1306,9 +1373,15 @@ final class BusinessApiClient
         code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
         message: body['error']?['message']?.toString() ?? '业务请求失败',
         fieldErrors: _parseFieldErrors(body['error']?['fields']),
+        retryAfterSeconds: response.statusCode == 429 ? _retrySeconds(response.headers['retry-after']) : null,
       );
     }
     return body;
+  }
+
+  static int _retrySeconds(String? value) {
+    final parsed = int.tryParse(value ?? '');
+    return parsed != null && parsed > 0 && parsed <= 86400 ? parsed : 60;
   }
 
   static Map<String, String> _parseFieldErrors(Object? raw) {

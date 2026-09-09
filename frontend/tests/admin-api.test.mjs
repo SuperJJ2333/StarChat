@@ -3,6 +3,25 @@ import assert from "node:assert/strict";
 import { createAdminApi, can, normalizeAdminContext } from "../src/admin-api.js";
 import { readFile } from "node:fs/promises";
 
+test('admin errors preserve structured handover evidence for actionable feedback',async()=>{
+  const fields=[{loc:['evidence'],msg:'MANUAL_COVERAGE_PENDING',type:'wallet.handover.evidence'}];
+  const api=createAdminApi({fetchImpl:async()=>new Response(JSON.stringify({error:{code:'HANDOVER_EVIDENCE_UNAVAILABLE',fields}}),{status:503})});
+  await assert.rejects(api.getContext(),error=>{
+    assert.deepEqual(error.fields,fields);return true;
+  });
+});
+
+test('session expiry emits once per failed request; permission denial and stale responses do not', async()=>{
+  const events=[];globalThis.dispatchEvent=e=>events.push(e.type);globalThis.sessionStorage={getItem:()=> 'current'};
+  try {
+    for(const [token,status,code] of [['current',401,'UNAUTHORIZED'],['current',403,'RECENT_LOGIN_REQUIRED'],['current',403,'FORBIDDEN'],['stale',401,'UNAUTHORIZED']]){
+      const api=createAdminApi({token,fetchImpl:async()=>new Response(JSON.stringify({error:{code}}),{status,headers:{'content-type':'application/json'}})});
+      await assert.rejects(api.getContext());
+    }
+    assert.deepEqual(events,['admin-session-expired']); // Recent-auth is an inline step-up, not a logout.
+  } finally {delete globalThis.dispatchEvent;delete globalThis.sessionStorage;}
+});
+
 test("admin API sends bearer token and parses permissions", async () => {
   const calls=[];
   const api=createAdminApi({baseUrl:"https://chatflow.test", token:"abc", fetchImpl: async (url,opts)=>{calls.push({url,opts}); return new Response(JSON.stringify({permissions:["admin.dashboard.read"], overview:{registered_users:42}}),{status:200,headers:{"content-type":"application/json"}});}});
@@ -67,4 +86,11 @@ test("admin finance form exposes a direct point-grant flow rather than an applic
 test("admin API unwraps production error envelopes", async () => {
   const api=createAdminApi({fetchImpl:async ()=>new Response(JSON.stringify({error:{code:"VALIDATION_ERROR",message:"请求参数无效"}}),{status:422,headers:{"content-type":"application/json"}})});
   await assert.rejects(api.command("/api/v1/admin/ads", {}, {idempotencyKey:"error-1"}), error => error.code === "VALIDATION_ERROR" && error.message === "请求参数无效");
+});
+
+test('network failure has a safe localized error and never replays a password command',async()=>{
+ let calls=0;
+ const api=createAdminApi({fetchImpl:async()=>{calls++;throw new TypeError('Failed to fetch');}});
+ await assert.rejects(api.setWalletOperationPassword({login_password:'synthetic-login',new_operation_password:'synthetic-operation'},{idempotencyKey:'network-test'}),error=>error.code==='NETWORK_ERROR'&&error.status===0&&error.message.includes('网络'));
+ assert.equal(calls,1);
 });

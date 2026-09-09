@@ -1,0 +1,168 @@
+--- a/synapse/media/media_repository.py
++++ b/synapse/media/media_repository.py
+@@ -20,6 +20,7 @@
+ #
+ #
+ import errno
++from synapse.media.chatflow_media_dedup import ContentAddressedMedia
+ import logging
+ import os
+ import shutil
+@@ -285,7 +286,10 @@
+             raise NotFoundError("Media ID has expired")
+ 
+     @trace
+-    async def update_content(
++    async def update_content(self, media_id, media_type, upload_name, content, content_length, auth_user):
++        return await ContentAddressedMedia(self).update(media_id, media_type, upload_name, content, content_length, auth_user)
++
++    async def _chatflow_update_content_original(
+         self,
+         media_id: str,
+         media_type: str,
+@@ -333,13 +337,17 @@
+             logger.info("Failed to generate thumbnails: %s", e)
+ 
+     @trace
+-    async def create_content(
++    async def create_content(self, media_type, upload_name, content, content_length, auth_user):
++        return await ContentAddressedMedia(self).create(media_type, upload_name, content, content_length, auth_user)
++
++    async def _chatflow_create_content_original(
+         self,
+         media_type: str,
+         upload_name: Optional[str],
+         content: IO,
+         content_length: int,
+         auth_user: UserID,
++        _chatflow_media_id: Optional[str] = None,
+     ) -> MXCUri:
+         """Store uploaded content for a local user and return the mxc URL
+ 
+@@ -354,7 +362,7 @@
+             The mxc url of the stored content
+         """
+ 
+-        media_id = random_string(24)
++        media_id = _chatflow_media_id or random_string(24)
+ 
+         file_info = FileInfo(server_name=None, file_id=media_id)
+         # This implements all of IO as it has a passthrough
+@@ -1455,18 +1463,8 @@
+ 
+         return {"deleted": deleted}
+ 
+-    async def delete_local_media_ids(
+-        self, media_ids: List[str]
+-    ) -> Tuple[List[str], int]:
+-        """
+-        Delete the given local or remote media ID from this server
+-
+-        Args:
+-            media_id: The media ID to delete.
+-        Returns:
+-            A tuple of (list of deleted media IDs, total deleted media IDs).
+-        """
+-        return await self._remove_local_media_from_disk(media_ids)
++    async def delete_local_media_ids(self, media_ids, user_id=None):
++        return await ContentAddressedMedia(self).delete(media_ids, user_id)
+ 
+     async def delete_old_local_media(
+         self,
+@@ -1501,7 +1499,10 @@
+         )
+         return await self._remove_local_media_from_disk(old_media)
+ 
+-    async def _remove_local_media_from_disk(
++    async def _remove_local_media_from_disk(self, media_ids):
++        return await ContentAddressedMedia(self).purge(media_ids)
++
++    async def _chatflow_remove_local_media_original(
+         self, media_ids: List[str]
+     ) -> Tuple[List[str], int]:
+         """
+--- a/synapse/storage/databases/main/media_repository.py
++++ b/synapse/storage/databases/main/media_repository.py
+@@ -304,7 +304,7 @@
+             args: List[Union[str, int]] = [user_id]
+             sql = """
+                 SELECT COUNT(*) as total_media
+-                FROM local_media_repository
++                FROM chatflow_media_user_view
+                 WHERE user_id = ?
+             """
+             txn.execute(sql, args)
+@@ -324,7 +324,7 @@
+                     user_id,
+                     authenticated,
+                     sha256
+-                FROM local_media_repository
++                FROM chatflow_media_user_view
+                 WHERE user_id = ?
+                 ORDER BY {order_by_column} {order}, media_id ASC
+                 LIMIT ? OFFSET ?
+--- a/synapse/storage/databases/main/stats.py
++++ b/synapse/storage/databases/main/stats.py
+@@ -747,7 +747,7 @@
+             where_clause = "WHERE " + " AND ".join(filters) if len(filters) > 0 else ""
+ 
+             sql_base = """
+-                FROM local_media_repository as lmr
++                FROM chatflow_media_user_view as lmr
+                 LEFT JOIN profiles AS p ON lmr.user_id = p.full_user_id
+                 {}
+                 GROUP BY lmr.user_id, displayname
+--- a/synapse/storage/databases/main/room.py
++++ b/synapse/storage/databases/main/room.py
+@@ -21,6 +21,7 @@
+ #
+ 
+ import logging
++from synapse.media.chatflow_media_dedup import media_lifecycle
+ from enum import Enum
+ from typing import (
+     TYPE_CHECKING,
+@@ -979,6 +980,7 @@
+             "get_media_ids_in_room", _get_media_mxcs_in_room_txn
+         )
+ 
++    @media_lifecycle
+     async def quarantine_media_ids_in_room(
+         self, room_id: str, quarantined_by: str
+     ) -> int:
+@@ -1057,6 +1059,7 @@
+ 
+         return local_media_mxcs, remote_media_mxcs
+ 
++    @media_lifecycle
+     async def quarantine_media_by_id(
+         self,
+         server_name: str,
+@@ -1086,6 +1089,7 @@
+             "quarantine_media_by_user", _quarantine_media_by_id_txn
+         )
+ 
++    @media_lifecycle
+     async def quarantine_media_ids_by_user(
+         self, user_id: str, quarantined_by: str
+     ) -> int:
+@@ -1120,7 +1124,7 @@
+         # Local media
+         sql = """
+             SELECT media_id
+-            FROM local_media_repository
++            FROM chatflow_media_user_view
+             WHERE user_id = ?
+             """
+         if filter_quarantined:
+--- a/synapse/rest/admin/media.py
++++ b/synapse/rest/admin/media.py
+@@ -445,7 +445,7 @@
+         )
+ 
+         deleted_media, total = await self.media_repository.delete_local_media_ids(
+-            [m.media_id for m in media]
++            [m.media_id for m in media], user_id=user_id
+         )
+ 
+         return HTTPStatus.OK, {"deleted_media": deleted_media, "total": total}

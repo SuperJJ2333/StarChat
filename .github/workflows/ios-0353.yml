@@ -1,14 +1,14 @@
-name: iOS 0.3.53 calls TestFlight
+name: iOS signed compatibility candidate
 on:
   push:
-    branches: [codex/ios-0353-testflight]
+    branches: [codex/ios-0353-testflight, codex/mobile-parity-20260909]
     paths:
       - apps/mobile_flutter/**
       - .github/workflows/ios-0353.yml
 permissions:
   contents: read
 concurrency:
-  group: ios-0353-testflight
+  group: ios-signed-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -31,6 +31,20 @@ jobs:
       - name: Resolve Flutter dependencies
         working-directory: apps/mobile_flutter
         run: flutter pub get
+      - name: Record candidate source identity
+        run: |
+          python3 <<'PY'
+          import hashlib, os, pathlib, re
+          root = pathlib.Path('apps/mobile_flutter')
+          version = re.search(r'^version:\s*(\S+)\s*$', (root / 'pubspec.yaml').read_text(), re.M)
+          assert version, 'Missing candidate version'
+          name, build = version.group(1).split('+')
+          assert build.isdigit(), 'Candidate build must be numeric'
+          digest = hashlib.sha256((root / 'assets/html/statistics_tools_combined_v2.html').read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'IOS_CANDIDATE_VERSION={name}\nIOS_CANDIDATE_BUILD={build}\nIOS_CANDIDATE_STATISTICS_SHA256={digest}\n')
+          print(f'Candidate source: {name}+{build}, statistics SHA256={digest}')
+          PY
       - name: Test push integration
         working-directory: apps/mobile_flutter
         run: flutter test test/features/push test/core/ios_secure_session_test.dart test/features/matrix/ios_call_coordinator_test.dart test/features/matrix/call_wakeup_client_test.dart test/features/matrix/voice_audio_source_test.dart test/features/matrix/voice_playback_controller_test.dart
@@ -97,7 +111,7 @@ jobs:
         working-directory: apps/mobile_flutter
         run: |
           set -o pipefail
-          flutter build ipa --release --build-number="$((55 + GITHUB_RUN_NUMBER))" --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=false --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
+          flutter build ipa --release  --export-options-plist="$RUNNER_TEMP/signing/ExportOptions.plist" --dart-define=LIUHETONG_IN_APP_UPDATE=true --dart-define=LIUHETONG_SYGNAL_URL=https://liuhetong888.com 2>&1 | tee "$RUNNER_TEMP/ios-build.log"
       - name: Verify signed IPA
         working-directory: apps/mobile_flutter
         run: |
@@ -118,6 +132,8 @@ jobs:
           assert ent['application-identifier'] == 'HY9Q7Q35S5.com.liuhetong.liuhetongMobile'
           assert not ent.get('get-task-allow', False)
           info = plistlib.loads((app / 'Info.plist').read_bytes())
+          html = app / 'Frameworks/App.framework/flutter_assets/assets/html/statistics_tools_combined_v2.html'
+          assert hashlib.sha256(html.read_bytes()).hexdigest() == os.environ['IOS_CANDIDATE_STATISTICS_SHA256']
           linked = subprocess.check_output(['otool', '-L', str(app / info['CFBundleExecutable'])], text=True)
           libraries = [line.strip().split(' (', 1)[0] for line in linked.splitlines()[1:]]
           cipher = '@rpath/SQLCipher.framework/SQLCipher'
@@ -128,7 +144,8 @@ jobs:
           print('SQLCIPHER_LOAD_ORDER_PASS')
           assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
           assert 2 in info['UIDeviceFamily'], 'iPad support required'
-          assert info['CFBundleShortVersionString'] == '0.3.53'
+          assert info['CFBundleShortVersionString'] == os.environ['IOS_CANDIDATE_VERSION']
+          assert info['CFBundleVersion'] == os.environ['IOS_CANDIDATE_BUILD']
           assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
           assert float(info['MinimumOSVersion']) >= 16.0
           for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:

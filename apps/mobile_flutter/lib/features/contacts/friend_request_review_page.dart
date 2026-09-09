@@ -15,6 +15,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
     required this.request,
     required this.onAccept,
     required this.onReject,
+    this.onOpenAccepted,
     this.busy = false,
   });
 
@@ -26,6 +27,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
   /// 由「新的朋友」页提供的受理动作（accept 仅在点击通过验证时调用）。
   final Future<void> Function() onAccept;
   final Future<void> Function() onReject;
+  final Future<void> Function()? onOpenAccepted;
   final bool busy;
 
   bool get _pending => request['status']?.toString() == 'PENDING';
@@ -148,6 +150,12 @@ final class FriendRequestReviewPage extends StatelessWidget {
                   style: const TextStyle(
                       fontSize: 15, color: WeChatColors.textSecondary),
                 ),
+              ),
+            if (request['status'] == 'ACCEPTED' && onOpenAccepted != null)
+              CupertinoButton(
+                key: const Key('friend-request-open-chat'),
+                onPressed: busy ? null : onOpenAccepted,
+                child: const Text('打开聊天'),
               ),
           ],
         ),

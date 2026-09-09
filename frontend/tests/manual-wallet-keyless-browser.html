@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隔离验证：待启用 MFA 恢复</title>
+<link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css">
+<body class="admin-page"><main class="admin-content"><h1>待启用 MFA 恢复 · 隔离测试</h1><div id="panel"></div><p id="result">RUNNING</p></main>
+<script type="module">
+import {manualWalletPanel} from '/src/admin-manual-wallet-panel.js';
+let pending='fixture-pending', calls=0;
+const api={getWalletMfaStatus:async()=>({configured:false,enabled:false,pending_credential_id:pending}),
+ getManualPayouts:async()=>({items:[]}),getWalletIncidents:async()=>({items:[]}),
+ getWalletMonitorStatus:async()=>({stale:true,external_delivery_configured:false}),
+ abortWalletMfaEnrollment:async body=>{if(body.credential_id!=='fixture-pending'||body.password!=='fixture-password')throw Error('wrong request');calls++;pending=null;return {enabled:false};}};
+const data=new Map(), storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
+const panel=manualWalletPanel(api,{actor:{id:'fixture-owner'},storage});document.querySelector('#panel').append(panel);
+const flush=()=>new Promise(r=>setTimeout(r,0));
+try {
+ await flush();
+ if(panel.querySelector('form[name=mfa-enable]')||panel.querySelector('form[name=mfa-enroll]'))throw Error('crypto operation offered');
+ const form=panel.querySelector('form[name=mfa-abort]');if(!form)throw Error('pending recovery unavailable');
+ if(calls!==0)throw Error('automatic cancellation');
+ form.querySelector('input[name=password]').value='fixture-password';form.requestSubmit();await flush();await flush();
+ if(calls!==1||panel.querySelector('form[name=mfa-abort]'))throw Error('cancellation not reconciled');
+ if(JSON.stringify([...data]).includes('fixture-password'))throw Error('password persisted');
+ document.querySelector('#result').textContent='PASS';
+}catch(error){document.querySelector('#result').textContent='FAIL: '+error.message;}
+</script></body></html>

@@ -1,0 +1,39 @@
+# Independent project. No production business environment, database or signer mounts.
+services:
+  tron-watch:
+    image: "${TRON_WATCH_IMAGE:?Set the verified immutable runtime image ID}"
+    user: "10001:10001"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      TRON_WATCH_ADDRESS: "${TRON_WATCH_ADDRESS:?Protected watch address required}"
+      TRON_WATCH_START_MS: "${TRON_WATCH_START_MS:?Explicit historical coverage required}"
+      TRON_WATCH_API_KEY: "${TRON_WATCH_API_KEY:-}"
+      TRON_WATCH_INTERVAL_SECONDS: "30"
+      TRON_WATCH_BATCH_DAYS: "${TRON_WATCH_BATCH_DAYS:-1}"
+      TRON_WATCH_DATA_DIR: /data
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+      WALLET_DIAGNOSTIC_LOG_LEVEL: "${WALLET_DIAGNOSTIC_LOG_LEVEL:-INFO}"
+      PYTHONPATH: /opt
+    volumes:
+      - "${TRON_WATCH_SOURCE_DIR:?Reviewed module directory required}:/opt/tron:ro"
+      - "${TRON_WATCH_DATA_DIR:?Restricted persistent directory required}:/data"
+    tmpfs: [/tmp]
+    command: [python, -m, tron.cli]
+    healthcheck:
+      test: [CMD, python, -m, tron.cli, --health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "10"

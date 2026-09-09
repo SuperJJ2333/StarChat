@@ -119,6 +119,10 @@ final class _LoginPageState extends State<LoginPage>
         try {
           await widget.onConfirmMatrixAccountSwitch?.call();
           await widget.onAuthenticated?.call();
+        } on BusinessApiException catch (error) {
+          if (mounted) setState(() => _error = error.message);
+        } on LoginStageException catch (error) {
+          if (mounted) setState(() => _error = error.message);
         } catch (_) {
           if (mounted) setState(() => _error = '服务暂时不可用，请稍后重试');
         }

@@ -34,42 +34,38 @@ final class CacheRepository {
       '$momentsFeedKey.$accountKey';
 
   static CacheRepository? _instance;
+  static Future<CacheRepository>? _opening;
   static final _momentsGenerations = <String, int>{};
   static int momentsGeneration(String accountKey) =>
       _momentsGenerations[momentsFeedKeyFor(accountKey)] ?? 0;
   static Map<String, dynamic>? peekMoments(String? accountKey) =>
-      accountKey == null ? null : _instance?.momentsFor(accountKey).loadSync();
-
+      accountKey == null ? null : _instance?.momentsFor(accountKey).snapshot;
   static String? peekMomentCover(String? accountKey) => accountKey == null
       ? null
-      : _instance?._preferences
-          .getString('${momentsFeedKeyFor(accountKey)}.cover');
-
+      : _instance
+          ?.momentsFor(accountKey)
+          .preferencesSnapshot?['cover_url']
+          ?.toString();
   static String? peekMomentCoverKey(String? accountKey) => accountKey == null
       ? null
-      : _instance?._preferences
-          .getString('${momentsFeedKeyFor(accountKey)}.cover-key');
+      : _instance
+          ?.momentsFor(accountKey)
+          .preferencesSnapshot?['cover_cache_key']
+          ?.toString();
 
   Future<void> saveMomentCover(String accountKey, String? url,
-      {String? cacheKey, int? expectedGeneration}) async {
-    if (expectedGeneration != null && expectedGeneration != momentsGeneration(accountKey)) return;
-    final key = '${momentsFeedKeyFor(accountKey)}.cover';
-    if (url == null) {
-      await _preferences.remove(key);
-    } else {
-      await _preferences.setString(key, url);
-    }
-    if (expectedGeneration != null && expectedGeneration != momentsGeneration(accountKey)) return;
-    if (cacheKey == null) {
-      await _preferences.remove('$key-key');
-    } else {
-      await _preferences.setString('$key-key', cacheKey);
-    }
-  }
+          {String? cacheKey, int? expectedGeneration}) =>
+      momentsFor(accountKey)._saveCover(url, cacheKey, expectedGeneration);
+
+  /// Available synchronously after the first initialization in this process.
+  static CacheRepository? get current => _instance;
 
   /// 进程级单例；测试可用 [inject] 注入 mock preferences。
-  static Future<CacheRepository> instance() async =>
-      _instance ??= CacheRepository._(await SharedPreferences.getInstance());
+  static Future<CacheRepository> instance() => _instance != null
+      ? Future.value(_instance)
+      : _opening ??= SharedPreferences.getInstance().then((preferences) {
+          return _instance ??= CacheRepository._(preferences);
+        }).whenComplete(() => _opening = null);
 
   /// 测试专用：注入 mock preferences 并重置单例。
   static CacheRepository inject(SharedPreferences preferences) =>
@@ -77,14 +73,16 @@ final class CacheRepository {
 
   static Future<void> resetForTest() async {
     _instance = null;
+    _opening = null;
     _momentsGenerations.clear();
   }
 
   final SharedPreferences _preferences;
+  final _moments = <String, MomentsCache>{};
 
   /// U04：按账号取朋友圈缓存（accountKey = 业务账号稳定标识）。
-  MomentsCache momentsFor(String accountKey) =>
-      MomentsCache(_preferences, momentsFeedKeyFor(accountKey));
+  MomentsCache momentsFor(String accountKey) => _moments.putIfAbsent(accountKey,
+      () => MomentsCache(_preferences, momentsFeedKeyFor(accountKey)));
 
   ProfileCache get profile => const ProfileCache();
   AvatarCache get avatar => const AvatarCache();
@@ -100,11 +98,51 @@ final class MomentsCache {
 
   final SharedPreferences _preferences;
   final String _storageKey;
+  Map<String, dynamic>? _snapshot;
+  Map<String, dynamic>? _preferencesSnapshot;
+  bool _loaded = false;
+  bool _preferencesLoaded = false;
+  int _feedRevision = 0;
+  int _preferencesRevision = 0;
+  Future<void> _writing = Future.value();
 
-  Future<Map<String, dynamic>?> load() async => loadSync();
+  /// Request tickets are shared across page instances for this account.
+  int beginRefresh() => ++_feedRevision;
+  bool isCurrent(int ticket) => ticket == _feedRevision;
+  int beginPreferencesRefresh() => ++_preferencesRevision;
+  bool preferencesAreCurrent(int ticket) => ticket == _preferencesRevision;
 
-  Map<String, dynamic>? loadSync() {
-    final raw = _preferences.getString(_storageKey);
+  Map<String, dynamic>? get snapshot {
+    if (!_loaded) {
+      _snapshot = _decode(_storageKey);
+      _loaded = true;
+    }
+    return _copy(_snapshot);
+  }
+
+  Map<String, dynamic>? get preferencesSnapshot {
+    if (!_preferencesLoaded) {
+      _preferencesSnapshot = _decode('$_storageKey.preferences');
+      // Android 2072 stored cover fields separately; retain them on upgrade.
+      if (_preferencesSnapshot == null &&
+          _preferences.containsKey('$_storageKey.cover')) {
+        _preferencesSnapshot = {
+          'cover_url': _preferences.getString('$_storageKey.cover'),
+          'cover_cache_key': _preferences.getString('$_storageKey.cover-key'),
+        };
+      }
+      _preferencesLoaded = true;
+    }
+    return _copy(_preferencesSnapshot);
+  }
+
+  static Map<String, dynamic>? _copy(Map<String, dynamic>? value) =>
+      value == null
+          ? null
+          : jsonDecode(jsonEncode(value)) as Map<String, dynamic>;
+
+  Map<String, dynamic>? _decode(String key) {
+    final raw = _preferences.getString(key);
     if (raw == null || raw.isEmpty) return null;
     try {
       return jsonDecode(raw) as Map<String, dynamic>;
@@ -113,16 +151,81 @@ final class MomentsCache {
     }
   }
 
-  Future<void> save(Map<String, dynamic> feed, {int? expectedGeneration}) async {
-    if (expectedGeneration != null && expectedGeneration != (CacheRepository._momentsGenerations[_storageKey] ?? 0)) return;
-    await _preferences.setString(_storageKey, jsonEncode(feed));
+  Map<String, dynamic>? loadSync() => snapshot;
+  Future<Map<String, dynamic>?> load() async => snapshot;
+
+  Future<void> _persist(Future<void> Function() write) {
+    final result = _writing.then((_) => write());
+    _writing = result.catchError((Object _) {});
+    return result;
+  }
+
+  bool _generationIsCurrent(int? expected) =>
+      expected == null ||
+      expected == (CacheRepository._momentsGenerations[_storageKey] ?? 0);
+
+  Future<void> _saveCover(String? url, String? cacheKey, int? expected) async {
+    if (!_generationIsCurrent(expected)) return;
+    await savePreferences({
+      ...?preferencesSnapshot,
+      'cover_url': url,
+      'cover_cache_key': url == null ? null : cacheKey,
+    }, expectedGeneration: expected);
+  }
+
+  Future<void> save(Map<String, dynamic> feed,
+      {int? expectedGeneration}) async {
+    if (!_generationIsCurrent(expectedGeneration)) return;
+    ++_feedRevision;
+    _snapshot = _copy(feed);
+    _loaded = true;
+    final encoded = jsonEncode(feed);
+    await _persist(() async {
+      if (!_generationIsCurrent(expectedGeneration)) return;
+      await _preferences.setString(_storageKey, encoded);
+    });
+  }
+
+  Future<void> savePreferences(Map<String, dynamic> value,
+      {int? expectedGeneration}) async {
+    if (!_generationIsCurrent(expectedGeneration)) return;
+    ++_preferencesRevision;
+    _preferencesSnapshot = _copy(value);
+    _preferencesLoaded = true;
+    final encoded = jsonEncode(value);
+    final cover = value['cover_url']?.toString();
+    final coverKey =
+        cover == null ? null : value['cover_cache_key']?.toString();
+    await _persist(() async {
+      if (!_generationIsCurrent(expectedGeneration)) return;
+      await _preferences.setString('$_storageKey.preferences', encoded);
+      if (cover == null) {
+        await _preferences.remove('$_storageKey.cover');
+      } else {
+        await _preferences.setString('$_storageKey.cover', cover);
+      }
+      if (coverKey == null) {
+        await _preferences.remove('$_storageKey.cover-key');
+      } else {
+        await _preferences.setString('$_storageKey.cover-key', coverKey);
+      }
+    });
   }
 
   Future<void> clear() async {
-    CacheRepository._momentsGenerations[_storageKey] = (CacheRepository._momentsGenerations[_storageKey] ?? 0) + 1;
-    await _preferences.remove(_storageKey);
-    await _preferences.remove('$_storageKey.cover');
-    await _preferences.remove('$_storageKey.cover-key');
+    CacheRepository._momentsGenerations[_storageKey] =
+        (CacheRepository._momentsGenerations[_storageKey] ?? 0) + 1;
+    ++_feedRevision;
+    ++_preferencesRevision;
+    _snapshot = null;
+    _preferencesSnapshot = null;
+    _loaded = _preferencesLoaded = true;
+    await _persist(() async {
+      await _preferences.remove(_storageKey);
+      await _preferences.remove('$_storageKey.preferences');
+      await _preferences.remove('$_storageKey.cover');
+      await _preferences.remove('$_storageKey.cover-key');
+    });
   }
 }
 

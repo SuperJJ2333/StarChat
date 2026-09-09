@@ -16,6 +16,7 @@ Future<void> interactWithMomentComment(
   MomentCommentView? comment,
   required MomentItem? Function() currentItem,
   required ValueChanged<MomentItem> onChanged,
+  Future<void> Function(MomentItem)? onConfirmed,
   required ValueChanged<String?> onSelectionChanged,
   required ValueChanged<String> onError,
 }) async {
@@ -48,11 +49,14 @@ Future<void> interactWithMomentComment(
     if (remove != true || !active()) return;
     try {
       await api.deleteMomentComment(momentId, comment.id);
-      if (active()) {
-        final current = currentItem()!;
-        onChanged(current.copyWith(
+      final current = currentItem();
+      if (privacyRevision == momentsPrivacyChanges.revision &&
+          current != null) {
+        final updated = current.copyWith(
             comments:
-                current.comments.where((c) => c.id != comment.id).toList()));
+                current.comments.where((c) => c.id != comment.id).toList());
+        if (active()) onChanged(updated);
+        await onConfirmed?.call(updated);
       }
     } catch (_) {
       if (active()) onError('删除失败，请重试');
@@ -68,8 +72,10 @@ Future<void> interactWithMomentComment(
         parent: comment);
     if (result != null && active()) {
       final current = currentItem()!;
-      onChanged(current.copyWith(
-          comments: mergeMomentComments(current.comments, result)));
+      final updated = current.copyWith(
+          comments: mergeMomentComments(current.comments, result));
+      onChanged(updated);
+      await onConfirmed?.call(updated);
     }
   } finally {
     if (context.mounted) onSelectionChanged(null);

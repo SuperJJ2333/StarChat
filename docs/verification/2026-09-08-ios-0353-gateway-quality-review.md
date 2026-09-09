@@ -1,0 +1,11 @@
+# iOS 0.3.53 wake gateway quality/security review
+
+Reviewed the final gateway source including retired registration owners and the dedicated private Synapse admin origin. Independent root execution: 52 pytest tests passed; evidence `artifacts/2026-09-08/ios-0353/gateway-root-final.log`.
+
+No remaining source-level deployment blocker found. Request authentication uses fresh Matrix whoami; encrypted two-member room admission is separate from APNs presentation. Payloads contain only opaque references, media type and expiry. Neither bearer credentials nor encrypted-session secrets enter SQLite/APNs. Participant claims are transactional; network operations do not hold the database lock; failed cancellation cannot invalidate a committed answer. Registration ownership protects delayed deletion and invalid-token cleanup; retired owners prevent delayed PUT resurrection with bounded retention/capacity.
+
+The production admin origin is exactly `http://synapse:8008` on the existing trusted `starchat_default` Docker network. The privileged credential goes only to the dedicated client, never public nginx, redirects or environment proxies. This preserves the public admin-deny route and follows the existing business service's private-network trust boundary. It is not a scoped Synapse token: protect the credential file/container and restrict service code to the fixed read-only GETs.
+
+Deployment uses a separate pinned image and route volume, non-root UID, read-only root filesystem, dropped capabilities, loopback host port and a rate/body-limited TLS proxy route. It does not migrate or write business, ledger or homeserver tables. Back up nginx before its additive route, validate configuration before reload; rollback stops the independent service and restores that route configuration.
+
+This approves deployment smoke tests, not actual APNs/iPad delivery. Remaining release evidence must include Linux container health, private admin read access, public unauthenticated rejection, native macOS compilation/signing and physical-device calls/notifications. Token-only revocation without Matrix device deletion remains the explicitly documented eligibility limit; the client must authenticate and match the encrypted call before media.

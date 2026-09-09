@@ -38,6 +38,15 @@ class EncryptedFile {
 Future<EncryptedFile> encryptFile(Uint8List input) async {
   final key = secureRandomBytes(32);
   final iv = secureRandomBytes(16);
+  return encryptFileWithKey(input, key, iv);
+}
+
+/// Matrix v2 attachment encryption with explicitly supplied key and IV.
+Future<EncryptedFile> encryptFileWithKey(
+    Uint8List input, Uint8List key, Uint8List iv) async {
+  if (key.length != 32 || iv.length != 16) {
+    throw ArgumentError('AES-256-CTR requires a 32-byte key and 16-byte IV');
+  }
   final data = await aesCtr.encrypt(input, key, iv);
   final hash = await sha256(data);
   return EncryptedFile(

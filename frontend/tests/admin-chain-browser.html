@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隔离验证：后台链上流水</title>
+<link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css">
+<body class="admin-page"><main class="admin-content"><h1>隔离测试数据</h1><div id="panel"></div><p id="result">RUNNING</p></main>
+<script type="module">
+import { chainPanel } from "/src/admin-chain-panel.js";
+const calls = [];
+const item = {txid:"a".repeat(64),log_index:1,timestamp_ms:1000,amount:"10.000001",direction:"INFLOW",
+  platform_record:{kind:"DEPOSIT",record_id:"isolated-receipt",ledger_status:"CREDITED",user_id:"isolated-user",
+    ledger_transaction_id:"isolated-ledger",intent_id:"isolated-intent",reason_code:"MATCHED",evidence_status:"CONFLICT"}};
+const api = {
+  getChainSummary: async () => ({balance:"10.000001",last_success_ms:1000,checkpoint_ms:1000,coverage_start_ms:0,observer_status:"OK",reconciliation:"SOURCE_MATCHED"}),
+  getChainTransactions: async args => {calls.push(args);return {items:[item],total:30,snapshot:7};},
+  getChainTransaction: async () => ({...item,block_number:123,from_address:"隔离测试来源",to_address:"隔离测试目标"})
+};
+const panel=chainPanel(api);document.querySelector("#panel").append(panel);
+const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
+const assert=(value,message)=>{if(!value)throw Error(message);};
+try {
+  await flush(); assert(panel.textContent.includes("10.000001"),"exact amount");
+  assert(panel.textContent.includes("已入账") && panel.textContent.includes("证据冲突"),"separate ledger and evidence");
+  [...panel.querySelectorAll("button")].find(x=>x.textContent==="下一页").click(); await flush();
+  assert(calls[1].snapshot===7 && calls[1].offset===25,"stable pagination");
+  [...panel.querySelectorAll("button")].find(x=>x.textContent==="详情").click(); await flush();
+  assert(panel.textContent.includes("隔离测试目标"),"detail");
+  assert(panel.textContent.includes("isolated-ledger") && panel.textContent.includes("isolated-user"),"financial linkage");
+  document.querySelector("#result").textContent="PASS";document.body.dataset.result="PASS";
+}catch(error){document.querySelector("#result").textContent=error.message;document.body.dataset.result="FAIL";}
+</script></body></html>

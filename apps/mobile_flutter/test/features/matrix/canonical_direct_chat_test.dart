@@ -3,7 +3,7 @@ import 'package:liuhetong_mobile/features/matrix/direct_chat_controller.dart';
 
 /// Canonical Direct Conversation（好友系统重构 Phase E）：
 /// 创建私聊前先查规范房间复用；不存在才 inner 新建并注册；
-/// 并发冲突采用规范房间；目录异常回落 inner。
+/// 并发注册采用规范房间；目录异常禁止回落。跨端创建使用独立协调网关。
 void main() {
   const room = DirectChatRoom(
     roomId: '!canonical:test',
@@ -74,20 +74,19 @@ void main() {
     expect(result.roomId, '!winner:test');
   });
 
-  test('目录查询异常 → 静默回落 inner 新建', () async {
+  test('目录查询异常 → 禁止回落新建', () async {
     final gateway = CanonicalDirectChatGateway(
       inner: _FakeInnerGateway(() async => roomWithId('!fresh:test')),
       directory: _ThrowingDirectory(),
       businessUserIdOf: (mxid) => 'bob-id',
       openExistingRoom: (roomId) async => roomWithId(roomId),
     );
-    final result = await gateway.openOrCreateDirectChat('@bob:test');
-    expect(result.roomId, '!fresh:test');
+    await expectLater(
+        gateway.openOrCreateDirectChat('@bob:test'), throwsStateError);
   });
 
-  test('注册冲突且规范房间已失效（如对端退出）→ 回退本次新建房间，不抛错', () async {
-    // 真机 BUG 场景：direct_conversations 里登记的旧房间已不可用，
-    // 依既有房间打开抛错必须回退到本次新建的有效房间，禁止死锁报错。
+  test('注册冲突且规范房间不可用 → 报错，不返回第二个房间', () async {
+    // 旧房间暂不可用并不授权返回第二个房间；等待原房间恢复。
     var openAttempts = <String>[];
     final gateway = CanonicalDirectChatGateway(
       inner: _FakeInnerGateway(() async => roomWithId('!fresh:test')),
@@ -100,12 +99,12 @@ void main() {
       },
     );
 
-    final result = await gateway.openOrCreateDirectChat('@bob:test');
-    expect(result.roomId, '!fresh:test');
+    await expectLater(
+        gateway.openOrCreateDirectChat('@bob:test'), throwsStateError);
     expect(openAttempts, ['!dead:test']);
   });
 
-  test('无业务 userId（非好友映射缺失）→ 直接 inner', () async {
+  test('无业务 userId（非好友映射缺失）→ 禁止新建', () async {
     var directoryQueried = false;
     final gateway = CanonicalDirectChatGateway(
       inner: _FakeInnerGateway(() async => room),
@@ -114,8 +113,8 @@ void main() {
       businessUserIdOf: (mxid) => null,
       openExistingRoom: (roomId) async => roomWithId(roomId),
     );
-    final result = await gateway.openOrCreateDirectChat('@stranger:test');
-    expect(result.roomId, '!canonical:test');
+    await expectLater(
+        gateway.openOrCreateDirectChat('@stranger:test'), throwsStateError);
     expect(directoryQueried, isFalse, reason: '业务映射缺失时不得查询目录');
   });
 }

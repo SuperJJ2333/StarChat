@@ -1,28 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'moment_media_cache.dart';
 
-import '../foundation/retained_image_cache_manager.dart';
-
-final _momentImageCache = RetainedImageCacheManager(
-    Config('changliao-moment-images-v1', maxNrOfCacheObjects: 500));
-
-class _MomentImageProvider extends CachedNetworkImageProvider {
-  const _MomentImageProvider(super.url, {super.cacheKey});
-
-  // Constructing/comparing an image identity must not initialize disk storage.
-  @override
-  BaseCacheManager get cacheManager => _momentImageCache;
-}
-
-/// A signed URL can change while its immutable business media object does not.
-/// Only server-projected stable keys are reused; unknown URLs keep normal URL
-/// identity, avoiding accidental reuse when an image is replaced.
+/// Compatibility entry point: stable private identity requires an explicitly
+/// trusted origin, as well as an account and a server-issued digest.
 CachedNetworkImageProvider momentImageProvider(String url,
-        [String? stableKey, String namespace = '']) =>
-    _MomentImageProvider(url,
-        cacheKey: stableKey == null || stableKey.isEmpty || namespace.isEmpty
-            ? null
-            : '${Uri.tryParse(url)?.origin}:moment:$namespace:$stableKey');
+        [String? stableKey, String namespace = '', String? trustedOrigin]) =>
+    MomentMediaCache.imageProvider(url,
+        cacheKey: stableKey,
+        accountKey: namespace,
+        trustedOrigin: trustedOrigin);
 
-String? momentImageKey(List<String> keys, int index) =>
+String? momentImageKey(List<String?> keys, int index) =>
     index < keys.length ? keys[index] : null;

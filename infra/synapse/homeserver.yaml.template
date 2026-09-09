@@ -3,6 +3,12 @@ pid_file: /data/homeserver.pid
 public_baseurl: "{{SYNAPSE_PUBLIC_BASEURL}}"
 
 listeners:
+  - port: 9093
+    bind_addresses: ['0.0.0.0']
+    tls: false
+    type: http
+    resources:
+      - names: [replication]
   - port: 8008
     tls: false
     type: http
@@ -22,7 +28,20 @@ database:
     host: "{{POSTGRES_HOST}}"
     port: {{POSTGRES_PORT}}
     cp_min: 5
-    cp_max: 10
+    cp_max: 30
+
+redis:
+  enabled: true
+  host: matrix-redis
+  port: 6379
+
+presence:
+  enabled: false
+
+rc_invites:
+  per_room:
+    per_second: 50
+    burst_count: 1200
 
 log_config: "/data/log.config"
 media_store_path: /data/media_store

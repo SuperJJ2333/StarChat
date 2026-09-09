@@ -3,11 +3,19 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 
 import '../components/wechat_scaffold.dart';
+import 'moment_media_cache.dart';
 
 final class WeChatMomentViewer extends StatelessWidget {
   const WeChatMomentViewer(
-      {super.key, required this.urls, this.initialIndex = 0});
+      {super.key,
+      required this.urls,
+      this.initialIndex = 0,
+      this.imageCacheKeys = const [],
+      this.mediaAccountKey,
+      this.mediaOrigin});
   final List<String> urls;
+  final List<String?> imageCacheKeys;
+  final String? mediaAccountKey, mediaOrigin;
   final int initialIndex;
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -18,7 +26,21 @@ final class WeChatMomentViewer extends StatelessWidget {
             itemCount: urls.length,
             itemBuilder: (_, index) => InteractiveViewer(
                 child: Center(
-                    child: Image.network(urls[index],
+                    child: Image(
+                        key: ValueKey(MomentMediaCache.imageIdentity(
+                            urls[index],
+                            accountKey: mediaAccountKey,
+                            trustedOrigin: mediaOrigin,
+                            cacheKey: index < imageCacheKeys.length
+                                ? imageCacheKeys[index]
+                                : null)),
+                        gaplessPlayback: true,
+                        image: MomentMediaCache.imageProvider(urls[index],
+                            accountKey: mediaAccountKey,
+                            trustedOrigin: mediaOrigin,
+                            cacheKey: index < imageCacheKeys.length
+                                ? imageCacheKeys[index]
+                                : null),
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) =>
                             const Icon(CupertinoIcons.photo, size: 48))))),
@@ -30,9 +52,16 @@ final class WeChatMomentCoverViewer extends StatefulWidget {
     super.key,
     required this.url,
     required this.onChangeCover,
+    this.cacheKey,
+    this.cacheKeyForUrl,
+    this.mediaAccountKey,
+    this.mediaOrigin,
   });
 
   final String? url;
+  final String? cacheKey;
+  final String? mediaAccountKey, mediaOrigin;
+  final String? Function(String url)? cacheKeyForUrl;
   final Future<String?> Function(ValueChanged<Uint8List> onPreview)
       onChangeCover;
 
@@ -44,6 +73,7 @@ final class WeChatMomentCoverViewer extends StatefulWidget {
 final class _WeChatMomentCoverViewerState
     extends State<WeChatMomentCoverViewer> {
   String? _url;
+  String? _cacheKey;
   String? _error;
   Uint8List? _localPreview;
   bool _uploading = false;
@@ -52,6 +82,7 @@ final class _WeChatMomentCoverViewerState
   void initState() {
     super.initState();
     _url = widget.url;
+    _cacheKey = widget.cacheKey;
   }
 
   Future<void> _changeCover() async {
@@ -67,6 +98,7 @@ final class _WeChatMomentCoverViewerState
       if (mounted && value != null) {
         setState(() {
           _url = value;
+          _cacheKey = widget.cacheKeyForUrl?.call(value);
           _localPreview = null;
         });
       }
@@ -99,8 +131,17 @@ final class _WeChatMomentCoverViewerState
                         : _url == null
                             ? const Icon(CupertinoIcons.photo,
                                 color: CupertinoColors.white, size: 56)
-                            : Image.network(
-                                _url!,
+                            : Image(
+                                key: ValueKey(MomentMediaCache.imageIdentity(
+                                    _url!,
+                                    accountKey: widget.mediaAccountKey,
+                                    trustedOrigin: widget.mediaOrigin,
+                                    cacheKey: _cacheKey)),
+                                gaplessPlayback: true,
+                                image: MomentMediaCache.imageProvider(_url!,
+                                    cacheKey: _cacheKey,
+                                    accountKey: widget.mediaAccountKey,
+                                    trustedOrigin: widget.mediaOrigin),
                                 fit: BoxFit.contain,
                                 errorBuilder: (_, __, ___) => const Icon(
                                   CupertinoIcons.exclamationmark_triangle,

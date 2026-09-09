@@ -247,6 +247,13 @@ void main() {
       throw StateError('Unexpected request: ${request.method} ${request.url}');
     });
 
+    // Optimistic own identity requires the authenticated business account.
+    final claims = base64Url.encode(utf8.encode(jsonEncode({'sub': 'me'})));
+    await api.sessionStore.saveSession(
+        accessToken: 'header.$claims.signature',
+        refreshToken: 'refresh',
+        matrixUserId: '@me:test');
+
     await tester.pumpWidget(CupertinoApp(
       home: MomentsPage(
           api: api,

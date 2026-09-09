@@ -34,7 +34,8 @@ import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
-import 'features/matrix/cached_direct_room_directory.dart';
+import 'features/matrix/coordinated_direct_chat.dart';
+import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
 import 'features/matrix/room_page.dart';
@@ -154,17 +155,14 @@ final class AppHome extends StatefulWidget {
 
 final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   late final DirectChatController directChats = DirectChatController(
-    // Canonical Direct Conversation（好友系统重构 Phase E）：
-    // 创建私聊前先查规范房间复用；不存在才 startDirectChat 新建并注册。
-    CanonicalDirectChatGateway(
-      inner: widget.matrix,
-      directory: CachedDirectRoomDirectory(
-        accountId: widget.matrix.userId ?? '',
-        upstream: _ApiCanonicalDirectRoomDirectory(widget.api),
-      ),
+    CoordinatedDirectChatGateway(
+      coordinator: ApiDirectRoomCoordinator(widget.api),
+      intents: PreferencesDirectRoomIntentStore(widget.matrix.userId ?? ''),
+      createOnce: widget.matrix.createDirectChatOnce,
+      findExisting: widget.matrix.findExistingDirectChat,
       businessUserIdOf: (matrixUserId) =>
           _chatIdentityCache?.contactsByMatrixId[matrixUserId]?.userId,
-      openExistingRoom: _openCanonicalDirectRoom,
+      openExisting: _openCanonicalDirectRoom,
     ),
   );
 
@@ -816,10 +814,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       _friendRequestWatch = FriendRequestWatch(widget.api, prefs,
           notifier: notifier,
           accountKey: widget.matrix.userId ?? '',
-          onOutgoingAccepted: _sendAcceptedRequestGreeting,
+          onOutgoingAcceptedChanged: (_) => _refreshAfterFriendChanges(),
           onPendingCount: (count) {
-        if (_currentStartup(generation)) pendingFriendRequests.value = count;
-      });
+            if (_currentStartup(generation)) {
+              pendingFriendRequests.value = count;
+            }
+          });
       _friendRequestPollTimer = Timer.periodic(
         const Duration(seconds: 5),
         (_) => unawaited(_pollFriendRequests()),
@@ -864,9 +864,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
           onRequestsChanged: () => unawaited(_refreshAfterFriendChanges()),
           identityCache: _chatIdentityCache,
           // BUG 3：accept 后建立私聊 + 发送好友接受系统消息。
-          onEstablishDirectChat:
-              (matrixUserId, friendUserId, friendDisplayName) =>
-                  _establishDirectChatAndGreet(matrixUserId, friendDisplayName),
+          onEstablishDirectChatWithRequest:
+              (matrixUserId, friendUserId, friendDisplayName, request) =>
+                  _establishDirectChatAndGreet(
+                      matrixUserId, friendDisplayName, request),
         ),
       ),
     );
@@ -877,27 +878,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _establishDirectChatAndGreet(
     String matrixUserId,
     String friendDisplayName,
+    Map request,
   ) async {
-    final reference = await directChats.open(matrixUserId);
-    unawaited(_openConversationFromNotification(reference.roomId));
-    await widget.matrix
-        .sendFriendAccepted(reference.roomId, matrixUserId, friendDisplayName);
-  }
-
-  Future<void> _sendAcceptedRequestGreeting(Map request) async {
-    final peer = request['matrix_user_id']?.toString() ?? '';
-    final greeting = request['message']?.toString() ?? '';
-    if (peer.isEmpty) throw StateError('好友 Matrix 身份尚未就绪');
-    if (greeting.isEmpty) return;
     final cache = await _identityCache();
-    final businessId = request['user_id']?.toString() ?? '';
-    if (businessId.isEmpty) throw StateError('好友业务身份尚未就绪');
-    await cache.applyUpdatedContact(
-        ContactSummary.fromJson(Map<String, dynamic>.from(request)));
-    final reference = await directChats.open(peer);
-    await widget.matrix.sendFriendRequestGreeting(
-        reference.roomId, greeting, request['id'].toString());
-    unawaited(_refreshAfterFriendChanges());
+    await _refreshMissingFriendIdentity(cache, matrixUserId);
+    final reference = await directChats.open(matrixUserId);
+    await widget.matrix.sendFriendAccepted(
+        reference.roomId, matrixUserId, friendDisplayName,
+        requestId: request['id']?.toString(),
+        requestMessage: request['message']?.toString());
+    // The recipient sees request context before this route exposes a composer.
+    await _openConversationFromNotification(reference.roomId);
   }
 
   AppUpdateDeferStore? _deferStore;
@@ -1775,26 +1766,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         );
 }
 
-/// Canonical Direct Conversation 目录适配（好友系统重构 Phase E）。
-final class _ApiCanonicalDirectRoomDirectory
-    implements CanonicalDirectRoomDirectory {
-  _ApiCanonicalDirectRoomDirectory(this._api);
-  final BusinessApiClient _api;
-
-  @override
-  Future<String?> canonicalRoomId(String peerUserId) =>
-      _api.canonicalDirectRoomId(peerUserId);
-
-  @override
-  Future<String?> registerRoom(String peerUserId, String roomId) async {
-    try {
-      return await _api.registerDirectConversation(peerUserId, roomId);
-    } catch (_) {
-      return null;
-    }
-  }
-}
-
 // Existing contacts use the hydrated snapshot immediately. A newly accepted
 // contact must be resolved through the business API before room lookup, so the
 // canonical directory and RoomPage share the same current identity projection.
@@ -1955,15 +1926,14 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
       controller: controller,
-      onMoments: () {
+      onMoments: () async {
         final cache = widget.identityCache;
         if (cache == null) return;
-        Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
-            fullscreenDialog: true,
-            builder: (_) => MomentsPage(
-                  api: widget.api,
-                  identityCache: cache,
-                )));
+        final page =
+            await MomentsPage.prepare(api: widget.api, identityCache: cache);
+        if (!context.mounted) return;
+        Navigator.of(context, rootNavigator: true).push(
+            CupertinoPageRoute(fullscreenDialog: true, builder: (_) => page));
       },
       onCaibi: () => Navigator.push(
           context,

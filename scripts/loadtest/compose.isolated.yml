@@ -1,0 +1,108 @@
+# Standalone isolated test stack. Never combine this with the production compose.
+name: ${CAPACITY_PROJECT:?prepare an isolated run first}
+x-common: &common
+  restart: "no"
+  networks: [isolated]
+services:
+  postgres:
+    <<: *common
+    image: postgres:16.9-alpine
+    command: [postgres, -N, "250"]
+    environment:
+      POSTGRES_DB: synapse
+      POSTGRES_USER: synapse
+      POSTGRES_PASSWORD: ${CAPACITY_DB_PASSWORD:?prepare an isolated run first}
+      POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+    volumes: ["${CAPACITY_RUN_DIR:?}/postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U synapse -d synapse"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  matrix-redis:
+    <<: *common
+    image: redis:7.4.2-alpine
+    command: [redis-server, --save, "", --appendonly, "no"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  synapse:
+    <<: *common
+    image: starchat/synapse:v1.132.0-dedup.1
+    build: ../../third_party/synapse
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      CHATFLOW_MEDIA_DEDUP: ${CAPACITY_MEDIA_DEDUP:-true}
+      CHATFLOW_MEDIA_RETENTION_MS: "604800000"
+    volumes: ["${CAPACITY_RUN_DIR:?}/synapse:/data"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      matrix-redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health',timeout=3)"]
+      interval: 3s
+      timeout: 4s
+      retries: 60
+      start_period: 30s
+  synapse-sync-worker:
+    <<: *common
+    image: starchat/synapse:v1.132.0-dedup.1
+    entrypoint: [python, -m, synapse.app.generic_worker]
+    command: [--config-path, /data/homeserver.yaml, --config-path, /data/worker-sync.yaml]
+    environment:
+      CHATFLOW_MEDIA_DEDUP: ${CAPACITY_MEDIA_DEDUP:-true}
+    volumes: ["${CAPACITY_RUN_DIR:?}/synapse:/data"]
+    depends_on:
+      synapse: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health',timeout=3)"]
+      interval: 3s
+      timeout: 4s
+      retries: 60
+  gateway-worker:
+    <<: *common
+    networks: [isolated, ingress]
+    image: nginx:1.27.5-alpine
+    volumes: ["${CAPACITY_RUN_DIR:?}/gateway-worker.conf:/etc/nginx/conf.d/default.conf:ro"]
+    ports: ["127.0.0.1:18008:8080"]
+    depends_on:
+      synapse-sync-worker: {condition: service_healthy}
+  gateway-baseline:
+    <<: *common
+    networks: [isolated, ingress]
+    image: nginx:1.27.5-alpine
+    volumes: ["${CAPACITY_RUN_DIR:?}/gateway-baseline.conf:/etc/nginx/conf.d/default.conf:ro"]
+    ports: ["127.0.0.1:18009:8080"]
+    depends_on:
+      synapse: {condition: service_healthy}
+  k6:
+    <<: *common
+    image: grafana/k6:0.54.0
+    profiles: [load]
+    user: "0:0"
+    volumes:
+      - ./:/scripts:ro
+      - "${CAPACITY_RUN_DIR:?}:/artifacts"
+    environment:
+      CAPACITY_ISOLATED_TEST: ${CAPACITY_ISOLATED_TEST:?prepare an isolated run first}
+      CAPACITY_ISOLATED_DOCKER: "YES"
+      CAPACITY_RUN_ID: ${CAPACITY_RUN_ID:?prepare an isolated run first}
+      # Empty during prepare/config/up; capacity.py run supplies a fresh value.
+      CAPACITY_LOAD_ID: ${CAPACITY_LOAD_ID:-}
+      CAPACITY_BASE_URL: ${CAPACITY_BASE_URL:-http://gateway-worker:8080}
+      CAPACITY_ACCOUNTS_FILE: /artifacts/accounts.json
+      CAPACITY_EVENTS_FILE: ${CAPACITY_EVENTS_FILE:-}
+      CAPACITY_MODE: ${CAPACITY_MODE:-sync}
+      CAPACITY_VUS: ${CAPACITY_VUS:-2}
+      CAPACITY_RAMP: ${CAPACITY_RAMP:-30s}
+      CAPACITY_HOLD: ${CAPACITY_HOLD:-2m}
+      CAPACITY_SEND_EVERY: ${CAPACITY_SEND_EVERY:-5}
+      CAPACITY_SUMMARY_FILE: ${CAPACITY_SUMMARY_FILE:-/artifacts/summary.json}
+    command: [run, /scripts/capacity.js]
+networks:
+  isolated:
+    internal: true
+  ingress:
+    internal: false

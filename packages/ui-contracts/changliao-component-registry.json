@@ -59,6 +59,76 @@
       "behavior": "Resolve at build; light/dark/system live updates; preserve photos, QR and accent contrast",
       "html": "frontend/src/styles/tokens.css",
       "figmaSync": "Deferred: Figma connector unavailable; no remote nodes modified"
+    },
+    "2026-09-09-mobile-parity": {
+      "figmaSync": "Deferred: remote Figma tooling unavailable; existing layout retained, local behavior record only",
+      "feed": "Account-scoped cached first paint; preserve content during background refresh",
+      "media": "Shared disk cache for thumbnails, cover and full-screen; retain layout and gestures",
+      "likes": "Immediate heart, count and people update with rollback and confirmed cache persistence"
+    },
+    "2026-09-09-friend-request-context": {
+      "flutter": "apps/mobile_flutter/lib/features/friendship/friend_acceptance_coordinator.dart; apps/mobile_flutter/lib/features/contacts/contacts_page.dart; apps/mobile_flutter/lib/features/matrix/matrix_e2ee_client.dart",
+      "acceptance": "Labeled original request context in existing system notice; authenticated acceptor is sender, never impersonates requester",
+      "ordering": "Acceptance context send completes before accepting route opens composer; outgoing polling never sends ordinary greeting",
+      "failure": "Friendship remains saved; explicit retry initializes same request, without another accept API call",
+      "tokens": "Existing system notice typography, spacing and colors retained",
+      "figmaPageNodes": [
+        "19:3",
+        "18:7"
+      ],
+      "figmaSync": "Deferred: Figma tooling unavailable; no remote nodes modified"
+    },
+    "2026-09-07-wallet-chain": {
+      "html": "frontend/src/admin-chain-panel.js",
+      "flutter": null,
+      "scope": "administration-only",
+      "states": [
+        "loading",
+        "empty",
+        "error",
+        "retry",
+        "paged",
+        "detail",
+        "credited",
+        "review",
+        "settled",
+        "evidence-conflict",
+        "unverified"
+      ],
+      "financialLink": "server platform_record only; ledger status and evidence conflict remain distinct",
+      "amount": "server six-decimal string; never Number conversion",
+      "paging": "retain snapshot until filters change or refresh",
+      "figmaSync": "deferred by user; no remote node modified"
+    },
+    "2026-09-10-mention-history": {
+      "flutter": [
+        "lib/ui/components/conversation_list_tile.dart",
+        "lib/ui/chat/conversation_mention_banner.dart",
+        "lib/ui/chat/chat_search_page.dart",
+        "lib/features/matrix/room_page.dart"
+      ],
+      "props": [
+        "hasPendingMention",
+        "loadCalendarMonth",
+        "onCalendarClosed",
+        "onSearchInvalidated"
+      ],
+      "states": [
+        "pending",
+        "viewed",
+        "jump-failed",
+        "month-loading",
+        "month-empty",
+        "month-error",
+        "retry",
+        "stale-query"
+      ],
+      "tokens": {
+        "filterSurface": "elevatedSurface",
+        "filterText": "resolveTextPrimary"
+      },
+      "mentionOrder": "Matrix event-relative rank; persisted boundary event identity and completed scan head",
+      "figmaSync": "tool unavailable; no remote node modified"
     }
   },
   "figma": {
@@ -644,13 +714,41 @@
       "flutter": {
         "name": "WeChatMomentReactions",
         "file": "apps/mobile_flutter/lib/ui/moments/wechat_moment_reactions.dart",
-        "props": ["item", "resolveIdentity", "onPersonTap", "onCommentTap", "selectedCommentId", "detailMode", "cacheNamespace"],
-        "variants": {"mode": ["feed", "detail"]},
-        "states": ["default", "reply-selected", "own-comment-copy-delete", "empty", "liked"]
+        "props": [
+          "item",
+          "resolveIdentity",
+          "onPersonTap",
+          "onCommentTap",
+          "selectedCommentId",
+          "detailMode",
+          "cacheNamespace"
+        ],
+        "variants": {
+          "mode": [
+            "feed",
+            "detail"
+          ]
+        },
+        "states": [
+          "default",
+          "reply-selected",
+          "own-comment-copy-delete",
+          "empty",
+          "liked"
+        ]
       },
-      "html": {"tag": "app-moment-reactions"},
-      "figma": {"name": "app-moment-reactions", "key": "25:127"},
-      "tokens": ["surface", "spacing", "radius"],
+      "html": {
+        "tag": "app-moment-reactions"
+      },
+      "figma": {
+        "name": "app-moment-reactions",
+        "key": "25:127"
+      },
+      "tokens": [
+        "surface",
+        "spacing",
+        "radius"
+      ],
       "reactionTokenSource": {
         "flutter": "apps/mobile_flutter/lib/ui/moments/moment_reaction_tokens.dart",
         "html": "frontend/src/styles/tokens.css: --moment-reaction-*",
@@ -662,13 +760,40 @@
       "flutter": {
         "name": "ProfileIdentityCard",
         "file": "apps/mobile_flutter/lib/features/contacts/contact_profile_sections.dart",
-        "props": ["userId", "username", "nickname", "remark", "avatarUrl", "identityCache", "statusLabel"],
-        "variants": {"relationship": ["friend", "user"]},
-        "states": ["default", "large-text", "pending", "self"]
+        "props": [
+          "userId",
+          "username",
+          "nickname",
+          "remark",
+          "avatarUrl",
+          "identityCache",
+          "statusLabel"
+        ],
+        "variants": {
+          "relationship": [
+            "friend",
+            "user"
+          ]
+        },
+        "states": [
+          "default",
+          "large-text",
+          "pending",
+          "self"
+        ]
       },
-      "html": {"tag": "app-identity-header"},
-      "figma": {"name": "app-identity-header", "key": "25:37"},
-      "tokens": ["surface", "spacing", "radius"]
+      "html": {
+        "tag": "app-identity-header"
+      },
+      "figma": {
+        "name": "app-identity-header",
+        "key": "25:37"
+      },
+      "tokens": [
+        "surface",
+        "spacing",
+        "radius"
+      ]
     },
     {
       "id": "moment-personal-cover",

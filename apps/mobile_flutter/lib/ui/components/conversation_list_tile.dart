@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../chat/wechat_unread_badge.dart';
+import '../chat/conversation_mention_banner.dart';
 import '../foundation/changliao_icons.dart';
 import '../foundation/wechat_tokens.dart';
 
@@ -12,6 +13,7 @@ final class ConversationListTile extends StatelessWidget {
     required this.timeLabel,
     required this.avatar,
     this.unreadCount = 0,
+    this.hasPendingMention = false,
     this.muted = false,
     this.pinnedGroup = false,
     this.onTap,
@@ -23,6 +25,7 @@ final class ConversationListTile extends StatelessWidget {
   final String timeLabel;
   final Widget avatar;
   final int unreadCount;
+  final bool hasPendingMention;
   final bool muted;
   final bool pinnedGroup;
   final VoidCallback? onTap;
@@ -72,10 +75,10 @@ final class ConversationListTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: WeChatSpacing.xs),
-                    Text(
-                      subtitle,
+                    ConversationSummaryWithMention(
+                      summary: subtitle,
+                      hasPendingMention: hasPendingMention,
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: WeChatColors.textSecondary,
                         fontSize: WeChatTypography.subhead,

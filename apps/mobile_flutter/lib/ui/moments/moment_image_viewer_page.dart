@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
-import 'moment_image_provider.dart';
+
+import 'moment_media_cache.dart';
 
 /// 朋友圈图片全屏查看页：网络大图 + 双指缩放 + 左右切换 + 点击关闭。
 final class MomentImageViewerPage extends StatefulWidget {
@@ -8,12 +9,15 @@ final class MomentImageViewerPage extends StatefulWidget {
     required this.imageUrls,
     required this.initialIndex,
     this.imageCacheKeys = const [],
+    this.mediaAccountKey,
+    this.mediaOrigin,
     this.cacheNamespace = '',
   });
 
   final List<String> imageUrls;
+  final List<String?> imageCacheKeys;
+  final String? mediaAccountKey, mediaOrigin;
   final int initialIndex;
-  final List<String> imageCacheKeys;
   final String cacheNamespace;
 
   @override
@@ -46,11 +50,22 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   maxScale: 4,
                   child: Center(
                     child: Image(
-                      image: momentImageProvider(
+                      key: ValueKey(MomentMediaCache.imageIdentity(
                           widget.imageUrls[i],
-                          momentImageKey(widget.imageCacheKeys, i),
-                          widget.cacheNamespace),
+                          accountKey:
+                              widget.mediaAccountKey ?? widget.cacheNamespace,
+                          trustedOrigin: widget.mediaOrigin,
+                          cacheKey: i < widget.imageCacheKeys.length
+                              ? widget.imageCacheKeys[i]
+                              : null)),
                       gaplessPlayback: true,
+                      image: MomentMediaCache.imageProvider(widget.imageUrls[i],
+                          accountKey:
+                              widget.mediaAccountKey ?? widget.cacheNamespace,
+                          trustedOrigin: widget.mediaOrigin,
+                          cacheKey: i < widget.imageCacheKeys.length
+                              ? widget.imageCacheKeys[i]
+                              : null),
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Center(
                         child: Text('图片加载失败',

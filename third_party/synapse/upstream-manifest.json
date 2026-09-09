@@ -1,0 +1,25 @@
+{
+  "version": "1.132.0",
+  "files": {
+    "synapse/media/media_repository.py": {
+      "before": "0eeee5d9235669e5cc0927888021e227aae72b523d496ed236aa69a66d4634bc",
+      "after": "1922615e20a78dc9c4a04b9fb9613e0bd3d09b2ddca2b88975f4b7d6d1a23860"
+    },
+    "synapse/storage/databases/main/media_repository.py": {
+      "before": "bad28fb92a4571e301e483bb88788797b9b13cf0cab4f65b22698d2fe0e4fe3e",
+      "after": "a25e509c3af19758c46b411215fbc7b037ae241b5b9d8f9f7c90672dc08a48ae"
+    },
+    "synapse/storage/databases/main/stats.py": {
+      "before": "a584a45b3504ab093872f7038bec0a3dd5db5a7db48284c2ad241d7a87e6519c",
+      "after": "2e950a9a1a9dde40820242af4d9189478e2e7c95220ab31175b7248d6a1ef0b7"
+    },
+    "synapse/storage/databases/main/room.py": {
+      "before": "b06031a050cf841a95669f2439d49775d5125acb304e15531a1152ae73e9c4bc",
+      "after": "e6393401609bfad27c8abd758fed563838e1f9f092a6d1ec23f17dacceafd1bb"
+    },
+    "synapse/rest/admin/media.py": {
+      "before": "aeca40dbdf591de82b7ca7a796cb03270ed8b0641a5afbfa0aad97c9deb372a4",
+      "after": "c9a85e4bbbb866f59ba46b712e5edd3e699cc24b22aa2d09cadec514e1132615"
+    }
+  }
+}

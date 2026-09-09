@@ -22,7 +22,8 @@ test("source uses no private styling or shadow DOM escape hatches", async () => 
     assert.doesNotMatch(source, /!important/u, `${file.pathname} uses !important`);
     assert.doesNotMatch(source, /attachShadow/u, `${file.pathname} uses Shadow DOM`);
     assert.doesNotMatch(source, /style\s*=/u, `${file.pathname} uses inline styles`);
-    assert.doesNotMatch(source, /https?:\/\//u, `${file.pathname} uses an external URL`);
+    // SVG's standard namespace is an identifier, never a network resource.
+    assert.doesNotMatch(source.replaceAll('http://www.w3.org/2000/svg',''), /https?:\/\//u, `${file.pathname} uses an external URL`);
     if (!file.pathname.endsWith("/tokens.css")) {
       assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b/iu, `${file.pathname} hard-codes a color`);
       assert.doesNotMatch(source, /\b(?:rgb|rgba|hsl|hsla)\(/iu, `${file.pathname} hard-codes a color function`);

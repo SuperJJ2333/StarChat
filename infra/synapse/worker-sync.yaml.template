@@ -1,0 +1,28 @@
+# Loaded after homeserver.yaml; shared secrets and Redis settings are inherited.
+worker_app: synapse.app.generic_worker
+worker_name: sync-worker-1
+worker_pid_file: /data/sync-worker-1.pid
+worker_log_config: /data/log.config
+instance_map:
+  main:
+    host: synapse
+    port: 9093
+worker_listeners:
+  - port: 8081
+    bind_addresses: ['0.0.0.0']
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, replication]
+        compress: false
+database:
+  name: psycopg2
+  args:
+    user: "{{POSTGRES_USER}}"
+    password: "{{POSTGRES_PASSWORD}}"
+    database: "{{POSTGRES_DB}}"
+    host: "{{POSTGRES_HOST}}"
+    port: {{POSTGRES_PORT}}
+    cp_min: 5
+    cp_max: 15

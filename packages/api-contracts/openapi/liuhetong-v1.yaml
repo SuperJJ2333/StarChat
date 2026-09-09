@@ -4081,6 +4081,45 @@
         "title": "OperationPasswordBody",
         "type": "object"
       },
+      "PasswordLoginResponse": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "default": 900,
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "matrix_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix User Id"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "PasswordLoginResponse",
+        "type": "object"
+      },
       "PaymentPinAuthorizationView": {
         "properties": {
           "authorization": {
@@ -10161,7 +10200,22 @@
     "/api/v1/app-updates/latest": {
       "get": {
         "operationId": "latest_api_v1_app_updates_latest_get",
-        "parameters": [],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "platform",
+            "required": false,
+            "schema": {
+              "default": "android",
+              "enum": [
+                "android",
+                "ios"
+              ],
+              "title": "Platform",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -10797,7 +10851,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/PasswordLoginResponse"
                 }
               }
             },

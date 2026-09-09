@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隔离验证：人工出款</title>
+<link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css">
+<body class="admin-page"><main class="admin-content"><h1>人工出款 · 隔离测试数据</h1><div id="panel"></div><p id="result">RUNNING</p></main>
+<script type="module">
+import {manualWalletPanel} from '/src/admin-manual-wallet-panel.js';
+const digest='a'.repeat(64),calls=[];
+let order={id:'isolated-order',status:'REQUESTED',amount:'10.000001',digest,snapshot:{amount:'10.000001',fee:'0.000000',hold:'10.000001',receive:'10.000001',target_address:'隔离测试收款地址',official_address:'隔离测试官方来源地址',network:'TRON',contract:'隔离测试 USDT 合约',owner_admin_id:'isolated-owner',binding_version:1,official_config_version:'fixture-v1'},candidates:[]};
+const api={getManualPayouts:async()=>({items:[order]}),getManualPayout:async()=>order,getWalletMfaStatus:async()=>({configured:true,enabled:true}),getWalletIncidents:async()=>({items:[]}),getWalletMonitorStatus:async()=>({stale:false,external_delivery_configured:false}),claimManualPayout:async(id,body,options)=>{calls.push({body,options});order={...order,status:'CLAIMED',claimed_by:'isolated-owner'};return order;},submitManualPayoutTxid:async(id,body)=>{order={...order,status:'UNKNOWN',candidate_txid:body.txid};return order;}};
+const data=new Map(),storage={getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,value),removeItem:key=>data.delete(key)};
+const panel=manualWalletPanel(api,{actor:{id:'isolated-owner'},storage});document.querySelector('#panel').append(panel);
+const flush=()=>new Promise(resolve=>setTimeout(resolve,0));const assert=(condition,message)=>{if(!condition)throw Error(message);};
+try {
+ await flush(); [...panel.querySelectorAll('button')].find(x=>x.textContent==='查看出款').click();await flush();
+ assert(panel.textContent.includes('10.000001'),'exact amount'); assert(!panel.textContent.includes('复制收款地址'),'no instructions before claim');
+ panel.querySelector('[name=mfa_proof]').value='123456';panel.querySelector('form[name=claim]').requestSubmit();await flush();await flush();
+ assert(calls[0].body.expected_digest===digest,'digest protected');assert(calls[0].options.idempotencyKey,'stable key');
+ assert(panel.textContent.includes('禁止重复付款'),'claimed warning');assert(panel.textContent.includes('复制收款地址'),'claimed instructions');
+ panel.querySelector('input[name=txid]').value='b'.repeat(64);panel.querySelector('form[name=txid]').requestSubmit();await flush();await flush();
+ assert(panel.textContent.includes('结果未知 · 尚未结算'),'no premature settlement');
+ assert(!JSON.stringify([...data]).includes('123456'),'no OTP stored');
+ document.querySelector('#result').textContent='PASS';document.body.dataset.result='PASS';
+} catch(error) {document.querySelector('#result').textContent=error.message;document.body.dataset.result='FAIL';}
+</script></body></html>

@@ -4,6 +4,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $projectRoot ".env"
@@ -30,7 +36,7 @@ function Get-EnvOrDefault {
 function Import-DotEnv {
     param([string]$Path)
 
-    Get-Content $Path | ForEach-Object {
+    Get-Content -LiteralPath $Path -Encoding UTF8 | ForEach-Object {
         $line = $_.Trim()
         if (-not $line -or $line.StartsWith("#")) {
             return
@@ -132,7 +138,9 @@ $signingKey = Join-Path $synapseData "$($env:MATRIX_SERVER_NAME).signing.key"
 
 if (-not $RenderOnly -and (-not (Test-Path $homeserverConfig) -or -not (Test-Path $signingKey))) {
     Write-Host "Generating initial Synapse config and signing keys..."
-    $synapseImage = Get-EnvOrDefault -Name "SYNAPSE_IMAGE" -DefaultValue "matrixdotorg/synapse:latest"
+    # Key/config bootstrap uses the same immutable upstream as the patched image.
+    # A fresh machine has not built the local dedup image at this point.
+    $synapseImage = 'matrixdotorg/synapse:v1.132.0@sha256:3036ec25dfb5fcc5120942465788c1e1f2bb3671e28b04d7b3a1db4400ac84f4'
     docker run --rm `
         -e SYNAPSE_SERVER_NAME=$env:MATRIX_SERVER_NAME `
         -e SYNAPSE_REPORT_STATS=no `
@@ -179,6 +187,11 @@ if ($env:BUSINESS_ENVIRONMENT -eq 'production') {
 Write-RenderedTemplate `
     -TemplatePath (Join-Path $projectRoot "infra/synapse/homeserver.yaml.template") `
     -DestinationPath $homeserverConfig `
+    -Variables $variables
+
+Write-RenderedTemplate `
+    -TemplatePath (Join-Path $projectRoot "infra/synapse/worker-sync.yaml.template") `
+    -DestinationPath (Join-Path $synapseData "worker-sync.yaml") `
     -Variables $variables
 
 Copy-Item `

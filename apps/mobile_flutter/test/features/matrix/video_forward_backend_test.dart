@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,8 @@ class ForwardTimeline extends Fake implements Timeline {
 
 class ForwardClient extends Client {
   ForwardClient() : super('video-forward');
+  @override
+  bool get fileEncryptionEnabled => true;
   final destinations = <String, Room>{};
   @override
   Room? getRoomById(String id) => destinations[id];
@@ -46,7 +50,7 @@ class ForwardRoom extends Room {
     String? threadLastEventId,
   }) async {
     sent = file;
-    expect(extraContent, isNull);
+    expect(extraContent?['chatflow_media']['v'], 1);
     return r'$copy';
   }
 }
@@ -85,7 +89,22 @@ class ForwardVideo extends Event {
   }
 }
 
+class ForwardPaths extends PathProviderPlatform {
+  ForwardPaths(this.root);
+  final String root;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => root;
+}
+
 void main() {
+  setUp(() async {
+    final root = Directory(
+        '../../docs/verification/artifacts/2026-09-09/media-dedup-implementation/mobile/forward');
+    await root.create(recursive: true);
+    final dir = await root.createTemp('case-');
+    PathProviderPlatform.instance = ForwardPaths(dir.absolute.path);
+    addTearDown(() => dir.delete(recursive: true));
+  });
   for (final withInfo in [true, false]) {
     test('video uses encrypted room attachment pipeline with info=$withInfo',
         () async {

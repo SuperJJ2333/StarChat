@@ -734,7 +734,12 @@ class Room {
 
     MatrixFile uploadFile = file; // ignore: omit_local_variable_types
     // computing the thumbnail in case we can
+    if (file.preEncrypted != null &&
+        (!encrypted || !client.fileEncryptionEnabled)) {
+      throw StateError('Prepared encrypted media requires E2EE');
+    }
     if (file is MatrixImageFile &&
+        file.preEncrypted == null &&
         (thumbnail == null || shrinkImageMaxDimension != null)) {
       syncUpdate.rooms!.join!.values.first.timeline!.events!.first
               .unsigned![fileSendingStatusKey] =

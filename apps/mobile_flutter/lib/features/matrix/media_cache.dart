@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'content_addressed_media.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -30,7 +31,7 @@ final class MediaCache {
         // list() returns only direct children, and links are never followed.
         try {
           await entry.delete(recursive: true);
-        } on FileSystemException { /* Retry on the next process start. */ }
+        } on FileSystemException {/* Retry on the next process start. */}
       }
     });
   }
@@ -51,7 +52,19 @@ final class MediaCache {
   }
 
   static Future<File?> cached(String roomId, String eventId,
-      {String accountId = ''}) async {
+      {String accountId = '', String? contentSha256}) async {
+    if (contentSha256 != null) {
+      validateContentSha256(contentSha256);
+      final root = await _root(accountId);
+      for (final suffix in ['', '.mp4', '.mov']) {
+        final file = File('${root.path}/objects/$contentSha256$suffix');
+        if (await _valid(file)) {
+          await file.setLastModified(DateTime.now());
+          return file;
+        }
+      }
+      return null;
+    }
     final ref = await _reference(accountId, roomId, eventId);
     try {
       if (!await ref.exists()) return null;
@@ -72,8 +85,15 @@ final class MediaCache {
       if (!await file.exists()) return false;
       final expected =
           int.tryParse(await File('${file.path}.len').readAsString());
-      if (expected != null && expected == await file.length()) return true;
-    } on FileSystemException {/* Interrupted writes are cache misses. */}
+      if (expected != null && expected == await file.length()) {
+        final name = file.uri.pathSegments.last.split('.').first;
+        validateContentSha256(name);
+        verifyMediaContent(await file.readAsBytes(), name);
+        return true;
+      }
+    } on FileSystemException {
+      /* Interrupted writes are cache misses. */
+    } on FormatException {/* Modified content is a cache miss. */}
     await _deleteQuietly(file);
     await _deleteQuietly(File('${file.path}.len'));
     return false;
@@ -97,7 +117,8 @@ final class MediaCache {
   }
 
   static Future<File> store(String roomId, String eventId, Uint8List bytes,
-      {String accountId = ''}) async {
+      {String accountId = '', String? contentSha256}) async {
+    verifyMediaContent(bytes, contentSha256);
     final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
     final existing = _storeFlights[flightKey];
     if (existing != null) return existing;
@@ -141,11 +162,12 @@ final class MediaCache {
   }
 
   static Future<File> preparePlaybackFile(String roomId, String eventId,
-      {String accountId = ''}) async {
+      {String accountId = '', String? contentSha256}) async {
     final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
     final flight = _storeFlights[flightKey];
     if (flight != null) await flight;
-    final file = await cached(roomId, eventId, accountId: accountId);
+    final file = await cached(roomId, eventId,
+        accountId: accountId, contentSha256: contentSha256);
     if (file == null) throw FileSystemException('Video cache is unavailable');
     return file;
   }
@@ -267,6 +289,13 @@ final class MediaMemoryCache {
   Uint8List? get(String eventId) {
     final bytes = _entries.remove(eventId);
     if (bytes == null) return null;
+    final hash = RegExp(r'(?:content:|[/\\])([a-f0-9]{64})(?:\.mp4|\.mov)?$')
+        .firstMatch(eventId)
+        ?.group(1);
+    if (hash != null && sha256.convert(bytes).toString() != hash) {
+      _totalBytes -= bytes.length;
+      return null;
+    }
     _entries[eventId] = bytes; // 刷新 LRU 访问顺序
     return bytes;
   }
@@ -315,6 +344,7 @@ final class MediaMemoryCache {
 /// 解密并缓存媒体附件：优先命中本地缓存；未命中时调用 loader 解密、
 /// 落盘后返回字节。
 final _sharedMediaBytes = MediaMemoryCache();
+final contentMediaMemoryCache = _sharedMediaBytes;
 final _mediaLoads = <String, Future<Uint8List>>{};
 int _mediaGeneration = 0;
 
@@ -340,18 +370,19 @@ Future<Uint8List> loadMediaWithCache(
   final flight = existing ??
       (() async {
         var disk = await MediaCache.cached(key.roomId, key.eventId,
-            accountId: key.accountId);
+            accountId: key.accountId, contentSha256: key.contentSha256);
         if (disk == null && key.sourceIdentity != null) {
           disk = await MediaCache.cached('source', key.sourceIdentity!,
-              accountId: key.accountId);
+              accountId: key.accountId, contentSha256: key.contentSha256);
         }
         final bytes = disk == null ? await decrypt() : null;
+        if (bytes != null) verifyMediaContent(bytes, key.contentSha256);
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
         }
         final file = disk ??
             await MediaCache.store(key.roomId, key.eventId, bytes!,
-                accountId: key.accountId);
+                accountId: key.accountId, contentSha256: key.contentSha256);
         if (key.sourceIdentity != null) {
           final ref = await MediaCache._reference(
               key.accountId, 'source', key.sourceIdentity!);
@@ -371,7 +402,7 @@ Future<Uint8List> loadMediaWithCache(
     // A source flight can serve a different message: persist its reference too.
     if (existing != null && generation == _mediaGeneration) {
       await MediaCache.store(key.roomId, key.eventId, bytes,
-          accountId: key.accountId);
+          accountId: key.accountId, contentSha256: key.contentSha256);
     }
     return bytes;
   } finally {
@@ -396,21 +427,21 @@ Future<File> resolveCachedVideoFile({
   MediaMemoryCache? memoryCache,
 }) async {
   final disk = await MediaCache.cached(key.roomId, key.eventId,
-      accountId: key.accountId);
+      accountId: key.accountId, contentSha256: key.contentSha256);
   if (disk != null) {
     return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
-        accountId: key.accountId);
+        accountId: key.accountId, contentSha256: key.contentSha256);
   }
   final bytes = await (memoryCache ?? videoMemoryCache)
       .putIfAbsent(key.identity, () => loadMediaWithCache(key, decrypt));
   if (await MediaCache.cached(key.roomId, key.eventId,
-          accountId: key.accountId) ==
+          accountId: key.accountId, contentSha256: key.contentSha256) ==
       null) {
     await MediaCache.store(key.roomId, key.eventId, bytes,
-        accountId: key.accountId);
+        accountId: key.accountId, contentSha256: key.contentSha256);
   }
   return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
-      accountId: key.accountId);
+      accountId: key.accountId, contentSha256: key.contentSha256);
 }
 
 final class MediaCacheKey {
@@ -418,15 +449,26 @@ final class MediaCacheKey {
       {required this.roomId,
       required this.eventId,
       this.accountId = '',
-      this.sourceIdentity});
+      this.sourceIdentity,
+      this.contentSha256});
   final String accountId;
+  final String? contentSha256;
+  String get cacheId => identity;
 
   /// Full authenticated source identity, including encryption descriptor.
   final String? sourceIdentity;
-  String get identity => jsonEncode([
-        accountId,
-        sourceIdentity ?? [roomId, eventId]
-      ]);
+  String get identity {
+    final hash = contentSha256;
+    if (hash != null) {
+      validateContentSha256(hash);
+      return '${jsonEncode(accountId)}:content:$hash';
+    }
+    return jsonEncode([
+      accountId,
+      sourceIdentity ?? [roomId, eventId]
+    ]);
+  }
+
   final String roomId;
   final String eventId;
 
@@ -434,12 +476,14 @@ final class MediaCacheKey {
   bool operator ==(Object other) =>
       other is MediaCacheKey &&
       other.accountId == accountId &&
+      other.contentSha256 == contentSha256 &&
       other.sourceIdentity == sourceIdentity &&
       other.roomId == roomId &&
       other.eventId == eventId;
 
   @override
-  int get hashCode => Object.hash(accountId, sourceIdentity, roomId, eventId);
+  int get hashCode =>
+      Object.hash(accountId, sourceIdentity, contentSha256, roomId, eventId);
 }
 
 /// Compute only from the already authorized event's attachment descriptor.

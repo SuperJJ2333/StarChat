@@ -38,6 +38,14 @@ import 'package:matrix/matrix.dart';
       mimeType: mimeType,
       duration: intKey('duration'),
     );
+  } else if (mimeType.startsWith('image/')) {
+    file = MatrixImageFile(
+      bytes: bytes,
+      name: name,
+      mimeType: mimeType,
+      width: intKey('w'),
+      height: intKey('h'),
+    );
   } else {
     file = MatrixFile(bytes: bytes, name: name, mimeType: mimeType);
   }

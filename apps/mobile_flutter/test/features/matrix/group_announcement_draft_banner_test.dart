@@ -87,6 +87,12 @@ void main() {
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     expect(room.operations, isEmpty);
   });
+  test('announcement attachments use content addressed envelopes', () async {
+    final room = _Room();
+    await MatrixGroupAnnouncementService(room).uploadImage(png, 'draft.png');
+    expect(room.uploadedFile!.preEncrypted, isNotNull);
+    expect(room.uploadedExtra!['chatflow_media']['v'], 1);
+  });
   test('publishing uploads local draft images before the encrypted document',
       () async {
     final room = _Room();
@@ -163,6 +169,8 @@ class _Room extends Room {
         originServerTs: DateTime(2026)));
   }
   final operations = <String>[];
+  MatrixFile? uploadedFile;
+  Map<String, dynamic>? uploadedExtra;
   bool failSend = false;
   Map<String, dynamic>? sent;
   Future<Event?>? pending;
@@ -189,6 +197,8 @@ class _Room extends Room {
       Map<String, dynamic>? extraContent,
       String? threadRootEventId,
       String? threadLastEventId}) async {
+    uploadedFile = file;
+    uploadedExtra = extraContent;
     operations.add('image');
     return r'$image';
   }

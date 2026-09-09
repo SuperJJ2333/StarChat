@@ -1,0 +1,45 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>隔离验证：人工操作重新登录</title><body><div id="app"></div><p id="result">RUNNING</p>
+<script type="module">
+const digest='c'.repeat(64),calls=[];let order={id:'isolated-reauth-order',status:'REQUESTED',amount:'10.000001',digest,snapshot:{amount:'10.000001',fee:'0.000000',hold:'10.000001',receive:'10.000001',owner_admin_id:'isolated-reauth-owner',target_address:'fixture-target',official_address:'fixture-source',network:'TRON',contract:'fixture-contract'},candidates:[]};
+sessionStorage.removeItem('chatflow_access_token');
+globalThis.fetch=async(url,options={})=>{
+ const path=new URL(url,location.origin).pathname;calls.push({path,options});let data={};
+ if(path==='/api/v1/auth/admin-session/refresh'||path==='/api/v1/auth/admin-session/step-up') data={access_token:path.endsWith('/step-up')?'isolated-new-token':'isolated-old-token',expires_in:900,user_id:'isolated-reauth-owner',session_id:'isolated-family'};
+ else if(path==='/api/v1/admin/wallet/security')data={auth_mode:'totp',configured:true,version:1};
+ else if(path.endsWith('/operations/control'))data={status:'PAUSED',epoch:1,snapshot_digest:digest,restriction_scopes:['manual_tron'],unresolved_incidents:0};
+ else if(path.endsWith('/operations/diagnostics'))data={source_status:'HEALTHY',coverage_status:'CURRENT',reserve_policy:'manual_liquidity',codes:[]};
+ else if(path==='/api/v1/admin/context') data={actor:{id:'isolated-reauth-owner',roles:[]},permissions:['admin.withdrawals.read'],modules:{},overview:{}};
+ else if(path==='/api/v1/admin/modules/wallet') data={items:[]};
+ else if(path==='/api/v1/security/mfa') data={configured:true,enabled:true};
+ else if(path==='/api/v1/admin/wallet/manual/payouts') data={items:[order]};
+ else if(path==='/api/v1/admin/wallet/manual/payouts/isolated-reauth-order') data=order;
+ else if(path==='/api/v1/wallet/manual/payouts/isolated-reauth-order/claim') {
+   if(options.headers.Authorization==='Bearer isolated-old-token') return new Response(JSON.stringify({error:{code:'RECENT_LOGIN_REQUIRED'}}),{status:403,headers:{'content-type':'application/json'}});
+   order={...order,status:'CLAIMED',claimed_by:'isolated-reauth-owner'};data=order;
+ } else if(path.endsWith('/incidents')||path.endsWith('/chain/transactions')) data={items:[],total:0};
+ else if(path.endsWith('/monitor/status')) data={stale:false,external_delivery_configured:false};
+ else if(path.endsWith('/chain/summary')) data={};
+ else throw Error('Unexpected isolated URL: '+path);
+ return new Response(JSON.stringify(data),{headers:{'content-type':'application/json'}});
+};
+const pause=()=>new Promise(r=>setTimeout(r,0));const assert=(x,m)=>{if(!x)throw Error(m);};
+async function waitFor(fn){for(let i=0;i<30;i++){if(fn())return;await pause();}throw Error('timeout');}
+const button=text=>[...document.querySelectorAll('button')].find(x=>x.textContent===text);
+try {
+ await import('/src/admin-home.js');await waitFor(()=>document.querySelector('[data-module=wallet]'));document.querySelector('[data-module=wallet]').click();
+ await waitFor(()=>button('查看出款'));button('查看出款').click();await waitFor(()=>document.querySelector('form[name=claim]'));
+ document.querySelector('[name=mfa_proof]').value='123456';document.querySelector('form[name=claim]').requestSubmit();await waitFor(()=>button('重新登录'));
+ const original=calls.find(x=>x.path.endsWith('/claim'));button('重新登录').click();
+ assert(sessionStorage.getItem('chatflow_access_token')===null,'old token removed');assert(document.querySelector('form[name=claim]'),'wallet form preserved');
+ await waitFor(()=>document.querySelector('dialog input[type=password]'));document.querySelector('dialog input[type=password]').value='isolated-password';document.querySelector('dialog form').requestSubmit();
+ await waitFor(()=>!document.querySelector('dialog'));await waitFor(()=>document.querySelector('.admin-manual-wallet-panel').getAttribute('aria-busy')==='false');await pause();
+ await waitFor(()=>button('查看出款'));assert(calls.filter(x=>x.path.endsWith('/claim')).length===1,'no automatic replay');
+ await waitFor(()=>document.querySelector('form[name=claim] button[type=submit]')?.disabled===false);document.querySelector('form[name=claim] [name=mfa_proof]').value='654321';document.querySelector('form[name=claim]').requestSubmit();
+ await waitFor(()=>button('复制收款地址'));const replay=calls.filter(x=>x.path.endsWith('/claim'))[1];
+ assert(replay.options.headers.Authorization==='Bearer isolated-new-token','API recreated with new token');
+ assert(replay.options.headers['Idempotency-Key']===original.options.headers['Idempotency-Key'],'same operation key');
+ assert(!localStorage.getItem('chatflow.manual.v1:isolated-reauth-owner:isolated-reauth-order:claim'),'confirmed journal cleared');
+ document.querySelector('#result').textContent='PASS';document.body.dataset.result='PASS';document.body.dataset.verification='PASS';
+} catch(error) {document.querySelector('#result').textContent=error.message+' '+JSON.stringify(calls.map(c=>({path:c.path,auth:c.options.headers?.Authorization})));document.body.dataset.result='FAIL';document.body.dataset.verification='FAIL';}
+</script></body></html>

@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'package:matrix/matrix.dart';
 import 'group_room_authority.dart';
 import 'gif_image_policy.dart';
+import 'content_addressed_media.dart';
+import 'media_cache.dart';
 
 const maxAnnouncementBlocks = 100;
 const maxAnnouncementImageBytes = 20 * 1024 * 1024;
@@ -178,8 +180,20 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
   Future<String> uploadImage(Uint8List bytes, String name) async {
     validateAnnouncementImage(bytes);
     _requireEncryptedManager();
-    final id =
-        await room.sendFileEvent(MatrixImageFile(bytes: bytes, name: name));
+    final file = MatrixImageFile(bytes: bytes, name: name);
+    MatrixImageFile? thumbnail;
+    try {
+      thumbnail = await file.generateThumbnail(
+          nativeImplementations: room.client.nativeImplementations,
+          customImageResizer: room.client.customImageResizer);
+    } catch (_) {
+      /* Preserve the original when no thumbnail can be generated. */
+    }
+    if (thumbnail != null && thumbnail.size > file.size) thumbnail = null;
+    final prepared =
+        await prepareContentAddressedMedia(file: file, thumbnail: thumbnail);
+    final id = await room.sendFileEvent(prepared.file,
+        thumbnail: prepared.thumbnail, extraContent: prepared.extraContent);
     if (id == null || !id.startsWith(r'$')) throw StateError('图片上传失败');
     return id;
   }
@@ -189,15 +203,26 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     final event = await room.getEventById(eventId);
     if (event == null ||
         event.messageType != MessageTypes.Image ||
-        event.originalSource?.type != EventTypes.Encrypted ||
-        !event.isAttachmentEncrypted) {
+        event.originalSource?.type != EventTypes.Encrypted) {
       throw StateError('图片暂不可用');
     }
     final declaredSize = event.infoMap['size'];
     if (declaredSize is num && declaredSize > maxAnnouncementImageBytes) {
       throw const FormatException('公告图片不能超过20MB');
     }
-    final bytes = (await event.downloadAndDecryptAttachment()).bytes;
+    final hashes = TrustedMediaHashes.fromEvent(event);
+    final bytes = await loadMediaWithCache(
+        MediaCacheKey(
+            accountId: room.client.userID ?? '',
+            roomId: room.id,
+            eventId: eventId,
+            sourceIdentity: matrixMediaSourceIdentity(event.content),
+            contentSha256: hashes?.contentSha256), () async {
+      if (!event.isAttachmentEncrypted) {
+        throw StateError('图片暂不可用');
+      }
+      return (await event.downloadAndDecryptAttachment()).bytes;
+    });
     validateAnnouncementImage(bytes);
     return bytes;
   }

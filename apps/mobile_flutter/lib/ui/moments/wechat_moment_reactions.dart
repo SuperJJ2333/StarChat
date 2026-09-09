@@ -17,6 +17,8 @@ final class WeChatMomentReactions extends StatelessWidget {
       this.onCommentTap,
       this.selectedCommentId,
       this.detailMode = false,
+      this.mediaAccountKey,
+      this.mediaOrigin,
       this.cacheNamespace = ''});
   final MomentItem item;
   final UserIdentity Function(MomentAuthor) resolveIdentity;
@@ -25,6 +27,7 @@ final class WeChatMomentReactions extends StatelessWidget {
   final String? selectedCommentId;
   final bool detailMode;
   final String cacheNamespace;
+  final String? mediaAccountKey, mediaOrigin;
 
   Widget _person(MomentAuthor author, Widget child, String key) =>
       GestureDetector(
@@ -192,14 +195,16 @@ final class WeChatMomentReactions extends StatelessWidget {
                                       onTap: () => Navigator.push(
                                           context,
                                           CupertinoPageRoute(
-                                              builder: (_) =>
-                                                  MomentImageViewerPage(
-                                                      imageUrls: comment.images,
-                                                      initialIndex: i,
-                                                      imageCacheKeys: comment
-                                                          .imageCacheKeys,
-                                                      cacheNamespace:
-                                                          cacheNamespace))),
+                                              builder: (_) => MomentImageViewerPage(
+                                                  imageUrls: comment.images,
+                                                  initialIndex: i,
+                                                  imageCacheKeys:
+                                                      comment.imageCacheKeys,
+                                                  mediaAccountKey:
+                                                      mediaAccountKey,
+                                                  mediaOrigin: mediaOrigin,
+                                                  cacheNamespace:
+                                                      cacheNamespace))),
                                       child: Padding(
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 2),
@@ -207,8 +212,11 @@ final class WeChatMomentReactions extends StatelessWidget {
                                               image: momentImageProvider(
                                                   comment.images[i],
                                                   momentImageKey(
-                                                      comment.imageCacheKeys, i),
-                                                  cacheNamespace),
+                                                      comment.imageCacheKeys,
+                                                      i),
+                                                  mediaAccountKey ??
+                                                      cacheNamespace,
+                                                  mediaOrigin),
                                               width: 22,
                                               height: 22,
                                               fit: BoxFit.cover,

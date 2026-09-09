@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>事故处理测试数据</title>
+<link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-wallet.css"><link rel="stylesheet" href="/src/styles/admin-modern.css">
+<body class="admin-page"><main class="admin-modern"><div class="admin-content"><p>本页为本地测试数据，不连接生产或操作真实资金。</p><div id="app"></div><pre id="evidence"></pre></div></main><script type="module">
+import {manualWalletPanel} from '/src/admin-manual-wallet-panel.js';
+const item={id:'fixture-source',code:'MANUAL_SOURCE_UNHEALTHY',fingerprint:'manual-reserve:source',subject_id:'global',severity:'P0',status:'OPEN',version:1,generation:1,condition_active:true,opened_at:'2026-09-08T09:08:55Z',last_seen_at:'2026-09-08T09:08:55Z'};
+const advisory={id:'fixture-advisory',code:'MANUAL_BACKING_DEFICIT',fingerprint:'manual-liquidity:backing-deficit',subject_id:'global',severity:'P1',status:'OPEN',version:1,generation:1,condition_active:true,opened_at:'2026-09-08T06:47:22Z'};
+let paused=true,epoch=1;const calls=[];const clone=x=>structuredClone(x);
+const api={
+ getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),
+ getManualPayouts:async()=>({items:[]}),getWalletIncidents:async()=>({items:[clone(item),clone(advisory)]}),
+ getWalletIncident:async id=>clone(id===item.id?item:advisory),
+ getWalletMonitorStatus:async()=>({stale:true,last_success_at:'2026-09-08T09:06:52Z',external_delivery_configured:true}),
+ getManualWalletDiagnostics:async()=>({checked_at:new Date().toISOString(),source_status:'HEALTHY',coverage_status:'CURRENT',observation_id:4564,heartbeat_at:new Date().toISOString(),codes:[],reserve_policy:'manual_liquidity'}),
+ getManualWalletControl:async()=>({status:paused?'PAUSED':'RUNNING',epoch,snapshot_digest:'a'.repeat(64),restriction_scopes:paused?['manual_tron']:[],unresolved_incidents:item.status==='RESOLVED'?0:1}),
+ manualWalletIncidentAction:async(id,kind,body)=>{
+  if(id!==item.id||body.expected_version!==item.version)throw {code:'WALLET_INCIDENT_VERSION_CONFLICT'};
+  if(body.operation_password!=='synthetic-operation-password')throw {code:'OPERATION_PASSWORD_INVALID'};
+  calls.push(kind);item.version++;
+  if(kind==='ack'){item.status='ACKNOWLEDGED';item.acknowledged_at=new Date().toISOString();}
+  if(kind==='review'){item.condition_active=false;item.clearance_digest='b'.repeat(64);item.cleared_at=new Date().toISOString();}
+  if(kind==='resolve'){item.status='RESOLVED';item.resolved_at=new Date().toISOString();}
+  document.querySelector('#evidence').textContent=JSON.stringify({calls,paused});return clone(item);
+ },
+ manualWalletControlAction:async(kind,body)=>{if(kind!=='resume'||item.status!=='RESOLVED'||body.operation_password!=='synthetic-operation-password')throw Error('fixture guard');calls.push('resume');paused=false;epoch++;document.querySelector('#evidence').textContent=JSON.stringify({calls,paused});return api.getManualWalletControl();}
+};
+const memory=new Map();const storage={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)};
+const panel=manualWalletPanel(api,{actor:{id:'fixture-admin'},storage,unifiedRefresh:true});
+const refresh=document.createElement('button');refresh.className='admin-primary';refresh.textContent='刷新';refresh.onclick=()=>panel.refresh();
+document.querySelector('#app').append(refresh,panel);
+</script></html>

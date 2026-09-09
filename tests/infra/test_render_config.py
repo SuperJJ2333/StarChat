@@ -30,6 +30,8 @@ def scaffold(tmp_path, env_extra="", nginx_body="resolver x;", sygnal_exists=Fal
     """最小部署骨架：模板 + env + 可选已有 sygnal.yaml。"""
     write(tmp_path / "infra/synapse/homeserver.yaml.template",
           "server_name: \"{{MATRIX_SERVER_NAME}}\"\npassword: \"{{POSTGRES_PASSWORD}}\"\n")
+    write(tmp_path / "infra/synapse/worker-sync.yaml.template",
+          "worker_app: synapse.app.generic_worker\n")
     write(tmp_path / "infra/nginx/nginx.conf.template",
           "server_name {{PUBLIC_HOSTNAME}};\n" + nginx_body)
     write(tmp_path / "infra/element/config.json.template",

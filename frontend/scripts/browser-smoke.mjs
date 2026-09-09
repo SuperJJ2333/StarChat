@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { screens } from "../src/catalog/screens.js";
 
 const run = promisify(execFile);
 const chromeCandidates = [
@@ -58,7 +59,9 @@ try {
   assert.doesNotMatch(gallery, /data-render-error/u);
 
   const grouped = await dump("/?modules=messages,chat");
-  assert.match(grouped, /data-visible-count="59"/u);
+  const groupedCount = screens.filter(screen => ["messages", "chat"].includes(screen.module)).length;
+  assert.ok(groupedCount > 0);
+  assert.ok(grouped.includes(`data-visible-count="${groupedCount}"`));
 
   const single = await dump("/?screen=wallet-withdrawal-unknown-result");
   assert.match(single, /data-screen-id="wallet-withdrawal-unknown-result"/u);
@@ -77,6 +80,8 @@ try {
   assert.match(errors, /data-visible-count="[1-9][0-9]*"/u);
   assert.doesNotMatch(errors, /data-visible-count="0"/u);
 
+  const chain = await dump("/tests/admin-chain-browser.html");
+  assert.match(chain, /data-result="PASS"/u);
   process.stdout.write("Browser smoke: PASS\n");
 } finally {
   server.kill();

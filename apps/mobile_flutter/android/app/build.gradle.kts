@@ -80,6 +80,15 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Opt-in separate install when an existing app has a different signer.
+            if (providers.gradleProperty("chatflowParallelDebug").orNull == "true") {
+                applicationIdSuffix = ".debug"
+                manifestPlaceholders["CHATFLOW_DEBUG_LABEL"] = "畅聊 Debug"
+            } else {
+                manifestPlaceholders["CHATFLOW_DEBUG_LABEL"] = "畅聊 ChatFlow"
+            }
+        }
         release {
             // 用户要求从源码直接发布，不启用 R8 混淆或资源收缩。
             isMinifyEnabled = false

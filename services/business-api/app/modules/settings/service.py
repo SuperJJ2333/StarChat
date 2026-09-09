@@ -24,6 +24,21 @@ APP_UPDATE_SETTING_KEYS = (
 )
 
 
+APP_IOS_LATEST_VERSION_KEY = "app_ios_latest_version"
+APP_IOS_LATEST_BUILD_KEY = "app_ios_latest_build"
+APP_IOS_MIN_SUPPORTED_BUILD_KEY = "app_ios_min_supported_build"
+APP_IOS_UPDATE_NOTES_KEY = "app_ios_update_notes"
+APP_IOS_DOWNLOAD_URL_KEY = "app_ios_download_url"
+
+APP_IOS_UPDATE_SETTING_KEYS = (
+    APP_IOS_LATEST_VERSION_KEY,
+    APP_IOS_LATEST_BUILD_KEY,
+    APP_IOS_MIN_SUPPORTED_BUILD_KEY,
+    APP_IOS_UPDATE_NOTES_KEY,
+    APP_IOS_DOWNLOAD_URL_KEY,
+)
+
+
 class SettingService:
     def __init__(self, session_factory):
         self.session_factory = session_factory

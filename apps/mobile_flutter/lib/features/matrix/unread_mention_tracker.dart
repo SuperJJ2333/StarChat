@@ -4,8 +4,8 @@ import 'dart:convert';
 /// 提及集合"，与普通已读数分开；按房间时间线**从新到旧**排序。
 ///
 /// 判定规则：
-/// - 依据解密后的**结构化提及目标**（m.mentions / 富文本 pill 的目标
-///   userId 集合）判断是否包含当前用户；不凭昵称或正文出现 @ 判断；
+/// - 依据解密后的**结构化提及目标**（m.mentions 的目标
+///   user_ids / room）判断是否包含当前用户；不凭昵称、正文 @ 或仅有富文本 pill 判断；
 /// - 本人发送、已撤回、已删除不计入；
 /// - @所有人：发送时本人属于提醒范围（群成员且非本人发送）则计入；
 /// - 初次建立本地状态：以**原有已读位置**为历史边界，此后的新提及
@@ -34,6 +34,46 @@ final class UnreadMentionTracker {
 
   int get pendingCount => _pendingEventIds.length;
   bool get hasPending => _pendingEventIds.isNotEmpty;
+  int get initialBoundaryOrder => _initialBoundaryOrder;
+  String? boundaryEventId;
+  String? completedScanHead;
+  final Map<String, int> _timelineOrders = {};
+
+  void initializeEventBoundary(String eventId) {
+    if (_initialized) return;
+    boundaryEventId = eventId;
+    _initialized = true;
+  }
+
+  String? get newestKnownEventId => _timelineOrders.isEmpty
+      ? null
+      : (_timelineOrders.entries.toList()
+            ..sort((a, b) => b.value.compareTo(a.value)))
+          .first
+          .key;
+
+  /// Stable relative ranks from Matrix's event order, independent of clocks.
+  void registerTimeline(List<String> newestFirst) {
+    if (newestFirst.isEmpty) return;
+    int? newestRank;
+    for (var i = 0; i < newestFirst.length; i++) {
+      final known = _timelineOrders[newestFirst[i]];
+      if (known != null) {
+        newestRank = known + i;
+        break;
+      }
+    }
+    newestRank ??=
+        (_timelineOrders.values.fold<int>(0, (a, b) => a > b ? a : b)) +
+            newestFirst.length;
+    for (var i = 0; i < newestFirst.length; i++) {
+      _timelineOrders[newestFirst[i]] = newestRank - i;
+    }
+  }
+
+  int orderFor(String eventId) => _timelineOrders[eventId]!;
+  bool get hasKnownBoundary =>
+      boundaryEventId == '' || _timelineOrders.containsKey(boundaryEventId);
 
   /// 初始化历史边界（登录会话恢复时调用一次；R9：与回执推进分离）。
   void initializeBoundary({required int lastReadOrder}) {
@@ -66,7 +106,14 @@ final class UnreadMentionTracker {
     // 历史边界：**初始化**时确立的边界之前的旧提及不加（回填防护）。
     // 普通已读回据推进（onReadReceiptAdvanced）不收窄此判定——
     // 规则："普通已读不替代逐条查看"。
-    if (_initialized && order <= _initialBoundaryOrder) return false;
+    if (boundaryEventId != null) {
+      if (boundaryEventId!.isNotEmpty) {
+        final boundary = _timelineOrders[boundaryEventId];
+        if (boundary == null || order <= boundary) return false;
+      }
+    } else if (_initialized && order <= _initialBoundaryOrder) {
+      return false;
+    }
     _orderByEventId[eventId] = order;
     return _pendingEventIds.add(eventId);
   }
@@ -74,20 +121,21 @@ final class UnreadMentionTracker {
   /// 撤回/删除：从待查看集合移除。
   void onRedacted(String eventId) {
     _pendingEventIds.remove(eventId);
+    _viewedEventIds.add(eventId);
   }
 
   /// 待查看列表：按时间线从新到旧（order 降序）。
   List<String> pendingEventIdsNewestFirst() {
     final entries = _pendingEventIds.toList()
-      ..sort((a, b) => (_orderByEventId[b] ?? 0).compareTo(_orderByEventId[a] ?? 0));
+      ..sort((a, b) =>
+          (_orderByEventId[b] ?? 0).compareTo(_orderByEventId[a] ?? 0));
     return entries;
   }
 
   /// 下一条跳转目标（最新的未查看提及；null = 无）。
-  String? get nextJumpTarget =>
-      pendingEventIdsNewestFirst().firstOrNull;
+  String? get nextJumpTarget => pendingEventIdsNewestFirst().firstOrNull;
 
-  /// 可见性判定通过（气泡 ≥50% 可见持续 500ms 且应用前台）：标记已查看。
+  /// 可见性判定通过（气泡与视口较小高度的 50% 可见持续 500ms，且应用前台）：标记已查看。
   /// R9：同时记录到已查看集合（重复同步/恢复后不复活）。
   bool markViewed(String eventId) {
     _viewedEventIds.add(eventId);
@@ -112,12 +160,14 @@ final class UnreadMentionTracker {
         'pending': _pendingEventIds.toList(growable: false),
         'viewed': _viewedEventIds.toList(growable: false),
         'orders': {
-          for (final entry in _orderByEventId.entries)
-            entry.key: entry.value,
+          for (final entry in _orderByEventId.entries) entry.key: entry.value,
         },
         'boundary': _historyBoundaryOrder,
         'initialBoundary': _initialBoundaryOrder,
         'initialized': _initialized,
+        'boundaryEventId': boundaryEventId,
+        'completedScanHead': completedScanHead,
+        'timelineOrders': _timelineOrders,
       };
 
   static UnreadMentionTracker fromJson(Map<String, dynamic> json) {
@@ -138,8 +188,15 @@ final class UnreadMentionTracker {
     }
     tracker._historyBoundaryOrder = (json['boundary'] as num?)?.toInt() ?? -1;
     tracker._initialBoundaryOrder =
-        (json['initialBoundary'] as num?)?.toInt() ?? tracker._historyBoundaryOrder;
+        (json['initialBoundary'] as num?)?.toInt() ??
+            tracker._historyBoundaryOrder;
     tracker._initialized = json['initialized'] as bool? ?? false;
+    tracker.boundaryEventId = json['boundaryEventId'] as String?;
+    tracker.completedScanHead = json['completedScanHead'] as String?;
+    final timelineOrders =
+        json['timelineOrders'] as Map<String, dynamic>? ?? {};
+    tracker._timelineOrders.addAll(timelineOrders
+        .map((key, value) => MapEntry(key, (value as num).toInt())));
     return tracker;
   }
 
@@ -165,3 +222,9 @@ final class UnreadMentionTracker {
   if (!hasPendingMention) return ('', originalSummary);
   return ('[有人@你] ', originalSummary);
 }
+
+/// Half of the message height that can fit in the viewport, for a 500 ms dwell.
+/// Oversized messages therefore remain viewable without an impossible threshold.
+double mentionVisibleHeightThreshold(
+        double messageHeight, double viewportHeight) =>
+    messageHeight.clamp(0, viewportHeight) * .5;

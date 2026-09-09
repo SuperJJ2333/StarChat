@@ -342,3 +342,39 @@ def test_matrix_login_token_ttl_accepts_compose_environment_string(monkeypatch) 
     settings = Settings(_env_file=None)
 
     assert settings.matrix_login_token_expires_in == 60
+
+
+@pytest.mark.asyncio
+async def test_login_returns_authenticated_matrix_identity_not_previous_device_identity():
+    from app.modules.identity.passwords import PasswordHasher
+    engine, factory, app, _ = _components()
+    _add_user(factory, "user-switch", mxid="@target:matrix.example.test")
+    with factory.begin() as session:
+        user = session.get(User, "user-switch")
+        user.password_hash = PasswordHasher().hash("correct horse battery staple")
+        username = user.username
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/login", json={"username": username, "password": "correct horse battery staple", "device_key": "old-device", "device_name": "Test"})
+    assert response.status_code == 200
+    assert response.json().get("matrix_user_id") == "@target:matrix.example.test"
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("upstream_retry, expected_seconds", [(1501, 2), (None, 60), (-5, 60), (True, 60), ("secret", 60)])
+async def test_upstream_login_limit_preserves_429_and_safe_retry_header(upstream_retry, expected_seconds):
+    def handler(request):
+        if request.url.path.endswith("/login/get_token"):
+            return httpx.Response(429, json={"errcode": "M_LIMIT_EXCEEDED", "retry_after_ms": upstream_retry, "error": "sensitive-upstream"})
+        return httpx.Response(200, json={"access_token": "never-log-this"})
+    gateway = SynapseMatrixAdminGateway(homeserver_url="http://synapse:8008", server_name="matrix.example.test", admin_access_token="secret", client=httpx.Client(transport=httpx.MockTransport(handler)), now_factory=lambda: NOW)
+    engine, factory, app, _ = _components(gateway)
+    _add_user(factory, "user-rate", mxid="@alice:matrix.example.test")
+    access = _access_token(factory, "user-rate")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/matrix-login-token", headers={"Authorization": f"Bearer {access}"})
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "MATRIX_LOGIN_RATE_LIMITED"
+    assert response.headers["retry-after"] == str(expected_seconds)
+    assert "sensitive-upstream" not in response.text and "never-log-this" not in response.text
+    engine.dispose()

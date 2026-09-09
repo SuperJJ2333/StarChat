@@ -53,16 +53,23 @@ final class FriendRequestWatch {
       {this.notifier,
       this.accountKey = '',
       this.onOutgoingAccepted,
+      this.onOutgoingAcceptedChanged,
       this.onPendingCount});
 
   final void Function(int count)? onPendingCount;
   static String pendingKey(String accountKey) =>
       'friend-request-pending-v1:$accountKey';
   final String accountKey;
+
+  /// Retired compatibility hook: deliberately never invoked. Persisted pending
+  /// requests from older clients must not produce a late ordinary greeting.
   final Future<void> Function(Map request)? onOutgoingAccepted;
+
+  /// Contact metadata refresh only. Acceptance never generates a chat message.
+  final Future<void> Function(Map request)? onOutgoingAcceptedChanged;
   Future<int>? _polling;
   String get _seenStorageKey => '$seenKey:$accountKey';
-  String get _greetedKey => 'friend-request-greeted-v1:$accountKey';
+  String get _acceptedKey => 'friend-request-accepted-refresh-v1:$accountKey';
 
   static const seenKey = 'friend-request-seen-v1';
 
@@ -135,24 +142,24 @@ final class FriendRequestWatch {
       }
     }
     await prefs.setStringList(pendingKey(accountKey), pending.toList());
-    final greeted = prefs.getStringList(_greetedKey)?.toSet() ?? <String>{};
-    final send = onOutgoingAccepted;
-    if (send != null) {
+    final refreshed = prefs.getStringList(_acceptedKey)?.toSet() ?? <String>{};
+    final refresh = onOutgoingAcceptedChanged;
+    if (refresh != null) {
       for (final request in allItems) {
         final id = request['id']?.toString();
         if (id == null ||
-            greeted.contains(id) ||
+            refreshed.contains(id) ||
             !pending.contains(id) ||
             request['direction'] != 'OUTGOING' ||
             request['status'] != 'ACCEPTED') {
           continue;
         }
         try {
-          await send(request);
-          greeted.add(id);
-          await prefs.setStringList(_greetedKey, greeted.toList());
+          await refresh(request);
+          refreshed.add(id);
+          await prefs.setStringList(_acceptedKey, refreshed.toList());
         } catch (_) {
-          // 保留待发状态；重试使用同一 Matrix transaction ID。
+          // Retry only contact refresh; never replay the request as chat text.
         }
       }
     }

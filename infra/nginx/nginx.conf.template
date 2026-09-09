@@ -10,6 +10,11 @@ upstream synapse_upstream {
     server synapse:8008 resolve;
 }
 
+upstream synapse_sync_upstream {
+    zone synapse_sync_upstream 64k;
+    server synapse-sync-worker:8081 resolve;
+}
+
 upstream element_upstream {
     zone element_upstream 64k;
     server element-web:80 resolve;
@@ -48,6 +53,12 @@ server {
     listen 443 ssl;
     http2 on;
     server_name {{PUBLIC_HOSTNAME}};
+
+    # chatflow-enterprise-download-v1
+    location = / { return 302 https://{{WWW_PUBLIC_HOSTNAME}}/download; }
+    location = /download { return 302 https://{{WWW_PUBLIC_HOSTNAME}}/download; }
+    location = /download/ { return 302 https://{{WWW_PUBLIC_HOSTNAME}}/download; }
+
 
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;
@@ -93,6 +104,18 @@ server {
         proxy_set_header X-Request-ID $request_id;
     }
 
+    # Rollback: route this location to synapse_upstream before stopping worker.
+    location ~ ^/_matrix/client/(r0|v3)/(sync|events)$ {
+        proxy_pass http://synapse_sync_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Request-ID $request_id;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+    }
+
     location /_matrix/ {
         client_max_body_size 100m;
         proxy_pass http://synapse_upstream;
@@ -118,6 +141,27 @@ server {
     listen 443 ssl;
     http2 on;
     server_name {{WWW_PUBLIC_HOSTNAME}};
+
+    # chatflow-enterprise-download-www-v1
+    location = /download {
+        try_files /download.html =404;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /download/ { return 302 /download; }
+    location = /downloads/ios/manifest.plist {
+        types { }
+        default_type application/xml;
+        try_files $uri =404;
+        add_header Cache-Control "no-store" always;
+    }
+    location ^~ /downloads/ios/ {
+        types { }
+        default_type application/octet-stream;
+        try_files $uri =404;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Cache-Control "public, max-age=3600" always;
+    }
+
 
     ssl_certificate /etc/nginx/certs/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/privkey.pem;

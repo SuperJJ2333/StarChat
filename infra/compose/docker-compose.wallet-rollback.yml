@@ -1,0 +1,11 @@
+# Apply after the original production overlays, without the wallet release overlay.
+# Keep the expanded database; old images must not run automatic Alembic commands.
+services:
+  business-api:
+    image: "${BUSINESS_API_ROLLBACK_IMAGE:?BUSINESS_API_ROLLBACK_IMAGE is required}"
+    build: !reset null
+    command: ["uvicorn", "app.main:create_default_app", "--factory", "--host", "0.0.0.0", "--port", "8082", "--workers", "2"]
+  business-worker:
+    image: "${BUSINESS_WORKER_ROLLBACK_IMAGE:?BUSINESS_WORKER_ROLLBACK_IMAGE is required}"
+    build: !reset null
+    command: ["python", "main.py"]

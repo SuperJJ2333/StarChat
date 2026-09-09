@@ -1,0 +1,28 @@
+# Apply LAST, after base, production, and the deployment's existing feature overlays.
+# Supply reviewed version tags or sha256 digests; never use untagged/latest images.
+# Migrate separately before starting either service:
+# docker compose <same files/env> run --rm --no-deps business-api alembic -c alembic.ini upgrade head
+services:
+  business-api:
+    image: "${BUSINESS_API_RELEASE_IMAGE:?BUSINESS_API_RELEASE_IMAGE is required}"
+    build: !reset null
+    environment:
+      BUSINESS_ENVIRONMENT: production
+      BUSINESS_WALLET_CONVERSIONS_ENABLED: "false"
+      BUSINESS_MATRIX_PROVISION_SECRET: "${MATRIX_PROVISION_SECRET:?MATRIX_PROVISION_SECRET is required}"
+    command:
+      - sh
+      - -c
+      - python /opt/business-api/release_preflight.py && exec uvicorn app.main:create_default_app --factory --host 0.0.0.0 --port 8082 --workers $${BUSINESS_API_WORKERS:-2}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/api/v1/health/ready', timeout=2)"]
+
+  business-worker:
+    image: "${BUSINESS_WORKER_RELEASE_IMAGE:?BUSINESS_WORKER_RELEASE_IMAGE is required}"
+    build: !reset null
+    environment:
+      BUSINESS_ENVIRONMENT: production
+      BUSINESS_WALLET_CONVERSIONS_ENABLED: "false"
+      BUSINESS_REFERRAL_CODE_SECRET: "${BUSINESS_REFERRAL_CODE_SECRET:?BUSINESS_REFERRAL_CODE_SECRET is required}"
+      BUSINESS_MATRIX_PROVISION_SECRET: "${MATRIX_PROVISION_SECRET:?MATRIX_PROVISION_SECRET is required}"
+    command: ["sh", "-c", "python /opt/business-api/release_preflight.py && exec python main.py"]

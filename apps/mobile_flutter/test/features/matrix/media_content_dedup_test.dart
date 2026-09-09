@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:crypto/crypto.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +21,47 @@ void main() {
     final dir = await root.createTemp('media-test-');
     PathProviderPlatform.instance = _Paths(dir.path);
     addTearDown(() => dir.delete(recursive: true));
+  });
+  test(
+      'trusted hashes reuse only verified account objects and reject corruption',
+      () async {
+    final bytes = Uint8List.fromList([1, 2, 3]);
+    final hash = sha256.convert(bytes).toString();
+    var calls = 0;
+    Future<Uint8List> load() async {
+      calls++;
+      return bytes;
+    }
+
+    MediaCacheKey key(String account, String room) => MediaCacheKey(
+        accountId: account,
+        roomId: room,
+        eventId: 'event',
+        contentSha256: hash);
+    await loadMediaWithCache(key('alice', 'one'), load);
+    await loadMediaWithCache(key('alice', 'two'), load);
+    expect(calls, 1);
+    await loadMediaWithCache(key('bob', 'one'), load);
+    expect(calls, 2);
+    final file = (await MediaCache.cached('one', 'event',
+        accountId: 'alice', contentSha256: hash))!;
+    await file.writeAsBytes([3, 2, 1]);
+    await loadMediaWithCache(key('alice', 'three'), load);
+    expect(calls, 3);
+    await expectLater(
+        loadMediaWithCache(
+            MediaCacheKey(
+                accountId: 'alice',
+                roomId: 'x',
+                eventId: 'x',
+                contentSha256: sha256.convert([9]).toString()),
+            load),
+        throwsFormatException);
+    final memory = MediaMemoryCache();
+    final mutable = Uint8List.fromList(bytes);
+    memory.put(key('alice', 'one').cacheId, mutable);
+    mutable[0] = 99;
+    expect(memory.get(key('alice', 'one').cacheId), isNull);
   });
   test('identical decrypted content across rooms occupies one physical object',
       () async {

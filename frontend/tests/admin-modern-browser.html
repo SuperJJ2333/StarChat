@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin modernization browser verification</title>
+<link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-wallet.css"><link rel="stylesheet" href="/src/styles/admin-modern.css">
+<body><div id="app"></div><script type="module">
+import {createAdminShell} from '/src/admin-dashboard.js';
+import {manualWalletPanel} from '/src/admin-manual-wallet-panel.js';
+const overview={registered_users:12580,online_customers:126,pending_withdrawals:3,today_point_volume:'23084.25',point_supply:{total:'1200580.25',issued:'1300580.25',returned:'100000.00',holdings:'1199980.25',platform_fees:'600.00',balanced:true},registration_trend:Array.from({length:30},(_,i)=>({date:`2026-08-${String(i+1).padStart(2,'0')}`,value:(i*17)%91}))};
+let refreshes=0;const api={getOverview:async()=>{refreshes++;return overview;},getModule:async()=>({items:[]}),getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),getManualPayouts:async()=>({items:[]}),getWalletIncidents:async()=>({items:[]}),getWalletMonitorStatus:async()=>({}),getManualWalletControl:async()=>({status:'PAUSED',epoch:1,snapshot_digest:'a'.repeat(64),restriction_scopes:['manual_tron'],unresolved_incidents:0}),getPointIssuance:async()=>({items:[]})};
+const context={actor:{id:'browser-fixture',display_name:'测试管理员'},permissions:['*'],overview,modules:{}};
+const modules=[['注册用户统计','','analytics','admin.analytics.read'],['点钻流水','','ledger','admin.ledger.read'],['USDT 钱包','','wallet','admin.withdrawals.read']];
+const shell=createAdminShell({context,api,modules,renderModule:()=>{const section=document.createElement('section');section.append(manualWalletPanel(api,{actor:context.actor,unifiedRefresh:true}));return section;}});document.querySelector('#app').append(shell);
+const assert=(value,message)=>{if(!value)throw Error(message);};
+try{
+ await new Promise(r=>setTimeout(r,50));assert(document.querySelector('.admin-trend-visual svg'),'chart rendered');assert(document.querySelector('.admin-supply-total').textContent==='1,200,580.25','exact total');
+ assert(getComputedStyle(document.querySelector('.admin-sidebar')).position==='fixed','fixed sidebar');
+ document.querySelector('.admin-refresh-icon').click();await new Promise(r=>setTimeout(r,30));assert(refreshes===1,'read refresh');
+ if(!location.search.includes('overview')){
+ document.querySelector('[data-module=wallet]').click();await new Promise(r=>setTimeout(r,50));
+ assert(!document.querySelector('form[name=control-pause]'),'paused cannot pause again');const form=document.querySelector('form[name=control-resume]');assert(form,'resume shown');
+ const confirmation=form.querySelector('[name=confirm_restore]');confirmation.checked=true;document.querySelector('.admin-refresh-icon').click();await new Promise(r=>setTimeout(r,50));assert(document.querySelector('form[name=control-resume] [name=confirm_restore]').checked,'confirmation draft retained');
+ }
+ assert(document.documentElement.scrollWidth<=innerWidth,'no page horizontal overflow');
+ if(innerWidth<760){document.querySelector('.admin-sidebar-toggle').click();assert(getComputedStyle(document.querySelector('.admin-nav button')).fontSize!=='0px','drawer preserves menu text');assert(document.querySelector('.admin-main').inert,'drawer focus isolation');document.querySelector('.admin-sidebar').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(document.querySelector('.admin-sidebar').hidden,'Escape hides drawer');}
+ document.body.dataset.verification='PASS';
+}catch(error){document.body.dataset.verification='FAIL';const p=document.createElement('pre');p.textContent=error.stack;document.body.append(p);}
+</script></body></html>

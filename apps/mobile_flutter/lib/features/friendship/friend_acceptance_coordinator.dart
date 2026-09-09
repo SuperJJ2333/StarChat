@@ -13,6 +13,7 @@ final class FriendAcceptanceCoordinator {
   FriendAcceptanceCoordinator({
     required this.identityCache,
     required this.establishDirectChat,
+    this.establishDirectChatWithRequest,
   });
 
   final ProfileRepository identityCache;
@@ -21,6 +22,9 @@ final class FriendAcceptanceCoordinator {
   final Future<void> Function(
           String matrixUserId, String friendUserId, String friendDisplayName)?
       establishDirectChat;
+
+  final Future<void> Function(String matrixUserId, String friendUserId,
+      String friendDisplayName, Map request)? establishDirectChatWithRequest;
 
   Future<void> onAccepted(Map request) async {
     final userId = request['user_id']?.toString();
@@ -60,17 +64,23 @@ final class FriendAcceptanceCoordinator {
 
     // 2/3. 私聊建立 + 系统招呼：失败不阻断好友显示。
     final establish = establishDirectChat;
-    if (establish == null || matrixUserId == null || matrixUserId.isEmpty) {
+    final establishWithRequest = establishDirectChatWithRequest;
+    if (establish == null && establishWithRequest == null) {
       return;
     }
-    try {
-      await establish(matrixUserId, userId ?? '', nickname);
-    } catch (_) {
-      // 会话/系统消息失败后续打开聊天时重试。
+    if (matrixUserId == null || matrixUserId.isEmpty) {
+      throw StateError('好友 Matrix 身份尚未就绪');
+    }
+    // The business acceptance has already succeeded. Surface initialization
+    // failures so the UI can retry the same request without accepting again.
+    if (establishWithRequest != null) {
+      await establishWithRequest(
+          matrixUserId, userId ?? '', nickname, Map.unmodifiable(request));
+    } else {
+      await establish!(matrixUserId, userId ?? '', nickname);
     }
   }
 }
 
 @visibleForTesting
-String friendAcceptedGreeting(String friendDisplayName) =>
-    '你已添加了 $friendDisplayName，现在可以开始聊天了。';
+String friendAcceptedGreeting(String friendDisplayName) => '你们已成为好友，现在可以开始聊天了。';
