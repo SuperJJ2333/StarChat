@@ -319,6 +319,85 @@ Future<MatrixClientContinuityMetadata> testContinuityMetadata(
 }
 
 void main() {
+  test('normal sync cannot adopt a fresh client after explicit clear',
+      () async {
+    final fresh = LogoutTrackingClient('fresh');
+    final matrix = MatrixSdkE2eeClient(LogoutTrackingClient('old'),
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => fresh,
+        clearClientData: (_) async {},
+        readContinuityMetadata: testContinuityMetadata);
+    await matrix.clearLocalChatData();
+    await expectLater(matrix.sync(), throwsStateError);
+    expect(fresh.syncCalls, 0);
+    expect(matrix.debugHasActiveClient, isFalse);
+    await matrix.loginWithToken(
+        loginToken: 'test-once', homeserver: Uri.parse('https://matrix.test'));
+    expect(matrix.isLoggedIn, isTrue);
+  });
+  test('clear cannot authorize adoption of an already logged-in client',
+      () async {
+    final stale = LogoutTrackingClient('stale',
+        loggedIn: true,
+        matrixUserId: '@old:matrix.test',
+        matrixDeviceId: 'OLD');
+    final matrix = MatrixSdkE2eeClient(LogoutTrackingClient('old'),
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => stale,
+        clearClientData: (_) async {},
+        readContinuityMetadata: testContinuityMetadata);
+    await matrix.clearLocalChatData();
+    await expectLater(
+        matrix.loginWithToken(
+            loginToken: 'test-once',
+            homeserver: Uri.parse('https://matrix.test')),
+        throwsStateError);
+    expect(matrix.debugHasActiveClient, isFalse);
+  });
+  test('failed fresh opener can retry only through explicit login', () async {
+    var opens = 0;
+    final matrix = MatrixSdkE2eeClient(LogoutTrackingClient('old'),
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {}, resumeClient: () async {
+      if (++opens == 1) throw StateError('open failed');
+      return LogoutTrackingClient('fresh');
+    },
+        clearClientData: (_) async {},
+        readContinuityMetadata: testContinuityMetadata);
+    await matrix.clearLocalChatData();
+    await expectLater(
+        matrix.loginWithToken(
+            loginToken: 'test-once',
+            homeserver: Uri.parse('https://matrix.test')),
+        throwsStateError);
+    await matrix.loginWithToken(
+        loginToken: 'test-new', homeserver: Uri.parse('https://matrix.test'));
+    expect(matrix.isLoggedIn, isTrue);
+    expect(opens, 2);
+  });
+
+  test('token login after confirmed local clear opens fresh client', () async {
+    final old = LogoutTrackingClient('old',
+        loggedIn: true,
+        matrixUserId: '@old:matrix.test',
+        matrixDeviceId: 'OLD');
+    final fresh = LogoutTrackingClient('fresh');
+    final matrix = MatrixSdkE2eeClient(old,
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => fresh,
+        clearClientData: (_) async {},
+        readContinuityMetadata: testContinuityMetadata);
+    await matrix.clearLocalChatData();
+    await matrix.loginWithToken(
+        loginToken: 'test-once', homeserver: Uri.parse('https://matrix.test'));
+    expect(matrix.isLoggedIn, isTrue);
+    expect(matrix.userId, '@alice:matrix.test');
+    expect(matrix.debugActiveClientName, 'fresh');
+  });
+
   test('uses a stable encrypted database path and secure key', () async {
     final secureStore = SecureSessionStore(MemoryStore());
     String? openedName;
@@ -1857,7 +1936,8 @@ void main() {
 
     await expectLater(
       service.login('alice', 'password'),
-      throwsA(isA<LoginStageException>().having((e) => e.diagnosticCode, 'stage', 'L05')),
+      throwsA(isA<LoginStageException>()
+          .having((e) => e.diagnosticCode, 'stage', 'L05')),
     );
 
     expect(events, ['dispose:old']);

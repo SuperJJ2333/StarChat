@@ -1,0 +1,13 @@
+# Cross-platform L04 after local clear
+
+User reports the same account-switch failure on connected Redmi as iPhone; Redmi shows L04. USB identified Redmi Note7 and two installed packages: com.liuhetong.mobile 0.3.73-debug/2077 and com.liuhetong.mobile.debug 0.3.75-debug/2079. Read-only package inspection and app-PID-filtered logcat did not expose the underlying lifecycle exception. Only whitelisted technical markers retained; no messages, tokens, account contents or credentials stored. No app installation or data clear performed by this task.
+
+A deterministic failure was reproduced through the real MatrixSdkE2eeClient gateway: successful explicit clear resets _suspendedMetadata to null; loginWithToken calls _resumeWithinLifecycle; its unconditional continuity check rejects the fresh client with "Matrix client resumed with a different identity". The failure occurs before checkHomeserver or token submission, inside stage L04. This establishes an actual shared-client defect matching the symptom, not a recovered device exception stack.
+
+The minimal repair allows a fresh unlogged client only after successful explicit clear and an explicit login operation. Ordinary sync cannot adopt it; stale logged-in/identity/device/fingerprint state is rejected; failed clear stays blocked, failed opening permits a later explicit-login retry, and allowance is consumed after adoption. Existing continuity validation for resuming old sessions remains unchanged.
+
+Red evidence: focused clear->login test fails with the exact different-identity StateError. Green: same test passes;80 auth/history/lifecycle tests passed including stale-client rejection, ordinary-sync rejection and failed-opener retry. Domain and Quality/Security reviews approved. Full checks recorded after completion.
+
+Distribution limitation: source repair is shared by Android/iOS but existing installed APK/IPA do not acquire it through a backend deployment. No production/backend/website/update settings changed, no Android package replaced, and no device-resolution claim until a repaired signed build is installed and the user verifies switching.
+
+Full Flutter suite: 1,575 tests passed (flutter-full.log). Flutter analyzer: no issues found (flutter-analyze.log). Dart formatting: both touched Dart files unchanged. git diff --check passed. Full scripts/verify.ps1 finished with exit 0 and Verification: PASS, including repository/deployment policies, backend and mobile boundary tests, UI/OpenAPI drift, local migration and Compose rendering checks. Existing dependency deprecation warnings and conditional skipped tests remain; this run does not establish live production or device success.

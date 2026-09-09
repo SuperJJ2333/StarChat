@@ -2236,6 +2236,7 @@ final class MatrixSdkE2eeClient
   bool _accessRevoked = false;
   MatrixClientContinuityMetadata? _suspendedMetadata;
   bool _clearFailed = false;
+  bool _freshLoginAfterClear = false;
   bool _activeContinuityValidated = false;
   bool _credentialsInvalid = false;
   final Uri homeserver;
@@ -2289,7 +2290,7 @@ final class MatrixSdkE2eeClient
             password: password,
             initialDeviceDisplayName: '畅聊移动端');
         await _persistLoggedInContinuity(active);
-      }, authorizeAccess: true);
+      }, authorizeAccess: true, freshLogin: true);
 
   @override
   Future<void> loginWithToken(
@@ -2344,7 +2345,7 @@ final class MatrixSdkE2eeClient
         }
         _credentialsInvalid = false;
         await _persistLoggedInContinuity(active);
-      }, authorizeAccess: true);
+      }, authorizeAccess: true, freshLogin: true);
 
   Future<void> _persistLoggedInContinuity(Client active) async {
     _activeContinuityValidated = false;
@@ -2523,13 +2524,16 @@ final class MatrixSdkE2eeClient
       await _clearClientData(target);
       _pendingCloseClient = null;
       _suspendedMetadata = null;
+      _activeContinuityValidated = false;
       _clearFailed = false;
+      _freshLoginAfterClear = true;
     });
   }
 
   Future<T> _withClient<T>(
     Future<T> Function(Client client) operation, {
     bool authorizeAccess = false,
+    bool freshLogin = false,
   }) async {
     if (_accessRevoked && !authorizeAccess) {
       throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
@@ -2540,7 +2544,7 @@ final class MatrixSdkE2eeClient
         throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
       }
       if (authorizeAccess) _accessRevoked = false;
-      active = await _resumeWithinLifecycle();
+      active = await _resumeWithinLifecycle(freshLogin: freshLogin);
       _beginClientOperation();
     });
     try {
@@ -2787,7 +2791,7 @@ final class MatrixSdkE2eeClient
     return result;
   }
 
-  Future<Client> _resumeWithinLifecycle() async {
+  Future<Client> _resumeWithinLifecycle({bool freshLogin = false}) async {
     final active = _client;
     if (active != null) {
       if (!_activeContinuityValidated) {
@@ -2813,8 +2817,16 @@ final class MatrixSdkE2eeClient
       Error.throwWithStackTrace(error, stackTrace);
     }
     final suspendedMetadata = _suspendedMetadata;
-    if (suspendedMetadata == null ||
-        !suspendedMetadata.hasSameContinuity(resumedMetadata)) {
+    final allowedFreshLogin = freshLogin &&
+        _freshLoginAfterClear &&
+        suspendedMetadata == null &&
+        !resumedMetadata.isLoggedIn &&
+        resumedMetadata.userId == null &&
+        resumedMetadata.deviceId == null &&
+        resumedMetadata.ed25519Fingerprint == null;
+    if (!allowedFreshLogin &&
+        (suspendedMetadata == null ||
+            !suspendedMetadata.hasSameContinuity(resumedMetadata))) {
       await _rejectResumeClient(resumed);
       throw StateError('Matrix client resumed with a different identity');
     }
@@ -2830,6 +2842,7 @@ final class MatrixSdkE2eeClient
     _bindDecryptionCache(resumedMetadata);
     _attachDecryptionListener(resumed);
     _client = resumed;
+    _freshLoginAfterClear = false;
     _activeContinuityValidated = true;
     return resumed;
   }
