@@ -49,7 +49,9 @@ final class WeChatMomentTile extends StatelessWidget {
             onTap: isAd ? null : onAuthorTap,
             child: UserAvatar(
               nickname: item.author.displayName,
-              fallbackSeed: item.author.userId,
+              fallbackSeed: item.author.username.isEmpty
+                  ? item.author.userId
+                  : item.author.username,
               avatarUrl: item.author.avatarUrl,
               diagnosticSource: 'moments-feed',
               size: 42,

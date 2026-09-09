@@ -21,4 +21,8 @@
 
 ## 验证材料
 
+## 2026-09-09 头像统一续修
+
+用户确认继续，并授权临时关闭 VPN 对照后恢复。开始检查时系统 VPN 已关闭，因此保留该初始状态。消息页私聊及群成员头像改为按 Matrix 用户 ID 查找共享业务资料，使用与通讯录相同的用户名缓存身份；本人头像沿用 profile fallbackSeed。业务资料缺失的成员继续走 Matrix。统一预热与移除键，消息页既有分钟定时器静默更新好友资料。主代理负责 conversation_avatar_identity.dart、matrix_home_page.dart、profile_repository.dart 及专属回归；先失败后通过，重新构建 0.3.67-debug/2070 并验证。
+
 仅存放 docs/verification/artifacts/2026-09-09/redmi-polish/，报告 docs/verification/2026-09-09-redmi-polish.md。不保存令牌、消息正文或用户媒体。设备原包 com.liuhetong.mobile 0.3.65-debug / 2068；新包版本号必须更高。
