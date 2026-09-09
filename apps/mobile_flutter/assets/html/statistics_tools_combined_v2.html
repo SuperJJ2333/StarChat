@@ -470,6 +470,102 @@ button, input, textarea {
     white-space: pre-wrap; padding: 10px; font-size: 14px; line-height: 1.5;
     word-break: break-all;
 }
+
+/* ===== 共享自绘提示/确认（替代 WebView 不可靠的原生 confirm/alert） ===== */
+.app-toast {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%,-50%);
+    max-width: 80vw;
+    background: rgba(0,0,0,0.78);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    z-index: 20000;
+    word-break: break-all;
+    pointer-events: none;
+}
+.app-modal-mask {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;   /* 显式四边：兼容 iOS < 14.5（不支持 inset 简写） */
+    z-index: 10000;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 28px;
+}
+.app-modal-card {
+    background: var(--surface);
+    color: var(--text-primary);
+    border-radius: var(--radius-card);
+    max-width: 300px;
+    width: 100%;
+    padding: 22px 18px 14px;
+    text-align: center;
+}
+.app-modal-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+.app-modal-msg {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    word-break: break-all;
+    white-space: pre-line;
+    text-align: left;
+}
+.app-modal-btns {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+}
+.app-modal-btns button {
+    flex: 1;
+    min-height: 44px;
+    border: none;
+    border-radius: var(--radius-control);
+    font-size: 15px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.app-modal-btn-cancel { background: var(--input-bg); color: var(--text-primary); border: 1px solid var(--divider); }
+.app-modal-btn-ok { background: var(--brand); color: #fff; }
+.app-modal-btn-ok.danger { background: var(--danger); color: #fff; }
+
+/* ===== 全局按键按压动效（Android / iOS 统一） ===== */
+button, .tab-btn, .fun-btn, .num-item,
+.stat-row label, .log-item button,
+.app-modal-btn-cancel, .app-modal-btn-ok {
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .12s ease, filter .12s ease, opacity .12s ease;
+}
+button:not(:disabled):active,
+.tab-btn:active,
+.fun-btn:active,
+.num-item:active,
+.stat-row label:active,
+.app-modal-btn-cancel:active,
+.app-modal-btn-ok:active {
+    transform: scale(.95);
+    filter: brightness(.88) saturate(1.05);
+}
+button:disabled { cursor: not-allowed; }
+
+/* 号码格选中闪动反馈 */
+.num-item.flash { animation: numFlash .5s ease; }
+@keyframes numFlash {
+    0%   { transform: scale(1.14); box-shadow: 0 0 0 2px var(--brand); filter: brightness(1.05); }
+    100% { transform: scale(1);    box-shadow: none; }
+}
 </style>
 </head>
 <body>
@@ -487,7 +583,7 @@ button, input, textarea {
     <h3>号码统计助手</h3>
     <div class="last-input def-bg" id="lastInput">最后操作：无</div>
     <textarea id="inputText" placeholder="输入号码/生肖/分类词；支持多行、各号金额，如：&#10;猪牛马猴猪各号100&#10;牛马蛇号三十&#10;龙蛇各一万一千零五十"></textarea>
-    <input type="text" id="money" placeholder="金额(仅整数，整批统一)" inputmode="numeric">
+    <input type="text" id="money" placeholder="金额(如 50 或 五十，整批统一)" inputmode="text">
     <p class="hint">提示：可多行录入，每行「项目+金额」，如 <b>猪牛马猴猪各号100</b>、<b>02,13/44、09，25各200</b>、<b>牛马蛇号三十</b>、<b>龙、蛇各一万一千零五十</b>。间隔可用空格/逗号/顿号/斜杠等；金额支持阿拉伯数字或<b>中文数字</b>；不写金额则整批使用金额框。</p>
     <button class="btn-add" onclick="t1_addMoney()">➕ 加金额</button>
     <button class="btn-sub" onclick="t1_subMoney()">➖ 减金额</button>
@@ -661,6 +757,47 @@ function switchTab(i){
     document.querySelectorAll(".tool-section").forEach((s,j)=>s.classList.toggle("active", j===i));
 }
 
+/* ===== 共享自绘提示/确认 =====
+ * WebView（Android 荣耀 / iOS WKWebView）不提供可靠的 window.confirm/alert，
+ * 这里用页面内自绘浮层，保证所有平台行为一致。 */
+function escapeHtml(s){
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+let _appToastTimer = null;
+function appToast(msg, ms){
+    document.querySelectorAll(".app-toast").forEach(el=>el.remove());
+    if(_appToastTimer){ clearTimeout(_appToastTimer); _appToastTimer = null; }
+    const el = document.createElement("div");
+    el.className = "app-toast";
+    el.textContent = msg;
+    document.body.appendChild(el);
+    _appToastTimer = setTimeout(()=>{ el.remove(); _appToastTimer = null; }, ms || 1800);
+}
+function appConfirm(opts){
+    if(!opts || typeof opts.onOk !== "function") return;
+    const mask = document.querySelector(".app-modal-mask");
+    if(mask) mask.remove();
+    const m = document.createElement("div");
+    m.className = "app-modal-mask";
+    const title = opts.title || "提示";
+    const message = opts.message || "";
+    const okText = opts.okText || "确定";
+    m.innerHTML =
+        '<div class="app-modal-card">' +
+            (title ? '<div class="app-modal-title">' + escapeHtml(title) + '</div>' : '') +
+            (message ? '<div class="app-modal-msg">' + escapeHtml(message) + '</div>' : '') +
+            '<div class="app-modal-btns">' +
+                '<button class="app-modal-btn-cancel" type="button">取消</button>' +
+                '<button class="app-modal-btn-ok' + (opts.danger ? ' danger' : '') + '" type="button">' + escapeHtml(okText) + '</button>' +
+            '</div>' +
+        '</div>';
+    const close = () => { if(m.parentNode) m.parentNode.removeChild(m); };
+    m.addEventListener("click", (e) => { if(e.target === m) close(); });
+    m.querySelector(".app-modal-btn-cancel").addEventListener("click", close);
+    m.querySelector(".app-modal-btn-ok").addEventListener("click", () => { close(); opts.onOk(); });
+    document.body.appendChild(m);
+}
+
 /* =========================================================
  * ① 号码统计
  * ========================================================= */
@@ -773,27 +910,35 @@ function switchTab(i){
         return "";
     }
     function debounceRun(fn, delay){
-        taskQueue.push(fn);
+        // 防连点：上一次仍在执行/冷却时忽略本次点击
         if(lock) return;
+        taskQueue.push(fn);
+        scheduleNext(delay);
+    }
+    function scheduleNext(delay){
+        const task = taskQueue.shift();
+        if(!task){
+            lock = false;
+            setBtnDisabled(false);
+            return;
+        }
         lock = true;
         setBtnDisabled(true);
-        function runTask(){
-            if(taskQueue.length === 0){
-                lock = false;
-                setBtnDisabled(false);
-                return;
-            }
-            const task = taskQueue.shift();
+        try {
             task();
-            setTimeout(runTask, delay);
+        } catch(e){
+            showToast("操作异常：" + (e && e.message ? e.message : e));
         }
-        runTask();
+        // 无论成功/异常都会继续排程，绝不让 lock 永久卡死后续按钮
+        setTimeout(() => {
+            setBtnDisabled(false);
+            scheduleNext(delay);
+        }, delay);
     }
     function setBtnDisabled(flag){
-        const a = document.getElementById("btnAdd");
-        const s = document.getElementById("btnSub");
-        if(a) a.disabled = flag;
-        if(s) s.disabled = flag;
+        // 冷却期间禁用加/减金额按钮（视觉 + 交互反馈）
+        const btns = document.querySelectorAll("#t1 .btn-add, #t1 .btn-sub");
+        for(const b of btns){ b.disabled = flag; }
     }
     function fillWord(word){
         let ta = document.getElementById("inputText");
@@ -801,7 +946,7 @@ function switchTab(i){
         if(!val.includes(word)){
             ta.value = val ? val + " " + word : word;
         }
-        ta.focus();
+        // 不主动聚焦输入框：避免移动端点选后强制弹出输入法
     }
     /* ---- 解析：项目+金额 ----
      * 支持：
@@ -949,11 +1094,15 @@ function switchTab(i){
         const inp = document.getElementById("money");
         if(!inp) return;
         inp.addEventListener("input",function(){
-            let v = this.value.replace(/[^0-9]/g,"");
-            if(v.length>10) v = v.slice(0,10);
-            let num = +v||0;
-            if(num > MAX_MONEY) v = MAX_MONEY+"";
-            v = v.replace(/^0+/,"")||"";
+            // 允许：阿拉伯数字 或 中文数字；其余字符过滤（不清空中文数字）
+            let v = this.value.replace(/[^0-9零〇一二两三四五六七八九十百千万亿]/g,"");
+            // 纯阿拉伯数字时即时整理：去前导 0、超上限截断
+            if(/^\d+$/.test(v)){
+                if(v.length>10) v = v.slice(0,10);
+                let num = +v||0;
+                if(num > MAX_MONEY) v = MAX_MONEY+"";
+                v = v.replace(/^0+/,"")||"";
+            }
             this.value = v;
         });
     }
@@ -970,7 +1119,7 @@ function switchTab(i){
         for(let i=1;i<=49;i++){
             let k = pad2(i), v = numCount[k]||0;
             let wc = getWaveClass(i), cls = v>0 ? "has":"zero";
-            h += `<div class="num-item ${cls} ${wc}" onclick="t1_quickInputNum(${i})">${k}<br>${v}</div>`;
+            h += `<div class="num-item ${cls} ${wc}" data-num="${k}" onclick="t1_quickInputNum(${i})">${k}<br>${v}</div>`;
         }
         document.getElementById("numGrid").innerHTML = h;
     }
@@ -1046,7 +1195,14 @@ function switchTab(i){
     function quickInputNum(num){
         let ta = document.getElementById("inputText");
         ta.value = ta.value ? ta.value+" "+pad2(num) : pad2(num);
-        ta.focus();
+        // 点击反馈：号码格短暂高亮闪动
+        const cell = document.querySelector('#numGrid .num-item[data-num="'+pad2(num)+'"]');
+        if(cell){
+            cell.classList.remove('flash');
+            void cell.offsetWidth;   // 重启动画
+            cell.classList.add('flash');
+        }
+        // 不主动聚焦输入框：避免移动端点号码后强制弹出输入法
     }
     function clearInput(){
         document.getElementById("inputText").value = "";
@@ -1064,27 +1220,36 @@ function switchTab(i){
         });
     }
     function delOneRecord(showIdx){
-        if(!confirm("确定删除这条整批记录？")) return;
-        const show = [...recordArr].reverse();
-        const oriIdx = recordArr.length - 1 - showIdx;
-        if(oriIdx < 0 || oriIdx >= recordArr.length) return;
-        reverseRecord(recordArr[oriIdx]);
-        recordArr.splice(oriIdx, 1);
-        saveAll();
-        pageNow = 1;
-        renderAll();
-        showToast("已删除该批次");
+        appConfirm({
+            title: "删除记录",
+            message: "确定删除这条整批记录？",
+            danger: true, okText: "删除",
+            onOk: () => {
+                const show = [...recordArr].reverse();
+                const oriIdx = recordArr.length - 1 - showIdx;
+                if(oriIdx < 0 || oriIdx >= recordArr.length) return;
+                reverseRecord(recordArr[oriIdx]);
+                recordArr.splice(oriIdx, 1);
+                saveAll();
+                pageNow = 1;
+                renderAll();
+                showToast("已删除该批次");
+            }
+        });
     }
     function submitData(type){
         const text = document.getElementById("inputText").value.trim();
         const mstr = document.getElementById("money").value.trim();
-        const money = +mstr || 0;
-        if(!text){ showToast("请输入有效内容"); return; }
+        // 金额框支持阿拉伯或中文数字；空金额仅当输入自带「项目+金额」时才合法
+        const amt = mstr ? parseAmount(mstr) : null;
+        const money = (amt === null) ? 0 : amt;
+        if(!text){ showToast("请先在上方输入号码/生肖"); return; }
+        if(mstr && amt === null){ showToast("金额格式不正确：请输入数字（如 50）或中文数字（如 五十）"); return; }
         if(money > MAX_MONEY){ showToast("金额不能超过"+MAX_MONEY); return; }
         const parsed = parseBetItems(text);
         if(!parsed){ showToast("存在无法识别的项目"); return; }
         const needsMoney = parsed.some(it => it.amount == null);
-        if(needsMoney && money <= 0){ showToast("请输入金额，或使用「项目+金额」格式"); return; }
+        if(needsMoney && money <= 0){ showToast("请输入金额（如 50 或 五十），或使用「项目+金额」格式"); return; }
         const list = [];   // {num, amount}
         let bad = false;
         for(const it of parsed){
@@ -1127,38 +1292,67 @@ function switchTab(i){
         debounceRun(()=>submitData(1), DEBOUNCE_TIME_ADD);
     }
     function subMoney(){
-        if(!confirm("确定扣除？")) return;
-        debounceRun(()=>submitData(-1), DEBOUNCE_TIME_SUB);
+        appConfirm({
+            title: "扣款",
+            message: "确定扣除？",
+            danger: true, okText: "扣除",
+            onOk: () => { debounceRun(()=>submitData(-1), DEBOUNCE_TIME_SUB); }
+        });
     }
     function undoLastRecord(){
-        if(!confirm("确定要撤销上一整批操作吗？")) return;
         if(!recordArr.length){ showToast("暂无记录可撤销"); return; }
-        reverseRecord(recordArr[recordArr.length-1]);
-        recordArr.pop();
-        saveAll();
-        pageNow = 1;
-        renderAll();
-        showToast("已撤销整批操作");
+        appConfirm({
+            title: "撤销",
+            message: "确定要撤销上一整批操作吗？",
+            danger: true, okText: "撤销",
+            onOk: () => {
+                reverseRecord(recordArr[recordArr.length-1]);
+                recordArr.pop();
+                saveAll();
+                pageNow = 1;
+                renderAll();
+                showToast("已撤销整批操作");
+            }
+        });
     }
     function clearRecordOnly(){
-        if(!confirm("确定清空记录？统计保留")) return;
-        recordArr = [];
-        saveAll();
-        pageNow = 1;
-        renderAll();
-        showToast("已清空记录");
+        appConfirm({
+            title: "清空记录",
+            message: "确定清空记录？统计保留（号码金额不清零）",
+            danger: true, okText: "清空",
+            onOk: () => {
+                recordArr = [];
+                saveAll();
+                pageNow = 1;
+                renderAll();
+                showToast("已清空记录");
+            }
+        });
     }
     function clearAllData(){
-        if(!confirm("确定清空所有？不可恢复")||!confirm("再次确认")) return;
-        recordArr = [];
-        initNumCount();
-        selectedSet.clear();
-        lastInput = {text:"",money:"",opt:""};
-        saveAll();
-        pageNow = 1;
-        renderLastTip();
-        renderAll();
-        showToast("已清空全部");
+        appConfirm({
+            title: "清空全部",
+            message: "确定清空所有数据？不可恢复！",
+            danger: true, okText: "清空",
+            onOk: () => {
+                appConfirm({
+                    title: "再次确认",
+                    message: "真的要清空全部数据吗？将删除所有记录与统计。",
+                    danger: true, okText: "确认清空",
+                    onOk: () => {
+                        recordArr = [];
+                        initNumCount();
+                        selectedSet.clear();
+                        lastInput = {text:"",money:"",opt:""};
+                        saveAll();
+                        pageNow = 1;
+                        renderLastTip();
+                        renderAll();
+                        showToast("已清空全部");
+                    }
+                });
+            }
+        });
     }
     function buildBillText(list, title){
         let txt = title + "\r\n";
@@ -1359,7 +1553,7 @@ function switchTab(i){
         const tipDom = document.getElementById("selectedTip");
         tipDom.innerText = "未选中生肖";
         tipDom.className = "tip-idle";
-        document.getElementById("sxInput").focus();
+        // 不主动聚焦：操作后收起键盘，避免连续点按钮反复弹输入法
     }
     function t2Save(){
         if(window.__statsSave){
@@ -1367,9 +1561,9 @@ function switchTab(i){
         }
     }
     function addMoney(){
-        if(selectSxArr.length === 0){ alert("请先输入有效生肖"); return; }
+        if(selectSxArr.length === 0){ appToast("请先输入有效生肖"); return; }
         const num = getValidMoney();
-        if(num === null){ alert("请输入1~9999999正整数"); return; }
+        if(num === null){ appToast("请输入1~9999999正整数"); return; }
         for(let sx of selectSxArr){
             t2_data[sx] = (t2_data[sx] || 0) + num;
         }
@@ -1381,9 +1575,9 @@ function switchTab(i){
     function subMoney(){
         const minusBtn = document.getElementById("minusBtn");
         if(minusBtnLock) return;
-        if(selectSxArr.length === 0){ alert("请先输入有效生肖"); return; }
+        if(selectSxArr.length === 0){ appToast("请先输入有效生肖"); return; }
         const num = getValidMoney();
-        if(num === null){ alert("请输入1~9999999正整数"); return; }
+        if(num === null){ appToast("请输入1~9999999正整数"); return; }
         let msg = `待扣：${selectSxArr.join("、")}\n单次扣 ${num}\n重复生肖多次扣除`;
         let tempData = {...t2_data};
         let zeroList = [];
@@ -1392,42 +1586,57 @@ function switchTab(i){
             if(tempData[s] === 0 && t2_data[s] > 0) zeroList.push(s);
         }
         if(zeroList.length) msg += `\n扣完清零：${zeroList.join("、")}`;
-        if(!confirm(msg + "\n确认扣款？")) return;
-
-        minusBtnLock = true;
-        minusBtn.disabled = true;
-        minusBtn.innerText = "处理中...";
-        for(let sx of selectSxArr){
-            t2_data[sx] = Math.max(0, (t2_data[sx] || 0) - num);
-        }
-        refreshSort();
-        updateRecordText(`【扣款】生肖：${selectSxArr.join("、")}｜金额：${num}`);
-        t2Save();
-        resetSxInputs();
-
-        setTimeout(()=>{
-            minusBtnLock = false;
-            minusBtn.disabled = false;
-            minusBtn.innerText = "批量扣除金额";
-        },1200);
+        appConfirm({
+            title: "扣款",
+            message: msg + "\n确认扣款？",
+            danger: true, okText: "确认扣款",
+            onOk: () => {
+                if(minusBtnLock) return;
+                minusBtnLock = true;
+                minusBtn.disabled = true;
+                minusBtn.innerText = "处理中...";
+                try {
+                    for(let sx of selectSxArr){
+                        t2_data[sx] = Math.max(0, (t2_data[sx] || 0) - num);
+                    }
+                    refreshSort();
+                    updateRecordText(`【扣款】生肖：${selectSxArr.join("、")}｜金额：${num}`);
+                    t2Save();
+                    resetSxInputs();
+                } finally {
+                    // 无论成败都恢复按钮，杜绝异常导致 minusBtnLock 永久卡死
+                    setTimeout(()=>{
+                        minusBtnLock = false;
+                        minusBtn.disabled = false;
+                        minusBtn.innerText = "批量扣除金额";
+                    },1200);
+                }
+            }
+        });
     }
     async function copyBill(){
-        if(!billText){ alert("暂无账单"); return; }
+        if(!billText){ appToast("暂无账单"); return; }
         await copyTextToClipboard(billText);
-        alert("复制成功");
+        appToast("复制成功");
     }
     function clearAll(){
-        if(!confirm("确定清空所有统计？无法恢复！")) return;
-        t2_data = {};
-        selectSxArr = [];
-        document.getElementById("sxInput").value = "";
-        document.getElementById("changeNum").value = "";
-        const tipDom = document.getElementById("selectedTip");
-        tipDom.innerText = "未选中生肖";
-        tipDom.className = "tip-idle";
-        updateRecordText("暂无操作记录");
-        refreshSort();
-        t2Save();
+        appConfirm({
+            title: "清空全部",
+            message: "确定清空所有统计？无法恢复！",
+            danger: true, okText: "清空",
+            onOk: () => {
+                t2_data = {};
+                selectSxArr = [];
+                document.getElementById("sxInput").value = "";
+                document.getElementById("changeNum").value = "";
+                const tipDom = document.getElementById("selectedTip");
+                tipDom.innerText = "未选中生肖";
+                tipDom.className = "tip-idle";
+                updateRecordText("暂无操作记录");
+                refreshSort();
+                t2Save();
+            }
+        });
     }
     function init(){
         t2_data = {};
@@ -1533,9 +1742,9 @@ function switchTab(i){
         const outputArea = document.getElementById("outputArea");
         try {
             await copyTextToClipboard(outputArea.innerText);
-            alert("复制成功");
+            appToast("复制成功");
         }catch(e){
-            alert("复制失败，请手动复制");
+            appToast("复制失败，请手动复制");
         }
     }
     // 从①的内存号码统计导入
@@ -1546,11 +1755,11 @@ function switchTab(i){
             const v = Number(numCount[k]);
             if(v > 0) arr.push({num:k, sx:getZodiacByNum(+k), money:v});
         }
-        if(!arr.length){ alert("① 暂无统计数据可导入"); return; }
+        if(!arr.length){ appToast("① 暂无统计数据可导入"); return; }
         billList = billList.concat(arr);
         saveToLocal();
         mergeSort();
-        alert(`已从①导入 ${arr.length} 个号码`);
+        appToast(`已从①导入 ${arr.length} 个号码`);
     }
     window.t3_addBill = addBill;
     window.t3_mergeSort = mergeSort;
