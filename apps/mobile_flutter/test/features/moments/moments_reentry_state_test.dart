@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:liuhetong_mobile/ui/moments/moment_media_cache.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -194,10 +196,15 @@ void main() {
       (tester) async {
     var reentered = false;
     final pending = Completer<http.Response>();
-    const cover = 'https://cover.example.test/account-cover.jpg';
+    const cover =
+        'https://business.example/api/v1/profile/avatar/content/account-cover';
+    const coverKey =
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     final client = await _client((request) async {
       if (request.url.path.endsWith('/feed')) return _json(_feed());
-      return reentered ? pending.future : _json({'cover_url': cover});
+      return reentered
+          ? pending.future
+          : _json({'cover_url': cover, 'cover_cache_key': coverKey});
     });
     await tester.pumpWidget(await _page(client));
     await tester.pumpAndSettle();
@@ -211,8 +218,40 @@ void main() {
         .first);
     expect((header.decoration as BoxDecoration).image!.image.toString(),
         contains(cover));
-    pending.complete(_json({'cover_url': cover}));
+    expect(
+        ((header.decoration as BoxDecoration).image!.image
+                as CachedNetworkImageProvider)
+            .cacheKey,
+        MomentMediaCache.imageProvider(cover,
+                cacheKey: coverKey,
+                accountKey: 'matrix:@me:test',
+                trustedOrigin: 'https://business.example')
+            .cacheKey);
+    pending.complete(_json({'cover_url': cover, 'cover_cache_key': coverKey}));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('settings never echoes response-only cover cache identity',
+      (tester) async {
+    Map<String, dynamic>? written;
+    final client = await _client((request) async {
+      if (request.method == 'PUT') {
+        written = jsonDecode(request.body) as Map<String, dynamic>;
+      }
+      return _json({
+        'history_range': 'ALL',
+        'personalized_recommendations': true,
+        'cover_url': 'https://example.test/cover',
+        'cover_cache_key': 'opaque-read-only'
+      });
+    });
+    await tester
+        .pumpWidget(CupertinoApp(home: MomentsSettingsPage(api: client.$1)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('最近一个月'));
+    await tester.pumpAndSettle();
+    expect(written,
+        {'history_range': 'ONE_MONTH', 'personalized_recommendations': true});
   });
 
   testWidgets(

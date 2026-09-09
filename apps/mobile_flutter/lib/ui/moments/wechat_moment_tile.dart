@@ -15,8 +15,11 @@ final class WeChatMomentTile extends StatelessWidget {
     this.onAdTap,
     this.likedOverride,
     this.onDelete,
+    this.mediaAccountKey,
+    this.mediaOrigin,
   });
   final MomentItem item;
+  final String? mediaAccountKey, mediaOrigin;
   final VoidCallback? onAuthorTap;
   final VoidCallback? onLike;
   final VoidCallback? onComment;
@@ -63,7 +66,11 @@ final class WeChatMomentTile extends StatelessWidget {
             if (item.images.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: WeChatMomentImageGrid(imageUrls: item.images),
+                child: WeChatMomentImageGrid(
+                    imageUrls: item.images,
+                    imageCacheKeys: item.imageCacheKeys,
+                    mediaAccountKey: mediaAccountKey,
+                    mediaOrigin: mediaOrigin),
               ),
             Row(children: [
               Text(formatMomentTime(item.createdAt),

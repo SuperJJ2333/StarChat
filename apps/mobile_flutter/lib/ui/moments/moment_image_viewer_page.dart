@@ -8,9 +8,14 @@ final class MomentImageViewerPage extends StatefulWidget {
     super.key,
     required this.imageUrls,
     required this.initialIndex,
+    this.imageCacheKeys = const [],
+    this.mediaAccountKey,
+    this.mediaOrigin,
   });
 
   final List<String> imageUrls;
+  final List<String?> imageCacheKeys;
+  final String? mediaAccountKey, mediaOrigin;
   final int initialIndex;
 
   @override
@@ -37,8 +42,13 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   maxScale: 4,
                   child: Center(
                     child: Image(
-                      image:
-                          MomentMediaCache.imageProvider(widget.imageUrls[i]),
+                      key: ValueKey(widget.imageUrls[i]),
+                      image: MomentMediaCache.imageProvider(widget.imageUrls[i],
+                          accountKey: widget.mediaAccountKey,
+                          trustedOrigin: widget.mediaOrigin,
+                          cacheKey: i < widget.imageCacheKeys.length
+                              ? widget.imageCacheKeys[i]
+                              : null),
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => const Center(
                         child: Text('图片加载失败',

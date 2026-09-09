@@ -39,30 +39,88 @@ void main() {
     PathProviderPlatform.instance = oldPaths;
   });
 
-  test('repeat reads reuse disk after decoded image eviction', () async {
+  test('rotating signed paths share memory and disk but fetch full URL',
+      () async {
     await HttpOverrides.runWithHttpOverrides(() async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      var requests = 0;
+      final requests = <String>[];
       server.listen((request) async {
-        requests++;
+        requests.add(request.uri.toString());
         request.response.headers.set('cache-control', 'max-age=3600');
         request.response.headers.contentType = ContentType('image', 'png');
         request.response.add(png);
         await request.response.close();
       });
       try {
-        final url = 'http://127.0.0.1:${server.port}/moment.png';
-        final first = await MomentMediaCache.manager.getSingleFile(url);
-        expect(await first.readAsBytes(), png);
-        await imageReady(MomentMediaCache.imageProvider(url)
-            .resolve(ImageConfiguration.empty));
-        await MomentMediaCache.imageProvider(url).evict();
-        await imageReady(MomentMediaCache.imageProvider(url)
-            .resolve(ImageConfiguration.empty));
-        final second = await MomentMediaCache.manager.getSingleFile(url);
-        expect(second.path, first.path);
-        expect(await second.readAsBytes(), png);
-        expect(requests, 1);
+        final origin = 'http://127.0.0.1:${server.port}';
+        final prefix = '$origin/api/v1/profile/avatar/content';
+        const key =
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        final first = MomentMediaCache.imageProvider(
+            '$prefix/signed-A?expires_in=300',
+            cacheKey: key,
+            accountKey: 'matrix:alice',
+            trustedOrigin: origin);
+        final refreshed = MomentMediaCache.imageProvider(
+            '$prefix/signed-B?expires_in=604800',
+            cacheKey: key,
+            accountKey: 'matrix:alice',
+            trustedOrigin: origin);
+        await imageReady(first.resolve(ImageConfiguration.empty));
+        expect(first, refreshed);
+        expect(
+            PaintingBinding.instance.imageCache.containsKey(refreshed), isTrue);
+        await first.evict();
+        await imageReady(refreshed.resolve(ImageConfiguration.empty));
+        expect(requests,
+            ['/api/v1/profile/avatar/content/signed-A?expires_in=300']);
+        // A different origin cannot collide even with an identical server key.
+        final otherOrigin = MomentMediaCache.imageProvider(
+            'https://other.example/signed-A',
+            cacheKey: key,
+            accountKey: 'matrix:alice',
+            trustedOrigin: origin);
+        expect(otherOrigin.cacheKey, isNull);
+        expect(
+            MomentMediaCache.imageProvider('$prefix/signed-A',
+                    cacheKey: key,
+                    accountKey: 'matrix:bob',
+                    trustedOrigin: origin)
+                .cacheKey,
+            isNot(first.cacheKey));
+        expect(
+            MomentMediaCache.imageProvider('$origin/arbitrary',
+                    cacheKey: key,
+                    accountKey: 'matrix:alice',
+                    trustedOrigin: origin)
+                .cacheKey,
+            isNull);
+        expect(
+            MomentMediaCache.imageProvider('$prefix/signed-A',
+                    cacheKey: key, trustedOrigin: origin)
+                .cacheKey,
+            isNull);
+        const changed =
+            'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+        final replacement = MomentMediaCache.imageProvider(
+            '$prefix/replacement?signature=new',
+            cacheKey: changed,
+            accountKey: 'matrix:alice',
+            trustedOrigin: origin);
+        await imageReady(replacement.resolve(ImageConfiguration.empty));
+        expect(requests, [
+          '/api/v1/profile/avatar/content/signed-A?expires_in=300',
+          '/api/v1/profile/avatar/content/replacement?signature=new'
+        ]);
+        // Missing, malformed and legacy identities never collapse URL variants.
+        final fallbackA = MomentMediaCache.imageProvider('$origin/unknown?v=A');
+        final fallbackB = MomentMediaCache.imageProvider('$origin/unknown?v=B');
+        expect(fallbackA, isNot(fallbackB));
+        expect(fallbackA.cacheKey, isNull);
+        expect(
+            MomentMediaCache.imageProvider('$origin/unknown', cacheKey: 'bad')
+                .cacheKey,
+            isNull);
       } finally {
         await server.close(force: true);
       }

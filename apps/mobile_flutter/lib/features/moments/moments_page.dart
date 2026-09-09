@@ -156,6 +156,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   }
 
   String? _coverUrl;
+  String? _coverCacheKey;
   String? _interactionError;
   String? _identityError;
   ProfileRepository get _identityCache => widget.identityCache;
@@ -182,6 +183,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     _accountKey = null;
     _viewerUserId = null;
     _coverUrl = null;
+    _coverCacheKey = null;
     _interactionError = null;
     _identityError = null;
     _loadingMore = false;
@@ -191,6 +193,8 @@ final class _MomentsPageState extends State<MomentsPage> {
       _moments = CacheRepository.current?.momentsFor(knownAccount);
       _feedData = _moments?.snapshot;
       _coverUrl = _moments?.preferencesSnapshot?['cover_url']?.toString();
+      _coverCacheKey =
+          _moments?.preferencesSnapshot?['cover_cache_key']?.toString();
     }
     _loadIdentity();
     unawaited(_initializeFeed());
@@ -240,7 +244,10 @@ final class _MomentsPageState extends State<MomentsPage> {
       if (cache != null) {
         unawaited(cache.savePreferences(value).catchError((Object _) {}));
       }
-      setState(() => _coverUrl = value['cover_url']?.toString());
+      setState(() {
+        _coverUrl = value['cover_url']?.toString();
+        _coverCacheKey = value['cover_cache_key']?.toString();
+      });
     } catch (_) {
       if (mounted && request == _preferencesRequest) {
         setState(() => _interactionError = '封面加载失败，请重试');
@@ -268,6 +275,7 @@ final class _MomentsPageState extends State<MomentsPage> {
       setState(() {
         _feedData = null;
         _coverUrl = null;
+        _coverCacheKey = null;
       });
       _moments = null;
       return;
@@ -278,6 +286,7 @@ final class _MomentsPageState extends State<MomentsPage> {
       setState(() {
         _feedData = null;
         _coverUrl = null;
+        _coverCacheKey = null;
       });
     }
     try {
@@ -291,7 +300,11 @@ final class _MomentsPageState extends State<MomentsPage> {
     if (!mounted || epoch != _accountEpoch) return;
     setState(() {
       _feedData ??= _moments?.snapshot;
-      _coverUrl ??= _moments?.preferencesSnapshot?['cover_url']?.toString();
+      if (_coverUrl == null) {
+        _coverUrl = _moments?.preferencesSnapshot?['cover_url']?.toString();
+        _coverCacheKey =
+            _moments?.preferencesSnapshot?['cover_cache_key']?.toString();
+      }
     });
     unawaited(_loadViewerUserId());
     unawaited(_loadPreferences());
@@ -678,14 +691,18 @@ final class _MomentsPageState extends State<MomentsPage> {
                 key: const Key('moment-cover-header'),
                 onTap: _openCover,
                 child: Container(
+                    key: ValueKey(_coverUrl),
                     height: 200,
                     decoration: BoxDecoration(
                         color: const Color(0xff4c4c4c),
                         image: _coverUrl == null
                             ? null
                             : DecorationImage(
-                                image:
-                                    MomentMediaCache.imageProvider(_coverUrl!),
+                                image: MomentMediaCache.imageProvider(
+                                    _coverUrl!,
+                                    cacheKey: _coverCacheKey,
+                                    accountKey: _accountKey,
+                                    trustedOrigin: widget.api.baseUri.origin),
                                 fit: BoxFit.cover,
                                 onError: (_, __) {})),
                     alignment: Alignment.bottomRight,
@@ -702,6 +719,8 @@ final class _MomentsPageState extends State<MomentsPage> {
                 return WeChatMomentTile(
                   key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
                   item: item,
+                  mediaAccountKey: _accountKey,
+                  mediaOrigin: widget.api.baseUri.origin,
                   onLike: _pendingLikeIds.contains(item.id)
                       ? null
                       : () => _toggleLike(item),
@@ -792,6 +811,10 @@ final class _MomentsPageState extends State<MomentsPage> {
       CupertinoPageRoute(
         builder: (_) => WeChatMomentCoverViewer(
           url: _coverUrl,
+          cacheKey: _coverCacheKey,
+          mediaAccountKey: _accountKey,
+          mediaOrigin: widget.api.baseUri.origin,
+          cacheKeyForUrl: (url) => url == _coverUrl ? _coverCacheKey : null,
           onChangeCover: _changeCover,
         ),
       ),
@@ -828,7 +851,10 @@ final class _MomentsPageState extends State<MomentsPage> {
           {...?cache.preferencesSnapshot, ...saved}).catchError((Object _) {}));
     }
     if (mounted) {
-      setState(() => _coverUrl = coverUrl);
+      setState(() {
+        _coverUrl = coverUrl;
+        _coverCacheKey = saved['cover_cache_key']?.toString();
+      });
     }
     return coverUrl;
   }

@@ -66,6 +66,7 @@ final class MomentItem {
       required this.text,
       required this.images,
       required this.createdAt,
+      this.imageCacheKeys = const [],
       this.liked = false,
       this.likeCount = 0,
       this.likeUsers = const [],
@@ -85,6 +86,7 @@ final class MomentItem {
               avatarUrl: ad['avatar_url']?.toString()),
           text: ad['text'].toString(),
           images: List<String>.from(ad['image_urls'] ?? const []),
+          imageCacheKeys: _imageCacheKeys(ad),
           createdAt: DateTime.now(),
           kind: 'AD',
           adLink: ad['link_url']?.toString());
@@ -95,6 +97,7 @@ final class MomentItem {
             Map<String, dynamic>.from(json['author'] as Map)),
         text: json['text']?.toString() ?? '',
         images: List<String>.from(json['image_urls'] ?? const []),
+        imageCacheKeys: _imageCacheKeys(json),
         createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
             DateTime.now(),
         liked: json['viewer_has_liked'] == true,
@@ -110,7 +113,17 @@ final class MomentItem {
   }
   final String id, text, kind;
   final MomentAuthor author;
+  static List<String?> _imageCacheKeys(Map<String, dynamic> json) {
+    final keys = json['image_cache_keys'];
+    final images = json['image_urls'];
+    if (keys is! List || images is! List || keys.length != images.length) {
+      return const [];
+    }
+    return keys.map((key) => key is String ? key : null).toList();
+  }
+
   final List<String> images;
+  final List<String?> imageCacheKeys;
   final List<MomentAuthor> likeUsers;
   final List<MomentCommentView> comments;
   final DateTime createdAt;
@@ -128,6 +141,7 @@ final class MomentItem {
           author: author,
           text: text,
           images: images,
+          imageCacheKeys: imageCacheKeys,
           createdAt: createdAt,
           liked: liked ?? this.liked,
           likeCount: likeCount ?? this.likeCount,

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import base64
 import json
+import hashlib
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -329,7 +330,7 @@ class MomentsService:
                 cover_url = self.avatar_storage.signed_read_url(
                     row.cover_object_key, self.MOMENT_MEDIA_URL_TTL
                 )
-            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "cover_url": cover_url}
+            return {"history_range": row.history_range, "personalized_recommendations": row.personalized_recommendations, "cover_url": cover_url, "cover_cache_key": self._media_cache_key(row.cover_object_key or row.cover_url)}
 
     def set_cover(self, actor, upload_id, key):
         with self.factory.begin() as session:
@@ -377,6 +378,7 @@ class MomentsService:
                 "history_range": row.history_range,
                 "personalized_recommendations": row.personalized_recommendations,
                 "cover_url": cover_url,
+                "cover_cache_key": self._media_cache_key(upload.object_key),
             }
 
     def report(self, actor, moment_id, reason, key):
@@ -394,6 +396,12 @@ class MomentsService:
     # 朋友圈媒体链接的有效期：feed 每次输出时动态重签，7 天内有效，
     # 旧动态（含历史上以 300s 短签持久化的链接）也会被重新签名救活。
     MOMENT_MEDIA_URL_TTL = 604800
+
+    @staticmethod
+    def _media_cache_key(reference):
+        # Hash the stored business-media reference, never the renewed signature
+        # or media bytes. Clients must still namespace caches by account.
+        return hashlib.sha256(reference.encode('utf-8')).hexdigest() if reference else None
 
     def _resign_media_url(self, url: str) -> str:
         # 对持久化的媒体链接重新签发长期签名。历史实现把上传完成时刻
@@ -460,6 +468,7 @@ class MomentsService:
             'image_urls': [
                 self._resign_media_url(url) for url in moment.image_urls
             ],
+            'image_cache_keys': [self._media_cache_key(url) for url in moment.image_urls],
             'include_user_ids': moment.include_user_ids,
             'exclude_user_ids': moment.exclude_user_ids,
             'include_tag_ids': moment.include_tag_ids,

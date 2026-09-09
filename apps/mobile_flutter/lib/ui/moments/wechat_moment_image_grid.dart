@@ -5,8 +5,15 @@ import 'moment_image_viewer_page.dart';
 import 'moment_media_cache.dart';
 
 final class WeChatMomentImageGrid extends StatelessWidget {
-  const WeChatMomentImageGrid({super.key, required this.imageUrls});
+  const WeChatMomentImageGrid(
+      {super.key,
+      required this.imageUrls,
+      this.imageCacheKeys = const [],
+      this.mediaAccountKey,
+      this.mediaOrigin});
   final List<String> imageUrls;
+  final List<String?> imageCacheKeys;
+  final String? mediaAccountKey, mediaOrigin;
   @override
   Widget build(BuildContext context) {
     final count = imageUrls.length.clamp(0, 9);
@@ -35,12 +42,22 @@ final class WeChatMomentImageGrid extends StatelessWidget {
                 CupertinoPageRoute(
                   fullscreenDialog: true,
                   builder: (_) => MomentImageViewerPage(
-                      imageUrls: imageUrls, initialIndex: index),
+                      imageUrls: imageUrls,
+                      imageCacheKeys: imageCacheKeys,
+                      mediaAccountKey: mediaAccountKey,
+                      mediaOrigin: mediaOrigin,
+                      initialIndex: index),
                 )),
             child: SizedBox(
                 key: const ValueKey('moment-image'),
                 child: Image(
-                    image: MomentMediaCache.imageProvider(imageUrls[index]),
+                    key: ValueKey(imageUrls[index]),
+                    image: MomentMediaCache.imageProvider(imageUrls[index],
+                        accountKey: mediaAccountKey,
+                        trustedOrigin: mediaOrigin,
+                        cacheKey: index < imageCacheKeys.length
+                            ? imageCacheKeys[index]
+                            : null),
                     width: size,
                     height: size,
                     fit: BoxFit.cover,
