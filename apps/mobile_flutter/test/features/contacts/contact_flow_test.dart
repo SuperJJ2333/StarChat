@@ -600,6 +600,13 @@ void main() {
     await tester.pump();
     expect(find.byKey(const Key('contacts-search')), findsOneWidget);
     expect(find.byKey(const Key('contacts-more')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('contacts-more')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('top-more-menu')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-group')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-add')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-scan')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-appearance')), findsOneWidget);
   });
 }
 

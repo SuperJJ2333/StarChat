@@ -1,4 +1,5 @@
-import '../../ui/components/anchored_action_menu.dart';
+import '../../ui/components/top_more_menu.dart';
+import '../contacts/contacts_page.dart' show AddFriendPage;
 import 'package:flutter/cupertino.dart';
 import '../contacts/scan_qr_page.dart';
 
@@ -21,12 +22,17 @@ final class DiscoveryPage extends StatelessWidget {
       required this.api,
       this.matrix,
       this.identityCache,
+      this.onCreateGroup,
+      this.onAddFriend,
+      this.onScan,
+      this.onAppearance,
       this.unreadController});
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient? matrix;
   final ProfileRepository? identityCache;
   final MomentsUnreadController? unreadController;
+  final VoidCallback? onCreateGroup, onAddFriend, onScan, onAppearance;
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
@@ -54,24 +60,19 @@ final class DiscoveryPage extends StatelessWidget {
               CupertinoButton(
                 key: const Key('discovery-more'),
                 padding: EdgeInsets.zero,
-                onPressed: () => showAnchoredCallbackMenu(context, items: [
-                  AnchoredMenuItem(
-                      value: () async {
-                        final cache = identityCache;
-                        if (cache == null) return;
-                        final page = await MomentsPage.prepare(
-                            api: api,
-                            identityCache: cache,
-                            onPostsDisplayed: unreadController?.markDisplayed,
-                            unreadChanges: unreadController);
-                        if (!context.mounted) return;
-                        Navigator.of(context, rootNavigator: true).push(
+                onPressed: () => showTopMoreMenu(context,
+                    onCreateGroup: () => onCreateGroup?.call(),
+                    onAddFriend: onAddFriend ??
+                        () => Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
-                                fullscreenDialog: true, builder: (_) => page));
-                      },
-                      icon: CupertinoIcons.photo_on_rectangle,
-                      label: '朋友圈'),
-                ]),
+                                builder: (_) => AddFriendPage(
+                                    api: api, identityCache: identityCache))),
+                    onScan: onScan ??
+                        () => Navigator.of(context, rootNavigator: true).push(
+                            CupertinoPageRoute(
+                                builder: (_) =>
+                                    ScanQrPage(api: api, groupJoinApi: api))),
+                    onAppearance: () => onAppearance?.call()),
                 child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
               ),
             ])),

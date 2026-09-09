@@ -926,5 +926,22 @@
     "sharedComponent": "WeChatAnchoredActionMenu",
     "htmlTag": "app-anchored-action-menu",
     "uiDesign": "UI_DESIGN.md#16-共享锚定操作菜单2026-09-10"
+  },
+  "conversationStateRevision": {
+    "date": "2026-09-10",
+    "base": "0.3.76-debug/2080",
+    "remoteNodesModified": false,
+    "status": "pending-tool-access",
+    "affectedPages": [
+      "18:7",
+      "19:3",
+      "19:4",
+      "19:5"
+    ],
+    "topMenu": "vertical fixed four actions; 208dp width; min 52dp rows",
+    "pin": "persistent newest-first; darker direct/group background",
+    "unread": "manual immediate; inactive-tab longpress clears all with haptic and 300ms scale",
+    "logout": "original confirm then default Save / explicit bold red Delete",
+    "referenceUrl": "https://www.figma.com/design/zpzwTbnj1hqx80tyRygX78/ChatFlow?node-id=18-7"
   }
 }

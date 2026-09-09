@@ -1,3 +1,5 @@
+import 'conversation_optimistic_state_test.dart' show PendingPreferenceClient;
+import 'matrix_client_factory_test.dart' show SnapshotRoom;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -34,11 +36,12 @@ void main() {
   });
 
   Future<void> pumpHome(WidgetTester tester,
-      {bool dark = false,
+      {Client? sdkOverride,
+      bool dark = false,
       bool invite = false,
       bool encrypted = false,
       bool previewOnly = false}) async {
-    final sdk = _NoNetworkClient();
+    final sdk = sdkOverride ?? _NoNetworkClient();
     if (encrypted) {
       final room =
           Room(id: '!locked:example', client: sdk, membership: Membership.join);
@@ -106,6 +109,46 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets(
+      'pending pin and manual unread render within 100ms for direct and group rooms',
+      (tester) async {
+    final client = PendingPreferenceClient();
+    final direct =
+        _DirectSnapshotRoom(id: '!direct:test', client: client, joined: true);
+    final group = SnapshotRoom(id: '!group:test', client: client, joined: true);
+    client.snapshotRooms.addAll([direct, group]);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+    await pumpHome(tester, previewOnly: true, sdkOverride: client);
+    final directFinder =
+        find.byKey(const ValueKey<String>('conversation-!direct:test'));
+    final groupFinder =
+        find.byKey(const ValueKey<String>('conversation-!group:test'));
+    await matrix.conversations
+        .mutate(group.id, MatrixConversationMutation.togglePin);
+    await tester.pump(const Duration(milliseconds: 50));
+    await matrix.conversations
+        .mutate(direct.id, MatrixConversationMutation.togglePin);
+    await matrix.conversations
+        .mutate(direct.id, MatrixConversationMutation.markUnread);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+        tester.widget<ConversationListTile>(directFinder).pinnedGroup, isTrue);
+    expect(
+        tester.widget<ConversationListTile>(groupFinder).pinnedGroup, isTrue);
+    expect(tester.widget<ConversationListTile>(directFinder).unreadCount, 1);
+    expect(tester.getTopLeft(directFinder).dy,
+        lessThan(tester.getTopLeft(groupFinder).dy));
+    await matrix.conversations
+        .mutate(direct.id, MatrixConversationMutation.togglePin);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+        tester.widget<ConversationListTile>(directFinder).pinnedGroup, isFalse);
+    expect(tester.widget<ConversationListTile>(directFinder).unreadCount, 1);
+    await tester.pumpWidget(const SizedBox());
+    client.pending.complete();
+    await tester.pump();
+  });
   testWidgets('消息加号菜单的扫一扫跳转 ScanQrPage', (tester) async {
     await pumpHome(tester);
 
@@ -161,4 +204,13 @@ final class _MemoryThemeStore implements ThemePreferenceStore {
 
   @override
   Future<void> write(String value) async {}
+}
+
+class _DirectSnapshotRoom extends SnapshotRoom {
+  _DirectSnapshotRoom(
+      {required super.id, required super.client, required super.joined});
+  @override
+  bool get isDirectChat => true;
+  @override
+  String? get directChatMatrixID => '@peer:test';
 }

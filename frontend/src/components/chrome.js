@@ -54,6 +54,7 @@ export class AppTabBar extends StrictElement {
     for (const [value, label, iconName] of items) {
       const item = button("c-tab-bar__item", label, `tab:${value}`);
       item.dataset.active = String(value === active);
+      if (value === "messages") item.dataset.feedback = this.attr("feedback", "idle");
       item.append(icon(iconName, "c-tab-bar__icon"), element("span", "c-tab-bar__label", label));
       root.append(item);
     }

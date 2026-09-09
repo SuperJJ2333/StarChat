@@ -868,14 +868,33 @@
         "key": "25:47"
       },
       "figmaReferenceOnly": true,
-      "remoteVariantSync": "pending-tool-access; existing source node only",
+      "remoteVariantSync": "pending-tool-access; vertical top-more variant local only",
       "tokens": [
         "AnchoredMenuTokens"
       ],
       "tokenSource": {
         "flutter": "apps/mobile_flutter/lib/ui/components/anchored_action_menu.dart",
         "html": "frontend/src/styles/tokens.css: --anchored-menu-*"
-      }
+      },
+      "companions": [
+        {
+          "flutter": "apps/mobile_flutter/lib/ui/components/top_more_menu.dart",
+          "name": "showTopMoreMenu",
+          "htmlVariant": "layout=top-more",
+          "tokens": "TopMoreMenuTokens",
+          "actions": [
+            "发起群聊",
+            "添加朋友",
+            "扫一扫",
+            "外观"
+          ],
+          "states": [
+            "vertical",
+            "large-text",
+            "reduced-motion"
+          ]
+        }
+      ]
     }
   ],
   "tokenParity": [

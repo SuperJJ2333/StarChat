@@ -47,5 +47,12 @@ void main() {
     expect(find.byKey(const Key('discovery-more')), findsOneWidget);
     expect(tester.getTopLeft(find.text('朋友圈')).dy,
         lessThan(tester.getTopLeft(find.text('扫一扫')).dy));
+    await tester.tap(find.byKey(const Key('discovery-more')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('top-more-menu')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-group')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-add')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-scan')), findsOneWidget);
+    expect(find.byKey(const Key('top-more-appearance')), findsOneWidget);
   });
 }

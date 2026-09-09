@@ -16,6 +16,38 @@ final class MediaCache {
   static final _storeFlights = <String, Future<File>>{};
   static final _objectFlights = <String, Future<File>>{};
   static final _legacyCleanups = <String, Future<void>>{};
+  static final _clearingAccounts = <String>{};
+  static final _clearingRoots = <String>{};
+  static final _storeAccounts = <String, String>{};
+  static final _atomicWrites = <String, Future<void>>{};
+
+  /// Removes only this account's managed objects and references. Late network
+  /// decrypts are fenced; local writes finish before their directory is removed.
+  static Future<void> clearAccount(String accountId) async {
+    if (!_clearingAccounts.add(accountId)) {
+      throw StateError('Media cache clear already in progress');
+    }
+    clearMediaMemoryCaches();
+    String? rootPath;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      rootPath = '${docs.path}/chat-media/v2/${_digest(accountId)}';
+      _clearingRoots.add(rootPath);
+      final writes = <Future<dynamic>>[
+        for (final entry in _storeFlights.entries)
+          if (_storeAccounts[entry.key] == accountId) entry.value,
+        for (final entry in _atomicWrites.entries)
+          if (entry.key.startsWith('$rootPath/')) entry.value,
+      ];
+      await Future.wait(writes
+          .map((future) => future.then<void>((_) {}, onError: (Object _) {})));
+      final root = Directory(rootPath);
+      if (await root.exists()) await root.delete(recursive: true);
+    } finally {
+      if (rootPath != null) _clearingRoots.remove(rootPath);
+      _clearingAccounts.remove(accountId);
+    }
+  }
 
   /// Legacy entries have no account owner. Discard only that managed cache;
   /// reusing them across accounts would cross the authorization boundary.
@@ -39,15 +71,28 @@ final class MediaCache {
   static String _digest(String value) =>
       sha256.convert(utf8.encode(value)).toString();
   static Future<Directory> _root(String accountId) async {
+    if (_clearingAccounts.contains(accountId)) {
+      throw StateError('Media cache is being cleared');
+    }
     final docs = await getApplicationDocumentsDirectory();
+    if (_clearingAccounts.contains(accountId)) {
+      throw StateError('Media cache is being cleared');
+    }
     return Directory('${docs.path}/chat-media/v2/${_digest(accountId)}')
         .create(recursive: true);
   }
 
   static Future<File> _reference(
-      String accountId, String roomId, String eventId) async {
+      String accountId, String roomId, String eventId,
+      {int? generation}) async {
     final root = await _root(accountId);
+    if (generation != null && generation != _mediaGeneration) {
+      throw StateError('Media cache session changed');
+    }
     final dir = await Directory('${root.path}/refs').create(recursive: true);
+    if (generation != null && generation != _mediaGeneration) {
+      throw StateError('Media cache session changed');
+    }
     return File('${dir.path}/${_digest(jsonEncode([roomId, eventId]))}.ref');
   }
 
@@ -105,7 +150,26 @@ final class MediaCache {
     } on FileSystemException {/* Best effort cleanup. */}
   }
 
-  static Future<void> _atomicBytes(File file, List<int> bytes) async {
+  static Future<void> _atomicBytes(File file, List<int> bytes,
+      {int? generation}) async {
+    if (generation != null && generation != _mediaGeneration) {
+      throw StateError('Media cache session changed');
+    }
+    if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
+      throw StateError('Media cache is being cleared');
+    }
+    final flight = _writeAtomicBytes(file, bytes);
+    _atomicWrites[file.path] = flight;
+    try {
+      await flight;
+    } finally {
+      if (identical(_atomicWrites[file.path], flight)) {
+        _atomicWrites.remove(file.path);
+      }
+    }
+  }
+
+  static Future<void> _writeAtomicBytes(File file, List<int> bytes) async {
     final tmp = File('${file.path}.${const Uuid().v4()}.tmp');
     try {
       await tmp.writeAsBytes(bytes, flush: true);
@@ -118,17 +182,24 @@ final class MediaCache {
 
   static Future<File> store(String roomId, String eventId, Uint8List bytes,
       {String accountId = '', String? contentSha256}) async {
+    final generation = _mediaGeneration;
     verifyMediaContent(bytes, contentSha256);
     final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
     final existing = _storeFlights[flightKey];
     if (existing != null) return existing;
-    final flight = _root(accountId)
-        .then((root) => _store(root, accountId, roomId, eventId, bytes));
+    final flight = _root(accountId).then((root) {
+      if (generation != _mediaGeneration) {
+        throw StateError('Media cache session changed');
+      }
+      return _store(root, accountId, roomId, eventId, bytes);
+    });
     _storeFlights[flightKey] = flight;
+    _storeAccounts[flightKey] = accountId;
     try {
       return await flight;
     } finally {
       _storeFlights.remove(flightKey);
+      _storeAccounts.remove(flightKey);
     }
   }
 
@@ -385,15 +456,21 @@ Future<Uint8List> loadMediaWithCache(
                 accountId: key.accountId, contentSha256: key.contentSha256);
         if (key.sourceIdentity != null) {
           final ref = await MediaCache._reference(
-              key.accountId, 'source', key.sourceIdentity!);
+              key.accountId, 'source', key.sourceIdentity!,
+              generation: generation);
           await MediaCache._atomicBytes(
-              ref, utf8.encode(file.uri.pathSegments.last));
+              ref, utf8.encode(file.uri.pathSegments.last),
+              generation: generation);
         }
-        final messageRef =
-            await MediaCache._reference(key.accountId, key.roomId, key.eventId);
+        final messageRef = await MediaCache._reference(
+            key.accountId, key.roomId, key.eventId,
+            generation: generation);
         await MediaCache._atomicBytes(
-            messageRef, utf8.encode(file.uri.pathSegments.last));
-        if (generation != _mediaGeneration) return file.readAsBytes();
+            messageRef, utf8.encode(file.uri.pathSegments.last),
+            generation: generation);
+        if (generation != _mediaGeneration) {
+          throw StateError('Media cache session changed');
+        }
         return _sharedMediaBytes.putIfAbsent(file.path, file.readAsBytes);
       })();
   if (existing == null) _mediaLoads[identity] = flight;
@@ -426,6 +503,7 @@ Future<File> resolveCachedVideoFile({
   required Future<Uint8List> Function() decrypt,
   MediaMemoryCache? memoryCache,
 }) async {
+  final generation = _mediaGeneration;
   final disk = await MediaCache.cached(key.roomId, key.eventId,
       accountId: key.accountId, contentSha256: key.contentSha256);
   if (disk != null) {
@@ -437,6 +515,9 @@ Future<File> resolveCachedVideoFile({
   if (await MediaCache.cached(key.roomId, key.eventId,
           accountId: key.accountId, contentSha256: key.contentSha256) ==
       null) {
+    if (generation != _mediaGeneration) {
+      throw StateError('Media cache session changed');
+    }
     await MediaCache.store(key.roomId, key.eventId, bytes,
         accountId: key.accountId, contentSha256: key.contentSha256);
   }

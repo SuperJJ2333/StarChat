@@ -128,7 +128,10 @@ void main() {
     expect(find.byType(CupertinoAlertDialog), findsOneWidget);
     await tester.tap(find.text('退出登录').last);
     await tester.pumpAndSettle();
-
+    expect(logoutCalls, 0);
+    expect(find.text('是否删除本机聊天记录？'), findsOneWidget);
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
     expect(logoutCalls, 1);
   });
 }

@@ -237,4 +237,11 @@
   --anchored-menu-font: 11px;
   --anchored-menu-hit: 44px;
   --anchored-menu-motion: 120ms;
+  --top-more-width: 208px;
+  --top-more-row-height: 52px;
+  --top-more-font: 16px;
+  --messages-clear-motion: 300ms;
+  --local-history-delete-text: #FF3B30;
+  --conversation-pinned-surface: #EDEDED;
 }
+.ui-screen[data-theme="dark"], html[data-theme="dark"] { --conversation-pinned-surface: #191919; }

@@ -49,9 +49,13 @@ def test_semantic_icon_registry_contains_figma_navigation_and_call_icons():
 
 def test_app_shell_consumes_semantic_navigation_icons():
     app_home = read("apps/mobile_flutter/lib/app_home.dart")
+    messages_icon = read("apps/mobile_flutter/lib/ui/components/messages_tab_icon.dart")
 
     assert "ui/foundation/changliao_icons.dart" in app_home
-    for name in ("messages", "contacts", "discover", "me"):
+    assert "MessagesTabIcon(" in app_home
+    assert "ChangliaoIcons.messages" in messages_icon
+    assert "ChangliaoIcons.messagesFilled" in messages_icon
+    for name in ("contacts", "discover", "me"):
         assert f"Icon(ChangliaoIcons.{name})" in app_home
         assert f"Icon(ChangliaoIcons.{name}Filled)" in app_home
 
@@ -191,7 +195,8 @@ def test_discovery_and_profile_use_the_single_real_icon_bottom_navigation():
     assert "CupertinoTabBar(" not in profile
     for placeholder in ("'●'", "'◇'", "'▣'"):
         assert placeholder not in app_home + discovery + profile
-    for name in ("messages", "contacts", "discover", "me"):
+    assert "MessagesTabIcon(" in app_home
+    for name in ("contacts", "discover", "me"):
         assert f"Icon(ChangliaoIcons.{name})" in app_home
 
 
@@ -223,7 +228,8 @@ def test_theme_is_persistent_and_only_resolved_at_the_app_root():
     assert "ThemePreference.system" in controller
     assert "ThemePreference.light" in controller
     assert "ThemePreference.dark" in controller
-    assert "key: const Key('messages-appearance')" in messages
+    assert "showTopMoreMenu(context" in messages
+    assert "appearanceKey: const Key('messages-appearance')" in messages
     feature_sources = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (FLUTTER_LIB / "features").rglob("*.dart")

@@ -225,7 +225,7 @@ app-red-packet-card {
 }
 
 .c-conversation-row[data-pinned="true"] {
-  background: var(--color-surface-primary);
+  background: var(--conversation-pinned-surface);
 }
 
 .c-conversation-row__title {

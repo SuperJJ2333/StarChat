@@ -1,4 +1,5 @@
-import '../../ui/components/anchored_action_menu.dart';
+import '../../ui/components/top_more_menu.dart';
+import 'scan_qr_page.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -71,6 +72,8 @@ final class ContactsPage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.onGroupChat,
+    this.onScan,
+    this.onAppearance,
     this.onGroupAddressList,
     this.identityCache,
   });
@@ -85,6 +88,8 @@ final class ContactsPage extends StatefulWidget {
   final ContactAction? onVoice;
   final ContactAction? onVideo;
   final VoidCallback? onGroupChat;
+  final VoidCallback? onScan;
+  final VoidCallback? onAppearance;
 
   /// BUG4：通讯录首页"群聊"→ 群聊通讯录列表（不再误入发起群聊）；
   /// "+"菜单的"发起群聊"继续走 [onGroupChat]。
@@ -206,23 +211,25 @@ final class _ContactsPageState extends State<ContactsPage> {
                 CupertinoButton(
                   key: const Key('contacts-more'),
                   padding: EdgeInsets.zero,
-                  onPressed: () => showAnchoredCallbackMenu(context, items: [
-                    AnchoredMenuItem(
-                        value: () => widget.onGroupChat?.call(),
-                        icon: CupertinoIcons.group_solid,
-                        label: '发起群聊'),
-                    AnchoredMenuItem(
-                        value: () {
-                          Navigator.push(
-                              context,
-                              CupertinoPageRoute(
-                                  builder: (_) => AddFriendPage(
-                                      api: businessApi,
-                                      identityCache: widget.identityCache)));
-                        },
-                        icon: CupertinoIcons.person_add_solid,
-                        label: '添加朋友'),
-                  ]),
+                  onPressed: () => showTopMoreMenu(
+                    context,
+                    onCreateGroup: () => widget.onGroupChat?.call(),
+                    onAddFriend: () {
+                      Navigator.push(
+                          context,
+                          CupertinoPageRoute(
+                              builder: (_) => AddFriendPage(
+                                  api: businessApi,
+                                  identityCache: widget.identityCache)));
+                    },
+                    onScan: widget.onScan ??
+                        () => Navigator.of(context, rootNavigator: true).push(
+                            CupertinoPageRoute(
+                                builder: (_) => ScanQrPage(
+                                    api: businessApi,
+                                    groupJoinApi: businessApi))),
+                    onAppearance: () => widget.onAppearance?.call(),
+                  ),
                   child: const Icon(CupertinoIcons.ellipsis_circle, size: 22),
                 ),
               ]),

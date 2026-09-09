@@ -1,3 +1,4 @@
+import 'conversation_read_state.dart';
 export 'matrix_room_timeline_adapter.dart' show changliaoRedPacketMessageType;
 import 'call_diagnostics.dart';
 import 'call_wakeup_client.dart';
@@ -476,7 +477,47 @@ final class MatrixConversationCapability {
   const MatrixConversationCapability._(this._owner);
   final MatrixSdkE2eeClient _owner;
 
+  Future<void> _savePreference(
+      Room room, ConversationPreference preference) async {
+    await saveLocalConversationPreference(room, preference);
+    _flushPreferences();
+  }
+
+  void _flushPreferences() {
+    unawaited(_owner
+        ._withClient((client) => flushConversationPreferences(client,
+            shouldContinue: () => !_owner._accessRevoked))
+        .catchError((_) {}));
+  }
+
+  Future<void> clearAllUnread() => _owner._withClient((client) async {
+        await loadConversationPreferences(client);
+        final rooms = client.rooms
+            .where((room) => room.membership == Membership.join)
+            .toList();
+        for (final room in rooms) {
+          ConversationReadState.shared()
+              .markCleared(room.id, eventId: room.lastEvent?.eventId);
+          if (preferenceForRoom(room).manualUnread) {
+            await saveLocalConversationPreference(
+                room, clearUnreadOnOpen(preferenceForRoom(room)));
+          }
+        }
+        conversationPreferencesChanged.publish();
+        _flushPreferences();
+        for (final room in rooms) {
+          final eventId = room.lastEvent?.eventId;
+          if (eventId == null) continue;
+          unawaited(_owner._withClient((active) async {
+            final activeRoom = active.getRoomById(room.id);
+            await activeRoom?.setReadMarker(eventId,
+                mRead: eventId, public: false);
+          }).catchError((_) {}));
+        }
+      });
+
   Future<void> reconcileMetadata() => _owner._withClient((client) async {
+        await loadConversationPreferences(client);
         final base = DateTime.now().toUtc();
         var offset = 0;
         for (final room in client.rooms) {
@@ -493,7 +534,7 @@ final class MatrixConversationCapability {
               preference.memberOrderIds.join('\u0000');
           if (!needsPinTime && !orderChanged) continue;
           try {
-            await writeConversationPreference(
+            await _savePreference(
               room,
               preference.copyWith(
                 pinnedAt: needsPinTime
@@ -509,6 +550,7 @@ final class MatrixConversationCapability {
       });
 
   Future<void> restoreHidden() => _owner._withClient((client) async {
+        await loadConversationPreferences(client);
         final currentUserId = client.userID;
         for (final room in client.rooms) {
           final preference = preferenceForRoom(room);
@@ -520,13 +562,15 @@ final class MatrixConversationCapability {
             isIncoming: event.senderId != currentUserId,
           );
           if (!restored.hidden) {
-            await writeConversationPreference(room, restored);
+            await _savePreference(room, restored);
           }
         }
       });
 
   Future<MatrixConversationSnapshot> snapshot() =>
       _owner._withClient((client) async {
+        await reconcileConversationPreferences(client);
+        _flushPreferences();
         final localHistory = client.userID == null
             ? null
             : await _owner._loadLocalHistory(client);
@@ -624,6 +668,8 @@ final class MatrixConversationCapability {
       });
 
   Future<int> totalUnreadCount() => _owner._withClient((client) async {
+        await reconcileConversationPreferences(client);
+        _flushPreferences();
         final localHistory = client.userID == null
             ? null
             : await _owner._loadLocalHistory(client);
@@ -636,7 +682,13 @@ final class MatrixConversationCapability {
             continue;
           }
           final preference = preferenceForRoom(room);
-          count += preference.manualUnread ? 1 : room.notificationCount;
+          count += ConversationReadState.shared().unreadCount(
+              roomId: room.id,
+              serverUnreadCount: room.notificationCount,
+              lastEventId: room.lastEvent?.eventId,
+              lastEventSenderId: room.lastEvent?.senderId,
+              currentUserId: client.userID,
+              manualUnread: preference.manualUnread);
         }
         return count;
       });
@@ -645,11 +697,11 @@ final class MatrixConversationCapability {
       _owner._withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null) throw StateError('Matrix room is unavailable');
+        await loadConversationPreferences(client);
         final preference = preferenceForRoom(room);
         if (!preference.manualUnread) return;
         try {
-          await writeConversationPreference(
-              room, clearUnreadOnOpen(preference));
+          await _savePreference(room, clearUnreadOnOpen(preference));
         } catch (_) {
           // A later sync retries the account-data write.
         }
@@ -659,10 +711,11 @@ final class MatrixConversationCapability {
       _owner._withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null) throw StateError('Matrix room is unavailable');
+        await loadConversationPreferences(client);
         final preference = preferenceForRoom(room);
         switch (mutation) {
           case MatrixConversationMutation.markUnread:
-            await writeConversationPreference(room, markUnread(preference));
+            await _savePreference(room, markUnread(preference));
           case MatrixConversationMutation.togglePin:
             final next = preference.pinned
                 ? preference.copyWith(pinned: false, clearPinnedAt: true)
@@ -670,9 +723,9 @@ final class MatrixConversationCapability {
                     pinned: true,
                     pinnedAt: DateTime.now().toUtc(),
                   );
-            await writeConversationPreference(room, next);
+            await _savePreference(room, next);
           case MatrixConversationMutation.hide:
-            await writeConversationPreference(
+            await _savePreference(
               room,
               hideConversation(preference, DateTime.now().toUtc()),
             );
@@ -686,8 +739,7 @@ final class MatrixConversationCapability {
                   mRead: lastEvent.eventId, public: false);
             }
             if (preference.manualUnread) {
-              await writeConversationPreference(
-                  room, clearUnreadOnOpen(preference));
+              await _savePreference(room, clearUnreadOnOpen(preference));
             }
             await localHistory.clearThrough(
                 roomId, latest != null && latest.isAfter(now) ? latest : now);
@@ -2638,6 +2690,8 @@ final class MatrixSdkE2eeClient
     });
   }
 
+  String? _localPreferenceAccountIdToClear;
+
   /// Destructively removes this device's Matrix session and encrypted store.
   /// Only explicit account-switch or confirmed local-clear flows may call it.
   @override
@@ -2649,6 +2703,8 @@ final class MatrixSdkE2eeClient
     _revokeManagedResources();
     return _serializeLifecycle(() async {
       final target = _client ?? _pendingCloseClient;
+      _localPreferenceAccountIdToClear ??=
+          target?.userID ?? _suspendedMetadata?.userId;
       await _waitForClientOperationsToDrain();
       _decryptedTimelineEvents.clear();
       _lastRecoveryKey = null;
@@ -2673,7 +2729,13 @@ final class MatrixSdkE2eeClient
       _client = null;
       _pendingCloseClient = target;
       _clearFailed = true;
+      if (_localPreferenceAccountIdToClear != null) {
+        await MediaCache.clearAccount(_localPreferenceAccountIdToClear!);
+      }
+      await clearLocalConversationPreferences(
+          _localPreferenceAccountIdToClear, target);
       await _clearClientData(target);
+      _localPreferenceAccountIdToClear = null;
       _pendingCloseClient = null;
       _suspendedMetadata = null;
       _activeContinuityValidated = false;

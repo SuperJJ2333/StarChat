@@ -1,4 +1,4 @@
-import '../../ui/components/anchored_action_menu.dart';
+import '../../ui/components/top_more_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -216,6 +216,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   @override
   void initState() {
     super.initState();
+    conversationPreferencesChanged.addListener(_preferencesChanged);
     if (widget.previewOnly) {
       unawaited(_refreshClientSnapshot());
       return;
@@ -275,6 +276,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   Future<void> _restoreHiddenConversations() async {
     await widget.matrix.conversations.restoreHidden();
     await _refreshClientSnapshot();
+  }
+
+  void _preferencesChanged() {
+    unawaited(_refreshClientSnapshot());
+    widget.onUnreadChanged?.call();
   }
 
   int _snapshotEpoch = 0;
@@ -365,6 +371,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   @override
   void dispose() {
+    conversationPreferencesChanged.removeListener(_preferencesChanged);
     RoomMentionStore.shared.removeListener(_mentionsChanged);
     _identityCache.removeListener(_identityChanged);
     syncSubscription?.cancel();
@@ -477,43 +484,23 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     );
   }
 
-  Future<void> _showMore() => showAnchoredCallbackMenu(context, items: [
-        AnchoredMenuItem(
-            value: () => widget.onCreateGroup(),
-            icon: CupertinoIcons.group_solid,
-            label: '发起群聊'),
-        AnchoredMenuItem(
-            value: () {
-              Navigator.push(
-                  context,
-                  CupertinoPageRoute(
-                      builder: (_) => AddFriendPage(
-                          api: widget.api, identityCache: _identityCache)));
-            },
-            icon: CupertinoIcons.person_add_solid,
-            label: '添加朋友'),
-        AnchoredMenuItem(
-            value: () {
-              Navigator.of(context, rootNavigator: true).push(
-                  CupertinoPageRoute(
-                      fullscreenDialog: true,
-                      builder: (_) => ScanQrPage(
-                          api: widget.api,
-                          groupJoinApi: widget.api,
-                          onGroupJoined: (roomId) =>
-                              unawaited(_openRoomById(roomId)))));
-            },
-            icon: CupertinoIcons.qrcode_viewfinder,
-            label: '扫一扫'),
-        AnchoredMenuItem(
-            value: () {
-              showThemePickerSheet(context, widget.themeController);
-            },
-            icon: CupertinoIcons.circle_lefthalf_fill,
-            label: '外观',
-            key: const Key('messages-appearance')),
-      ]);
-
+  Future<void> _showMore() => showTopMoreMenu(context,
+      onCreateGroup: widget.onCreateGroup,
+      onAddFriend: () => Navigator.push(
+          context,
+          CupertinoPageRoute(
+              builder: (_) => AddFriendPage(
+                  api: widget.api, identityCache: _identityCache))),
+      onScan: () => Navigator.of(context, rootNavigator: true).push(
+          CupertinoPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => ScanQrPage(
+                  api: widget.api,
+                  groupJoinApi: widget.api,
+                  onGroupJoined: (roomId) =>
+                      unawaited(_openRoomById(roomId))))),
+      onAppearance: () => showThemePickerSheet(context, widget.themeController),
+      appearanceKey: const Key('messages-appearance'));
   Future<void> _openRoomById(String roomId) async {
     if (roomId.isEmpty || widget.previewOnly) return;
     try {
@@ -539,16 +526,16 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
     MatrixRoomLease? lease;
-    _readState.setRoomOpen(snapshot.id, open: true);
-    _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
-    unawaited(widget.matrix.conversations
-        .markReadOnOpen(snapshot.id)
-        .catchError((_) {}));
-    widget.onUnreadChanged?.call();
     unawaited(_warmChatIdentity());
     try {
       lease = await widget.matrix.openRoomLease(snapshot.id);
       if (!mounted) return;
+      _readState.setRoomOpen(snapshot.id, open: true);
+      _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
+      unawaited(widget.matrix.conversations
+          .markReadOnOpen(snapshot.id)
+          .catchError((_) {}));
+      widget.onUnreadChanged?.call();
       final openedLease = lease;
       final route = CupertinoPageRoute<void>(
           builder: (_) => RoomPage(
@@ -824,7 +811,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                                 ),
                           unreadCount: room.unread,
                           muted: room.muted,
-                          pinnedGroup: !room.isDirect && preference.pinned,
+                          pinnedGroup: preference.pinned,
                           onTap: () => _openRoom(room),
                           onLongPress: () => _conversationActions(
                               room, _conversationAnchor(room.id)),

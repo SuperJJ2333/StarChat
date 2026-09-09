@@ -41,7 +41,17 @@ export class AppDialog extends StrictElement {
     cancel.textContent = this.attr("cancel", "取消");
     const confirm = button("c-dialog__button c-dialog__button--confirm", this.attr("confirm", "确认"), "dialog-confirm");
     confirm.textContent = this.attr("confirm", "确认");
-    actions.append(cancel, confirm);
+    if (this.attr("kind") === "history-choice") {
+      title.textContent = "是否删除本机聊天记录？";
+      content.textContent = "保存可在重新登录后继续查看。删除会清除本机聊天数据与加密密钥；未备份的记录可能无法恢复。";
+      const save = button("c-dialog__button c-dialog__button--default", "保存", "dialog-save");
+      save.textContent = "保存";
+      save.setAttribute("autofocus", "");
+      confirm.className = "c-dialog__button c-dialog__button--destructive";
+      confirm.textContent = "确认删除";
+      confirm.setAttribute("aria-label", "确认删除");
+      actions.append(cancel, save, confirm);
+    } else actions.append(cancel, confirm);
     dialog.append(header, content, actions);
     overlay.append(dialog);
     root.append(overlay);

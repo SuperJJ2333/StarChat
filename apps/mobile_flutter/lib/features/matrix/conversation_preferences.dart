@@ -1,3 +1,7 @@
+import 'conversation_read_state.dart';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matrix/matrix.dart';
 
 const conversationPreferenceType = 'com.liuhetong.conversation.settings.v2';
@@ -186,7 +190,7 @@ List<ConversationProjection> orderConversations(
               DateTime.fromMillisecondsSinceEpoch(0))
           .compareTo(
               b.preference.pinnedAt ?? DateTime.fromMillisecondsSinceEpoch(0));
-      if (time != 0) return time;
+      if (time != 0) return -time;
     } else {
       final activity = b.lastActivity.compareTo(a.lastActivity);
       if (activity != 0) return activity;
@@ -196,7 +200,7 @@ List<ConversationProjection> orderConversations(
   return result;
 }
 
-ConversationPreference preferenceForRoom(Room room) =>
+ConversationPreference remotePreferenceForRoom(Room room) =>
     ConversationPreference.fromContent(Map<String, Object?>.from(
       room.roomAccountData[conversationPreferenceType]?.content ??
           room.roomAccountData['com.liuhetong.group_chat.settings.v1']
@@ -216,4 +220,128 @@ Future<void> writeConversationPreference(
     conversationPreferenceType,
     preference.toContent(),
   );
+}
+
+/// Per-client cache, with durable account-scoped pending preferences. A sync
+/// response cannot replace a local edit until it contains that edit.
+final _localPreferences = Expando<_LocalConversationPreferences>();
+final conversationPreferencesChanged = ConversationPreferenceChanges();
+
+final class ConversationPreferenceChanges extends ChangeNotifier {
+  void publish() => notifyListeners();
+}
+
+final class _LocalConversationPreferences {
+  _LocalConversationPreferences(this.preferences, this.key) {
+    final encoded = preferences.getString(key);
+    if (encoded == null) return;
+    try {
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map<String, dynamic>) return;
+      for (final entry in decoded.entries) {
+        if (entry.value is! Map<String, dynamic>) continue;
+        pending[entry.key] = ConversationPreference.fromContent(
+            Map<String, Object?>.from(entry.value as Map));
+      }
+    } on FormatException {
+      // A corrupt device cache must not hide server-backed conversations.
+    }
+  }
+  final SharedPreferences preferences;
+  final String key;
+  final pending = <String, ConversationPreference>{};
+  final sending = <String>{};
+  final acknowledged = <String, ConversationPreference>{};
+  Future<void> persist() async {
+    if (!await preferences.setString(
+        key,
+        jsonEncode({
+          for (final entry in pending.entries)
+            entry.key: entry.value.toContent(),
+        }))) {
+      throw StateError('无法保存会话设置');
+    }
+  }
+}
+
+Future<void> loadConversationPreferences(Client client) async {
+  ConversationReadState.shared().bindAccount(client.userID);
+  if (client.userID == null) return;
+  if (_localPreferences[client] == null) {
+    final preferences = await SharedPreferences.getInstance();
+    _localPreferences[client] ??= _LocalConversationPreferences(
+        preferences, 'conversation_preferences.v1.${client.userID}');
+  }
+}
+
+Future<void> reconcileConversationPreferences(Client client) async {
+  await loadConversationPreferences(client);
+  final store = _localPreferences[client];
+  if (store == null) return;
+  var changed = false;
+  for (final room in client.rooms) {
+    final pending = store.pending[room.id];
+    if (pending != null &&
+        identical(store.acknowledged[room.id], pending) &&
+        jsonEncode(pending.toContent()) ==
+            jsonEncode(remotePreferenceForRoom(room).toContent())) {
+      store.pending.remove(room.id);
+      store.acknowledged.remove(room.id);
+      changed = true;
+    }
+  }
+  if (changed) await store.persist();
+}
+
+ConversationPreference preferenceForRoom(Room room) =>
+    _localPreferences[room.client]?.pending[room.id] ??
+    remotePreferenceForRoom(room);
+
+Future<void> saveLocalConversationPreference(
+    Room room, ConversationPreference preference) async {
+  await loadConversationPreferences(room.client);
+  final store = _localPreferences[room.client];
+  if (store == null) throw StateError('Matrix 账号尚未登录');
+  store.pending[room.id] = preference;
+  conversationPreferencesChanged.publish();
+  await store.persist();
+}
+
+/// Called inside the Matrix client's managed lifecycle. Failed writes remain
+/// durable and are retried on the next conversation snapshot/sync.
+Future<void> flushConversationPreferences(Client client,
+    {bool Function()? shouldContinue}) async {
+  final store = _localPreferences[client];
+  final userId = client.userID;
+  if (store == null || userId == null) return;
+  await Future.wait([
+    for (final roomId in store.pending.keys.toList())
+      () async {
+        if (!store.sending.add(roomId)) return;
+        try {
+          while (store.pending[roomId] != null &&
+              (shouldContinue?.call() ?? true)) {
+            final next = store.pending[roomId]!;
+            if (identical(store.acknowledged[roomId], next)) return;
+            await client.setAccountDataPerRoom(
+                userId, roomId, conversationPreferenceType, next.toContent());
+            store.acknowledged[roomId] = next;
+          }
+        } catch (_) {
+          // Keep the local edit while offline; the next sync retries it.
+        } finally {
+          store.sending.remove(roomId);
+        }
+      }(),
+  ]);
+}
+
+Future<void> clearLocalConversationPreferences(
+    String? accountId, Client? client) async {
+  if (accountId == null) return;
+  final preferences = await SharedPreferences.getInstance();
+  if (!await preferences.remove('conversation_preferences.v1.$accountId')) {
+    throw StateError('无法删除会话设置');
+  }
+  if (client != null) _localPreferences[client] = null;
 }

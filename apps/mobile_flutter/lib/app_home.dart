@@ -26,6 +26,7 @@ import 'core/notification/notification_usage_recorder.dart';
 import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
 import 'features/contacts/contacts_page.dart';
+import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
 import 'features/contacts/user_display_name_resolver.dart';
 import 'features/discovery/discovery_page.dart';
@@ -69,10 +70,11 @@ import 'features/push/push_tap_router.dart';
 import 'features/push/push_token_provider.dart';
 import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
-import 'ui/components/message_unread_badge.dart';
+import 'ui/components/messages_tab_icon.dart';
 import 'ui/foundation/changliao_icons.dart';
 import 'ui/foundation/wechat_tokens.dart';
 import 'ui/theme/theme_controller.dart';
+import 'ui/theme/theme_picker_sheet.dart';
 import 'features/profile/about_page.dart';
 import 'features/profile/invite_code_page.dart';
 import 'features/profile/my_qr_code_page.dart';
@@ -986,6 +988,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _clearAllUnread() async {
+    await widget.matrix.conversations.clearAllUnread();
+    await _refreshUnreadCount();
+  }
+
   Future<void> _refreshUnreadCount() async {
     final unread = await widget.matrix.conversations.totalUnreadCount();
     if (mounted && unread != _totalUnreadCount) {
@@ -1407,6 +1414,24 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  void _scanFromTab() {
+    Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => ScanQrPage(
+          api: widget.api,
+          groupJoinApi: widget.api,
+          onGroupJoined: (roomId) =>
+              unawaited(_openConversationFromNotification(roomId))),
+    ));
+  }
+
+  void _addFriendFromTab() {
+    Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+      builder: (_) =>
+          AddFriendPage(api: widget.api, identityCache: _chatIdentityCache),
+    ));
+  }
+
   Future<void> _createGroupChat() async {
     String currentUserDisplayName = '我';
     try {
@@ -1674,13 +1699,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 activeColor: const Color(0xff07c160),
                 items: [
                   BottomNavigationBarItem(
-                    icon: MessageUnreadBadge(
+                    icon: MessagesTabIcon(
                       unreadCount: _totalUnreadCount,
-                      child: const Icon(ChangliaoIcons.messages),
+                      active: false,
+                      onClearUnread: _clearAllUnread,
                     ),
-                    activeIcon: MessageUnreadBadge(
+                    activeIcon: MessagesTabIcon(
                       unreadCount: _totalUnreadCount,
-                      child: const Icon(ChangliaoIcons.messagesFilled),
+                      active: true,
+                      onClearUnread: _clearAllUnread,
                     ),
                     label: '消息',
                   ),
@@ -1731,11 +1758,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                           onVideo: (contact) =>
                               _openCall(contact, CallMediaType.video),
                           onGroupChat: _createGroupChat,
+                          onScan: _scanFromTab,
+                          onAppearance: () => showThemePickerSheet(
+                              context, widget.themeController),
                           onGroupAddressList: _openGroupAddressList,
                           reminderService: reminderService,
                           identityCache: _chatIdentityCache,
                         ),
                   2 => DiscoveryPage(
+                      onCreateGroup: _createGroupChat,
+                      onAddFriend: _addFriendFromTab,
+                      onScan: _scanFromTab,
+                      onAppearance: () =>
+                          showThemePickerSheet(context, widget.themeController),
                       unreadController: _momentsUnread,
                       matrix: widget.matrix,
                       api: widget.api,
@@ -1744,6 +1779,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                   _ => ProfileTabPage(
                       api: widget.api,
                       onLogout: widget.onLogout,
+                      onClearLocalChatData: widget.matrix.clearLocalChatData,
                       identityCache: _chatIdentityCache,
                     ),
                 },
@@ -1791,6 +1827,8 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
+    this.onScan,
+    this.onAppearance,
     this.onGroupAddressList,
     this.onFriendRequests,
     required this.pendingFriendRequests,
@@ -1803,6 +1841,7 @@ final class ContactsTabPage extends StatefulWidget {
   final ContactAction onVoice;
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
+  final VoidCallback? onScan, onAppearance;
 
   /// BUG4：通讯录"群聊"入口 → 群聊通讯录列表。
   final VoidCallback? onGroupAddressList;
@@ -1885,6 +1924,8 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
         onVoice: widget.onVoice,
         onVideo: widget.onVideo,
         onGroupChat: widget.onGroupChat,
+        onScan: widget.onScan,
+        onAppearance: widget.onAppearance,
         onGroupAddressList: widget.onGroupAddressList,
       );
 }
@@ -1894,11 +1935,13 @@ final class ProfileTabPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.onLogout,
+    this.onClearLocalChatData,
     this.identityCache,
   });
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
+  final Future<void> Function()? onClearLocalChatData;
   @override
   State<ProfileTabPage> createState() => _ProfileTabPageState();
 }
@@ -1967,8 +2010,10 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
       onSettings: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) =>
-                  SettingsPage(api: widget.api, onLogout: widget.onLogout))));
+              builder: (_) => SettingsPage(
+                  api: widget.api,
+                  onLogout: widget.onLogout,
+                  onClearLocalChatData: widget.onClearLocalChatData))));
 }
 
 final class ProfilePage extends StatelessWidget {
@@ -2039,32 +2084,112 @@ final class ProfilePage extends StatelessWidget {
       );
 }
 
-final class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key, required this.api, required this.onLogout});
+final class SettingsPage extends StatefulWidget {
+  const SettingsPage(
+      {super.key,
+      required this.api,
+      required this.onLogout,
+      this.onClearLocalChatData});
 
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
+  final Future<void> Function()? onClearLocalChatData;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+final class _SettingsPageState extends State<SettingsPage> {
+  bool _loggingOut = false;
 
   Future<void> _confirmLogout(BuildContext context) async {
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (dialogContext) => CupertinoAlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('退出后将清除本设备的登录状态。'),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('退出登录'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) await onLogout();
+    if (_loggingOut) return;
+    final rootNavigator = Navigator.of(context, rootNavigator: true);
+    var deleteRequested = false;
+    var loggedOut = false;
+    setState(() => _loggingOut = true);
+    try {
+      final confirmed = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('退出登录'),
+          content: const Text('退出后将清除本设备的登录状态。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              isDestructiveAction: true,
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('退出登录'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+      final delete = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title: const Text('是否删除本机聊天记录？'),
+          content: const Text('保存可在重新登录后继续查看。删除会清除本机聊天数据与加密密钥；未备份的记录可能无法恢复。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            CupertinoDialogAction(
+              isDefaultAction: true,
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('保存'),
+            ),
+            if (widget.onClearLocalChatData != null)
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('确认删除',
+                    style: TextStyle(
+                        color: CupertinoColors.systemRed,
+                        fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ),
+      );
+      if (delete == null || !context.mounted) return;
+      // Both dialogs close before lifecycle teardown. Keep the existing explicit
+      // local-clear API so the account-clear/login continuity repair remains intact.
+      if (delete) {
+        deleteRequested = true;
+        try {
+          await widget.onClearLocalChatData!();
+        } finally {
+          // Clear revokes home resources before disk work. Even if disk work
+          // fails, leave the authentication gate closed instead of a dead home.
+          await widget.onLogout();
+          loggedOut = true;
+        }
+      } else {
+        await widget.onLogout();
+      }
+    } catch (_) {
+      if (!rootNavigator.mounted) return;
+      await showCupertinoDialog<void>(
+        context: rootNavigator.context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+          title:
+              Text(deleteRequested && loggedOut ? '已退出登录，本机数据未完全删除' : '退出未完成'),
+          content: const Text('本机操作未完成，请重试。'),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('知道了'),
+            )
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   @override
@@ -2083,7 +2208,7 @@ final class SettingsPage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => AccountPrivacyPage(api: api),
+                    builder: (_) => AccountPrivacyPage(api: widget.api),
                   ),
                 ),
               ),
@@ -2113,7 +2238,7 @@ final class SettingsPage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => AboutChangliaoPage(api: api),
+                    builder: (_) => AboutChangliaoPage(api: widget.api),
                   ),
                 ),
               ),
@@ -2127,7 +2252,7 @@ final class SettingsPage extends StatelessWidget {
                           : WeChatColors.lightElevated,
                   borderRadius: BorderRadius.circular(14),
                   padding: EdgeInsets.zero,
-                  onPressed: () => _confirmLogout(context),
+                  onPressed: _loggingOut ? null : () => _confirmLogout(context),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

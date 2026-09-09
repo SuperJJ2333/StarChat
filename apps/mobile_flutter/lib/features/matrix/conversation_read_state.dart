@@ -21,8 +21,20 @@ final class ConversationReadState {
       ConversationReadState._internal();
   factory ConversationReadState.shared() => _shared;
 
+  String? _accountId;
+
+  /// Room identifiers can be shared by accounts. Keep same-account navigation
+  /// state, but never reuse read suppression after changing the active identity.
+  void bindAccount(String? accountId) {
+    if (_accountId == accountId) return;
+    _accountId = accountId;
+    _openRooms.clear();
+    _clearedEventByRoom.clear();
+  }
+
   /// 测试隔离用：重置共享实例的本地状态。
   void resetForTest() {
+    _accountId = null;
     _openRooms.clear();
     _clearedEventByRoom.clear();
   }

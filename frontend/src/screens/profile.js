@@ -59,6 +59,7 @@ function settings(definition) {
   content.append(component("app-action-button", { kind: "danger", icon: "close", label: definition.state === "logout-loading" ? "正在退出…" : "退出登录", loading: definition.state === "logout-loading", action: "profile:logout" }));
   root.append(content);
   if (definition.state === "logout-confirm") root.append(component("app-dialog", { kind: "danger", title: "退出登录", message: "退出后将清除本设备的登录状态。", cancel: "取消", confirm: "退出登录" }));
+  if (definition.state === "logout-history-choice") root.append(component("app-dialog", { kind: "history-choice" }));
   if (definition.state === "logout-failed") root.append(component("app-toast", { kind: "error", message: "退出失败，请检查网络后重试" }));
   return root;
 }

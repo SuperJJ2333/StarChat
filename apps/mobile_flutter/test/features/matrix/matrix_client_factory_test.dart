@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:matrix/encryption/encryption.dart';
 import 'package:matrix/encryption/ssss.dart';
 import 'dart:typed_data';
@@ -328,7 +330,14 @@ Future<MatrixClientContinuityMetadata> testContinuityMetadata(
   );
 }
 
+class MatrixTestPaths extends PathProviderPlatform {
+  @override
+  Future<String?> getApplicationDocumentsPath() async =>
+      '${Directory.current.parent.parent.path}/docs/verification/artifacts/2026-09-10/conversation-state-main/matrix-cache-tests';
+}
+
 void main() {
+  setUp(() => PathProviderPlatform.instance = MatrixTestPaths());
   setUp(() => SharedPreferences.setMockInitialValues({}));
   test('normal sync cannot adopt a fresh client after explicit clear',
       () async {

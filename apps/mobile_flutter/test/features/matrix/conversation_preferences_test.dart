@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 
 void main() {
-  test('pinned groups keep their original pin order despite new activity', () {
+  test('latest pin comes first despite new activity', () {
     final first = ConversationProjection(
       roomId: '!first:test',
       isGroup: true,
@@ -22,7 +22,7 @@ void main() {
       ),
     );
 
-    expect(orderConversations([second, first]), [first, second]);
+    expect(orderConversations([second, first]), [second, first]);
   });
 
   test('ordinary conversations use descending activity order', () {
