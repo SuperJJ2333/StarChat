@@ -312,6 +312,9 @@ void main() {
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pumpAndSettle();
     // 拖动后确保三态组件完全进入视口再点击（PRD §44）。
+    await tester.ensureVisible(find.text('消息通知'));
+    await tester.tap(find.text('消息通知'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('静音').first);
     await tester.pumpAndSettle();
     // PRD §44：三态切换为"静音"后展开静音专属设置。
@@ -322,6 +325,9 @@ void main() {
     expect(find.text('以下消息仍通知'), findsOneWidget);
 
     // 切回"默认"收回静音专属设置；"特别关注"互斥静音（PRD §44）。
+    await tester.ensureVisible(find.text('消息通知'));
+    await tester.tap(find.text('消息通知'));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('特别关注').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('特别关注').first);

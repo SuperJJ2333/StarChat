@@ -2,13 +2,34 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import '../foundation/retained_image_cache_manager.dart';
 
 /// Shared by feed thumbnails and the full-screen viewer. Flutter retains decoded
 /// frames in its bounded image cache; originals are also reusable from disk.
+class _MomentImageProvider extends CachedNetworkImageProvider {
+  const _MomentImageProvider(super.url, {super.cacheKey});
+
+  // Comparing identities must not initialize platform disk storage.
+  @override
+  BaseCacheManager get cacheManager => MomentMediaCache.manager;
+}
+
 abstract final class MomentMediaCache {
+  static Object imageIdentity(String url,
+          {String? cacheKey, String? accountKey, String? trustedOrigin}) =>
+      (
+        accountKey,
+        trustedOrigin,
+        imageProvider(url,
+                    cacheKey: cacheKey,
+                    accountKey: accountKey,
+                    trustedOrigin: trustedOrigin)
+                .cacheKey ??
+            url,
+      );
   static const diskTtl = Duration(days: 7);
   static const maximumDiskEntries = 200;
-  static final CacheManager manager = CacheManager(Config(
+  static final CacheManager manager = RetainedImageCacheManager(Config(
     'changliao-moments-media-v1',
     stalePeriod: diskTtl,
     maxNrOfCacheObjects: maximumDiskEntries,
@@ -41,7 +62,6 @@ abstract final class MomentMediaCache {
                 cacheKey
               ])))}'
         : null;
-    return CachedNetworkImageProvider(url,
-        cacheManager: manager, cacheKey: scoped);
+    return _MomentImageProvider(url, cacheKey: scoped);
   }
 }

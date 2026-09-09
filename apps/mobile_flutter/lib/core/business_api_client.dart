@@ -886,10 +886,18 @@ final class BusinessApiClient
   }, idempotencyKey: newIdempotencyKey());
   Future<Map<String, dynamic>> likeMoment(String id) =>
       postJson('/moments/$id/likes', {}, idempotencyKey: newIdempotencyKey());
-  Future<Map<String, dynamic>> commentMoment(String id, String text) =>
-      postJson('/moments/$id/comments', {
-        'text': text,
-      }, idempotencyKey: newIdempotencyKey());
+  Future<Map<String, dynamic>> commentMoment(String id, String text,
+          {String? parentId,
+          List<String> imageUploadIds = const [],
+          String? idempotencyKey}) =>
+      postJson(
+          '/moments/$id/comments',
+          {
+            'text': text,
+            if (parentId != null) 'parent_id': parentId,
+            if (imageUploadIds.isNotEmpty) 'image_upload_ids': imageUploadIds,
+          },
+          idempotencyKey: idempotencyKey ?? newIdempotencyKey());
   Future<Map<String, dynamic>> momentDetail(String id) =>
       getJson('/moments/$id');
   Future<void> unlikeMoment(String id) => deleteJson('/moments/$id/likes');

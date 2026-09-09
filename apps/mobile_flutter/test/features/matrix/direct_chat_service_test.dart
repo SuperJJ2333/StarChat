@@ -58,8 +58,10 @@ void main() {
 
     test('消息通知一级菜单默认收起（AnimatedSize）', () {
       final direct = readFile('lib/features/matrix/direct_chat_info_page.dart');
-      expect(direct.contains('_notificationExpanded = false'), isTrue);
-      expect(direct.contains('AnimatedSize'), isTrue);
+      expect(direct.contains('ConversationNotificationSection('), isTrue);
+      final shared = readFile('lib/ui/notification/conversation_notification_mode_tile.dart');
+      expect(shared.contains('bool expanded = false'), isTrue);
+      expect(shared.contains('AnimatedSize'), isTrue);
     });
 
     test('头像点击进入 APP 好友资料页（onTapPerson，禁 Matrix Profile）', () {

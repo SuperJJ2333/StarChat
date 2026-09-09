@@ -11,12 +11,14 @@ final class MomentImageViewerPage extends StatefulWidget {
     this.imageCacheKeys = const [],
     this.mediaAccountKey,
     this.mediaOrigin,
+    this.cacheNamespace = '',
   });
 
   final List<String> imageUrls;
   final List<String?> imageCacheKeys;
   final String? mediaAccountKey, mediaOrigin;
   final int initialIndex;
+  final String cacheNamespace;
 
   @override
   State<MomentImageViewerPage> createState() => _MomentImageViewerPageState();
@@ -24,6 +26,12 @@ final class MomentImageViewerPage extends StatefulWidget {
 
 final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
   late int index = widget.initialIndex.clamp(0, widget.imageUrls.length - 1);
+  late final controller = PageController(initialPage: index);
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
@@ -32,7 +40,7 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
           child: Stack(children: [
             PageView.builder(
               itemCount: widget.imageUrls.length,
-              controller: PageController(initialPage: index),
+              controller: controller,
               onPageChanged: (value) {
                 if (mounted) setState(() => index = value);
               },
@@ -42,9 +50,18 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   maxScale: 4,
                   child: Center(
                     child: Image(
-                      key: ValueKey(widget.imageUrls[i]),
+                      key: ValueKey(MomentMediaCache.imageIdentity(
+                          widget.imageUrls[i],
+                          accountKey:
+                              widget.mediaAccountKey ?? widget.cacheNamespace,
+                          trustedOrigin: widget.mediaOrigin,
+                          cacheKey: i < widget.imageCacheKeys.length
+                              ? widget.imageCacheKeys[i]
+                              : null)),
+                      gaplessPlayback: true,
                       image: MomentMediaCache.imageProvider(widget.imageUrls[i],
-                          accountKey: widget.mediaAccountKey,
+                          accountKey:
+                              widget.mediaAccountKey ?? widget.cacheNamespace,
                           trustedOrigin: widget.mediaOrigin,
                           cacheKey: i < widget.imageCacheKeys.length
                               ? widget.imageCacheKeys[i]

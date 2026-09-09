@@ -31,8 +31,9 @@ class DraftPayload(Strict):
     payload: dict = Field(default_factory=dict)
 
 class Comment(Strict):
-    text: str = Field(min_length=1, max_length=1000)
+    text: str = Field(default="", max_length=1000)
     parent_id: str | None = None
+    image_upload_ids: list[str] = Field(default_factory=list, max_length=9)
 
 
 class Preferences(Strict):
@@ -194,7 +195,7 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
 
     @router.post("/{moment_id}/comments", status_code=201)
     def comment(moment_id: str, body: Comment, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):
-        row = service.comment(user, moment_id, body.text, body.parent_id, idempotency_key)
+        row = service.comment(user, moment_id, body.text, body.parent_id, idempotency_key, image_upload_ids=body.image_upload_ids)
 
         with service.factory() as session:
             return service.comment_dto(session, row, user)

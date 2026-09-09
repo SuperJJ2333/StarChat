@@ -27,7 +27,14 @@ final class WeChatMomentViewer extends StatelessWidget {
             itemBuilder: (_, index) => InteractiveViewer(
                 child: Center(
                     child: Image(
-                        key: ValueKey(urls[index]),
+                        key: ValueKey(MomentMediaCache.imageIdentity(
+                            urls[index],
+                            accountKey: mediaAccountKey,
+                            trustedOrigin: mediaOrigin,
+                            cacheKey: index < imageCacheKeys.length
+                                ? imageCacheKeys[index]
+                                : null)),
+                        gaplessPlayback: true,
                         image: MomentMediaCache.imageProvider(urls[index],
                             accountKey: mediaAccountKey,
                             trustedOrigin: mediaOrigin,
@@ -125,7 +132,12 @@ final class _WeChatMomentCoverViewerState
                             ? const Icon(CupertinoIcons.photo,
                                 color: CupertinoColors.white, size: 56)
                             : Image(
-                                key: ValueKey(_url),
+                                key: ValueKey(MomentMediaCache.imageIdentity(
+                                    _url!,
+                                    accountKey: widget.mediaAccountKey,
+                                    trustedOrigin: widget.mediaOrigin,
+                                    cacheKey: _cacheKey)),
+                                gaplessPlayback: true,
                                 image: MomentMediaCache.imageProvider(_url!,
                                     cacheKey: _cacheKey,
                                     accountKey: widget.mediaAccountKey,

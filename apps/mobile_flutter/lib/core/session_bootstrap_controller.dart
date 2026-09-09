@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../features/matrix/media_cache.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -227,6 +228,7 @@ final class SessionBootstrapController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    clearMediaMemoryCaches();
     _generation++;
     _bootstrapFlight = null;
     canShowCachedMessages = false;

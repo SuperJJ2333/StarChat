@@ -106,6 +106,8 @@ final class _ContactsPageState extends State<ContactsPage> {
         ? widget.api.listContacts()
         : Future.value(List.unmodifiable(cached));
     widget.identityCache?.addListener(_identityChanged);
+    unawaited(
+        widget.identityCache?.refreshContactsQuietly() ?? Future<void>.value());
   }
 
   void _identityChanged() {
@@ -237,6 +239,7 @@ final class _ContactsPageState extends State<ContactsPage> {
       ),
       child: SafeArea(
         child: FutureBuilder<List<ContactSummary>>(
+          initialData: widget.identityCache?.contacts,
           future: contacts,
           builder: (_, snapshot) {
             final grouped = _groupContacts(

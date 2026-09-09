@@ -17,6 +17,7 @@ import '../../ui/theme/theme_controller.dart';
 import '../../ui/theme/theme_picker_sheet.dart';
 import 'matrix_e2ee_client.dart';
 import 'matrix_user_avatar.dart';
+import 'conversation_avatar_identity.dart';
 import 'profile_repository.dart';
 import 'conversation_preferences.dart';
 import 'conversation_read_state.dart';
@@ -33,10 +34,12 @@ import '../statistics/statistics_state_store.dart';
 import 'nudge_service.dart';
 
 final class _RoomAvatarSnapshot {
-  const _RoomAvatarSnapshot(this.nickname, this.fallbackSeed, this.uri);
+  const _RoomAvatarSnapshot(
+      this.nickname, this.fallbackSeed, this.uri, this.profileUrl);
   final String nickname;
   final String fallbackSeed;
   final Uri? uri;
+  final String? profileUrl;
 }
 
 final class _RoomSnapshot {
@@ -49,6 +52,8 @@ final class _RoomSnapshot {
     required this.lastBody,
     required this.lastActivity,
     required this.avatar,
+    required this.avatarSeed,
+    required this.avatarProfileUrl,
     required this.groupAvatars,
     required this.preference,
     required this.unread,
@@ -66,6 +71,8 @@ final class _RoomSnapshot {
   final String lastBody;
   final DateTime lastActivity;
   final Uri? avatar;
+  final String avatarSeed;
+  final String? avatarProfileUrl;
   final List<_RoomAvatarSnapshot> groupAvatars;
   final ConversationPreference preference;
   final int unread;
@@ -242,6 +249,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     _sendPresenceHeartbeat();
     _presenceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       _sendPresenceHeartbeat();
+      // Renew short-lived profile image URLs without clearing visible avatars.
+      unawaited(_identityCache.refreshContactsQuietly());
     });
     unawaited(_refreshClientSnapshot());
     unawaited(_refreshMembers());
@@ -288,6 +297,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final preference = room.preference;
     final members =
         room.isDirect ? const <MatrixMemberSnapshot>[] : room.members;
+    final peer = room.isDirect && room.directPeerId != null
+        ? _personAvatar(room.directPeerId!, room.avatar)
+        : (seed: room.id, uri: room.avatar, profileUrl: null);
     return _RoomSnapshot(
       id: room.id,
       displayName: room.displayName,
@@ -297,14 +309,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       lastBody: room.lastEvent?.body ?? '',
       lastActivity: room.lastEvent?.originServerTs ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      avatar: room.avatar,
+      avatar: peer.uri,
+      avatarSeed: peer.seed,
+      avatarProfileUrl: peer.profileUrl,
       groupAvatars: [
-        for (final member in members.take(9))
-          _RoomAvatarSnapshot(
-            member.displayName,
-            member.id,
-            member.avatar,
-          ),
+        for (final member in members.take(9)) _snapshotMemberAvatar(member),
       ],
       preference: preference,
       unread: _conversationUnread(room),
@@ -314,6 +323,22 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       groupName: room.name,
       memberCount: room.members.length,
     );
+  }
+
+  ConversationAvatarIdentity _personAvatar(
+          String matrixId, Uri? matrixAvatar) =>
+      conversationAvatarIdentity(
+        matrixUserId: matrixId,
+        matrixAvatar: matrixAvatar,
+        contact: _identityCache.contactsByMatrixId[matrixId],
+        ownProfile:
+            matrixId == widget.matrix.userId ? _identityCache.profile : null,
+      );
+
+  _RoomAvatarSnapshot _snapshotMemberAvatar(MatrixMemberSnapshot member) {
+    final avatar = _personAvatar(member.id, member.avatar);
+    return _RoomAvatarSnapshot(
+        member.displayName, avatar.seed, avatar.uri, avatar.profileUrl);
   }
 
   @override
@@ -772,8 +797,10 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           ? MatrixUserAvatar(
                               avatarMedia: widget.matrix,
                               nickname: roomName,
-                              fallbackSeed: room.id,
+                              fallbackSeed: room.avatarSeed,
                               matrixAvatarUri: room.avatar,
+                              fallbackAvatarUrl: room.avatarProfileUrl,
+                              diagnosticSource: 'messages-conversation',
                               size: WeChatDimensions.conversationAvatar,
                             )
                           : GroupAvatarMosaic(
@@ -784,6 +811,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                                     nickname: member.nickname,
                                     fallbackSeed: member.fallbackSeed,
                                     matrixAvatarUri: member.uri,
+                                    fallbackAvatarUrl: member.profileUrl,
+                                    diagnosticSource: 'messages-group-member',
                                   ),
                               ],
                             ),
@@ -955,8 +984,9 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
                     ? MatrixUserAvatar(
                         avatarMedia: avatarMedia,
                         nickname: room.displayName,
-                        fallbackSeed: room.id,
+                        fallbackSeed: room.avatarSeed,
                         matrixAvatarUri: room.avatar,
+                        fallbackAvatarUrl: room.avatarProfileUrl,
                       )
                     : GroupAvatarMosaic(
                         avatars: [
@@ -966,6 +996,7 @@ final class _FoldedGroupChatsPage extends StatelessWidget {
                               nickname: member.nickname,
                               fallbackSeed: member.fallbackSeed,
                               matrixAvatarUri: member.uri,
+                              fallbackAvatarUrl: member.profileUrl,
                             ),
                         ],
                       ),

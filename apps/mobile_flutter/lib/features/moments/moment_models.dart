@@ -34,12 +34,16 @@ final class MomentCommentView {
     required this.text,
     required this.author,
     this.parentAuthor,
+    this.images = const [],
+    this.imageCacheKeys = const [],
   });
 
   factory MomentCommentView.fromJson(Map<String, dynamic> json) =>
       MomentCommentView(
         id: json['id'].toString(),
         text: json['text']?.toString() ?? '',
+        images: List<String>.from(json['image_urls'] ?? const []),
+        imageCacheKeys: MomentItem._imageCacheKeys(json),
         author: MomentAuthor.fromJson(
             Map<String, dynamic>.from(json['author'] as Map)),
         parentAuthor: json['parent_author'] is Map
@@ -56,8 +60,19 @@ final class MomentCommentView {
         'text': text,
         'author': author.toJson(),
         'parent_author': parentAuthor?.toJson(),
+        'image_urls': images,
+        'image_cache_keys': imageCacheKeys,
       };
+  final List<String> images;
+  final List<String?> imageCacheKeys;
 }
+
+List<MomentCommentView> mergeMomentComments(
+        Iterable<MomentCommentView> existing, MomentCommentView incoming) =>
+    <String, MomentCommentView>{
+      for (final comment in existing) comment.id: comment,
+      incoming.id: incoming,
+    }.values.toList(growable: false);
 
 final class MomentItem {
   const MomentItem(

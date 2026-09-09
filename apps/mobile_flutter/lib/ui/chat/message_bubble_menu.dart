@@ -18,10 +18,14 @@ final class MessageBubbleMenu extends StatelessWidget {
     super.key,
     required this.actions,
     required this.onSelected,
+    this.arrowAtTop = false,
+    this.arrowX,
   });
 
   final Set<MessageAction> actions;
   final ValueChanged<MessageAction> onSelected;
+  final bool arrowAtTop;
+  final double? arrowX;
 
   static const _presentation = <MessageAction, (IconData, String)>{
     MessageAction.copy: (CupertinoIcons.doc_on_doc, '复制'),
@@ -45,6 +49,7 @@ final class MessageBubbleMenu extends StatelessWidget {
       rows.add(ordered.sublist(i, (i + 4).clamp(0, ordered.length)));
     }
     return Container(
+      width: 272,
       key: const Key('message-bubble-menu'),
       // 底部小三角凸起允许溢出绘制，指向目标气泡。
       clipBehavior: Clip.none,
@@ -70,12 +75,12 @@ final class MessageBubbleMenu extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    for (var c = 0; c < rows[r].length; c++)
-                      _MenuItem(
+                    for (var c = 0; c < 4; c++)
+                      Expanded(child: c >= rows[r].length ? const SizedBox() : _MenuItem(
                         action: rows[r][c],
                         presentation: _presentation[rows[r][c]]!,
                         onPressed: () => onSelected(rows[r][c]),
-                      ),
+                      )),
                   ],
                 ),
                 if (r < rows.length - 1) const SizedBox(height: 4),
@@ -84,9 +89,10 @@ final class MessageBubbleMenu extends StatelessWidget {
           ),
           // 下边框中央的小三角凸起：指向对应的气泡（视觉引导）。
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: -5,
+            left: arrowX == null ? 0 : arrowX! - 11,
+            right: arrowX == null ? 0 : null,
+            top: arrowAtTop ? -9 : null,
+            bottom: arrowAtTop ? null : -5,
             child: Center(
               child: Transform.rotate(
                 angle: math.pi / 4,
@@ -135,8 +141,8 @@ final class _MenuItem extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               label,
-              style: const TextStyle(
-                  fontSize: 11, color: CupertinoColors.white),
+              style:
+                  const TextStyle(fontSize: 11, color: CupertinoColors.white),
             ),
           ],
         ),

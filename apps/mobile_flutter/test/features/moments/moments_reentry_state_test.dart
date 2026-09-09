@@ -107,6 +107,59 @@ void main() {
     await CacheRepository.resetForTest();
   });
 
+  for (final initiallyLiked in [false, true]) {
+    testWidgets(
+        'detail ${initiallyLiked ? 'unlike' : 'like'} updates names in feed and disk',
+        (tester) async {
+      var liked = initiallyLiked;
+      final client = await _client((request) async {
+        if (request.url.path.endsWith('/likes')) {
+          liked = request.method != 'DELETE';
+          return _json({});
+        }
+        if (request.url.path.endsWith('/feed')) {
+          return _json(_feed(liked: liked));
+        }
+        if (request.url.path.endsWith('/post-1')) {
+          return _json((_feed(liked: liked)['items'] as List).single);
+        }
+        return _json({});
+      });
+      await tester.pumpWidget(await _page(client));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('cached post'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('moment-like-button')));
+      await tester.pumpAndSettle();
+      final expected = ['other', if (!initiallyLiked) 'me'];
+      expect(
+          tester
+              .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
+              .item
+              .likeUsers
+              .map((u) => u.userId),
+          expected);
+      Navigator.of(tester.element(find.byType(WeChatMomentTile))).pop();
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
+              .item
+              .likeUsers
+              .map((u) => u.userId),
+          expected);
+      await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+      await CacheRepository.resetForTest();
+      final disk = (await (await CacheRepository.instance())
+          .momentsFor('matrix:@me:test')
+          .load())!;
+      final stored = (disk['items'] as List).single as Map;
+      expect(stored['viewer_has_liked'], !initiallyLiked);
+      expect((stored['like_users'] as List).map((u) => (u as Map)['user_id']),
+          expected);
+    });
+  }
+
   testWidgets(
       'successful comment survives overlapping failed like without caching the pending like',
       (tester) async {
@@ -168,6 +221,76 @@ void main() {
     expect((stored['like_users'] as List).map((v) => (v as Map)['user_id']),
         ['other']);
     expect((stored['comments'] as List).single['text'], 'confirmed comment');
+  });
+
+  testWidgets(
+      'successful image reply survives overlapping failed like without caching the pending like',
+      (tester) async {
+    final like = Completer<http.Response>();
+    final comment = Completer<http.Response>();
+    final client = await _client((request) async {
+      if (request.url.path.endsWith('/feed')) return _json(_feed());
+      if (request.url.path.endsWith('/likes')) return like.future;
+      if (request.url.path.endsWith('/comments')) return comment.future;
+      return _json({});
+    });
+    await tester.pumpWidget(await _page(client));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moment-like-button')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('moment-comment-button')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+        find.byKey(const Key('moment-comment-input')), 'confirmed comment');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('moment-comment-submit')));
+    comment.complete(_json({
+      'id': 'comment-1',
+      'text': 'confirmed comment',
+      'author': _author('me', 'My name'),
+      'parent_author': _author('other', 'Other'),
+      'image_urls': ['https://example.com/image-comment'],
+      'image_cache_keys': ['a' * 64]
+    }, 201));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
+            .item
+            .comments
+            .map((value) => value.text),
+        ['confirmed comment'],
+        reason: 'The comment must be acknowledged before failing the like');
+    final during = (await (await CacheRepository.instance())
+        .momentsFor('matrix:@me:test')
+        .load())!;
+    final pendingCacheItem = (during['items'] as List).single as Map;
+    like.complete(_json({
+      'error': {'code': 'FAIL', 'message': 'Try again'}
+    }, 503));
+    await tester.pumpAndSettle();
+    final item =
+        tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
+    expect(item.comments.map((value) => value.text), ['confirmed comment']);
+    expect(item.liked, isFalse);
+    expect(item.likeCount, 1);
+    expect(item.likeUsers.map((author) => author.userId), ['other']);
+    expect(pendingCacheItem['viewer_has_liked'], isFalse,
+        reason: 'Comment acknowledgement cannot persist an unconfirmed like');
+    await CacheRepository.resetForTest();
+    final disk = (await (await CacheRepository.instance())
+        .momentsFor('matrix:@me:test')
+        .load())!;
+    final stored = (disk['items'] as List).single as Map;
+    expect(stored['viewer_has_liked'], isFalse);
+    expect(stored['like_count'], 1);
+    expect((stored['like_users'] as List).map((v) => (v as Map)['user_id']),
+        ['other']);
+    expect((stored['comments'] as List).single['text'], 'confirmed comment');
+    final reply = (stored['comments'] as List).single as Map;
+    expect(reply['image_urls'], ['https://example.com/image-comment']);
+    expect(reply['image_cache_keys'], ['a' * 64]);
+    expect((reply['parent_author'] as Map)['user_id'], 'other');
   });
 
   for (final actual in ['@b:test', null]) {

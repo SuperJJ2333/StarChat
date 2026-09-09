@@ -24,6 +24,7 @@ import 'package:flutter/services.dart';
 
 import '../../ui/chat/message_action.dart';
 import '../../ui/chat/message_bubble_menu.dart';
+import '../../ui/chat/message_menu_placement.dart';
 import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
 import 'media_thumbnail.dart';
@@ -279,7 +280,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _voicePlayback ??= VoicePlaybackController(
         // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
         loadAttachment: (eventId) => loadMediaWithCache(
-          MediaCacheKey(roomId: roomInfo.id, eventId: eventId),
+          MediaCacheKey(
+              accountId: roomInfo.currentUserId ?? '',
+              roomId: roomInfo.id,
+              eventId: eventId),
           () => controller!.loadAttachment(eventId),
         ),
       );
@@ -328,6 +332,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final mentionComposer = MentionComposerModel();
   String _lastComposerText = '';
   final menuLinks = <String, LayerLink>{};
+  final menuAnchorKeys = <String, GlobalKey>{};
   OverlayEntry? actionMenuEntry;
   RoomMessageViewModel? replyingTo;
   MatrixEmojiVault? emojiVault;
@@ -1030,7 +1035,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         fullscreenDialog: true,
         builder: (_) => VideoViewerPage(
           loadFile: () => resolveCachedVideoFile(
-            key: MediaCacheKey(roomId: roomInfo.id, eventId: message.id),
+            key: MediaCacheKey(
+                accountId: roomInfo.currentUserId ?? '',
+                roomId: roomInfo.id,
+                eventId: message.id),
             decrypt: () => controller!.loadAttachment(message.id),
           ),
           initialDuration: message.videoDuration,
@@ -1062,7 +1070,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final poster = await timeline.loadThumbnail(messageId);
         if (poster != null && poster.isNotEmpty) return poster;
         final file = await resolveCachedVideoFile(
-          key: MediaCacheKey(roomId: roomInfo.id, eventId: messageId),
+          key: MediaCacheKey(
+              accountId: roomInfo.currentUserId ?? '',
+              roomId: roomInfo.id,
+              eventId: messageId),
           decrypt: () => timeline.loadAttachment(messageId),
         );
         return extractVideoPoster(file.path);
@@ -2105,7 +2116,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             loadOriginal: () => imageMemoryCache.putIfAbsent(
               message.id,
               () => loadMediaWithCache(
-                MediaCacheKey(roomId: roomInfo.id, eventId: message.id),
+                MediaCacheKey(
+                    accountId: roomInfo.currentUserId ?? '',
+                    roomId: roomInfo.id,
+                    eventId: message.id),
                 () => controller!.loadAttachment(message.id),
               ),
             ),
@@ -2366,6 +2380,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // 纯动效表情（超级表情）：微信式无气泡大图渲染，但与普通消息
           // 同布局展示头像与昵称/备注，消息来源可识别，长按可操作。
           SuperEmojiMessage(
+            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             key: ValueKey('animated-emoji-${message.stableId}'),
             emojis: animatedEmojis,
             direction: message.isOwn
@@ -2387,6 +2402,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // 点击全屏播放；头像/昵称与图片消息一致。
           WeChatMessageBubble(
             key: ValueKey('video-message-${message.stableId}'),
+            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             decorateContent: false,
             content: VideoMessageCard(
               posterIdentity: message.id,
@@ -2420,6 +2436,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             content: LayoutBuilder(
               builder: (context, constraints) {
                 return ContainImageBubble(
+                  bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
                   key: ValueKey('image-${message.stableId}'),
                   initialBytes: roomImagePreviewCache.get(message.stableId),
                   loadCached: () =>
@@ -2456,6 +2473,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         else
           WeChatMessageBubble(
             content: _messageContent(message),
+            bubbleKey: menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
             onRetry: () =>
                 unawaited(_trackAction(() => _retryMessage(message))),
             decorateContent: messageBubbleIsDecorated(message.kind),
@@ -2477,13 +2495,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           Align(
             alignment:
                 message.isOwn ? Alignment.centerRight : Alignment.centerLeft,
-            child: _QuotePreview(
-              message: replied,
-              targetEventId: message.replyToEventId!,
-              displayName: replied == null
-                  ? '引用消息'
-                  : _displayName(replied.senderId, replied.isOwn),
-              onTap: () => _scrollToMessage(message.replyToEventId!),
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: message.isOwn ? 0 : WeChatDimensions.messageAvatar + 8,
+                right: message.isOwn ? WeChatDimensions.messageAvatar + 8 : 0,
+              ),
+              child: _QuotePreview(
+                message: replied,
+                targetEventId: message.replyToEventId!,
+                displayName: replied == null
+                    ? '引用消息'
+                    : _displayName(replied.senderId, replied.isOwn),
+                onTap: () => _scrollToMessage(message.replyToEventId!),
+              ),
             ),
           ),
       ],
@@ -2537,7 +2561,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     LayerLink anchor,
   ) async {
     unawaited(HapticFeedback.mediumImpact());
-    final serverNow = await _serverNow();
+    // Opening a local menu must not wait for network time. Recall is checked
+    // again against server time by _handleMessageAction before submission.
+    final menuNow = DateTime.now();
     if (!mounted) return;
     final actions = MessageActionPolicy.actionsFor(
       MessageCapabilities(
@@ -2545,39 +2571,75 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         isSent: message.deliveryState == RoomDeliveryState.sent,
         isOwn: message.isOwn,
         sentAt: message.timestamp,
-        serverNow: serverNow ?? message.timestamp.add(const Duration(days: 1)),
+        serverNow: menuNow,
       ),
     );
     if (actions.isEmpty) return;
     dismissActionMenu();
     final isOwn = message.isOwn;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    final messageBox =
+        menuAnchorKeys[message.stableId]?.currentContext?.findRenderObject();
+    if (overlayBox == null ||
+        messageBox is! RenderBox ||
+        !messageBox.attached) {
+      return;
+    }
+    final position =
+        messageBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final anchorRect = position & messageBox.size;
     actionMenuEntry = OverlayEntry(
-      builder: (overlayContext) => Stack(children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: dismissActionMenu,
-            child: const ColoredBox(color: Color(0x1A000000)),
+      builder: (overlayContext) {
+        final media = MediaQuery.of(overlayContext);
+        final placement = MessageMenuPlacement.calculate(
+          anchor: anchorRect,
+          viewport: Rect.fromLTRB(
+              8,
+              media.padding.top + 8,
+              overlayBox.size.width - 8,
+              overlayBox.size.height -
+                  media.viewInsets.bottom -
+                  media.padding.bottom -
+                  8),
+          menuSize: Size(272, actions.length > 4 ? 128 : 72),
+          outgoing: isOwn,
+        );
+        return Stack(children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: dismissActionMenu,
+              child: const ColoredBox(color: Color(0x1A000000)),
+            ),
           ),
-        ),
-        CompositedTransformFollower(
-          link: anchor,
-          targetAnchor: isOwn ? Alignment.topRight : Alignment.topLeft,
-          followerAnchor: isOwn ? Alignment.bottomRight : Alignment.bottomLeft,
-          offset: Offset(isOwn ? -8 : 8, -8),
-          showWhenUnlinked: false,
-          child: MessageBubbleMenu(
-            actions: actions,
-            onSelected: (action) {
-              dismissActionMenu();
-              unawaited(
-                  _trackAction(() => _handleMessageAction(message, action)));
-            },
+          Positioned.fromRect(
+            rect: placement.rect,
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: MediaQuery.disableAnimationsOf(overlayContext) ? Duration.zero : const Duration(milliseconds: 120),
+              builder: (_, value, child) => Opacity(opacity: value,
+                child: Transform.scale(scale: .96 + .04 * value, child: child)),
+              child: SingleChildScrollView(
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 6),
+              child: MessageBubbleMenu(
+                arrowAtTop: placement.arrowAtTop,
+                arrowX: placement.arrowX,
+                actions: actions,
+                onSelected: (action) {
+                  dismissActionMenu();
+                  unawaited(_trackAction(
+                      () => _handleMessageAction(message, action)));
+                },
+              ),
+              ),
+              ),
+            ),
           ),
-        ),
-      ]),
+        ]);
+      },
     );
-    Overlay.of(context, rootOverlay: true).insert(actionMenuEntry!);
+    overlay.insert(actionMenuEntry!);
   }
 
   void dismissActionMenu() {
@@ -2755,6 +2817,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _disposing = true;
+    dismissActionMenu();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(RoomDraftStore.shared.flush(_draftKey));
     latestMessageAnchor.dispose();

@@ -13,6 +13,9 @@ from app.modules.friendship.models import ContactProfile, ContactTag, Friendship
 
 
 class MomentAvatarStorage:
+    def put(self, object_key, content):
+        pass
+
     def signed_read_url(self, object_key, expires_in):
         return f"https://media.example.test/{object_key}?signed=1"
 
@@ -34,6 +37,131 @@ def ctx():
         session.add(Friendship(id='fixture-f12', user_low_id='u1', user_high_id='u2', created_at=now))
     settings = Settings(_env_file=None, environment='test', jwt_secret='x' * 32)
     yield create_app(settings, session_factory=factory), settings
+
+
+@pytest.mark.asyncio
+async def test_image_comment_upload_reply_visibility_and_delete(ctx):
+    app, settings = ctx
+    factory = app.state.session_factory
+    app = create_app(settings, session_factory=factory, avatar_storage=MomentAvatarStorage())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        owner = {**auth(settings, 'u1'), 'Idempotency-Key': 'image-moment'}
+        commenter = {**auth(settings, 'u2'), 'Idempotency-Key': 'image-upload'}
+        moment = await client.post('/api/v1/moments', headers=owner, json={'text': 'test', 'visibility': 'FRIENDS'})
+        moment_id = moment.json()['id']
+        upload = await client.post('/api/v1/moments/media/uploads', headers=commenter, json={'file_name': 'image.png', 'mime_type': 'image/png', 'byte_size': 3})
+        upload_id = upload.json()['id']
+        uploaded = await client.put(upload.json()['upload_url'], headers={**commenter, 'Content-Type': 'image/png'}, content=b'png')
+        assert uploaded.status_code == 204
+        completed = await client.post(f'/api/v1/moments/media/uploads/{upload_id}/complete', headers=commenter)
+        assert completed.json()['status'] == 'COMPLETED'
+        route = f'/api/v1/moments/{moment_id}/comments'
+        payload = {'image_upload_ids': [upload_id]}
+        created = await client.post(route, headers={**commenter, 'Idempotency-Key': 'image-comment'}, json=payload)
+        assert created.status_code == 201, created.text
+        assert created.json()['text'] == ''
+        assert created.json()['image_urls'][0].startswith('https://media.example.test/moments/u2/')
+        replay = await client.post(route, headers={**commenter, 'Idempotency-Key': 'image-comment'}, json=payload)
+        assert replay.json()['id'] == created.json()['id']
+        reply = await client.post(route, headers={**owner, 'Idempotency-Key': 'emoji-reply'}, json={'text': '😊', 'parent_id': created.json()['id']})
+        assert reply.status_code == 201
+        assert reply.json()['image_urls'] == []
+        assert reply.json()['parent_author']['user_id'] == 'u2'
+        visible = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u1'))
+        assert visible.json()['comments'][0]['image_urls'] == created.json()['image_urls']
+        hidden = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u3'))
+        assert hidden.status_code == 404
+        hidden_comment = await client.post(route, headers={**auth(settings, 'u3'), 'Idempotency-Key': 'hidden-comment'}, json=payload)
+        assert hidden_comment.status_code == 404
+        other_moment = await client.post('/api/v1/moments', headers={**commenter, 'Idempotency-Key': 'other-moment'}, json={'text': 'other', 'visibility': 'SELF'})
+        collision = await client.post(f"/api/v1/moments/{other_moment.json()['id']}/comments", headers={**commenter, 'Idempotency-Key': 'image-comment'}, json=payload)
+        assert collision.status_code == 409
+        denied = await client.delete(f"{route}/{created.json()['id']}", headers={**auth(settings, 'u3'), 'Idempotency-Key': 'forbidden-delete'})
+        assert denied.status_code == 403
+        deleted = await client.delete(f"{route}/{created.json()['id']}", headers={**commenter, 'Idempotency-Key': 'own-delete'})
+        assert deleted.status_code == 204
+        remaining = await client.get(f'/api/v1/moments/{moment_id}', headers=auth(settings, 'u1'))
+        assert [row['id'] for row in remaining.json()['comments']] == [reply.json()['id']]
+    from app.modules.moments.models import MomentComment
+    with factory() as session:
+        stored = session.get(MomentComment, created.json()['id'])
+        assert stored.image_object_keys == [f'moments/u2/{upload_id}.png']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('owner_id,status,purpose', [
+    ('u1', 'COMPLETED', 'MOMENT_IMAGE'),
+    ('u2', 'PENDING', 'MOMENT_IMAGE'),
+    ('u2', 'SCANNING', 'MOMENT_IMAGE'),
+    ('u2', 'UPLOADED', 'MOMENT_IMAGE'),
+    ('u2', 'COMPLETED', 'MOMENT_COVER'),
+])
+async def test_image_comment_rejects_unowned_incomplete_or_cover_upload(ctx, owner_id, status, purpose):
+    from app.modules.moments.media import MomentMediaUpload
+    app, settings = ctx
+    now = datetime.now(timezone.utc)
+    with app.state.session_factory.begin() as session:
+        session.add(MomentMediaUpload(id='upload', owner_id=owner_id, file_name='image.png', mime_type='image/png', byte_size=3, status=status, purpose=purpose, object_key='moments/test.png', idempotency_key='upload', created_at=now, expires_at=now + timedelta(minutes=30)))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        moment = await client.post('/api/v1/moments', headers={**auth(settings, 'u1'), 'Idempotency-Key': 'moment'}, json={'text': 'test', 'visibility': 'FRIENDS'})
+        response = await client.post(f"/api/v1/moments/{moment.json()['id']}/comments", headers={**auth(settings, 'u2'), 'Idempotency-Key': 'comment'}, json={'text': '😊', 'image_upload_ids': ['upload']})
+        assert response.status_code == 422
+        assert response.json()['error']['code'] == 'MOMENT_COMMENT_MEDIA_INVALID'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('payload', [{}, {'text': '  '}, {'image_urls': ['https://untrusted.example/image.png']}, {'image_upload_ids': ['missing']}, {'image_upload_ids': ['x'] * 10}])
+async def test_image_comment_rejects_empty_arbitrary_or_missing_media(ctx, payload):
+    app, settings = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        headers = {**auth(settings, 'u1'), 'Idempotency-Key': 'moment'}
+        moment = await client.post('/api/v1/moments', headers=headers, json={'text': 'test', 'visibility': 'PUBLIC'})
+        response = await client.post(f"/api/v1/moments/{moment.json()['id']}/comments", headers={**headers, 'Idempotency-Key': 'comment'}, json=payload)
+        assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_media_cache_keys_survive_signature_rotation_and_cover_replacement(ctx):
+    from app.modules.moments.media import MomentMediaUpload
+    from app.modules.moments.models import MomentsPreference
+    class RotatingStorage(MomentAvatarStorage):
+        revision = 0
+
+        def signed_read_url(self, object_key, expires_in):
+            self.revision += 1
+            return f'https://media.example.test/{self.revision}/{object_key}?expires_in={expires_in}'
+
+        def resign_read_url(self, token, expires_in):
+            return self.signed_read_url(token, expires_in)
+
+    app, settings = ctx
+    factory = app.state.session_factory
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(MomentsPreference(user_id='u1', history_range='ALL', personalized_recommendations=True, cover_object_key='moments/covers/u1/first.png', updated_at=now))
+        session.add(MomentMediaUpload(id='image', owner_id='u1', file_name='image.png', mime_type='image/png', byte_size=3, status='COMPLETED', purpose='MOMENT_IMAGE', object_key='moments/u1/image.png', idempotency_key='image', created_at=now, expires_at=now + timedelta(minutes=30)))
+    app = create_app(settings, session_factory=factory, avatar_storage=RotatingStorage())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+        headers = {**auth(settings, 'u1'), 'Idempotency-Key': 'cache-moment'}
+        moment = await client.post('/api/v1/moments', headers=headers, json={'text': 'test', 'visibility': 'SELF', 'image_urls': ['https://media.example.test/api/v1/profile/avatar/content/original-token?expires_in=300']})
+        route = f"/api/v1/moments/{moment.json()['id']}"
+        await client.post(f'{route}/comments', headers={**headers, 'Idempotency-Key': 'cache-comment'}, json={'image_upload_ids': ['image']})
+        first = (await client.get(route, headers=headers)).json()
+        second = (await client.get(route, headers=headers)).json()
+        assert first['image_urls'] != second['image_urls']
+        assert first['image_cache_keys'] == second['image_cache_keys']
+        assert len(first['image_cache_keys'][0]) == 64
+        assert first['comments'][0]['image_urls'] != second['comments'][0]['image_urls']
+        assert first['comments'][0]['image_urls'][0].endswith('?expires_in=604800')
+        assert first['comments'][0]['image_cache_keys'] == second['comments'][0]['image_cache_keys']
+        cover_first = (await client.get('/api/v1/moments/preferences', headers=headers)).json()
+        cover_second = (await client.get('/api/v1/moments/preferences', headers=headers)).json()
+        assert cover_first['cover_url'] != cover_second['cover_url']
+        assert cover_first['cover_cache_key'] == cover_second['cover_cache_key']
+        with factory.begin() as session:
+            session.get(MomentsPreference, 'u1').cover_object_key = 'moments/covers/u1/replaced.png'
+        changed = (await client.get('/api/v1/moments/preferences', headers=headers)).json()
+        assert changed['cover_cache_key'] != cover_first['cover_cache_key']
 
 @pytest.mark.asyncio
 async def test_public_moment_publish_read_like_comment_search(ctx):

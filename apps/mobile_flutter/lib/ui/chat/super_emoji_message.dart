@@ -21,6 +21,7 @@ final class SuperEmojiMessage extends StatelessWidget {
     this.onAvatarDoubleTap,
     this.onAvatarLongPress,
     this.onRetry,
+    this.bubbleKey,
   });
 
   /// 单枚表情的展示边长（逻辑像素），与微信大表情尺寸习惯一致。
@@ -39,12 +40,13 @@ final class SuperEmojiMessage extends StatelessWidget {
   final VoidCallback? onAvatarDoubleTap;
   final VoidCallback? onAvatarLongPress;
   final VoidCallback? onRetry;
+  final Key? bubbleKey;
 
   @override
   Widget build(BuildContext context) {
-    final edge =
-        emojis.length == 1 ? singleEmojiEdge : multiEmojiEdge;
+    final edge = emojis.length == 1 ? singleEmojiEdge : multiEmojiEdge;
     return WeChatMessageBubble(
+      bubbleKey: bubbleKey,
       direction: direction,
       state: state,
       decorateContent: false,
@@ -57,8 +59,11 @@ final class SuperEmojiMessage extends StatelessWidget {
       onRetry: onRetry,
       content: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
+          alignment: direction == MessageDirection.outgoing
+              ? WrapAlignment.end
+              : WrapAlignment.start,
+          runSpacing: 4,
           children: [
             for (final emoji in emojis)
               Padding(

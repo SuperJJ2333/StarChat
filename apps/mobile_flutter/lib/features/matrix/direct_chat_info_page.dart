@@ -144,51 +144,14 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
         ),
       );
 
-  bool _notificationExpanded = false;
-
-  Widget _notificationSection() {
-    final mode = preference.muted
-        ? ConversationNotificationMode.muted
-        : preference.attention
-            ? ConversationNotificationMode.attention
-            : ConversationNotificationMode.normal;
-    final modeLabel = switch (mode) {
-      ConversationNotificationMode.muted => '静音',
-      ConversationNotificationMode.attention => '特别关注',
-      _ => '默认',
-    };
-    return Column(children: [
-      WeChatListTile(
-        title: const Text('消息通知'),
-        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(modeLabel,
-              style: const TextStyle(
-                  fontSize: 14, color: WeChatColors.textSecondary)),
-          const CupertinoListTileChevron(),
-        ]),
-        onTap: () =>
-            setState(() => _notificationExpanded = !_notificationExpanded),
-      ),
-      AnimatedSize(
-        duration: const Duration(milliseconds: 200),
-        alignment: Alignment.topCenter,
-        child: _notificationExpanded
-            ? ConversationNotificationModeTile(
-                muted: preference.muted,
-                attention: preference.attention,
-                onChanged: (m) {
-                  setState(() => _notificationExpanded = false);
-                  _update(preference.copyWith(
-                    muted: m == ConversationNotificationMode.muted,
-                    attention: m == ConversationNotificationMode.attention,
-                  ));
-                },
-              )
-            : const SizedBox(width: double.infinity),
-      ),
-    ]);
-  }
-
+  Widget _notificationSection() => ConversationNotificationSection(
+        muted: preference.muted,
+        attention: preference.attention,
+        onChanged: (mode) => _update(preference.copyWith(
+          muted: mode == ConversationNotificationMode.muted,
+          attention: mode == ConversationNotificationMode.attention,
+        )),
+      );
   Widget _person(String name, String id, String? avatarUrl) => GestureDetector(
         // 规格§八：点击头像进入 APP 自己的好友资料页（onTapPerson 由
         // RoomPage 注入，携带 userId；禁止打开 Matrix Profile）。

@@ -37,7 +37,7 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_admin_controls_migration_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0040_direct_room_reservations (head)"
+    assert _alembic("heads").strip() == "0041_merge_mobile_parity (head)"
 
 
 def test_direct_room_reservation_upgrade_preserves_canonical_rooms() -> None:
@@ -48,6 +48,12 @@ def test_direct_room_reservation_upgrade_preserves_canonical_rooms() -> None:
     assert "drop " not in sql
     assert "alter table direct_conversations" not in sql
     assert "update direct_conversations" not in sql
+
+
+def test_comment_image_migration_expands_with_empty_existing_comments() -> None:
+    sql = _normalized_sql(_alembic("upgrade", "0039_merge_settings_wallet:0040_moment_comment_images", "--sql"))
+    assert "alter table moment_comments add column image_object_keys json default '[]' not null" in sql
+    assert "drop " not in sql
 
 
 def test_settings_migration_deploys_without_wallet_branch_and_preserves_values() -> None:

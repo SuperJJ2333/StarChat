@@ -293,6 +293,14 @@
       "Comment": {
         "additionalProperties": false,
         "properties": {
+          "image_upload_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 9,
+            "title": "Image Upload Ids",
+            "type": "array"
+          },
           "parent_id": {
             "anyOf": [
               {
@@ -305,15 +313,12 @@
             "title": "Parent Id"
           },
           "text": {
+            "default": "",
             "maxLength": 1000,
-            "minLength": 1,
             "title": "Text",
             "type": "string"
           }
         },
-        "required": [
-          "text"
-        ],
         "title": "Comment",
         "type": "object"
       },

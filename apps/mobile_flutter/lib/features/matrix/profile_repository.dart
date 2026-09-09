@@ -557,7 +557,9 @@ final class ProfileRepository extends ChangeNotifier {
         final previousAvatar = previousByMatrixId[entry.key]?.avatarUrl;
         final currentAvatar = entry.value.avatarUrl;
         if (previousAvatar != currentAvatar) {
-          unawaited(AvatarCache.invalidateUser(entry.key).catchError((_) {}));
+          unawaited(AvatarCache.invalidateUser(entry.value.username,
+                  retainLastSuccessful: currentAvatar != null)
+              .catchError((_) {}));
         }
       }
     }
@@ -590,7 +592,7 @@ final class ProfileRepository extends ChangeNotifier {
     final images = <(String, String)>[
       if (profile?.avatarUrl case final url?) (profile!.fallbackSeed, url),
       for (final contact in contacts)
-        if (contact.avatarUrl case final url?) (contact.matrixUserId, url),
+        if (contact.avatarUrl case final url?) (contact.username, url),
     ];
     for (final image in images) {
       try {

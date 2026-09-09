@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -31,12 +32,14 @@ void main() {
       await store.write('self',
           ProfileSnapshot(profile: profile, contacts: cached ? [friend] : []));
       var loads = 0;
+      final quietRefresh = Completer<List<ContactSummary>>();
       final identity = ProfileRepository.forTesting(
           accountKey: 'self',
           store: store,
           loadProfile: () async => profile,
           loadContacts: () async {
             loads++;
+            if (cached && loads > 1) return quietRefresh.future;
             return loads == 1 && !cached ? [] : [friend];
           });
       await identity.preload();
@@ -70,7 +73,10 @@ void main() {
       final opening = action(friend.toDetails());
       await tester.pumpAndSettle();
       expect(openedWithFriend, isTrue);
-      expect(loads, cached ? 1 : 2);
+      // Entry refresh runs quietly; even when it remains pending, the cached
+      // friend's DM callback must open immediately without a third request.
+      expect(loads, 2);
+      if (cached) quietRefresh.complete([friend]);
       await tester.tap(find.text('知道了'));
       await tester.pumpAndSettle();
       await opening;

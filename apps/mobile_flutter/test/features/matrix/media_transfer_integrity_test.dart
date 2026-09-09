@@ -73,7 +73,10 @@ void main() {
       expect(
           await scratch
               .list(recursive: true)
-              .where((entry) => entry is File && !entry.path.endsWith('.len'))
+              .where((entry) =>
+                  entry is File &&
+                  !entry.path.endsWith('.len') &&
+                  !entry.path.endsWith('.ref'))
               .length,
           1);
     });

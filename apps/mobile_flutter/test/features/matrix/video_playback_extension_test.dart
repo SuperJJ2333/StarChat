@@ -62,13 +62,15 @@ void main() {
     expect((await MediaCache.cached(key.roomId, key.eventId))?.path, file.path);
     final dataFiles = await docs
         .list(recursive: true)
-        .where((entity) => entity is File && !entity.path.endsWith('.len'))
+        .where((entity) =>
+            entity is File &&
+            !entity.path.endsWith('.len') &&
+            !entity.path.endsWith('.ref'))
         .toList();
     expect(dataFiles, hasLength(1), reason: 'No second plaintext media copy');
   });
 
-  test('legacy extensionless cache migrates without downloading and reopens',
-      () async {
+  test('typed content object reopens without downloading', () async {
     final bytes = _container('qt  ');
     final legacy = await MediaCache.store(key.roomId, key.eventId, bytes);
     final file = await resolveCachedVideoFile(
@@ -77,8 +79,8 @@ void main() {
       memoryCache: MediaMemoryCache(),
     );
     expect(file.path, endsWith('.mov'));
-    expect(await legacy.exists(), isFalse);
-    expect(await File('${legacy.path}.len').exists(), isFalse);
+    expect(legacy.path, file.path);
+    expect(await File('${legacy.path}.len').exists(), isTrue);
     expect(await File('${file.path}.len').readAsString(), '${bytes.length}');
 
     final again = await resolveCachedVideoFile(
@@ -100,8 +102,9 @@ void main() {
     expect(stored.path, prepared.path);
     expect(await stored.readAsBytes(), bytes);
     expect(await File('${stored.path}.len').readAsString(), '${bytes.length}');
-    expect(await docs.list(recursive: true).where((e) => e is File).length, 2,
-        reason: 'Only one media file and its length sidecar remain');
+    expect(await docs.list(recursive: true).where((e) => e is File).length, 3,
+        reason:
+            'One media object, integrity sidecar and message reference remain');
     expect(await MediaCache.totalCachedBytes(), bytes.length);
   });
 
@@ -117,7 +120,7 @@ void main() {
     expect(prepared.map((file) => file.path).toSet(), hasLength(1));
     expect(prepared.first.path, endsWith('.mp4'));
     expect(await prepared.first.readAsBytes(), bytes);
-    expect(await docs.list(recursive: true).where((e) => e is File).length, 2);
+    expect(await docs.list(recursive: true).where((e) => e is File).length, 3);
   });
 
   test('migrated cache still detects truncation and redownloads', () async {

@@ -128,8 +128,8 @@ jobs:
           print('SQLCIPHER_LOAD_ORDER_PASS')
           assert info['CFBundleIdentifier'] == 'com.liuhetong.liuhetongMobile'
           assert 2 in info['UIDeviceFamily'], 'iPad support required'
-          assert info['CFBundleShortVersionString'] == '0.3.59'
-          assert info['CFBundleVersion'] == '62'
+          assert info['CFBundleShortVersionString'] == '0.3.69'
+          assert info['CFBundleVersion'] == '2073'
           assert {'audio', 'voip', 'remote-notification'} <= set(info['UIBackgroundModes'])
           assert float(info['MinimumOSVersion']) >= 16.0
           for key in ['NSMicrophoneUsageDescription', 'NSCameraUsageDescription']:

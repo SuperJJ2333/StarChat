@@ -15,6 +15,8 @@ import '../../ui/moments/wechat_moment_tile.dart';
 import '../../ui/moments/wechat_moment_viewer.dart';
 import '../../ui/moments/moment_media_cache.dart';
 import 'moment_models.dart';
+import 'moment_detail_page.dart';
+import 'moment_comment_composer.dart';
 import 'moment_composer_page.dart';
 import '../matrix/profile_repository.dart';
 
@@ -85,6 +87,7 @@ enum _ConfirmedMomentWrite { likes, comments, deletion }
 final class _MomentsPageState extends State<MomentsPage> {
   final _itemOverrides = <String, MomentItem>{};
   final _pendingLikeIds = <String>{};
+  final _detailPendingLikes = <String, ValueNotifier<bool>>{};
   final _postKeys = <String, GlobalKey>{};
   final _feedScroll = ScrollController();
 
@@ -176,6 +179,9 @@ final class _MomentsPageState extends State<MomentsPage> {
     ++_preferencesRequest;
     _itemOverrides.clear();
     _pendingLikeIds.clear();
+    for (final pending in _detailPendingLikes.values) {
+      pending.value = false;
+    }
     _deletedIds.clear();
     _postKeys.clear();
     _feedData = null;
@@ -220,7 +226,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     final epoch = _accountEpoch;
     if (mounted) setState(() => _identityError = null);
     try {
-      await _identityCache.preload();
+      await _identityCache.refresh();
     } catch (_) {
       if (mounted && epoch == _accountEpoch && _identityCache.profile == null) {
         setState(() => _identityError = '资料加载失败');
@@ -234,6 +240,19 @@ final class _MomentsPageState extends State<MomentsPage> {
     final ticket = cache?.beginPreferencesRefresh();
     try {
       final value = await widget.api.momentsPreferences();
+      final url = value['cover_url']?.toString();
+      // Keep an already visible cover if its renewed image cannot be fetched.
+      if (mounted && _coverUrl != null && url != null && url != _coverUrl) {
+        var failed = false;
+        await precacheImage(
+            MomentMediaCache.imageProvider(url,
+                cacheKey: value['cover_cache_key']?.toString(),
+                accountKey: _accountKey,
+                trustedOrigin: widget.api.baseUri.origin),
+            context,
+            onError: (_, __) => failed = true);
+        if (failed) return;
+      }
       final sameAccount = await _stillSameAccount();
       if (!mounted ||
           !sameAccount ||
@@ -488,6 +507,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     } finally {
       if (mounted && epoch == _accountEpoch) {
         setState(() => _pendingLikeIds.remove(item.id));
+        _detailPendingLikes[item.id]?.value = false;
       }
     }
   }
@@ -555,93 +575,73 @@ final class _MomentsPageState extends State<MomentsPage> {
 
   Future<void> _showComment(BuildContext context, MomentItem item) async {
     final epoch = _accountEpoch;
-    final controller = TextEditingController();
-    await showCupertinoDialog<void>(
-        context: context,
-        builder: (dialogContext) => StatefulBuilder(
-              builder: (dialogContext, setDialogState) {
-                var submitting = false;
-                String? errorMessage;
-                return StatefulBuilder(
-                  builder: (dialogContext, updateDialog) =>
-                      CupertinoAlertDialog(
-                    title: const Text('评论'),
-                    content: Column(children: [
-                      Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: CupertinoTextField(
-                            key: const Key('moment-comment-input'),
-                            controller: controller,
-                            placeholder: '说点什么…',
-                            onChanged: (_) => updateDialog(() {}),
-                          )),
-                      if (errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(errorMessage!,
-                              style: const TextStyle(
-                                  color: CupertinoColors.systemRed)),
-                        ),
-                    ]),
-                    actions: [
-                      CupertinoDialogAction(
-                          onPressed: submitting
-                              ? null
-                              : () => Navigator.pop(dialogContext),
-                          child: const Text('取消')),
-                      CupertinoDialogAction(
-                          key: const Key('moment-comment-submit'),
-                          onPressed: submitting ||
-                                  controller.text.trim().isEmpty
-                              ? null
-                              : () async {
-                                  updateDialog(() {
-                                    submitting = true;
-                                    errorMessage = null;
-                                  });
-                                  try {
-                                    final response = await widget.api
-                                        .commentMoment(
-                                            item.id, controller.text.trim());
-                                    final comment =
-                                        MomentCommentView.fromJson(response);
-                                    if (mounted && epoch == _accountEpoch) {
-                                      setState(() {
-                                        final current =
-                                            _itemOverrides[item.id] ?? item;
-                                        _itemOverrides[item.id] =
-                                            current.copyWith(comments: [
-                                          ...current.comments,
-                                          comment,
-                                        ]);
-                                      });
-                                      await _persistItem(
-                                          _itemOverrides[item.id]!,
-                                          _ConfirmedMomentWrite.comments);
-                                    }
-                                    if (dialogContext.mounted) {
-                                      Navigator.pop(dialogContext);
-                                    }
-                                  } catch (error) {
-                                    if (!dialogContext.mounted) return;
-                                    updateDialog(() {
-                                      submitting = false;
-                                      errorMessage =
-                                          error is BusinessApiException
-                                              ? error.message
-                                              : '评论提交失败，请重试';
-                                    });
-                                  }
-                                },
-                          child: submitting
-                              ? const CupertinoActivityIndicator()
-                              : const Text('发送'))
-                    ],
-                  ),
-                );
-              },
-            ));
-    controller.dispose();
+    final comment = await showMomentCommentComposer(context,
+        api: widget.api, momentId: item.id);
+    if (comment == null ||
+        !mounted ||
+        epoch != _accountEpoch ||
+        !await _stillSameAccount()) {
+      return;
+    }
+    final current = _itemOverrides[item.id] ?? item;
+    final updated = current.copyWith(
+        comments: mergeMomentComments(current.comments, comment));
+    setState(() => _itemOverrides[item.id] = updated);
+    await _persistItem(updated, _ConfirmedMomentWrite.comments);
+  }
+
+  Future<void> _openDetail(MomentItem item,
+      [MomentCommentView? comment]) async {
+    final epoch = _accountEpoch;
+    final profile = _identityCache.profile;
+    final userId = _viewerUserId;
+    final viewer = profile != null && userId != null && userId.isNotEmpty
+        ? MomentAuthor(
+            userId: userId,
+            username: profile.username,
+            nickname: profile.nickname,
+            displayName: profile.nickname.trim().isEmpty
+                ? profile.username
+                : profile.nickname,
+            avatarUrl: profile.avatarUrl)
+        : null;
+    final pending = ValueNotifier(_pendingLikeIds.contains(item.id));
+    _detailPendingLikes[item.id] = pending;
+    await Navigator.push(
+        context,
+        CupertinoPageRoute(
+            builder: (_) => MomentDetailPage(
+                  api: widget.api,
+                  initialItem: _itemOverrides[item.id] ?? item,
+                  currentUsername: _identityCache.profile?.username ?? '',
+                  viewer: viewer,
+                  initialComment: comment,
+                  mediaAccountKey: _accountKey,
+                  mediaOrigin: widget.api.baseUri.origin,
+                  feedLikePending: pending,
+                  onConfirmed: (updated, change) async {
+                    if (!mounted ||
+                        epoch != _accountEpoch ||
+                        !await _stillSameAccount()) {
+                      return;
+                    }
+                    final current = _itemOverrides[item.id] ?? item;
+                    final merged = change == MomentDetailChange.comments
+                        ? current.copyWith(comments: updated.comments)
+                        : current.copyWith(
+                            liked: updated.liked,
+                            likeCount: updated.likeCount,
+                            likeUsers: updated.likeUsers);
+                    setState(() => _itemOverrides[item.id] = merged);
+                    await _persistItem(
+                        merged,
+                        change == MomentDetailChange.comments
+                            ? _ConfirmedMomentWrite.comments
+                            : _ConfirmedMomentWrite.likes);
+                  },
+                )));
+    _detailPendingLikes.remove(item.id);
+    pending.dispose();
   }
 
   @override
@@ -719,6 +719,8 @@ final class _MomentsPageState extends State<MomentsPage> {
                 return WeChatMomentTile(
                   key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
                   item: item,
+                  onOpen: () => _openDetail(item),
+                  onCommentTap: (comment) => _openDetail(item, comment),
                   mediaAccountKey: _accountKey,
                   mediaOrigin: widget.api.baseUri.origin,
                   onLike: _pendingLikeIds.contains(item.id)

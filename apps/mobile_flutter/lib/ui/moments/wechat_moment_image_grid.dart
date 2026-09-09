@@ -10,7 +10,9 @@ final class WeChatMomentImageGrid extends StatelessWidget {
       required this.imageUrls,
       this.imageCacheKeys = const [],
       this.mediaAccountKey,
-      this.mediaOrigin});
+      this.mediaOrigin,
+      this.cacheNamespace = ''});
+  final String cacheNamespace;
   final List<String> imageUrls;
   final List<String?> imageCacheKeys;
   final String? mediaAccountKey, mediaOrigin;
@@ -46,14 +48,22 @@ final class WeChatMomentImageGrid extends StatelessWidget {
                       imageCacheKeys: imageCacheKeys,
                       mediaAccountKey: mediaAccountKey,
                       mediaOrigin: mediaOrigin,
+                      cacheNamespace: cacheNamespace,
                       initialIndex: index),
                 )),
             child: SizedBox(
                 key: const ValueKey('moment-image'),
                 child: Image(
-                    key: ValueKey(imageUrls[index]),
+                    key: ValueKey(MomentMediaCache.imageIdentity(
+                        imageUrls[index],
+                        accountKey: mediaAccountKey ?? cacheNamespace,
+                        trustedOrigin: mediaOrigin,
+                        cacheKey: index < imageCacheKeys.length
+                            ? imageCacheKeys[index]
+                            : null)),
+                    gaplessPlayback: true,
                     image: MomentMediaCache.imageProvider(imageUrls[index],
-                        accountKey: mediaAccountKey,
+                        accountKey: mediaAccountKey ?? cacheNamespace,
                         trustedOrigin: mediaOrigin,
                         cacheKey: index < imageCacheKeys.length
                             ? imageCacheKeys[index]

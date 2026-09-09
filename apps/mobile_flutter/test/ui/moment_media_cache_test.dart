@@ -127,6 +127,29 @@ void main() {
     }, _RealHttp());
   });
 
+  testWidgets(
+      'account switch resets image state while signed rotation retains it',
+      (tester) async {
+    Future<Key?> render(String account, String signedPath) async {
+      await tester.pumpWidget(CupertinoApp(
+          home: WeChatMomentImageGrid(
+        imageUrls: [
+          'https://media.test/api/v1/profile/avatar/content/$signedPath'
+        ],
+        imageCacheKeys: const [
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        ],
+        mediaAccountKey: account,
+        mediaOrigin: 'https://media.test',
+      )));
+      return tester.widget<Image>(find.byType(Image)).key;
+    }
+
+    final first = await render('alice', 'signed-A');
+    expect(await render('alice', 'signed-B'), first);
+    expect(await render('bob', 'signed-B'), isNot(first));
+  });
+
   testWidgets('Moments thumbnails use a disk-backed image provider',
       (tester) async {
     await tester.pumpWidget(const CupertinoApp(
