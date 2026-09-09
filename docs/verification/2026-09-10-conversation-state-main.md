@@ -40,3 +40,9 @@
 - 最终 APK：`artifacts/2026-09-10/conversation-state-main/delivery-apk/final.apk`，142474066 字节，SHA256 `8bd7b6bc804b07fab4059490d7213aea3b1bfe94803ee296e8eae9d29b273c58`。固定证书 `75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff`；签名后对齐通过；26537 个 smali 类语义一致，338 个原生库/资产条目不变，清单语义一致。Debug kernel 包含 showTopMoreMenu、clearAllUnread，与前版 kernel 哈希不同。
 - Redmi Note 7 `cbd0156b`：adb install -r 返回 Success；包管理器显示 0.3.77-debug / 2081；主 Activity 启动 Status: ok、PID存在。启动7900ms仅为Debug冷启动记录，不是未读刷新延迟。未卸载、未清用户数据。
 - 发布前再次 fetch；所有本地及远程已提交分支仍为 main 祖先，远程 main 没有待合入提交。分支推送及清理在下一段记录。
+
+## 推送与分支清理结果
+
+功能提交 `2b023e8c` 已成功推送 origin/main，并通过 ls-remote 与本地 SHA 一致核验。随后以原子、预期 SHA 条件删除三个已合并远程分支：codex/ios-compatibility、codex/mobile-parity-20260909、codex/wallet-safety-mi6；未对 main 强制推送或改写历史。
+
+本地删除 codex/integrate-main-20260910、codex/video-menu-redmi-20260910、codex/redmi-polish-20260909。旧 Redmi 工作树在确认干净且原任务空闲后原地 detach，保留目录和历史 APK。本地 codex/wallet-safety-mi6、codex/ios-0353-background 仍承载未提交工作；codex/mobile-parity-20260909 为在途任务仍使用的工作树，保留并移除失效 upstream。未删除工作树、未丢弃未提交改动。远程剩余 main，所有删除分支的已提交历史仍可从 main 到达。

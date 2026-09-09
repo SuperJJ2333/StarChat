@@ -50,3 +50,7 @@ Recheck tips and worktree status immediately before acting; another task can cha
 5. Retain `main`, remote `main`, remote default `HEAD -> main`, local `codex/wallet-safety-mi6`, and local `codex/ios-0353-background`.
 
 No unique committed merge work remains in the audited feature refs. Remaining preservation work concerns dirty worktrees and concurrent work, not unmerged commit ancestry.
+
+## Executed cleanup
+
+Parent pushed tested implementation 2b023e8c to main and verified live remote SHA. Atomic expected-SHA remote deletion succeeded for all three listed feature refs. Local integrate-main, video-menu and redmi-polish refs deleted; clean inactive Redmi worktree detached at its unchanged tip, files retained. Wallet and iOS dirty worktrees retained; mobile-parity worktree retained for ongoing task use, obsolete upstream removed. Final remote branch inventory contains main only. No force push or history rewrite of main, no worktree removal or disposal of uncommitted source.
