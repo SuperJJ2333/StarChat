@@ -1857,7 +1857,7 @@ void main() {
 
     await expectLater(
       service.login('alice', 'password'),
-      throwsA(isA<MatrixException>()),
+      throwsA(isA<LoginStageException>().having((e) => e.diagnosticCode, 'stage', 'L05')),
     );
 
     expect(events, ['dispose:old']);

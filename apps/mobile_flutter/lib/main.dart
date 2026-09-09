@@ -91,7 +91,7 @@ Future<void> main() async {
       api: api,
       onLogin: login.login,
       onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
-      onCancelMatrixAccountSwitch: api.logoutBusiness,
+      onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
       onAuthenticated: session.bootstrap,
     ),
     authenticatedBuilder: (_) => AppHome(

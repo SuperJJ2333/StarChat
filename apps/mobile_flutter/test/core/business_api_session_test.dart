@@ -53,6 +53,62 @@ final class _AlreadyAuthenticatedMatrix implements MatrixTokenLoginGateway {
 }
 
 void main() {
+  test('legacy login without identity never inherits previous account',
+      () async {
+    final store = SecureSessionStore(MemoryStore());
+    await store.saveSession(
+        accessToken: 'old',
+        refreshToken: 'old-r',
+        matrixUserId: '@old:example');
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: store,
+        client: MockClient((_) async => http.Response(
+            jsonEncode({'access_token': 'new', 'refresh_token': 'new-r'}),
+            200)));
+    await api.loginBusiness(
+        username: 'new',
+        password: 'password',
+        deviceKey: 'device',
+        deviceName: 'test');
+    expect(await api.currentMatrixUserId(), isNull);
+  });
+
+  test(
+      'concurrent grant requests share one exchange and rate cooldown blocks retry',
+      () async {
+    final store = SecureSessionStore(MemoryStore());
+    await store.saveSession(accessToken: 'a', refreshToken: 'r');
+    var requests = 0;
+    final api = BusinessApiClient(
+        baseUri: Uri.parse('https://business.example'),
+        sessionStore: store,
+        client: MockClient((_) async {
+          requests++;
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          return http.Response(
+              jsonEncode({
+                'error': {
+                  'code': 'MATRIX_LOGIN_RATE_LIMITED',
+                  'message': '稍后重试'
+                }
+              }),
+              429,
+              headers: {
+                'retry-after': '60',
+                'content-type': 'application/json; charset=utf-8'
+              });
+        }));
+    Future<void> attempt() async {
+      await expectLater(
+          api.issueMatrixLoginToken(), throwsA(isA<BusinessApiException>()));
+    }
+
+    await Future.wait([attempt(), attempt()]);
+    await attempt();
+    expect(requests, 1);
+  });
+
   test('restore rotates and atomically replaces the stored token pair',
       () async {
     final storage = MemoryStore();

@@ -110,6 +110,10 @@ class TokenResponse(BaseModel):
     expires_in: int = 900
 
 
+class PasswordLoginResponse(TokenResponse):
+    matrix_user_id: str | None = None
+
+
 class MatrixLoginTokenResponse(BaseModel):
     login_token: str
     homeserver: str
@@ -416,11 +420,11 @@ def create_identity_router(
             "resend_after_seconds": result.resend_after_seconds,
         }
 
-    @router.post("/auth/login", response_model=TokenResponse)
-    async def login(body: LoginRequest, request: Request) -> TokenResponse:
+    @router.post("/auth/login", response_model=PasswordLoginResponse)
+    async def login(body: LoginRequest, request: Request) -> PasswordLoginResponse:
         identifier = body.username.strip()
 
-        def _authenticate_sync() -> tuple[str, str, str]:
+        def _authenticate_sync() -> tuple[str, str, str, str | None]:
             # C01：同步限频、数据库查询、Argon2 校验与令牌签发整体卸载到
             # 线程池——事件循环不再被密码计算/磁盘 IO 阻塞，轻量接口在
             # 登录负载下仍及时响应（哈希安全强度不变）。
@@ -446,9 +450,9 @@ def create_identity_router(
                     device_key=body.device_key,
                     display_name=body.device_name,
                 )
-                return user.id, pair.access_token, pair.refresh_token
+                return user.id, pair.access_token, pair.refresh_token, user.matrix_user_id
 
-        actor_id, access_token, refresh_token = await anyio.to_thread.run_sync(_authenticate_sync)
+        actor_id, access_token, refresh_token, matrix_user_id = await anyio.to_thread.run_sync(_authenticate_sync)
         record_audit(
             request,
             actor_id=actor_id,
@@ -456,7 +460,7 @@ def create_identity_router(
             action="identity.session.created",
             reason_code="PASSWORD_LOGIN",
         )
-        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+        return PasswordLoginResponse(access_token=access_token, refresh_token=refresh_token, matrix_user_id=matrix_user_id)
 
     @router.post("/auth/refresh", response_model=TokenResponse)
     async def refresh(body: RefreshRequest, request: Request) -> TokenResponse:

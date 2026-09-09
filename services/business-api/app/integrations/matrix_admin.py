@@ -226,7 +226,7 @@ class SynapseMatrixAdminGateway:
         except httpx.HTTPError:
             self._login_token_failed()
         if admin_response.status_code != 200:
-            self._login_token_failed()
+            self._raise_login_response_error(admin_response)
         try:
             short_lived_access_token = admin_response.json()["access_token"]
         except (ValueError, KeyError, TypeError):
@@ -243,7 +243,7 @@ class SynapseMatrixAdminGateway:
         except httpx.HTTPError:
             self._login_token_failed()
         if token_response.status_code != 200:
-            self._login_token_failed()
+            self._raise_login_response_error(token_response)
         try:
             login_token = token_response.json()["login_token"]
         except (ValueError, KeyError, TypeError):
@@ -293,6 +293,25 @@ class SynapseMatrixAdminGateway:
             self._profile_sync_failed()
         if response.status_code != 200:
             self._profile_sync_failed()
+
+    @staticmethod
+    def _raise_login_response_error(response: httpx.Response) -> NoReturn:
+        if response.status_code == 429:
+            try:
+                payload = response.json()
+                milliseconds = payload.get("retry_after_ms") if isinstance(payload, dict) else None
+            except ValueError:
+                milliseconds = None
+            seconds = 60
+            if type(milliseconds) is int and 0 < milliseconds <= 86_400_000:
+                seconds = (milliseconds + 999) // 1000
+            raise AppError(
+                code="MATRIX_LOGIN_RATE_LIMITED",
+                message=f"聊天登录请求较频繁，请等待 {seconds} 秒后重试",
+                status_code=429,
+                retry_after_seconds=seconds,
+            )
+        SynapseMatrixAdminGateway._login_token_failed()
 
     @staticmethod
     def _login_token_failed() -> NoReturn:

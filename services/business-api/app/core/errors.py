@@ -42,12 +42,14 @@ class AppError(Exception):
         message: str,
         status_code: int = 400,
         fields: list[FieldError] | None = None,
+        retry_after_seconds: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.fields = fields or []
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _payload(
@@ -72,6 +74,7 @@ def install_error_handlers(app) -> None:
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"Retry-After": str(exc.retry_after_seconds)} if exc.retry_after_seconds is not None else None,
             content=_payload(
                 code=exc.code,
                 message=exc.message,

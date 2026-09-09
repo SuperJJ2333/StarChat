@@ -76,7 +76,6 @@ final class BusinessApiClient
     required String deviceKey,
     required String deviceName,
   }) async {
-    final previous = await sessionStore.session();
     final response = await _client.post(
       _uri('/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -94,7 +93,7 @@ final class BusinessApiClient
       refreshToken: body['refresh_token'] as String,
       deviceKey: deviceKey,
       matrixUserId: returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
-          ? previous?.matrixUserId
+          ? null
           : returnedMatrixUserId,
     );
     return body;
@@ -115,19 +114,49 @@ final class BusinessApiClient
     );
   }
 
+  Future<MatrixLoginGrant>? _matrixGrantFlight;
+  DateTime? _matrixGrantRetryAt;
+
   @override
-  Future<MatrixLoginGrant> issueMatrixLoginToken() async {
-    final response = await _authorized(
-      (headers) =>
-          _client.post(_uri('/auth/matrix-login-token'), headers: headers),
-    );
-    final body = _decode(response);
-    return MatrixLoginGrant(
-      loginToken: body['login_token'] as String,
-      homeserver: body['homeserver'] as String,
-      expiresIn: body['expires_in'] as int,
-      matrixUserId: body['matrix_user_id'] as String,
-    );
+  Future<MatrixLoginGrant> issueMatrixLoginToken() {
+    final existing = _matrixGrantFlight;
+    if (existing != null) return existing;
+    final retryAt = _matrixGrantRetryAt;
+    if (retryAt != null && retryAt.isAfter(DateTime.now())) {
+      final seconds = (retryAt.difference(DateTime.now()).inMilliseconds / 1000)
+          .ceil()
+          .clamp(1, 86400);
+      return Future.error(BusinessApiException(
+          statusCode: 429,
+          code: 'MATRIX_LOGIN_RATE_LIMITED',
+          message: '聊天登录请求较频繁，请等待 $seconds 秒后重试',
+          retryAfterSeconds: seconds));
+    }
+    late final Future<MatrixLoginGrant> flight;
+    flight = _requestMatrixLoginToken().whenComplete(() {
+      if (identical(_matrixGrantFlight, flight)) _matrixGrantFlight = null;
+    });
+    _matrixGrantFlight = flight;
+    return flight;
+  }
+
+  Future<MatrixLoginGrant> _requestMatrixLoginToken() async {
+    try {
+      final response = await _authorized((headers) =>
+          _client.post(_uri('/auth/matrix-login-token'), headers: headers));
+      final body = _decode(response);
+      return MatrixLoginGrant(
+          loginToken: body['login_token'] as String,
+          homeserver: body['homeserver'] as String,
+          expiresIn: body['expires_in'] as int,
+          matrixUserId: body['matrix_user_id'] as String);
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 429) {
+        _matrixGrantRetryAt = DateTime.now()
+            .add(Duration(seconds: error.retryAfterSeconds ?? 60));
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -1150,9 +1179,15 @@ final class BusinessApiClient
         code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
         message: body['error']?['message']?.toString() ?? '业务请求失败',
         fieldErrors: _parseFieldErrors(body['error']?['fields']),
+        retryAfterSeconds: response.statusCode == 429 ? _retrySeconds(response.headers['retry-after']) : null,
       );
     }
     return body;
+  }
+
+  static int _retrySeconds(String? value) {
+    final parsed = int.tryParse(value ?? '');
+    return parsed != null && parsed > 0 && parsed <= 86400 ? parsed : 60;
   }
 
   static Map<String, String> _parseFieldErrors(Object? raw) {
