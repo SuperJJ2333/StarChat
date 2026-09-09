@@ -9,3 +9,6 @@ Design: allow one fresh unsigned-in client adoption only after successful explic
 - [x] Test real SDK gateway clear -> login, observe expected different-identity red.
 - [x] Implement bounded lifecycle transition, test rejected stale clients and ordinary sync after clear.
 - [x] Domain then quality review, focused/full tests and analyzer; record limitations and package handoff.
+
+## Authorized Redmi package verification
+User explicitly requested building and installing the repair. Own Android app build.gradle.kts opt-in debug package suffix, this plan and verification evidence. Build source 10316dda plus packaging-only suffix configuration as 0.3.76-debug/2080 ARM64 with production HTTPS defines. Preserve installed com.liuhetong.mobile.debug signing identity and data via adb install -r; do not replace differently signed com.liuhetong.mobile. Rebuild, sign and verify per android-apk-rebuild.md before install. Capture only safe diagnostic markers; user enters credentials privately. Device verification requires observing account-switch outcome after update.

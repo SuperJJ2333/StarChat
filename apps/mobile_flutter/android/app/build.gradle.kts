@@ -80,6 +80,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (providers.gradleProperty("chatflowParallelDebug").orNull == "true") {
+                applicationIdSuffix = ".debug"
+            }
+        }
         release {
             // 用户要求从源码直接发布，不启用 R8 混淆或资源收缩。
             isMinifyEnabled = false
