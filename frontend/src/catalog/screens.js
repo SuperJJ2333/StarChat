@@ -129,7 +129,7 @@ register("contacts", "official", [["default", "公众号与官方客服 / 列表
 register("contacts", "search", [["default", "通讯录搜索 / 默认"], ["results", "通讯录搜索 / 结果"], ["no-result", "通讯录搜索 / 无结果"]]);
 register("contacts", "state", [["loading", "通讯录 / 加载"], ["empty", "通讯录 / 空状态"], ["error-network", "通讯录 / 网络错误"]]);
 
-register("friend", "profile", [["default", "好友主页 / 默认"], ["support", "好友主页 / 官方客服"]], { height: 980 });
+register("friend", "profile", [["default", "好友主页 / 默认"], ["support", "好友主页 / 官方客服"], ["user", "用户资料 / 添加到通讯录"]], { height: 980 });
 register("friend", "message", [["creating", "好友主页 / 创建会话"], ["failed", "好友主页 / 创建失败"]]);
 register("friend", "more", [["default", "好友更多 / 默认"]]);
 register("friend", "remark", [["edit", "好友更多 / 编辑备注"], ["saved", "好友更多 / 备注已保存"]]);

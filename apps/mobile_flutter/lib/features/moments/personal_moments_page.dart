@@ -1,3 +1,4 @@
+import 'moment_comment_interaction.dart';
 import 'moment_reactions.dart';
 import 'moment_person_navigation.dart';
 import 'package:flutter/cupertino.dart';
@@ -29,6 +30,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   late List<MomentItem> _items = widget.initialItems;
   bool _loading = true;
   int _generation = 0;
+  final _selectedComments = <String, String>{};
   final _pendingLikes = <String>{};
   String? _error;
   String _username = '';
@@ -101,7 +103,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     }
   }
 
-  Future<void> _open(MomentItem item, [MomentCommentView? comment]) async {
+  Future<void> _open(MomentItem item) async {
     await Navigator.push(
         context,
         CupertinoPageRoute(
@@ -111,7 +113,6 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                   initialItem: item,
                   currentUsername:
                       widget.identityCache?.profile?.username ?? _username,
-                  initialComment: comment,
                   onChanged: _updateItem,
                   onReactionChanged: (updated) {
                     final current = _items
@@ -124,6 +125,25 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
                   cacheNamespace: 'profile:${widget.userId}',
                 )));
   }
+
+  Future<void> _comment(MomentItem item, [MomentCommentView? comment]) =>
+      interactWithMomentComment(context,
+          api: widget.api,
+          momentId: item.id,
+          currentUsername: _username,
+          identityCache: widget.identityCache,
+          comment: comment,
+          currentItem: () =>
+              _items.where((value) => value.id == item.id).firstOrNull,
+          onChanged: _updateItem,
+          onSelectionChanged: (id) => setState(() {
+                if (id == null) {
+                  _selectedComments.remove(item.id);
+                } else {
+                  _selectedComments[item.id] = id;
+                }
+              }),
+          onError: (message) => setState(() => _error = message));
 
   Future<void> _delete(MomentItem item) async {
     final confirmed = await showCupertinoDialog<bool>(
@@ -230,8 +250,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
               onOpen: () => _open(item),
               onAuthorTap: () => _openPerson(item.author),
               onPersonTap: _openPerson,
-              onComment: () => _open(item),
-              onCommentTap: (c) => _open(item, c),
+              selectedCommentId: _selectedComments[item.id],
+              onComment: () => _comment(item),
+              onCommentTap: (c) => _comment(item, c),
               onLike:
                   _pendingLikes.contains(item.id) ? null : () => _like(item),
               onDelete:

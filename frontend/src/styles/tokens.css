@@ -1,10 +1,4 @@
 :root {
-  --moment-reaction-background: #333333;
-  --moment-reaction-selected: #292929;
-  --moment-reaction-text: #f2f2f2;
-  --moment-reaction-name: #c4d2ee;
-  --moment-reaction-muted: #b3b3b3;
-  --moment-reaction-divider: rgba(255, 255, 255, 0.1);
   --moment-reaction-shadow: rgba(0, 0, 0, 0.07);
   --moment-reaction-radius: 8px;
   --moment-reaction-avatar: 30px;
@@ -216,4 +210,13 @@
   --color-brand-pressed: #06ad56;
   --color-bubble-outgoing: #95ec69;
 }
- .ui-screen { --color-outgoing-text: #191919; }
+ .ui-screen {
+  --color-outgoing-text: #191919;
+  --moment-reaction-background: var(--color-surface-primary);
+  --moment-reaction-selected: var(--color-page-background);
+  --moment-reaction-text: var(--color-text-primary);
+  --moment-reaction-name: var(--color-social-link);
+  --moment-reaction-muted: #666666;
+  --moment-reaction-divider: var(--color-divider);
+ }
+ .ui-screen[data-theme="dark"] { --moment-reaction-muted: #999999; }

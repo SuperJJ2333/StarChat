@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-import '../../ui/components/user_avatar.dart';
+import 'contact_profile_sections.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
@@ -43,6 +43,7 @@ final class AddFriendProfilePage extends StatelessWidget {
         'SELF' => '我',
         'FRIEND' => '已是好友',
         'OUTGOING_PENDING' => '申请已发送，等待对方验证',
+        'INCOMING_PENDING' => '等待好友验证',
         _ => '',
       };
 
@@ -68,48 +69,26 @@ final class AddFriendProfilePage extends StatelessWidget {
           listenable: identityCache!,
           builder: (context, _) => _buildContent(context));
   Widget _buildContent(BuildContext context) {
-    final identity = identityCache?.resolveIdentity(
-        userId: userId,
-        username: username,
-        nickname: nickname,
-        avatarUrl: avatarUrl);
     final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return WeChatPageScaffold.navigation(
       backgroundColor: dark
           ? WeChatColors.darkPageBackground
           : WeChatColors.lightPageBackground,
-      navigationBar: const CupertinoNavigationBar(middle: Text('用户资料')),
+      navigationBar: const CupertinoNavigationBar(
+        automaticBackgroundVisibility: false,
+        enableBackgroundFilterBlur: false,
+        middle: Text('用户资料'),
+      ),
       child: SafeArea(
         child: ListView(
           children: [
-            const SizedBox(height: 48),
-            UserAvatar(
-              nickname: identity?.displayName ?? nickname,
-              fallbackSeed: identity?.cacheKey ?? userId,
-              avatarUrl: identity == null ? avatarUrl : identity.avatarUrl,
-              size: 96,
-              diagnosticSource: 'add-friend-profile',
+            ProfileIdentityCard(
+              userId: userId,
+              username: username,
+              nickname: nickname,
+              avatarUrl: avatarUrl,
+              identityCache: identityCache,
             ),
-            const SizedBox(height: 16),
-            Text(
-              identity?.displayName ?? nickname,
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-                color: dark
-                    ? WeChatColors.darkTextPrimary
-                    : WeChatColors.lightTextPrimary,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '畅聊号：$username',
-              style: const TextStyle(
-                fontSize: 14,
-                color: WeChatColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 36),
             if (api is BusinessApiClient)
               MomentProfilePreview(
                   identityCache: identityCache,
@@ -117,10 +96,10 @@ final class AddFriendProfilePage extends StatelessWidget {
                   userId: userId,
                   displayName: nickname),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                    minHeight: 48, minWidth: double.infinity),
                 child: CupertinoButton(
                   key: const Key('add-friend-profile-add'),
                   padding:

@@ -1,4 +1,13 @@
 {
+  "momentsCorrectionsRevision": {
+    "date": "2026-09-10",
+    "plan": "docs/superpowers/plans/2026-09-10-moments-corrections.md",
+    "remoteNodesModified": false,
+    "status": "local-implementation-tested; remote-design-sync-pending",
+    "affectedPages": ["19:4", "19:3"],
+    "changes": ["navigation-theme reactions", "in-place comment actions", "shared bounded friend/user profile header"],
+    "reason": "Figma tools unavailable; existing export metadata below does not certify this revision."
+  },
   "momentsReactionsRevision": {
     "date": "2026-09-09",
     "plan": "docs/superpowers/plans/2026-09-09-moments-reactions-ui.md",

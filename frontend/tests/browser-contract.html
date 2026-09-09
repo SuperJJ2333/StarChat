@@ -126,7 +126,9 @@
         }
 
         const reactions = root.querySelector('[data-screen-id="moments-detail-default"] .c-moment-reactions');
-        if (!reactions || getComputedStyle(reactions).backgroundColor !== "rgb(51, 51, 51)") throw new Error("Moments reactions must share a dark rounded surface");
+        if (!reactions || getComputedStyle(reactions).backgroundColor !== "rgb(247, 247, 247)") throw new Error("Moments reactions must use the navigation theme surface");
+        const userProfile = root.querySelector('[data-screen-id="friend-profile-user"]');
+        if (!userProfile?.textContent.includes('添加到通讯录') || /发消息|语音通话|视频通话/u.test(userProfile.textContent)) throw new Error('User profile must only expose Add to Contacts');
         const commentRows = reactions.querySelectorAll('.c-moment-reactions__comment');
         if (commentRows.length < 2 || !commentRows[0].querySelector('app-avatar') || !commentRows[0].querySelector('time')) throw new Error("Moment detail comments need avatars, timestamps and separate rows");
         if (getComputedStyle(commentRows[0]).paddingTop !== "14px") throw new Error("Moment detail spacing is missing");

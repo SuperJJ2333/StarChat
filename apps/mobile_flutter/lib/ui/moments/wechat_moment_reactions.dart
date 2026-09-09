@@ -49,57 +49,74 @@ final class WeChatMomentReactions extends StatelessWidget {
         key);
   }
 
-  Widget _name(MomentAuthor author, String key) => _person(
-      author,
-      Text(resolveIdentity(author).displayName,
-          style: const TextStyle(
-              color: MomentReactionTokens.name,
-              fontSize: 13,
-              fontWeight: FontWeight.w600)),
-      key);
+  Widget _name(BuildContext context, MomentAuthor author, String key) =>
+      _person(
+          author,
+          Text(resolveIdentity(author).displayName,
+              style: TextStyle(
+                  color: CupertinoDynamicColor.resolve(
+                      MomentReactionTokens.name, context),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+          key);
 
-  Widget _divider(String key) => Container(
-      key: ValueKey(key), height: 1, color: MomentReactionTokens.divider);
+  Widget _divider(BuildContext context, String key) => Container(
+      key: ValueKey(key),
+      height: 1,
+      color:
+          CupertinoDynamicColor.resolve(MomentReactionTokens.divider, context));
 
   @override
   Widget build(BuildContext context) {
     if (item.likeUsers.isEmpty && item.comments.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Container(
-        key: const Key('moment-reactions'),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-            color: MomentReactionTokens.background,
-            borderRadius: BorderRadius.circular(MomentReactionTokens.radius)),
-        child:
-            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (item.likeUsers.isNotEmpty)
-            Padding(
-                padding: const EdgeInsets.all(MomentReactionTokens.feedPadding),
-                child: Row(children: [
-                  const Icon(CupertinoIcons.heart_fill,
-                      color: MomentReactionTokens.name, size: 15),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(children: [
-                            for (final person in item.likeUsers)
-                              Padding(
-                                  padding: const EdgeInsets.only(right: 6),
-                                  child: _avatar(
-                                      person, 'moment-liker-${person.userId}'))
-                          ]))),
-                ])),
-          if (item.likeUsers.isNotEmpty && item.comments.isNotEmpty)
-            _divider('moment-likes-divider'),
-          for (var i = 0; i < item.comments.length; i++) ...[
-            if (i > 0)
-              _divider('moment-comment-divider-${item.comments[i].id}'),
-            _comment(context, item.comments[i]),
-          ],
-        ]));
+    return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {},
+        onLongPress: () {},
+        child: Container(
+            key: const Key('moment-reactions'),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+                color: CupertinoDynamicColor.resolve(
+                    MomentReactionTokens.background, context),
+                borderRadius:
+                    BorderRadius.circular(MomentReactionTokens.radius)),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (item.likeUsers.isNotEmpty)
+                    Padding(
+                        padding: const EdgeInsets.all(
+                            MomentReactionTokens.feedPadding),
+                        child: Row(children: [
+                          Icon(CupertinoIcons.heart_fill,
+                              color: CupertinoDynamicColor.resolve(
+                                  MomentReactionTokens.name, context),
+                              size: 15),
+                          const SizedBox(width: 8),
+                          Expanded(
+                              child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(children: [
+                                    for (final person in item.likeUsers)
+                                      Padding(
+                                          padding:
+                                              const EdgeInsets.only(right: 6),
+                                          child: _avatar(person,
+                                              'moment-liker-${person.userId}'))
+                                  ]))),
+                        ])),
+                  if (item.likeUsers.isNotEmpty && item.comments.isNotEmpty)
+                    _divider(context, 'moment-likes-divider'),
+                  for (var i = 0; i < item.comments.length; i++) ...[
+                    if (i > 0)
+                      _divider(context,
+                          'moment-comment-divider-${item.comments[i].id}'),
+                    _comment(context, item.comments[i]),
+                  ],
+                ])));
   }
 
   Widget _comment(BuildContext context, MomentCommentView comment) =>
@@ -110,7 +127,8 @@ final class WeChatMomentReactions extends StatelessWidget {
           child: Container(
               key: ValueKey('moment-comment-surface-${comment.id}'),
               color: selectedCommentId == comment.id
-                  ? MomentReactionTokens.selected
+                  ? CupertinoDynamicColor.resolve(
+                      MomentReactionTokens.selected, context)
                   : null,
               padding: EdgeInsets.all(detailMode
                   ? MomentReactionTokens.detailPadding
@@ -127,7 +145,7 @@ final class WeChatMomentReactions extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                                child: _name(comment.author,
+                                child: _name(context, comment.author,
                                     'moment-comment-name-${comment.id}')),
                             if (comment.createdAt != null) ...[
                               const SizedBox(width: 6),
@@ -139,19 +157,24 @@ final class WeChatMomentReactions extends StatelessWidget {
                                           key: ValueKey(
                                               'moment-comment-time-${comment.id}'),
                                           textAlign: TextAlign.right,
-                                          style: const TextStyle(
-                                              color: MomentReactionTokens.muted,
+                                          style: TextStyle(
+                                              color:
+                                                  CupertinoDynamicColor.resolve(
+                                                      MomentReactionTokens
+                                                          .muted,
+                                                      context),
                                               fontSize: 11)))),
                             ],
                           ]),
                       const SizedBox(height: 4),
                       if (comment.parentAuthor != null)
                         Wrap(children: [
-                          const Text('回复 ',
+                          Text('回复 ',
                               style: TextStyle(
-                                  color: MomentReactionTokens.muted,
+                                  color: CupertinoDynamicColor.resolve(
+                                      MomentReactionTokens.muted, context),
                                   fontSize: 13)),
-                          _name(comment.parentAuthor!,
+                          _name(context, comment.parentAuthor!,
                               'moment-comment-parent-${comment.id}'),
                         ]),
                       Text.rich(
@@ -190,10 +213,11 @@ final class WeChatMomentReactions extends StatelessWidget {
                                               height: 22,
                                               fit: BoxFit.cover,
                                               gaplessPlayback: true,
-                                              errorBuilder: (_, __, ___) => const Icon(CupertinoIcons.photo, size: 22, color: MomentReactionTokens.muted))))),
+                                              errorBuilder: (_, __, ___) => Icon(CupertinoIcons.photo, size: 22, color: CupertinoDynamicColor.resolve(MomentReactionTokens.muted, context)))))),
                           ]),
-                          style: const TextStyle(
-                              color: MomentReactionTokens.text,
+                          style: TextStyle(
+                              color: CupertinoDynamicColor.resolve(
+                                  MomentReactionTokens.text, context),
                               fontSize: 13,
                               height: 1.5)),
                     ])),

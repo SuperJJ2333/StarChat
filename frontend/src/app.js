@@ -153,8 +153,34 @@ document.addEventListener("click", async (event) => {
   const action = target.dataset.action;
   if (action.startsWith("open:")) setQuery({ screen: action.slice(5), module: "", state: "", theme: "", q: "" });
   else if (action.startsWith("moment:profile:")) setQuery({ screen: "friend-profile-default", module: "", state: "", theme: "", q: "" });
-  else if (action === "moment:reply") setQuery({ screen: "moments-detail-comment-reply", module: "", state: "", theme: "", q: "" });
-  else if (action === "moment:comment-actions") setQuery({ screen: "moments-detail-comment-delete", module: "", state: "", theme: "", q: "" });
+  else if (action === "moment:reply" || action === "moment:comment-actions") {
+    const row = target.closest('.c-moment-reactions__comment');
+    const panel = target.closest('.c-moment-reactions');
+    panel.querySelector('.c-moment-reactions__editor')?.remove();
+    panel.querySelectorAll('[data-selected]').forEach(node => { node.dataset.selected = 'false'; });
+    const editor = element('div', 'c-moment-reactions__editor');
+    if (action === 'moment:reply') {
+      row.dataset.selected = 'true';
+      const input = element('textarea', 'c-moment-reactions__input');
+      input.placeholder = `回复${row.querySelector('.c-moment-reactions__name').textContent}`;
+      input.setAttribute('aria-label', input.placeholder);
+      editor.append(input);
+    } else {
+      const copy = button('c-moment-reactions__profile', '复制');
+      copy.textContent = '复制';
+      copy.addEventListener('click', async () => { await navigator.clipboard?.writeText(target.textContent); editor.remove(); });
+      const remove = button('c-moment-reactions__profile', '删除');
+      remove.textContent = '删除';
+      remove.addEventListener('click', () => { row.remove(); editor.remove(); });
+      editor.append(copy, remove);
+    }
+    const cancel = button('c-moment-reactions__profile', '取消');
+    cancel.textContent = '取消';
+    cancel.addEventListener('click', () => { row.dataset.selected = 'false'; editor.remove(); });
+    editor.append(cancel);
+    panel.append(editor);
+    editor.querySelector('textarea')?.focus();
+  }
   else if (action.startsWith("copy:")) await navigator.clipboard?.writeText(action.slice(5));
   else if (action === "gallery-back") window.location.search = "";
   else if (action === "gallery-theme") setQuery({ theme: params.get("theme") === "dark" ? "light" : "dark" });

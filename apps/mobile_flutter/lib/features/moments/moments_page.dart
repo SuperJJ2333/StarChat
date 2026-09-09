@@ -22,7 +22,7 @@ import '../../ui/moments/wechat_moment_viewer.dart';
 import 'moment_models.dart';
 import 'moment_composer_page.dart';
 import 'moment_detail_page.dart';
-import 'moment_comment_composer.dart';
+import 'moment_comment_interaction.dart';
 import '../matrix/profile_repository.dart';
 
 final class MomentsPage extends StatefulWidget {
@@ -43,6 +43,7 @@ final class MomentsPage extends StatefulWidget {
 
 final class _MomentsPageState extends State<MomentsPage> {
   final _itemOverrides = <String, MomentItem>{};
+  final _selectedComments = <String, String>{};
   final _pendingLikeIds = <String>{};
   final _postKeys = <String, GlobalKey>{};
   final _feedScroll = ScrollController();
@@ -385,19 +386,29 @@ final class _MomentsPageState extends State<MomentsPage> {
     }
   }
 
-  Future<void> _showComment(BuildContext context, MomentItem item) async {
-    final comment = await showMomentCommentComposer(context,
-        identityCache: _identityCache, api: widget.api, momentId: item.id);
-    if (comment == null || !mounted) return;
-    setState(() {
-      final current = _itemOverrides[item.id] ?? item;
-      _itemOverrides[item.id] = current.copyWith(
-          comments: mergeMomentComments(current.comments, comment));
-    });
-  }
+  Future<void> _showComment(BuildContext context, MomentItem item,
+          [MomentCommentView? comment]) =>
+      interactWithMomentComment(context,
+          api: widget.api,
+          momentId: item.id,
+          currentUsername: _identityCache.profile?.username ?? '',
+          identityCache: _identityCache,
+          comment: comment,
+          currentItem: () => _deletedIds.contains(item.id)
+              ? null
+              : _itemOverrides[item.id] ?? item,
+          onChanged: (updated) =>
+              setState(() => _itemOverrides[item.id] = updated),
+          onSelectionChanged: (id) => setState(() {
+                if (id == null) {
+                  _selectedComments.remove(item.id);
+                } else {
+                  _selectedComments[item.id] = id;
+                }
+              }),
+          onError: (message) => setState(() => _interactionError = message));
 
-  Future<void> _openDetail(MomentItem item,
-      [MomentCommentView? comment]) async {
+  Future<void> _openDetail(MomentItem item) async {
     await Navigator.push(
         context,
         CupertinoPageRoute(
@@ -406,7 +417,6 @@ final class _MomentsPageState extends State<MomentsPage> {
                   api: widget.api,
                   initialItem: _itemOverrides[item.id] ?? item,
                   currentUsername: _identityCache.profile?.username ?? '',
-                  initialComment: comment,
                   cacheNamespace: _identityCache.accountKey ?? '',
                   onReactionChanged: (updated) {
                     if (mounted) {
@@ -524,7 +534,9 @@ final class _MomentsPageState extends State<MomentsPage> {
                           onOpen: () => _openDetail(item),
                           onAuthorTap: () => _openAuthor(item.author),
                           onPersonTap: _openAuthor,
-                          onCommentTap: (comment) => _openDetail(item, comment),
+                          selectedCommentId: _selectedComments[item.id],
+                          onCommentTap: (comment) =>
+                              _showComment(context, item, comment),
                           onLike: _pendingLikeIds.contains(item.id)
                               ? null
                               : () => _toggleLike(item),

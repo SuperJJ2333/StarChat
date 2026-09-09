@@ -4,6 +4,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
+import 'user_identity.dart';
 import '../matrix/profile_repository.dart';
 
 final class FriendIdentityCard extends StatelessWidget {
@@ -13,16 +14,57 @@ final class FriendIdentityCard extends StatelessWidget {
   final ContactDetails contact;
 
   @override
+  Widget build(BuildContext context) => ProfileIdentityCard(
+        key: const Key('friend-identity-card'),
+        userId: contact.userId,
+        username: contact.username,
+        matrixUserId: contact.matrixUserId,
+        nickname: contact.nickname,
+        remark: contact.remark,
+        avatarUrl: contact.avatarUrl,
+        identityCache: identityCache,
+        statusLabel: '刚刚在线',
+      );
+}
+
+/// Shared identity layout for friend and user profile pages.
+final class ProfileIdentityCard extends StatelessWidget {
+  const ProfileIdentityCard(
+      {super.key,
+      required this.userId,
+      required this.username,
+      this.matrixUserId,
+      this.nickname,
+      this.remark,
+      this.avatarUrl,
+      this.identityCache,
+      this.statusLabel});
+  final String userId;
+  final String username;
+  final String? matrixUserId;
+  final String? nickname;
+  final String? remark;
+  final String? avatarUrl;
+  final ProfileRepository? identityCache;
+  final String? statusLabel;
+
+  @override
   Widget build(BuildContext context) {
     final identity = identityCache?.resolveIdentity(
-        userId: contact.userId,
-        matrixUserId: contact.matrixUserId,
-        username: contact.username,
-        nickname: contact.nickname,
-        avatarUrl: contact.avatarUrl);
+        userId: userId,
+        matrixUserId: matrixUserId,
+        username: username,
+        nickname: nickname,
+        avatarUrl: avatarUrl);
+    final displayName = identity?.displayName ??
+        identityDisplayName(
+            userId: userId,
+            matrixUserId: matrixUserId,
+            username: username,
+            nickname: nickname,
+            remark: remark);
     return Container(
-      key: const Key('friend-identity-card'),
-      height: 126,
+      constraints: const BoxConstraints(minHeight: 126),
       color: CupertinoTheme.of(context).brightness == Brightness.dark
           ? WeChatColors.darkElevated
           : WeChatColors.lightElevated,
@@ -30,20 +72,20 @@ final class FriendIdentityCard extends StatelessWidget {
       child: Row(
         children: [
           UserAvatar(
-            nickname: identity?.displayName ?? contact.displayName,
-            fallbackSeed: identity?.cacheKey ?? contact.username,
-            avatarUrl:
-                identity == null ? contact.avatarUrl : identity.avatarUrl,
+            nickname: displayName,
+            fallbackSeed: identity?.cacheKey ?? userId,
+            avatarUrl: identity == null ? avatarUrl : identity.avatarUrl,
             size: 72,
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  identity?.displayName ?? contact.displayName,
+                  displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -54,7 +96,7 @@ final class FriendIdentityCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '畅聊号：${contact.username}',
+                  '畅聊号：$username',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -63,15 +105,17 @@ final class FriendIdentityCard extends StatelessWidget {
                     height: 20 / 14,
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  '刚刚在线',
-                  style: TextStyle(
-                    color: WeChatColors.textSecondary,
-                    fontSize: WeChatTypography.subhead,
-                    height: 20 / 14,
+                if (statusLabel != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    statusLabel!,
+                    style: const TextStyle(
+                      color: WeChatColors.textSecondary,
+                      fontSize: WeChatTypography.subhead,
+                      height: 20 / 14,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),

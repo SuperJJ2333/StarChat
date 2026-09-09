@@ -10,5 +10,5 @@ test("Flutter–HTML–Figma registry names every HTML component contract", () =
   for (const component of registry.components) {
     assert.ok(tags.has(component.html.tag), `${component.id}: missing ${component.html.tag}`);
   }
-  assert.equal(registry.figma.expectedScreenCount, 330);
+  assert.equal(registry.figma.expectedScreenCount, 331);
 });

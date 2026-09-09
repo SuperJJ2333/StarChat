@@ -65,7 +65,7 @@
     "fileKey": "zpzwTbnj1hqx80tyRygX78",
     "stateArtifact": "frontend/artifacts/figma-state.json",
     "mode": "export-ledger",
-    "expectedScreenCount": 330
+    "expectedScreenCount": 331
   },
   "tokenMappings": {
     "colors": [
@@ -656,6 +656,19 @@
         "html": "frontend/src/styles/tokens.css: --moment-reaction-*",
         "remoteFigmaSync": "pending-tool-access"
       }
+    },
+    {
+      "id": "shared-profile-identity",
+      "flutter": {
+        "name": "ProfileIdentityCard",
+        "file": "apps/mobile_flutter/lib/features/contacts/contact_profile_sections.dart",
+        "props": ["userId", "username", "nickname", "remark", "avatarUrl", "identityCache", "statusLabel"],
+        "variants": {"relationship": ["friend", "user"]},
+        "states": ["default", "large-text", "pending", "self"]
+      },
+      "html": {"tag": "app-identity-header"},
+      "figma": {"name": "app-identity-header", "key": "25:37"},
+      "tokens": ["surface", "spacing", "radius"]
     },
     {
       "id": "moment-personal-cover",

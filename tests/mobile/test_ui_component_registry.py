@@ -7,7 +7,7 @@ from verify_ui_contract import verify
 
 
 def test_flutter_html_figma_component_registry_has_no_export_ledger_drift():
-    assert verify() == ["UI contract drift: PASS (18 components, 330 screens)"]
+    assert verify() == ["UI contract drift: PASS (19 components, 331 screens)"]
 
 
 def test_registry_registers_nudge_and_contact_tag_delivery_surfaces():
@@ -20,6 +20,7 @@ def test_registry_registers_nudge_and_contact_tag_delivery_surfaces():
         "moments-feed-v2": "MomentsPage",
         "moment-interactions": "WeChatMomentTile",
         "moment-reactions": "WeChatMomentReactions",
+        "shared-profile-identity": "ProfileIdentityCard",
         "moment-personal-cover": "WeChatMomentCoverViewer",
     }
     actual = {item["id"]: item["flutter"]["name"] for item in registry["components"]}

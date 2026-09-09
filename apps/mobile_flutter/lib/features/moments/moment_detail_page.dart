@@ -1,5 +1,4 @@
 import 'moments_privacy_changes.dart';
-import 'package:flutter/services.dart';
 import 'moment_reactions.dart';
 import 'moment_person_navigation.dart';
 import 'package:flutter/cupertino.dart';
@@ -8,7 +7,7 @@ import '../matrix/profile_repository.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
-import 'moment_comment_composer.dart';
+import 'moment_comment_interaction.dart';
 
 class MomentDetailPage extends StatefulWidget {
   const MomentDetailPage(
@@ -121,60 +120,19 @@ class _MomentDetailState extends State<MomentDetailPage> {
     } catch (_) {/* Preserve the snapshot only on transient network failure. */}
   }
 
-  Future<void> comment([MomentCommentView? parent]) async {
-    if (unavailable) return;
-    final result = await showMomentCommentComposer(context,
-        identityCache: widget.identityCache,
-        api: widget.api,
-        momentId: item.id,
-        parent: parent);
-    if (result != null && mounted) {
-      update(
-          item.copyWith(comments: mergeMomentComments(item.comments, result)));
-    }
-  }
+  Future<void> comment([MomentCommentView? parent]) =>
+      interactWithMomentComment(context,
+          api: widget.api,
+          momentId: item.id,
+          currentUsername: widget.currentUsername,
+          identityCache: widget.identityCache,
+          comment: parent,
+          currentItem: () => unavailable ? null : item,
+          onChanged: update,
+          onSelectionChanged: (id) => setState(() => selectedCommentId = id),
+          onError: (message) => setState(() => error = message));
 
-  Future<void> tapComment(MomentCommentView value) async {
-    final ownUsername =
-        widget.identityCache?.profile?.username ?? widget.currentUsername;
-    if (ownUsername.isEmpty || value.author.username != ownUsername) {
-      setState(() => selectedCommentId = value.id);
-      try {
-        await comment(value);
-      } finally {
-        if (mounted) setState(() => selectedCommentId = null);
-      }
-      return;
-    }
-    final remove = await showCupertinoModalPopup<bool>(
-        context: context,
-        builder: (context) => CupertinoActionSheet(
-                actions: [
-                  CupertinoActionSheetAction(
-                      onPressed: () {
-                        Navigator.pop(context, false);
-                        Clipboard.setData(ClipboardData(text: value.text));
-                      },
-                      child: const Text('复制')),
-                  CupertinoActionSheetAction(
-                      isDestructiveAction: true,
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('删除'))
-                ],
-                cancelButton: CupertinoActionSheetAction(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('取消'))));
-    if (remove != true || !mounted) return;
-    try {
-      await widget.api.deleteMomentComment(item.id, value.id);
-      if (mounted) {
-        update(item.copyWith(
-            comments: item.comments.where((c) => c.id != value.id).toList()));
-      }
-    } catch (_) {
-      if (mounted) setState(() => error = '删除失败，请重试');
-    }
-  }
+  Future<void> tapComment(MomentCommentView value) => comment(value);
 
   Future<void> like() async {
     if (liking ||

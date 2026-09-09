@@ -59,17 +59,19 @@ function contactCollection(definition) {
 }
 
 function friendProfile(definition) {
+  const isUser = definition.state === "user";
   const root = pageRoot(definition);
-  root.append(navigation("好友资料", { leading: "返回", action: "更多" }));
+  root.append(navigation(isUser ? "用户资料" : "好友资料", { leading: "返回", action: isUser ? "" : "更多" }));
   const content = element("div", "p-friend-profile__content");
   const contact = definition.state === "support" ? fixtures.contacts[2] : fixtures.contacts[0];
   content.append(component("app-identity-header", { name: contact.name, username: contact.username, signature: contact.subtitle }));
   const preview = element("section", "c-profile-preview");
   preview.append(element("h2", "c-profile-preview__title", "朋友圈"), element("div", "c-profile-preview__images"));
   for (let index = 0; index < 3; index += 1) preview.querySelector(".c-profile-preview__images").append(element("span", "c-profile-preview__image", `动态 ${index + 1}`));
-  content.append(preview);
+  if (!isUser) content.append(preview);
   const actions = element("div", "c-profile-actions");
-  actions.append(
+  if (isUser) actions.append(component("app-action-button", { icon: "add", label: "添加到通讯录", action: "friend:add" }));
+  else actions.append(
     component("app-action-button", { icon: "chat", label: "发消息", action: "friend:message" }),
     component("app-action-button", { icon: "call", label: "语音通话", action: "friend:voice" }),
     component("app-action-button", { icon: "camera", label: "视频通话", action: "friend:video" })

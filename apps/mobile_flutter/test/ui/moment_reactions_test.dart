@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/moments/moment_models.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_tile.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 
 MomentItem post({bool liked = false}) => MomentItem.fromJson({
       'id': 'post',
@@ -34,7 +35,7 @@ MomentItem post({bool liked = false}) => MomentItem.fromJson({
     });
 
 void main() {
-  testWidgets('reactions group has rounded dark panel, avatars and dividers',
+  testWidgets('reactions group has rounded theme panel, avatars and dividers',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(home: WeChatMomentTile(item: post())));
     expect(find.byKey(const Key('moment-reactions')), findsOneWidget);
@@ -44,8 +45,33 @@ void main() {
     final box = tester
         .widget<Container>(find.byKey(const Key('moment-reactions')))
         .decoration! as BoxDecoration;
-    expect(box.color, const Color(0xff333333));
+    expect(box.color!.toARGB32(),
+        WeChatColors.chatNavigationBackground.toARGB32());
     expect(box.borderRadius, isNotNull);
+  });
+  testWidgets('reaction panel tracks theme and blank area never opens detail',
+      (tester) async {
+    var opened = 0;
+    for (final brightness in [
+      Brightness.light,
+      Brightness.dark,
+      Brightness.light
+    ]) {
+      await tester.pumpWidget(CupertinoApp(
+          theme: CupertinoThemeData(brightness: brightness),
+          home: WeChatMomentTile(item: post(), onOpen: () => opened++)));
+      await tester.pumpAndSettle();
+      final finder = find.byKey(const Key('moment-reactions'));
+      final context = tester.element(finder);
+      expect(
+          (tester.widget<Container>(finder).decoration as BoxDecoration)
+              .color!
+              .toARGB32(),
+          WeChatColors.navigationBackground(context).toARGB32());
+      await tester.tapAt(
+          tester.getCenter(find.byKey(const Key('moment-likes-divider'))));
+      expect(opened, 0);
+    }
   });
   testWidgets(
       'comment profile targets, selection and time survive narrow large text',
@@ -77,7 +103,8 @@ void main() {
     expect(comments, ['one']);
     final selected = tester
         .widget<Container>(find.byKey(const Key('moment-comment-surface-one')));
-    expect(selected.color, const Color(0xff292929));
+    expect(selected.color!.toARGB32(),
+        WeChatColors.lightPageBackground.toARGB32());
     expect(selected.padding, const EdgeInsets.all(14));
     expect(find.byKey(const Key('moment-comment-time-one')), findsOneWidget);
     expect(find.byKey(const Key('moment-comment-time-two')), findsNothing);

@@ -1,12 +1,22 @@
 import 'package:flutter/cupertino.dart';
+import '../foundation/wechat_tokens.dart';
 
 abstract final class MomentReactionTokens {
-  static const background = Color(0xff333333);
-  static const selected = Color(0xff292929);
-  static const text = Color(0xfff2f2f2);
-  static const name = Color(0xffc4d2ee);
-  static const muted = Color(0xffb3b3b3);
-  static const divider = Color(0x1affffff);
+  static const background = CupertinoDynamicColor.withBrightness(
+      color: WeChatColors.chatNavigationBackground,
+      darkColor: WeChatColors.darkSurface);
+  static const selected = CupertinoDynamicColor.withBrightness(
+      color: WeChatColors.lightPageBackground,
+      darkColor: WeChatColors.darkPageBackground);
+  static const text = CupertinoDynamicColor.withBrightness(
+      color: WeChatColors.lightTextPrimary,
+      darkColor: WeChatColors.darkTextPrimary);
+  static const name = CupertinoDynamicColor.withBrightness(
+      color: WeChatColors.socialLink, darkColor: Color(0xff9aaece));
+  static const muted = CupertinoDynamicColor.withBrightness(
+      color: Color(0xff666666), darkColor: Color(0xff999999));
+  static const divider = CupertinoDynamicColor.withBrightness(
+      color: WeChatColors.divider, darkColor: WeChatColors.darkDivider);
   static const shadow = Color(0x12000000);
   static const radius = 8.0;
   static const avatarSize = 30.0;
