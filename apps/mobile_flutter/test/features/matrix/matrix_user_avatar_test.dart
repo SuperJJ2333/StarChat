@@ -20,6 +20,31 @@ final class FakeAvatarMediaCapability implements AvatarMediaCapability {
 }
 
 void main() {
+  testWidgets('hidden Matrix avatar resumes retries only when visible again',
+      (tester) async {
+    var calls = 0;
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      if (++calls == 1) throw StateError('offline');
+      return null;
+    });
+    Widget build(bool visible) => CupertinoApp(
+        home: TickerMode(
+            enabled: visible,
+            child: MatrixUserAvatar(
+                avatarMedia: avatars,
+                nickname: 'Alice',
+                fallbackSeed: 'hidden:alice',
+                matrixAvatarUri: Uri.parse('mxc://matrix.test/hidden'))));
+    await tester.pumpWidget(build(true));
+    await tester.pumpWidget(build(false));
+    await tester.pump(const Duration(seconds: 120));
+    expect(calls, 1);
+    await tester.pumpWidget(build(true));
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls, 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('resuming during a retry does not start a competing resolution',
       (tester) async {
     var calls = 0;
@@ -138,29 +163,33 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('retry stops after budget and disposal cancels pending timer',
+  testWidgets('prolonged foreground outage recovers after initial retry budget',
       (tester) async {
     var calls = 0;
+    var online = false;
     final avatars = FakeAvatarMediaCapability((uri, _) async {
       calls++;
-      throw StateError('offline');
+      if (!online) throw StateError('offline');
+      return const ResolvedAvatarUrl('https://safe/long-recovery');
     });
-    Widget build() => CupertinoApp(
+    await tester.pumpWidget(CupertinoApp(
         home: MatrixUserAvatar(
             avatarMedia: avatars,
             nickname: 'Alice',
             fallbackSeed: 'account:alice',
-            matrixAvatarUri: Uri.parse('mxc://matrix.test/retry')));
-    await tester.pumpWidget(build());
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/long-retry'))));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(seconds: 10));
     }
-    expect(calls, 3);
+    expect(calls, lessThanOrEqualTo(7));
+    online = true;
+    await tester.pump(const Duration(seconds: 60));
+    await tester.pump();
+    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl,
+        'https://safe/long-recovery');
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(build());
     final beforeDispose = calls;
-    await tester.pumpWidget(const SizedBox());
-    await tester.pump(const Duration(seconds: 10));
+    await tester.pump(const Duration(seconds: 120));
     expect(calls, beforeDispose);
   });
 

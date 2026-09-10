@@ -1,6 +1,11 @@
-import 'package:flutter/cupertino.dart';
+import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../core/performance_metrics.dart';
 import '../foundation/avatar_cache.dart';
+import '../foundation/avatar_retry.dart';
 import '../foundation/wechat_tokens.dart';
 
 final class UserAvatar extends StatefulWidget {
@@ -24,6 +29,58 @@ final class UserAvatar extends StatefulWidget {
 }
 
 final class _UserAvatarState extends State<UserAvatar> {
+  final _retry = AvatarRetry();
+  int _generation = 0;
+  int _imageEpoch = 0;
+  bool _retrying = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _retry.setActive(TickerMode.valuesOf(context).enabled);
+  }
+
+  @override
+  void didUpdateWidget(covariant UserAvatar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fallbackSeed != widget.fallbackSeed ||
+        oldWidget.avatarUrl != widget.avatarUrl ||
+        !mapEquals(oldWidget.avatarHeaders, widget.avatarHeaders)) {
+      _generation++;
+      _retry.reset();
+      _retrying = false;
+      _imageEpoch++;
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    _retry.reset();
+    super.dispose();
+  }
+
+  Future<void> _retryImage(
+      AvatarCacheImageProvider provider, int generation) async {
+    if (!mounted || generation != _generation || _retrying) return;
+    _retrying = true;
+    PerformanceMetrics.instance.increment(PerformanceCounter.avatarRetry);
+    try {
+      await AvatarCache.evictFailedImage(provider);
+      if (!mounted || generation != _generation) return;
+      // ImageProvider equality intentionally ignores transport headers. A new
+      // Image state resolves its stream again using the same stable disk key.
+      setState(() {
+        _imageEpoch++;
+        _retrying = false;
+      });
+    } catch (_) {
+      if (!mounted || generation != _generation) return;
+      _retrying = false;
+      _retry.schedule(() => unawaited(_retryImage(provider, generation)));
+    }
+  }
+
   void _logLoadError(Object error, StackTrace? stackTrace) {
     debugPrint(
       '[AvatarLoadError] source=${widget.diagnosticSource} '
@@ -71,6 +128,7 @@ final class _UserAvatarState extends State<UserAvatar> {
 
   @override
   Widget build(BuildContext context) {
+    final generation = _generation;
     final url = widget.avatarUrl;
     final provider = url == null
         ? null
@@ -89,11 +147,14 @@ final class _UserAvatarState extends State<UserAvatar> {
         child: provider == null
             ? _fallback()
             : Image(
+                key: ValueKey((widget.fallbackSeed, _imageEpoch)),
                 image: provider,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                  if (generation != _generation) return const SizedBox.expand();
                   if (wasSynchronouslyLoaded || frame != null) {
+                    if (generation == _generation) _retry.reset();
                     AvatarCache.rememberSuccessful(
                         widget.fallbackSeed, provider);
                     if (wasSynchronouslyLoaded || retained != null) {
@@ -126,6 +187,10 @@ final class _UserAvatarState extends State<UserAvatar> {
                 },
                 errorBuilder: (_, error, stackTrace) {
                   _logLoadError(error, stackTrace);
+                  if (generation == _generation && !_retrying) {
+                    _retry.schedule(
+                        () => unawaited(_retryImage(provider, generation)));
+                  }
                   return retained == null
                       ? _fallback()
                       : Image(image: retained, fit: BoxFit.cover);

@@ -5,6 +5,23 @@ import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
 import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 
 void main() {
+  testWidgets(
+      'late frame callback cannot retain previous account image under new identity',
+      (tester) async {
+    Widget build(String identity) => CupertinoApp(
+        home: UserAvatar(
+            nickname: identity,
+            fallbackSeed: identity,
+            avatarUrl: 'https://safe/$identity'));
+    await tester.pumpWidget(build('late-old-account'));
+    final oldImage = tester.widget<Image>(find.byType(Image));
+    final context = tester.element(find.byType(Image));
+    await tester.pumpWidget(build('late-new-account'));
+    oldImage.frameBuilder!(context, const SizedBox(), 0, true);
+    expect(AvatarCache.lastSuccessful('late-new-account'), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('explicit absent avatar does not resurrect retained custom image',
       (tester) async {
     AvatarCache.rememberSuccessful(

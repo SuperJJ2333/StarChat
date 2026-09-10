@@ -23,6 +23,7 @@ abstract final class AvatarCache {
   );
 
   static final Map<String, Set<String>> _keysByUser = {};
+  static final Map<String, Future<void>> _failedEvictions = {};
   static final Map<String, ImageProvider> _lastSuccessfulByUser = {};
 
   static void configureMemoryCache() {
@@ -83,6 +84,25 @@ abstract final class AvatarCache {
       cacheManager: manager,
       headers: headers,
     );
+  }
+
+  /// Join cleanup for the same failed image. Do not evict a shared pending or
+  /// successfully decoded replacement started by another visible subscriber.
+  static Future<void> evictFailedImage(AvatarCacheImageProvider provider) {
+    final key = provider.cacheKey ?? provider.url;
+    return _failedEvictions.putIfAbsent(key, () async {
+      try {
+        final status = await provider.obtainCacheStatus(
+            configuration: ImageConfiguration.empty);
+        if (status?.pending == true || status?.keepAlive == true) return;
+        await provider.evict();
+        // A codec error may have left corrupt bytes in the otherwise fresh
+        // disk entry. Remove only this failed version, retaining older avatars.
+        await manager.removeFile(key);
+      } finally {
+        _failedEvictions.remove(key);
+      }
+    });
   }
 
   /// Retains the last painted custom avatar while a replacement image decodes.

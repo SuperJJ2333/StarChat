@@ -1,9 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/cupertino.dart';
 
 import '../../core/performance_metrics.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/foundation/avatar_retry.dart';
 import 'avatar_url_resolver.dart';
 
 /// Minimal managed capability for resolving Matrix media without exposing a
@@ -41,22 +40,20 @@ final class MatrixUserAvatar extends StatefulWidget {
   State<MatrixUserAvatar> createState() => _MatrixUserAvatarState();
 }
 
-final class _MatrixUserAvatarState extends State<MatrixUserAvatar>
-    with WidgetsBindingObserver {
+final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
   int _resolutionGeneration = 0;
-  Timer? _retryTimer;
-  int _retryCount = 0;
-  bool _needsRetry = false;
+  final _retry = AvatarRetry();
 
-  bool get _isForeground =>
-      WidgetsBinding.instance.lifecycleState == null ||
-      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _retry.setActive(TickerMode.valuesOf(context).enabled);
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _diagnose('initial');
     _resolve();
   }
@@ -73,37 +70,12 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar>
           oldWidget.avatarMedia != widget.avatarMedia) {
         resolved = null;
       }
-      _retryTimer?.cancel();
-      _retryTimer = null;
-      _retryCount = 0;
-      _needsRetry = false;
+      _retry.reset();
       _resolve();
     }
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      _retryTimer?.cancel();
-      _retryTimer = null;
-    } else if (_needsRetry) {
-      _scheduleRetry();
-    }
-  }
-
-  void _scheduleRetry() {
-    if (!_isForeground || _retryCount >= 2 || _retryTimer != null) return;
-    _retryTimer = Timer(Duration(seconds: 1 << _retryCount), () {
-      _retryTimer = null;
-      if (!mounted || !_isForeground || !_needsRetry) return;
-      _retryCount++;
-      PerformanceMetrics.instance.increment(PerformanceCounter.avatarRetry);
-      _resolve();
-    });
   }
 
   Future<void> _resolve() async {
-    _needsRetry = false;
     final metrics = PerformanceMetrics.instance;
     final watch = metrics.enabled ? (Stopwatch()..start()) : null;
     final generation = ++_resolutionGeneration;
@@ -115,13 +87,17 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar>
         size: size,
       );
       if (!mounted || generation != _resolutionGeneration) return;
-      _needsRetry = false;
+      _retry.reset();
       setState(() => resolved = value);
       _diagnose('resolved');
     } catch (_) {
       if (!mounted || generation != _resolutionGeneration) return;
-      _needsRetry = avatarUri != null;
-      if (_needsRetry) _scheduleRetry();
+      if (avatarUri != null) {
+        _retry.schedule(() {
+          PerformanceMetrics.instance.increment(PerformanceCounter.avatarRetry);
+          _resolve();
+        });
+      }
       _diagnose('resolution-failed');
       // Retain the HTTP profile fallback or local text avatar while Matrix
       // media capability discovery is temporarily unavailable.
@@ -136,8 +112,7 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar>
   @override
   void dispose() {
     _resolutionGeneration++;
-    _retryTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
+    _retry.reset();
     super.dispose();
   }
 
