@@ -191,7 +191,8 @@ def create_manual_wallet_router(settings, factory, *, runtime):
     @router.post('/payouts/{order_id}/txid', response_model=PayoutView)
     def submit(order_id: str, body: TxidBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
         auth = {}
-        if getattr(settings,'wallet_admin_auth_mode','totp') != 'totp' or body.operation_password is not None:
+        if (getattr(settings,'wallet_access_grant_enabled',False)
+                or getattr(settings,'wallet_admin_auth_mode','totp') != 'totp' or body.operation_password is not None):
             auth['authorize'] = selected_password_authorization(settings,factory,lambda:datetime.now(timezone.utc),identity[2],body)
         return call(ready().payouts.submit_txid, admin_id=identity[0], order_id=order_id, txid=body.txid,
             idempotency_key=idempotency_key, **auth)

@@ -69,9 +69,10 @@ export function createAdminShell({context,api,modules,renderModule,onLogout}) {
       }
       if(currentPanel?.refresh&&isRefresh)return await currentPanel.refresh();
       if(currentPanel&&isRefresh){const wallet=currentPanel.querySelector('.admin-manual-wallet-panel');if(wallet?.refresh){const result=await wallet.refresh();return result!==false&&(!Array.isArray(result)||result.every(r=>r.status!=='rejected'));}}
-      const payload=await api.getModule(current);if(revision!==generation)return;
+      // Wallet owns its privacy gate; no sensitive module request before verification.
+      const payload=current==='wallet'?{}:await api.getModule(current);if(revision!==generation)return;
       // Module tables refresh independently of command forms to retain user drafts.
-      const rendered=renderModule(current,routeTitle.textContent,{...context,modules:{...context.modules,[current]:payload}});
+      const rendered=renderModule(current,routeTitle.textContent,{...context,onWalletExit:()=>links.get('overview').click(),modules:{...context.modules,[current]:payload}});
       if(isRefresh&&currentPanel){const oldTable=currentPanel.querySelector('.admin-table'),newTable=rendered.querySelector('.admin-table');if(oldTable&&newTable)oldTable.replaceWith(newTable);}
       else{currentPanel=rendered;content.replaceChildren(rendered);}return true;
     }catch(error){if(revision!==generation)return;const old=content.querySelector('.admin-load-error');old?.remove();content.prepend(el('p','admin-load-error',`数据读取失败：${error.message??'请重试'}。现有数据可能已过期。`));return false;}

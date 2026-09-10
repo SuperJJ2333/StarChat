@@ -335,6 +335,8 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             overview_data = overview(request, user_id, 30)
         modules = {}
         for name, required in MODULE_PERMISSIONS.items():
+            if name == 'wallet' and getattr(settings, 'wallet_access_grant_enabled', False):
+                continue
             if is_admin or required in actual:
                 modules[name] = module_data(name, user_id).get("items", [])
         return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}

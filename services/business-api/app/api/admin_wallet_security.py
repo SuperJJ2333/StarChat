@@ -35,8 +35,17 @@ def create_admin_wallet_security_router(settings,factory,*,clock=None):
         return tokens.require_recent_login(authorization[7:])
     def response(value):
         return JSONResponse(value,headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+    def status_actor(authorization: Annotated[str | None,Header()]=None):
+        if not getattr(settings, 'wallet_access_grant_enabled', False):
+            return actor(authorization)
+        if not authorization or not authorization.startswith('Bearer '):
+            raise AppError(code='AUTH_REQUIRED',message='AUTH_REQUIRED',status_code=401)
+        claims = tokens.decode_access_token(authorization[7:])
+        return claims
     @router.get('',response_model=WalletSecurityView)
-    def status(claims=Depends(actor)):
+    def status(claims=Depends(status_actor)):
+        if getattr(settings, 'wallet_access_grant_enabled', False):
+            return response(service.status(claims=claims, grant_verification=True))
         return response(service.status(claims=claims))
     @router.post('/operation-password',response_model=WalletSecurityView)
     def set_password(body:OperationPasswordBody,

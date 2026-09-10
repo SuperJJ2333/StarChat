@@ -61,6 +61,9 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
   };
   return {
     getManualWalletDiagnostics: async () => request('/api/v1/admin/wallet/manual/operations/diagnostics', {cache:'no-store'}),
+    getWalletAccess: async () => request('/api/v1/wallet/manual/access', {cache:'no-store'}),
+    verifyWalletAccess: async proof => request('/api/v1/wallet/manual/access/verify', {method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(proof)}),
+    revokeWalletAccess: async () => request('/api/v1/wallet/manual/access/revoke', {method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:'{}'}),
     getOverview: async ({days=30}={})=>request(`/api/v1/admin/overview?days=${days}`,{cache:'no-store'}),
     getPointIssuance: async ({limit=25,cursor,kind}={})=>{const query=new URLSearchParams({limit:String(limit)});if(cursor)query.set('cursor',cursor);if(kind)query.set('kind',kind);return request(`/api/v1/admin/point-issuance?${query}`,{cache:'no-store'});},
     getPointIssuanceDetail: async id=>request(`/api/v1/admin/point-issuance/${encodeURIComponent(id)}`,{cache:'no-store'}),

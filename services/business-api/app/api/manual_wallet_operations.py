@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from app.api.wallet_operations import WalletIncidentView
-from app.api.admin_wallet_auth import AdminWalletProofBody, selected_password_authorization
+from app.api.admin_wallet_auth import AdminWalletProofBody, selected_password_authorization, wallet_grant_service
 from app.core.errors import AppError, FieldError
 from app.integrations.tron import diagnostics as diag
 from app.modules.wallet.manual_diagnostics import current_diagnostics, safe_review_result
@@ -80,7 +80,10 @@ def create_manual_wallet_operations_router(settings, factory, *, reviewer=None, 
             fail('PERMISSION_DENIED', '仅官方钱包管理员可复核', 403)
         with factory.begin() as session:
             require_wallet_actor(session, user_id=user, clock=clock, administrator=True)
-        tokens.require_recent_login(authorization[7:])
+        if getattr(settings, 'wallet_access_grant_enabled', False):
+            wallet_grant_service(settings, factory, clock).require(claims=claims)
+        else:
+            tokens.require_recent_login(authorization[7:])
         return claims
 
     def verify(identity, body, request):

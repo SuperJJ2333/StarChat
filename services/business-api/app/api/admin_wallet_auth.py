@@ -2,6 +2,7 @@
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from app.core.errors import AppError
 from app.modules.identity.operation_password import AdminWalletOperationPasswordService
+from app.modules.identity.wallet_grant import WalletAccessGrantService
 
 
 class AdminWalletProofBody(BaseModel):
@@ -16,6 +17,8 @@ def operation_service(settings,factory,clock):
 
 
 def selected_password_authorization(settings,factory,clock,claims,body):
+    if getattr(settings,'wallet_access_grant_enabled',False):
+        return wallet_grant_service(settings,factory,clock).authorization(claims=claims)
     mode=getattr(settings,'wallet_admin_auth_mode','totp')
     if mode=='totp':
         if body.operation_password is not None:
@@ -28,3 +31,7 @@ def selected_password_authorization(settings,factory,clock,claims,body):
     service=operation_service(settings,factory,clock)
     proof=service.verify(claims=claims,operation_password=body.operation_password.get_secret_value())
     return service.authorization(claims=claims,proof=proof)
+
+
+def wallet_grant_service(settings,factory,clock):
+    return WalletAccessGrantService(settings,factory,clock)

@@ -1,13 +1,14 @@
 import {adminSession} from "./admin-session.js?v=20260908-modern";
-import {createAdminShell} from "./admin-dashboard.js?v=20260910-readability";
+import {createAdminShell} from "./admin-dashboard.js?v=20260910-wallet-access";
 import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260910-readability";
+import { browserAdminApi, can } from "./admin-api.js?v=20260910-wallet-access";
 import { presentModuleRows } from "./admin-presenters.js";
 import { userPanel } from "./admin-user-panel.js";
 import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260910-readability";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-readability";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-wallet-access";
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-wallet-access';
 
 const modules = [
   ["发点钻给客服", "批次与审计记录", "finance", "admin.adjustments.read"],
@@ -18,7 +19,7 @@ const modules = [
   ["朋友圈原生广告", "素材与投放统计", "ads", "admin.ads.read"],
   ["官方通知公告", "定时发布与阅读", "notice", "admin.notices.read"],
   ["点钻流水", "可追溯复式账本", "ledger", "admin.ledger.read"],
-  ["USDT 提现和支付地址", "TRC20 审核与对账", "wallet", "admin.withdrawals.read"]
+  ["USDT提现与支付", "TRC20 审核与对账", "wallet", "admin.withdrawals.read"]
 ];
 const headerFallbacks = {
   finance: ["批次号", "用户标识", "数量（点钻）", "状态", "原因", "创建时间"], security: ["注册时间", "畅聊号", "用户名", "邮箱验证", "账号状态"],
@@ -53,6 +54,11 @@ function tableFor(key, dataset = {}) {
   return table;
 }
 function modulePanel(key, title, context) {
+  if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
+    actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,
+    renderSetup:(api,onSecurityChanged)=>manualWalletPanel(api,{actor:context.actor,securityOnly:true,onSecurityChanged,onReauthenticate:reauthenticateManualWallet}),
+    renderContent:(api,walletAccess)=>walletContent(api,context,walletAccess)
+  });
   if (key === 'security' || key === 'analytics') return userPanel(browserAdminApi(), {module:key,context,initialData:context.modules[key],onReauthenticate:reauthenticateManualWallet});
   const panel = element("section", "admin-card admin-module-panel"); const head = element("div", "admin-panel-heading"); const titleBlock = element("div"); titleBlock.append(element("h2", null, title)); head.append(titleBlock, element("span", "admin-chip", "服务端权限已验证")); panel.append(head);
   const dataset = context.modules[key] ?? {};
@@ -60,13 +66,18 @@ function modulePanel(key, title, context) {
     ? { headers: headerFallbacks[key], rows: presentModuleRows(key, dataset.items) }
     : dataset;
   panel.append(tableFor(key, tableDataset));
-  if (key === "wallet") {
-    const wallet=manualWalletPanel(browserAdminApi(), {actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true}),chain=chainPanel(browserAdminApi());
-    panel.append(wallet,chain);panel.dispose=()=>{wallet.dispose?.();chain.dispose?.();};
-    panel.refresh=async()=>{const results=await Promise.allSettled([wallet.refresh(),chain.refresh(),browserAdminApi().getModule(key).then(payload=>{panel.querySelector('.admin-table').replaceWith(tableFor(key,{headers:headerFallbacks[key],rows:presentModuleRows(key,payload.items??[])}));})]);return results.every(r=>r.status==='fulfilled'&&r.value!==false);};
-  }
   if (["support-role", "ads", "notice", "finance"].includes(key)) panel.append(commandForm(key, context));
   panel.append(element("p", "admin-audit-note", "管理员可直接操作；服务端持续保留 RBAC、幂等键、审计与 Outbox。")); return panel;
+}
+function walletContent(api,context,walletAccess){
+  const panel=element('section','admin-card admin-module-panel');
+  panel.append(element('h2',null,'USDT提现与支付'));
+  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess}),chain=chainPanel(api);
+  panel.append(table,wallet,chain);let disposed=false,revision=0;
+  const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'钱包记录加载失败，请重试。'));return false;}};
+  panel.dispose=()=>{disposed=true;++revision;wallet.dispose?.();chain.dispose?.();table.replaceChildren();};
+  panel.refresh=async()=>{const results=await Promise.allSettled([wallet.refresh(),chain.refresh(),loadTable()]);return results.every(r=>r.status==='fulfilled'&&r.value!==false);};
+  void loadTable();return panel;
 }
 function commandForm(key, context) {
   const form = element("form", "admin-command-form"); const title = element("h3", null, {"support-role":"配置客服角色", ads:"创建广告草稿", notice:"发布官方公告", finance:"发放点钻给客服"}[key]);

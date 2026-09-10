@@ -11,6 +11,19 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('server wallet grant omits repeated proof while keeping confirmation and original pending key',async()=>{
+ const calls=[],store=storage();
+ const panel=setup({getManualWalletControl:async()=>({epoch:3,snapshot_digest:digest,status:'ACTIVE',restriction_scopes:[],unresolved_incidents:0}),manualWalletControlAction:async(kind,body,options)=>{calls.push({body,options});throw {code:'NETWORK_ERROR'};}},{walletAccess:true,storage:store});
+ await settle();const form=panel.find('form').find(x=>x.name==='control-pause');
+ assert.deepEqual(form.find('input').map(x=>x.name),['confirm_pause']);
+ await form.handlers.submit({preventDefault(){}});assert.equal(calls.length,0);
+ form.find('input')[0].checked=true;await form.handlers.submit({preventDefault(){}});
+ await panel.refresh();assert.equal(calls.length,1);
+ const restored=panel.find('form').find(x=>x.name==='control-pause');restored.find('input')[0].checked=true;await restored.handlers.submit({preventDefault(){}});
+ assert.equal(calls[0].options.idempotencyKey,calls[1].options.idempotencyKey);
+ assert.ok(!('operation_password' in calls[0].body));assert.ok(!('mfa_proof' in calls[0].body));
+});
+
 test('wallet detail expiration candidate history and refresh status display complete Beijing dates',async()=>{
  const dated={...order,snapshot:{...order.snapshot,expires_at:'2026-09-09T17:02:03Z'},
   candidates:[{txid:'candidate',actor_id:'owner',reason_code:'CHECK',created_at:'2026-09-09T18:04:05Z'}]};

@@ -37,7 +37,7 @@ def require_wallet_actor(session, *, user_id, clock, administrator=False):
             raise AppError(code='PERMISSION_DENIED', message='无权执行此操作', status_code=403)
 
 
-def require_wallet_session(session, *, claims, clock, verified_at):
+def require_wallet_session(session, *, claims, clock, verified_at, require_recent=True, require_proof=True):
     """Recheck trusted decoded claims in the financial caller's transaction.
 
     Caller owns budget/control/user locks before this call. No second connection
@@ -75,9 +75,9 @@ def require_wallet_session(session, *, claims, clock, verified_at):
         if (not int(claims['iat']) <= now.timestamp() < int(claims['exp'])
                 or admin_deadline is not None and now >= admin_deadline):
             raise AppError(code='ACCESS_TOKEN_INVALID', message='访问令牌无效', status_code=401)
-        if not timedelta(0) <= now-created_at <= timedelta(minutes=5):
+        if require_recent and not timedelta(0) <= now-created_at <= timedelta(minutes=5):
             raise AppError(code='RECENT_LOGIN_REQUIRED', message='请重新登录后再执行此操作', status_code=403)
-        if verified_at is None or not timedelta(0) <= now-verified_at <= timedelta(seconds=30):
+        if require_proof and (verified_at is None or not timedelta(0) <= now-verified_at <= timedelta(seconds=30)):
             raise AppError(code='TOTP_REQUIRED', message='需要重新验证动态验证码', status_code=403)
     fresh()
     return fresh

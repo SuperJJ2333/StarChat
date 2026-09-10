@@ -41,14 +41,15 @@ class AdminWalletOperationPasswordService:
         self.hasher=password_hasher or PasswordHasher()
         self.audit=AuditWriter(factory,now_factory=clock)
 
-    def _identity(self,session,claims,verified_at):
+    def _identity(self,session,claims,verified_at,*,grant_verification=False):
         lock_budget(session)
         if not self.owner_id() or claims['sub'] != self.owner_id():
             raise error('PERMISSION_DENIED')
         require_wallet_actor(session,user_id=claims['sub'],clock=self.clock,administrator=True)
         def check():
             try:
-                return require_wallet_session(session,claims=claims,clock=self.clock,verified_at=verified_at)
+                return require_wallet_session(session,claims=claims,clock=self.clock,verified_at=verified_at,
+                    require_recent=not (grant_verification and claims.get('session_scope')=='admin'))
             except AppError as exc:
                 if exc.code=='TOTP_REQUIRED': raise error('OPERATION_PASSWORD_REQUIRED') from None
                 raise
@@ -69,9 +70,10 @@ class AdminWalletOperationPasswordService:
     def _view(self,row):
         return dict(auth_mode=self.auth_mode(),configured=row is not None,version=row.version if row else 0)
 
-    def status(self,*,claims):
+    def status(self,*,claims,authorization=None,grant_verification=False):
         with self.factory.begin() as session:
-            fresh=self._identity(session,claims,self.clock())
+            fresh=authorization(session) if authorization is not None else self._identity(session,claims,self.clock(),
+                grant_verification=grant_verification)
             result=self._view(self._credential(session,claims['sub']))
             fresh()
             return result
@@ -85,11 +87,11 @@ class AdminWalletOperationPasswordService:
             OutboxPublisher.enqueue(session,topic='identity.admin_operation',event_type=action,aggregate_type='admin_operation_credential',
                 aggregate_id=user_id,payload=payload,now=now)
 
-    def _execute(self,claims,action):
+    def _execute(self,claims,action,*,grant_verification=False):
         failure=None
         with self.factory.begin() as session:
             now=self.clock()
-            fresh=self._identity(session,claims,now)
+            fresh=self._identity(session,claims,now,grant_verification=grant_verification)
             row=self._credential(session,claims['sub'])
             attempt=session.get(AdminOperationAttempt,claims['sub'],with_for_update=True)
             if attempt is None:
@@ -149,7 +151,7 @@ class AdminWalletOperationPasswordService:
             return result
         return self._execute(claims,change)
 
-    def verify(self,*,claims,operation_password):
+    def verify(self,*,claims,operation_password,grant_verification=False):
         if self.auth_mode()!='operation_password': raise error('ADMIN_WALLET_AUTH_MODE_MISMATCH')
         if not isinstance(operation_password,str) or not 12<=len(operation_password)<=128:
             raise error('OPERATION_PASSWORD_REQUIRED')
@@ -158,7 +160,7 @@ class AdminWalletOperationPasswordService:
             if not self.hasher.verify(row.password_hash,operation_password): raise _Rejected('OPERATION_PASSWORD_INVALID')
             self._record(session,claims['sub'],'identity.admin_operation.verified','SUCCESS',row.version,now)
             return OperationPasswordProof(claims['sub'],claims['family_id'],claims['device_id'],row.version,now)
-        return self._execute(claims,verify)
+        return self._execute(claims,verify,grant_verification=grant_verification)
 
     def authorization(self,*,claims,proof):
         def authorize(session):

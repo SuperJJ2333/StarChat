@@ -1,0 +1,27 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>钱包验证隐私边界测试</title><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/admin-wallet.css">
+<body><main id="app"></main><p id="result">RUNNING</p><script type="module">
+import {walletAccessPanel} from '/src/admin-wallet-access.js';
+import {manualWalletPanel} from '/src/admin-manual-wallet-panel.js';
+const assert=(condition,message)=>{if(!condition)throw Error(message);};
+const wait=async condition=>{for(let i=0;i<100;i++){if(condition())return;await new Promise(r=>setTimeout(r,0));}throw Error('timeout');};
+let verified=false,configured=true,reads=0,writes=0,proofs=0,exit=0,disposed=0,apiError,held;
+const api={getWalletAccess:async()=>({enabled:true,verified,configured,auth_mode:'operation_password',server_time:new Date().toISOString(),expires_at:new Date(Date.now()+3600000-10).toISOString()}),verifyWalletAccess:async proof=>{proofs++;assert(proof.operation_password==='fixture-operation','exact first proof');verified=true;return api.getWalletAccess();},getModule:async()=>{reads++;if(apiError)throw apiError;return {balance:'SENSITIVE-BALANCE'};},command:async()=>{writes++;throw {code:'NETWORK_ERROR'};}};
+const root=walletAccessPanel(api,{actor:{id:'fixture-wallet-admin'},onExit:()=>{exit++;root.dispose();},renderContent:guarded=>{const child=document.createElement('section');child.dispose=()=>disposed++;child.refresh=async()=>{const result=await guarded.getModule();child.textContent=result.balance;};const action=document.createElement('button');action.textContent='command';action.onclick=()=>guarded.command().catch(()=>{});held=guarded;void child.refresh();child.append(action);return child;}});
+document.querySelector('#app').append(root);
+try{
+ await wait(()=>document.querySelector('dialog input'));
+ assert(reads===0,'no sensitive prefetch');assert(document.querySelector('#app').inert,'background inert');assert(document.querySelector('dialog').matches(':modal'),'native modal');
+ const input=document.querySelector('dialog input');input.value='fixture-operation';document.querySelector('dialog form').requestSubmit();assert(input.value==='','secret cleared synchronously');
+ await wait(()=>!document.querySelector('dialog')&&reads===1);assert(proofs===1,'one verification');assert(!document.querySelector('#app').inert,'background restored');
+ await held.command().catch(()=>{});assert(writes===1,'one command');
+ await root.refresh();assert(proofs===1&&writes===1,'refresh does not reverify or replay');
+ apiError={status:403,code:'WALLET_ACCESS_REQUIRED'};await held.getModule().catch(()=>{});
+ assert(!document.querySelector('#app').textContent.includes('SENSITIVE-BALANCE'),'sensitive DOM removed on expiry');assert(document.querySelector('#app').inert,'expiry inert');assert(disposed===1,'content disposed');
+ document.querySelector('dialog').dispatchEvent(new Event('cancel',{cancelable:true}));assert(exit===1&&!document.querySelector('dialog'),'escape exits safely');
+ configured=false;verified=false;reads=0;
+ const setup=walletAccessPanel({...api,getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:false,version:0}),getManualPayouts:async()=>{reads++;return {items:[]};}},{actor:{id:'fixture-wallet-admin'},renderContent:()=>{throw Error('setup unlocked content');},renderSetup:(service,onSecurityChanged)=>manualWalletPanel(service,{actor:{id:'fixture-wallet-admin'},securityOnly:true,onSecurityChanged})});document.querySelector('#app').replaceChildren(setup);
+ await wait(()=>document.querySelector('form[name=operation-password]'));assert(reads===0,'setup never reads financial data');setup.dispose();
+ document.querySelector('#result').textContent='PASS';document.body.dataset.result='PASS';
+}catch(error){root.dispose();document.querySelector('#result').textContent=error.stack;document.body.dataset.result='FAIL';}
+</script></body></html>

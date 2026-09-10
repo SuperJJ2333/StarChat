@@ -395,6 +395,43 @@
         "title": "AdminUserPage",
         "type": "object"
       },
+      "AdminWalletProofBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mfa_proof": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 6,
+                "minLength": 6,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Proof"
+          },
+          "operation_password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 128,
+                "minLength": 12,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation Password"
+          }
+        },
+        "title": "AdminWalletProofBody",
+        "type": "object"
+      },
       "AmountBody": {
         "additionalProperties": false,
         "properties": {
@@ -6016,6 +6053,75 @@
           "items"
         ],
         "title": "UserSearchResponse",
+        "type": "object"
+      },
+      "WalletAccessView": {
+        "properties": {
+          "auth_mode": {
+            "title": "Auth Mode",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "grant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Id"
+          },
+          "server_time": {
+            "title": "Server Time",
+            "type": "string"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "enabled",
+          "verified",
+          "auth_mode",
+          "configured",
+          "grant_id",
+          "verified_at",
+          "expires_at",
+          "server_time"
+        ],
+        "title": "WalletAccessView",
         "type": "object"
       },
       "WalletIncidentList": {
@@ -19840,6 +19946,187 @@
         "summary": "Deposit Address",
         "tags": [
           "wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/manual/access": {
+      "get": {
+        "operationId": "status_api_v1_wallet_manual_access_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Status",
+        "tags": [
+          "wallet-access"
+        ]
+      }
+    },
+    "/api/v1/wallet/manual/access/revoke": {
+      "post": {
+        "operationId": "revoke_api_v1_wallet_manual_access_revoke_post",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke",
+        "tags": [
+          "wallet-access"
+        ]
+      }
+    },
+    "/api/v1/wallet/manual/access/verify": {
+      "post": {
+        "operationId": "verify_api_v1_wallet_manual_access_verify_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminWalletProofBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletAccessView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Verify",
+        "tags": [
+          "wallet-access"
         ]
       }
     },

@@ -53,7 +53,7 @@ function describe(parent, pairs) {
 }
 const statusLabel = status => ({REQUESTED:'待领取', CLAIMED:'已领取 · 尚未结算', UNKNOWN:'结果未知 · 尚未结算', SETTLED:'已结算', CANCELLED:'已取消'}[status] ?? '状态未知');
 
-export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false} = {}) {
+export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.navigator?.clipboard, onReauthenticate, unifiedRefresh = false, walletAccess = false, securityOnly = false, onSecurityChanged} = {}) {
   const root = node('section'); root.className = 'admin-card admin-manual-wallet-panel';
   const heading=node('header');heading.className='wallet-heading';
   const intro=node('div');intro.append(node('p','TRON · 人工签名'),node('h3','USDT 钱包'),node('p','核对每笔出款，让每一步都有据可查。'));
@@ -62,7 +62,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   const workspace=node('div'),primary=node('div'),aside=node('aside');workspace.className='wallet-workspace';primary.className='wallet-main';aside.className='wallet-aside';workspace.append(primary,aside);root.append(workspace);
   let authMode=api.getWalletOperationSecurity?'loading':'totp',operationConfigured=false;
   const credentialField=()=>authMode==='operation_password'?field('operation_password','操作密码',{secret:true}):field('mfa_proof','当前六位验证码',{secret:true,pattern:'[0-9]{6}'});
-  const credentialPayload=values=>authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
+  const credentialFields=()=>walletAccess?[]:[credentialField()];
+  const credentialPayload=values=>walletAccess?{}:authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
   const secretInputs = new Set(); let disposed = false, refreshing = false, writing = false, reading = 0, reauthenticating = false;
   const descendants = el => [el, ...Array.from(el.children ?? []).flatMap(descendants)];
   const forms = () => descendants(root).filter(el => el.tagName === 'FORM' || el.tag === 'form');
@@ -119,7 +120,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const pending = journal.pending(operation);
       if (pending) {
         for (const input of inputs) if (input.type !== 'password' && pending.metadata[input.name] !== undefined) input.value = pending.metadata[input.name];
-        state.textContent = '已恢复未确认请求；请先刷新服务端状态，再输入验证凭证重试。';
+        state.textContent = walletAccess?'已恢复未确认请求；请先刷新服务端状态，核对原参数后确认继续。':'已恢复未确认请求；请先刷新服务端状态，再输入验证凭证重试。';
       }
     }
     form.append(...inputs.map(input=>{
@@ -211,7 +212,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         if(values.new_operation_password!==values.confirm_operation_password)throw Error('两次操作密码不一致');
         const {confirm_operation_password,...body}=values;
         await mutate(`operation-password:${current.version}`,{},options=>api.setWalletOperationPassword(body,options));
-        await loadSecurity();await Promise.all([loadOrders(),loadIncidents(),loadControl(),loadHandover()]);
+        if(onSecurityChanged){await onSecurityChanged();return;} await loadSecurity();await Promise.all([loadOrders(),loadIncidents(),loadControl(),loadHandover()]);
       });
       mfa.append(node('p','密码不会保存到浏览器。更改后，旧授权立即失效。'));
     }catch(error){if(disposed||generation!==mfaGeneration)return;authMode='unavailable';authFailure(error);if(!disposed&&generation===mfaGeneration)return stale(mfa,'安全设置暂不可用，敏感操作已关闭。');}
@@ -232,7 +233,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         }
         return;
       }
-      if (current.enabled) { mfa.append(node('p','动态验证已启用。敏感操作请输入当前六位验证码。')); return; }
+      if (current.enabled) { mfa.append(node('p',walletAccess?'动态验证已启用。钱包验证有效期内无需重复输入验证码。':'动态验证已启用。敏感操作请输入当前六位验证码。')); return; }
       if (current.pending_credential_id) {
         mfa.append(node('p','存在待启用凭证。已添加验证器可继续验证；密钥已丢失时请用密码终止待启用凭证后重新设置。'));
         renderPending(current.pending_credential_id); return;
@@ -248,10 +249,10 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   }
   function renderPending(credentialId, canEnable=true) {
     if(canEnable) commandForm(mfa,'mfa-enable','验证并启用',[field('code','验证器六位验证码',{secret:true,pattern:'[0-9]{6}'})],async values=>{
-      await mutate(`mfa:enable:${credentialId}`,{credential_id:credentialId},options=>api.enableWalletMfa({...values,credential_id:credentialId},options)); await loadMfa();
+      await mutate(`mfa:enable:${credentialId}`,{credential_id:credentialId},options=>api.enableWalletMfa({...values,credential_id:credentialId},options)); await loadMfa();if(onSecurityChanged)await onSecurityChanged();
     });
     commandForm(mfa,'mfa-abort','终止待启用凭证',[field('password','当前登录密码',{secret:true})],async values=>{
-      await mutate(`mfa:abort:${credentialId}`,{credential_id:credentialId},options=>api.abortWalletMfaEnrollment({...values,credential_id:credentialId},options)); await loadMfa();
+      await mutate(`mfa:abort:${credentialId}`,{credential_id:credentialId},options=>api.abortWalletMfaEnrollment({...values,credential_id:credentialId},options)); await loadMfa();if(onSecurityChanged)await onSecurityChanged();
     });
   }
   const orders = node('section'), detail = node('section'); detail.setAttribute('aria-live','polite');
@@ -289,7 +290,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
         detail.append(node('p','请核对以上完整快照。确认摘要并领取后，才可按指令在 imToken 付款。'));
-        commandForm(detail,'claim','领取付款指令',[credentialField()],async values=>{
+        commandForm(detail,'claim','领取付款指令',[...credentialFields()],async values=>{
           await mutate(`${id}:claim`,{expected_digest:item.digest},options=>api.claimManualPayout(id,{...credentialPayload(values),expected_digest:item.digest},options));
           if(generation===detailGeneration) await showOrder(id);
         }, `${id}:claim`);
@@ -309,7 +310,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         const correction=Boolean(item.candidate_txid);
         const inputs=[field('txid','完整交易哈希',{pattern:'[a-fA-F0-9]{64}'})];
         if(correction) inputs.push(field('reason_code','更正原因代码',{pattern:'[A-Z][A-Z0-9_]{2,79}'}));
-        if(correction||authMode==='operation_password')inputs.push(credentialField());
+        if(correction||authMode==='operation_password')inputs.push(...credentialFields());
         commandForm(detail,'txid',correction?'追加更正候选哈希':'提交候选哈希',inputs,async values=>{
           const {mfa_proof,operation_password,...metadata}=values;
           const body=correction||authMode==='operation_password'?{...metadata,...credentialPayload(values)}:metadata;
@@ -353,13 +354,13 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const technical=node('details');technical.append(node('summary','技术详情与时间线'));
       describe(technical,[['事故编号',item.id],['技术代码',item.code],['级别',item.severity],['版本',item.version],['复核证据摘要',item.clearance_digest],['确认人',item.acknowledged_by],['结案人',item.resolved_by],['最近发现',incidentTime(item.last_seen_at)],['接手时间',incidentTime(item.acknowledged_at)],['异常消失时间',incidentTime(item.cleared_at)],['结案时间',incidentTime(item.resolved_at)]]);incidentDetail.append(technical);
       if(item.status==='RESOLVED'||summary.advisory)return;
-      incidentDetail.append(node('p',authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成；处理后资金仍暂停。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。'));
-      commandForm(incidentDetail,'incident-process','检查并处理事故',[checkbox('accept_incident','我确认处理这起事故；完成后可前往“资金启停”恢复资金'),credentialField()],async(values,state)=>{
+      incidentDetail.append(node('p',walletAccess?'钱包身份已验证。确认后执行事故检查与处理；不会恢复资金。':authMode==='operation_password'?'查看和检查当前状态无需操作密码。下方密码用于授权事故处理与结案，一次输入即可完成；处理后资金仍暂停。':'验证码模式每次只完成一个步骤。请等待下一组六位验证码，再点击同一按钮继续；不会自动复用验证码。'));
+      commandForm(incidentDetail,'incident-process','检查并处理事故',[checkbox('accept_incident','我确认处理这起事故；完成后可前往“资金启停”恢复资金'),...credentialFields()],async(values,state)=>{
         const credential=credentialPayload(values);
         delete values.operation_password;delete values.mfa_proof;
-        const result=await processIncident({id,api,journal,credentials:credential,authMode,onProgress:message=>{state.textContent=message;},shouldStop:()=>disposed||selection!==incidentSelection});
+        const result=await processIncident({id,api,journal,credentials:credential,authMode:walletAccess?'operation_password':authMode,onProgress:message=>{state.textContent=message;},shouldStop:()=>disposed||selection!==incidentSelection});
         if(disposed||selection!==incidentSelection)return;
-        const message=result.status==='resolved'?'事故已结案。下一步：前往“资金启停”，勾选恢复确认并输入操作密码，点击“核验并恢复资金”。核验通过后才会启用资金。':result.status==='needs_credential'?'当前步骤已完成或状态已更新。请使用下一组验证码，再次确认并继续检查。':'实时检查仍有异常，处理已停止。请按当前诊断排查后重新检查。';
+        const message=walletAccess&&result.status==='resolved'?'事故已结案。请前往资金启停，核对并单独确认恢复资金。':result.status==='resolved'?'事故已结案。下一步：前往“资金启停”，勾选恢复确认并输入操作密码，点击“核验并恢复资金”。核验通过后才会启用资金。':result.status==='needs_credential'?'当前步骤已完成或状态已更新。请使用下一组验证码，再次确认并继续检查。':'实时检查仍有异常，处理已停止。请按当前诊断排查后重新检查。';
         await showIncident(id);await loadIncidents();await loadControl();
         if(!disposed&&selectedIncident===id)incidentDetail.append(node('p',message));
       });
@@ -384,7 +385,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       for(const [kind,label] of [['pause','暂停新资金操作'],['resume','核验并恢复资金']]) {
         if(kind==='pause'&&!['RUNNING','ACTIVE'].includes(current.status)||kind==='resume'&&(current.status!=='PAUSED'||current.unresolved_incidents!==0)) continue;
         const operation=`control:${kind}:${current.epoch}`;
-        commandForm(control,`control-${kind}`,label,[kind==='resume'?checkbox('confirm_restore','我确认在核验通过后恢复资金操作'):checkbox('confirm_pause','我确认暂停新的资金操作'),credentialField()],async values=>{
+        commandForm(control,`control-${kind}`,label,[kind==='resume'?checkbox('confirm_restore','我确认在核验通过后恢复资金操作'):checkbox('confirm_pause','我确认暂停新的资金操作'),...credentialFields()],async values=>{
           const saved=journal.pending(operation);
           const metadata=saved?.metadata??{expected_epoch:current.epoch,snapshot_digest:current.snapshot_digest,reason_code:kind==='resume'?'OWNER_CONTROL_RESUME':'OWNER_CONTROL_PAUSE'};
           try {
@@ -407,7 +408,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   }
   const handover=node('section'),history=node('details');history.className='wallet-surface wallet-history';history.append(node('summary','历史监控交接'),handover);primary.append(history);let handoverGeneration=0;
   function handoverForm(parent,name,label,run,extra=[],operation=name) {
-    return commandForm(parent,name,label,[field('reason_code','交接原因代码',{pattern:'[A-Z][A-Z0-9_]{2,99}'}),...extra,credentialField()],run,operation);
+    return commandForm(parent,name,label,[field('reason_code','交接原因代码',{pattern:'[A-Z][A-Z0-9_]{2,99}'}),...extra,...credentialFields()],run,operation);
   }
   function checkbox(name,label) {
     const input=field(name,label);input.type='checkbox';input.value='true';return input;
@@ -491,6 +492,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     const drafts=new Map(initialForms.map(form=>[form.name,inputsOf(form).map(input=>({name:input.name,value:input.value,checked:input.checked}))]));
     try {
       const securityResult=await loadSecurity();if(disposed)return false;
+      if(securityOnly)return securityResult!==false;
       const results=await Promise.all([loadOrders(),loadIncidents(),loadControl(), selectedOrder ? showOrder(selectedOrder) : null, selectedIncident ? showIncident(selectedIncident) : null]);
       if(disposed)return false;
       for(const oldForm of initialForms) drafts.set(oldForm.name,inputsOf(oldForm).map(input=>({name:input.name,value:input.value,checked:input.checked})));
@@ -511,7 +513,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     } finally { drafts.clear(); refreshing=false;if(ownRefresh){ownRefresh.disabled=false;ownRefresh.setAttribute('aria-busy','false');}root.setAttribute('aria-busy','false'); }
   };
   if(!unifiedRefresh){const button=ownRefresh=action('↻',()=>root.refresh());button.className='admin-refresh';button.title='刷新';button.setAttribute('aria-label','刷新');heading.append(button);}
-  void loadSecurity().then(()=>{if(!disposed){void loadOrders();void loadIncidents();void loadControl();void loadHandover();}});
+  if(securityOnly){workspace.replaceChildren(mfa);heading.hidden=true;}
+  void loadSecurity().then(()=>{if(!disposed&&!securityOnly){void loadOrders();void loadIncidents();void loadControl();void loadHandover();}});
   return root;
 }
 import {formatBeijingTime} from './admin-formatters.js';

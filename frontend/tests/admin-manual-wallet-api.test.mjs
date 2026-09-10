@@ -2,6 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createAdminApi} from '../src/admin-api.js';
 
+test('wallet access endpoints are no-store and verification sends only explicit proof', async () => {
+  const {api,calls}=fixture();
+  assert.equal(typeof api.getWalletAccess,'function');
+  await api.getWalletAccess();
+  await api.verifyWalletAccess({operation_password:' exact password '});
+  await api.revokeWalletAccess();
+  assert.deepEqual(calls.map(c=>c.url),['/api/v1/wallet/manual/access','/api/v1/wallet/manual/access/verify','/api/v1/wallet/manual/access/revoke']);
+  assert.deepEqual(JSON.parse(calls[1].options.body),{operation_password:' exact password '});
+  assert.ok(calls.every(c=>c.options.cache==='no-store'));
+});
+
 function fixture() {
   const calls = [];
   const api = createAdminApi({token: 'fixture-token', fetchImpl: async (url, options) => {

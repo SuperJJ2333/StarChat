@@ -11,6 +11,7 @@ from app.core.migrations import configure_database_url
 from app.modules.identity import payment_pin_models as _payment_pin_models  # noqa: F401
 from app.modules.identity import models as _identity_models  # noqa: F401
 from app.modules.identity import operation_password_models as _operation_password_models  # noqa: F401
+from app.modules.identity import wallet_grant_models as _wallet_grant_models  # noqa: F401
 from app.modules.audit import models as _audit_models  # noqa: F401
 from app.modules.support import service as _support_models  # noqa: F401
 from app.modules.ledger import models as _ledger_models  # noqa: F401

@@ -17,3 +17,12 @@
 
 @media(prefers-reduced-motion:reduce){.admin-manual-wallet-panel .wallet-detail,.admin-manual-wallet-panel .wallet-history>section{animation:none}.admin-manual-wallet-panel button,.admin-manual-wallet-panel .wallet-field input{transition:none}.admin-manual-wallet-panel button:active:not(:disabled){transform:none}}
 @media(prefers-contrast:more){.admin-manual-wallet-panel{--wallet-line:currentColor;--wallet-secondary:var(--wallet-ink)}}
+/* Private content is removed before this full application privacy treatment. */
+.wallet-access-obscured { filter: blur(10px); pointer-events: none; user-select: none; }
+.wallet-access-dialog { width: min(560px, calc(100vw - 32px)); max-height: 90dvh; overflow: auto; border: 1px solid var(--wallet-line); border-radius: 20px; padding: 28px; color: var(--wallet-ink); background: var(--wallet-paper); box-shadow: var(--shadow-overlay); }
+.wallet-access-dialog::backdrop { background: var(--admin-modal-scrim); backdrop-filter: blur(10px); }
+.wallet-access-dialog h2 { margin: 0 0 16px; font-size: 22px; }
+.wallet-access-dialog p { margin: 16px 0; line-height: 1.6; }
+.wallet-access-dialog form, .wallet-access-dialog label { display: grid; gap: 12px; }
+.wallet-access-dialog > button { margin: 4px 8px 4px 0; }
+.wallet-access-dialog .wallet-workspace { display: block; }

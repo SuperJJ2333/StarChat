@@ -12,6 +12,7 @@ from app.api.payment_pin import create_payment_pin_router
 from app.api.transfer import create_transfer_router
 from app.api.wallet import create_wallet_router
 from app.api.wallet_mfa import create_wallet_mfa_router
+from app.api.wallet_access import create_wallet_access_router
 from app.modules.wallet.runtime import create_manual_wallet_runtime
 from app.api.friendship import create_friendship_router
 from app.api.moments import create_moments_router
@@ -105,6 +106,7 @@ def create_app(
     app.include_router(create_payment_pin_router(settings, session_factory, rate_limiter), prefix="/api/v1")
     app.include_router(create_wallet_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
     app.include_router(create_wallet_mfa_router(settings, session_factory, rate_limiter), prefix="/api/v1")
+    app.include_router(create_wallet_access_router(settings, session_factory), prefix="/api/v1")
     app.include_router(
         create_friendship_router(
             settings,

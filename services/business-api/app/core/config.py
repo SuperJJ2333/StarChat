@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     wallet_official_config_version: str | None = None
     wallet_manual_owner_admin_id: str | None = None
     wallet_admin_auth_mode: Literal['totp', 'operation_password'] = 'totp'
+    wallet_access_grant_enabled: bool = False
+    wallet_access_policy_version: str = 'wallet-access-v1'
     wallet_manual_policy_version: str | None = None
     wallet_manual_max_per: str | None = None
     wallet_manual_user_24h: str | None = None
