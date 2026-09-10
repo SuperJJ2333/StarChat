@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
+import '../../core/performance_metrics.dart';
 
 enum RoomDeliveryState { sent, sending, failed }
 
@@ -101,6 +102,40 @@ final class RoomMessageViewModel {
   final bool isSdkLocalEcho;
   String get stableId => transactionId ?? id;
 
+  /// Exact presentation equality; includes non-text payload and delivery changes.
+  bool samePresentation(RoomMessageViewModel other) =>
+      identical(this, other) ||
+      (id == other.id &&
+          senderId == other.senderId &&
+          text == other.text &&
+          isOwn == other.isOwn &&
+          deliveryState == other.deliveryState &&
+          timestamp == other.timestamp &&
+          kind == other.kind &&
+          mimeType == other.mimeType &&
+          packetId == other.packetId &&
+          greeting == other.greeting &&
+          transferId == other.transferId &&
+          transferAmount == other.transferAmount &&
+          transferNote == other.transferNote &&
+          voiceDuration == other.voiceDuration &&
+          isRecalled == other.isRecalled &&
+          replyToEventId == other.replyToEventId &&
+          callVideo == other.callVideo &&
+          callConnected == other.callConnected &&
+          callDuration == other.callDuration &&
+          videoDuration == other.videoDuration &&
+          attachmentSize == other.attachmentSize &&
+          transactionId == other.transactionId &&
+          imageWidth == other.imageWidth &&
+          imageHeight == other.imageHeight &&
+          isSdkLocalEcho == other.isSdkLocalEcho &&
+          nudge?.senderId == other.nudge?.senderId &&
+          nudge?.senderName == other.nudge?.senderName &&
+          nudge?.targetUserId == other.nudge?.targetUserId &&
+          nudge?.targetName == other.nudge?.targetName &&
+          nudge?.suffix == other.nudge?.suffix);
+
   RoomMessageViewModel copyWith({
     String? id,
     RoomDeliveryState? deliveryState,
@@ -172,7 +207,10 @@ abstract interface class RoomHistoryStatus {
 
 final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter, {this.canSendNow})
-      : messages = adapter.snapshot();
+      : messages = List.unmodifiable(adapter.snapshot()) {
+    _sourceSnapshot = messages;
+    _reindex();
+  }
 
   final RoomTimelineAdapter adapter;
 
@@ -180,7 +218,30 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 绝不触达发送服务；UI 与服务层同一守卫）。
   final bool Function()? canSendNow;
   List<RoomMessageViewModel> messages;
+  final _indexById = <String, int>{};
+
+  /// Both server IDs and transaction aliases resolve to the same row in O(1).
+  int? indexOf(String id) => _indexById[id];
+
+  void _reindex() {
+    _indexById.clear();
+    for (var i = 0; i < messages.length; i++) {
+      _indexById[messages[i].id] = i;
+      _indexById[messages[i].stableId] = i;
+    }
+  }
+
+  void _publish() {
+    _reindex();
+    PerformanceMetrics.instance
+        .increment(PerformanceCounter.timelineNotification);
+    notifyListeners();
+  }
+
   final Set<String> _retrying = {};
+  late List<RoomMessageViewModel> _sourceSnapshot;
+  int _echoRevision = 0;
+  int _projectedEchoRevision = 0;
   final _localEchoes = <String, RoomMessageViewModel>{};
   final _eventTransactions = <String, String>{};
   final _senders = <String, Future<String> Function()>{};
@@ -189,23 +250,44 @@ final class RoomTimelineController extends ChangeNotifier {
 
   List<RoomMessageViewModel> _snapshot() {
     final snapshot = adapter.snapshot();
-    final result = <RoomMessageViewModel>[];
-    final seen = <String>{};
-    for (var message in snapshot) {
-      final alias = _eventTransactions[message.id];
-      if (alias != null) message = message.copyWith(transactionId: alias);
-      String? localKey;
-      for (final entry in _localEchoes.entries) {
-        if (entry.key == message.stableId || entry.value.id == message.id) {
-          localKey = entry.key;
+    // Legacy adapters may return fresh models/lists. Compare before allocating
+    // merge structures, including when pending sends have not changed.
+    var sameSource = snapshot.length == _sourceSnapshot.length;
+    if (sameSource) {
+      for (var i = 0; i < snapshot.length; i++) {
+        if (!_sourceSnapshot[i].samePresentation(snapshot[i])) {
+          sameSource = false;
           break;
         }
       }
-      if (localKey != null) {
-        final local = _localEchoes[localKey]!;
+    }
+    if (sameSource && _echoRevision == _projectedEchoRevision) return messages;
+    if (!sameSource) _sourceSnapshot = List.unmodifiable(snapshot);
+    _projectedEchoRevision = _echoRevision;
+    final result = <RoomMessageViewModel>[];
+    final seen = <String>{};
+    final pending = <RoomMessageViewModel>[];
+    void add(RoomMessageViewModel message) {
+      if (!seen.add(message.stableId)) return;
+      final previousIndex = _indexById[message.stableId];
+      final previous = previousIndex == null ? null : messages[previousIndex];
+      result.add(previous != null && previous.samePresentation(message)
+          ? previous
+          : message);
+    }
+
+    for (var message in snapshot) {
+      final alias = _eventTransactions[message.id];
+      if (alias != null && alias != message.transactionId) {
+        message = message.copyWith(transactionId: alias);
+      }
+      final localKey =
+          _localEchoes.containsKey(message.stableId) ? message.stableId : alias;
+      final local = _localEchoes[localKey];
+      if (local != null) {
         final confirmed = message.deliveryState == RoomDeliveryState.sent &&
             !message.isSdkLocalEcho;
-        _eventTransactions[message.id] = localKey;
+        _eventTransactions[message.id] = localKey!;
         message = message.copyWith(
             transactionId: localKey,
             timestamp: confirmed ? message.timestamp : local.timestamp,
@@ -213,15 +295,34 @@ final class RoomTimelineController extends ChangeNotifier {
                 confirmed ? RoomDeliveryState.sent : local.deliveryState);
         if (confirmed) {
           _localEchoes.remove(localKey);
+        } else {
+          pending.add(message);
+          continue;
         }
       }
-      if (seen.add(message.stableId)) result.add(message);
+      add(message);
     }
-    for (final local in _localEchoes.values) {
-      if (seen.add(local.stableId)) result.add(local);
+    // Authoritative rows keep SDK order, including equal timestamps and gaps.
+    // Insert only pending sends by their original device insertion timestamp;
+    // later incoming rows must not move a failed send to the end on refresh.
+    for (final local in [...pending, ..._localEchoes.values]) {
+      if (seen.contains(local.stableId)) continue;
+      final index =
+          result.indexWhere((m) => m.timestamp.isAfter(local.timestamp));
+      add(local);
+      if (index >= 0) result.insert(index, result.removeLast());
     }
-    result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-    return result;
+    if (result.length == messages.length) {
+      var same = true;
+      for (var i = 0; i < result.length; i++) {
+        if (!identical(result[i], messages[i])) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return messages;
+    }
+    return List.unmodifiable(result);
   }
 
   // Pending/failed entries have no server timestamp yet. Anchor the insertion
@@ -245,8 +346,17 @@ final class RoomTimelineController extends ChangeNotifier {
 
   Future<void> refresh() async {
     if (_disposed) return;
-    messages = _snapshot();
-    notifyListeners();
+    final watch =
+        PerformanceMetrics.instance.enabled ? (Stopwatch()..start()) : null;
+    final next = _snapshot();
+    if (!identical(next, messages)) {
+      messages = next;
+      _publish();
+    }
+    if (watch != null) {
+      PerformanceMetrics.instance.record(
+          PerformanceOperation.timelineRefresh, watch.elapsedMicroseconds);
+    }
   }
 
   /// 重建失败消息的本地发送条目；传输事务 ID 由适配器保留以防重复投递。
@@ -256,21 +366,21 @@ final class RoomTimelineController extends ChangeNotifier {
         !_retrying.add(transactionId)) {
       return;
     }
-    String? tx;
-    for (final entry in _localEchoes.entries) {
-      if (entry.key == transactionId || entry.value.id == transactionId) {
-        tx = entry.key;
-        break;
-      }
-    }
+    final alias = _eventTransactions[transactionId];
+    final tx = _localEchoes.containsKey(transactionId)
+        ? transactionId
+        : _localEchoes.containsKey(alias)
+            ? alias
+            : null;
     try {
       if (tx != null) {
         final fresh = _localEchoes[tx]!.copyWith(
             timestamp: _nextLocalTimestamp(),
             deliveryState: RoomDeliveryState.sending);
+        _echoRevision++;
         _localEchoes[tx] = fresh;
         messages = _snapshot();
-        notifyListeners();
+        _publish();
         final exists = adapter
             .snapshot()
             .any((m) => m.id == transactionId || m.stableId == tx);
@@ -282,6 +392,7 @@ final class RoomTimelineController extends ChangeNotifier {
       await adapter.retry(transactionId);
     } catch (_) {
       if (tx != null && _localEchoes.containsKey(tx)) {
+        _echoRevision++;
         _localEchoes[tx] =
             _localEchoes[tx]!.copyWith(deliveryState: RoomDeliveryState.failed);
       }
@@ -297,7 +408,7 @@ final class RoomTimelineController extends ChangeNotifier {
   Future<void> loadHistory() async {
     if (_disposed || historyLoading || historyExhausted) return;
     historyLoading = true;
-    notifyListeners();
+    _publish();
     try {
       final before = messages.length;
       await adapter.loadHistory();
@@ -308,7 +419,7 @@ final class RoomTimelineController extends ChangeNotifier {
           : messages.length <= before;
     } finally {
       historyLoading = false;
-      if (!_disposed) notifyListeners();
+      if (!_disposed) _publish();
     }
   }
 
@@ -364,9 +475,10 @@ final class RoomTimelineController extends ChangeNotifier {
             ? (transport as RoomOptimisticTextAdapter)
                 .sendTextWithTransaction(text, tx)
             : adapter.sendText(text);
+    _echoRevision++;
     _localEchoes[tx] = local;
     messages = [...messages, local];
-    notifyListeners();
+    _publish();
     if (permitted) await _dispatch(tx, local);
   }
 
@@ -374,6 +486,7 @@ final class RoomTimelineController extends ChangeNotifier {
     try {
       final eventId = await _senders[tx]!();
       if (_disposed) return;
+      _echoRevision++;
       _eventTransactions[eventId] = tx;
       if (_localEchoes.containsKey(tx)) {
         _localEchoes[tx] =
@@ -383,11 +496,12 @@ final class RoomTimelineController extends ChangeNotifier {
       NotificationFeedback.shared.play(SoundType.messageSent);
     } catch (_) {
       if (_disposed) return;
+      _echoRevision++;
       _localEchoes[tx] =
           local.copyWith(deliveryState: RoomDeliveryState.failed);
     }
     messages = _snapshot();
-    notifyListeners();
+    _publish();
   }
 
   @override

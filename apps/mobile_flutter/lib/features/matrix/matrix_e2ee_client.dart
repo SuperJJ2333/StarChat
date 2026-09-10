@@ -1319,8 +1319,8 @@ final class MatrixRoomLease
                     roomId: source.id,
                     eventId: 'thumb:${event.eventId}',
                     contentSha256: hashes?.thumbnailSha256,
-                    sourceIdentity: matrixMediaSourceIdentity(
-                        event.content, thumbnail: true)), () async {
+                    sourceIdentity: matrixMediaSourceIdentity(event.content,
+                        thumbnail: true)), () async {
               if (!event.isThumbnailEncrypted) {
                 throw const FormatException('Missing encrypted thumbnail');
               }
@@ -1495,6 +1495,33 @@ final class _SdkRoomTimelineCapability
   final Timeline _timeline;
   final Set<String> _retrying = {};
   bool _disposed = false;
+  final _messageCache =
+      <String, (Event, EventStatus, Object?, String?, RoomMessageViewModel)>{};
+  List<RoomMessageViewModel> _projectedMessages = const [];
+  List<RoomMessageViewModel> _serverMessages = const [];
+  List<RoomMessageViewModel> _pendingMessages = const [];
+  List<RoomMessageViewModel> _withNotices = const [];
+  List<RoomMessageViewModel> _visibleMessages = const [];
+  List<GroupJoinNotice> _lastNotices = const [];
+
+  RoomMessageViewModel _cachedMessage(Event event) {
+    final cached = _messageCache[event.eventId];
+    final redaction = event.unsigned?['redacted_because'];
+    final transaction = event.unsigned?['transaction_id'] as String?;
+    // The SDK replaces events for sync/history/decryption. Redaction and send
+    // status are its in-place mutations and must be checked independently.
+    if (cached != null &&
+        identical(cached.$1, event) &&
+        cached.$2 == event.status &&
+        identical(cached.$3, redaction) &&
+        cached.$4 == transaction) {
+      return cached.$5;
+    }
+    final message = _message(event);
+    _messageCache[event.eventId] =
+        (event, event.status, redaction, transaction, message);
+    return message;
+  }
 
   void _ensureActive() {
     if (_disposed) throw StateError('Matrix timeline capability is disposed');
@@ -1518,20 +1545,50 @@ final class _SdkRoomTimelineCapability
   @override
   List<RoomMessageViewModel> snapshot() {
     _ensureActive();
-    final viewModels = _timeline.events
-        .where(
-          (event) =>
-              event.type == EventTypes.Message ||
+    List<RoomMessageViewModel>? changed;
+    var index = 0;
+    final pending = <RoomMessageViewModel>[];
+    for (final event in _timeline.events.reversed) {
+      if (!(event.type == EventTypes.Message ||
               (event.type == EventTypes.Encrypted && event.redacted) ||
               event.type == changliaoNudgeEventType ||
-              event.type == changliaoFriendAcceptedEventType,
-        )
-        .where((event) => event.messageType != groupAnnouncementMessageType)
-        .toList(growable: false)
-        .reversed
-        .map(_message)
-        .toList(growable: false)
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+              event.type == changliaoFriendAcceptedEventType) ||
+          event.messageType == groupAnnouncementMessageType) {
+        continue;
+      }
+      final message = _cachedMessage(event);
+      if (event.status.isError || event.status.isSending) {
+        pending.add(message);
+        continue;
+      }
+      if (changed == null &&
+          (index >= _serverMessages.length ||
+              !identical(_serverMessages[index], message))) {
+        changed = _serverMessages.take(index).toList();
+      }
+      changed?.add(message);
+      index++;
+    }
+    if (changed == null && index != _serverMessages.length) {
+      changed = _serverMessages.take(index).toList();
+    }
+    final projectionChanged =
+        changed != null || !listEquals(pending, _pendingMessages);
+    if (changed != null) _serverMessages = List.unmodifiable(changed);
+    if (projectionChanged) {
+      _pendingMessages = pending;
+      final ordered = List<RoomMessageViewModel>.of(_serverMessages);
+      // Only unsent entries are timestamp-positioned. Server rows preserve
+      // timeline order rather than sorting across SDK history gaps.
+      for (final message in pending) {
+        final at =
+            ordered.indexWhere((m) => m.timestamp.isAfter(message.timestamp));
+        ordered.insert(at < 0 ? ordered.length : at, message);
+      }
+      _projectedMessages = List.unmodifiable(ordered);
+      final retained = {for (final event in _timeline.events) event.eventId};
+      _messageCache.removeWhere((id, _) => !retained.contains(id));
+    }
     // BUG3：入群系统通知——以真实 Matrix 成员事件为唯一权威，本地推导
     // （invite 配对 join 转变），绝不插入本地临时文本；历史重载一致。
     // 规格§一4：私聊（m.direct）房间绝不推导群聊系统通知——DM 的
@@ -1539,19 +1596,55 @@ final class _SdkRoomTimelineCapability
     final notices = _lease._activeRoom.isDirectChat
         ? const <GroupJoinNotice>[]
         : deriveGroupJoinNotices(
-            [for (final event in _timeline.events) projectMemberEvent(event)],
+            [
+              for (final event in _timeline.events)
+                if (event.type == EventTypes.RoomMember)
+                  projectMemberEvent(event)
+            ],
             resolveName: (matrixUserId) => _lease._activeRoom
                 .unsafeGetUserFromMemoryOrFallback(matrixUserId)
                 .calcDisplayname(),
           );
-    final messages = notices.isEmpty
-        ? viewModels
-        : mergeNoticesIntoTimeline(viewModels, notices);
-    return _lease.owner._localHistoryStore?.visibleItems(
-            _lease.roomId, messages,
-            eventId: (message) => message.id,
-            eventTimestamp: (message) => message.timestamp) ??
-        messages;
+    var noticesChanged = notices.length != _lastNotices.length;
+    if (!noticesChanged) {
+      for (var i = 0; i < notices.length; i++) {
+        if (notices[i].eventId != _lastNotices[i].eventId ||
+            notices[i].timestamp != _lastNotices[i].timestamp ||
+            notices[i].text != _lastNotices[i].text) {
+          noticesChanged = true;
+          break;
+        }
+      }
+    }
+    if (projectionChanged || noticesChanged) {
+      _lastNotices = notices;
+      _withNotices = notices.isEmpty
+          ? _projectedMessages
+          : List.unmodifiable(
+              mergeNoticesIntoTimeline(_projectedMessages, notices));
+    }
+    final store = _lease.owner._localHistoryStore;
+    if (store == null) return _withNotices;
+    // Re-check visibility every time so locally deleted/cleared rows never
+    // return from the projection cache. Allocate only when visible rows change.
+    final hidden = store.readFilter(_lease.roomId);
+    List<RoomMessageViewModel>? visible;
+    var visibleIndex = 0;
+    for (final message in _withNotices) {
+      if (hidden(message.id, message.timestamp)) continue;
+      if (visible == null &&
+          (visibleIndex >= _visibleMessages.length ||
+              !identical(_visibleMessages[visibleIndex], message))) {
+        visible = _visibleMessages.take(visibleIndex).toList();
+      }
+      visible?.add(message);
+      visibleIndex++;
+    }
+    if (visible == null && visibleIndex != _visibleMessages.length) {
+      visible = _visibleMessages.take(visibleIndex).toList();
+    }
+    if (visible != null) _visibleMessages = List.unmodifiable(visible);
+    return _visibleMessages;
   }
 
   RoomMessageViewModel _message(Event event) {
@@ -2044,7 +2137,9 @@ final class _SdkEmojiVaultBackend
   EmojiVaultEvent? _decodeEvent(Event event) {
     if (!event.type.startsWith('com.changliao.emoji.') ||
         event.redacted ||
-        event.originalSource?.type != EventTypes.Encrypted) return null;
+        event.originalSource?.type != EventTypes.Encrypted) {
+      return null;
+    }
     final content = Map<String, Object?>.from(event.content);
     return _decodeContent(
         event.type, content, event.eventId, event.originServerTs.toUtc());

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
+import 'package:matrix/src/models/timeline_chunk.dart';
 import 'package:matrix/src/utils/file_send_request_credentials.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
@@ -20,7 +21,7 @@ class RetryClient extends Client {
 }
 
 Future<MatrixRoomTimelineAdapter> openAdapter(
-    RetryRoom room, RetryTimeline timeline) async {
+    RetryRoom room, Timeline timeline) async {
   (room.client as RetryClient).room = room;
   room.timeline = timeline;
   final owner =
@@ -32,7 +33,7 @@ Future<MatrixRoomTimelineAdapter> openAdapter(
 
 class RetryRoom extends Room {
   RetryRoom() : super(id: '!retry:test', client: RetryClient());
-  late RetryTimeline timeline;
+  late Timeline timeline;
   @override
   Future<Timeline> getTimeline(
           {void Function(int)? onChange,
@@ -109,6 +110,113 @@ class RetryEvent extends Event {
 }
 
 void main() {
+  test(
+      'real SDK replacement invalidates content reply and redaction projection',
+      () async {
+    final room = RetryRoom();
+    Map<String, dynamic> message(String body, String reply) => {
+          'event_id': 'event',
+          'type': EventTypes.Message,
+          'sender': '@peer:test',
+          'origin_server_ts': 1000,
+          'content': {
+            'msgtype': 'm.video',
+            'body': body,
+            'info': {
+              'duration': 3200,
+              'mimetype': 'video/mp4',
+              'size': 900,
+              'w': 40,
+              'h': 30
+            },
+            'm.relates_to': {
+              'm.in_reply_to': {'event_id': reply}
+            }
+          },
+        };
+    final timeline = Timeline(
+        room: room,
+        chunk: TimelineChunk(
+            events: [Event.fromJson(message('before', 'reply-a'), room)]));
+    final adapter = await openAdapter(room, timeline);
+    final original = adapter.snapshot().single;
+    expect(original.replyToEventId, 'reply-a');
+    room.client.onEvent.add(EventUpdate(
+        roomID: room.id,
+        type: EventUpdateType.timeline,
+        content: message('after', 'reply-b')));
+    await Future<void>.delayed(Duration.zero);
+    final updated = adapter.snapshot().single;
+    expect(updated.text, 'after');
+    expect(updated.replyToEventId, 'reply-b');
+    expect(updated.videoDuration, const Duration(milliseconds: 3200));
+    expect(updated.attachmentSize, 900);
+    expect(updated.imageWidth, 40);
+    expect(identical(updated, original), isFalse);
+    room.client.onEvent.add(
+        EventUpdate(roomID: room.id, type: EventUpdateType.timeline, content: {
+      'event_id': 'redact',
+      'type': EventTypes.Redaction,
+      'sender': '@peer:test',
+      'origin_server_ts': 2000,
+      'redacts': 'event',
+      'content': {},
+    }));
+    await Future<void>.delayed(Duration.zero);
+    final recalled = adapter.snapshot().single;
+    expect(recalled.isRecalled, isTrue);
+    expect(recalled.replyToEventId, isNull);
+    expect(recalled.text, isEmpty);
+    expect(identical(recalled, adapter.snapshot().single), isTrue);
+    adapter.dispose();
+    await room.client.dispose();
+  });
+
+  test('unchanged failed SDK echo retains projected list', () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    timeline.events.addAll([
+      RetryEvent(room, timeline, id: 'failed', minute: 1),
+      RetryEvent(room, timeline,
+          id: 'newer', minute: 2, status: EventStatus.synced),
+    ]);
+    final adapter = await openAdapter(room, timeline);
+    final first = adapter.snapshot();
+    expect(identical(adapter.snapshot(), first), isTrue);
+  });
+
+  test('SDK snapshot reuses unchanged rows and preserves SDK order', () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline();
+    final older = RetryEvent(room, timeline,
+        id: 'older', minute: 2, status: EventStatus.synced);
+    final newer = RetryEvent(room, timeline,
+        id: 'newer', minute: 1, status: EventStatus.synced);
+    timeline.events.addAll([newer, older]);
+    final adapter = await openAdapter(room, timeline);
+    final first = adapter.snapshot();
+    final second = adapter.snapshot();
+    expect(identical(first, second), isTrue);
+    expect(first.map((m) => m.id), ['older', 'newer']);
+    newer.setRedactionEvent(Event(
+        room: room,
+        type: EventTypes.Redaction,
+        eventId: 'redaction',
+        senderId: '@me:test',
+        originServerTs: DateTime.utc(2026),
+        content: {}));
+    final redacted = adapter.snapshot();
+    expect(redacted.last.isRecalled, isTrue);
+    expect(identical(redacted.first, first.first), isTrue);
+    timeline.events.insert(
+        0,
+        RetryEvent(room, timeline,
+            id: 'append', minute: 3, status: EventStatus.synced));
+    final appended = adapter.snapshot();
+    expect(appended.map((m) => m.id), ['older', 'newer', 'append']);
+    expect(identical(appended[1], redacted[1]), isTrue);
+  });
+
   test('HTTP ack and sync expose different timestamp authority', () async {
     final room = RetryRoom();
     final timeline = RetryTimeline();
