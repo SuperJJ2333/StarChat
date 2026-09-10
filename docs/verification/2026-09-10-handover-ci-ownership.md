@@ -21,4 +21,6 @@ test_legacy_handover.handover已经创建完整deployment.json并chmod0600，故
 - RED：nonroot_posix.py模拟UID1001/0600，原handover第一项复现相同503（red.log）。不修改生产代码。
 - GREEN：原受影响六组加权限边界共68项通过（green.log，7.67s）。测试主机仍Windows；这是POSIX边界模拟，非Linux实跑。
 - 最终权限测试6项通过；独立审查另跑6项通过，先规格后质量安全无阻塞发现。
-- 完整scripts/verify.ps1及实际Linux CI结果完成后补录。此次变更不影响已交付2085 APK/IPA，无需重新打包或部署生产。
+- 实际Ubuntu CI run34490176702的Backend & infra gates成功：1815通过、49跳过、0失败（361.62s），原31项失败清零；Infra141、Getui28、移动边界70、UI契约22组件/332页面、OpenAPI、Alembic及Compose检查通过。保留原有环境条件跳过与既有DeprecationWarning，没有为修复增加skip。原失败日志与成功日志摘录分别保存original-ci-excerpt.log、linux-ci-green-excerpt.log。
+- Windows scripts/verify.ps1已运行到后端全量，前置仓库/部署策略、模板渲染、Infra141、Getui28、Bot9通过；Ubuntu已完成同套后端全量与后续门禁后，主动停止尚在运行的Windows重复全量，避免重复等待。verify.log是部分记录，不能称Windows完整verify通过；Windows新增权限专项6项已经独立通过。
+- CI run34490176702三个任务全部成功：Backend & infra gates、Flutter analyze/test、Android debug build。修复提交d70a16ff已推送main。此次变更不影响已交付2085 APK/IPA，无需重新打包或部署生产。
