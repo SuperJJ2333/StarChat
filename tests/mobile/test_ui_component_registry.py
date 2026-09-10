@@ -7,13 +7,13 @@ from verify_ui_contract import verify
 
 
 def test_flutter_html_component_registry_has_no_drift():
-    assert verify() == ["UI contract drift: PASS (20 components, 331 screens)"]
+    assert verify() == ["UI contract drift: PASS (22 components, 332 screens)"]
 
 
 def test_ui_contract_is_html_demo_only_without_figma_ledger():
     registry = json.loads((Path(__file__).parents[2] / "packages/ui-contracts/changliao-component-registry.json").read_text(encoding="utf-8"))
     assert "figma" not in registry
-    assert registry["screens"]["expectedCount"] == 331
+    assert registry["screens"]["expectedCount"] == 332
     assert all("figma" not in token for token in registry["tokenParity"])
     assert all("figma" not in component for component in registry["components"])
 

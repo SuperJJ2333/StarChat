@@ -56,5 +56,5 @@ def test_manual_overlay_renders_after_release_and_preserves_both_readonly_mounts
         assert service['environment']['BUSINESS_WALLET_REAL_FUNDS_ENABLED'] == 'false'
         for target in ('/data/tron-watch', '/data/wallet-handover.json'):
             mount, = [item for item in service['volumes'] if item['target'] == target]
-            assert mount['read_only'] and not mount['bind']['create_host_path']
+            assert mount['read_only'] and not mount.get('bind', {}).get('create_host_path', False)
         assert service['image'].endswith(':2026.09.07-test')

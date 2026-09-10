@@ -48,6 +48,9 @@ media_store_path: /data/media_store
 signing_key_path: "/data/{{MATRIX_SERVER_NAME}}.signing.key"
 
 enable_registration: false
+modules:
+  - module: chatflow_mobile_login.MobileLoginModule
+    config: {}
 enable_registration_without_verification: false
 registration_shared_secret: "{{SYNAPSE_REGISTRATION_SHARED_SECRET}}"
 

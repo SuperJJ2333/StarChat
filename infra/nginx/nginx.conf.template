@@ -104,6 +104,22 @@ server {
         proxy_set_header X-Request-ID $request_id;
     }
 
+    # All native aliases consume business opaque grants; never forward raw login.
+    location ~ ^/_matrix/client/(api/v1|r0|v3|unstable)/login/?$ {
+        client_max_body_size 16k;
+        rewrite ^ /api/v1/auth/matrix-broker break;
+        proxy_pass http://business_api_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 120s;
+    }
+
+    # Unsupported token issuers must not bypass the mobile session authority.
+    location ~ ^/_matrix/client/[^/]+/(login|register|refresh|sso|cas|saml2|oidc)(/|$) { return 403; }
+    location ~ ^/_matrix/client/api/v1/(login|register|refresh|sso|cas|saml2|oidc)(/|$) { return 403; }
+    location ^~ /_synapse/client/ { return 403; }
+
     # Rollback: route this location to synapse_upstream before stopping worker.
     location ~ ^/_matrix/client/(r0|v3)/(sync|events)$ {
         proxy_pass http://synapse_sync_upstream;

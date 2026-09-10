@@ -51,7 +51,10 @@ export class AppDialog extends StrictElement {
       confirm.textContent = "确认删除";
       confirm.setAttribute("aria-label", "确认删除");
       actions.append(cancel, save, confirm);
-    } else actions.append(cancel, confirm);
+    } else {
+      if (!this.boolAttr("hide-cancel")) actions.append(cancel);
+      actions.append(confirm);
+    }
     dialog.append(header, content, actions);
     overlay.append(dialog);
     root.append(overlay);

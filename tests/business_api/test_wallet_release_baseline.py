@@ -18,7 +18,12 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     merge = scripts.get_revision('0056_merge_moment_comments')
     assert set(merge.down_revision) == {
         '0055_admin_sessions', '0040_moment_comment_images'}
-    assert scripts.get_heads() == ['0060_merge_release_parity']
+    assert scripts.get_heads() == ['0063_merge_wallet_access']
+    assert set(scripts.get_revision('0063_merge_wallet_access').down_revision) == {
+        '0062_matrix_login_broker', '0062_wallet_access_grant'}
+    assert '0060_merge_release_parity' in ancestors
+    assert scripts.get_revision('0062_matrix_login_broker').down_revision == '0061_mobile_matrix_session'
+    assert scripts.get_revision('0061_mobile_matrix_session').down_revision == '0060_merge_release_parity'
     assert set(scripts.get_revision('0057_merge_direct_room').down_revision) == {
         '0056_merge_moment_comments', '0040_direct_room_reservations'}
 
@@ -29,4 +34,4 @@ def test_release_preflight_pins_the_integrated_migration_head():
         'integrated_wallet_preflight', root / 'scripts/wallet_release_preflight.py')
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    assert helper.EXPECTED_HEAD == '0060_merge_release_parity'
+    assert helper.EXPECTED_HEAD == '0063_merge_wallet_access'

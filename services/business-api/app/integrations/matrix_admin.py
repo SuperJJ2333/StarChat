@@ -29,6 +29,15 @@ class MatrixAdminGateway(Protocol):
 
     def issue_login_token(self, matrix_user_id: str, expires_in: int) -> str: ...
 
+    def session_identity(self, access_token: str) -> tuple[str, str]: ...
+
+    def list_devices(self, matrix_user_id: str) -> list[str]: ...
+
+    def revoke_device(self, matrix_user_id: str, device_id: str) -> None: ...
+
+    def complete_mobile_login(self, *, matrix_user_id: str, device_id: str,
+        generation: int, display_name: str | None) -> dict: ...
+
     def upload_profile_media(self, content: bytes, mime_type: str) -> str: ...
 
     def set_user_profile(
@@ -52,6 +61,22 @@ class MatrixCredentialCodec:
 
 
 class SynapseMatrixAdminGateway:
+    def complete_mobile_login(self, *, matrix_user_id, device_id, generation, display_name):
+        try:
+            response = self._client.post(
+                f'{self._homeserver_url}/_synapse/client/chatflow/mobile_login',
+                headers={'Authorization': f'Bearer {self._admin_access_token}'},
+                json={'user_id': matrix_user_id, 'device_id': device_id,
+                      'generation': generation, 'initial_device_display_name': display_name})
+            if response.status_code != 200:
+                raise ValueError('upstream rejected operation')
+            result = response.json()
+            if not isinstance(result, dict):
+                raise ValueError('invalid response')
+            return result
+        except (httpx.HTTPError, ValueError):
+            raise AppError(code='MATRIX_LOGIN_PENDING', message='聊天登录尚未完成，请重新登录重试', status_code=503) from None
+
     def __init__(
         self,
         *,
@@ -251,6 +276,60 @@ class SynapseMatrixAdminGateway:
         if not isinstance(login_token, str) or not login_token:
             self._login_token_failed()
         return login_token
+
+    def session_identity(self, access_token: str) -> tuple[str, str]:
+        try:
+            response = self._client.get(
+                f'{self._homeserver_url}/_matrix/client/v3/account/whoami',
+                headers={'Authorization': f'Bearer {access_token}'})
+            if response.status_code >= 500 or response.status_code == 429:
+                raise httpx.HTTPError('identity temporarily unavailable')
+            if response.status_code != 200:
+                raise ValueError('identity unavailable')
+            body = response.json()
+            user_id, device_id = body.get('user_id'), body.get('device_id')
+            if (body.get('is_guest') or not isinstance(user_id, str) or not user_id
+                    or not isinstance(device_id, str) or not device_id):
+                raise ValueError('identity incomplete')
+            return user_id, device_id
+        except httpx.HTTPError:
+            raise AppError(code='MATRIX_SESSION_IDENTITY_UNAVAILABLE',
+                message='聊天设备身份暂时无法验证，请重试', status_code=503) from None
+        except (ValueError, AttributeError):
+            raise AppError(code='MATRIX_SESSION_IDENTITY_INVALID',
+                message='聊天设备身份验证失败', status_code=401) from None
+
+    def list_devices(self, matrix_user_id: str) -> list[str]:
+        try:
+            response = self._client.get(
+                f'{self._homeserver_url}/_synapse/admin/v2/users/{quote(matrix_user_id, safe="")}/devices',
+                headers={'Authorization': f'Bearer {self._admin_access_token}'})
+            if response.status_code != 200:
+                raise ValueError('devices unavailable')
+            devices = response.json().get('devices')
+            if not isinstance(devices, list):
+                raise ValueError('invalid devices')
+            result = []
+            for device in devices:
+                device_id = device.get('device_id')
+                if not isinstance(device_id, str) or not device_id:
+                    raise ValueError('invalid device')
+                result.append(device_id)
+            return sorted(set(result))
+        except (httpx.HTTPError, ValueError, AttributeError):
+            raise AppError(code='MATRIX_SESSION_DEVICES_UNAVAILABLE',
+                message='聊天设备列表暂时不可用，请重试', status_code=503) from None
+
+    def revoke_device(self, matrix_user_id: str, device_id: str) -> None:
+        try:
+            response = self._client.delete(
+                f'{self._homeserver_url}/_synapse/admin/v2/users/{quote(matrix_user_id, safe="")}/devices/{quote(device_id, safe="")}',
+                headers={'Authorization': f'Bearer {self._admin_access_token}'})
+            if response.status_code not in (200, 204, 404):
+                raise ValueError('device revocation unavailable')
+        except (httpx.HTTPError, ValueError):
+            raise AppError(code='MATRIX_DEVICE_REVOKE_FAILED',
+                message='聊天设备退出暂时失败', status_code=503) from None
 
     def upload_profile_media(self, content: bytes, mime_type: str) -> str:
         try:

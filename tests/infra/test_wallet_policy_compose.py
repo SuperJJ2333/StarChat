@@ -48,7 +48,7 @@ def test_both_services_receive_independent_policy_and_protected_mounts():
         assert {key: service['environment'].get(key) for key in POLICY} == POLICY
         for target in ('/data/tron-watch', '/data/wallet-handover.json'):
             mount, = [m for m in service['volumes'] if m['target'] == target]
-            assert mount['read_only'] and not mount['bind']['create_host_path']
+            assert mount['read_only'] and not mount.get('bind', {}).get('create_host_path', False)
 
 
 @pytest.mark.parametrize('missing', POLICY)

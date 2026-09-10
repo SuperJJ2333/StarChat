@@ -6,7 +6,7 @@ from urllib.parse import quote
 import anyio.to_thread
 
 from fastapi import APIRouter, Depends, Header, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from redis import Redis
@@ -21,6 +21,7 @@ from app.modules.identity.invitations import (
     normalize_invitation_reason,
 )
 from app.modules.identity.matrix_login import MatrixLoginTokenService
+from app.modules.identity.matrix_sessions import MatrixSessionService
 from app.modules.identity.models import User, Device
 from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.recovery import PasswordRecoveryService, PasswordResetTokenCodec
@@ -91,6 +92,15 @@ class LoginRequest(StrictModel):
 
 class RefreshRequest(StrictModel):
     refresh_token: str
+
+
+class MatrixSessionRequest(StrictModel):
+    matrix_access_token: str = Field(min_length=1, max_length=8192, repr=False)
+    matrix_device_id: str = Field(min_length=1, max_length=255)
+
+
+class MatrixSessionResponse(StrictModel):
+    status: str
 
 
 class AdminLoginRequest(LoginRequest):
@@ -570,6 +580,7 @@ def create_identity_router(
                     user_id=user.id,
                     device_key=body.device_key,
                     display_name=body.device_name,
+                    password=body.password,
                 )
                 return user.id, pair.access_token, pair.refresh_token, user.matrix_user_id
 
@@ -622,7 +633,9 @@ def create_identity_router(
             f"auth:matrix-login-token:{user_id}", limit=20, window_seconds=60
         )
         try:
-            result = matrix_login.issue(user_id)
+            if not claims.get('family_id'):
+                raise AppError(code='AUTH_REQUIRED', message='需要移动端登录', status_code=401)
+            result = matrix_login.issue(user_id, family_id=claims.get('family_id'))
         except AppError as exc:
             record_audit(
                 request,
@@ -646,6 +659,46 @@ def create_identity_router(
             expires_in=result.expires_in,
             matrix_user_id=result.matrix_user_id,
         )
+
+    @router.get('/auth/matrix-broker', operation_id='matrix_broker_flows')
+    @router.post('/auth/matrix-broker', operation_id='matrix_broker_login')
+    @router.options('/auth/matrix-broker', include_in_schema=False)
+    async def matrix_login_broker(request: Request):
+        headers = {'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'}
+        if request.method == 'OPTIONS':
+            return Response(status_code=204, headers=headers)
+        if request.method == 'GET':
+            return JSONResponse({'flows': [{'type': 'm.login.token'}]}, headers=headers)
+        try:
+            rate_limiter.hit(public_rate_limit_key('auth:matrix-broker', request.client.host if request.client else 'unknown'), limit=30, window_seconds=60)
+            raw = await request.body()
+            if len(raw) > 16384:
+                raise ValueError('body too large')
+            import json
+            body = json.loads(raw)
+            if not isinstance(body, dict):
+                raise ValueError('body must be object')
+            result = await anyio.to_thread.run_sync(lambda: matrix_login.consume(body))
+            return JSONResponse(result, headers=headers)
+        except AppError as error:
+            return JSONResponse({'errcode': 'M_FORBIDDEN' if error.status_code < 500 else 'M_UNKNOWN',
+                'error': '登录授权已失效，请重新登录重试' if error.status_code < 500 else '聊天登录尚未完成，请重试'},
+                status_code=error.status_code, headers=headers)
+        except (ValueError, UnicodeError):
+            return JSONResponse({'errcode': 'M_BAD_JSON', 'error': '无效登录请求'}, status_code=400, headers=headers)
+
+    @router.post('/auth/matrix-session', response_model=MatrixSessionResponse)
+    async def matrix_session(body: MatrixSessionRequest,
+                             claims: Annotated[dict, Depends(current_claims)]) -> dict:
+        rate_limiter.hit(f"auth:matrix-session:{claims['sub']}", limit=30, window_seconds=60)
+        if not claims.get('family_id'):
+            raise AppError(code='AUTH_REQUIRED', message='需要登录', status_code=401)
+        return await anyio.to_thread.run_sync(lambda: MatrixSessionService(
+            session_factory, gateway=matrix_gateway).bind(
+                user_id=claims['sub'], family_id=claims['family_id'],
+                matrix_access_token=body.matrix_access_token,
+                matrix_device_id=body.matrix_device_id))
 
     @router.post("/auth/logout", status_code=204)
     async def logout(body: RefreshRequest, request: Request) -> Response:

@@ -17,6 +17,7 @@ from app.modules.wallet.service import WalletService
 from app.modules.identity.registration import VerificationTokenCodec
 from app.modules.identity.recovery import PasswordResetTokenCodec
 from app.modules.identity.provisioning import MatrixProvisionTask
+from app.modules.identity.matrix_sessions import MatrixSessionService
 from app.integrations.matrix_admin import (
     MatrixCredentialCodec,
     SynapseMatrixAdminGateway,
@@ -51,6 +52,9 @@ def build_identity_handlers(
         email_sender=email_sender,
     )
     handlers = {"identity.email": task, "identity.admin_operation": AdminOperationObservationTask()}
+    if matrix_gateway is not None:
+        handlers['identity.matrix_session'] = MatrixSessionService(
+            session_factory, gateway=matrix_gateway).revoke_from_outbox
     if matrix_gateway is not None and matrix_provision_secret is not None:
         handlers["identity.matrix"] = MatrixProvisionTask(
             session_factory,

@@ -99,7 +99,7 @@ class PasswordRecoveryService:
             )
             if challenge is None:
                 self._invalid()
-            user = session.get(User, challenge.user_id)
+            user = session.scalar(select(User).where(User.id == challenge.user_id).with_for_update())
             if user is None:
                 self._invalid()
             challenge.consumed_at = now

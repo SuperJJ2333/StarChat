@@ -4,6 +4,7 @@ import { component, createDeviceScreen, pageRoot } from "./shared.js";
 
 const stateCopy = Object.freeze({
   default: "使用用户名或邮箱登录",
+  "session-replaced": "使用用户名或邮箱登录",
   filled: "账号信息已填写，可以继续",
   submitting: "正在建立安全会话…",
   "error-required": "请输入用户名和密码",
@@ -121,5 +122,17 @@ export function renderScreen(definition) {
   else if (definition.page === "verification") panel.append(verificationForm(definition));
   else panel.append(component("app-empty-state", { title: "认证布局检查", message: stateCopy[definition.state], action: "返回登录" }));
   root.append(background, panel);
+  if (definition.state === "session-replaced") {
+    const dialog = component("app-dialog", {
+      title: "账号已退出",
+      message: "账号已在其他设备登录，当前设备已退出。本地聊天记录已保留。",
+      confirm: "知道了",
+      "hide-cancel": true
+    });
+    dialog.addEventListener("click", event => {
+      if (event.target.closest('[data-action="dialog-confirm"]')) dialog.remove();
+    });
+    root.append(dialog);
+  }
   return createDeviceScreen(definition, root);
 }

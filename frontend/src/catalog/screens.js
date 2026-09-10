@@ -63,7 +63,8 @@ register("foundation", "icons", [
 
 register("auth", "login", [
   ["default", "登录 / 默认"], ["filled", "登录 / 已填写"], ["submitting", "登录 / 提交中"],
-  ["error-required", "登录 / 字段缺失"], ["error-credentials", "登录 / 凭证错误"], ["error-network", "登录 / 网络错误"]
+  ["error-required", "登录 / 字段缺失"], ["error-credentials", "登录 / 凭证错误"], ["error-network", "登录 / 网络错误"],
+  ["session-replaced", "登录 / 其他设备登录"]
 ]);
 register("auth", "registration", [
   ["default", "注册 / 默认"], ["invitation-required", "注册 / 邀请码缺失"], ["field-errors", "注册 / 字段错误"],

@@ -862,6 +862,26 @@
         "WeChatRadius.bubble",
         "WeChatColors.bubbleOutgoing"
       ]
+    },
+    {
+      "id": "session-gate-replaced",
+      "flutter": {
+        "name": "SessionGate",
+        "file": "apps/mobile_flutter/lib/session_gate.dart",
+        "props": [
+          "controller",
+          "unauthenticatedBuilder",
+          "authenticatedBuilder"
+        ],
+        "variants": [],
+        "states": [
+          "session-replaced"
+        ]
+      },
+      "html": {
+        "tag": "app-dialog"
+      },
+      "tokens": []
     }
   ],
   "tokenParity": [
@@ -1151,6 +1171,6 @@
     }
   },
   "screens": {
-    "expectedCount": 331
+    "expectedCount": 332
   }
 }

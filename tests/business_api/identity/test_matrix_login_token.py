@@ -44,6 +44,53 @@ class RejectingMatrixGateway:
         )
 
 
+@pytest.mark.asyncio
+async def test_mobile_matrix_session_api_requires_real_family_and_never_echoes_token(caplog):
+    class Gateway:
+        deleted = []
+
+        def session_identity(self, token):
+            assert token == 'memory-only-secret'
+            return '@alice:matrix.example.test', 'CURRENT'
+
+        def list_devices(self, user_id):
+            assert user_id == '@alice:matrix.example.test'
+            return ['OLD', 'CURRENT']
+
+        def revoke_device(self, user_id, device_id):
+            self.deleted.append(device_id)
+
+    engine, factory, app, gateway = _components(Gateway())
+    _add_user(factory, 'alice', mxid='@alice:matrix.example.test')
+    token = _access_token(factory, 'alice')
+    from app.modules.identity.models import MobileMatrixSession
+    claims = TokenService(factory, jwt_secret=JWT_SECRET, jwt_issuer='liuhetong').decode_access_token(token)
+    with factory.begin() as session:
+        session.add(MobileMatrixSession(user_id='alice', family_id=claims['family_id'],
+            matrix_device_id='CURRENT', updated_at=NOW))
+    caplog.set_level(logging.DEBUG)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        response = await client.post('/api/v1/auth/matrix-session',
+            headers={'Authorization': f'Bearer {token}'},
+            json={'matrix_access_token': 'memory-only-secret', 'matrix_device_id': 'CURRENT'})
+        assert response.status_code == 200
+        assert response.json() == {'status': 'ACTIVE'}
+        assert gateway.deleted == []
+        _access_token(factory, 'alice')
+        replaced = await client.post('/api/v1/auth/matrix-session',
+            headers={'Authorization': f'Bearer {token}'},
+            json={'matrix_access_token': 'memory-only-secret', 'matrix_device_id': 'CURRENT'})
+        assert replaced.status_code == 401
+        assert replaced.json()['error']['code'] == 'SESSION_REPLACED'
+        assert gateway.deleted == []
+    assert 'memory-only-secret' not in caplog.text
+    assert 'memory-only-secret' not in response.text
+    with factory() as session:
+        assert all('memory-only-secret' not in str(event.after_data)
+                   for event in session.scalars(select(AuditEvent)))
+    engine.dispose()
+
+
 def _components(gateway=None):
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -122,12 +169,14 @@ async def test_matrix_login_token_is_bound_to_authenticated_business_subject(
 
     assert response.status_code == 200
     assert response.json() == {
-        "login_token": "one-time-matrix-token",
+        "login_token": response.json()["login_token"],
         "homeserver": "https://matrix.example.test",
         "expires_in": 60,
         "matrix_user_id": "@alice:matrix.example.test",
     }
-    assert gateway.calls == [("@alice:matrix.example.test", 60)]
+    assert gateway.calls == []
+    assert len(response.json()["login_token"]) >= 40
+    assert response.json()["login_token"] not in caplog.text
     assert "one-time-matrix-token" not in caplog.text
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(OutboxEvent)) == outbox_before
@@ -209,7 +258,7 @@ async def test_matrix_login_token_rejects_unready_business_identity(
 
 
 @pytest.mark.asyncio
-async def test_matrix_login_token_records_sanitized_synapse_failure() -> None:
+async def test_opaque_grant_issuance_does_not_depend_on_synapse_availability() -> None:
     engine, factory, app, _ = _components(RejectingMatrixGateway())
     _add_user(factory, "user-1", mxid="@alice:matrix.example.test")
     access_token = _access_token(factory, "user-1")
@@ -222,8 +271,8 @@ async def test_matrix_login_token_records_sanitized_synapse_failure() -> None:
             headers={"Authorization": f"Bearer {access_token}"},
         )
 
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == "MATRIX_LOGIN_TOKEN_FAILED"
+    assert response.status_code == 200
+    assert len(response.json()["login_token"]) >= 40
     with factory() as session:
         audit = session.scalar(
             select(AuditEvent).where(
@@ -231,8 +280,8 @@ async def test_matrix_login_token_records_sanitized_synapse_failure() -> None:
             )
         )
         assert audit.actor_id == "user-1"
-        assert audit.result == "FAILURE"
-        assert audit.reason_code == "MATRIX_LOGIN_TOKEN_FAILED"
+        assert audit.result == "SUCCESS"
+        assert audit.reason_code == "MATRIX_LOGIN_TOKEN"
         assert audit.before_data is None and audit.after_data is None
     engine.dispose()
 
@@ -368,13 +417,9 @@ async def test_upstream_login_limit_preserves_429_and_safe_retry_header(upstream
             return httpx.Response(429, json={"errcode": "M_LIMIT_EXCEEDED", "retry_after_ms": upstream_retry, "error": "sensitive-upstream"})
         return httpx.Response(200, json={"access_token": "never-log-this"})
     gateway = SynapseMatrixAdminGateway(homeserver_url="http://synapse:8008", server_name="matrix.example.test", admin_access_token="secret", client=httpx.Client(transport=httpx.MockTransport(handler)), now_factory=lambda: NOW)
-    engine, factory, app, _ = _components(gateway)
-    _add_user(factory, "user-rate", mxid="@alice:matrix.example.test")
-    access = _access_token(factory, "user-rate")
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/auth/matrix-login-token", headers={"Authorization": f"Bearer {access}"})
-    assert response.status_code == 429
-    assert response.json()["error"]["code"] == "MATRIX_LOGIN_RATE_LIMITED"
-    assert response.headers["retry-after"] == str(expected_seconds)
-    assert "sensitive-upstream" not in response.text and "never-log-this" not in response.text
-    engine.dispose()
+    with pytest.raises(AppError) as failure:
+        gateway.issue_login_token("@alice:matrix.example.test", 60)
+    assert failure.value.status_code == 429
+    assert failure.value.retry_after_seconds == expected_seconds
+    assert "sensitive-upstream" not in str(failure.value)
+    assert "never-log-this" not in str(failure.value)

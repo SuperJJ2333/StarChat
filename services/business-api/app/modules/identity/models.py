@@ -53,6 +53,21 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class MatrixLoginGrant(Base):
+    __tablename__ = "identity_matrix_login_grants"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    family_id: Mapped[str] = mapped_column(ForeignKey("refresh_token_families.id"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MatrixLoginGeneration(Base):
+    __tablename__ = "identity_matrix_login_generations"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
 class Invitation(Base):
     __tablename__ = "invitations"
 
@@ -162,6 +177,17 @@ class RefreshTokenFamily(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoke_reason: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MobileMatrixSession(Base):
+    """Current mobile Matrix device; tokens and encryption keys are never stored."""
+
+    __tablename__ = 'identity_mobile_matrix_sessions'
+
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'), primary_key=True)
+    family_id: Mapped[str] = mapped_column(ForeignKey('refresh_token_families.id'), nullable=False)
+    matrix_device_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class RefreshToken(Base):

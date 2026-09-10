@@ -3957,6 +3957,43 @@
         "title": "MatrixLoginTokenResponse",
         "type": "object"
       },
+      "MatrixSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "matrix_access_token": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Matrix Access Token",
+            "type": "string"
+          },
+          "matrix_device_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Matrix Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "matrix_access_token",
+          "matrix_device_id"
+        ],
+        "title": "MatrixSessionRequest",
+        "type": "object"
+      },
+      "MatrixSessionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "MatrixSessionResponse",
+        "type": "object"
+      },
       "MfaStatus": {
         "properties": {
           "configured": {
@@ -11291,6 +11328,102 @@
         ]
       }
     },
+    "/api/v1/auth/matrix-broker": {
+      "get": {
+        "operationId": "matrix_broker_flows",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Matrix Login Broker",
+        "tags": [
+          "identity"
+        ]
+      },
+      "post": {
+        "operationId": "matrix_broker_login",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Matrix Login Broker",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/auth/matrix-login-token": {
       "post": {
         "operationId": "matrix_login_token_api_v1_auth_matrix_login_token_post",
@@ -11343,6 +11476,73 @@
           }
         ],
         "summary": "Matrix Login Token",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/v1/auth/matrix-session": {
+      "post": {
+        "operationId": "matrix_session_api_v1_auth_matrix_session_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatrixSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatrixSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Matrix Session",
         "tags": [
           "identity"
         ]

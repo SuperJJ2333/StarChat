@@ -333,6 +333,9 @@ def test_bootstrap_http_rate_limit_backoff_is_bounded_and_opt_in(monkeypatch):
 
         def do_POST(self):
             calls.append(self.path)
+            # Drain the request before closing the test connection: on Windows
+            # unread POST data can reset the socket before the response is read.
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
             retry = self.path != "/retry" or calls.count("/retry") <= 2
             payload = json.dumps({"errcode": "M_LIMIT_EXCEEDED", "retry_after_ms": 10} if retry else {"joined": True}).encode()
             self.send_response(429 if retry else 200)

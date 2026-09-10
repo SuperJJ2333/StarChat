@@ -589,6 +589,7 @@
   border-left: var(--size-hairline) solid var(--color-divider);
   color: var(--color-brand-primary);
 }
+.c-dialog__button:only-child { grid-column: 1 / -1; }
 
 .c-action-sheet {
   position: absolute;
