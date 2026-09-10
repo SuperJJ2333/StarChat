@@ -33,7 +33,7 @@ History: two incidents shaped this procedure — a concurrent `rm /tmp/chunk-*` 
 
 ## 5. Publishing the update popup (app-update settings)
 
-Settings are single global rows shared by Android and iOS clients (`app_latest_version`, `app_latest_build`, `app_min_supported_build`, `app_update_notes`, `app_apk_url`), exposed at `GET /api/v1/app-updates/latest` (auth required).
+Authenticated `GET /api/v1/app-updates/latest` selects a platform projection. The historical keys (`app_latest_version`, `app_latest_build`, `app_min_supported_build`, `app_update_notes`, `app_apk_url`) are the Android/default projection; the iOS keys are separate. A request without `platform` still selects the historical projection, regardless of the actual client OS.
 
 - Publish with the app's own `SettingService` inside the business-api container (same audit trail as the admin API without minting an admin JWT):
   `docker exec -i -e PYTHONUTF8=1 -w /opt/business-api starchat-business-api-1 python3 - < publish_script.py <inspect|apply|rollback>`
@@ -41,9 +41,9 @@ Settings are single global rows shared by Android and iOS clients (`app_latest_v
 - Since the 2026-09-10 platform-aware endpoint deployment (commit `8bec689e`,
   image `starchat-business-api:app-update-platform-20260910`; see
   `docs/verification/2026-09-10-mobile-0380-2084-release.md`), the five
-  legacy keys feed Android clients and the five `app_ios_*` keys
+  legacy keys feed explicit Android and unlabelled legacy requests; the five `app_ios_*` keys
   (`app_ios_latest_version/build/min_supported_build/update_notes/download_url`)
-  feed iOS clients; the response carries `platform: "ios"` so legacy servers
+  feed requests with `platform=ios`; the response carries `platform: "ios"` so legacy servers
   are rejected by new clients. Publish each platform in its own `set_many`
   with its own audit trace.
 - **Platform paths differ on purpose**: the Android `app_apk_url` may point at
@@ -51,15 +51,26 @@ Settings are single global rows shared by Android and iOS clients (`app_latest_v
   `app_ios_download_url` must stay the download page
   (`https://www.liuhetong888.com/download`) — its primary button triggers the
   `itms-services://` install; a scheme URL in the setting would break the
-  iOS 更新 button. Before the endpoint was platform-aware, both platforms read
-  the same rows, so `app_apk_url` had to be the download page then; that
-  constraint is gone.
+  iOS 更新 button. **Legacy iOS 0.3.69/2073 still sends no platform** (source
+  `80d2510e`) and therefore receives the historical Android/default rows.
+  Deploying platform support does not retrofit older binaries. Do not infer
+  platform from generic Dart user agents or device names. A direct APK in
+  the default row is not safe for every legacy iOS client; the transition must
+  explicitly cover them, for example with a shared download-page bridge or a
+  one-time enterprise upgrade. Do not claim complete legacy isolation from an
+  explicit `?platform=ios` probe alone.
+- The user chose to receive the 2085 IPA first and return an enterprise-signed
+  package before the next dual-platform transition publication. Prepare and
+  verify candidates now; do not publish 2085 settings or change OTA metadata
+  before that return. New 2085 clients request and validate the platform for
+  both automatic and manual checks. Their additive API response includes
+  `download_url`, with `apk_url` retained as a compatibility alias.
 - Publish the iOS keys **only after** the enterprise-signed IPA is installed
   and `manifest.plist` points at it; an early publication would show iOS users
   an update dialog for a package that cannot install yet.
 - `app_update_notes` ≤ 255 characters (DB column is VARCHAR(255) while the admin API contract allows 2000 — known mismatch, do not exceed 255 until it is fixed).
 - `min_supported_build`: only raise with explicit product approval; it turns the dialog into an unclosable barrier.
-- Popup math: the client compares `latest_version` semantically against its own version name first (build number fallback). One global latest therefore targets both platforms at once — expect the dialog on every platform below latest.
+- Popup math: the client compares its selected projection's `latest_version` semantically against its own version name first (build number fallback). Unlabelled legacy requests still share the default projection; explicit platform requests use independent versions.
 
 ## 6. Verification checklist (all URL checks from the server AND the workstation)
 
