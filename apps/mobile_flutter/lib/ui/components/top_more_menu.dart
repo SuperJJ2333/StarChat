@@ -3,9 +3,36 @@ import 'package:flutter/cupertino.dart';
 import 'anchored_action_menu.dart';
 
 abstract final class TopMoreMenuTokens {
-  static const width = 176.0;
+  static const horizontalPadding = 8.0;
+  static const iconSize = 20.0;
+  static const iconGap = 8.0;
   static const rowHeight = 52.0;
   static const divider = Color(0x3DFFFFFF);
+}
+
+/// Intrinsic geometry respects the real font, locale and accessibility scale.
+/// Only the viewport is bounded; exceptionally wide content remains scrollable.
+double measureTopMoreMenuWidth(Iterable<String> labels, TextStyle style,
+    TextScaler scaler, TextDirection direction,
+    {Locale? locale}) {
+  var widest = 0.0;
+  for (final label in labels) {
+    final painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textScaler: scaler,
+        textDirection: direction,
+        locale: locale,
+        maxLines: 1)
+      ..layout();
+    widest = math.max(widest, painter.width.ceilToDouble());
+    painter.dispose();
+  }
+  return math.max(
+      44,
+      widest +
+          TopMoreMenuTokens.iconSize +
+          TopMoreMenuTokens.iconGap +
+          TopMoreMenuTokens.horizontalPadding * 2);
 }
 
 /// The three main tabs share this fixed ordered, vertical action surface.
@@ -41,6 +68,13 @@ Future<void> showTopMoreMenu(
         label: '外观',
         key: appearanceKey ?? const Key('top-more-appearance')),
   ];
+  final labelStyle = CupertinoTheme.of(context)
+      .textTheme
+      .actionTextStyle
+      .copyWith(fontSize: 16, height: 1.2, color: CupertinoColors.white);
+  final contentWidth = measureTopMoreMenuWidth(items.map((item) => item.label),
+      labelStyle, media.textScaler, Directionality.of(context),
+      locale: Localizations.maybeLocaleOf(context));
   final selected = await showGeneralDialog<VoidCallback>(
     context: context,
     barrierDismissible: true,
@@ -64,7 +98,8 @@ Future<void> showTopMoreMenu(
         Positioned(
             top: top,
             right: 12,
-            width: math.min(TopMoreMenuTokens.width, constraints.maxWidth - 24),
+            width:
+                math.min(contentWidth, math.max(0, constraints.maxWidth - 24)),
             child: ConstrainedBox(
                 constraints: BoxConstraints(
                     maxHeight: math.max(
@@ -80,45 +115,73 @@ Future<void> showTopMoreMenu(
                         key: const Key('top-more-menu'),
                         color: AnchoredMenuTokens.background,
                         child: SingleChildScrollView(
-                            child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                              for (var i = 0; i < items.length; i++) ...[
-                                if (i > 0)
-                                  Container(
-                                      key: Key('top-more-divider-${i - 1}'),
-                                      height: .5,
-                                      margin: const EdgeInsets.only(
-                                          left: 12, right: 12),
-                                      color: TopMoreMenuTokens.divider),
-                                ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                        minHeight: TopMoreMenuTokens.rowHeight),
-                                    child: CupertinoButton(
-                                        key: items[i].key,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: 12),
-                                        onPressed: () => Navigator.pop(
-                                            menuContext, items[i].value),
-                                        child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(items[i].icon,
-                                                  size: 20,
-                                                  color: CupertinoColors.white),
-                                              const SizedBox(width: 12),
-                                              Flexible(
-                                                  child: Text(items[i].label,
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      style: const TextStyle(
-                                                          color: CupertinoColors
-                                                              .white,
-                                                          fontSize: 16))),
-                                            ]))),
-                              ],
-                            ]))))))
+                            child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: SizedBox(
+                                    width: contentWidth,
+                                    child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (var i = 0;
+                                              i < items.length;
+                                              i++) ...[
+                                            if (i > 0)
+                                              Container(
+                                                  key: Key(
+                                                      'top-more-divider-${i - 1}'),
+                                                  height: .5,
+                                                  margin: const EdgeInsets.only(
+                                                      left: TopMoreMenuTokens
+                                                          .horizontalPadding,
+                                                      right: TopMoreMenuTokens
+                                                          .horizontalPadding),
+                                                  color: TopMoreMenuTokens
+                                                      .divider),
+                                            ConstrainedBox(
+                                                constraints:
+                                                    const BoxConstraints(
+                                                        minHeight:
+                                                            TopMoreMenuTokens
+                                                                .rowHeight),
+                                                child: CupertinoButton(
+                                                    key: items[i].key,
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal:
+                                                            TopMoreMenuTokens
+                                                                .horizontalPadding,
+                                                        vertical: 12),
+                                                    onPressed: () =>
+                                                        Navigator.pop(
+                                                            menuContext,
+                                                            items[i].value),
+                                                    child: Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .center,
+                                                        children: [
+                                                          Icon(items[i].icon,
+                                                              size:
+                                                                  TopMoreMenuTokens
+                                                                      .iconSize,
+                                                              color:
+                                                                  CupertinoColors
+                                                                      .white),
+                                                          const SizedBox(
+                                                              width:
+                                                                  TopMoreMenuTokens
+                                                                      .iconGap),
+                                                          Text(items[i].label,
+                                                              maxLines: 1,
+                                                              softWrap: false,
+                                                              textAlign:
+                                                                  TextAlign
+                                                                      .center,
+                                                              style:
+                                                                  labelStyle),
+                                                        ]))),
+                                          ],
+                                        ]))))))))
       ]);
     })),
   );

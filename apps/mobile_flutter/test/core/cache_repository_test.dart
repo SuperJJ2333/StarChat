@@ -11,7 +11,8 @@ void main() {
   });
 
   test('moments cache: save → load roundtrip（首绘无需等待网络）', () async {
-    final cache = (await CacheRepository.instance()).momentsFor("matrix:@u:test");
+    final cache =
+        (await CacheRepository.instance()).momentsFor("matrix:@u:test");
     await cache.save({
       'items': [
         {'id': 'm1', 'text': '第一条'},
@@ -26,19 +27,33 @@ void main() {
   });
 
   test('moments cache: no snapshot returns null（首次进入等待网络）', () async {
-    final cache = (await CacheRepository.instance()).momentsFor("matrix:@u:test");
+    final cache =
+        (await CacheRepository.instance()).momentsFor("matrix:@u:test");
+    expect(await cache.load(), isNull);
+  });
+
+  test('old comment-audience metadata is not painted after policy upgrade',
+      () async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cache.moments.feed.latest.matrix:@u:test',
+        '{"items":[{"id":"old","comments":[{"text":"previous audience"}]}]}');
+    final cache =
+        (await CacheRepository.instance()).momentsFor('matrix:@u:test');
     expect(await cache.load(), isNull);
   });
 
   test('moments cache: corrupted snapshot treated as no cache', () async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(CacheRepository.momentsFeedKeyFor("matrix:@u:test"), "{broken-json");
-    final cache = (await CacheRepository.instance()).momentsFor("matrix:@u:test");
+    await prefs.setString(
+        CacheRepository.momentsFeedKeyFor("matrix:@u:test"), "{broken-json");
+    final cache =
+        (await CacheRepository.instance()).momentsFor("matrix:@u:test");
     expect(await cache.load(), isNull);
   });
 
   test('moments cache: clear removes snapshot', () async {
-    final cache = (await CacheRepository.instance()).momentsFor("matrix:@u:test");
+    final cache =
+        (await CacheRepository.instance()).momentsFor("matrix:@u:test");
     await cache.save({'items': []});
     await cache.clear();
     expect(await cache.load(), isNull);

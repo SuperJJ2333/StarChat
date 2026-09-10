@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:matrix/matrix.dart' show MatrixException;
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/chat/contain_image_bubble.dart' show boundedChatImageProvider;
 import '../../ui/foundation/wechat_tokens.dart';
@@ -18,18 +21,65 @@ final class GroupAnnouncementPage extends StatefulWidget {
 
 final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
   List<AnnouncementBlock>? blocks;
+  GroupAnnouncement? _document;
   final inputs = <int, TextEditingController>{};
   bool editing = false;
   bool busy = false;
   String? error;
+  bool _loadRetryable = false;
+  int _loadEpoch = 0;
+  int _editorEpoch = 0;
+  StreamSubscription<void>? _subscription;
   @override
   void initState() {
     super.initState();
+    unawaited(_load());
+    _listen();
+  }
+
+  void _listen() {
+    _subscription = widget.service.changes.listen((_) {
+      if (editing && widget.service.canEdit) return;
+      if (editing) {
+        setState(() {
+          _editorEpoch++;
+          editing = false;
+          busy = false;
+          blocks = null;
+          _clearInputs();
+        });
+      }
+      unawaited(_load());
+    });
+  }
+
+  void _clearInputs() {
+    for (final input in inputs.values) {
+      input.dispose();
+    }
+    inputs.clear();
+  }
+
+  @override
+  void didUpdateWidget(covariant GroupAnnouncementPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.service, widget.service)) return;
+    _editorEpoch++;
+    _subscription?.cancel();
+    _clearInputs();
+    blocks = null;
+    _document = null;
+    editing = false;
+    busy = false;
+    error = null;
+    _loadRetryable = false;
+    _listen();
     unawaited(_load());
   }
 
   @override
   void dispose() {
+    _subscription?.cancel();
     for (final input in inputs.values) {
       input.dispose();
     }
@@ -37,16 +87,40 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
   }
 
   Future<void> _load() async {
+    final epoch = ++_loadEpoch;
     try {
       final value = await widget.service.load();
-      if (mounted) {
+      if (mounted && epoch == _loadEpoch) {
         setState(() {
           blocks = value.blocks.toList();
+          _document = value;
           error = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => error = '公告加载失败，请重试');
+    } catch (failure) {
+      if (mounted && epoch == _loadEpoch) {
+        setState(() {
+          final status =
+              failure is MatrixException ? failure.response?.statusCode : null;
+          _loadRetryable = failure is SocketException ||
+              failure is TimeoutException ||
+              failure is http.ClientException ||
+              status == 408 ||
+              status == 429 ||
+              (status != null && status >= 500 && status < 600);
+          error = _loadRetryable
+              ? '公告加载失败，请重试'
+              : failure is FormatException
+                  ? '公告格式异常，暂无法显示'
+                  : failure is StateError && failure.message == '仅群成员可查看公告'
+                      ? '仅群成员可查看公告'
+                      : failure is MatrixException &&
+                              (failure.errcode == 'M_FORBIDDEN' ||
+                                  failure.errcode == 'M_UNKNOWN_TOKEN')
+                          ? '无权查看群公告'
+                          : '公告暂不可用，请稍后查看';
+        });
+      }
     }
   }
 
@@ -65,6 +139,10 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
   }
 
   Future<void> _save() async {
+    final epoch = _editorEpoch;
+    final service = widget.service;
+    bool current() =>
+        mounted && epoch == _editorEpoch && identical(service, widget.service);
     setState(() {
       busy = true;
       error = null;
@@ -76,18 +154,22 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
               ? blocks![i]
               : AnnouncementBlock.text(inputs[i]!.text)
       ]);
-      await widget.service.save(document);
-      if (mounted) Navigator.pop(context, true);
+      await service.save(document);
+      if (mounted && current()) Navigator.pop(context, true);
     } on FormatException catch (failure) {
-      if (mounted) setState(() => error = failure.message);
+      if (current()) setState(() => error = failure.message);
     } catch (_) {
-      if (mounted) setState(() => error = '发布失败，请检查权限、加密状态和网络后重试');
+      if (current()) setState(() => error = '发布失败，请检查权限、加密状态和网络后重试');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (current()) setState(() => busy = false);
     }
   }
 
   Future<void> _image() async {
+    final epoch = _editorEpoch;
+    final service = widget.service;
+    bool current() =>
+        mounted && epoch == _editorEpoch && identical(service, widget.service);
     if (blocks!.length >= maxAnnouncementBlocks) {
       setState(() => error = '群公告最多100段，请删除部分内容后重试');
       return;
@@ -97,8 +179,9 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
       final file = await (widget.pickImage?.call() ??
           ImagePicker().pickImage(
               source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600));
-      if (file == null || !mounted) return;
+      if (file == null || !current()) return;
       final length = await file.length();
+      if (!current()) return;
       if (length > maxAnnouncementImageBytes) {
         throw const FormatException('公告图片不能超过20MB');
       }
@@ -108,19 +191,20 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
         throw const FormatException('公告草稿图片合计不能超过40MB');
       }
       final bytes = await file.readAsBytes();
+      if (!current()) return;
       validateAnnouncementImage(bytes);
       final block = AnnouncementBlock.localImage(bytes, file.name);
-      if (mounted) {
+      if (current()) {
         setState(() {
           blocks!.add(block);
         });
       }
     } on FormatException catch (failure) {
-      if (mounted) setState(() => error = failure.message);
+      if (current()) setState(() => error = failure.message);
     } catch (_) {
-      if (mounted) setState(() => error = '图片读取失败，请重试');
+      if (current()) setState(() => error = '图片读取失败，请重试');
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (current()) setState(() => busy = false);
     }
   }
 
@@ -141,17 +225,27 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
         child: SafeArea(
             child: ListView(padding: const EdgeInsets.all(16), children: [
           if (error != null)
-            CupertinoButton(
-                onPressed: busy
-                    ? null
-                    : editing
-                        ? _save
-                        : _load,
-                child: Text(error!,
-                    style: const TextStyle(color: WeChatColors.danger))),
+            if (!editing && !_loadRetryable)
+              Text(error!, style: const TextStyle(color: WeChatColors.danger))
+            else
+              CupertinoButton(
+                  onPressed: busy
+                      ? null
+                      : editing
+                          ? _save
+                          : _load,
+                  child: Text(error!,
+                      style: const TextStyle(color: WeChatColors.danger))),
           if (blocks == null && error == null)
             const CupertinoActivityIndicator(),
           if (blocks?.isEmpty == true) const Text('暂无群公告'),
+          if (!editing && _document?.publisherName != null)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                    '${_document!.publisherName} · ${_publicationTime(_document!.publishedAt!)}',
+                    style: const TextStyle(
+                        fontSize: 13, color: WeChatColors.textSecondary))),
           if (blocks != null)
             for (var i = 0; i < blocks!.length; i++)
               Padding(
@@ -222,6 +316,13 @@ final class _GroupAnnouncementPageState extends State<GroupAnnouncementPage> {
           if (busy) const CupertinoActivityIndicator(),
         ])),
       );
+
+  String _publicationTime(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
 }
 
 final class _AnnouncementImage extends StatefulWidget {
@@ -280,6 +381,16 @@ final class _GroupAnnouncementBannerState
     subscription = widget.service.changes.listen((_) {
       unawaited(_load());
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant GroupAnnouncementBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.service, widget.service)) return;
+    subscription?.cancel();
+    value = const GroupAnnouncement([]);
+    subscription = widget.service.changes.listen((_) => unawaited(_load()));
+    unawaited(_load());
   }
 
   Future<void> _load() async {

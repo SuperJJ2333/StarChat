@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -97,6 +98,8 @@ void main() {
         home: MomentsPage(
             api: api, identityCache: identity, onPostsDisplayed: seen.addAll)));
     await tester.pumpAndSettle();
+    final feed = tester.widget<CustomScrollView>(find.byType(CustomScrollView));
+    expect(feed.scrollCacheExtent, const ScrollCacheExtent.viewport(0.5));
     expect(seen, contains('post-0'));
     expect(seen, isNot(contains('post-11')));
     // 滚动接近底部自动加载下一页（问题四：不再需要手动按钮）。

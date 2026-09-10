@@ -26,7 +26,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final oldPaths = PathProviderPlatform.instance;
   final scratch = Directory(
-          '../../docs/verification/artifacts/2026-09-09/mobile-parity/media-cache-${DateTime.now().microsecondsSinceEpoch}')
+          '../../docs/verification/artifacts/2026-09-10/four-fixes-2083/media/cache-${DateTime.now().microsecondsSinceEpoch}')
       .absolute;
   final png = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
@@ -80,7 +80,8 @@ void main() {
             cacheKey: key,
             accountKey: 'matrix:alice',
             trustedOrigin: origin);
-        expect(otherOrigin.cacheKey, isNull);
+        expect(otherOrigin.cacheKey, startsWith('moments-url-account-v1:'));
+        expect(otherOrigin.cacheKey, isNot(first.cacheKey));
         expect(
             MomentMediaCache.imageProvider('$prefix/signed-A',
                     cacheKey: key,
@@ -94,7 +95,7 @@ void main() {
                     accountKey: 'matrix:alice',
                     trustedOrigin: origin)
                 .cacheKey,
-            isNull);
+            startsWith('moments-url-account-v1:'));
         expect(
             MomentMediaCache.imageProvider('$prefix/signed-A',
                     cacheKey: key, trustedOrigin: origin)

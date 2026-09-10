@@ -38,6 +38,14 @@ def reaction_audience(session, viewer):
     return visible
 
 
+def moment_comment_audience(session, viewer, author):
+    """Keep owner semantics; foreign comments require a live common audience."""
+    audience = reaction_audience(session, viewer)
+    if not viewer or viewer == author:
+        return audience
+    return (audience & reaction_audience(session, author)) | {viewer, author}
+
+
 class VisibilityPolicy:
     def __init__(self, session, *, now=None):
         self.s = session

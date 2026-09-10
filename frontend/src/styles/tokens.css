@@ -237,7 +237,8 @@
   --anchored-menu-font: 11px;
   --anchored-menu-hit: 44px;
   --anchored-menu-motion: 120ms;
-  --top-more-width: 176px;
+  --top-more-padding-inline: 8px;
+  --top-more-icon-gap: 8px;
   --top-more-row-height: 52px;
   --top-more-font: 16px;
   --messages-clear-motion: 300ms;

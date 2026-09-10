@@ -3,6 +3,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/components/top_more_menu.dart';
 
 void main() {
+  test('menu width follows full content and accessibility scale', () {
+    const style = TextStyle(fontSize: 16);
+    double width(String text, double scale) => measureTopMoreMenuWidth(
+        [text], style, TextScaler.linear(scale), TextDirection.ltr);
+    expect(width('外观', 1), lessThan(width('添加朋友', 1)));
+    expect(width('添加朋友', 1), lessThanOrEqualTo(176 * .75));
+    expect(width('添加朋友', 2), greaterThan(width('添加朋友', 1)));
+    expect(width('很长的菜单选项需要完整保留文字', 3), greaterThan(320));
+  });
   testWidgets('top more has four full-width vertical actions and dividers',
       (tester) async {
     var selected = '';
@@ -27,7 +36,7 @@ void main() {
     expect(find.byKey(const Key('top-more-divider-1')), findsOneWidget);
     expect(find.byKey(const Key('top-more-divider-2')), findsOneWidget);
     final row = tester.getRect(find.byKey(const Key('top-more-scan')));
-    expect(row.width, lessThanOrEqualTo(180));
+    expect(row.width, lessThanOrEqualTo(176 * .75));
     final icon = tester.getRect(find.descendant(
         of: find.byKey(const Key('top-more-scan')),
         matching: find.byType(Icon)));
@@ -63,6 +72,12 @@ void main() {
     await tester.tap(find.text('more'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    for (final label in ['发起群聊', '添加朋友', '扫一扫', '外观']) {
+      final text = tester.widget<Text>(find.text(label));
+      expect(text.maxLines, 1);
+      expect(text.softWrap, isFalse);
+      expect(tester.getSize(find.text(label)).height, lessThan(45));
+    }
     await tester.tap(find.text('外观'));
     await tester.pumpAndSettle();
     expect(selected, isTrue);

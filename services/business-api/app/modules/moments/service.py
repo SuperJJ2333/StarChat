@@ -23,7 +23,7 @@ from app.modules.moments.models import (
     MomentDraft,
     NativeMomentAd,
 )
-from app.modules.moments.visibility import VisibilityPolicy, reaction_audience
+from app.modules.moments.visibility import VisibilityPolicy, moment_comment_audience, reaction_audience
 from app.modules.moments.recommendation import recommendation_score
 from app.modules.moments.media import MomentMediaUpload
 from app.modules.moments.media_access import owned_key, signed_url
@@ -250,7 +250,7 @@ class MomentsService:
                 image_object_keys.append(upload.object_key)
             if parent_id:
                 parent = session.get(MomentComment, parent_id)
-                if not parent or parent.moment_id != moment_id or parent.deleted_at or parent.user_id not in reaction_audience(session, actor):
+                if not parent or parent.moment_id != moment_id or parent.deleted_at or parent.user_id not in moment_comment_audience(session, actor, moment.author_id):
                     raise AppError(code="COMMENT_PARENT_NOT_FOUND", message="回复的评论不存在", status_code=404)
             row = MomentComment(
                 id=str(uuid4()), moment_id=moment_id, user_id=actor, parent_id=parent_id,
@@ -279,7 +279,7 @@ class MomentsService:
         with self.factory() as session:
             rows = session.scalars(select(MomentNotification).where(MomentNotification.recipient_id == actor, MomentNotification.invalidated_at.is_(None)).order_by(MomentNotification.created_at.desc(), MomentNotification.id.desc())).all()
             policy = VisibilityPolicy(session)
-            rows = [row for row in rows if (moment := session.get(Moment, row.moment_id)) and not moment.deleted_at and moment.status == 'PUBLISHED' and policy.can_view(actor, moment)]
+            rows = [row for row in rows if (moment := session.get(Moment, row.moment_id)) and not moment.deleted_at and moment.status == 'PUBLISHED' and policy.can_view(actor, moment) and (row.kind != 'COMMENT' or row.actor_id in moment_comment_audience(session, actor, moment.author_id))]
             return [{'id': row.id, 'moment_id': row.moment_id, 'kind': row.kind, 'actor': self._user_projection(session, row.actor_id, actor), 'created_at': row.created_at, 'read_at': row.read_at} for row in rows]
 
     def notification_unread_count(self, actor):
@@ -472,8 +472,9 @@ class MomentsService:
         }
 
     def comment_dto(self, session, row, viewer_id=None, *, parents=None):
+        moment = session.get(Moment, row.moment_id)
         parent = (parents.get(row.parent_id) if parents is not None else session.get(MomentComment, row.parent_id)) if row.parent_id else None
-        if parent and (parent.deleted_at or parent.user_id not in reaction_audience(session, viewer_id)):
+        if parent and (parent.deleted_at or parent.moment_id != row.moment_id or not moment or parent.user_id not in moment_comment_audience(session, viewer_id, moment.author_id)):
             parent = None
         image_urls = [signed_url(self.avatar_storage, key, row.moment_id, viewer_id) for key in (row.image_object_keys or [])] if self.avatar_storage else []
         created_at = row.created_at
@@ -484,12 +485,13 @@ class MomentsService:
     def dto(self, session, moment, viewer_id=None):
         audience = reaction_audience(session, viewer_id)
         like_rows = session.scalars(select(MomentLike).where(MomentLike.moment_id == moment.id, MomentLike.user_id.in_(audience)).order_by(MomentLike.created_at, MomentLike.id)).all()
+        comment_audience = moment_comment_audience(session, viewer_id, moment.author_id)
         comment_rows = session.scalars(
             select(MomentComment)
             .where(
                 MomentComment.moment_id == moment.id,
                 MomentComment.deleted_at.is_(None),
-                MomentComment.user_id.in_(audience),
+                MomentComment.user_id.in_(comment_audience),
             )
             .order_by(MomentComment.created_at, MomentComment.id)
         ).all()

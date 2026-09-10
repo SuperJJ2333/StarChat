@@ -15,6 +15,13 @@ class _MomentImageProvider extends CachedNetworkImageProvider {
 }
 
 abstract final class MomentMediaCache {
+  /// Called only after a failed decode/load. Remove a damaged disk entry as
+  /// well as the failed decoded frame so the explicit retry can recover.
+  static Future<void> retry(CachedNetworkImageProvider provider) async {
+    await manager.removeFile(provider.cacheKey ?? provider.url);
+    await provider.evict();
+  }
+
   static Object imageIdentity(String url,
           {String? cacheKey, String? accountKey, String? trustedOrigin}) =>
       (
@@ -29,10 +36,13 @@ abstract final class MomentMediaCache {
       );
   static const diskTtl = Duration(days: 7);
   static const maximumDiskEntries = 200;
+  static const maximumConcurrentDownloads = 3;
   static final CacheManager manager = RetainedImageCacheManager(Config(
     'changliao-moments-media-v1',
     stalePeriod: diskTtl,
     maxNrOfCacheObjects: maximumDiskEntries,
+    fileService: HttpFileService()
+      ..concurrentFetches = maximumConcurrentDownloads,
   ));
 
   static CachedNetworkImageProvider imageProvider(
@@ -61,7 +71,12 @@ abstract final class MomentMediaCache {
                 accountKey,
                 cacheKey
               ])))}'
-        : null;
+        : accountKey != null && accountKey.isNotEmpty
+            ? 'moments-url-account-v1:${sha256.convert(utf8.encode(jsonEncode([
+                    accountKey,
+                    url,
+                  ])))}'
+            : null;
     return _MomentImageProvider(url, cacheKey: scoped);
   }
 }

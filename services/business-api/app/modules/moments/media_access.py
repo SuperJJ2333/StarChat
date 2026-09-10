@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.core.errors import AppError
 from app.modules.moments.media import MomentMediaUpload
 from app.modules.moments.models import Moment, MomentComment
-from app.modules.moments.visibility import VisibilityPolicy, reaction_audience
+from app.modules.moments.visibility import VisibilityPolicy, moment_comment_audience
 
 
 def invalid(status=404):
@@ -86,7 +86,7 @@ def read_content(factory, storage, token):
             except AppError:
                 continue
         if not attached:
-            comments = session.scalars(select(MomentComment).where(MomentComment.moment_id == moment_id, MomentComment.deleted_at.is_(None), MomentComment.user_id.in_(reaction_audience(session, viewer))))
+            comments = session.scalars(select(MomentComment).where(MomentComment.moment_id == moment_id, MomentComment.deleted_at.is_(None), MomentComment.user_id.in_(moment_comment_audience(session, viewer, moment.author_id))))
             attached = any(key in (comment.image_object_keys or []) for comment in comments)
         if not attached:
             invalid()

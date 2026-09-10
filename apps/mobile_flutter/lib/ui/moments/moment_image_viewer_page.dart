@@ -25,6 +25,7 @@ final class MomentImageViewerPage extends StatefulWidget {
 }
 
 final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
+  final _retries = <int, int>{};
   late int index = widget.initialIndex.clamp(0, widget.imageUrls.length - 1);
   late final controller = PageController(initialPage: index);
   @override
@@ -50,14 +51,16 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   maxScale: 4,
                   child: Center(
                     child: Image(
-                      key: ValueKey(MomentMediaCache.imageIdentity(
-                          widget.imageUrls[i],
-                          accountKey:
-                              widget.mediaAccountKey ?? widget.cacheNamespace,
-                          trustedOrigin: widget.mediaOrigin,
-                          cacheKey: i < widget.imageCacheKeys.length
-                              ? widget.imageCacheKeys[i]
-                              : null)),
+                      key: ValueKey((
+                        MomentMediaCache.imageIdentity(widget.imageUrls[i],
+                            accountKey:
+                                widget.mediaAccountKey ?? widget.cacheNamespace,
+                            trustedOrigin: widget.mediaOrigin,
+                            cacheKey: i < widget.imageCacheKeys.length
+                                ? widget.imageCacheKeys[i]
+                                : null),
+                        _retries[i] ?? 0
+                      )),
                       gaplessPlayback: true,
                       image: MomentMediaCache.imageProvider(widget.imageUrls[i],
                           accountKey:
@@ -67,10 +70,27 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                               ? widget.imageCacheKeys[i]
                               : null),
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Center(
-                        child: Text('图片加载失败',
-                            style:
-                                TextStyle(color: CupertinoColors.systemGrey)),
+                      errorBuilder: (_, __, ___) => Center(
+                        child: CupertinoButton(
+                          onPressed: () async {
+                            await MomentMediaCache.retry(
+                                MomentMediaCache.imageProvider(
+                                    widget.imageUrls[i],
+                                    accountKey: widget.mediaAccountKey ??
+                                        widget.cacheNamespace,
+                                    trustedOrigin: widget.mediaOrigin,
+                                    cacheKey: i < widget.imageCacheKeys.length
+                                        ? widget.imageCacheKeys[i]
+                                        : null));
+                            if (mounted) {
+                              setState(
+                                  () => _retries[i] = (_retries[i] ?? 0) + 1);
+                            }
+                          },
+                          child: const Icon(CupertinoIcons.arrow_clockwise,
+                              color: CupertinoColors.systemGrey,
+                              semanticLabel: '重新加载图片'),
+                        ),
                       ),
                       loadingBuilder: (_, child, progress) {
                         if (progress == null) return child;

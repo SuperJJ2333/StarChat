@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:image_picker/image_picker.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
@@ -804,6 +805,9 @@ final class _MomentsPageState extends State<MomentsPage> {
               );
               return CustomScrollView(
                 controller: _feedScroll,
+                // Build/load only the viewport plus half a screen on either
+                // side. The shared media downloader bounds parallel requests.
+                scrollCacheExtent: const ScrollCacheExtent.viewport(0.5),
                 slivers: [
                   CupertinoSliverRefreshControl(onRefresh: _refreshFeed),
                   SliverList.list(children: [
@@ -843,43 +847,44 @@ final class _MomentsPageState extends State<MomentsPage> {
                         child: _ownerIdentity(),
                       ),
                     ),
-                    for (final m in items)
-                      Builder(
-                        builder: (_) {
-                          final parsed = MomentItem.fromJson(
-                            Map<String, dynamic>.from(m as Map),
-                          );
-                          if (_deletedIds.contains(parsed.id)) {
-                            return const SizedBox.shrink();
-                          }
-                          final item = _itemOverrides[parsed.id] ?? parsed;
-                          return WeChatMomentTile(
-                            key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
-                            identityCache: _identityCache,
-                            item: visibleMomentReactions(item, _identityCache),
-                            onAuthorTap: () => _openAuthor(item.author),
-                            onPersonTap: _openAuthor,
-                            selectedCommentId: _selectedComments[item.id],
-                            cacheNamespace: _identityCache.accountKey ?? '',
-                            onOpen: () => _openDetail(item),
-                            onCommentLongPress: (comment, anchor) =>
-                                _showComment(context, item, comment, anchor),
-                            onCommentTap: (comment) =>
-                                _showComment(context, item, comment),
-                            mediaAccountKey: _accountKey,
-                            mediaOrigin: widget.api.baseUri.origin,
-                            onLike: _pendingLikeIds.contains(item.id)
-                                ? null
-                                : () => _toggleLike(item),
-                            onComment: () => _showComment(context, item),
-                            onDelete: _canDelete(item)
-                                ? () => _confirmDelete(item)
-                                : null,
-                          );
-                        },
-                      ),
-                    _paginationFooter(items),
                   ]),
+                  SliverList.builder(
+                    itemCount: items.length,
+                    itemBuilder: (_, index) {
+                      final m = items[index];
+                      final parsed = MomentItem.fromJson(
+                        Map<String, dynamic>.from(m as Map),
+                      );
+                      if (_deletedIds.contains(parsed.id)) {
+                        return const SizedBox.shrink();
+                      }
+                      final item = _itemOverrides[parsed.id] ?? parsed;
+                      return WeChatMomentTile(
+                        key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
+                        identityCache: _identityCache,
+                        item: visibleMomentReactions(item, _identityCache),
+                        onAuthorTap: () => _openAuthor(item.author),
+                        onPersonTap: _openAuthor,
+                        selectedCommentId: _selectedComments[item.id],
+                        cacheNamespace: _identityCache.accountKey ?? '',
+                        onOpen: () => _openDetail(item),
+                        onCommentLongPress: (comment, anchor) =>
+                            _showComment(context, item, comment, anchor),
+                        onCommentTap: (comment) =>
+                            _showComment(context, item, comment),
+                        mediaAccountKey: _accountKey,
+                        mediaOrigin: widget.api.baseUri.origin,
+                        onLike: _pendingLikeIds.contains(item.id)
+                            ? null
+                            : () => _toggleLike(item),
+                        onComment: () => _showComment(context, item),
+                        onDelete: _canDelete(item)
+                            ? () => _confirmDelete(item)
+                            : null,
+                      );
+                    },
+                  ),
+                  SliverToBoxAdapter(child: _paginationFooter(items)),
                 ],
               );
             },

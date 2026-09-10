@@ -25,7 +25,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 final class CacheRepository {
   CacheRepository._(this._preferences);
 
-  static const String momentsFeedKey = 'cache.moments.feed.latest';
+  // v2 rejects snapshots projected before the common-friend comment policy.
+  // This namespace is metadata only; downloaded image bytes remain reusable.
+  static const String momentsFeedKey = 'cache.moments.feed.latest.audience-v2';
 
   /// U04：朋友圈快照按账号命名空间——`<基键>.<accountKey>`。
   /// 账号切换/登出只清除对应账号的键，绝不让 B 首绘 A 的 feed，

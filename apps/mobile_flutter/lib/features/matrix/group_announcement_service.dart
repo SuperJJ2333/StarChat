@@ -39,8 +39,10 @@ final class AnnouncementBlock {
 }
 
 final class GroupAnnouncement {
-  const GroupAnnouncement(this.blocks);
+  const GroupAnnouncement(this.blocks, {this.publisherName, this.publishedAt});
   final List<AnnouncementBlock> blocks;
+  final String? publisherName;
+  final DateTime? publishedAt;
   bool get isEffective => blocks.any(
       (block) => block.localBytes != null || block.value.trim().isNotEmpty);
   String get preview =>
@@ -120,6 +122,7 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
       .map<void>((_) {});
   @override
   Future<GroupAnnouncement> load() async {
+    _requireMember();
     final reference = room.getState(groupAnnouncementStateType);
     if (reference == null) {
       // Read-only compatibility for announcements published by older clients.
@@ -135,13 +138,38 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
     if (eventId is! String || !eventId.startsWith(r'$')) {
       throw FormatException('公告引用无效');
     }
-    final event = await room.getEventById(eventId);
+    final event = await _loadEncryptedEvent(eventId);
     if (event == null ||
         event.senderId != reference.senderId ||
         event.originalSource?.type != EventTypes.Encrypted) {
       throw StateError('公告暂不可用');
     }
-    return GroupAnnouncement.fromContent(event.content);
+    final document = GroupAnnouncement.fromContent(event.content);
+    final displayName = room
+        .getState(EventTypes.RoomMember, event.senderId)
+        ?.content['displayname'];
+    final name = displayName is String ? displayName.trim() : null;
+    return GroupAnnouncement(document.blocks,
+        publisherName:
+            name == null || name.isEmpty || name.startsWith('@') ? '群成员' : name,
+        publishedAt: event.originServerTs);
+  }
+
+  void _requireMember() {
+    if (room.client.userID == null || room.membership != Membership.join) {
+      throw StateError('仅群成员可查看公告');
+    }
+  }
+
+  Future<Event?> _loadEncryptedEvent(String eventId) async {
+    _requireMember();
+    var event = await room.getEventById(eventId);
+    // SDK cache hits can still be ciphertext; its network path alone decrypts.
+    if (event?.type == EventTypes.Encrypted && room.client.encryptionEnabled) {
+      event = await room.client.encryption?.decryptRoomEvent(room.id, event!);
+    }
+    _requireMember();
+    return event;
   }
 
   void _requireEncryptedManager() {
@@ -200,7 +228,7 @@ final class MatrixGroupAnnouncementService implements GroupAnnouncementService {
 
   @override
   Future<Uint8List> loadImage(String eventId) async {
-    final event = await room.getEventById(eventId);
+    final event = await _loadEncryptedEvent(eventId);
     if (event == null ||
         event.messageType != MessageTypes.Image ||
         event.originalSource?.type != EventTypes.Encrypted) {

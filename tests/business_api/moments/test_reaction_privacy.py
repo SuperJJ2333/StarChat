@@ -13,7 +13,7 @@ from app.modules.moments.service import MomentsService
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('revoke', ['stranger', 'removed', 'block', 'reverse_block', 'hidden', 'excluded', 'entry'])
+@pytest.mark.parametrize('revoke', ['stranger', 'removed', 'author_removed', 'block', 'reverse_block', 'hidden', 'excluded', 'entry'])
 async def test_viewer_relative_reactions_and_saved_comment_media(ctx, tmp_path, revoke):
     original, settings = ctx
     factory = original.state.session_factory
@@ -42,6 +42,8 @@ async def test_viewer_relative_reactions_and_saved_comment_media(ctx, tmp_path, 
         with factory.begin() as s:
             if revoke == 'removed':
                 s.execute(delete(Friendship).where(Friendship.id == 'f23'))
+            elif revoke == 'author_removed':
+                s.execute(delete(Friendship).where(Friendship.id == 'f13'))
             elif revoke in ('block', 'reverse_block'):
                 blocker, blocked = ('u2', 'u3') if revoke == 'block' else ('u3', 'u2')
                 s.add(UserBlock(id='block', blocker_id=blocker, blocked_id=blocked, idempotency_key='block', created_at=now))
@@ -53,8 +55,9 @@ async def test_viewer_relative_reactions_and_saved_comment_media(ctx, tmp_path, 
         feed = (await c.get('/api/v1/moments/feed', headers=headers)).json()['items'][0]
         personal = MomentsService(factory, avatar_storage=storage).personal_timeline('u2', 'u1')[0]
         for dto in [detail, feed, personal]:
-            assert dto['like_count'] == 2
-            assert {row['user_id'] for row in dto['like_users']} == {'u1', 'u2'}
+            expected_likers = {'u1', 'u2', 'u3'} if revoke == 'author_removed' else {'u1', 'u2'}
+            assert dto['like_count'] == len(expected_likers)
+            assert {row['user_id'] for row in dto['like_users']} == expected_likers
             assert dto['viewer_has_liked'] is True
             assert dto['comment_count'] == 3
             assert {row['user_id'] for row in dto['comments']} == {'u1', 'u2'}
