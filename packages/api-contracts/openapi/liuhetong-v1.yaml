@@ -164,6 +164,28 @@
         "title": "AdminLoginRequest",
         "type": "object"
       },
+      "AdminModulePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "module": {
+            "title": "Module",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "items"
+        ],
+        "title": "AdminModulePage",
+        "type": "object"
+      },
       "AdminOverview": {
         "properties": {
           "active_users": {
@@ -279,6 +301,98 @@
           "session_expires_at"
         ],
         "title": "AdminTokenResponse",
+        "type": "object"
+      },
+      "AdminUserItem": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "nickname": {
+            "title": "Nickname",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nickname",
+          "status",
+          "created_at",
+          "updated_at",
+          "email_verified_at"
+        ],
+        "title": "AdminUserItem",
+        "type": "object"
+      },
+      "AdminUserPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "module": {
+            "enum": [
+              "security",
+              "analytics"
+            ],
+            "title": "Module",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module",
+          "items",
+          "total",
+          "next_cursor"
+        ],
+        "title": "AdminUserPage",
         "type": "object"
       },
       "AmountBody": {
@@ -4355,6 +4469,17 @@
             "title": "Action",
             "type": "string"
           },
+          "actor_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Display Name"
+          },
           "actor_id": {
             "anyOf": [
               {
@@ -4365,6 +4490,17 @@
               }
             ],
             "title": "Actor Id"
+          },
+          "actor_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Username"
           },
           "created_at": {
             "title": "Created At",
@@ -4401,9 +4537,31 @@
       },
       "PointIssuanceDetail": {
         "properties": {
+          "actor_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Display Name"
+          },
           "actor_id": {
             "title": "Actor Id",
             "type": "string"
+          },
+          "actor_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Username"
           },
           "amount": {
             "pattern": "^-?\\d+\\.\\d{2}$",
@@ -4527,9 +4685,31 @@
       },
       "PointIssuanceItem": {
         "properties": {
+          "actor_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Display Name"
+          },
           "actor_id": {
             "title": "Actor Id",
             "type": "string"
+          },
+          "actor_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Username"
           },
           "amount": {
             "pattern": "^-?\\d+\\.\\d{2}$",
@@ -6950,13 +7130,70 @@
               "title": "Module",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminUserPage"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdminModulePage"
+                    }
+                  ],
+                  "title": "Response Module Data Api V1 Admin Modules  Module  Get"
+                }
               }
             },
             "description": "Successful Response"

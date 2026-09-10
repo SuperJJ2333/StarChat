@@ -39,6 +39,14 @@
 
 ## 常见阻断
 
+### 后台快照有界重采样（ADR-0061）
+
+部署包含此修复的 worker 后，`BUSINESS_WALLET_MANUAL_STALE_RESAMPLE_BUDGET_SECONDS` 控制后台重采样预算，整数范围 0–60，默认 60；设为 0 并重建 worker 可恢复原有 200ms 单次重采样。同步管理接口仍使用原有短重采样，不等待 60 秒。
+
+仅当快照除了过期之外均有效、业务保护检查通过且储备可以失效时，后台才进入 `MANUAL_SOURCE_WAITING`。等待前先提交储备失效，使新出款执行、兑换及依赖储备的入账无法使用旧证据。等待不占用资金事务，告警发送继续运行。新快照必须具有更大的 observation_id，并通过完整检查；180 秒固化头期限不变。等待超时或发现其他异常仍阻断，不自动结案或恢复已有暂停。
+
+排障查看结构化事件 `reserve_cut_expired_wait`：STARTED、RECOVERED、REJECTED、TIMED_OUT，以及 waited_ms、poll_count 和 observation_id。频繁等待说明源扫描或固化头滞后挤压了可用窗口，应结合已有扫描耗时和块头年龄日志检查供应商。此日志不能作为解除提现暂停的依据，已有事故仍按上方人工流程处理。
+
 - WALLET_MONITOR_UNAVAILABLE / MANUAL_CONTROL_EVIDENCE_UNAVAILABLE：当前证据尚未通过；刷新并检查具体等待/失败原因后重试。
 - WALLET_UNRESOLVED_INCIDENTS：仍有阻断事故未结案。
 - MANUAL_CONTROL_UNRESOLVED_PAYOUT：存在已领取或状态未知的付款，先核对原付款与链上记录。

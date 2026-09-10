@@ -91,8 +91,10 @@ def build_wallet_tasks(settings, session_factory):
         from app.modules.wallet.manual_reserve_monitor import ManualReserveMonitor
         limiter = NoopRateLimiter() if settings.environment == 'test' else RedisRateLimiter.from_url(settings.redis_url)
         runtime = create_manual_wallet_runtime(settings, session_factory, limiter)
+        monitor_runner = None
         try:
-            clock = lambda: datetime.now(timezone.utc)
+            def clock():
+                return datetime.now(timezone.utc)
             source = SQLiteFundingSource(settings.tron_observer_database_path,
                 official_address=settings.wallet_official_address.get_secret_value(), clock=clock,
                 solid_head_max_age_seconds=180)
@@ -116,18 +118,31 @@ def build_wallet_tasks(settings, session_factory):
                     recipient=recipient.get_secret_value())
                 # Configuration only: no SMTP probe or secret reaches heartbeat.
                 external_delivery_configured = not isinstance(sender, DisabledEmailSender)
+            resample_budget = getattr(settings, 'wallet_manual_stale_resample_budget_seconds', 0)
+            resample_options = ({'stale_resample_budget_seconds': resample_budget}
+                if hasattr(settings, 'wallet_manual_stale_resample_budget_seconds') else {})
             monitor = ManualReserveMonitor(session_factory, source=source, official_config=official,
                 activation_baseline_time=settings.wallet_funding_baseline_at,
                 activation_baseline_height=settings.wallet_funding_baseline_height, clock=clock,
-                external_delivery_configured=external_delivery_configured)
+                external_delivery_configured=external_delivery_configured, **resample_options)
             monitor.reserve_policy = getattr(settings, 'wallet_reserve_policy', 'full_backing')
             monitor.discovery_sync = lambda: scanner.run_once(funds_enabled=False)
             preparing = getattr(settings, 'wallet_handover_preparation_mode', False)
+            secondary_monitor = monitor.preparation_once if preparing else monitor.run_once
+            if resample_budget > 0 and not preparing:
+                from tasks.reserve_monitor_runner import ReserveMonitorRunner
+                monitor_runner = ReserveMonitorRunner(monitor)
+                monitor = monitor_runner
+                secondary_monitor = monitor_runner.ensure_running
             task = ManualWalletMaintenanceTask(session_factory, runtime=runtime, scanner=scanner, monitor=monitor,
-                handover_preparation=preparing)
-            return task.run_once, monitor.preparation_once if preparing else monitor.run_once, handlers
+                handover_preparation=preparing, monitor_runner=monitor_runner)
+            return task.run_once, secondary_monitor, handlers
         except Exception:
-            runtime.close()
+            try:
+                if monitor_runner is not None:
+                    monitor_runner.close()
+            finally:
+                runtime.close()
             raise
 
     # A04：托管 provider 统一工厂注入——生产未接真实托管时资金维护

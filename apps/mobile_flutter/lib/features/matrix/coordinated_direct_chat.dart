@@ -48,7 +48,8 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
   final String? Function(String) businessUserIdOf;
   final Future<DirectChatRoom> Function(String) createOnce;
   final Future<DirectChatRoom?> Function(String) findExisting;
-  final Future<DirectChatRoom> Function(String) openExisting;
+  final Future<DirectChatRoom> Function(String roomId, String matrixUserId)
+      openExisting;
   final Future<void> Function(Duration) wait;
   final int waitAttempts;
 
@@ -62,13 +63,13 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     // failures propagate; none of them is evidence that another room is needed.
     final canonical = await coordinator.canonicalRoomId(peer);
     if (canonical != null && canonical.isNotEmpty) {
-      return _safe(await openExisting(canonical), matrixUserId);
+      return _safe(await openExisting(canonical, matrixUserId), matrixUserId);
     }
     final intent = await intents.loadOrCreate(peer);
     final claim = await coordinator.claim(peer, intent.attemptId);
     final claimedRoom = claim.roomId;
     if (claimedRoom != null && claimedRoom.isNotEmpty) {
-      return _safe(await openExisting(claimedRoom), matrixUserId);
+      return _safe(await openExisting(claimedRoom, matrixUserId), matrixUserId);
     }
     DirectChatRoom? result;
     if (claim.mayCreate && claim.canPublish) {
@@ -76,14 +77,17 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
       // uncertain Matrix result must never replay the create operation.
       final existing = await findExisting(matrixUserId);
       result = existing != null
-          ? _safe(existing, matrixUserId)
+          ? _safe(
+              await openExisting(existing.roomId, matrixUserId), matrixUserId)
           : _safe(await createOnce(matrixUserId), matrixUserId);
     } else if (claim.canPublish) {
       final savedRoom = intent.roomId;
-      result = savedRoom != null
-          ? _safe(await openExisting(savedRoom), matrixUserId)
-          : await findExisting(matrixUserId);
-      if (result != null) result = _safe(result, matrixUserId);
+      final existingRoomId =
+          savedRoom ?? (await findExisting(matrixUserId))?.roomId;
+      if (existingRoomId != null) {
+        result = _safe(
+            await openExisting(existingRoomId, matrixUserId), matrixUserId);
+      }
     }
     if (result != null) {
       await intents.saveRoom(peer, intent, result.roomId);
@@ -92,13 +96,13 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
       if (published.isEmpty) throw StateError('规范私聊登记未完成');
       return published == result.roomId
           ? result
-          : _safe(await openExisting(published), matrixUserId);
+          : _safe(await openExisting(published, matrixUserId), matrixUserId);
     }
     for (var i = 0; i < waitAttempts; i++) {
       await wait(const Duration(milliseconds: 500));
       final ready = await coordinator.canonicalRoomId(peer);
       if (ready != null && ready.isNotEmpty) {
-        return _safe(await openExisting(ready), matrixUserId);
+        return _safe(await openExisting(ready, matrixUserId), matrixUserId);
       }
     }
     throw const DirectRoomPendingException();

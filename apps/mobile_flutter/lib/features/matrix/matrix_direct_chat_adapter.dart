@@ -10,7 +10,8 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
 
   /// Open the business directory's canonical room, including an invitation
   /// that has not yet appeared in the local room list.
-  Future<DirectChatRoom> openCanonicalRoom(String roomId) async {
+  Future<DirectChatRoom> openCanonicalRoom(String roomId,
+      {String? matrixUserId}) async {
     var room = client.getRoomById(roomId);
     if (room == null || room.membership != Membership.join) {
       await client.joinRoomById(roomId).timeout(const Duration(seconds: 15));
@@ -22,10 +23,21 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
       room = client.getRoomById(roomId);
     }
     var snapshot = await waitForRoom(roomId);
-    final target = snapshot.participantIds
-        .firstWhere((id) => id != client.userID, orElse: () => '');
-    snapshot =
-        await DirectChatService(this).openExisting(snapshot.roomId, target);
+    // The clicked contact supplies the peer; account metadata may be absent or
+    // stale. Legacy callers can infer it only when they have enough room state.
+    final target = matrixUserId ??
+        room?.directChatMatrixID ??
+        snapshot.participantIds
+            .firstWhere((id) => id != client.userID, orElse: () => '');
+    // 问题三（重复会话根因一）：成员/加密状态可能尚未同步送达，此前
+    // 校验失败立即抛错、上层回落新建第二个私聊。现在有界等待收敛；
+    // 仍不健康则修复（重邀已退出的对方/补开加密，保留聊天历史）；
+    // 仍不可用时保留原房间重试，不能借校验失败创建重复房间。
+    snapshot = await _ensureHealthy(
+      snapshot,
+      target: target,
+      me: client.userID ?? '',
+    );
     if (target.isNotEmpty &&
         (room?.isDirectChat != true || room?.directChatMatrixID != target)) {
       try {
@@ -39,6 +51,48 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
     }
     return snapshot;
   }
+
+  /// 等待规范房间快照达到“加密+双人”健康态：先短轮询（同步送达），
+  /// 不收敛再走 [repairDirectRoom]（重邀/补加密），修复后复验。
+  /// 全部失败抛 [StateError]，由用户重试原房间。
+  Future<DirectChatRoom> _ensureHealthy(
+    DirectChatRoom snapshot, {
+    required String target,
+    required String me,
+  }) async {
+    if (_isHealthy(snapshot, target: target, me: me)) return snapshot;
+    final room = client.getRoomById(snapshot.roomId);
+    if (room == null || target.isEmpty || me.isEmpty || target == me) {
+      throw StateError('Direct chat identity or room is unavailable');
+    }
+    // requestParticipants may return a complete but stale local cache.
+    snapshot = await _snapshot(room, refreshMembers: true);
+    if (_isHealthy(snapshot, target: target, me: me)) return snapshot;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final candidate = await _snapshot(room, refreshMembers: true);
+      if (_isHealthy(candidate, target: target, me: me)) return candidate;
+      snapshot = candidate;
+    }
+    final repaired = await repairDirectRoom(snapshot, target);
+    if (repaired != null && _isHealthy(repaired, target: target, me: me)) {
+      return repaired;
+    }
+    throw StateError(
+        'Canonical room is not a healthy direct chat (room=${snapshot.roomId} '
+        'encrypted=${snapshot.encrypted} members=${snapshot.joinedMemberCount})');
+  }
+
+  bool _isHealthy(
+    DirectChatRoom room, {
+    required String target,
+    required String me,
+  }) =>
+      room.encrypted &&
+      room.joinedMemberCount == 2 &&
+      room.participantIds.length == 2 &&
+      room.participantIds.contains(target) &&
+      room.participantIds.contains(me);
 
   @override
   Future<DirectChatRoom?> findJoinedDirectRoom(String matrixUserId) async {
@@ -151,9 +205,15 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
   ) async {
     final room = client.getRoomById(snapshot.roomId);
     if (room == null || room.membership != Membership.join) return null;
+    if (matrixUserId.isEmpty || matrixUserId == client.userID) return null;
     try {
+      snapshot = await _snapshot(room, refreshMembers: true);
+      if (_isHealthy(snapshot, target: matrixUserId, me: client.userID ?? '')) {
+        return snapshot;
+      }
       if (snapshot.encrypted &&
           snapshot.participantIds.length == 1 &&
+          snapshot.participantIds.contains(client.userID) &&
           !snapshot.participantIds.contains(matrixUserId)) {
         // 对方已退出（invite→leave）：重新邀请恢复会话，保留聊天历史。
         // invite 计入双人校验；对端打开会话时经 invite 扫描自动接受。
@@ -168,7 +228,7 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
       }
       // 成员来自服务端实时查询；加密标志依赖本地同步送达，短暂轮询。
       for (var attempt = 0; attempt < 3; attempt++) {
-        final candidate = await _snapshot(room);
+        final candidate = await _snapshot(room, refreshMembers: true);
         if (candidate.encrypted &&
             candidate.participantIds.length == 2 &&
             candidate.participantIds.contains(matrixUserId)) {
@@ -219,11 +279,25 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
     return _snapshot(room);
   }
 
-  Future<DirectChatRoom> _snapshot(Room room) async {
+  Future<DirectChatRoom> _snapshot(Room room,
+      {bool refreshMembers = false}) async {
     // 成员按 join+invite 口径统计：新好友的 DM 在对方接受邀请前只有
     // 一方 joined，会话必须允许该状态存在（否则必报"无法打开加密会话"）。
-    final members =
-        await room.requestParticipants([Membership.join, Membership.invite]);
+    final members = refreshMembers
+        ? (await client
+                .getMembersByRoom(room.id)
+                .timeout(const Duration(seconds: 15)))
+            ?.map((event) => Event.fromMatrixEvent(event, room).asUser)
+            .where((user) =>
+                user.membership == Membership.join ||
+                user.membership == Membership.invite)
+            .toList()
+        : await room
+            .requestParticipants([Membership.join, Membership.invite]).timeout(
+                const Duration(seconds: 15));
+    if (members == null) {
+      throw StateError('Direct chat members are unavailable');
+    }
     return DirectChatRoom(
       roomId: room.id,
       encrypted: room.encrypted,

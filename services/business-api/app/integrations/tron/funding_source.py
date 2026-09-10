@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
+import time
 from . import diagnostics as diag
 
 from app.integrations.tron.message_signature import canonical_address
@@ -57,6 +59,7 @@ class SourceBatch:
     observation_id: int = 0
     balance_units: int | None = None
     pending_since_ms: int | None = None
+    age_expired_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,6 +74,12 @@ class ReserveCut:
     fresh_until_ms: int
     healthy: bool
     digest: str
+
+
+@dataclass(frozen=True)
+class ReserveCutSample:
+    cut: ReserveCut
+    age_expired_only: bool
 
 
 def _integer(value):
@@ -94,16 +103,30 @@ class SQLiteFundingSource:
 
     def read_reserve_cut(self):
         """One observer transaction; this is discovery coverage, not finality proof."""
-        batch = self.read_batch(after_rowid=0, limit=1)
+        return self.read_reserve_sample().cut
+
+    def read_reserve_sample(self, *, timeout_seconds=5.0):
+        """Classify expiry in the same transaction as the unchanged financial cut."""
+        batch = self.read_batch(after_rowid=0, limit=1, timeout_seconds=timeout_seconds)
         if batch.pending_since_ms is not None:
             raise FundingSourcePending(batch.pending_since_ms, batch.fresh_until_ms)
         values = {key: getattr(batch, key) for key in ('source_identity', 'observation_id',
             'max_rowid', 'checkpoint_ms', 'solid_block', 'balance_units', 'heartbeat_ms',
             'fresh_until_ms', 'healthy')}
         digest = hashlib.sha256(json.dumps(values, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-        return ReserveCut(**values, digest=digest)
+        return ReserveCutSample(ReserveCut(**values, digest=digest), batch.age_expired_only)
 
-    def read_batch(self, *, after_rowid, limit=100):
+    def read_batch(self, *, after_rowid, limit=100, timeout_seconds=5.0):
+        if type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 5:
+            raise FundingSourceError('SOURCE_READ_BUDGET')
+        deadline = time.monotonic() + timeout_seconds
+
+        def remaining():
+            budget = deadline - time.monotonic()
+            if budget <= 0:
+                raise FundingSourceError('SOURCE_READ_BUDGET_EXPIRED')
+            return min(timeout_seconds, budget)
+
         _integer(after_rowid)
         if type(limit) is not int or not 1 <= limit <= 100:
             raise FundingSourceError('SOURCE_BATCH_LIMIT')
@@ -112,20 +135,26 @@ class SQLiteFundingSource:
             raise ValueError('aware server clock required')
         now_ms = int(now.astimezone(timezone.utc).timestamp()*1000)
         try:
-            with closing(sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro', uri=True, timeout=5)) as conn:
+            with closing(sqlite3.connect(self.path.resolve().as_uri()+'?mode=ro', uri=True, timeout=remaining())) as conn:
                 conn.row_factory = sqlite3.Row
-                conn.execute('BEGIN')
-                state = conn.execute('SELECT * FROM observer_state WHERE singleton=1').fetchone()
+                conn.set_progress_handler(lambda: int(time.monotonic() >= deadline), 100)
+
+                def execute(sql, parameters=()):
+                    conn.execute(f'PRAGMA busy_timeout={int(remaining()*1000)}')
+                    return conn.execute(sql, parameters)
+
+                execute('BEGIN')
+                state = execute('SELECT * FROM observer_state WHERE singleton=1').fetchone()
                 if state is None or state['identity'] != self.source_identity:
                     raise FundingSourceError('SOURCE_IDENTITY_MISMATCH')
                 checkpoint = _integer(state['checkpoint_ms'])
                 if checkpoint < _integer(state['start_ms']):
                     raise FundingSourceError('SOURCE_REGRESSION')
-                maximum = _integer(conn.execute('SELECT COALESCE(MAX(rowid),0) FROM events').fetchone()[0])
+                maximum = _integer(execute('SELECT COALESCE(MAX(rowid),0) FROM events').fetchone()[0])
                 if maximum < after_rowid:
                     raise FundingSourceError('SOURCE_REGRESSION')
-                run = conn.execute('SELECT * FROM runs ORDER BY id DESC LIMIT 1').fetchone()
-                observation = conn.execute('SELECT * FROM observations ORDER BY id DESC LIMIT 1').fetchone()
+                run = execute('SELECT * FROM runs ORDER BY id DESC LIMIT 1').fetchone()
+                observation = execute('SELECT * FROM observations ORDER BY id DESC LIMIT 1').fetchone()
                 if run is None or observation is None:
                     raise FundingSourceError('SOURCE_HEALTH_MISSING')
                 heartbeat = _integer(run['heartbeat_ms'])
@@ -149,6 +178,12 @@ class SQLiteFundingSource:
                 fresh = (all(0 <= now_ms-value <= self.max_age_seconds*1000 for value in (heartbeat,observed))
                     and 0 <= now_ms-solid_ms <= self.solid_head_max_age_seconds*1000)
                 healthy = fresh and run['status'] == 'OK' and run['error_code'] is None and stable and reconciliation == 'SOURCE_MATCHED'
+                fresh_until = min(min(heartbeat, observed)+self.max_age_seconds*1000,
+                    solid_ms+self.solid_head_max_age_seconds*1000)
+                age_expired_only = (run['status'] == 'OK' and run['error_code'] is None
+                    and stable and reconciliation == 'SOURCE_MATCHED'
+                    and all(value <= now_ms for value in (heartbeat, observed, solid_ms, checkpoint, state['start_ms']))
+                    and now_ms > fresh_until)
                 diag.source_health(now_ms=now_ms, heartbeat=heartbeat, observed=observed,
                     solid_ms=solid_ms, max_age_seconds=self.max_age_seconds,
                     head_limit=self.solid_head_max_age_seconds, observation_id=observation['id'],
@@ -157,28 +192,30 @@ class SQLiteFundingSource:
                                                       solid_ms+self.solid_head_max_age_seconds*1000))
                 pending_since = None
                 if fresh and run['status'] == 'OK' and run['error_code'] is None and reconciliation == 'RECONCILIATION_UNVERIFIED':
-                    pending_since = _integer(conn.execute("""SELECT MIN(heartbeat_ms) FROM observations
+                    pending_since = _integer(execute("""SELECT MIN(heartbeat_ms) FROM observations
                         WHERE id > COALESCE((SELECT MAX(id) FROM observations
                             WHERE stable_balance=1 AND reconciliation='SOURCE_MATCHED'),0)""").fetchone()[0])
                     if pending_since > observed:
                         raise FundingSourceError('SOURCE_MALFORMED')
                 if (fresh and run['status'] == 'ERROR' and run['error_code'] == 'SNAPSHOT_FAILED'
                         and reconciliation != 'BALANCE_DISCREPANCY'):
-                    failed_since = _integer(conn.execute("""SELECT MIN(heartbeat_ms) FROM runs
+                    failed_since = _integer(execute("""SELECT MIN(heartbeat_ms) FROM runs
                         WHERE id > COALESCE((SELECT MAX(id) FROM runs WHERE status='OK' AND error_code IS NULL),0)
                         """).fetchone()[0])
                     if failed_since > heartbeat:
                         raise FundingSourceError('SOURCE_MALFORMED')
                     pending_since = failed_since
                     if reconciliation == 'RECONCILIATION_UNVERIFIED':
-                        pending_since = min(pending_since, _integer(conn.execute("""SELECT MIN(heartbeat_ms)
+                        pending_since = min(pending_since, _integer(execute("""SELECT MIN(heartbeat_ms)
                             FROM observations WHERE id > COALESCE((SELECT MAX(id) FROM observations
                             WHERE stable_balance=1 AND reconciliation='SOURCE_MATCHED'),0)""").fetchone()[0]))
                 events = []
-                rows = conn.execute('SELECT rowid,txid,log_index,payload,timestamp_ms FROM events WHERE rowid>? ORDER BY rowid LIMIT ?', (after_rowid,limit))
+                rows = execute('SELECT rowid,txid,log_index,payload,timestamp_ms FROM events WHERE rowid>? ORDER BY rowid LIMIT ?', (after_rowid,limit))
                 for row in rows:
+                    remaining()
                     payload = json.loads(row['payload'])
-                    if not isinstance(payload,dict): raise FundingSourceError('SOURCE_MALFORMED')
+                    if not isinstance(payload,dict):
+                        raise FundingSourceError('SOURCE_MALFORMED')
                     txid = row['txid']
                     if not isinstance(txid,str) or re.fullmatch('[0-9a-f]{64}',txid) is None:
                         raise FundingSourceError('SOURCE_MALFORMED')
@@ -192,12 +229,14 @@ class SQLiteFundingSource:
                         raise FundingSourceError('SOURCE_MALFORMED')
                     events.append(SourceEvent(_integer(row['rowid']),txid,timestamp,height,
                         payload['log_index'],payload['amount_units'],payload['from_address'],payload['to_address']))
+                remaining()
                 return SourceBatch(self.source_identity,after_rowid,events[-1].rowid if events else after_rowid,
                     maximum,checkpoint,heartbeat,solid,stable,reconciliation,healthy,
                     min(min(heartbeat,observed)+self.max_age_seconds*1000,
                         solid_ms+self.solid_head_max_age_seconds*1000),tuple(events),
-                    _integer(observation['id']),int(balance),pending_since)
+                    _integer(observation['id']),int(balance),pending_since,age_expired_only)
         except FundingSourceError:
             raise
         except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, IndexError):
+            remaining()
             raise FundingSourceError('SOURCE_UNAVAILABLE_OR_MALFORMED') from None

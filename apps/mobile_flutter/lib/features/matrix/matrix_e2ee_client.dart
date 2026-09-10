@@ -1,3 +1,4 @@
+import 'matrix_room_display_name.dart' as room_names;
 import 'conversation_read_state.dart';
 export 'matrix_room_timeline_adapter.dart' show changliaoRedPacketMessageType;
 import 'call_diagnostics.dart';
@@ -606,7 +607,7 @@ final class MatrixConversationCapability {
             for (final room in client.rooms)
               if (room.membership == Membership.invite && !room.isDirectChat)
                 MatrixGroupInviteSnapshot(
-                    id: room.id, name: room.getLocalizedDisplayname())
+                    id: room.id, name: room_names.roomDisplayName(room))
           ]);
   Future<void> acceptGroupInvite(String id) =>
       _owner._withClient((client) async {
@@ -664,7 +665,7 @@ final class MatrixConversationCapability {
       _owner._withClient((client) async {
         final room = client.getRoomById(roomId);
         if (room == null) throw StateError('Matrix room is unavailable');
-        return room.getLocalizedDisplayname();
+        return room_names.roomDisplayName(room);
       });
 
   Future<int> totalUnreadCount() => _owner._withClient((client) async {
@@ -786,7 +787,7 @@ final class MatrixConversationCapability {
         );
     return MatrixConversationRoomSnapshot(
       id: room.id,
-      displayName: room.getLocalizedDisplayname(),
+      displayName: room_names.roomDisplayName(room),
       name: room.name,
       avatar: room.avatar,
       isDirect: room.isDirectChat,
@@ -1099,13 +1100,13 @@ final class MatrixRoomLease
             if (target.encrypted &&
                 !isMatrixControlRoom(
                   roomId: target.id,
-                  displayName: target.getLocalizedDisplayname(),
+                  displayName: room_names.roomDisplayName(target),
                   vaultRoomId: vaultRoomId,
                   reminderRoomId: reminderRoomId,
                 ))
               MatrixForwardDestinationSnapshot(
                 id: target.id,
-                displayName: target.getLocalizedDisplayname(),
+                displayName: room_names.roomDisplayName(target),
                 directPeerId: target.directChatMatrixID,
                 isDirect: target.isDirectChat,
                 memberCount: target.getParticipants([Membership.join]).length,
@@ -3308,8 +3309,8 @@ final class MatrixSdkE2eeClient
         ]);
       });
 
-  Future<DirectChatRoom> openCanonicalDirectRoom(String id) => _withClient(
-      (client) => MatrixDirectChatBackend(client).openCanonicalRoom(id));
+  Future<DirectChatRoom> openCanonicalDirectRoom(String id, {String? matrixUserId}) => _withClient(
+      (client) => MatrixDirectChatBackend(client).openCanonicalRoom(id, matrixUserId: matrixUserId));
 
   /// Recovery after an uncertain create may only reuse an existing room.
   Future<DirectChatRoom?> findExistingDirectChat(String peer) => _withClient(

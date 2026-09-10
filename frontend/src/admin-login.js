@@ -6,7 +6,8 @@ function node(tag, className, text) {
 export function loginView(api, onSuccess) {
   const page = node('main', 'admin-login-page');
   const brand = node('header', 'admin-login-brand');
-  brand.append(node('div', 'admin-login-mark', '畅'), node('p', 'admin-login-eyebrow', 'CHATFLOW'), node('h1', '', '畅聊管理后台'), node('p', 'admin-login-intro', '让每一次管理，都清晰有序。'));
+  const mark=node('img','admin-login-mark');mark.src='/assets/branding/admin-logo.png';mark.alt='畅聊';
+  brand.append(mark, node('p', 'admin-login-eyebrow', 'CHATFLOW'), node('h1', '', '畅聊管理后台'), node('p', 'admin-login-intro', '让每一次管理，都清晰有序。'));
   const card = node('section', 'admin-card admin-login-card');
   card.append(node('p', 'admin-login-kicker', '管理员入口'), node('h2', '', '欢迎回来'), node('p', 'admin-audit-note', '登录保留 48 小时；新设备登录后，旧设备将退出。'));
   const form = node('form', 'admin-login-form');

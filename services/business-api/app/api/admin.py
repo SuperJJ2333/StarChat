@@ -7,7 +7,8 @@ from sqlalchemy import func, select
 from datetime import date, datetime, timedelta, timezone
 from app.modules.wallet.reporting import ReportDataError, WalletReportService, to_csv
 from app.api.wallet_report_contracts import DailyWalletReport
-from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail
+from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage
+from app.modules.admin.user_reports import user_page
 from app.modules.admin.dashboard_reports import registration_trend
 from app.modules.ledger.supply_reports import point_supply, issuance_page, issuance_detail
 from app.core.config import Settings
@@ -380,13 +381,21 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             raise AppError(code="ADMIN_ISSUANCE_NOT_FOUND", message="发行或回收交易不存在", status_code=404)
         return result
 
-    @router.get("/modules/{module}")
-    def module_data(module: str, user_id: str = Depends(actor)):
+    @router.get("/modules/{module}", response_model=AdminUserPage | AdminModulePage)
+    def module_data(module: str, user_id: str = Depends(actor),
+                    q: Annotated[str | None, Query(max_length=128)] = None,
+                    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+                    cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None):
         permission = MODULE_PERMISSIONS.get(module)
         if permission is None:
             raise AppError(code="ADMIN_MODULE_NOT_FOUND", message="模块不存在", status_code=404)
         require(user_id, permission)
         with session_factory() as session:
+            if module in ('analytics', 'security'):
+                try:
+                    return {'module': module, **user_page(session, q=q, limit=limit, cursor=cursor)}
+                except ValueError as exc:
+                    raise AppError(code='ADMIN_USER_FILTER_INVALID', message='用户筛选或分页参数无效', status_code=422) from exc
             if module == "online":
                 cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
                 rows = session.execute(select(User, Device.last_seen_at).join(Device, Device.user_id == User.id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= cutoff).order_by(Device.last_seen_at.desc()).limit(100)).all()
@@ -395,12 +404,6 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
                     if u.id in seen: continue
                     seen.add(u.id); items.append({"id": u.id, "username": u.username, "status": "在线", "last_seen_at": last_seen.isoformat()})
                 return {"items": items, "module": module}
-            if module == "analytics":
-                rows = session.scalars(select(User).order_by(User.created_at.desc()).limit(100)).all()
-                return {"items": [{"id": u.id, "username": u.username, "status": u.status.value, "created_at": u.created_at.isoformat()} for u in rows], "module": module}
-            if module == "security":
-                rows = session.scalars(select(User).order_by(User.updated_at.desc()).limit(100)).all()
-                return {"module": module, "items": [{"id": u.id, "username": u.username, "status": u.status.value, "updated_at": u.updated_at.isoformat()} for u in rows]}
             if module == "support-role":
                 rows = session.execute(select(User, UserRole.role_code).join(UserRole, UserRole.user_id == User.id).order_by(UserRole.assigned_at.desc()).limit(100)).all()
                 return {"module": module, "items": [{"id": u.id, "username": u.username, "role": role.value, "assigned_at": next((r.assigned_at.isoformat() for r in session.scalars(select(UserRole).where(UserRole.user_id == u.id, UserRole.role_code == role).limit(1)).all()), None)} for u, role in rows]}

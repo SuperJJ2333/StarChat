@@ -55,9 +55,52 @@ class Directory implements DirectRoomCoordinator {
 }
 
 void main() {
+  for (final resumed in [false, true]) {
+    test('repairs an unregistered single-member room, resumed=$resumed',
+        () async {
+      final directory = Directory()..owner = resumed ? 'a' : null;
+      var creates = 0;
+      var repairs = 0;
+      var failRepair = true;
+      final gateway = CoordinatedDirectChatGateway(
+        coordinator: directory,
+        intents: Store('a'),
+        businessUserIdOf: (_) => 'peer',
+        createOnce: (peer) async {
+          creates++;
+          return room('!duplicate:test', peer);
+        },
+        findExisting: (_) async => DirectChatRoom(
+          roomId: '!legacy:test',
+          encrypted: true,
+          joinedMemberCount: 1,
+          participantIds: {'@a:test'},
+        ),
+        openExisting: (id, peer) async {
+          repairs++;
+          expect(id, '!legacy:test');
+          expect(peer, '@b:test');
+          if (failRepair) throw StateError('invite pending');
+          return room(id, peer);
+        },
+      );
+      await expectLater(
+          gateway.openOrCreateDirectChat('@b:test'), throwsStateError);
+      expect(repairs, 1);
+      expect(directory.canonical, isNull);
+      failRepair = false;
+      expect((await gateway.openOrCreateDirectChat('@b:test')).roomId,
+          '!legacy:test');
+      expect(directory.canonical, '!legacy:test');
+      expect(creates, 0);
+      expect(repairs, 2);
+    });
+  }
+
   CoordinatedDirectChatGateway gateway(Directory directory, Store store,
           Future<DirectChatRoom> Function(String) create,
           {Future<DirectChatRoom?> Function(String)? recover,
+          Future<DirectChatRoom> Function(String, String)? open,
           String? businessId = 'peer'}) =>
       CoordinatedDirectChatGateway(
         coordinator: directory,
@@ -65,7 +108,7 @@ void main() {
         businessUserIdOf: (_) => businessId,
         createOnce: create,
         findExisting: recover ?? (_) async => null,
-        openExisting: (id) async => room(id, '@b:test'),
+        openExisting: open ?? (id, peer) async => room(id, peer),
         wait: (_) async => Future<void>.delayed(Duration.zero),
         waitAttempts: 5,
       );
@@ -196,6 +239,11 @@ void main() {
         gateway(Directory(), Store('b'), create,
                 recover: (_) async => const DirectChatRoom(
                     roomId: '!unsafe:test',
+                    encrypted: false,
+                    joinedMemberCount: 2,
+                    participantIds: {'@a:test', '@b:test'}),
+                open: (id, peer) async => DirectChatRoom(
+                    roomId: id,
                     encrypted: false,
                     joinedMemberCount: 2,
                     participantIds: {'@a:test', '@b:test'}))

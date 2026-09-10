@@ -1,0 +1,18 @@
+.admin-user-panel { min-width: 0; }
+.admin-ban-form { padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--admin-border); }
+.admin-ban-form h2 { margin-bottom: 16px; }
+.admin-ban-fields { display: grid; grid-template-columns: 100px minmax(190px, 1.5fr) minmax(150px, 1fr) 110px auto; align-items: end; gap: 12px; }
+.admin-ban-fields label { display: grid; gap: 8px; min-width: 0; color: var(--admin-muted); font-size: 13px; }
+.admin-ban-fields .admin-filter { width: 100%; min-width: 0; box-sizing: border-box; }
+.admin-ban-fields button { min-height: 40px; white-space: nowrap; }
+.admin-user-search { display: flex; gap: 12px; margin: 16px 0; }
+.admin-user-search input { width: min(440px, 100%); min-width: 0; }
+.admin-user-table-wrap { max-width: 100%; overflow-x: auto; }
+.admin-user-table-wrap th, .admin-user-table-wrap td { white-space: nowrap; }
+.admin-user-pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.admin-user-pagination span { color: var(--admin-muted); font-size: 13px; }
+.admin-user-panel button:disabled { cursor: not-allowed; opacity: .5; }
+@media (max-width: 1000px) { .admin-ban-fields { grid-template-columns: 1fr 2fr; } .admin-ban-fields button { align-self: end; } }
+@media (max-width: 480px) { .admin-ban-fields { grid-template-columns: 1fr; } .admin-user-pagination { justify-content: flex-start; } }
+
+.admin-user-search button{white-space:nowrap;flex-shrink:0}

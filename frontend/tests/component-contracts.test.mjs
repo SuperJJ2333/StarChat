@@ -22,7 +22,7 @@ const mappedTags = [
   "app-moment-grid"
 ];
 
-test("all approved HTML to Figma component mappings have contracts", () => {
+test("all approved HTML component mappings have contracts", () => {
   const tags = componentContracts.map((contract) => contract.tagName);
   for (const tag of mappedTags) assert.ok(tags.includes(tag), `missing ${tag}`);
 });

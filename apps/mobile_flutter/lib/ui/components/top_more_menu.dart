@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'anchored_action_menu.dart';
 
 abstract final class TopMoreMenuTokens {
-  static const width = 208.0;
+  static const width = 176.0;
   static const rowHeight = 52.0;
   static const divider = Color(0x3DFFFFFF);
 }
@@ -89,7 +89,7 @@ Future<void> showTopMoreMenu(
                                       key: Key('top-more-divider-${i - 1}'),
                                       height: .5,
                                       margin: const EdgeInsets.only(
-                                          left: 48, right: 12),
+                                          left: 12, right: 12),
                                       color: TopMoreMenuTokens.divider),
                                 ConstrainedBox(
                                     constraints: const BoxConstraints(
@@ -100,18 +100,23 @@ Future<void> showTopMoreMenu(
                                             horizontal: 16, vertical: 12),
                                         onPressed: () => Navigator.pop(
                                             menuContext, items[i].value),
-                                        child: Row(children: [
-                                          Icon(items[i].icon,
-                                              size: 20,
-                                              color: CupertinoColors.white),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                              child: Text(items[i].label,
-                                                  style: const TextStyle(
-                                                      color:
-                                                          CupertinoColors.white,
-                                                      fontSize: 16))),
-                                        ]))),
+                                        child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(items[i].icon,
+                                                  size: 20,
+                                                  color: CupertinoColors.white),
+                                              const SizedBox(width: 12),
+                                              Flexible(
+                                                  child: Text(items[i].label,
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: const TextStyle(
+                                                          color: CupertinoColors
+                                                              .white,
+                                                          fontSize: 16))),
+                                            ]))),
                               ],
                             ]))))))
       ]);

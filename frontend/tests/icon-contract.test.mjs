@@ -25,7 +25,7 @@ test("icon library provides a production-sized editable outline set", () => {
     assert.ok(iconModule.iconNames.includes(name), `missing product icon ${name}`);
   }
 
-  assert.ok(iconModule.iconDefinitions, "icon definitions must be exported for HTML and Figma parity");
+  assert.ok(iconModule.iconDefinitions, "icon definitions must be exported for HTML demo and Flutter parity");
   for (const name of iconModule.iconNames) {
     const definition = iconModule.iconDefinitions[name];
     assert.ok(Array.isArray(definition) && definition.length > 0, `${name} needs editable SVG geometry`);

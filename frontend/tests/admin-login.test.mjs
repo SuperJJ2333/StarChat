@@ -18,7 +18,7 @@ function setup(api){globalThis.document={createElement:t=>new Element(t),body:ne
 const challenge={challenge_id:'a'.repeat(43),image:'data:image/png;base64,aGVsbG8=',expires_in:120};
 test('challenge visible, refresh clears stale answer, failed refresh disables login',async()=>{
  let count=0;const page=setup({getLoginCaptcha:async()=>{if(count++)throw Error('offline');return challenge;}});await settle();
- assert.equal(page.find('img')[0].src,challenge.image);
+ assert.equal(page.find('img').find(n=>n.className==='admin-captcha-image').src,challenge.image);
  const input=page.find('input').find(n=>n.name==='captcha_answer');input.value='ABC123';
  await page.find('button').find(n=>n.textContent==='换一张').handlers.click();
  assert.equal(input.value,'');assert.equal(page.find('button').find(n=>n.type==='submit').disabled,true);

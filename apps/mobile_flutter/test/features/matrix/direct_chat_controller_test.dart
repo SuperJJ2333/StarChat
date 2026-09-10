@@ -132,7 +132,7 @@ void main() {
     expect(backend.creates, 0);
   });
 
-  test('对方退出且重邀失败：绕开坏房间显式新建', () async {
+  test('对方退出且重邀失败：保留原房间并允许重试，不创建重复房间', () async {
     final backend = FakeDirectChatBackend()
       ..existing = const DirectChatRoom(
         roomId: '!stale:example.test',
@@ -140,11 +140,11 @@ void main() {
         joinedMemberCount: 1,
         participantIds: {'@me:example.test'},
       ); // repairResult 为 null：修复失败
-    final room = await DirectChatService(backend)
-        .openOrCreateDirectChat('@alice:example.test');
-    expect(room.roomId, '!new:example.test');
-    expect(backend.lastAvoidRoomId, '!stale:example.test');
-    expect(backend.creates, 1);
+    await expectLater(
+        DirectChatService(backend)
+            .openOrCreateDirectChat('@alice:example.test'),
+        throwsStateError);
+    expect(backend.creates, 0);
   });
 
   test('未加密双人房间：补开加密后复用同一房间', () async {

@@ -116,7 +116,7 @@ export function renderScreen(definition) {
       root.querySelector(".p-feedback-center").append(component("app-network-capsule", { state: definition.state }));
     } else if (definition.page === "new") {
       root = pageRoot(definition, [navigation("消息"), element("div", "p-feedback-center")]);
-      root.querySelector(".p-feedback-center").append(component("app-action-sheet", { title: "新建会话", options: "发起群聊,添加朋友,扫一扫" }));
+      root.querySelector(".p-feedback-center").append(component("app-action-sheet", { title: "新建会话", options: "发起群聊,添加朋友,扫一扫", variant: "fit" }));
     } else root = messageInbox(definition);
   } else root = chatScreen(definition);
   return createDeviceScreen(definition, root);

@@ -64,6 +64,10 @@ PASS指现有HTTP成功/错误阈值通过（sync_success>99%、operation_errors
 
 本轮infra回归102项通过，容量脚本18项通过。最终完整仓库门禁：运行中，最终状态待追加，[原始输出](artifacts/2026-09-10/media-capacity-runtime/verify-full-runtime.txt)。Flutter应用本轮未修改，上轮1396项Flutter与静态分析结果不冒充本轮重跑。
 
+本轮infra回归102项通过，容量脚本18项通过。最终完整仓库门禁：退出0，Verification: PASS，[原始输出](artifacts/2026-09-10/media-capacity-runtime/verify-full-runtime.txt)。Flutter应用本轮未修改，上轮1396项Flutter与静态分析结果不冒充本轮重跑。
+
+本轮业务回归1400项通过、34项条件跳过（业务PostgreSQL隔离环境未启用及SQLite不支持的特定场景），跳过不计为通过。原有Starlette TestClient/httpx与Pydantic class Config弃用警告保留；未关闭警告或变更这些无关依赖。
+
 ## 证据与清理
 
 本次所有隔离测试容器已停止、网络已移除，数据库和私有输入保留在被.gitignore排除的run目录；其他容器未停止。临时WSL配置文件恢复原状，见[cleanup.json](artifacts/2026-09-10/media-capacity-runtime/cleanup.json)。

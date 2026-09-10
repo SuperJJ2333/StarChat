@@ -22,7 +22,7 @@ _numbers = frozenset(('duration_ms', 'http_status', 'run_id', 'observation_id',
     'checkpoint_ms', 'solid_block', 'solid_timestamp_ms', 'heartbeat_age_ms',
     'observation_age_ms', 'solid_head_age_ms', 'freshness_limit_ms', 'fresh_until_ms',
     'pending_age_ms', 'generation', 'events_added', 'page_count', 'transaction_count',
-    'budget_ms', 'suppressed_count'))
+    'budget_ms', 'suppressed_count', 'waited_ms', 'previous_observation_id', 'poll_count'))
 _ids = frozenset(('trace_id', 'request_id', 'incident_id', 'event_id'))
 _states = {}
 ROUTES = {'head': '/walletsolidity/getnowblock', 'balance': '/walletsolidity/triggerconstantcontract',

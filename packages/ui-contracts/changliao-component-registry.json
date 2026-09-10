@@ -134,13 +134,30 @@
       "menus": "All four contexts consume WeChatAnchoredActionMenu; top pages retain their own actions per user clarification.",
       "comments": "Author can delete friend comments on own moments; server authorization required.",
       "video": "Group original <=20971520 bytes; check before preparation; background hash/encryption and independent upload."
+    },
+    "2026-09-10-admin-readability": {
+      "scope": "administration-only",
+      "html": [
+        "frontend/src/admin-dashboard.js",
+        "frontend/src/admin-user-panel.js",
+        "frontend/src/admin-sidebar.js",
+        "frontend/src/admin-proof-dialog.js"
+      ],
+      "states": [
+        "loading",
+        "error",
+        "retry",
+        "empty",
+        "search",
+        "paged",
+        "resizing",
+        "collapsed",
+        "modal"
+      ],
+      "timestamps": "Asia/Shanghai YYYY-MM-DD HH:mm:ss; datetime-local filters interpreted in Beijing time",
+      "identity": "username is 畅聊号; nickname is 用户名; actor IDs preserved by API",
+      "figmaSync": "Explicitly deferred by user on 2026-09-10; no remote update claimed"
     }
-  },
-  "figma": {
-    "fileKey": "zpzwTbnj1hqx80tyRygX78",
-    "stateArtifact": "frontend/artifacts/figma-state.json",
-    "mode": "export-ledger",
-    "expectedScreenCount": 331
   },
   "tokenMappings": {
     "colors": [
@@ -203,10 +220,6 @@
       "html": {
         "tag": "app-action-button"
       },
-      "figma": {
-        "name": "app-action-button",
-        "key": "25:17"
-      },
       "tokens": [
         "brandPrimary",
         "controlBorder",
@@ -237,10 +250,6 @@
       "html": {
         "tag": "app-navigation-bar"
       },
-      "figma": {
-        "name": "app-navigation-bar",
-        "key": "25:7"
-      },
       "tokens": [
         "chatNavigationBackground",
         "chatPageBackground",
@@ -268,10 +277,6 @@
       },
       "html": {
         "tag": "app-avatar"
-      },
-      "figma": {
-        "name": "app-avatar",
-        "key": "25:32"
       },
       "tokens": [
         "control"
@@ -306,10 +311,6 @@
       "html": {
         "tag": "app-composer"
       },
-      "figma": {
-        "name": "app-composer",
-        "key": "25:22"
-      },
       "tokens": [
         "composerMinHeight",
         "control"
@@ -336,10 +337,6 @@
       "html": {
         "tag": "app-list-tile"
       },
-      "figma": {
-        "name": "app-list-tile",
-        "key": "25:27"
-      },
       "tokens": [
         "contactTileHeight",
         "contactAvatar",
@@ -363,10 +360,6 @@
       },
       "html": {
         "tag": "app-contact-index"
-      },
-      "figma": {
-        "name": "app-contact-index",
-        "key": "25:42"
       },
       "tokens": [
         "contactIndexFeedback"
@@ -399,10 +392,6 @@
       "html": {
         "tag": "app-dialog"
       },
-      "figma": {
-        "name": "app-dialog",
-        "key": "25:77"
-      },
       "tokens": [
         "dialog"
       ]
@@ -432,10 +421,6 @@
       "html": {
         "tag": "app-toast"
       },
-      "figma": {
-        "name": "app-toast",
-        "key": "25:87"
-      },
       "tokens": [
         "dialog"
       ]
@@ -462,10 +447,6 @@
       "html": {
         "tag": "app-empty-state"
       },
-      "figma": {
-        "name": "app-empty-state",
-        "key": "25:92"
-      },
       "tokens": [
         "callControl"
       ]
@@ -488,10 +469,6 @@
       "html": {
         "tag": "app-network-capsule"
       },
-      "figma": {
-        "name": "app-network-capsule",
-        "key": "25:97"
-      },
       "tokens": [
         "networkCapsule"
       ]
@@ -511,10 +488,6 @@
       },
       "html": {
         "tag": "app-nudge-notice"
-      },
-      "figma": {
-        "name": "app-nudge-notice",
-        "key": "18:7"
       },
       "tokens": [
         "textSecondary",
@@ -543,10 +516,6 @@
       },
       "html": {
         "tag": "app-contact-tag-management"
-      },
-      "figma": {
-        "name": "app-contact-tag-management",
-        "key": "19:3"
       },
       "tokens": [
         "surface",
@@ -579,10 +548,6 @@
       "html": {
         "tag": "app-contact-tag-members"
       },
-      "figma": {
-        "name": "app-contact-tag-members",
-        "key": "19:3"
-      },
       "tokens": [
         "surface",
         "brandPrimary",
@@ -612,10 +577,6 @@
       },
       "html": {
         "tag": "app-contact-tag-friend-picker"
-      },
-      "figma": {
-        "name": "app-contact-tag-friend-picker",
-        "key": "19:3"
       },
       "tokens": [
         "surface",
@@ -649,10 +610,6 @@
       },
       "html": {
         "tag": "app-moments-feed-v2"
-      },
-      "figma": {
-        "name": "app-moments-feed-v2",
-        "key": "19:4"
       },
       "tokens": [
         "surface",
@@ -700,10 +657,6 @@
       "html": {
         "tag": "app-moment-tile"
       },
-      "figma": {
-        "name": "app-moment-tile",
-        "key": "25:117"
-      },
       "reactionTokenSource": {
         "flutter": "apps/mobile_flutter/lib/ui/moments/moment_reaction_tokens.dart",
         "html": "frontend/src/styles/tokens.css: --moment-reaction-*",
@@ -749,10 +702,6 @@
       "html": {
         "tag": "app-moment-reactions"
       },
-      "figma": {
-        "name": "app-moment-reactions",
-        "key": "25:127"
-      },
       "tokens": [
         "surface",
         "spacing",
@@ -794,10 +743,6 @@
       "html": {
         "tag": "app-identity-header"
       },
-      "figma": {
-        "name": "app-identity-header",
-        "key": "25:37"
-      },
       "tokens": [
         "surface",
         "spacing",
@@ -823,10 +768,6 @@
       },
       "html": {
         "tag": "app-moment-cover-viewer"
-      },
-      "figma": {
-        "name": "app-moment-cover-viewer",
-        "key": "19:4"
       },
       "tokens": [
         "surface",
@@ -863,10 +804,6 @@
       "html": {
         "tag": "app-anchored-action-menu"
       },
-      "figma": {
-        "name": "app-message-bubble",
-        "key": "25:47"
-      },
       "figmaReferenceOnly": true,
       "remoteVariantSync": "pending-tool-access; vertical top-more variant local only",
       "tokens": [
@@ -900,73 +837,61 @@
   "tokenParity": [
     {
       "category": "colors",
-      "figma": "color/brand/primary",
       "html": "--color-brand-primary: #07c160",
       "flutter": "static const brandPrimary = Color(0xFF07C160);"
     },
     {
       "category": "colors",
-      "figma": "color/page/background",
       "html": "--color-page-background: #ededed",
       "flutter": "static const chatPageBackground = Color(0xFFEDEDED);"
     },
     {
       "category": "colors",
-      "figma": "color/surface/primary",
       "html": "--color-surface-primary: #f7f7f7",
       "flutter": "static const chatNavigationBackground = Color(0xFFF7F7F7);"
     },
     {
       "category": "colors",
-      "figma": "color/text/primary",
       "html": "--color-text-primary: #191919",
       "flutter": "static const lightTextPrimary = Color(0xFF191919);"
     },
     {
       "category": "colors",
-      "figma": "color/divider",
       "html": "--color-divider: #d9d9d9",
       "flutter": "static const divider = Color(0xFFD9D9D9);"
     },
     {
       "category": "typography",
-      "figma": "type/callout/size",
       "html": "--type-callout-size: 16px",
       "flutter": "static const callout = 16.0;"
     },
     {
       "category": "typography",
-      "figma": "type/subhead/size",
       "html": "--type-subhead-size: 14px",
       "flutter": "static const subhead = 14.0;"
     },
     {
       "category": "spacing",
-      "figma": "space/md",
       "html": "--space-md: 12px",
       "flutter": "static const md = 12.0;"
     },
     {
       "category": "spacing",
-      "figma": "space/lg",
       "html": "--space-lg: 16px",
       "flutter": "static const lg = 16.0;"
     },
     {
       "category": "radius",
-      "figma": "radius/tag",
       "html": "--radius-tag: 4px",
       "flutter": "static const tag = 4.0;"
     },
     {
       "category": "radius",
-      "figma": "radius/dialog",
       "html": "--radius-dialog: 12px",
       "flutter": "static const dialog = 12.0;"
     },
     {
       "category": "radius",
-      "figma": "radius/red/packet",
       "html": "--radius-red-packet: 10px",
       "flutter": "static const redPacket = 10.0;"
     }
@@ -997,5 +922,205 @@
       "phase5-core-component-tokenization",
       "phase6-auth-form-feedback"
     ]
+  },
+  "walletSafetyRevision": {
+    "date": "2026-09-06",
+    "remoteNodesModified": false,
+    "status": "User explicitly waived Figma installation/synchronization for this execution",
+    "flutter": [
+      "lib/features/wallet/wallet_page.dart",
+      "lib/features/wallet/wallet_conversion_card.dart"
+    ],
+    "states": [
+      "disabled",
+      "confirm",
+      "submitting",
+      "unknown-retry",
+      "completed"
+    ]
+  },
+  "officialDepositRevision": {
+    "date": "2026-09-07",
+    "remoteNodesModified": false,
+    "status": "Figma deferred by prior explicit user authorization; implemented readonly official address display",
+    "flutter": [
+      "lib/features/wallet/wallet_page.dart"
+    ],
+    "html": [
+      "src/screens/finance.js"
+    ],
+    "states": [
+      "loading",
+      "address",
+      "qr",
+      "copied",
+      "unavailable",
+      "funds-disabled"
+    ],
+    "endpoint": "/api/v1/wallet/official-deposit-address",
+    "financialWrites": false
+  },
+  "walletCompactRevision": {
+    "date": "2026-09-08",
+    "flutter": [
+      "lib/features/wallet/manual_wallet_page.dart",
+      "lib/features/wallet/wallet_page.dart"
+    ],
+    "remoteNodesModified": false,
+    "status": "User-authorized Flutter revision; Figma synchronization remains deferred",
+    "states": [
+      "compact-header",
+      "inline-binding-status",
+      "inline-rebind-time",
+      "recharge-withdrawal-binding-order",
+      "single-line-address",
+      "red-warning-callout",
+      "filled-shortcuts",
+      "navigation-refresh",
+      "copy-full-address",
+      "expired-address-unavailable",
+      "recharge-application",
+      "expandable-order-details"
+    ],
+    "tokens": [
+      "WeChatColors.elevatedSurface",
+      "WeChatColors.brandPrimary",
+      "WeChatColors.textSecondary"
+    ],
+    "amountHandlingChanged": false
+  },
+  "manualTronWalletRevision": {
+    "date": "2026-09-07",
+    "remoteNodesModified": false,
+    "status": "Remote Figma synchronization deferred by explicit user authorization; local implementation and contracts only",
+    "flutter": [
+      "lib/features/wallet/manual_wallet_page.dart",
+      "lib/features/wallet/manual_mfa_page.dart"
+    ],
+    "html": [
+      "src/screens/finance.js",
+      "src/admin-manual-wallet-panel.js"
+    ],
+    "states": [
+      "private-binding",
+      "challenge-expired",
+      "mfa-enrollment",
+      "deposit-intent",
+      "intent-expired",
+      "quote-confirmation",
+      "payout-requested",
+      "claimed",
+      "unknown",
+      "settled",
+      "reauthentication",
+      "incident-review"
+    ],
+    "fundsAcceptance": "pending-production-and-user-signatures"
+  },
+  "adminWalletPasswordRevision": {
+    "date": "2026-09-08",
+    "scope": "administrator-wallet-only",
+    "html": [
+      "src/admin-manual-wallet-panel.js",
+      "src/styles/admin-wallet.css"
+    ],
+    "authPolicy": "ADMIN_OPERATION_PASSWORD_V1",
+    "states": [
+      "unconfigured",
+      "configured",
+      "reauthentication",
+      "locked",
+      "pending",
+      "unknown",
+      "failure",
+      "reduced-motion"
+    ],
+    "remoteNodesModified": false,
+    "status": "Figma remote synchronization deferred by prior explicit user authorization; local implementation only"
+  },
+  "adminLoginRevision": {
+    "date": "2026-09-08",
+    "html": [
+      "src/admin-login.js",
+      "src/styles/admin-login.css"
+    ],
+    "states": [
+      "captcha-loading",
+      "captcha-error",
+      "submitting",
+      "credentials-error",
+      "session-expired",
+      "mobile",
+      "reduced-motion"
+    ],
+    "remoteNodesModified": false,
+    "status": "Figma remote synchronization deferred by prior explicit user authorization; local implementation only"
+  },
+  "enterpriseDownloadPage": {
+    "html": "frontend/download.html",
+    "flutter": null,
+    "scope": "public-download-only",
+    "figmaSync": "unavailable; no remote node modified",
+    "states": [
+      "install-entry",
+      "unverified-enterprise-test",
+      "android-download",
+      "qr",
+      "installation-help"
+    ],
+    "tokens": "existing landing/admin tokens",
+    "homepage": "frontend/src/admin-home.js; iOS 0.3.53(59) link to /download"
+  },
+  "adminConsoleModernization": {
+    "date": "2026-09-08",
+    "scope": "administrator-web-only",
+    "html": [
+      "frontend/src/admin-dashboard.js",
+      "frontend/src/admin-session.js",
+      "frontend/src/admin-home.js",
+      "frontend/src/admin-manual-wallet-panel.js",
+      "frontend/src/styles/admin-modern.css"
+    ],
+    "flutter": null,
+    "states": [
+      "loading",
+      "ready",
+      "empty",
+      "stale",
+      "partial-failure",
+      "paused",
+      "running",
+      "unknown",
+      "submitting",
+      "reauthentication",
+      "session-replaced",
+      "sidebar-expanded",
+      "sidebar-compact",
+      "sidebar-hidden",
+      "mobile-drawer",
+      "reduced-motion"
+    ],
+    "tokens": "frontend/src/styles/tokens.css .admin-modern palette",
+    "remoteNodesModified": false,
+    "figmaSync": "Remote synchronization remains deferred under recorded prior user authorization in 2026-09-08-admin-login-repair and admin-wallet-password-apple-ui plans; no remote modification claimed",
+    "verification": "docs/verification/2026-09-08-admin-console-modernization.md",
+    "incidentWorkflow": {
+      "design": "docs/superpowers/specs/2026-09-08-wallet-incident-simple-workflow-design.md",
+      "source": "frontend/src/wallet-incident-workflow.js",
+      "states": [
+        "read-only-diagnostics",
+        "processing",
+        "refresh-queued",
+        "waiting",
+        "unknown-result",
+        "resolved-funds-paused",
+        "independent-resume"
+      ],
+      "interactionPlan": "docs/superpowers/plans/2026-09-09-wallet-interaction-polish.md",
+      "safety": "Existing command authorization, per-step idempotency and separate fund recovery remain enforced"
+    }
+  },
+  "screens": {
+    "expectedCount": 331
   }
 }

@@ -50,7 +50,9 @@ services:
       driver: json-file
       options: {max-size: 20m, max-file: "10"}
   business-worker:
-    environment: *manual-wallet-environment
+    environment:
+      <<: *manual-wallet-environment
+      BUSINESS_WALLET_MANUAL_STALE_RESAMPLE_BUDGET_SECONDS: "${BUSINESS_WALLET_MANUAL_STALE_RESAMPLE_BUDGET_SECONDS:-60}"
     logging:
       driver: json-file
       options: {max-size: 20m, max-file: "10"}

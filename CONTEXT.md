@@ -15,7 +15,7 @@ _Avoid_: ChatFlow号, 用户ID
 ## Assets
 
 **点钻**:
-The sole user-visible name for the two-decimal internal CAIBI asset, including balances, transfers, red packets, receipts, notifications, email, admin UI, HTML, and Figma.
+The sole user-visible name for the two-decimal internal CAIBI asset, including balances, transfers, red packets, receipts, notifications, email, admin UI, and the HTML demo.
 _Avoid_: 彩币, CAIBI（用户界面中）
 
 **CAIBI**:
@@ -29,13 +29,13 @@ _Avoid_: 点钻兑换, USDT 转点钻
 ## UI delivery
 
 **UI contract**:
-The checked Flutter–HTML–Figma registry that declares a component’s public name, files, Figma key, props, variants, states, and token mappings.
-_Avoid_: 临时页面样式, 未登记组件
+The checked Flutter–HTML registry that declares a component’s public name, files, HTML tag, props, variants, states, and token mappings. Figma keys and the Figma export ledger are retired; the registry rejects them.
+_Avoid_: 临时页面样式, 未登记组件, Figma 台账
 
-**Figma export ledger**:
-The versioned Figma-state artifact owned and refreshed by the Agent after Figma UI changes; CI uses it to prove component, token, and screen-registration parity.
-_Avoid_: 开发者手工导出, 手工口头核对
+**HTML design demo**:
+The Flutter-side HTML demo under `frontend/` (catalog screens, tokens, demo page `frontend/index.html`). It is the visual source of record for UI review and is updated in the same change as the Flutter implementation.
+_Avoid_: 截图口头评审, 无 demo 的 UI 变更
 
 **UI design reviewer**:
-The developer role that checks Figma UI design quality and reports defects. It does not update Figma, export ledgers, or component contracts.
+The developer role that checks the HTML demo’s design quality and reports defects. It does not update component contracts.
 _Avoid_: Figma 同步负责人

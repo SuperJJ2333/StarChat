@@ -1,5 +1,5 @@
 // Manual operations never sign or broadcast; API/ledger state is authoritative.
-import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260908-incident-simple';
+import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260910-readability';
 const SAFE_METADATA = new Set(['expected_digest', 'txid', 'reason_code', 'expected_version', 'clearance_digest', 'credential_id', 'expected_epoch', 'snapshot_digest','preparation_id','manifest_digest','no_unregistered_payments','notice_received']);
 export function exactUsdt(value) {
   if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)\.[0-9]{6}$/.test(value)) throw new Error('金额格式异常，操作已关闭');
@@ -284,8 +284,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       for(const name of ['amount','fee','hold','receive']) exactUsdt(s[name]);
       if(s.fee!=='0.000000'||s.amount!==item.amount||! /^[a-f0-9]{64}$/.test(item.digest)) throw new Error('Invalid snapshot');
       detail.replaceChildren(node('h4',`出款 ${item.id}`),node('p',statusLabel(item.status)),...refreshAction('刷新此出款',()=>showOrder(id)));
-      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',s.expires_at],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
-      for(const candidate of item.candidates ?? []) describe(detail,[['候选历史',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',candidate.created_at]]);
+      describe(detail,[['收款地址（锁定）',s.target_address],['官方出款地址（锁定）',s.official_address],['网络',s.network],['合约',s.contract],['本金 USDT',s.amount],['服务费 USDT',s.fee],['总冻结 USDT',s.hold],['到账 USDT',s.receive],['不可变报价摘要',item.digest],['绑定版本',s.binding_version],['官方配置版本',s.official_config_version],['报价到期',formatBeijingTime(s.expires_at)],['领取管理员',item.claimed_by],['候选哈希',item.candidate_txid],['结算哈希',item.settlement_txid],['复核原因',item.review_reason]]);
+      for(const candidate of item.candidates ?? []) describe(detail,[['候选历史',candidate.txid],['操作者',candidate.actor_id],['原因',candidate.reason_code],['时间',formatBeijingTime(candidate.created_at)]]);
       if(actor?.id!==s.owner_admin_id) { detail.append(node('p','当前账号不是官方钱包拥有者，仅可查看。')); return; }
       if(item.status==='REQUESTED') {
         detail.append(node('p','请核对以上完整快照。确认摘要并领取后，才可按指令在 imToken 付款。'));
@@ -430,7 +430,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       const current=await api.getWalletHandover(active.metadata.preparation_id);
       if(disposed||generation!==handoverGeneration) return;
       if(!/^[a-f0-9]{64}$/.test(current.manifest_digest)||!Number.isSafeInteger(current.alert_count)||!Number.isSafeInteger(current.incident_count)) throw Error('Invalid handover state');
-      describe(handover,[['交接状态',current.status],['事故数量',current.incident_count],['历史告警数量',current.alert_count],['清单摘要',current.manifest_digest],['清单到期',current.expires_at]]);
+      describe(handover,[['交接状态',current.status],['事故数量',current.incident_count],['历史告警数量',current.alert_count],['清单摘要',current.manifest_digest],['清单到期',formatBeijingTime(current.expires_at)]]);
       if(current.source_configuration_version) describe(handover,[['来源配置版本',current.source_configuration_version],['部署记录摘要',current.deployment_record_sha256]]);
       if(Array.isArray(current.incidents)) for(const incident of current.incidents) {
         describe(handover,[['历史事故',incident.id],['事件码',incident.code],['代次 / 版本',`${incident.generation} / ${incident.version}`]]);
@@ -506,7 +506,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         if(drafts.has(form.name)&&result?.textContent&&current)current.textContent=result.textContent;
       }
       const success=securityResult!==false&&results.every(result=>result!==false);
-      refreshStatus.textContent=`${success?'已刷新':'部分数据刷新失败'} · ${new Date().toLocaleTimeString('zh-CN')}`;
+      refreshStatus.textContent=`${success?'已刷新':'部分数据刷新失败'} · ${formatBeijingTime(Date.now())}`;
       return success;
     } finally { drafts.clear(); refreshing=false;if(ownRefresh){ownRefresh.disabled=false;ownRefresh.setAttribute('aria-busy','false');}root.setAttribute('aria-busy','false'); }
   };
@@ -514,3 +514,4 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   void loadSecurity().then(()=>{if(!disposed){void loadOrders();void loadIncidents();void loadControl();void loadHandover();}});
   return root;
 }
+import {formatBeijingTime} from './admin-formatters.js';

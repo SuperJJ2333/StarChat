@@ -4,7 +4,7 @@
 
 ## 全局约束
 
-共享 media_id＋独立上传者引用；可信内容哈希命中经过校验的缓存。精确最终字节去重，压缩先于哈希/加密，重试复用生成结果。明文哈希只在 E2EE 事件内传送。采用 ADR 的固定派生协议。默认开关可回退，不部署生产、不改 Megolm 轮换、不做先问后传。每个行为任务先失败测试再实现。临时文件只在 docs/verification/。保留其他任务修改；compose 由根协调者唯一拥有。
+共享 media_id＋独立上传者引用；可信内容哈希命中经过校验的缓存。精确最终字节去重，压缩先于哈希/加密，重试复用生成结果。明文哈希只在 E2EE 事件内传送。采用 ADR 的固定派生协议。默认开关可回退，不改 Megolm 轮换、不做先问后传。每个行为任务先失败测试再实现。临时文件只在 docs/verification/。保留其他任务修改；compose 由根协调者唯一拥有。初始范围不含生产部署；2026-09-10 用户明确要求按 app-release-deployment.md 将更新框架同步生产，追加 Task 10，替代原生产部署限制。
 
 ## Task 1：文档、审批和协议
 
@@ -41,3 +41,8 @@
 ## Task 9：门禁评审
 
 执行 flutter analyze --no-pub、flutter test --no-pub、py -3.12 -m pytest tests/mobile -q、pwsh -NoProfile -File scripts/verify.ps1。先规格评审、后质量安全；修正后复核。区分通过、失败、环境限制。未授权生产部署或全量千人压测。
+
+
+## Task 10：生产框架发布（2026-09-10 用户追加授权）
+
+根协调者拥有生产发布脚本、infra/compose 下 Matrix 发布 overlay、部署文档及当日发布证据。按指定 runbook 的 jumper SSH、文件 SHA-256、服务器私密备份、网关 inode 保持和双端验证流程执行。先核对现有配置漂移，保留服务器独有配置；只同步本任务 Synapse 补丁、main/worker/Redis 配置和 sync 路由，不覆盖其他业务模块、客户端版本或升级设置。镜像基于已验证 digest 构建并记录最终 image ID。备份数据库与密文媒体/签名配置，验证可恢复后，先 main/Redis、后 worker、最后 nginx 路由切换。上线前领域评审通过后再质量安全评审。回退关闭新去重并将 sync 路由恢复 main，保留补丁与增量 schema，不恢复会丢失发布后写入的旧数据库。验证现有媒体读取、健康、权限边界及 worker 请求路径。保留 500 VU 首轮失败的容量结论；生产上线不等于千人 E2EE 验收，不在生产进行容量压测。

@@ -11,6 +11,21 @@ class Element {
 }
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('wallet detail expiration candidate history and refresh status display complete Beijing dates',async()=>{
+ const dated={...order,snapshot:{...order.snapshot,expires_at:'2026-09-09T17:02:03Z'},
+  candidates:[{txid:'candidate',actor_id:'owner',reason_code:'CHECK',created_at:'2026-09-09T18:04:05Z'}]};
+ const panel=setup({getManualPayout:async()=>dated});
+ await settle();await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
+ const values=panel.find('dd').map(n=>n.textContent);
+ assert.ok(values.includes('2026-09-10 01:02:03'));
+ assert.ok(values.includes('2026-09-10 02:04:05'));
+ assert.ok(!values.includes('2026-09-09T17:02:03Z'));
+ await panel.refresh();
+ assert.ok(panel.find('p').some(n=>/(?:已刷新|部分数据刷新失败) · \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(n.textContent)));
+ assert.equal(dated.snapshot.expires_at,'2026-09-09T17:02:03Z');
+ assert.equal(dated.candidates[0].created_at,'2026-09-09T18:04:05Z');
+});
+
 test('current status check is read-only and requires no operation credential',async()=>{
  let reads=0;
  const panel=setup({getManualWalletDiagnostics:async()=>{reads++;return {source_status:'HEALTHY',coverage_status:'CURRENT'};},getManualWalletControl:async()=>({epoch:1,snapshot_digest:digest,status:'PAUSED',restriction_scopes:[],unresolved_incidents:0}),manualWalletIncidentAction:async()=>assert.fail('read must not mutate')});

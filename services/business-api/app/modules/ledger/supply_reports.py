@@ -11,6 +11,7 @@ from sqlalchemy.orm import aliased
 
 from app.modules.audit.models import AuditEvent
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
+from app.modules.identity.models import User
 
 ZERO = Decimal('0.00')
 
@@ -75,7 +76,19 @@ def _decode_cursor(cursor):
         raise ValueError('invalid report cursor') from exc
 
 
-def _item(session, tx):
+def _actor_names(session, actor_ids):
+    keys = {key for key in actor_ids if key}
+    if not keys:
+        return {}
+    return {key: {'actor_username': username, 'actor_display_name': nickname or username}
+        for key, username, nickname in session.execute(select(User.id, User.username, User.nickname).where(User.id.in_(keys)))}
+
+
+def _actor_fields(names, actor_id):
+    return names.get(actor_id, {'actor_username': None, 'actor_display_name': None})
+
+
+def _item(session, tx, *, actors=None):
     delta = sum((entry.amount for entry in tx.entries
                  if entry.asset == 'CAIBI' and entry.account_id == 'PLATFORM_CLEARING'), ZERO)
     audits = session.scalars(select(AuditEvent).where(
@@ -95,6 +108,8 @@ def _item(session, tx):
             'actor_id': tx.actor_id, 'reason_code': tx.reason_code, 'scope': tx.scope,
             'reversal_of_id': tx.reversal_of_id, 'audit_ids': [row.id for row in audits],
             'anomalies': anomalies}
+    if actors is not None:
+        item.update(_actor_fields(actors, tx.actor_id))
     return item, audits
 
 
@@ -117,7 +132,8 @@ def issuance_page(session, *, limit=50, cursor=None, kind=None):
     if len(rows) > limit:
         last = rows[limit - 1]
         next_cursor = base64.urlsafe_b64encode(json.dumps([last.created_at.isoformat(), last.id]).encode()).decode()
-    return {'items': [_item(session, tx)[0] for tx in rows[:limit]], 'next_cursor': next_cursor}
+    actors = _actor_names(session, (tx.actor_id for tx in rows[:limit]))
+    return {'items': [_item(session, tx, actors=actors)[0] for tx in rows[:limit]], 'next_cursor': next_cursor}
 
 
 def issuance_detail(session, transaction_id):
@@ -126,8 +142,10 @@ def issuance_detail(session, transaction_id):
             if entry.asset == 'CAIBI' and entry.account_id == 'PLATFORM_CLEARING'), ZERO):
         return None
     item, audits = _item(session, tx)
+    actors = _actor_names(session, [tx.actor_id, *(row.actor_id for row in audits)])
+    item.update(_actor_fields(actors, tx.actor_id))
     return {**item, 'entries': [{'id': entry.id, 'account_id': entry.account_id,
             'asset': entry.asset, 'amount': f'{entry.amount:.2f}'} for entry in sorted(tx.entries, key=lambda row: row.id)],
-        'audits': [{'id': row.id, 'actor_id': row.actor_id, 'action': row.action,
+        'audits': [{'id': row.id, 'actor_id': row.actor_id, **_actor_fields(actors, row.actor_id), 'action': row.action,
             'resource_type': row.subject_type, 'resource_id': row.subject_id, 'reason_code': row.reason_code,
             'created_at': row.created_at.isoformat()} for row in audits]}

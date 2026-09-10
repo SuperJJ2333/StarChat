@@ -14,6 +14,32 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 const record = { txid: "b".repeat(64), log_index: 0, timestamp_ms: 1000, direction: "INFLOW", amount: "10.000001" };
 const summary = { balance: "10.000001", last_success_ms: 1000, checkpoint_ms: 1000, coverage_start_ms: 0, observer_status: "OK", reconciliation: "SOURCE_MATCHED" };
 
+test('chain absolute times and filter serialization use Beijing time in every browser timezone', async () => {
+  const originalTimezone = process.env.TZ;
+  try {
+    for (const timezone of ['UTC', 'America/Los_Angeles']) {
+      process.env.TZ = timezone;
+      globalThis.document = { createElement: tag => new Element(tag) };
+      const calls = [];
+      const panel = chainPanel({getChainSummary: async () => summary,
+        getChainTransactions: async filters => { calls.push(filters); return {items: [record], total: 1, snapshot: 1}; }});
+      await settle();
+      assert.ok(panel.find('td').some(item => item.textContent === '1970-01-01 08:00:01'));
+      assert.ok(panel.find('p').some(item => item.textContent?.includes('覆盖起点：1970-01-01 08:00:00')));
+      const dates = panel.find('input').filter(item => item.type === 'datetime-local');
+      dates[0].value = '2026-09-10T08:00'; dates[1].value = '2026-09-10T09:00:30';
+      panel.find('form')[0].handlers.submit({preventDefault(){}}); await settle();
+      assert.equal(calls.at(-1).start_ms, Date.parse('2026-09-10T00:00:00Z'));
+      assert.equal(calls.at(-1).end_ms, Date.parse('2026-09-10T01:00:30Z'));
+      dates[0].value = 'invalid';
+      const before = calls.length;
+      panel.find('form')[0].handlers.submit({preventDefault(){}}); await settle();
+      assert.equal(calls.length, before);
+      assert.ok(panel.find('p').some(item => item.textContent?.includes('有效的北京时间')));
+    }
+  } finally { if (originalTimezone === undefined) delete process.env.TZ; else process.env.TZ = originalTimezone; }
+});
+
 test("chain panel uses stable pages, renders exact amount and fetches detail", async () => {
   globalThis.document = { createElement: tag => new Element(tag) };
   const calls = [];

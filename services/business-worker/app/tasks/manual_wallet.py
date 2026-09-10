@@ -8,15 +8,21 @@ from app.modules.wallet.receipt_models import DepositReceipt
 
 
 class ManualWalletMaintenanceTask:
-    def __init__(self, session_factory, *, runtime, scanner, monitor=None, handover_preparation=False):
+    def __init__(self, session_factory, *, runtime, scanner, monitor=None, handover_preparation=False,
+                 monitor_runner=None):
         self.factory, self.runtime, self.scanner, self.monitor = session_factory, runtime, scanner, monitor
         self._binding_after = None
         self._payout_after = None
         self._receipt_after = None
         self.handover_preparation = handover_preparation
+        self.monitor_runner = monitor_runner
 
     def close(self):
-        self.runtime.close()
+        try:
+            if self.monitor_runner is not None:
+                self.monitor_runner.close()
+        finally:
+            self.runtime.close()
 
     def _page(self, model, condition, after):
         with self.factory() as session:

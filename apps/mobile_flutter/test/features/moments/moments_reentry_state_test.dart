@@ -324,6 +324,21 @@ void main() {
       pending.complete(_json(_feed(text: 'authorized result')));
       await tester.pumpAndSettle();
       expect(find.text('private account A'), findsNothing);
+      if (actual == '@b:test') {
+        expect(find.text('账号已切换，请重新进入朋友圈'), findsOneWidget);
+        final corrected = await _client(
+            (request) async => request.url.path.endsWith('/feed')
+                ? _json({
+                    'error': {'code': 'FAIL', 'message': 'Retry'}
+                  }, 503)
+                : _json({}),
+            matrixId: actual,
+            account: 'matrix:$actual');
+        await tester.pumpWidget(_defaultPage(corrected));
+        await tester.pumpAndSettle();
+        expect(find.text('账号已切换，请重新进入朋友圈'), findsNothing);
+        expect(find.byKey(const Key('moments-initial-retry')), findsOneWidget);
+      }
     });
   }
 
@@ -656,7 +671,8 @@ void main() {
         matrixId: null,
         account: '');
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    // Initial loading animates until the pending network response completes.
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('private other account'), findsNothing);
     pending.complete(_json(_feed(text: 'authorized result')));
     await tester.pumpAndSettle();

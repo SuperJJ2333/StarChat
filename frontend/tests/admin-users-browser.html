@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>用户面板浏览器验证</title>
+<link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-modern.css"><link rel="stylesheet" href="/src/styles/admin-users.css">
+<body style="margin:0;background:#f3f6fa;padding:24px"><div id="app"></div><script type="module">
+import {userPanel} from '/src/admin-user-panel.js';
+let writes=[];let reads=[];
+const row={id:'fixture-internal-uuid',username:'changliao2026',nickname:'小星',created_at:'2026-09-10T00:00:00Z',email_verified_at:'2026-09-10T00:05:00Z',status:'ACTIVE'};
+const api={getModule:async(module,query)=>{reads.push(query);return {items:[row],total:51,next_cursor:query.cursor?null:'opaque-next'};},command:async(...args)=>{writes.push(args);return {status:'ACTIVE'};}};
+const panel=userPanel(api,{context:{permissions:['admin.bans.read']}});document.querySelector('#app').append(panel);
+const wait=()=>new Promise(resolve=>setTimeout(resolve,20));
+const check=(ok,message)=>{if(!ok)throw Error(message);};
+try{
+ await wait();check(document.querySelectorAll('.admin-ban-form select').length===3,'three localized dropdowns');
+ [...document.querySelectorAll('button')].find(x=>x.textContent==='选择封禁').click();check(writes.length===0,'selection never writes');
+ check(document.querySelector('[name=target_display]').value==='小星（changliao2026）','human-readable target');
+ document.querySelector('[name=ban-user]').requestSubmit();await wait();
+ check(writes.length===1&&writes[0][1].target==='fixture-internal-uuid','uses selected internal target');
+ check(writes[0][1].duration_minutes===1440,'24-hour preset');
+ [...document.querySelectorAll('button')].find(x=>x.textContent==='下一页').click();await wait();check(reads.at(-1).cursor==='opaque-next','server cursor');
+ check(document.documentElement.scrollWidth<=innerWidth,'no page overflow');
+ check(document.querySelector('tbody').textContent.includes('2026-09-10 08:00:00'),'Beijing registration time');
+ document.body.dataset.verification='PASS';
+}catch(error){document.body.dataset.verification='FAIL';const pre=document.createElement('pre');pre.textContent=error.stack;document.body.append(pre);}
+</script></body></html>

@@ -21,13 +21,18 @@ void main() {
     final rects =
         labels.map((label) => tester.getRect(find.text(label))).toList();
     for (var i = 1; i < rects.length; i++) {
-      expect(rects[i].left, rects[0].left);
       expect(rects[i].top, greaterThan(rects[i - 1].bottom));
     }
     expect(find.byKey(const Key('top-more-divider-0')), findsOneWidget);
     expect(find.byKey(const Key('top-more-divider-1')), findsOneWidget);
     expect(find.byKey(const Key('top-more-divider-2')), findsOneWidget);
     final row = tester.getRect(find.byKey(const Key('top-more-scan')));
+    expect(row.width, lessThanOrEqualTo(180));
+    final icon = tester.getRect(find.descendant(
+        of: find.byKey(const Key('top-more-scan')),
+        matching: find.byType(Icon)));
+    final label = tester.getRect(find.text('扫一扫'));
+    expect((icon.left + label.right) / 2, closeTo(row.center.dx, .5));
     expect(row.height, 52);
     await tester.tapAt(Offset(row.right - 8, row.center.dy));
     await tester.pumpAndSettle();

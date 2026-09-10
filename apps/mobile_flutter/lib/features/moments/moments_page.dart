@@ -125,9 +125,21 @@ final class _MomentsPageState extends State<MomentsPage> {
   int _mutation = 0;
   int _accountEpoch = 0;
   bool _loadingMore = false;
+  bool _refreshing = false;
+  bool _loadMoreFailed = false;
+  bool _initialFailed = false;
+  bool _accountMismatch = false;
+  Object? _loadMoreOperation;
+
+  void _onScroll() {
+    _reportVisiblePosts();
+    if (_feedScroll.hasClients && _feedScroll.position.extentAfter < 600) {
+      unawaited(_loadMorePosts());
+    }
+  }
 
   Future<void> _loadMorePosts() async {
-    if (_loadingMore) return;
+    if (_loadingMore || _loadMoreFailed || _refreshing) return;
     final current = _feedData;
     if (current == null) return;
     final request = _feedRequest;
@@ -135,6 +147,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     final epoch = _accountEpoch;
     final cursor = current['next_cursor'] as String?;
     if (!mounted || cursor == null) return;
+    final operation = _loadMoreOperation = Object();
     setState(() => _loadingMore = true);
     try {
       final next = await widget.api.momentsFeed(mode: 'latest', cursor: cursor);
@@ -155,11 +168,16 @@ final class _MomentsPageState extends State<MomentsPage> {
       };
       setState(() => _feedData = {...next, 'items': merged.values.toList()});
     } catch (_) {
-      if (mounted && epoch == _accountEpoch) {
-        setState(() => _interactionError = '加载更多失败，请重试');
+      if (mounted &&
+          epoch == _accountEpoch &&
+          request == _feedRequest &&
+          mutation == _mutation) {
+        setState(() => _loadMoreFailed = true);
       }
     } finally {
-      if (mounted && epoch == _accountEpoch) {
+      if (mounted &&
+          epoch == _accountEpoch &&
+          identical(operation, _loadMoreOperation)) {
         setState(() => _loadingMore = false);
       }
     }
@@ -209,7 +227,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   void initState() {
     super.initState();
     momentCommentDeletions.addListener(_commentDeleted);
-    _feedScroll.addListener(_reportVisiblePosts);
+    _feedScroll.addListener(_onScroll);
     widget.unreadChanges?.addListener(_unreadChanged);
     _identityCache.addListener(_identityChanged);
     momentsPrivacyChanges.addListener(_privacyChanged);
@@ -234,6 +252,11 @@ final class _MomentsPageState extends State<MomentsPage> {
     _interactionError = null;
     _identityError = null;
     _loadingMore = false;
+    _refreshing = false;
+    _loadMoreFailed = false;
+    _initialFailed = false;
+    _accountMismatch = false;
+    _loadMoreOperation = null;
     final knownAccount = widget._preparedAccount;
     if (knownAccount != null) {
       _accountKey = knownAccount;
@@ -355,6 +378,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     // A projection supplied for another session cannot authorize cache use.
     if (knownAccount != null && resolved != null && knownAccount != resolved) {
       setState(() {
+        _accountMismatch = true;
         _feedData = null;
         _coverUrl = null;
         _coverCacheKey = null;
@@ -426,6 +450,12 @@ final class _MomentsPageState extends State<MomentsPage> {
     final mutation = _mutation;
     final cache = _moments;
     final ticket = cache?.beginRefresh();
+    setState(() {
+      _refreshing = true;
+      _initialFailed = false;
+      _loadMoreOperation = null;
+      _loadingMore = false;
+    });
     try {
       final fresh = await widget.api.momentsFeed(mode: 'latest');
       final sameAccount = await _stillSameAccount();
@@ -441,10 +471,21 @@ final class _MomentsPageState extends State<MomentsPage> {
       if (cache != null) unawaited(cache.save(fresh).catchError((Object _) {}));
       setState(() {
         _feedData = fresh;
+        _loadMoreFailed = false;
+        _interactionError = null;
         _itemOverrides.removeWhere((id, _) => !_pendingLikeIds.contains(id));
       });
     } catch (_) {
-      // 后台刷新失败保持缓存首绘内容，不打断浏览。
+      if (mounted && request == _feedRequest) {
+        setState(() {
+          _initialFailed = true;
+          if (_feedData != null) _interactionError = '刷新失败，请重试';
+        });
+      }
+    } finally {
+      if (mounted && request == _feedRequest) {
+        setState(() => _refreshing = false);
+      }
     }
   }
 
@@ -761,94 +802,140 @@ final class _MomentsPageState extends State<MomentsPage> {
               WidgetsBinding.instance.addPostFrameCallback(
                 (_) => _reportVisiblePosts(),
               );
-              return ListView(
+              return CustomScrollView(
                 controller: _feedScroll,
-                children: [
-                  if (_interactionError != null)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        _interactionError!,
-                        key: const Key('moment-interaction-error'),
-                        style:
-                            const TextStyle(color: CupertinoColors.systemRed),
+                slivers: [
+                  CupertinoSliverRefreshControl(onRefresh: _refreshFeed),
+                  SliverList.list(children: [
+                    if (_interactionError != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          _interactionError!,
+                          key: const Key('moment-interaction-error'),
+                          style:
+                              const TextStyle(color: CupertinoColors.systemRed),
+                        ),
                       ),
-                    ),
-                  GestureDetector(
-                    key: const Key('moment-cover-header'),
-                    onTap: _openCover,
-                    child: Container(
-                      key: ValueKey(_coverUrl),
-                      height: 200,
-                      decoration: BoxDecoration(
-                        color: const Color(0xff4c4c4c),
-                        image: _coverUrl == null
-                            ? null
-                            : DecorationImage(
-                                image: MomentMediaCache.imageProvider(
-                                  _coverUrl!,
-                                  cacheKey: _coverCacheKey,
-                                  accountKey: _accountKey,
-                                  trustedOrigin: widget.api.baseUri.origin,
-                                ),
-                                fit: BoxFit.cover,
-                                onError: (_, __) {},
-                              ),
-                      ),
-                      alignment: Alignment.bottomRight,
-                      padding: const EdgeInsets.all(16),
-                      child: _ownerIdentity(),
-                    ),
-                  ),
-                  for (final m in items)
-                    Builder(
-                      builder: (_) {
-                        final parsed = MomentItem.fromJson(
-                          Map<String, dynamic>.from(m as Map),
-                        );
-                        if (_deletedIds.contains(parsed.id)) {
-                          return const SizedBox.shrink();
-                        }
-                        final item = _itemOverrides[parsed.id] ?? parsed;
-                        return WeChatMomentTile(
-                          key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
-                          identityCache: _identityCache,
-                          item: visibleMomentReactions(item, _identityCache),
-                          onAuthorTap: () => _openAuthor(item.author),
-                          onPersonTap: _openAuthor,
-                          selectedCommentId: _selectedComments[item.id],
-                          cacheNamespace: _identityCache.accountKey ?? '',
-                          onOpen: () => _openDetail(item),
-                          onCommentLongPress: (comment, anchor) =>
-                              _showComment(context, item, comment, anchor),
-                          onCommentTap: (comment) =>
-                              _showComment(context, item, comment),
-                          mediaAccountKey: _accountKey,
-                          mediaOrigin: widget.api.baseUri.origin,
-                          onLike: _pendingLikeIds.contains(item.id)
+                    GestureDetector(
+                      key: const Key('moment-cover-header'),
+                      onTap: _openCover,
+                      child: Container(
+                        key: ValueKey(_coverUrl),
+                        height: 200,
+                        decoration: BoxDecoration(
+                          color: const Color(0xff4c4c4c),
+                          image: _coverUrl == null
                               ? null
-                              : () => _toggleLike(item),
-                          onComment: () => _showComment(context, item),
-                          onDelete: _canDelete(item)
-                              ? () => _confirmDelete(item)
-                              : null,
-                        );
-                      },
+                              : DecorationImage(
+                                  image: MomentMediaCache.imageProvider(
+                                    _coverUrl!,
+                                    cacheKey: _coverCacheKey,
+                                    accountKey: _accountKey,
+                                    trustedOrigin: widget.api.baseUri.origin,
+                                  ),
+                                  fit: BoxFit.cover,
+                                  onError: (_, __) {},
+                                ),
+                        ),
+                        alignment: Alignment.bottomRight,
+                        padding: const EdgeInsets.all(16),
+                        child: _ownerIdentity(),
+                      ),
                     ),
-                  if (_feedData?['next_cursor'] != null)
-                    CupertinoButton(
-                      key: const Key('moments-load-more'),
-                      onPressed: _loadingMore ? null : _loadMorePosts,
-                      child: _loadingMore
-                          ? const CupertinoActivityIndicator()
-                          : const Text('加载更多'),
-                    ),
+                    for (final m in items)
+                      Builder(
+                        builder: (_) {
+                          final parsed = MomentItem.fromJson(
+                            Map<String, dynamic>.from(m as Map),
+                          );
+                          if (_deletedIds.contains(parsed.id)) {
+                            return const SizedBox.shrink();
+                          }
+                          final item = _itemOverrides[parsed.id] ?? parsed;
+                          return WeChatMomentTile(
+                            key: _postKeys.putIfAbsent(item.id, GlobalKey.new),
+                            identityCache: _identityCache,
+                            item: visibleMomentReactions(item, _identityCache),
+                            onAuthorTap: () => _openAuthor(item.author),
+                            onPersonTap: _openAuthor,
+                            selectedCommentId: _selectedComments[item.id],
+                            cacheNamespace: _identityCache.accountKey ?? '',
+                            onOpen: () => _openDetail(item),
+                            onCommentLongPress: (comment, anchor) =>
+                                _showComment(context, item, comment, anchor),
+                            onCommentTap: (comment) =>
+                                _showComment(context, item, comment),
+                            mediaAccountKey: _accountKey,
+                            mediaOrigin: widget.api.baseUri.origin,
+                            onLike: _pendingLikeIds.contains(item.id)
+                                ? null
+                                : () => _toggleLike(item),
+                            onComment: () => _showComment(context, item),
+                            onDelete: _canDelete(item)
+                                ? () => _confirmDelete(item)
+                                : null,
+                          );
+                        },
+                      ),
+                    _paginationFooter(items),
+                  ]),
                 ],
               );
             },
           ),
         ),
       );
+
+  Widget _paginationFooter(List items) {
+    if (_feedData == null) {
+      if (_accountMismatch) {
+        return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: Text('账号已切换，请重新进入朋友圈')));
+      }
+      if (_initialFailed) {
+        return CupertinoButton(
+            key: const Key('moments-initial-retry'),
+            onPressed: _reloadFeed,
+            child: const Text('加载失败，点击重试'));
+      }
+      return const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CupertinoActivityIndicator()));
+    }
+    if (items.isEmpty) {
+      return const Padding(
+          key: Key('moments-empty'),
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('还没有朋友圈动态')));
+    }
+    if (_loadMoreFailed) {
+      return CupertinoButton(
+          key: const Key('moments-load-more-retry'),
+          onPressed: () {
+            setState(() => _loadMoreFailed = false);
+            unawaited(_loadMorePosts());
+          },
+          child: const Text('加载失败，点击重试'));
+    }
+    if (_loadingMore) {
+      return const Padding(
+          key: Key('moments-footer-loading'),
+          padding: EdgeInsets.all(16),
+          child: Center(child: CupertinoActivityIndicator()));
+    }
+    if (_feedData?['next_cursor'] == null) {
+      return const Padding(
+          key: Key('moments-no-more'),
+          padding: EdgeInsets.all(16),
+          child: Center(child: Text('没有更多了')));
+    }
+    return CupertinoButton(
+        key: const Key('moments-load-more'),
+        onPressed: _loadMorePosts,
+        child: const Text('加载更多'));
+  }
 
   Widget _ownerIdentity() {
     final profile = _identityCache.profile;

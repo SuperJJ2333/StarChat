@@ -1,3 +1,5 @@
+import { formatBeijingTime, parseBeijingInput } from './admin-formatters.js';
+
 function node(tag, text, className) {
   const result = document.createElement(tag);
   if (text !== undefined) result.textContent = String(text);
@@ -6,7 +8,8 @@ function node(tag, text, className) {
 }
 
 function time(value) {
-  return value === null || value === undefined ? "暂无" : new Date(value).toLocaleString("zh-CN");
+  const formatted = formatBeijingTime(value);
+  return formatted === '—' ? '暂无' : formatted;
 }
 
 function accounting(record) {
@@ -40,7 +43,8 @@ export function chainPanel(api) {
   txid.pattern = "[a-fA-F0-9]{64}";
   const dates = ["开始时间", "结束时间"].map(label => {
     const input = node("input", undefined, "admin-filter");
-    input.type = "datetime-local"; input.setAttribute("aria-label", label); return input;
+    input.type = "datetime-local"; input.setAttribute("aria-label", label);
+    input.title = "按北京时间输入（UTC+08:00）"; return input;
   });
   const submit = node("button", "查询 / 刷新", "admin-primary"); submit.type = "submit";
   form.append(direction, txid, ...dates, submit);
@@ -122,8 +126,11 @@ export function chainPanel(api) {
   }
   form.addEventListener("submit", event => {
     event.preventDefault();
-    const start = dates[0].value ? new Date(dates[0].value).getTime() : undefined;
-    const end = dates[1].value ? new Date(dates[1].value).getTime() : undefined;
+    const start = parseBeijingInput(dates[0].value);
+    const end = parseBeijingInput(dates[1].value);
+    if ([start, end].some(value => value !== undefined && !Number.isFinite(value))) {
+      state.textContent = "请输入有效的北京时间。"; return;
+    }
     if (start !== undefined && end !== undefined && start > end) { state.textContent = "开始时间不能晚于结束时间。"; return; }
     activeFilters = { direction: direction.value, txid: txid.value.trim(), start_ms: start, end_ms: end };
     offset = 0; snapshot = undefined; load();

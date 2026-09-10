@@ -1,4 +1,4 @@
-"""Executable Flutter–HTML–Figma export-ledger drift validator."""
+"""Executable Flutter–HTML design-demo drift validator."""
 from __future__ import annotations
 
 import json
@@ -12,15 +12,11 @@ REGISTRY_PATH = ROOT / "packages/ui-contracts/changliao-component-registry.json"
 
 def verify() -> list[str]:
     registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    figma_path = ROOT / registry["figma"]["stateArtifact"]
-    figma = json.loads(figma_path.read_text(encoding="utf-8"))
+    assert "figma" not in registry, "Figma export ledger retired; UI changes deliver the HTML demo only"
     contracts = (ROOT / "frontend/src/catalog/contracts.js").read_text(encoding="utf-8")
     css_tokens = (ROOT / "frontend/src/styles/tokens.css").read_text(encoding="utf-8")
     tokens = (ROOT / "apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart").read_text(encoding="utf-8")
 
-    assert figma["fileKey"] == registry["figma"]["fileKey"]
-    assert figma["phase"] == "complete" and figma["step"] == "verified"
-    assert not figma["pendingValidations"]
     result = subprocess.run(
         ["node", "-e", "import('./frontend/src/catalog/screens.js').then(({screens}) => console.log(screens.length))"],
         cwd=ROOT,
@@ -28,23 +24,13 @@ def verify() -> list[str]:
         capture_output=True,
         check=True,
     )
-    assert int(result.stdout.strip()) == registry["figma"]["expectedScreenCount"]
+    assert int(result.stdout.strip()) == registry["screens"]["expectedCount"]
 
     brand = registry["brand"]
     assert brand["internalAssetCode"] == "CAIBI"
     assert brand["productDisplayName"] == "畅聊 ChatFlow"
     assert brand["caibiDisplayName"] == "点钻"
     assert brand["caibiRedPacketLabel"] == "畅聊点钻红包"
-    figma_brand = figma["brand"]
-    for key in (
-        "productDisplayName",
-        "compactProductName",
-        "accountLabel",
-        "caibiDisplayName",
-        "caibiRedPacketLabel",
-        "internalAssetCode",
-    ):
-        assert figma_brand[key] == brand[key], f"Figma brand mapping drift: {key}"
     user_visible_sources = [
         ROOT / "apps/mobile_flutter/lib",
         ROOT / "frontend/src",
@@ -65,12 +51,10 @@ def verify() -> list[str]:
     for required in (brand["productDisplayName"], brand["caibiDisplayName"], brand["caibiRedPacketLabel"]):
         assert required in user_visible_text, f"User-visible brand text missing: {required}"
 
-    figma_variables = figma["entities"]["variables"]
     for group, values in registry["tokenMappings"].items():
         for value in values:
             assert value in tokens, f"Flutter token missing: {group}/{value}"
     for token in registry["tokenParity"]:
-        assert token["figma"] in figma_variables, f"Figma token missing: {token['figma']}"
         html_name = token["html"].split(":", 1)[0]
         assert html_name in css_tokens, f"HTML token missing: {html_name}"
         assert token["flutter"] in tokens, f"Flutter token drift: {token['flutter']}"
@@ -93,8 +77,7 @@ def verify() -> list[str]:
         for prop in flutter["props"]:
             assert prop in body, f"Flutter prop missing: {flutter['name']}.{prop}"
         assert f'tagName: "{component["html"]["tag"]}"' in contracts
-        assert figma["entities"]["components"].get(component["figma"]["name"]) == component["figma"]["key"]
-    return [f"UI contract drift: PASS ({len(registry['components'])} components, {registry['figma']['expectedScreenCount']} screens)"]
+    return [f"UI contract drift: PASS ({len(registry['components'])} components, {registry['screens']['expectedCount']} screens)"]
 
 
 if __name__ == "__main__":

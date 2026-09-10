@@ -73,7 +73,7 @@ async function renderCard(definition) {
 function galleryHeader(visibleCount) {
   const header = element("header", "ui-gallery__header");
   const heading = element("div", "ui-gallery__heading");
-  heading.append(element("p", "ui-gallery__eyebrow", "HTML → FIGMA REVIEW SYSTEM"), element("h1", "ui-gallery__title", "畅聊 APP 完整设计审查"), element("p", "ui-gallery__summary", `${visibleCount} 个当前画板 · ${screens.length} 个总画板 · iPhone 15 / 393×852`));
+  heading.append(element("p", "ui-gallery__eyebrow", "HTML DESIGN REVIEW SYSTEM"), element("h1", "ui-gallery__title", "畅聊 APP 完整设计审查"), element("p", "ui-gallery__summary", `${visibleCount} 个当前画板 · ${screens.length} 个总画板 · iPhone 15 / 393×852`));
   const themeButton = button("ui-gallery__theme", "切换审查主题", "gallery-theme");
   themeButton.textContent = params.get("theme") === "dark" ? "查看浅色" : "查看深色";
   header.append(heading, themeButton);

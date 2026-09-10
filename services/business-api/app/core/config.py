@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     wallet_manual_user_24h: str | None = None
     wallet_manual_global_24h: str | None = None
     wallet_manual_quote_ttl_seconds: int = 300
+    wallet_manual_stale_resample_budget_seconds: int = 60
+
+    @field_validator('wallet_manual_stale_resample_budget_seconds', mode='before')
+    @classmethod
+    def validate_manual_stale_resample_budget(cls, value):
+        if isinstance(value, str) and re.fullmatch(r'[0-9]+', value):
+            value = int(value)
+        if type(value) is not int or not 0 <= value <= 60:
+            raise ValueError('manual stale resample budget must be an integer from 0 to 60')
+        return value
     wallet_deposit_intent_ttl_seconds: int = 1200
     wallet_funding_baseline_at: datetime | None = None
     wallet_funding_baseline_height: int | None = None

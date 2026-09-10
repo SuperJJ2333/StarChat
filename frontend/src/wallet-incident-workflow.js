@@ -90,7 +90,7 @@ export function incidentSummary(item, policy) {
   };
 }
 export function incidentTime(value) {
-  const time=Date.parse(value);return Number.isFinite(time)?new Date(time).toLocaleString('zh-CN',{timeZone:'Asia/Hong_Kong',hour12:false})+'（香港时间）':'暂无记录';
+  const formatted=formatBeijingTime(value);return formatted==='—'?'暂无记录':formatted;
 }
 export function diagnosticSummary(value) {
   if(!value)return '当前诊断暂不可用，请刷新重试。';
@@ -145,3 +145,4 @@ export async function processIncident({id,api,journal,credentials,authMode,onPro
     for(const key of Object.keys(credentials))delete credentials[key];
   }
 }
+import { formatBeijingTime } from './admin-formatters.js';

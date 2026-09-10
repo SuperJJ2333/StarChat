@@ -3,6 +3,18 @@ import assert from "node:assert/strict";
 import { createAdminApi, can, normalizeAdminContext } from "../src/admin-api.js";
 import { readFile } from "node:fs/promises";
 
+test('admin module reads encode literal user search and opaque cursor without replacing bearer',async()=>{
+  let received;
+  const api=createAdminApi({token:'access',fetchImpl:async(url,options)=>{received={url,options};return new Response('{}');}});
+  await api.getModule('security',{q:'小星+a@example.test',limit:50,cursor:'cursor+/='});
+  const url=new URL(received.url,'https://example.test');
+  assert.equal(url.searchParams.get('q'),'小星+a@example.test');
+  assert.equal(url.searchParams.get('cursor'),'cursor+/=');
+  assert.equal(url.searchParams.get('limit'),'50');
+  assert.equal(received.options.headers.Authorization,'Bearer access');
+  assert.equal(received.options.cache,'no-store');
+});
+
 test('admin errors preserve structured handover evidence for actionable feedback',async()=>{
   const fields=[{loc:['evidence'],msg:'MANUAL_COVERAGE_PENDING',type:'wallet.handover.evidence'}];
   const api=createAdminApi({fetchImpl:async()=>new Response(JSON.stringify({error:{code:'HANDOVER_EVIDENCE_UNAVAILABLE',fields}}),{status:503})});

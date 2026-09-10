@@ -1,3 +1,4 @@
+import 'features/matrix/direct_chat_failure.dart';
 import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
 
@@ -171,8 +172,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 打开规范登记的私聊房间：受邀未加入时先加入；对端建的房间我方
   /// m.direct 可能缺失，补写后房间才具备 DM 语义（否则渲染成"群聊"，
   /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
-  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId) =>
-      widget.matrix.openCanonicalDirectRoom(roomId);
+  Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId, String peer) =>
+      widget.matrix.openCanonicalDirectRoom(roomId, matrixUserId: peer);
 
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
   /// （UI 展示/点击接听）共享同一时间线。
@@ -1337,21 +1338,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final reference = await directChats.open(contact.matrixUserId);
       await _openManagedRoom(reference.roomId,
           roomName: contact.displayName, initialContact: contact, cache: cache);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
-          title: const Text('无法打开加密会话'),
-          content: const Text('请检查网络后重试。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
-      );
+      await showDirectChatFailureDialog(context, error,
+          onRetry: () => _openMessage(contact));
     }
   }
 
@@ -1894,21 +1884,10 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
       } finally {
         await lease.cancel();
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      await showCupertinoDialog<void>(
-        context: context,
-        builder: (dialogContext) => CupertinoAlertDialog(
-          title: const Text('无法打开加密会话'),
-          content: const Text('请检查网络后重试。'),
-          actions: [
-            CupertinoDialogAction(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
-      );
+      await showDirectChatFailureDialog(context, error,
+          onRetry: () => _openMessage(contact));
     }
   }
 

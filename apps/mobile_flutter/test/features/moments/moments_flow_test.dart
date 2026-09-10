@@ -99,15 +99,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(seen, contains('post-0'));
     expect(seen, isNot(contains('post-11')));
-    final list = find.byType(ListView).first;
-    await tester.scrollUntilVisible(
-        find.byKey(const Key('moments-load-more')), 400,
-        scrollable:
-            find.descendant(of: list, matching: find.byType(Scrollable)).first);
-    await tester.tap(find.byKey(const Key('moments-load-more')));
+    // 滚动接近底部自动加载下一页（问题四：不再需要手动按钮）。
+    final list = find.byType(Scrollable).first;
+    await tester.drag(list, const Offset(0, -2000));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('moments-load-more')), findsNothing);
-    await tester.drag(list, const Offset(0, -500));
+    await tester.drag(list, const Offset(0, -2000));
     await tester.pumpAndSettle();
     expect(seen, contains('older'));
   });

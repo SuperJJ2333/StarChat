@@ -115,12 +115,19 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     getChainTransaction: async (txid, logIndex) => request(`/api/v1/admin/wallet/chain/transactions/${encodeURIComponent(txid)}/${encodeURIComponent(logIndex)}`),
     getContext: async () => normalizeAdminContext(await request("/api/v1/admin/context")),
     login: async ({ username, password, device_key = "admin-browser", device_name = "ChatFlow Admin" }) => request("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, device_key, device_name }) }),
-    getModule: async (module, accessToken = token) => {
+    getModule: async (module, options = {}) => {
+      const accessToken = typeof options === 'string' ? options : token;
       const scoped = createAdminApi({ baseUrl, token: accessToken, tokenProvider, fetchImpl });
-      return scoped.requestModule(module);
+      return scoped.requestModule(module, typeof options === 'string' ? {} : options);
     },
     command,
-    requestModule: async (module) => request(`/api/v1/admin/modules/${encodeURIComponent(module)}`)
+    requestModule: async (module, filters = {}) => {
+      const query = new URLSearchParams();
+      for (const key of ['q', 'limit', 'cursor']) {
+        if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') query.set(key, String(filters[key]));
+      }
+      return request(`/api/v1/admin/modules/${encodeURIComponent(module)}${query.size ? `?${query}` : ''}`, {cache:'no-store'});
+    }
   };
 }
 

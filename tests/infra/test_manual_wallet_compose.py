@@ -18,7 +18,10 @@ def test_manual_wallet_overlay_shares_explicit_config_and_readonly_observer():
                     'WALLET_FUNDING_BASELINE_HEIGHT','WALLET_MANUAL_OWNER_ADMIN_ID','WALLET_ALERT_RECIPIENT'):
             assert '${BUSINESS_' + key + ':?' in env['BUSINESS_' + key]
         assert env['BUSINESS_TRON_OBSERVER_DATABASE_PATH'] == '/data/tron-watch/observations.sqlite3'
-    assert api['environment'] == worker['environment']
+    budget = 'BUSINESS_WALLET_MANUAL_STALE_RESAMPLE_BUDGET_SECONDS'
+    assert budget not in api['environment']
+    assert worker['environment'][budget] == '${' + budget + ':-60}'
+    assert api['environment'] == {key: value for key, value in worker['environment'].items() if key != budget}
     for service in (api, worker):
         assert {mount['target'] for mount in service['volumes']} == {'/data/tron-watch', '/data/wallet-handover.json'}
         for mount in service['volumes']:

@@ -53,6 +53,11 @@ final class DirectChatService implements DirectChatGateway {
       // 历史；不可修复才绕开旧房间显式新建。
       final repaired = await backend.repairDirectRoom(existing, matrixUserId);
       if (repaired != null && _isSafe(repaired, matrixUserId)) return repaired;
+      if (existing.participantIds.length < 2 ||
+          (existing.participantIds.length == 2 &&
+              existing.participantIds.contains(matrixUserId))) {
+        throw StateError('Direct chat is not ready; retry the existing room');
+      }
       final roomId = await backend.createEncryptedDirectRoom(
         matrixUserId,
         avoidRoomId: existing.roomId,

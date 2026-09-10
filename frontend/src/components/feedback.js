@@ -64,7 +64,10 @@ export class AppActionSheet extends StrictElement {
     const root = element("div", "c-action-sheet-overlay");
     const overlay = element("div", "c-overlay");
     overlay.append(element("div", "c-overlay__scrim"));
-    const sheet = element("section", "c-action-sheet");
+    const variant = this.attr("variant");
+    // "fit": 与 Flutter 端 WeChatMoreSheet 对齐——宽度适配内容、水平居中
+    //（问题二：全宽底部菜单两侧空白过宽）。
+    const sheet = element("section", variant === "fit" ? "c-action-sheet c-action-sheet--fit" : "c-action-sheet");
     sheet.setAttribute("role", "dialog");
     sheet.setAttribute("aria-modal", "true");
     const header = element("header", "c-action-sheet__header");

@@ -1,9 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {processIncident, incidentSummary, incidentError, diagnosticSummary, fundControlError} from '../src/wallet-incident-workflow.js';
+import {processIncident, incidentSummary, incidentError, diagnosticSummary, fundControlError, incidentTime} from '../src/wallet-incident-workflow.js';
 import {operationJournal} from '../src/admin-manual-wallet-panel.js';
 
 const digest='a'.repeat(64);
+test('incident times use padded Beijing date and safely retain the missing-record label',()=>{
+  const originalTimezone=process.env.TZ;
+  try {
+    for(const timezone of ['UTC','America/Los_Angeles']) {
+      process.env.TZ=timezone;
+      assert.equal(incidentTime('2026-09-09T17:02:03Z'),'2026-09-10 01:02:03');
+      assert.equal(incidentTime('2026-09-09T17:02:03'),'2026-09-10 01:02:03');
+      for(const value of [null,undefined,'','invalid'])assert.equal(incidentTime(value),'暂无记录');
+    }
+  } finally {if(originalTimezone===undefined)delete process.env.TZ;else process.env.TZ=originalTimezone;}
+});
 function fixture(start={}) {
   let current={id:'incident',status:'OPEN',version:1,condition_active:true,code:'MANUAL_SOURCE_UNHEALTHY',...start};
   const data=new Map(),calls=[];

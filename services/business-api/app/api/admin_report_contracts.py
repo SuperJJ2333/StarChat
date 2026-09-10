@@ -42,6 +42,8 @@ class PointIssuanceItem(BaseModel):
     kind: Literal['issued', 'returned']
     amount: Amount
     actor_id: str
+    actor_username: str | None = None
+    actor_display_name: str | None = None
     reason_code: str
     scope: str
     reversal_of_id: str | None
@@ -64,6 +66,8 @@ class PointIssuanceEntry(BaseModel):
 class PointIssuanceAudit(BaseModel):
     id: str
     actor_id: str | None
+    actor_username: str | None = None
+    actor_display_name: str | None = None
     action: str
     resource_type: str
     resource_id: str
@@ -74,3 +78,25 @@ class PointIssuanceAudit(BaseModel):
 class PointIssuanceDetail(PointIssuanceItem):
     entries: list[PointIssuanceEntry]
     audits: list[PointIssuanceAudit]
+
+
+class AdminUserItem(BaseModel):
+    id: str
+    username: str
+    nickname: str
+    status: str
+    created_at: str
+    updated_at: str
+    email_verified_at: str | None
+
+
+class AdminUserPage(BaseModel):
+    module: Literal['security', 'analytics']
+    items: list[AdminUserItem]
+    total: int
+    next_cursor: str | None
+
+
+class AdminModulePage(BaseModel):
+    module: str
+    items: list[dict]

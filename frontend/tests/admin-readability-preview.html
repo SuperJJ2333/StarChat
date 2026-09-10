@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>畅聊后台 · 本地验收数据</title>
+<link rel="icon" type="image/png" href="/assets/branding/admin-logo.png"><link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-modern.css"><link rel="stylesheet" href="/src/styles/admin-users.css">
+<div id="app"></div><script type="module">
+import {createAdminShell} from '/src/admin-dashboard.js';
+import {userPanel} from '/src/admin-user-panel.js';
+const overview={registered_users:12580,online_customers:126,pending_withdrawals:3,today_point_volume:'23084.25',point_supply:{total:'1200580.25',issued:'1300580.25',returned:'100000.00',holdings:'1199980.25',platform_fees:'600.00',balanced:true},registration_trend:Array.from({length:14},(_,i)=>({date:`2026-09-${String(i+1).padStart(2,'0')}`,value:35+(i*17)%91}))};
+const item={transaction_id:'txn-preview-0001',created_at:'2026-09-09T18:04:05Z',amount:'12500.00',actor_id:'private-user-id',actor_username:'changliao_admin',reason_code:'SUPPORT_CAIBI_GRANT'};
+window.calls={issuance:0,users:[],writes:[]};
+const users=Array.from({length:8},(_,i)=>({id:`private-user-${i}`,username:`changliao_${i+1}`,nickname:['晨曦','小林','若水','星辰'][i%4],status:i===3?'BANNED':'ACTIVE',created_at:'2026-09-09T18:04:05Z',email_verified_at:i%2?'2026-09-10T00:15:00Z':null}));
+window.api={getOverview:async()=>overview,getModule:async(module,query={})=>{window.calls.users.push(query);if(window.failUsers)throw Error('暂时无法连接');return {module,items:query.q?users.filter(u=>u.username.includes(query.q)||u.nickname.includes(query.q)):users,total:query.q?1:58,next_cursor:query.cursor||query.q?null:'preview-next'};},command:async(...args)=>{window.calls.writes.push(args);return {status:'ACTIVE'};},getPointIssuance:async()=>{window.calls.issuance++;if(window.failIssuance)throw Error('读取中断');return {items:[item,{...item,transaction_id:'txn-preview-0002',amount:'-500.00',reason_code:'REVERSAL'}]};},getPointIssuanceDetail:async id=>({...item,transaction_id:id,entries:[{account_id:'PLATFORM_CLEARING',asset:'CAIBI',amount:'-12500.00'},{account_id:'customer-account',asset:'CAIBI',amount:'12500.00'}],audits:[{...item,id:'audit-preview-01'}]})};
+const context={actor:{id:'fixture',display_name:'演示管理员'},permissions:['*'],overview};
+window.shell=createAdminShell({context,api:window.api,modules:[['封禁 IP 和用户','','security','admin.bans.read'],['平台注册用户统计','','analytics','admin.analytics.read'],['点钻流水','','ledger','admin.ledger.read']],renderModule:(module,title,ctx)=>userPanel(window.api,{module,context:ctx,initialData:ctx.modules[module]})});document.querySelector('#app').append(window.shell);
+document.body.dataset.preview='synthetic-verification-data';
+</script></html>

@@ -87,13 +87,21 @@ class ManualReserveMonitor:
     publish_backing_advisory = True
     discovery_sync = None
     def __init__(self, factory, *, source, official_config, activation_baseline_time,
-                 activation_baseline_height, clock, external_delivery_configured=False):
+                 activation_baseline_height, clock, external_delivery_configured=False,
+                 stale_resample_budget_seconds=0, resample_monotonic=None, resample_sleep=None):
         canonical_address(official_config.address)
         identity = hashlib.sha256(('tron-mainnet-usdt:'+official_config.address).encode()).hexdigest()
         if (source.source_identity != identity or not official_config.version or not callable(clock)
                 or type(activation_baseline_height) is not int or activation_baseline_height < 0
                 or type(external_delivery_configured) is not bool):
             raise ValueError('manual reserve monitor configuration required')
+        if type(stale_resample_budget_seconds) is not int or not 0 <= stale_resample_budget_seconds <= 60:
+            raise ValueError('bounded stale resample budget required')
+        self.stale_resample_budget_seconds = stale_resample_budget_seconds
+        self.resample_monotonic = resample_monotonic or time.monotonic
+        self.resample_sleep = resample_sleep or time.sleep
+        if not callable(self.resample_monotonic) or not callable(self.resample_sleep):
+            raise ValueError('resample clock and sleep must be callable')
         self.factory, self.source, self.config, self.clock = factory, source, official_config, clock
         self.baseline = _aware(activation_baseline_time)
         self.baseline_height = activation_baseline_height
@@ -199,12 +207,14 @@ class ManualReserveMonitor:
                 if escalate:
                     self.incidents.escalate()
                 attempts = 3 if self.discovery_sync is not None else 1
+                wait_state = {}
                 for attempt in range(attempts):
                     # Discovery commits before reserve/incident proof, never under
                     # its financial transaction and never credits a receipt.
                     if self.discovery_sync is not None:
                         self.discovery_sync()
-                    result = self._run(review_only=review_only, on_review=on_review, on_activate=on_activate)
+                    result = self._run(review_only=review_only, on_review=on_review, on_activate=on_activate,
+                                       wait_state=wait_state)
                     if (result.get('complete') or result.get('codes') not in
                             (['MANUAL_COVERAGE_PENDING'], ['MANUAL_SOURCE_CHANGED'])):
                         return result
@@ -226,7 +236,74 @@ class ManualReserveMonitor:
             except Exception:
                 return dict(complete=False, status='UNAVAILABLE', codes=['MANUAL_MONITOR_UNAVAILABLE'])
 
-    def _run(self, *, review_only=False, on_review=None, on_activate=None):
+    def _begin_source_wait(self, expected, cut):
+        """Commit an unusable reserve before waiting; never clear control state."""
+        with self.factory.begin() as session:
+            reserve = lock_budget(session)
+            now = _aware(self.clock())
+            if (reserve.version if reserve is not None else None) != expected:
+                return {'result': dict(complete=False, status='RETRY', codes=['MANUAL_RESERVE_CHANGED'])}
+            control = session.get(WalletControl, 'global', with_for_update=True)
+            if control is None:
+                return {'result': self._block(session, 'MANUAL_CONTROL_MISSING', now)}
+            if session.scalar(select(OutboxEvent.id).where(OutboxHandover.unhealthy_predicate(now)).limit(1)):
+                return {'result': self._block(session, 'ALERT_DELIVERY_UNHEALTHY', now)}
+            if session.scalar(select(Coverage.id).where(Coverage.source_identity == self.source.source_identity,
+                                                       Coverage.status == 'CONFLICT').limit(1)):
+                return {'result': self._block(session, 'MANUAL_COVERAGE_CONFLICT', now)}
+            if reserve is None:
+                return {'result': self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)}
+            if (cut.checkpoint_ms < int(self.baseline.timestamp()*1000)
+                    or cut.solid_block < self.baseline_height):
+                return {'result': self._block(session, 'MANUAL_SOURCE_UNHEALTHY', now)}
+            state = session.get(WalletFundingScanState, 'global', with_for_update=True)
+            if (state is None or state.source_identity != cut.source_identity
+                    or state.cursor_rowid > cut.max_rowid or state.source_max_rowid > cut.max_rowid
+                    or state.checkpoint_ms > cut.checkpoint_ms):
+                return {'result': self._block(session, 'MANUAL_COVERAGE_GAP', now)}
+            # Only age may be deferred. Reuse the coverage proof so receipt
+            # anomalies and mismatched payout evidence cannot hide in a wait.
+            code = self._coverage(session, cut)
+            if code and code != 'MANUAL_COVERAGE_PENDING':
+                return {'result': self._block(session, code, now)}
+            pending, oldest = session.execute(select(func.count(), func.min(ManualPayoutOrder.claimed_at))
+                .where(ManualPayoutOrder.status.in_(('CLAIMED', 'UNKNOWN')))).one()
+            if pending != reserve.pending_payouts:
+                return {'result': self._block(session, 'MANUAL_PAYOUT_PENDING_MISMATCH', now)}
+            if pending:
+                oldest = oldest.replace(tzinfo=timezone.utc) if oldest.tzinfo is None else oldest
+                if now-oldest >= timedelta(minutes=5) or oldest > now:
+                    return {'result': self._block(session, 'MANUAL_PAYOUT_UNCERTAIN', now)}
+            safety = session.get(WalletSafetyState, 'global')
+            if control.withdrawals_paused or reserve.outgoing_restricted or safety is not None and safety.restricted:
+                if not owns_manual_pause(session):
+                    return {'result': self._block(session, 'MANUAL_WALLET_PAUSED', now)}
+                invalidate_wallet_reserve(session)
+                self._heartbeat(session, now, 'MANUAL_WALLET_PAUSED')
+                return {'result': dict(complete=False, status='WAITING', codes=['MANUAL_WALLET_PAUSED'])}
+            with localcontext() as context:
+                context.prec = 100
+                liability = usdt_liability(session)
+                eligible = Decimal(cut.balance_units)/Decimal(1000000)
+                required = liability + LedgerService(self.factory).redeemable_liability(session=session)
+                if eligible < required and self.reserve_policy == 'full_backing':
+                    return {'result': self._block(session, 'MANUAL_RESERVE_DEFICIT', now)}
+                if any(value >= Decimal('1e24') for value in (liability, eligible)):
+                    return {'result': self._block(session, 'MANUAL_RESERVE_OVERFLOW', now)}
+            if (code == 'MANUAL_COVERAGE_PENDING' or state.cursor_rowid < cut.max_rowid
+                    or state.source_max_rowid < cut.max_rowid or state.checkpoint_ms < cut.checkpoint_ms):
+                return {'result': self._wait_for_coverage(session, now,
+                    discovery_since=state.updated_at if state.cursor_rowid < cut.max_rowid else None)}
+            invalidate_wallet_reserve(session)
+            if pending:
+                self._heartbeat(session, now, 'MANUAL_PAYOUT_PENDING')
+                return {'result': dict(complete=False, status='WAITING', codes=['MANUAL_PAYOUT_PENDING'])}
+            self._heartbeat(session, now, 'MANUAL_SOURCE_WAITING')
+            # Capture only our invalidation's version before further external
+            # reads. A concurrent financial write still fails the later CAS.
+            return {'expected': reserve.version if reserve is not None else None}
+
+    def _run(self, *, review_only=False, on_review=None, on_activate=None, wait_state=None):
         # Both external reads happen outside the financial transaction. A
         # concurrent claim/settlement is detected again under the budget lock.
         with self.factory() as session:
@@ -236,18 +313,26 @@ class ManualReserveMonitor:
             integrity = WalletLedgerIntegrityService(self.factory).check(_aware(self.clock()))
             if not integrity['balanced'] or integrity['missing_transaction_metadata']:
                 return self._failed_source('LEDGER_INTEGRITY')
-            cut = self.source.read_reserve_cut()
+            if self.stale_resample_budget_seconds and not review_only:
+                from app.modules.wallet.manual_source_resample import read_fresh_cut
+                sampled = read_fresh_cut(self, expected, wait_state if wait_state is not None else {}, _valid_cut)
+                if 'result' in sampled:
+                    return sampled['result']
+                cut, expected = sampled['cut'], sampled['expected']
+            else:
+                cut = self.source.read_reserve_cut()
             if not _valid_cut(cut, self.source.source_identity):
                 return self._failed_source('MANUAL_SOURCE_INVALID')
             sample_ms = int(_aware(self.clock()).timestamp()*1000)
-            if not cut.healthy or sample_ms > cut.fresh_until_ms:
+            if (not self.stale_resample_budget_seconds or review_only) and (not cut.healthy or sample_ms > cut.fresh_until_ms):
                 # A just-committing observer snapshot can replace the expired
                 # sample. Resample once; never extend or accept its deadline.
                 time.sleep(0.2)
                 cut = self.source.read_reserve_cut()
                 if not _valid_cut(cut, self.source.source_identity):
                     return self._failed_source('MANUAL_SOURCE_INVALID')
-            second = self.source.read_reserve_cut()
+            second = (sampled['second'] if self.stale_resample_budget_seconds and not review_only
+                      and 'second' in sampled else self.source.read_reserve_cut())
             if not _valid_cut(second, self.source.source_identity):
                 return self._failed_source('MANUAL_SOURCE_INVALID')
             if second != cut:

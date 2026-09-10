@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-/// Semantic icon names shared by the Figma library and Flutter UI.
+/// Semantic icon names shared by the HTML demo and Flutter UI.
 ///
 /// Call sites depend on the semantic name rather than a concrete glyph, so the
 /// icon can be refined without changing feature code or its DOM-equivalent
