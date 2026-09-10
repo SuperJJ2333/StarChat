@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/installation_marker.dart';
+import 'package:liuhetong_mobile/core/installation_reconciler.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
@@ -14,54 +16,73 @@ MatrixClientFactory _factory(SecureSessionStore store) => MatrixClientFactory(
       supportDirectoryPath: () async => '/private/support',
       clientMigrator: (_, __) async {},
       opener: (
-          {required clientName,
-          required databasePath,
-          required cipher}) async =>
+              {required clientName,
+              required databasePath,
+              required cipher}) async =>
           LogoutTrackingClient(clientName),
     );
 
-/// iOS deletes the app sandbox on uninstall but keeps the keychain, so the
-/// account registry, binding and database key survive while the SQLCipher
-/// database does not. Reinstalling and logging into the same account therefore
-/// reopens an empty store under a scope that still claims a bound identity.
+final class _Marker implements InstallationMarkerStore {
+  _Marker({this.registered = false, this.readError});
+  bool registered;
+  final Object? readError;
+  var registerCalls = 0;
+
+  @override
+  Future<bool> isRegistered() async {
+    if (readError != null) throw readError!;
+    return registered;
+  }
+
+  @override
+  Future<void> register() async {
+    registerCalls++;
+    registered = true;
+  }
+}
+
+/// iOS 卸载会删掉应用沙盒（含 SQLCipher 库）但保留钥匙串，因此账号注册表、
+/// 绑定与数据库密钥仍在，而库已不存在。重装后登录必须能正常建立新的加密设备，
+/// 而不是被判成完整性损坏（登录流程的 account_storage 阶段 = L07）。
 void main() {
-  test('iOS uninstall leaves a binding for a store that no longer has one',
-      () async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  Future<MemorySecureKeyValueStore> retainedKeychain() async {
     final memory = MemorySecureKeyValueStore();
     final store = SecureSessionStore(memory);
-    // Surviving keychain from the previous install.
     await store.selectMatrixAccount(_home, '@a:test');
     await store.saveMatrixBinding(binding('@a:test', 'device-A'));
     await store.matrixDatabaseKey();
-    // The sandbox was wiped, so the reopened store has no identity at all.
-    final next = await _factory(store).create();
-    expect(next.userID, isNull);
-    expect(next.deviceID, isNull);
-    expect(await store.matrixBinding(), isNotNull);
+    return memory;
+  }
 
+  test('iOS 重装后清除遗留，连续性检查不再抛错', () async {
+    final memory = await retainedKeychain();
+    final store = SecureSessionStore(memory);
+    final factory = _factory(store);
+
+    // 清除之前，重装留下的绑定确实会让空库被判成损坏。
     await expectLater(
-        _factory(store).continuityMetadata(next),
-        throwsA(isA<StateError>().having(
-            (error) => error.message,
-            'message',
+        factory.continuityMetadata(await factory.create()),
+        throwsA(isA<StateError>().having((error) => error.message, 'message',
             'Matrix continuity identity is unavailable')));
-  });
 
-  test('a wiped store with no retained binding still reports no continuity',
-      () async {
-    final store = SecureSessionStore(MemorySecureKeyValueStore());
-    final next = await _factory(store).create();
-    final metadata = await _factory(store).continuityMetadata(next);
+    final outcome =
+        await InstallationReconciler(marker: _Marker(), store: store)
+            .reconcile();
+    expect(outcome, InstallationResetOutcome.cleared);
+
+    final next = await factory.create();
+    final metadata = await factory.continuityMetadata(next);
     expect(metadata.isLoggedIn, isFalse);
     expect(metadata.userId, isNull);
+    expect(metadata.deviceId, isNull);
   });
 
-  test('reinstalled first login fails in the account_storage stage', () async {
-    final memory = MemorySecureKeyValueStore();
+  test('重装后首次登录不再阻断在 account_storage 阶段', () async {
+    final memory = await retainedKeychain();
     final store = SecureSessionStore(memory);
-    await store.selectMatrixAccount(_home, '@a:test');
-    await store.saveMatrixBinding(binding('@a:test', 'device-A'));
-    await store.matrixDatabaseKey();
+    await InstallationReconciler(marker: _Marker(), store: store).reconcile();
     final factory = _factory(store);
     final matrix = MatrixSdkE2eeClient(
       LogoutTrackingClient('liuhetong_mobile'),
@@ -71,11 +92,42 @@ void main() {
       selectClientAccount: factory.selectAccount,
       readContinuityMetadata: factory.continuityMetadata,
     );
+
+    await matrix.selectAccount('@a:test', Uri.parse(_home));
+
+    expect(matrix.userId, isNull);
+  });
+
+  test('Android 式干净重装：清除为空操作且检查不抛错', () async {
+    final memory = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(memory);
+    final factory = _factory(store);
+
+    final outcome =
+        await InstallationReconciler(marker: _Marker(), store: store)
+            .reconcile();
+    expect(outcome, InstallationResetOutcome.cleared);
+    expect(
+        memory.values.keys.where((k) => k.startsWith('liuhetong.')), isEmpty);
+
+    final metadata = await factory.continuityMetadata(await factory.create());
+    expect(metadata.isLoggedIn, isFalse);
+  });
+
+  test('标记读取失败时不清理，完整性守卫仍按原样失败关闭', () async {
+    final memory = await retainedKeychain();
+    final store = SecureSessionStore(memory);
+    final factory = _factory(store);
+
+    final outcome = await InstallationReconciler(
+            marker: _Marker(readError: StateError('prefs unavailable')),
+            store: store)
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.failed);
     await expectLater(
-        matrix.selectAccount('@a:test', Uri.parse(_home)),
-        throwsA(isA<StateError>().having(
-            (error) => error.message,
-            'message',
+        factory.continuityMetadata(await factory.create()),
+        throwsA(isA<StateError>().having((error) => error.message, 'message',
             'Matrix continuity identity is unavailable')));
   });
 }
