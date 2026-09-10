@@ -74,7 +74,31 @@ export class AppMomentReactions extends StrictElement {
       row.dataset.selected = String(this.boolAttr("selected"));
       const header = element("div", "c-moment-reactions__header");
       header.append(profile(name), element("time", "c-moment-reactions__time", this.attr("time", "12 分钟前")));
-      const reply = button("c-moment-reactions__reply", this.boolAttr("own") ? "评论操作：复制、删除" : `回复${name}`, this.boolAttr("own") ? "moment:comment-actions" : "moment:reply");
+      const own = this.boolAttr("own");
+      const reply = button("c-moment-reactions__reply", own ? "自己的评论，长按复制或删除" : `回复${name}`, own ? null : "moment:reply");
+      if (own) {
+        let timer;
+        const openMenu = () => {
+          if (root.querySelector("app-anchored-action-menu")) return;
+          const menu = element("app-anchored-action-menu");
+          menu.setAttribute("options", JSON.stringify([{ id: "copy", label: "复制" }, { id: "delete", label: "删除" }]));
+          menu.addEventListener("click", async (event) => {
+            const action = event.target.closest("[data-action]")?.dataset.action;
+            if (!action) return;
+            event.stopPropagation();
+            if (action === "copy") {
+              try { await navigator.clipboard.writeText(text); menu.remove(); }
+              catch { menu.replaceChildren(element("p", "", "复制失败，请重试")); }
+            } else if (action === "delete") { row.remove(); menu.remove(); }
+          });
+          root.append(menu);
+        };
+        reply.addEventListener("contextmenu", (event) => { event.preventDefault(); openMenu(); });
+        reply.addEventListener("pointerdown", () => { timer = setTimeout(openMenu, 500); });
+        for (const type of ["pointerup", "pointercancel", "pointerleave"]) reply.addEventListener(type, () => clearTimeout(timer));
+        reply.addEventListener("click", (event) => event.stopPropagation());
+        reply.addEventListener("keydown", (event) => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); openMenu(); } });
+      }
       reply.textContent = text;
       row.append(header, reply);
       comments.append(row);

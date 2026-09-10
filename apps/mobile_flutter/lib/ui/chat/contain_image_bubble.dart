@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 
 import '../../features/matrix/image_contain_layout.dart';
+import '../../features/matrix/media_cache.dart';
 
 import '../../features/matrix/gif_image_policy.dart';
 import '../foundation/wechat_tokens.dart';
@@ -22,6 +23,12 @@ ImageProvider boundedChatImageProvider(Uint8List bytes, {int maxEdge = 720}) {
   }
   return ResizeImage(MemoryImage(displayBytes),
       width: maxEdge, height: maxEdge, policy: ResizeImagePolicy.fit);
+}
+
+void _clearDecodedChatImages() {
+  final cache = PaintingBinding.instance.imageCache;
+  cache.clear();
+  cache.clearLiveImages();
 }
 
 final _unavailableImagePixel = base64Decode(
@@ -159,6 +166,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    registerDecodedMediaCacheClearer(_clearDecodedChatImages);
     final constraints = ChatBubbleImageConstraints(
       availableWidth: widget.availableWidth,
       availableHeight: widget.availableHeight,
@@ -243,6 +251,7 @@ final class ContainGridCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    registerDecodedMediaCacheClearer(_clearDecodedChatImages);
     return GestureDetector(
       onTap: onTap,
       child: Container(

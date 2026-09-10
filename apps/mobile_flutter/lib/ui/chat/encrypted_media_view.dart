@@ -9,6 +9,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../foundation/wechat_tokens.dart';
 import '../components/wechat_scaffold.dart';
 import 'chat_forward_picker_page.dart';
+import 'wechat_image_editor.dart';
 import '../../core/gallery_save_access.dart';
 
 /// 原图大小展示格式：≥1MB 用 MB（10MB 以上取整），否则用 KB。
@@ -156,6 +157,9 @@ final class ImageViewerPage extends StatefulWidget {
     this.forwardTargets = const [],
     this.forwardTo,
     this.onForward,
+    this.onForwardEdited,
+    this.onFavorite,
+    this.onZoomChanged,
   });
 
   /// 占位缩略图/预览字节：点击“查看原图”前仅展示它。
@@ -173,6 +177,9 @@ final class ImageViewerPage extends StatefulWidget {
   /// 转发动作：把当前图片转发到目标会话。
   final Future<void> Function(String roomId)? forwardTo;
   final Future<void> Function()? onForward;
+  final Future<bool> Function(Uint8List)? onForwardEdited;
+  final Future<void> Function(Uint8List)? onFavorite;
+  final ValueChanged<bool>? onZoomChanged;
 
   @override
   State<ImageViewerPage> createState() => _ImageViewerPageState();
@@ -182,6 +189,42 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   final _transform = TransformationController();
   Offset _doubleTapPosition = Offset.zero;
   Size? _viewportSize;
+  bool _zoomed = false;
+  bool _editing = false;
+
+  void _zoomChanged() {
+    final zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed == _zoomed || !mounted) return;
+    setState(() => _zoomed = zoomed);
+    widget.onZoomChanged?.call(zoomed);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_zoomChanged);
+  }
+
+  Future<void> _edit() async {
+    if (loadingOriginal || _editing) return;
+    setState(() => _editing = true);
+    try {
+      if (originalBytes == null && widget.loadOriginal != null)
+        await _loadOriginal();
+      if (!mounted || originalFailed) return;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => WeChatImageEditorPage(
+            bytes: originalBytes ?? widget.previewBytes,
+            onForward: widget.onForwardEdited,
+            onFavorite: widget.onFavorite,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _editing = false);
+    }
+  }
 
   void _toggleZoom() {
     if (_transform.value.getMaxScaleOnAxis() > 1.01) {
@@ -341,31 +384,42 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            LayoutBuilder(builder: (context, constraints) {
-              final size = constraints.biggest;
-              if (_viewportSize != size) {
-                _viewportSize = size;
-                _transform.value = Matrix4.identity();
-              }
-              return GestureDetector(
-                onTap: () => Navigator.pop(context),
-                onDoubleTapDown: (details) =>
-                    _doubleTapPosition = details.localPosition,
-                onDoubleTap: _toggleZoom,
-                child: InteractiveViewer(
-                  transformationController: _transform,
-                  maxScale: 4,
-                  child: Image(
-                    width: size.width,
-                    height: size.height,
-                    image: boundedChatImageProvider(displayBytes,
-                        maxEdge: isGifBytes(displayBytes) ? 720 : 2048),
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.biggest;
+                if (_viewportSize != size) {
+                  _viewportSize = size;
+                  // Transformation listeners rebuild both viewer and gallery.
+                  // Never notify them while LayoutBuilder is building.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _viewportSize == size) {
+                      _transform.value = Matrix4.identity();
+                    }
+                  });
+                }
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  onDoubleTapDown: (details) =>
+                      _doubleTapPosition = details.localPosition,
+                  onDoubleTap: _toggleZoom,
+                  child: InteractiveViewer(
+                    transformationController: _transform,
+                    panEnabled: _zoomed,
+                    maxScale: 4,
+                    child: Image(
+                      width: size.width,
+                      height: size.height,
+                      image: boundedChatImageProvider(
+                        displayBytes,
+                        maxEdge: isGifBytes(displayBytes) ? 720 : 2048,
+                      ),
+                      fit: BoxFit.contain,
+                      gaplessPlayback: true,
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
             if (loadingOriginal)
               const Center(child: CupertinoActivityIndicator()),
             if (widget.loadOriginal != null)
@@ -390,6 +444,13 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
               bottom: 24,
               child: Column(
                 children: [
+                  ViewerRoundAction(
+                    key: const Key('viewer-edit'),
+                    icon: CupertinoIcons.pencil,
+                    label: '编辑',
+                    onPressed: loadingOriginal || _editing ? null : _edit,
+                  ),
+                  const SizedBox(height: 14),
                   ViewerRoundAction(
                     key: const Key('viewer-download'),
                     icon: CupertinoIcons.cloud_download,
@@ -451,9 +512,10 @@ final class ViewerRoundAction extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 12, color: CupertinoColors.white)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: CupertinoColors.white),
+          ),
         ],
       );
 }
@@ -464,14 +526,18 @@ final class ViewerStatusHint extends StatelessWidget {
   final String message;
   @override
   Widget build(BuildContext context) => Center(
-          child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
             color: CupertinoColors.systemGrey6.withValues(alpha: .3),
-            borderRadius: BorderRadius.circular(18)),
-        child: Text(message,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Text(
+            message,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: CupertinoColors.white)),
-      ));
+            style: const TextStyle(fontSize: 13, color: CupertinoColors.white),
+          ),
+        ),
+      );
 }

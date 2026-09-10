@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import 'moments_privacy_changes.dart';
 import 'moment_reactions.dart';
 import 'moment_person_navigation.dart';
@@ -16,6 +17,7 @@ class MomentDetailPage extends StatefulWidget {
     super.key,
     required this.api,
     this.identityCache,
+    this.contactActions,
     required this.initialItem,
     required this.currentUsername,
     this.onChanged,
@@ -28,6 +30,7 @@ class MomentDetailPage extends StatefulWidget {
     this.cacheNamespace = '',
   });
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final Future<void> Function(MomentItem, MomentDetailChange)? onConfirmed;
   final String? mediaAccountKey, mediaOrigin;
   final String? viewerUserId;
@@ -230,6 +233,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
     try {
       await openMomentPerson(
         context,
+        contactActions: widget.contactActions,
         api: widget.api,
         identityCache: widget.identityCache,
         person: person,

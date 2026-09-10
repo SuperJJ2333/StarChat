@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'dart:convert';
-import 'dart:async';
 import 'emoji_preview_cache.dart';
 import 'media_cache.dart';
 
@@ -78,13 +77,14 @@ final class RoomImagePreviewCache {
     });
   }
 
-  /// Paint outgoing local bytes in the same frame as the local message. Disk
-  /// work is deferred and best effort, while source flights remain intact.
+  /// Paint outgoing local bytes immediately, without per-message disk copies.
+  /// The encrypted send gateway persists the canonical content object before
+  /// upload. Transaction IDs are transient UI aliases, not durable content IDs;
+  /// authoritative received/legacy previews still use load() persistence.
   void seed(String eventId, Uint8List bytes) {
     if (_disposed) return;
     final key = _key(eventId);
     _memory!.put(key, bytes);
-    unawaited(_persist(key, bytes).catchError((Object _) {}));
   }
 
   Future<Uint8List> load(String eventId, Future<Uint8List> Function() source) {

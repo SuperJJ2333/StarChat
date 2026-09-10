@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 export 'moments_settings_page.dart';
 import 'moments_settings_page.dart';
 import 'moments_privacy_changes.dart';
@@ -32,6 +33,7 @@ final class MomentsPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.identityCache,
+    this.contactActions,
     this.onPostsDisplayed,
     this.unreadChanges,
   }) : _preparedAccount = null;
@@ -40,6 +42,7 @@ final class MomentsPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.identityCache,
+    this.contactActions,
     required String? account,
     this.onPostsDisplayed,
     this.unreadChanges,
@@ -51,6 +54,7 @@ final class MomentsPage extends StatefulWidget {
     Key? key,
     required BusinessApiClient api,
     required ProfileRepository identityCache,
+    ContactActions? contactActions,
     void Function(Iterable<String> ids)? onPostsDisplayed,
     Listenable? unreadChanges,
   }) async {
@@ -74,6 +78,7 @@ final class MomentsPage extends StatefulWidget {
       key: key,
       api: api,
       identityCache: identityCache,
+      contactActions: contactActions,
       account: account,
       onPostsDisplayed: onPostsDisplayed,
       unreadChanges: unreadChanges,
@@ -82,6 +87,7 @@ final class MomentsPage extends StatefulWidget {
 
   final String? _preparedAccount;
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final ProfileRepository identityCache;
   final void Function(Iterable<String> ids)? onPostsDisplayed;
   final Listenable? unreadChanges;
@@ -704,6 +710,7 @@ final class _MomentsPageState extends State<MomentsPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => MomentDetailPage(
+          contactActions: widget.contactActions,
           identityCache: _identityCache,
           viewerUserId: _viewerUserId,
           api: widget.api,
@@ -748,6 +755,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     try {
       await openMomentPerson(
         context,
+        contactActions: widget.contactActions,
         api: widget.api,
         identityCache: _identityCache,
         person: author,

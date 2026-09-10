@@ -17,6 +17,8 @@ function defineContract({
 }
 
 export const componentContracts = Object.freeze([
+  defineContract({ tagName: "app-image-editor", rootClass: "c-image-editor", allowedAttributes: ["state", "picture"], allowedStates: ["ready", "complete-sheet", "loading", "error"], domSignature: [".c-image-editor", ".c-image-editor>.c-image-editor__header", ".c-image-editor>.c-image-editor__viewport", ".c-image-editor>.c-image-editor__footer"] }),
+  defineContract({ tagName: "app-room-image-gallery", rootClass: "c-room-image-gallery", allowedAttributes: [], allowedStates: ["ready"], domSignature: [".c-room-image-gallery", ".c-room-image-gallery>.c-room-image-gallery__track"] }),
   defineContract({ tagName: "app-anchored-action-menu", rootClass: "c-anchored-menu", allowedAttributes: ["options", "arrow-at-top"], allowedStates: ["default", "disabled", "pressed"], domSignature: [".c-anchored-menu", ".c-anchored-menu>.c-anchored-menu__grid"] }),
   defineContract({ tagName: "app-status-bar", rootClass: "c-status-bar", allowedAttributes: ["time"], domSignature: [".c-status-bar", ".c-status-bar>.c-status-bar__time", ".c-status-bar>.c-status-bar__indicators"] }),
   defineContract({ tagName: "app-navigation-bar", rootClass: "c-navigation-bar", allowedAttributes: ["title", "leading", "action", "heading"], domSignature: [".c-navigation-bar", ".c-navigation-bar>.c-navigation-bar__leading", ".c-navigation-bar>.c-navigation-bar__title", ".c-navigation-bar>.c-navigation-bar__actions"] }),

@@ -1,3 +1,4 @@
+import 'contact_actions.dart';
 import 'package:flutter/cupertino.dart';
 
 import 'contact_profile_sections.dart';
@@ -24,9 +25,11 @@ final class AddFriendProfilePage extends StatelessWidget {
     required this.relationshipState,
     this.avatarUrl,
     this.identityCache,
+    this.contactActions,
   });
 
   final AddFriendGateway api;
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final String userId;
   final String username;
@@ -91,7 +94,8 @@ final class AddFriendProfilePage extends StatelessWidget {
             ),
             if (api is BusinessApiClient)
               MomentProfilePreview(
-                  identityCache: identityCache,
+                contactActions: contactActions,
+                identityCache: identityCache,
                   api: api as BusinessApiClient,
                   userId: userId,
                   displayName: nickname),

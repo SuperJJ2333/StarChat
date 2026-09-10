@@ -502,10 +502,15 @@ class Timeline {
         if (events[i].status.isSynced && !status.isSynced) return;
         // if the old status is larger than the new one, we also want to preserve the old status
         final oldStatus = events[i].status;
+        final priorRedaction = events[i].redactedBecause;
         events[i] = Event.fromJson(
           eventUpdate.content,
           room,
         );
+        // A delayed history/decryption result cannot undo a server redaction.
+        if (priorRedaction != null && !events[i].redacted) {
+          events[i].setRedactionEvent(priorRedaction);
+        }
         // do we preserve the status? we should allow 0 -> -1 updates and status increases
         if ((latestEventStatus(status, oldStatus) == oldStatus) &&
             !(status.isError && oldStatus.isSending)) {
@@ -537,8 +542,10 @@ class Timeline {
 
       // Handle redaction events
       if (eventUpdate.content['type'] == EventTypes.Redaction) {
-        final index =
-            _findEvent(event_id: eventUpdate.content.tryGet<String>('redacts'));
+        final redaction = Event.fromJson(eventUpdate.content, room);
+        final target = eventUpdate.content.tryGet<String>('redacts') ??
+            redaction.content.tryGet<String>('redacts');
+        final index = target == null ? events.length : _findEvent(event_id: target);
         if (index < events.length) {
           removeAggregatedEvent(events[index]);
 
@@ -548,7 +555,6 @@ class Timeline {
             final relationshipEventId = events[index].relationshipEventId;
             if (relationshipEventId != null) {
               onChange?.call(_findEvent(event_id: relationshipEventId));
-              return;
             }
           }
 

@@ -158,7 +158,19 @@ final class MediaCache {
     if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
       throw StateError('Media cache is being cleared');
     }
-    final flight = _writeAtomicBytes(file, bytes);
+    final previous = _atomicWrites[file.path];
+    final flight = (() async {
+      if (previous != null) {
+        try { await previous; } catch (_) { /* A failed reference can retry. */ }
+      }
+      if (generation != null && generation != _mediaGeneration) {
+        throw StateError('Media cache session changed');
+      }
+      if (_clearingRoots.any((root) => file.path.startsWith('$root/'))) {
+        throw StateError('Media cache is being cleared');
+      }
+      await _writeAtomicBytes(file, bytes);
+    })();
     _atomicWrites[file.path] = flight;
     try {
       await flight;
@@ -184,7 +196,8 @@ final class MediaCache {
       {String accountId = '', String? contentSha256}) async {
     final generation = _mediaGeneration;
     verifyMediaContent(bytes, contentSha256);
-    final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
+    final flightKey = '${_digest(jsonEncode([accountId, roomId, eventId]))}'
+        ':${sha256.convert(bytes)}';
     final existing = _storeFlights[flightKey];
     if (existing != null) return existing;
     final flight = _root(accountId).then((root) {
@@ -235,8 +248,10 @@ final class MediaCache {
   static Future<File> preparePlaybackFile(String roomId, String eventId,
       {String accountId = '', String? contentSha256}) async {
     final flightKey = _digest(jsonEncode([accountId, roomId, eventId]));
-    final flight = _storeFlights[flightKey];
-    if (flight != null) await flight;
+    await Future.wait([
+      for (final entry in _storeFlights.entries)
+        if (entry.key.startsWith('$flightKey:')) entry.value,
+    ]);
     final file = await cached(roomId, eventId,
         accountId: accountId, contentSha256: contentSha256);
     if (file == null) throw FileSystemException('Video cache is unavailable');
@@ -316,10 +331,9 @@ extension _FileStatOrNull on File {
   }
 }
 
-/// 会话页内存级媒体缓存：按 eventId 保存已解密字节，命中时同步返回，
-/// 彻底避免列表滚动过程中对同一消息重复解密/读盘触发重建与抽动；
-/// 相同实例也保证 Image.memory 的解码缓存按身份命中，重建不重复解码。
-/// 并发加载按 eventId 去重（在途 Future 复用）。
+/// Byte-budgeted memory cache. Shared chat media uses account + actual digest;
+/// room-local preview users may supply their own stable keys. Reusing the same
+/// byte instance lets MemoryImage share its decoded image/animated codec.
 ///
 /// M04：LRU 同时受**字节预算**与条目上限约束——大视频按实际字节数
 /// 加权，不再出现"3 条 4K 视频"式的条数掩盖内存失控；超预算从最旧
@@ -418,6 +432,13 @@ final _sharedMediaBytes = MediaMemoryCache();
 final contentMediaMemoryCache = _sharedMediaBytes;
 final _mediaLoads = <String, Future<Uint8List>>{};
 int _mediaGeneration = 0;
+final _decodedMediaCacheClearers = <VoidCallback>{};
+
+/// A renderer registers lazily, after Flutter has created its painting binding.
+/// Pure storage users do not need to initialize the Flutter widget runtime.
+void registerDecodedMediaCacheClearer(VoidCallback clear) {
+  _decodedMediaCacheClearers.add(clear);
+}
 
 /// Call when clearing cache or signing out. In-flight work cannot repopulate
 /// the shared memory cache after this boundary.
@@ -426,6 +447,9 @@ void clearMediaMemoryCaches() {
   _sharedMediaBytes.clear();
   videoMemoryCache.clear();
   _mediaLoads.clear();
+  for (final clear in _decodedMediaCacheClearers) {
+    clear();
+  }
 }
 
 Future<Uint8List> loadMediaWithCache(
@@ -437,6 +461,15 @@ Future<Uint8List> loadMediaWithCache(
   }
   unawaited(MediaCache.discardLegacyCache().catchError((_) {}));
   final identity = '${root.path}/${key.identity}';
+  // Trusted content bytes are already verified in get(). Do not read the same
+  // multi-megabyte GIF from disk for every event that references its digest.
+  final warm = key.contentSha256 == null
+      ? null
+      : _sharedMediaBytes.get(key.cacheId);
+  if (warm != null) {
+    await _linkMediaReference(key, warm, generation);
+    return warm;
+  }
   final existing = _mediaLoads[identity];
   final flight = existing ??
       (() async {
@@ -471,20 +504,59 @@ Future<Uint8List> loadMediaWithCache(
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
         }
-        return _sharedMediaBytes.putIfAbsent(file.path, file.readAsBytes);
+        // Legacy sources discover their digest after decrypting; converge on
+        // the same memory identity as newer events carrying a trusted digest.
+        final memoryKey = MediaCacheKey(accountId: key.accountId,
+            roomId: key.roomId, eventId: key.eventId,
+            contentSha256: file.uri.pathSegments.last.split('.').first).cacheId;
+        return _sharedMediaBytes.putIfAbsent(memoryKey, () async {
+          final result = bytes ?? await file.readAsBytes();
+          verifyMediaContent(result, key.contentSha256);
+          return result;
+        });
       })();
   if (existing == null) _mediaLoads[identity] = flight;
   try {
     final bytes = await flight;
     // A source flight can serve a different message: persist its reference too.
     if (existing != null && generation == _mediaGeneration) {
-      await MediaCache.store(key.roomId, key.eventId, bytes,
-          accountId: key.accountId, contentSha256: key.contentSha256);
+      await _linkMediaReference(key, bytes, generation);
     }
     return bytes;
   } finally {
     if (identical(_mediaLoads[identity], flight)) _mediaLoads.remove(identity);
   }
+}
+
+Future<void> _linkMediaReference(MediaCacheKey key,
+    Uint8List bytes, int generation) async {
+  final hash = key.contentSha256 ?? sha256.convert(bytes).toString();
+  final name = '$hash${MediaCache._videoContainerSuffix(bytes) ?? ''}';
+  for (final reference in [
+    (key.roomId, key.eventId),
+    if (key.sourceIdentity != null) ('source', key.sourceIdentity!),
+  ]) {
+    final ref = await MediaCache._reference(
+        key.accountId, reference.$1, reference.$2, generation: generation);
+    await MediaCache._atomicBytes(ref, utf8.encode(name), generation: generation);
+  }
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
+}
+
+/// Retain actual outgoing content before encryption/upload. A returned copy can
+/// then resolve its trusted digest even if the original was never opened.
+Future<Uint8List> cacheOutgoingMedia({
+  required String accountId,
+  required String roomId,
+  required Uint8List bytes,
+}) {
+  final hash = sha256.convert(bytes).toString();
+  return loadMediaWithCache(
+      MediaCacheKey(accountId: accountId, roomId: roomId,
+          eventId: 'outgoing:$hash', contentSha256: hash),
+      () async => bytes);
 }
 
 /// 视频播放的页级共享内存缓存（在途去重 + LRU）；视频字节大，
@@ -507,8 +579,10 @@ Future<File> resolveCachedVideoFile({
   final disk = await MediaCache.cached(key.roomId, key.eventId,
       accountId: key.accountId, contentSha256: key.contentSha256);
   if (disk != null) {
-    return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
-        accountId: key.accountId, contentSha256: key.contentSha256);
+    if (generation != _mediaGeneration) {
+      throw StateError('Media cache session changed');
+    }
+    return disk;
   }
   final bytes = await (memoryCache ?? videoMemoryCache)
       .putIfAbsent(key.identity, () => loadMediaWithCache(key, decrypt));

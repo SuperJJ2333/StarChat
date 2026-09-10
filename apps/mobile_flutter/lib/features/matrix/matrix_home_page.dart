@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
 import 'dart:async';
 
@@ -490,7 +491,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           context,
           CupertinoPageRoute(
               builder: (_) => AddFriendPage(
-                  api: widget.api, identityCache: _identityCache))),
+              contactActions: ContactActions(
+                onMessage: widget.onMessage,
+                onVoice: widget.onVoice,
+                onVideo: widget.onVideo,
+              ),
+              api: widget.api, identityCache: _identityCache))),
       onScan: () => Navigator.of(context, rootNavigator: true).push(
           CupertinoPageRoute(
               fullscreenDialog: true,
@@ -688,7 +694,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                 context,
                 CupertinoPageRoute(
                     builder: (_) => GlobalSearchPage(
-                          api: widget.api,
+                    contactActions: ContactActions(
+                      onMessage: widget.onMessage,
+                      onVoice: widget.onVoice,
+                      onVideo: widget.onVideo,
+                    ),
+                    api: widget.api,
                           matrix: widget.matrix,
                           identityCache: _identityCache,
                         ))),

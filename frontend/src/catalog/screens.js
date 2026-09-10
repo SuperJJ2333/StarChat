@@ -184,6 +184,10 @@ register("feedback", "network", [["offline", "网络 / 断网"], ["reconnecting"
 register("feedback", "motion", [["reduced", "动效 / 减少动态效果"]]);
 register("feedback", "type-scale", [["085", "字号缩放 / 0.85"], ["100", "字号缩放 / 1.0"], ["140", "字号缩放 / 1.4"]]);
 
+register("chat", "image-editor", [["ready", "图片编辑 / 五种工具"], ["complete-sheet", "图片编辑 / 完成菜单"], ["loading", "图片编辑 / 打开中"], ["error", "图片编辑 / 打开失败"]]);
+register("chat", "image-gallery", [["ready", "聊天图片 / 左右浏览"]]);
+register("moments", "detail", [["own-comment", "朋友圈 / 自己评论短按与长按"]]);
+
 const darkKeys = [
   ["foundation-tokens-overview", "foundation-tokens-overview-dark"],
   ["foundation-components-catalog", "foundation-components-catalog-dark"],

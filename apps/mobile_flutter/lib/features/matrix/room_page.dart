@@ -107,6 +107,8 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import '../../ui/chat/room_image_gallery.dart';
+import '../contacts/contact_actions.dart';
 
 class RoomPage extends StatefulWidget {
   const RoomPage({
@@ -156,6 +158,7 @@ Future<void> openGroupMemberProfile(
   required GroupChatMember member,
   String? selfMatrixUserId,
   ProfileRepository? identityCache,
+  ContactActions? contactActions,
   ContactDetails? friendContact,
   void Function(ContactDetails contact)? onOpenFriendContact,
 }) async {
@@ -172,6 +175,7 @@ Future<void> openGroupMemberProfile(
         builder: (_) => AddFriendProfilePage(
           api: api,
           identityCache: identityCache,
+          contactActions: contactActions,
           userId: profile['user_id']?.toString() ?? '',
           username: profile['username']?.toString() ?? member.matrixUserId,
           nickname: (profile['nickname']?.toString() ?? '').isNotEmpty
@@ -238,22 +242,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   List<MatrixRoomMemberSnapshot> get _joinedMembers {
     final members = {
       for (final member in roomInfo.members)
-        if (member.isJoined) member.id: member
+        if (member.isJoined) member.id: member,
     };
     return [
       for (final id in reconcileMemberOrder(
-          roomInfo.preference.memberOrderIds, members.keys))
-        members[id]!
+        roomInfo.preference.memberOrderIds,
+        members.keys,
+      ))
+        members[id]!,
     ];
   }
 
-  MatrixRoomMemberSnapshot _member(String id) =>
-      roomInfo.members.firstWhere((member) => member.id == id,
-          orElse: () => MatrixRoomMemberSnapshot(
-              id: id,
-              displayName: localPart(id),
-              avatarUri: null,
-              isJoined: false));
+  MatrixRoomMemberSnapshot _member(String id) => roomInfo.members.firstWhere(
+        (member) => member.id == id,
+        orElse: () => MatrixRoomMemberSnapshot(
+          id: id,
+          displayName: localPart(id),
+          avatarUri: null,
+          isJoined: false,
+        ),
+      );
   Future<void> _trackMatrixOperation(Future<void> operation) async {
     _pendingMatrixOperations.add(operation);
     try {
@@ -319,13 +327,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _voicePlayback ??= VoicePlaybackController(
         canPlay: () => _canPlayVoice,
         // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
-        loadAttachment: (eventId) => loadMediaWithCache(
-          MediaCacheKey(
-              accountId: roomInfo.currentUserId ?? '',
-              roomId: roomInfo.id,
-              eventId: eventId),
-          () => controller!.loadAttachment(eventId),
-        ),
+        loadAttachment: (eventId) => controller!.loadAttachment(eventId),
       );
   final messageKeys = <String, GlobalKey>{};
   final recalledDrafts = <String, String>{};
@@ -491,11 +493,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 规格#3：差分同步 + 新 @ 触发记录。
     final next = input.text;
     if (next != _lastComposerText) {
-      final (start, removed, inserted) =
-          MentionComposerModel.diffEdit(_lastComposerText, next);
+      final (start, removed, inserted) = MentionComposerModel.diffEdit(
+        _lastComposerText,
+        next,
+      );
       mentionComposer.text = next;
       mentionComposer.applyEdit(
-          start: start, removed: removed, inserted: inserted);
+        start: start,
+        removed: removed,
+        inserted: inserted,
+      );
       final cursor = input.selection.baseOffset;
       if (inserted > 0 && cursor > 0 && cursor <= next.length) {
         final insertedEnd = start + inserted;
@@ -654,8 +661,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // （不等待服务器）；历史分页 requestHistory 默认 30 条/页
           // （Room.defaultHistoryCount，处于 30~50 规范区间），
           // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
-          await widget.roomLease
-              .openRoomTimeline(onUpdate: () => controller?.refresh());
+          await widget.roomLease.openRoomTimeline(
+        onUpdate: () => controller?.refresh(),
+      );
       if (!mounted) {
         timeline.dispose();
         return;
@@ -672,7 +680,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await _ingestMentions();
       if (!mounted) return;
       _mentionVisibilityTimer = Timer.periodic(
-          const Duration(milliseconds: 100), (_) => _observeVisibleMentions());
+        const Duration(milliseconds: 100),
+        (_) => _observeVisibleMentions(),
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
       setState(() => loading = false);
       await controller!.markRead();
@@ -1009,7 +1019,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 'body': text,
                 if (reply != null)
                   'm.relates_to': {
-                    'm.in_reply_to': {'event_id': reply.id}
+                    'm.in_reply_to': {'event_id': reply.id},
                   },
                 if (mentions.isNotEmpty) 'm.mentions': {'user_ids': mentions},
               }, txid: transactionId),
@@ -1095,7 +1105,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 : RoomMessageKind.file,
         mimeType: mime,
         send: (txid) => _enqueueMedia(
-            () => service.sendSelectedFile(roomInfo.id, file, txid: txid)),
+          () => service.sendSelectedFile(roomInfo.id, file, txid: txid),
+        ),
       );
     } on GroupVideoTooLargeException catch (error) {
       if (mounted) _showMediaMessage(error.toString());
@@ -1127,6 +1138,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       api: widget.api,
       lookupByMatrixId: widget.api.lookupUserByMatrixId,
       identityCache: _identityCache,
+      contactActions: ContactActions(
+        onMessage: widget.onMessage,
+        onVoice: widget.onVoice,
+        onVideo: widget.onVideo,
+      ),
       member: GroupChatMember(
         matrixUserId: matrixUserId,
         displayName: member.displayName,
@@ -1228,42 +1244,47 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<Uint8List?> _readCachedImagePreview(
-      RoomMessageViewModel message) async {
+    RoomMessageViewModel message,
+  ) async {
     if (_mediaHashes(message.id) == null) {
       return roomImagePreviewCache.readCached(message.stableId);
     }
     final key = _previewKey(message);
-    final file = await MediaCache.cached(key.roomId, key.eventId,
-        accountId: key.accountId, contentSha256: key.contentSha256);
+    final cached = contentMediaMemoryCache.get(key.cacheId);
+    if (cached != null) return cached;
+    final file = await MediaCache.cached(
+      key.roomId,
+      key.eventId,
+      accountId: key.accountId,
+      contentSha256: key.contentSha256,
+    );
     if (file == null) return null;
-    final bytes = await file.readAsBytes();
-    verifyMediaContent(bytes, key.contentSha256);
-    contentMediaMemoryCache.put(key.cacheId, bytes);
-    return bytes;
+    return loadMediaWithCache(key, file.readAsBytes);
   }
 
   Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) async {
     if (_mediaHashes(message.id) != null) {
       final key = _previewKey(message);
-      return contentMediaMemoryCache.putIfAbsent(key.cacheId, () async {
-        if (key.eventId.startsWith('thumb:')) {
-          final bytes = await controller!.loadThumbnail(message.id);
-          if (bytes == null) {
-            throw const FormatException('Missing declared thumbnail');
-          }
-          return bytes;
+      if (key.eventId.startsWith('thumb:')) {
+        final bytes = await controller!.loadThumbnail(message.id);
+        if (bytes == null) {
+          throw const FormatException('Missing declared thumbnail');
         }
-        return controller!.loadAttachment(message.id);
-      });
+        return bytes;
+      }
+      return controller!.loadAttachment(message.id);
     }
     return roomImagePreviewCache.load(
-        message.stableId,
-        () => loadChatImagePreview(
-            animated: _isAnimatedImage(message),
-            loadThumbnail: () => controller!.loadThumbnail(message.id),
-            loadOriginal: () => imageMemoryCache.putIfAbsent(
-                _mediaKey(message.id).cacheId,
-                () => controller!.loadAttachment(message.id))));
+      message.stableId,
+      () => loadChatImagePreview(
+        animated: _isAnimatedImage(message),
+        loadThumbnail: () => controller!.loadThumbnail(message.id),
+        loadOriginal: () => imageMemoryCache.putIfAbsent(
+          _mediaKey(message.id).cacheId,
+          () => controller!.loadAttachment(message.id),
+        ),
+      ),
+    );
   }
 
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
@@ -1284,77 +1305,90 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
     final sends = <Future<void>>[];
     for (final photo in result.photos) {
-      sends.add(timeline.sendText(
-        photo.isVideo ? '[视频消息]' : '[图片消息]',
-        kind: photo.isVideo ? RoomMessageKind.video : RoomMessageKind.image,
-        mimeType: photo.mimeType,
-        send: (transactionId) {
-          if (!photo.isVideo &&
-              photo.mimeType != 'image/gif' &&
-              photo.thumbnail.isNotEmpty) {
-            roomImagePreviewCache.seed(transactionId, photo.thumbnail);
-          }
-          return _enqueueMedia(() async {
-            final prepared = await prepareGalleryMedia(photo,
-                original: result.original, isGroup: isGroup);
-            final bytes = prepared.bytes;
-            final mimeType = prepared.mimeType;
-            if (!photo.isVideo) {
-              roomImagePreviewCache.seed(
+      sends.add(
+        timeline.sendText(
+          photo.isVideo ? '[视频消息]' : '[图片消息]',
+          kind: photo.isVideo ? RoomMessageKind.video : RoomMessageKind.image,
+          mimeType: photo.mimeType,
+          send: (transactionId) {
+            if (!photo.isVideo &&
+                photo.mimeType != 'image/gif' &&
+                photo.thumbnail.isNotEmpty) {
+              roomImagePreviewCache.seed(transactionId, photo.thumbnail);
+            }
+            return _enqueueMedia(() async {
+              final prepared = await prepareGalleryMedia(
+                photo,
+                original: result.original,
+                isGroup: isGroup,
+              );
+              final bytes = prepared.bytes;
+              final mimeType = prepared.mimeType;
+              if (!photo.isVideo) {
+                roomImagePreviewCache.seed(
                   transactionId,
                   isGifBytes(bytes)
                       ? bytes
                       : photo.thumbnail.isNotEmpty
                           ? photo.thumbnail
-                          : bytes);
-            }
-            // 视频附带时长（毫秒），接收端显示角标。
-            final extra = photo.duration == null
-                ? null
-                : {
-                    'info': {'duration': photo.duration!.inMilliseconds},
-                  };
-            // 附带本地生成的压缩演绎版（E2EE 同样保护）：
-            // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
-            // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
-            ({Uint8List bytes, int? width, int? height})? rendition;
-            if (photo.isVideo) {
-              final poster = await photo.posterBytes?.call();
-              if (poster != null && poster.isNotEmpty) {
-                final dims = await decodeImageDimensions(poster);
-                rendition = (
-                  bytes: poster,
-                  width: dims?.$1,
-                  height: dims?.$2,
+                          : bytes,
                 );
               }
-            } else {
-              final thumbnail = await buildChatImageThumbnail(bytes);
-              if (thumbnail != null) {
-                rendition = (
-                  bytes: thumbnail.bytes,
-                  width: thumbnail.width,
-                  height: thumbnail.height,
-                );
+              // 视频附带时长（毫秒），接收端显示角标。
+              final extra = photo.duration == null
+                  ? null
+                  : {
+                      'info': {'duration': photo.duration!.inMilliseconds},
+                    };
+              // 附带本地生成的压缩演绎版（E2EE 同样保护）：
+              // 图片为 ≤800px/≤100KB 缩略图，视频为封面海报帧；
+              // 生成失败不阻断发送，接收端自动回退全量加载（兼容旧行为）。
+              ({Uint8List bytes, int? width, int? height})? rendition;
+              if (photo.isVideo) {
+                final poster = await photo.posterBytes?.call();
+                if (poster != null && poster.isNotEmpty) {
+                  final dims = await decodeImageDimensions(poster);
+                  rendition = (
+                    bytes: poster,
+                    width: dims?.$1,
+                    height: dims?.$2,
+                  );
+                }
+              } else {
+                final thumbnail = await buildChatImageThumbnail(bytes);
+                if (thumbnail != null) {
+                  rendition = (
+                    bytes: thumbnail.bytes,
+                    width: thumbnail.width,
+                    height: thumbnail.height,
+                  );
+                }
               }
-            }
-            return _cacheSentImage(
+              return _cacheSentImage(
                 roomImagePreviewCache.get(transactionId),
-                matrix.sendEncryptedMedia(roomInfo.id, bytes, mimeType,
-                    extraContent: extra,
-                    txid: transactionId,
-                    thumbnailBytes: rendition?.bytes,
-                    thumbnailWidth: rendition?.width,
-                    thumbnailHeight: rendition?.height));
-          });
-        },
-      ));
+                matrix.sendEncryptedMedia(
+                  roomInfo.id,
+                  bytes,
+                  mimeType,
+                  extraContent: extra,
+                  txid: transactionId,
+                  thumbnailBytes: rendition?.bytes,
+                  thumbnailWidth: rendition?.width,
+                  thumbnailHeight: rendition?.height,
+                ),
+              );
+            });
+          },
+        ),
+      );
     }
     await Future.wait(sends);
   }
 
   Future<String> _cacheSentImage(
-      Uint8List? preview, Future<String> sending) async {
+    Uint8List? preview,
+    Future<String> sending,
+  ) async {
     final eventId = await sending;
     if (preview != null) roomImagePreviewCache.seed(eventId, preview);
     return eventId;
@@ -1710,8 +1744,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 participant.id,
                 _identityCache
                     .resolveIdentity(
-                        matrixUserId: participant.id,
-                        displayName: participant.displayName)
+                      matrixUserId: participant.id,
+                      displayName: participant.displayName,
+                    )
                     .displayName,
               ),
         ];
@@ -1871,6 +1906,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               api: widget.api,
               lookupByMatrixId: widget.api.lookupUserByMatrixId,
               identityCache: _identityCache,
+              contactActions: ContactActions(
+                onMessage: widget.onMessage,
+                onVoice: widget.onVoice,
+                onVideo: widget.onVideo,
+              ),
               member: member,
               selfMatrixUserId: roomInfo.currentUserId,
               friendContact: contactsById[member.matrixUserId],
@@ -1977,14 +2017,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     List<ChatSearchMessage> currentSearchMessages() {
       final allMessages =
           controller?.messages ?? const <RoomMessageViewModel>[];
-      final messages = (hiddenEvents?.visibleItems(roomInfo.id, allMessages,
-                  eventId: (message) => message.id,
-                  eventTimestamp: (message) => message.timestamp) ??
+      final messages = (hiddenEvents?.visibleItems(
+                roomInfo.id,
+                allMessages,
+                eventId: (message) => message.id,
+                eventTimestamp: (message) => message.timestamp,
+              ) ??
               allMessages)
           .where((message) => !message.isRecalled)
           .toList();
-      messagesById
-          .addAll({for (final message in messages) message.id: message});
+      messagesById.addAll({
+        for (final message in messages) message.id: message,
+      });
       // 转换为搜索模型（含媒体分类/正文可见文本/时间线序号）。
       // R6：普通文本含 HTTP(S) URL → link 分类（此前漏检）。
       return <ChatSearchMessage>[
@@ -2023,8 +2067,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               RoomMessageKind.image => ChatSearchMediaCategory.imageVideo,
               RoomMessageKind.file => ChatSearchMediaCategory.file,
               RoomMessageKind.text
-                  when RegExp('https?://[^\\\\s<>"]+', caseSensitive: false)
-                      .hasMatch(message.text) =>
+                  when RegExp(
+                    'https?://[^\\\\s<>"]+',
+                    caseSensitive: false,
+                  ).hasMatch(message.text) =>
                 ChatSearchMediaCategory.link,
               _ => null,
             },
@@ -2070,7 +2116,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final searchMessages = currentSearchMessages();
     final datesWithMessages = {
       for (final m in searchMessages)
-        DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day)
+        DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day),
     };
     final earliestMonth = widget.roomLease.creationDate ?? DateTime(1970);
     final latestMonth = DateTime.now();
@@ -2083,7 +2129,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           identityChanges: _identityCache,
           senderDisplayName: (id) => _identityCache
               .resolveIdentity(
-                  matrixUserId: id, displayName: _member(id).displayName)
+                matrixUserId: id,
+                displayName: _member(id).displayName,
+              )
               .displayName,
           search: (filters, {cursor, limit = 50}) async {
             final generation = ++searchGeneration;
@@ -2096,7 +2144,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               if (matched.length >= start + limit ||
                   (controller?.historyExhausted ?? true)) {
                 return matched.sublist(
-                    start, (start + limit).clamp(0, matched.length));
+                  start,
+                  (start + limit).clamp(0, matched.length),
+                );
               }
               final last = widget.roomLease.oldestTimelineEventId;
               final token = widget.roomLease.historyToken;
@@ -2145,14 +2195,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               final bytes = snapshot.data;
               if (bytes != null) {
                 return Image(
-                    image: boundedChatImageProvider(bytes, maxEdge: 360),
-                    fit: BoxFit.contain);
+                  image: boundedChatImageProvider(bytes, maxEdge: 360),
+                  fit: BoxFit.contain,
+                );
               }
               return Center(
-                  child: snapshot.connectionState == ConnectionState.waiting
-                      ? const CupertinoActivityIndicator()
-                      : const Icon(CupertinoIcons.photo,
-                          color: WeChatColors.textTertiary));
+                child: snapshot.connectionState == ConnectionState.waiting
+                    ? const CupertinoActivityIndicator()
+                    : const Icon(
+                        CupertinoIcons.photo,
+                        color: WeChatColors.textTertiary,
+                      ),
+              );
             },
           ),
           onOpenMedia: (eventId) {
@@ -2244,9 +2298,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (!mounted) return;
       await WidgetsBinding.instance.endOfFrame;
       final all = controller?.messages ?? const <RoomMessageViewModel>[];
-      final visible = hiddenEvents?.visibleItems(roomInfo.id, all,
-              eventId: (message) => message.id,
-              eventTimestamp: (message) => message.timestamp) ??
+      final visible = hiddenEvents?.visibleItems(
+            roomInfo.id,
+            all,
+            eventId: (message) => message.id,
+            eventTimestamp: (message) => message.timestamp,
+          ) ??
           all;
       found = await revealLazyMessage(
         controller: messageScrollController,
@@ -2304,17 +2361,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// R7：打开全屏图片查看器（含转发/下载操作）。
   Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
     try {
-      final bytes = await _loadImagePreview(message);
-      if (!mounted) return;
+      final images = _galleryImages();
+      if (!mounted || !images.any((image) => image.id == message.id)) return;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
-          builder: (_) => ImageViewerPage(
-            previewBytes: bytes,
-            originalSizeHint: message.attachmentSize,
-            loadOriginal: () => contentMediaMemoryCache.putIfAbsent(
-                _mediaKey(message.id).cacheId,
-                () => controller!.loadAttachment(message.id)),
-            onForward: () => _forwardMessages([message]),
+          builder: (_) => RoomImageGalleryPage(
+            images: images,
+            initialId: message.id,
+            loadEarlier: _earlierGalleryImages,
+            onForwardEdited: _forwardEditedImage,
+            onFavorite: _favoriteEditedImage,
           ),
         ),
       );
@@ -2325,23 +2381,114 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   /// R7：打开全屏图片查看器（ContainImageBubble 的点击动作）。
-  Future<void> _openImageViewer(RoomMessageViewModel message) async {
-    try {
-      final bytes = await controller!.loadAttachment(message.id);
-      if (!mounted) return;
-      await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
-          builder: (_) => ImageViewerPage(
-            previewBytes: bytes,
+  Future<void> _openImageViewer(RoomMessageViewModel message) =>
+      _openImageViewerWithForward(message);
+
+  List<RoomGalleryImage> _galleryImages() {
+    final all = controller?.messages ?? const <RoomMessageViewModel>[];
+    final visible = hiddenEvents?.visibleItems(
+          roomInfo.id,
+          all,
+          eventId: (message) => message.id,
+          eventTimestamp: (message) => message.timestamp,
+        ) ??
+        all;
+    return [
+      for (final message in visible)
+        if (message.kind == RoomMessageKind.image &&
+            !message.isRecalled &&
+            message.deliveryState == RoomDeliveryState.sent)
+          RoomGalleryImage(
+            id: message.id,
+            loadPreview: () => _loadImagePreview(message),
             loadOriginal: () => controller!.loadAttachment(message.id),
+            originalSize: message.attachmentSize,
             onForward: () => _forwardMessages([message]),
           ),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      // 加载失败轻提示（不解密失败不崩溃）。
+    ];
+  }
+
+  Future<List<RoomGalleryImage>> _earlierGalleryImages() async {
+    final initial = _galleryImages();
+    final boundary = initial.firstOrNull?.id;
+    final known = initial.map((image) => image.id).toSet();
+    while (mounted && !(controller?.historyExhausted ?? true)) {
+      final token = widget.roomLease.historyToken;
+      final oldest = widget.roomLease.oldestTimelineEventId;
+      await _loadEarlier();
+      if (!mounted) return const [];
+      final added = _galleryImages()
+          .takeWhile((image) => image.id != boundary)
+          .where((image) => !known.contains(image.id)).toList();
+      if (added.isNotEmpty) return added;
+      if (token == widget.roomLease.historyToken &&
+          oldest == widget.roomLease.oldestTimelineEventId) {
+        if (!(controller?.historyExhausted ?? true)) {
+          throw StateError('History did not advance');
+        }
+        break;
+      }
     }
+    return const [];
+  }
+
+  Future<void> _favoriteEditedImage(Uint8List bytes) async {
+    final session = emojiVault;
+    if (session == null) throw StateError('收藏服务尚未就绪');
+    final item = await session.vault.add(bytes, mimeType: 'image/png');
+    if (!mounted) return;
+    setState(
+      () => customEmojiItems = [
+        CustomEmojiItem(
+          id: item.id,
+          loadPreview: () => session.loadPreview(item),
+          isAnimated: false,
+          mimeType: item.mimeType,
+        ),
+        ...customEmojiItems.where((existing) => existing.id != item.id),
+      ],
+    );
+  }
+
+  Future<bool> _forwardEditedImage(Uint8List bytes) async {
+    final destinations = await widget.roomLease.forwardingDestinations();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return false;
+    final recent = RecentForwardStore(prefs);
+    final completed = <String>{};
+    final transaction = 'image-edit-${DateTime.now().microsecondsSinceEpoch}';
+    return await Navigator.of(context, rootNavigator: true).push<bool>(
+          CupertinoPageRoute(
+            builder: (_) => ChatForwardPickerPage(
+              contentPreview: '[编辑图片]',
+              candidates: [
+                for (final room in destinations)
+                  ChatForwardCandidate(
+                    roomId: room.id,
+                    title: _forwardTitleFor(room),
+                    avatar: _forwardRoomAvatar(room),
+                    isGroup: !room.isDirect,
+                    memberCount: room.memberCount,
+                  ),
+              ],
+              recentRoomIds: recent.load(),
+              onForward: (ids) async {
+                for (final id in ids) {
+                  if (completed.contains(id)) continue;
+                  await widget.roomLease.sendEditedImageTo(
+                    id,
+                    bytes,
+                    transactionId:
+                        '$transaction-${destinations.indexWhere((room) => room.id == id)}',
+                  );
+                  completed.add(id);
+                }
+                await recent.record(ids);
+              },
+            ),
+          ),
+        ) ??
+        false;
   }
 
   Widget _messageContent(RoomMessageViewModel message) =>
@@ -2501,28 +2648,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Center(
           child: message.isOwn
-              ? Wrap(children: [
-                  const Text('你撤回了一条消息 ',
+              ? Wrap(
+                  children: [
+                    const Text(
+                      '你撤回了一条消息 ',
                       style: TextStyle(
-                          color: WeChatColors.textSecondary, fontSize: 13)),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    onPressed: () => setState(() {
-                      input.text = recalledDrafts[message.id] ?? '';
-                      input.selection =
-                          TextSelection.collapsed(offset: input.text.length);
-                    }),
-                    child: Text('重新编辑',
-                        style: TextStyle(
+                        color: WeChatColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (recalledDrafts.containsKey(message.id))
+                      CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        onPressed: () => setState(() {
+                          input.text = recalledDrafts[message.id] ?? '';
+                          input.selection = TextSelection.collapsed(
+                            offset: input.text.length,
+                          );
+                        }),
+                        child: Text(
+                          '重新编辑',
+                          style: TextStyle(
                             color: WeChatColors.resolve(
-                                context, WeChatColors.socialLink),
-                            fontSize: 13)),
-                  ),
-                ])
-              : Text('$displayName 撤回了一条消息',
+                              context,
+                              WeChatColors.socialLink,
+                            ),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                )
+              : Text(
+                  isGroup ? '$displayName 撤回了一条消息' : '对方撤回了一条消息',
                   style: const TextStyle(
-                      color: WeChatColors.textSecondary, fontSize: 13)),
+                    color: WeChatColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
         ),
       );
     }
@@ -2634,7 +2798,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               builder: (context, constraints) {
                 return ContainImageBubble(
                   bubbleKey: menuAnchorKeys.putIfAbsent(
-                      message.stableId, GlobalKey.new),
+                    message.stableId,
+                    GlobalKey.new,
+                  ),
                   key: ValueKey('image-${message.stableId}'),
                   initialBytes: _cachedImagePreview(message),
                   loadCached: () => _readCachedImagePreview(message),
@@ -2774,9 +2940,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     if (message.kind == RoomMessageKind.voice &&
         message.deliveryState == RoomDeliveryState.sent) {
-      actions.add(voicePlayback.earpiece
-          ? MessageAction.voiceSpeaker
-          : MessageAction.voiceEarpiece);
+      actions.add(
+        voicePlayback.earpiece
+            ? MessageAction.voiceSpeaker
+            : MessageAction.voiceEarpiece,
+      );
     }
     if (actions.isEmpty) return;
     dismissActionMenu();
@@ -2790,8 +2958,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         !messageBox.attached) {
       return;
     }
-    final position =
-        messageBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final position = messageBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
     final anchorRect = position & messageBox.size;
     actionMenuEntry = OverlayEntry(
       builder: (overlayContext) {
@@ -2873,11 +3043,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         }
         await voicePlayback.setEarpiece(action == MessageAction.voiceEarpiece);
         if (mounted && !_disposing) {
-          _showMediaMessage(voicePlayback.hasFailed(message.id)
-              ? '播放方式切换失败，请重试'
-              : voicePlayback.earpiece
-                  ? '已切换为听筒播放'
-                  : '已切换为扬声器播放');
+          _showMediaMessage(
+            voicePlayback.hasFailed(message.id)
+                ? '播放方式切换失败，请重试'
+                : voicePlayback.earpiece
+                    ? '已切换为听筒播放'
+                    : '已切换为扬声器播放',
+          );
         }
       case MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
@@ -2967,11 +3139,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     List<ChatForwardCandidate> candidates() => <ChatForwardCandidate>[
           for (final room in destinations)
             ChatForwardCandidate(
-                roomId: room.id,
-                title: _forwardTitleFor(room),
-                avatar: _forwardRoomAvatar(room),
-                isGroup: !room.isDirect,
-                memberCount: room.memberCount),
+              roomId: room.id,
+              title: _forwardTitleFor(room),
+              avatar: _forwardRoomAvatar(room),
+              isGroup: !room.isDirect,
+              memberCount: room.memberCount,
+            ),
         ];
     if (candidates().isEmpty) {
       if (mounted) setState(() => mediaMessage = '没有可用的端到端加密会话');
@@ -2988,13 +3161,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             resolveCandidates: candidates,
             candidates: candidates(),
             contentPreview: messages
-                .map((message) => switch (message.kind) {
-                      RoomMessageKind.image => '[图片]',
-                      RoomMessageKind.video => '[视频]',
-                      RoomMessageKind.voice => '[语音]',
-                      RoomMessageKind.file => '[文件] ${message.text}',
-                      _ => message.text,
-                    })
+                .map(
+                  (message) => switch (message.kind) {
+                    RoomMessageKind.image => '[图片]',
+                    RoomMessageKind.video => '[视频]',
+                    RoomMessageKind.voice => '[语音]',
+                    RoomMessageKind.file => '[文件] ${message.text}',
+                    _ => message.text,
+                  },
+                )
                 .join('\n'),
             recentRoomIds: [
               for (final id in recentIds)
@@ -3239,7 +3414,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                                           return null;
                                         }
                                         final index = messages.indexWhere(
-                                            (m) => m.stableId == key.value);
+                                          (m) => m.stableId == key.value,
+                                        );
                                         return index < 0
                                             ? null
                                             : messages.length - index - 1;
@@ -3259,16 +3435,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                                           child: KeyedSubtree(
                                             key: messageKeys[message.id] =
                                                 _stableMessageKeys.putIfAbsent(
-                                                    message.stableId,
-                                                    GlobalKey.new),
+                                              message.stableId,
+                                              GlobalKey.new,
+                                            ),
                                             child: AnimatedContainer(
                                               duration: const Duration(
-                                                  milliseconds: 180),
+                                                milliseconds: 180,
+                                              ),
                                               color: highlightedMessageId ==
                                                       message.id
                                                   ? WeChatColors.resolve(
                                                       context,
-                                                      WeChatColors.divider)
+                                                      WeChatColors.divider,
+                                                    )
                                                   : const Color(0x00000000),
                                               child: _messageRow(
                                                   message, previous),

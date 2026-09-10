@@ -12,3 +12,7 @@
 | 跨会话工作流 | 根AGENTS已挂接操作手册与此索引 | [工作流](../runbooks/mobile-delivery-workflow.md)、[任务模板](task-template.md)、[本次工作流任务](tasks/2026-09-10-delivery-workflow.md) |
 
 无新增版本/提交声称：本次工作流配置不发布APK、IPA或业务服务，不改变现有更新设置。
+
+## Mi 6 朋友圈与聊天Debug（2026-09-11）
+
+本任务独立分支已交付0.3.82-debug/2086到Mi 6，未生产发布。功能测试按用户要求未执行，待用户验收。[任务记录](tasks/2026-09-10-moments-im-mi6.md) · [根因与安装证据](../verification/2026-09-10-moments-im-mi6.md)。

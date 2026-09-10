@@ -1,3 +1,4 @@
+import 'contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
 import 'scan_qr_page.dart';
 import 'dart:async';
@@ -200,7 +201,12 @@ final class _ContactsPageState extends State<ContactsPage> {
                     context,
                     CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
-                        identityCache: widget.identityCache,
+                          contactActions: ContactActions(
+                            onMessage: widget.onMessage,
+                            onVoice: widget.onVoice,
+                            onVideo: widget.onVideo,
+                          ),
+                          identityCache: widget.identityCache,
                         api: businessApi,
                         matrix: widget.matrix,
                       ),
@@ -219,7 +225,12 @@ final class _ContactsPageState extends State<ContactsPage> {
                           context,
                           CupertinoPageRoute(
                               builder: (_) => AddFriendPage(
-                                  api: businessApi,
+                              contactActions: ContactActions(
+                                onMessage: widget.onMessage,
+                                onVoice: widget.onVoice,
+                                onVideo: widget.onVideo,
+                              ),
+                              api: businessApi,
                                   identityCache: widget.identityCache)));
                     },
                     onScan: widget.onScan ??
@@ -529,7 +540,12 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
                   contact: contact, identityCache: widget.identityCache),
               if (widget.api is BusinessApiClient)
                 MomentProfilePreview(
-                    identityCache: widget.identityCache,
+                  contactActions: ContactActions(
+                    onMessage: widget.onMessage,
+                    onVoice: widget.onVoice,
+                    onVideo: widget.onVideo,
+                  ),
+                  identityCache: widget.identityCache,
                     api: widget.api as BusinessApiClient,
                     userId: contact.userId,
                     displayName: contact.primaryDisplayName,
@@ -1038,7 +1054,13 @@ final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
 }
 
 final class AddFriendPage extends StatefulWidget {
-  const AddFriendPage({super.key, required this.api, this.identityCache});
+  const AddFriendPage({
+    super.key,
+    required this.api,
+    this.identityCache,
+    this.contactActions,
+  });
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final AddFriendGateway api;
   @override
@@ -1146,6 +1168,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => AddFriendProfilePage(
+          contactActions: widget.contactActions,
           identityCache: widget.identityCache,
           api: widget.api,
           userId: user['user_id'].toString(),

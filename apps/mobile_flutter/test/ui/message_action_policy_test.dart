@@ -92,7 +92,7 @@ void main() {
     }
   });
 
-  test('recall uses the authoritative two-minute server-time boundary', () {
+  test('recall uses the authoritative three-minute server-time boundary', () {
     Set<MessageAction> actions(Duration age) => MessageActionPolicy.actionsFor(
           MessageCapabilities(
             kind: MessageContentKind.text,
@@ -102,9 +102,9 @@ void main() {
           ),
         );
 
-    expect(actions(const Duration(minutes: 2)), contains(MessageAction.recall));
+    expect(actions(const Duration(minutes: 3)), contains(MessageAction.recall));
     expect(
-      actions(const Duration(minutes: 2, milliseconds: 1)),
+      actions(const Duration(minutes: 3, milliseconds: 1)),
       isNot(contains(MessageAction.recall)),
     );
   });

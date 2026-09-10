@@ -1,3 +1,4 @@
+import 'features/contacts/contact_actions.dart';
 import 'features/matrix/direct_chat_failure.dart';
 import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
@@ -1274,6 +1275,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
 
     try {
+      final cache = await _identityCache();
+      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
+      if (!mounted) return;
       final reference = await directChats.open(contact.matrixUserId);
       if (!mounted) return;
       if (callUi.hasActiveCall) {
@@ -1418,7 +1422,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _addFriendFromTab() {
     Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
       builder: (_) =>
-          AddFriendPage(api: widget.api, identityCache: _chatIdentityCache),
+          AddFriendPage(api: widget.api, identityCache: _chatIdentityCache,
+          contactActions: ContactActions(
+            onMessage: _openMessage,
+            onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+            onVideo: (contact) => _openCall(contact, CallMediaType.video),
+          ),
+        ),
     ));
   }
 
@@ -1756,6 +1766,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                           identityCache: _chatIdentityCache,
                         ),
                   2 => DiscoveryPage(
+                      contactActions: ContactActions(
+                        onMessage: _openMessage,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                      ),
                       onCreateGroup: _createGroupChat,
                       onAddFriend: _addFriendFromTab,
                       onScan: _scanFromTab,
@@ -1767,6 +1784,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                       identityCache: _chatIdentityCache,
                     ),
                   _ => ProfileTabPage(
+                      contactActions: ContactActions(
+                        onMessage: _openMessage,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                      ),
                       api: widget.api,
                       onLogout: widget.onLogout,
                       onClearLocalChatData: widget.matrix.clearLocalChatData,
@@ -1916,8 +1940,10 @@ final class ProfileTabPage extends StatefulWidget {
     required this.onLogout,
     this.onClearLocalChatData,
     this.identityCache,
+    this.contactActions,
   });
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final Future<void> Function() onLogout;
   final ProfileRepository? identityCache;
   final Future<void> Function()? onClearLocalChatData;
@@ -1952,7 +1978,9 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         final cache = widget.identityCache;
         if (cache == null) return;
         final page =
-            await MomentsPage.prepare(api: widget.api, identityCache: cache);
+            await MomentsPage.prepare(api: widget.api, identityCache: cache,
+            contactActions: widget.contactActions,
+          );
         if (!context.mounted) return;
         Navigator.of(context, rootNavigator: true).push(
             CupertinoPageRoute(fullscreenDialog: true, builder: (_) => page));

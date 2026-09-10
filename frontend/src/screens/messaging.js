@@ -121,7 +121,11 @@ function chatScreen(definition) {
 
 export function renderScreen(definition) {
   let root;
-  if (definition.module === "messages") {
+  if (definition.page === "image-editor") {
+    root = pageRoot(definition, [component("app-image-editor", { state: definition.state })]);
+  } else if (definition.page === "image-gallery") {
+    root = pageRoot(definition, [component("app-room-image-gallery")]);
+  } else if (definition.module === "messages") {
     if (definition.page === "conversation") root = conversationVariant(definition);
     else if (definition.page === "network") {
       root = pageRoot(definition, [navigation("网络状态"), element("div", "p-feedback-center")]);

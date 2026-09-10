@@ -882,6 +882,71 @@
         "tag": "app-dialog"
       },
       "tokens": []
+    },
+    {
+      "id": "image-editor",
+      "flutter": {
+        "name": "WeChatImageEditorPage",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_image_editor.dart",
+        "props": [
+          "bytes",
+          "onForward",
+          "onFavorite"
+        ],
+        "variants": {},
+        "states": [
+          "ready",
+          "drawing",
+          "emoji",
+          "text",
+          "crop",
+          "mosaic",
+          "undo",
+          "redo",
+          "complete-sheet",
+          "saving",
+          "error",
+          "cancelled"
+        ]
+      },
+      "html": {
+        "tag": "app-image-editor"
+      },
+      "tokens": [
+        "brandPrimary",
+        "textPrimary",
+        "textSecondary"
+      ]
+    },
+    {
+      "id": "room-image-gallery",
+      "flutter": {
+        "name": "RoomImageGalleryPage",
+        "file": "apps/mobile_flutter/lib/ui/chat/room_image_gallery.dart",
+        "props": [
+          "images",
+          "initialId",
+          "loadEarlier",
+          "onForwardEdited",
+          "onFavorite"
+        ],
+        "variants": {},
+        "states": [
+          "ready",
+          "loading",
+          "error",
+          "paging",
+          "editing"
+        ]
+      },
+      "html": {
+        "tag": "app-room-image-gallery"
+      },
+      "tokens": [
+        "brandPrimary",
+        "textPrimary",
+        "textSecondary"
+      ]
     }
   ],
   "tokenParity": [
@@ -1171,7 +1236,7 @@
     }
   },
   "screens": {
-    "expectedCount": 332
+    "expectedCount": 338
   },
   "adminCompletion20260910": {
     "html": [
@@ -1200,5 +1265,19 @@
     },
     "walletValidation": "fixed 60 minutes; global login unchanged",
     "demo": "frontend/tests/admin-completion-preview.html"
+  },
+  "mobileImageEditing20260910": {
+    "demo": [
+      "chat-image-editor-ready",
+      "chat-image-editor-complete-sheet",
+      "chat-image-editor-loading",
+      "chat-image-editor-error",
+      "chat-image-gallery-ready",
+      "moments-detail-own-comment"
+    ],
+    "html": "frontend/src/components/image-editor.js",
+    "interaction": "五工具底部、撤销重做右上、完成右下；生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
+    "tokens": "Reuse existing color, spacing, typography, radius and touch-size tokens; landscape canvas colors are fixture artwork, not UI tokens",
+    "verification": "Source review only; user explicitly requested no self testing"
   }
 }

@@ -1,3 +1,4 @@
+import { AppImageEditor, AppRoomImageGallery } from "./image-editor.js";
 import { AppAnchoredActionMenu } from "./anchored-menu.js";
 import { componentContracts } from "../catalog/contracts.js";
 import { AppActionButton, AppComposer } from "./actions.js";
@@ -9,6 +10,8 @@ import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagMan
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
 
 const implementations = new Map([
+  ["app-image-editor", AppImageEditor],
+  ["app-room-image-gallery", AppRoomImageGallery],
   ["app-anchored-action-menu", AppAnchoredActionMenu],
   ["app-status-bar", AppStatusBar],
   ["app-navigation-bar", AppNavigationBar],

@@ -20,7 +20,7 @@ function momentCard(definition, imageCount = 3) {
   const card = element("section", "c-moment-card");
   card.append(component("app-moment-tile", { ...fixtures.moment, state: definition.state }));
   if (imageCount > 0) card.append(component("app-moment-grid", { count: imageCount, failed: definition.state === "upload-failed" }));
-  if (definition.page === "detail" || ["liked", "comment", "default", "published"].includes(definition.state)) card.append(component("app-moment-reactions", { likes: "林晓、陈默", comments: "林晓：下次一起走！\n陈默：照片很好看！", detail: definition.page === "detail", selected: ["comment", "comment-reply"].includes(definition.state), own: definition.state === "comment-delete" }));
+  if (definition.page === "detail" || ["liked", "comment", "default", "published"].includes(definition.state)) card.append(component("app-moment-reactions", { likes: "林晓、陈默", comments: "林晓：下次一起走！\n陈默：照片很好看！", detail: definition.page === "detail", selected: ["comment", "comment-reply"].includes(definition.state), own: ["comment-delete", "own-comment"].includes(definition.state) }));
   return card;
 }
 
@@ -100,7 +100,7 @@ function genericMoment(definition) {
       content.append(menu);
     }
     if (definition.page === "visibility") content.append(component("app-visibility-icon", { visibility: definition.state }));
-    if (definition.page === "detail" && definition.state === "comment-delete") content.append(component("app-action-sheet", { title: "评论操作", options: "复制,删除" }));
+    if (definition.page === "detail" && ["comment-delete", "own-comment"].includes(definition.state)) content.append(element("p", "c-system-message", "长按自己的评论可复制或删除"));
     if (definition.page === "detail" && definition.state === "comment-reply") content.append(component("app-composer", { placeholder: "回复林晓", mode: "text" }));
     if (definition.page === "governance") content.append(component("app-status-chip", { status: definition.state === "failed" || definition.state === "removed" ? "error" : definition.state === "reviewing" || definition.state === "uploading" ? "processing" : "success", label: definition.title }));
     if (definition.page === "recommendation") content.prepend(element("div", "c-segmented-control", definition.state === "latest" || definition.state === "personalization-off" ? "推荐　最新 ✓" : "推荐 ✓　最新"));

@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
 import '../contacts/contacts_page.dart' show AddFriendPage;
 import 'package:flutter/cupertino.dart';
@@ -22,13 +23,15 @@ final class DiscoveryPage extends StatelessWidget {
       required this.api,
       this.matrix,
       this.identityCache,
-      this.onCreateGroup,
+      this.contactActions,
+    this.onCreateGroup,
       this.onAddFriend,
       this.onScan,
       this.onAppearance,
       this.unreadController});
 
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final MatrixSdkE2eeClient? matrix;
   final ProfileRepository? identityCache;
   final MomentsUnreadController? unreadController;
@@ -51,7 +54,8 @@ final class DiscoveryPage extends StatelessWidget {
                   context,
                   CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
-                          api: api,
+                      contactActions: contactActions,
+                      api: api,
                           matrix: matrix,
                           identityCache: identityCache)),
                 ),
@@ -66,7 +70,8 @@ final class DiscoveryPage extends StatelessWidget {
                         () => Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
                                 builder: (_) => AddFriendPage(
-                                    api: api, identityCache: identityCache))),
+                                contactActions: contactActions,
+                                api: api, identityCache: identityCache))),
                     onScan: onScan ??
                         () => Navigator.of(context, rootNavigator: true).push(
                             CupertinoPageRoute(
@@ -112,6 +117,7 @@ final class DiscoveryPage extends StatelessWidget {
                   final cache = identityCache;
                   if (cache == null) return;
                   final page = await MomentsPage.prepare(
+                    contactActions: contactActions,
                     api: api,
                     identityCache: cache,
                     onPostsDisplayed: unreadController?.markDisplayed,

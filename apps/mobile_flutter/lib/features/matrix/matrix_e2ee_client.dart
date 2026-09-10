@@ -42,6 +42,7 @@ import 'matrix_direct_chat_adapter.dart';
 import 'matrix_group_chat_adapter.dart';
 import 'matrix_media_file.dart';
 import 'content_addressed_media.dart';
+import 'outgoing_media_thumbnail_cache.dart';
 import 'room_mention_store.dart';
 import 'unread_mention_tracker.dart';
 import 'matrix_call_adapter.dart' hide changliaoCallMessageType;
@@ -1097,6 +1098,8 @@ final class MatrixRoomLease
         return [
           for (final target in client.rooms)
             if (target.encrypted &&
+                target.membership == Membership.join &&
+                target.canSendDefaultMessages &&
                 !isMatrixControlRoom(
                   roomId: target.id,
                   displayName: room_names.roomDisplayName(target),
@@ -1231,6 +1234,31 @@ final class MatrixRoomLease
     );
   }
 
+  /// Edited pixels use the same encrypted send and content cache as attachments.
+  Future<String> sendEditedImageTo(
+    String targetRoomId,
+    Uint8List bytes, {
+    required String transactionId,
+  }) =>
+      _withLeaseOperation((source) async {
+        final target = source.client.getRoomById(targetRoomId);
+        if (target == null || !target.encrypted) {
+          throw StateError('只能发送到端到端加密会话');
+        }
+        return owner._sendMedia(
+          target,
+          bytes,
+          'image/png',
+          txid: transactionId,
+          filename: '编辑图片.png',
+          validateLease: () {
+            if (!identical(_activeRoom, source)) {
+              throw StateError('Matrix source room lease is no longer active');
+            }
+          },
+        );
+      });
+
   @override
   Future<void> forwardEncryptedCopy(
     String sourceRoomId,
@@ -1279,7 +1307,8 @@ final class MatrixRoomLease
                   accountId: source.client.userID ?? '',
                   roomId: source.id,
                   eventId: event.eventId,
-                  contentSha256: hashes?.contentSha256),
+                  contentSha256: hashes?.contentSha256,
+                  sourceIdentity: matrixMediaSourceIdentity(event.content)),
               () => downloadMediaContent(event));
           if (groupVideo) validateGroupVideoSize(bytes.length);
           Uint8List? thumbnail;
@@ -1289,7 +1318,9 @@ final class MatrixRoomLease
                     accountId: source.client.userID ?? '',
                     roomId: source.id,
                     eventId: 'thumb:${event.eventId}',
-                    contentSha256: hashes?.thumbnailSha256), () async {
+                    contentSha256: hashes?.thumbnailSha256,
+                    sourceIdentity: matrixMediaSourceIdentity(
+                        event.content, thumbnail: true)), () async {
               if (!event.isThumbnailEncrypted) {
                 throw const FormatException('Missing encrypted thumbnail');
               }
@@ -1491,6 +1522,7 @@ final class _SdkRoomTimelineCapability
         .where(
           (event) =>
               event.type == EventTypes.Message ||
+              (event.type == EventTypes.Encrypted && event.redacted) ||
               event.type == changliaoNudgeEventType ||
               event.type == changliaoFriendAcceptedEventType,
         )
@@ -1743,6 +1775,7 @@ final class _SdkRoomTimelineCapability
 final class _SdkEmojiVaultBackend
     implements
         MatrixEmojiVaultBackend,
+        MatrixEmojiVaultContentLoader,
         MatrixEmojiVaultMetadataBackend,
         MatrixEmojiVaultCacheIdentity {
   _SdkEmojiVaultBackend(this._lease);
@@ -1942,6 +1975,24 @@ final class _SdkEmojiVaultBackend
       });
 
   @override
+  Future<Uint8List> loadContent(String roomId, EmojiVaultItem item) =>
+      _withOperation((client) async {
+        final room = await _room(client, roomId);
+        if (!room.encrypted || !client.encryptionEnabled) {
+          throw StateError('Emoji media download requires Matrix E2EE');
+        }
+        return loadMediaWithCache(
+          MediaCacheKey(
+            accountId: client.userID ?? '',
+            roomId: roomId,
+            eventId: 'emoji:${item.id}',
+            contentSha256: item.sha256,
+          ),
+          () => downloadAndDecrypt(roomId, item.encryptedFile),
+        );
+      });
+
+  @override
   Future<Uint8List> downloadAndDecrypt(
     String roomId,
     Map<String, Object?> encryptedFile,
@@ -1991,7 +2042,9 @@ final class _SdkEmojiVaultBackend
       });
 
   EmojiVaultEvent? _decodeEvent(Event event) {
-    if (!event.type.startsWith('com.changliao.emoji.')) return null;
+    if (!event.type.startsWith('com.changliao.emoji.') ||
+        event.redacted ||
+        event.originalSource?.type != EventTypes.Encrypted) return null;
     final content = Map<String, Object?>.from(event.content);
     return _decodeContent(
         event.type, content, event.eventId, event.originServerTs.toUtc());
@@ -3307,14 +3360,18 @@ final class MatrixSdkE2eeClient
             thumbnailHeight: thumbnailHeight);
       });
 
-  Future<String> _sendMedia(Room room, List<int> plaintext, String mimeType,
-      {void Function()? validateLease,
-      Map<String, dynamic>? extraContent,
-      String? txid,
-      String? filename,
-      Uint8List? thumbnailBytes,
-      int? thumbnailWidth,
-      int? thumbnailHeight}) async {
+  Future<String> _sendMedia(
+    Room room,
+    List<int> plaintext,
+    String mimeType, {
+    void Function()? validateLease,
+    Map<String, dynamic>? extraContent,
+    String? txid,
+    String? filename,
+    Uint8List? thumbnailBytes,
+    int? thumbnailWidth,
+    int? thumbnailHeight,
+  }) async {
     void validateSendAccess() {
       if (_accessRevoked ||
           !identical(_client, room.client) ||
@@ -3325,6 +3382,9 @@ final class MatrixSdkE2eeClient
       if (!room.encrypted || !room.client.fileEncryptionEnabled) {
         throw StateError('Encrypted media requires E2EE attachments');
       }
+      if (room.membership != Membership.join || !room.canSendDefaultMessages) {
+        throw StateError('当前会话不可发送消息');
+      }
     }
 
     validateSendAccess();
@@ -3334,11 +3394,12 @@ final class MatrixSdkE2eeClient
     MatrixImageFile? thumbnail;
     if (thumbnailBytes != null) {
       thumbnail = MatrixImageFile(
-          bytes: thumbnailBytes,
-          name: 'thumb.jpg',
-          mimeType: 'image/jpeg',
-          width: thumbnailWidth,
-          height: thumbnailHeight);
+        bytes: thumbnailBytes,
+        name: 'thumb.jpg',
+        mimeType: 'image/jpeg',
+        width: thumbnailWidth,
+        height: thumbnailHeight,
+      );
     }
     final media = buildMediaFileForSend(
       bytes: plaintext is Uint8List ? plaintext : Uint8List.fromList(plaintext),
@@ -3352,26 +3413,46 @@ final class MatrixSdkE2eeClient
     final image = media.file;
     if (image is MatrixImageFile && thumbnail == null) {
       try {
-        thumbnail = await image.generateThumbnail(
-          nativeImplementations: room.client.nativeImplementations,
-          customImageResizer: room.client.customImageResizer,
+        thumbnail = await OutgoingMediaThumbnailCache.load(
+          accountId: room.client.userID ?? '',
+          image: image,
+          generate: () => image.generateThumbnail(
+            nativeImplementations: room.client.nativeImplementations,
+            customImageResizer: room.client.customImageResizer,
+          ),
         );
       } catch (_) {
         /* An unavailable optional thumbnail preserves the original. */
       }
       if (thumbnail != null && thumbnail.size > image.size) thumbnail = null;
     }
+    await cacheOutgoingMedia(
+      accountId: room.client.userID ?? '',
+      roomId: room.id,
+      bytes: media.file.bytes,
+    );
+    if (thumbnail != null) {
+      await cacheOutgoingMedia(
+        accountId: room.client.userID ?? '',
+        roomId: room.id,
+        bytes: thumbnail.bytes,
+      );
+    }
+    validateSendAccess();
     final prepared = await prepareContentAddressedMedia(
-        file: media.file,
-        thumbnail: thumbnail,
-        extraContent: media.extraContent);
+      file: media.file,
+      thumbnail: thumbnail,
+      extraContent: media.extraContent,
+    );
     // Preparation yields to worker isolates. Revoke/room replacement can happen
     // meanwhile; check both owner and originating lease before any SDK upload.
     validateSendAccess();
-    final eventId = await room.sendFileEvent(prepared.file,
-        thumbnail: prepared.thumbnail,
-        extraContent: prepared.extraContent,
-        txid: txid);
+    final eventId = await room.sendFileEvent(
+      prepared.file,
+      thumbnail: prepared.thumbnail,
+      extraContent: prepared.extraContent,
+      txid: txid,
+    );
     if (eventId == null) {
       throw StateError('Matrix media event was not accepted');
     }
