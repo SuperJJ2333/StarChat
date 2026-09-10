@@ -28,6 +28,7 @@ void main() {
     expect(await marker.isRegistered(), isTrue);
     // 重新读取同一个键，确认落盘的是非空值而不是仅存在于内存。
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString(SharedPreferencesInstallationMarker.key), isNotEmpty);
+    expect(
+        prefs.getString(SharedPreferencesInstallationMarker.key), isNotEmpty);
   });
 }
