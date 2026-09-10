@@ -83,7 +83,10 @@ async def test_broker_public_matrix_shape_and_no_secret_errors(caplog):
     access = _access_token(factory, 'alice')
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
         path = '/api/v1/auth/matrix-broker'
-        assert (await client.get(path)).json() == {'flows': [{'type': 'm.login.token'}]}
+        # The gate advertises the legacy password flow so existing Matrix SDK
+        # clients pass checkHomeserver; broker POST still rejects that type.
+        assert (await client.get(path)).json() == {'flows': [
+            {'type': 'm.login.token'}, {'type': 'm.login.password'}]}
         grant = (await client.post('/api/v1/auth/matrix-login-token', headers={'Authorization': f'Bearer {access}'})).json()['login_token']
         response = await client.post(path, json={'type': 'm.login.token', 'token': grant, 'device_id': 'D'})
         assert response.status_code == 200

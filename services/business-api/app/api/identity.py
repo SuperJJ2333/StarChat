@@ -669,7 +669,9 @@ def create_identity_router(
         if request.method == 'OPTIONS':
             return Response(status_code=204, headers=headers)
         if request.method == 'GET':
-            return JSONResponse({'flows': [{'type': 'm.login.token'}]}, headers=headers)
+            # Advertise the legacy password flow so existing Matrix SDK clients
+            # pass checkHomeserver; broker POST still rejects that type.
+            return JSONResponse({'flows': [{'type': 'm.login.token'}, {'type': 'm.login.password'}]}, headers=headers)
         try:
             rate_limiter.hit(public_rate_limit_key('auth:matrix-broker', request.client.host if request.client else 'unknown'), limit=30, window_seconds=60)
             raw = await request.body()
