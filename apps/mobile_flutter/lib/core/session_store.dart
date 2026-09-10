@@ -227,6 +227,16 @@ final class SecureSessionStore {
   Future<void> _saveMatrixBindingUnlocked(MatrixLocalBinding binding) =>
       _storage.write(_matrixBindingKey, jsonEncode(binding.toJson()));
 
+  /// Removes the current scope's continuity binding. Only for the stale-
+  /// binding case in continuityMetadata: the scoped encrypted store no longer
+  /// exists (out-of-band destruction such as an iOS reinstall), so the
+  /// surviving binding describes nothing and must not block future logins.
+  Future<void> clearMatrixBinding() =>
+      _runMatrixIdentityOperation(_clearMatrixBindingUnlocked);
+
+  Future<void> _clearMatrixBindingUnlocked() =>
+      _storage.delete(_matrixBindingKey);
+
   Future<MatrixLocalBinding?> matrixBinding() =>
       _runMatrixIdentityOperation(_matrixBindingUnlocked);
 

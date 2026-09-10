@@ -94,20 +94,29 @@ final class MatrixClientFactory {
   Future<MatrixClientContinuityMetadata> continuityMetadata(
       Client client) async {
     final binding = await sessionStore.matrixBinding();
-    final generation = binding?.databaseGeneration ??
-        (_unboundDatabaseGeneration ??= databaseGenerationFactory());
     if (!client.isLogged() &&
         client.userID == null &&
-        client.deviceID == null &&
-        binding == null) {
+        client.deviceID == null) {
+      // A store without any session cannot honor a surviving binding: the
+      // encrypted material the binding describes was destroyed out-of-band
+      // (on iOS the Keychain scope/registry/binding outlive the sandbox
+      // across reinstall while the database file does not). Keeping the
+      // stale binding would reject every future login for this account
+      // (L07), so reset it and adopt the empty store as a fresh identity.
+      if (binding != null) {
+        await sessionStore.clearMatrixBinding();
+      }
       return MatrixClientContinuityMetadata(
         isLoggedIn: false,
         userId: null,
         deviceId: null,
         ed25519Fingerprint: null,
-        databaseGeneration: generation,
+        databaseGeneration:
+            _unboundDatabaseGeneration ??= databaseGenerationFactory(),
       );
     }
+    final generation = binding?.databaseGeneration ??
+        (_unboundDatabaseGeneration ??= databaseGenerationFactory());
     final userId = client.userID;
     final deviceId = client.deviceID;
     final fingerprint = fingerprintReader(client);

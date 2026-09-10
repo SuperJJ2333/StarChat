@@ -540,10 +540,42 @@ void main() {
     expect(retained.ed25519Fingerprint, 'FINGERPRINT-A');
     client.matrixDeviceId = 'UNEXPECTED';
     await expectLater(factory.continuityMetadata(client), throwsStateError);
-    client.matrixUserId = null;
-    client.matrixDeviceId = null;
-    await expectLater(factory.continuityMetadata(client), throwsStateError,
-        reason: 'a bound database cannot silently become a new identity');
+  });
+
+  test('stale binding on an empty store is reset so reinstall can log in',
+      () async {
+    // iOS reinstall: the Keychain keeps the continuity binding while the
+    // encrypted database is destroyed with the sandbox. The reopened store
+    // holds no session, so the surviving binding describes nothing; it must
+    // be reset instead of rejecting every future login (the L07 wedge).
+    final store = SecureSessionStore(MemoryStore());
+    await store.saveMatrixBinding(MatrixLocalBinding(
+      version: 2,
+      matrixUserId: '@alice:matrix.test',
+      deviceId: 'DEVICE-A',
+      homeserver: 'https://matrix.test',
+      databaseGeneration: 'destroyed-generation',
+      ed25519Fingerprint: 'FINGERPRINT-A',
+    ));
+    final factory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse('https://matrix.test'),
+      fingerprintReader: (_) => null,
+      databaseGenerationFactory: () => 'fresh-generation',
+    );
+
+    final metadata = await factory.continuityMetadata(LogoutTrackingClient(
+      'reinstalled',
+      loggedIn: false,
+    ));
+
+    expect(metadata.isLoggedIn, isFalse);
+    expect(metadata.userId, isNull);
+    expect(metadata.deviceId, isNull);
+    expect(metadata.databaseGeneration, 'fresh-generation',
+        reason: 'the fresh store must not reuse the destroyed generation');
+    expect(await store.matrixBinding(), isNull,
+        reason: 'the stale binding is consumed by the reset');
   });
 
   test('failed migration closes client without deleting store', () async {
