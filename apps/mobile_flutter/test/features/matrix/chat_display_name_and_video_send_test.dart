@@ -87,6 +87,7 @@ void main() {
     test('平台转码不可用时明确失败且保留原片', () async {
       final root = Directory(
           '../../docs/verification/artifacts/2026-09-10/chat-reliability-2084/video');
+      await root.create(recursive: true);
       final dir = await root.createTemp('unavailable-');
       final temp = await File('${dir.path}/source.mp4').writeAsBytes([1]);
       try {

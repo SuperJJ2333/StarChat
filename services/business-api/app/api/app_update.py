@@ -1,6 +1,7 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header
+from pydantic import BaseModel, Field
 
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -10,6 +11,17 @@ from app.modules.settings.service import (
     APP_UPDATE_SETTING_KEYS,
     SettingService,
 )
+
+
+class AppUpdateResponse(BaseModel):
+    platform: Literal["android", "ios"]
+    configured: bool
+    latest_version: str | None = None
+    latest_build: int | None = None
+    min_supported_build: int | None = None
+    notes: str | None = None
+    download_url: str | None = Field(default=None, description="Download destination for the requested platform only.")
+    apk_url: str | None = Field(default=None, description="Compatibility alias of download_url for older clients.")
 
 
 def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
@@ -27,7 +39,7 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return str(tokens.decode_access_token(authorization[7:])["sub"])
 
-    @router.get("/latest")
+    @router.get("/latest", response_model=AppUpdateResponse)
     def latest(
         platform: Literal["android", "ios"] = "android",
         user_id: str = Depends(actor),
@@ -36,8 +48,8 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
         keys = APP_IOS_UPDATE_SETTING_KEYS if platform == "ios" else APP_UPDATE_SETTING_KEYS
         version_key, build_key, minimum_key, notes_key, url_key = keys
         values = app_settings.get_many(keys)
-        # The marker lets iOS clients reject legacy servers that ignore platform.
-        platform_fields = {"platform": "ios"} if platform == "ios" else {}
+        # Clients can reject a cached or misrouted projection for either OS.
+        platform_fields = {"platform": platform}
         latest_build = values[build_key]
         if latest_build is None:
             return {
@@ -48,6 +60,7 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
                 "min_supported_build": None,
                 "notes": None,
                 "apk_url": None,
+                "download_url": None,
             }
         return {
             **platform_fields,
@@ -59,6 +72,7 @@ def create_app_update_router(settings: Settings, session_factory) -> APIRouter:
             ),
             "notes": values[notes_key],
             "apk_url": values[url_key],
+            "download_url": values[url_key],
         }
 
     return router

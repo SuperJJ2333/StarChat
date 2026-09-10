@@ -46,6 +46,15 @@ void main() {
     expect(info.apkUrl, contains('/downloads/app-release.apk'));
   });
 
+  test('platform download URL takes precedence over legacy wire alias', () {
+    final info = parseAppUpdate({
+      ...publishedPayload,
+      'platform': 'ios',
+      'download_url': 'https://www.example.com/download/ios',
+    });
+    expect(info!.apkUrl, 'https://www.example.com/download/ios');
+  });
+
   test('current builds at or above latest need no update', () {
     final info = parseAppUpdate(publishedPayload);
     expect(resolvePendingUpdate(info: info, currentBuild: 4), isNull);
@@ -70,8 +79,7 @@ void main() {
     expect(gateway.calls, 1);
   });
 
-  test('semantic version compare works despite abi-offset build numbers',
-      () {
+  test('semantic version compare works despite abi-offset build numbers', () {
     // 服务端发布策略：latest_build 使用 arm64 清单值（2000+build）。
     // 旧版构建号比较在新客户端上失真，语义化版本名比较必须兜住：
     final info = parseAppUpdate({
@@ -106,7 +114,8 @@ void main() {
       'latest_version': 'not-a-version',
     });
     expect(
-      resolvePendingUpdate(info: info, currentBuild: 3, currentVersion: '0.3.19'),
+      resolvePendingUpdate(
+          info: info, currentBuild: 3, currentVersion: '0.3.19'),
       isNotNull,
       reason: '版本名不可解析时回退构建号比较',
     );

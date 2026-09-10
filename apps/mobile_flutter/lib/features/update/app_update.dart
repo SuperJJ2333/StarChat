@@ -23,7 +23,8 @@ final class AppUpdateInfo {
         minSupportedBuild:
             int.tryParse(map['min_supported_build']?.toString() ?? '') ?? 0,
         notes: map['notes']?.toString() ?? '',
-        apkUrl: map['apk_url']?.toString() ?? '',
+        apkUrl:
+            map['download_url']?.toString() ?? map['apk_url']?.toString() ?? '',
       );
 
   final String latestVersion;
@@ -31,6 +32,10 @@ final class AppUpdateInfo {
   final int minSupportedBuild;
   final String notes;
   final String apkUrl;
+
+  /// Platform-specific release destination. Keep apkUrl as a compatibility alias
+  /// for existing callers; an iOS destination is an enterprise download page.
+  String get downloadUrl => apkUrl;
 
   bool get isConfigured => latestBuild > 0;
 }

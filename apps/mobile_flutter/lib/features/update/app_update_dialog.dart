@@ -18,7 +18,8 @@ Future<void> showAppUpdateDialog(
   return showCupertinoDialog(
     context: context,
     barrierDismissible: !forced,
-    routeSettings: RouteSettings(name: forced ? 'app-update/forced' : 'app-update'),
+    routeSettings:
+        RouteSettings(name: forced ? 'app-update/forced' : 'app-update'),
     builder: (dialogContext) => PopScope(
       canPop: !forced,
       child: CupertinoAlertDialog(
@@ -47,7 +48,7 @@ Future<void> showAppUpdateDialog(
           CupertinoDialogAction(
             key: const Key('app-update-now'),
             isDefaultAction: true,
-            onPressed: () => launchExternal(info.apkUrl),
+            onPressed: () => launchExternal(info.downloadUrl),
             child: Text(forced ? '立即更新' : '更新'),
           ),
         ],
