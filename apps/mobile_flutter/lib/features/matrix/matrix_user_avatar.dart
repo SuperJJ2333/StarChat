@@ -82,14 +82,20 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
     final avatarUri = widget.matrixAvatarUri;
     final size = widget.size;
     try {
-      final value = await widget.avatarMedia.resolveAvatar(
-        avatarUri: avatarUri,
-        size: size,
+      ResolvedAvatarUrl? value;
+      await _retry.runAfter(
+        widget.avatarMedia
+            .resolveAvatar(avatarUri: avatarUri, size: size)
+            .then((fresh) {
+          value = fresh;
+        }),
+        () {
+          if (!mounted || generation != _resolutionGeneration) return;
+          _retry.reset();
+          setState(() => resolved = value);
+          _diagnose('resolved');
+        },
       );
-      if (!mounted || generation != _resolutionGeneration) return;
-      _retry.reset();
-      setState(() => resolved = value);
-      _diagnose('resolved');
     } catch (_) {
       if (!mounted || generation != _resolutionGeneration) return;
       if (avatarUri != null) {

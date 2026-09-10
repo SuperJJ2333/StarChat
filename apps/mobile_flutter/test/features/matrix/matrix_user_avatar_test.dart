@@ -20,6 +20,54 @@ final class FakeAvatarMediaCapability implements AvatarMediaCapability {
 }
 
 void main() {
+  for (final background in [true, false]) {
+    testWidgets(
+        'pending resolution defers URL publication while ${background ? 'background' : 'hidden'}',
+        (tester) async {
+      final pending = Completer<ResolvedAvatarUrl?>();
+      var calls = 0;
+      final avatars = FakeAvatarMediaCapability((uri, _) async {
+        if (++calls == 1) throw StateError('offline');
+        return pending.future;
+      });
+      Widget build(bool visible) => CupertinoApp(
+          home: TickerMode(
+              enabled: visible,
+              child: MatrixUserAvatar(
+                  avatarMedia: avatars,
+                  nickname: 'Alice',
+                  fallbackSeed: 'pending:alice',
+                  matrixAvatarUri: Uri.parse('mxc://matrix.test/pending'))));
+      await tester.pumpWidget(build(true));
+      await tester.pump(const Duration(seconds: 1));
+      expect(calls, 2);
+      if (background) {
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      } else {
+        await tester.pumpWidget(build(false));
+      }
+      pending.complete(const ResolvedAvatarUrl('https://safe/deferred'));
+      await tester.pump();
+      await tester.pump();
+      final hiddenUrl =
+          tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl;
+      if (background) {
+        tester.binding
+            .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      } else {
+        await tester.pumpWidget(build(true));
+      }
+      await tester.pump(const Duration(seconds: 2));
+      final activeUrl =
+          tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl;
+      await tester.pumpWidget(const SizedBox());
+      expect(hiddenUrl, isNull,
+          reason: 'hidden resolution must not start an image stream');
+      expect(activeUrl, 'https://safe/deferred');
+      expect(calls, 2);
+    });
+  }
+
   testWidgets('hidden Matrix avatar resumes retries only when visible again',
       (tester) async {
     var calls = 0;
