@@ -3,21 +3,21 @@
 ## Recovery
 - User authorization: execute all five phases and publish after tests; Android currently published baseline, include iOS; stable cross-device encrypted media hash confirmed.
 - Plan: ../../superpowers/plans/2026-09-11-performance-execution.md
-- Status: baseline and implementation setup; no production writes or new artifacts published.
+- Status: PERF01/02 and local PERF03 accepted; PERF05a immutable memory accepted; incremental timeline underway. No production writes or new artifacts published.
 - Worktree: D:/pythonProject/outsource/StarChat/.worktrees/performance-20260911, codex/performance-20260911; merges 7bc73ec3 and 0f65614d. Dirty main changes excluded.
 - Owner: parent integration/docs/baselines/delivery; subtask owners assigned explicitly.
 - Start: 2026-09-11T01:15+08:00 approximate, exact first tool timestamp unavailable.
-- Next: verify published versions, prepare Flutter dependency environment, reproduce avatar failure/publication dependencies.
+- Next: finish incremental timeline subagent and reviews; implement shared budgets/media scheduler and persisted moments pagination, then list/profile/viewer integration and full Android/iOS verification/publication. Device availability remains pending.
 
 ## Acceptance ledger
 | ID | Expected | Implementation | Tests | Production |
 | --- | --- | --- | --- | --- |
 | PERF00 | Baseline and reproducible load/fault cases | pending | pending | N/A |
-| PERF01 | Avatar retry/independent profile publication | pending | pending | pending |
-| PERF02 | Offline timeline independent of optional network operations | pending | pending | pending |
-| PERF03 | Draft and composer decoupling | pending | pending | pending |
+| PERF01 | Avatar retry/independent profile publication | accepted through4fd3f42a | scoped red/green + spec/quality approved; device pending | pending |
+| PERF02 | Offline timeline independent of optional network operations | accepted783caf1a | 62regressions + spec/quality approved | pending |
+| PERF03 | Draft and composer decoupling | local changes accepted1ad22847 | draft8/composer48/room10; native IME pending | pending |
 | PERF04 | Incremental bounded timeline with identity/ordering correctness | pending | pending | pending |
-| PERF05 | Shared cache budget and media priority scheduling | pending | pending | pending |
+| PERF05 | Shared cache budget and media priority scheduling | immutable warm media accepteda6ae3613; budget/scheduler pending | 49media regressions + spec/quality approved | pending |
 | PERF06 | Offline persisted moments pagination | pending | pending | pending |
 | PERF07 | Conversation/profile/viewer completion | pending | pending | pending |
 | PERF08 | Android/iOS functional and performance validation | pending | pending | pending |
