@@ -2,6 +2,8 @@
 
 Scope: publishing a mobile release to `www.liuhetong888.com` and publishing the in-app update popup via the business API. Proven by the 0.3.69 iOS release (`docs/verification/2026-09-09-ios-0369-enterprise-ota.md`) and the 0.3.73 Android release (`docs/verification/2026-09-10-android-0373-2077-release.md`). Read together with `docs/runbooks/android-apk-rebuild.md` for packaging gates.
 
+Cross-session entry: [mobile delivery workflow](mobile-delivery-workflow.md) and [last observed state](../workflow/current-state.md). Re-read live state before publication; historical package and image values below are not current-state guarantees.
+
 Server: `root@207.56.8.8`, SSH port `23421`. Containers: `starchat-gateway-1` (nginx), `starchat-business-api-1`, `starchat-business-postgres-1`. Web root: `/opt/starchat/frontend/`.
 
 ## 1. Artifact gates (before any upload)
@@ -20,7 +22,7 @@ Preserve SSH host-key checking and HTTPS certificate/hostname verification. If w
 
 History: two incidents shaped this procedure — a concurrent `rm /tmp/chunk-*` deleted an in-flight upload round (2026-09-09), and single-stream scp over the proxy route stalled repeatedly.
 
-1. Split locally into 16 MB chunks (Python, temp dir outside the repository).
+1. Split locally into 16 MB chunks (Python, a unique task directory under `docs/verification/artifacts/<date>/`, as required by AGENTS.md).
 2. Upload with a resumable, sequential script (poll remote size per chunk, append `tail -c +N | ssh cat >>`, retry with backoff). Sequential single-stream over the jumper route beat 4-way parallel scp over the proxy; do not run cleanup commands (`rm /tmp/...`) while any upload is running.
 3. Merge on the server **behind a SHA256 gate**: compare the merged file hash to the local baseline; on mismatch, stop — never install an unverified merge.
 4. Install with `install -m 0644` to a versioned, immutable filename (`ChatFlow-<ver>-<build>-arm64.apk`, `ChatFlow-<ver>-<build>-enterprise-<sha8>.ipa`). Keep the previous release file in place. For Android, update the `latest-<abi>.apk` symlinks only for ABIs actually shipped.
@@ -37,7 +39,7 @@ Authenticated `GET /api/v1/app-updates/latest` selects a platform projection. Th
 
 - Publish with the app's own `SettingService` inside the business-api container (same audit trail as the admin API without minting an admin JWT):
   `docker exec -i -e PYTHONUTF8=1 -w /opt/business-api starchat-business-api-1 python3 - < publish_script.py <inspect|apply|rollback>`
-  Use the inspect → apply pattern with a preflight backup, an audit-count assertion, and an endpoint projection check (see `docs/verification/artifacts/2026-09-10/android-release-2077-distribution/publish_settings_2077_pageurl.py`).
+  Use the inspect → apply pattern with a preflight backup, an audit-count assertion, and an endpoint projection check (see `docs/verification/artifacts/2026-09-10/android-release-2077-distribution/publish_settings_2077_pageurl.py`). Persist the backup in the host's private release directory before publication; container `/tmp` is only a working copy and disappears on container replacement. Validate exact partial/completed states for retry and rollback, including failure between separate platform transactions.
 - Since the 2026-09-10 platform-aware endpoint deployment (commit `8bec689e`,
   image `starchat-business-api:app-update-platform-20260910`; see
   `docs/verification/2026-09-10-mobile-0380-2084-release.md`), the five
@@ -59,10 +61,15 @@ Authenticated `GET /api/v1/app-updates/latest` selects a platform projection. Th
   explicitly cover them, for example with a shared download-page bridge or a
   one-time enterprise upgrade. Do not claim complete legacy isolation from an
   explicit `?platform=ios` probe alone.
-- The user chose to receive the 2085 IPA first and return an enterprise-signed
-  package before the next dual-platform transition publication. Prepare and
-  verify candidates now; do not publish 2085 settings or change OTA metadata
-  before that return. New 2085 clients request and validate the platform for
+- The 2085 enterprise IPA returned and iOS was published on 2026-09-10; see
+  `docs/verification/2026-09-10-ios-0381-enterprise-publication.md`.
+  iOS uses `/download?platform=ios&install=1`; the historical Android/default
+  URL uses `/download?install=1` to route legacy iOS to OTA and Android to its
+  existing APK. Android remains 2084 in that publication. Old iOS2073 still
+  sees shared 2084 metadata until upgraded; do not remove this bridge without
+  checking the legacy transition. For subsequent releases, wait for the actual
+  returned and verified enterprise file before switching iOS settings or OTA.
+  New 2085 clients request and validate the platform for
   both automatic and manual checks. Their additive API response includes
   `download_url`, with `apk_url` retained as a compatibility alias.
 - Publish the iOS keys **only after** the enterprise-signed IPA is installed

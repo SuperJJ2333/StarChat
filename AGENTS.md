@@ -13,6 +13,9 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 
 ## Required context
 
+- For bug fixes, new features, and Android/iOS releases, first read `docs/runbooks/mobile-delivery-workflow.md`, then `docs/workflow/current-state.md`. These are the user-requested cross-session entry points for Codex and Claude Code. Resume the linked task record; do not restart completed work from chat memory or treat historical snapshots as live production facts.
+- Record stage timings, evidence identity and the next executable step using `docs/workflow/task-template.md`. Keep each task's record separate. Read the task's existing authorization before asking again; missing signing artifacts or device feedback blocks only dependent steps.
+
 - Android APK packaging must follow `docs/runbooks/android-apk-rebuild.md` (user-confirmed on 2026-09-05): source build, conventional DEX/resource/manifest rebuild, alignment, stable user-tested signing identity, and artifact verification. A raw Flutter/Gradle APK is an intermediate, not the final user delivery. Do not rotate the key per build, silently revert to an older signer, or copy arbitrary padding/manifest changes from third-party tools. This replaces the earlier source-only/no-rebuild preference; no packer or Dart/R8 obfuscation is requested.
 
 - Read `docs/superpowers/specs/2026-08-12-starchat-product-modernization-design.md` before changing product behavior.
@@ -42,7 +45,7 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 1. Claim one bounded task and declare the files it owns.
 2. Write a failing test and verify that it fails for the intended missing behavior.
 3. Implement the minimum change required to pass.
-4. Run focused tests, then `pwsh -NoProfile -File scripts/verify.ps1` when that script exists.
+4. For executable code changes, run focused tests, then `pwsh -NoProfile -File scripts/verify.ps1` when that script exists; preflight its environment before launching. Apply the evidence reuse and change-impact rules in `docs/runbooks/mobile-delivery-workflow.md`: do not duplicate an equivalent completed gate on unchanged inputs. Documentation-only work needs link/consistency checks; unchanged artifact publication needs signature/content/distribution checks, not a new source build. Required security and platform-specific checks remain mandatory.
 5. Update OpenAPI, migrations, configuration, runbooks, and verification evidence with the code they describe.
 6. Run a specification-compliance review before a quality/security review.
 
