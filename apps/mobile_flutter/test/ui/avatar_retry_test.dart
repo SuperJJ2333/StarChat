@@ -1,8 +1,41 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/ui/foundation/avatar_retry.dart';
 
 void main() {
+  for (final mode in ['background', 'hidden', 'disposed']) {
+    testWidgets(
+        'cleanup finishing while $mode cannot start another image stream',
+        (tester) async {
+      final owner = AvatarRetry();
+      final cleanup = Completer<void>();
+      var downloads = 0;
+      final completed = owner.runAfter(cleanup.future, () => downloads++);
+      if (mode == 'background') {
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      } else if (mode == 'hidden') {
+        owner.setActive(false);
+      } else {
+        owner.reset();
+      }
+      cleanup.complete();
+      await completed;
+      await tester.pump(const Duration(seconds: 120));
+      expect(downloads, 0);
+      if (mode == 'background') {
+        tester.binding
+            .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      } else if (mode == 'hidden') {
+        owner.setActive(true);
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(downloads, mode == 'disposed' ? 0 : 1);
+      owner.reset();
+    });
+  }
+
   testWidgets('shared queue spaces due retries and cancels disposed owners',
       (tester) async {
     final owners = List.generate(12, (_) => AvatarRetry());

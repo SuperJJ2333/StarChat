@@ -66,13 +66,14 @@ final class _UserAvatarState extends State<UserAvatar> {
     _retrying = true;
     PerformanceMetrics.instance.increment(PerformanceCounter.avatarRetry);
     try {
-      await AvatarCache.evictFailedImage(provider);
-      if (!mounted || generation != _generation) return;
-      // ImageProvider equality intentionally ignores transport headers. A new
-      // Image state resolves its stream again using the same stable disk key.
-      setState(() {
-        _imageEpoch++;
-        _retrying = false;
+      await _retry.runAfter(AvatarCache.evictFailedImage(provider), () {
+        if (!mounted || generation != _generation) return;
+        // The retry owner defers reconstruction if cleanup outlives the
+        // foreground/visible interval, preserving the same stable disk key.
+        setState(() {
+          _imageEpoch++;
+          _retrying = false;
+        });
       });
     } catch (_) {
       if (!mounted || generation != _generation) return;

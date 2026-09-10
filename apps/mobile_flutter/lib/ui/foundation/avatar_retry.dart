@@ -12,6 +12,26 @@ final class AvatarRetry {
   int _attempt = 0;
   int _ticks = 0;
   bool _active = true;
+  int _generation = 0;
+
+  bool get isActive {
+    final state = WidgetsBinding.instance.lifecycleState;
+    return _active && (state == null || state == AppLifecycleState.resumed);
+  }
+
+  /// Keep async cleanup separate from the UI action that starts a new stream.
+  /// Reset/disposal cancels late completions; inactive owners defer the action.
+  Future<void> runAfter(
+      Future<void> preparation, VoidCallback completed) async {
+    final generation = _generation;
+    await preparation;
+    if (generation != _generation) return;
+    if (isActive) {
+      completed();
+    } else {
+      schedule(completed);
+    }
+  }
 
   void schedule(VoidCallback callback) {
     if (_callback != null) return;
@@ -31,6 +51,7 @@ final class AvatarRetry {
   }
 
   void reset() {
+    _generation++;
     _queue.remove(this);
     _callback = null;
     _attempt = 0;
