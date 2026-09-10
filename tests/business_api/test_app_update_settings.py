@@ -195,6 +195,7 @@ IOS_RESPONSE = {
     "min_supported_build": 2073,
     "notes": "iOS enterprise update",
     "apk_url": "https://example.com/ios/2074/",
+    "download_url": "https://example.com/ios/2074/",
 }
 UNCONFIGURED_RESPONSE = {
     "configured": False,
@@ -203,6 +204,7 @@ UNCONFIGURED_RESPONSE = {
     "min_supported_build": None,
     "notes": None,
     "apk_url": None,
+    "download_url": None,
 }
 
 
@@ -220,7 +222,8 @@ async def test_platform_releases_are_isolated_and_android_default_is_unchanged(c
         for suffix in ("", "?platform=android"):
             response = await client.get(f"/api/v1/app-updates/latest{suffix}", headers=headers)
             assert response.status_code == 200
-            assert response.json() == {"configured": True, **PAYLOAD}
+            assert response.json() == {"platform": "android", "configured": True,
+                                       **PAYLOAD, "download_url": PAYLOAD["apk_url"]}
         ios = await client.get("/api/v1/app-updates/latest?platform=ios", headers=headers)
         assert ios.status_code == 200
         assert ios.json() == IOS_RESPONSE
@@ -248,7 +251,7 @@ async def test_ios_publication_does_not_configure_android(context):
         for suffix in ("", "?platform=android"):
             response = await client.get(f"/api/v1/app-updates/latest{suffix}", headers=bearer(settings, "member-1"))
             assert response.status_code == 200
-            assert response.json() == UNCONFIGURED_RESPONSE
+            assert response.json() == {"platform": "android", **UNCONFIGURED_RESPONSE}
 
 
 @pytest.mark.asyncio

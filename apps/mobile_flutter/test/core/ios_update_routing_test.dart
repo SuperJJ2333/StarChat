@@ -46,12 +46,13 @@ void main() {
         sessionStore: SecureSessionStore(_Memory()),
         client: MockClient((request) async {
           expect(request.url.path, '/api/v1/app-updates/latest');
-          expect(request.url.queryParameters,
-              platform == TargetPlatform.iOS ? {'platform': 'ios'} : isEmpty);
+          expect(request.url.queryParameters, {
+            'platform': platform == TargetPlatform.iOS ? 'ios' : 'android',
+          });
           return http.Response(
               jsonEncode({
                 'configured': true,
-                if (platform == TargetPlatform.iOS) 'platform': 'ios',
+                'platform': platform == TargetPlatform.iOS ? 'ios' : 'android',
                 'latest_version': '0.3.69',
                 'latest_build': 2074,
                 'apk_url': platform == TargetPlatform.iOS
@@ -80,4 +81,27 @@ void main() {
     );
     expect((await api.latestAppUpdate())['configured'], false);
   });
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    for (final marker in [null, 'android', 'ios']) {
+      final expected = platform == TargetPlatform.iOS ? 'ios' : 'android';
+      if (marker == expected) continue;
+      test('$platform rejects release projection marked $marker', () async {
+        debugDefaultTargetPlatformOverride = platform;
+        final api = BusinessApiClient(
+          baseUri: Uri.parse('https://business.example'),
+          sessionStore: SecureSessionStore(_Memory()),
+          client: MockClient((_) async => http.Response(
+              jsonEncode({
+                'configured': true,
+                if (marker != null) 'platform': marker,
+                'latest_version': '0.4.0',
+                'latest_build': 2200,
+                'download_url': 'https://www.example.com/wrong-platform',
+              }),
+              200)),
+        );
+        expect((await api.latestAppUpdate())['configured'], false);
+      });
+    }
+  }
 }

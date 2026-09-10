@@ -730,12 +730,13 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> redPacketLimits() =>
       getJson('/red-packets/limits');
   Future<Map<String, dynamic>> latestAppUpdate() async {
-    final ios = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-    final response = await getJson(
-        ios ? '/app-updates/latest?platform=ios' : '/app-updates/latest');
-    // Old servers ignore unknown query parameters and return Android releases.
-    // Require an explicit iOS projection before displaying any update link.
-    if (ios && response['platform'] != 'ios') {
+    final platform = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS
+        ? 'ios'
+        : 'android';
+    final response = await getJson('/app-updates/latest?platform=$platform');
+    // Both update entry points share this boundary. A missing or mismatched
+    // platform can never offer a download intended for another operating system.
+    if (response['platform'] != platform) {
       return {'configured': false};
     }
     return response;

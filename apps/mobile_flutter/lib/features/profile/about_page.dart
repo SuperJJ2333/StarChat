@@ -119,11 +119,15 @@ final class _AboutDetailPageState extends State<AboutDetailPage> {
       currentVersion: AppConfig.appVersionName,
     );
     if (pending != null) {
-      await showAppUpdateDialog(
-        context,
-        info: pending,
-        currentBuild: AppConfig.appBuildNumber,
-      );
+      try {
+        await showAppUpdateDialog(
+          context,
+          info: pending,
+          currentBuild: AppConfig.appBuildNumber,
+        );
+      } finally {
+        if (mounted) setState(() => checking = false);
+      }
       return;
     }
     await showCupertinoDialog<void>(
