@@ -5,8 +5,60 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/emoji_preview_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
+import 'package:liuhetong_mobile/features/matrix/media_memory_budget.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 
 void main() {
+  test('preview disk identity can differ while account memory stays canonical',
+      () {
+    final images = MediaMemoryCache(
+        budget: sharedMediaMemoryBudget, accountNamespace: '@a:test');
+    final preview = RoomImagePreviewCache(
+        accountId: 'https://test|@a:test',
+        memoryNamespace: '@a:test',
+        roomId: 'r',
+        read: (_) async => null,
+        write: (_, __) async {});
+    final first = images.put('image', Uint8List.fromList([1, 2]));
+    preview.seed('event', Uint8List.fromList([1, 2]));
+    expect(preview.get('event'), same(first));
+    preview.dispose();
+    images.dispose();
+  });
+
+  test('clear while probing disk cannot continue into a source load', () async {
+    final disk = Completer<Uint8List?>();
+    var sources = 0;
+    final cache = RoomImagePreviewCache(
+        accountId: 'a',
+        roomId: 'r',
+        read: (_) => disk.future,
+        write: (_, __) async {});
+    final loading = cache.load('event', () async {
+      sources++;
+      return Uint8List(1);
+    });
+    final assertion = expectLater(loading, throwsStateError);
+    sharedMediaMemoryBudget.clear();
+    disk.complete(null);
+    await assertion;
+    expect(sources, 0);
+    cache.dispose();
+  });
+  test('global clear invalidates a pending preview disk probe', () async {
+    final disk = Completer<Uint8List?>();
+    final cache = RoomImagePreviewCache(
+        accountId: 'a',
+        roomId: 'r',
+        read: (_) => disk.future,
+        write: (_, __) async {});
+    final loading = cache.readCached('event');
+    sharedMediaMemoryBudget.clear();
+    disk.complete(Uint8List.fromList([1]));
+    expect(await loading, isNull);
+    expect(cache.get('event'), isNull);
+    cache.dispose();
+  });
   test('cache-only disk probe deduplicates and populates synchronous memory',
       () async {
     final bytes = Uint8List.fromList([1, 2, 3]);

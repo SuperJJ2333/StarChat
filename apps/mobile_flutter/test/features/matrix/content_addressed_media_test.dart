@@ -148,6 +148,59 @@ Future<MatrixRoomTimelineAdapter> _adapter(
 }
 
 void main() {
+  test('video loader that already caches its content never awaits itself',
+      () async {
+    final payload = Uint8List.fromList(
+        [0, 0, 0, 24, ...ascii.encode('ftypisom'), ...List<int>.filled(12, 0)]);
+    final key = MediaCacheKey(
+        roomId: '!nested-video',
+        eventId: 'v',
+        contentSha256: sha256.convert(payload).toString());
+    var downloads = 0;
+    final load = resolveCachedVideoFile(
+        key: key,
+        loaderCachesContent: true,
+        decrypt: () => loadMediaWithCache(key, () async {
+              downloads++;
+              return payload;
+            }));
+    try {
+      final file = await load.timeout(const Duration(seconds: 1));
+      expect(await file.readAsBytes(), payload);
+      expect(downloads, 1);
+    } finally {
+      clearMediaMemoryCaches();
+      await load.then<void>((_) {}, onError: (Object _) {});
+    }
+  });
+
+  test('cold cache source work has a shared three-request limit', () async {
+    final gates = List.generate(4, (_) => Completer<Uint8List>());
+    final threeStarted = Completer<void>();
+    var started = 0;
+    final loads = [
+      for (var i = 0; i < 4; i++)
+        loadMediaWithCache(
+            MediaCacheKey(
+                roomId: '!scheduler',
+                eventId: '$i',
+                contentSha256: sha256.convert([i]).toString()), () {
+          started++;
+          if (started == 3) threeStarted.complete();
+          return gates[i].future;
+        })
+    ];
+    await threeStarted.future.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    final beforeRelease = started;
+    for (var i = 0; i < gates.length; i++) {
+      gates[i].complete(Uint8List.fromList([i]));
+    }
+    await Future.wait(loads);
+    expect(beforeRelease, 3);
+    expect(started, 4);
+  });
+
   final bytes = Uint8List.fromList(utf8.encode('abc'));
   final hash = sha256.convert(bytes).toString();
   setUp(() async {

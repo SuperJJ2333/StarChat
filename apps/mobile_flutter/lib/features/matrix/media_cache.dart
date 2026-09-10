@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'content_addressed_media.dart';
+import 'media_load_scheduler.dart';
+import 'media_memory_budget.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -133,7 +135,7 @@ final class MediaCache {
       if (expected != null && expected == await file.length()) {
         final name = file.uri.pathSegments.last.split('.').first;
         validateContentSha256(name);
-        verifyMediaContent(await file.readAsBytes(), name);
+        await verifyMediaContentStream(file.openRead(), name);
         return true;
       }
     } on FileSystemException {
@@ -340,14 +342,29 @@ extension _FileStatOrNull on File {
 /// M04：LRU 同时受**字节预算**与条目上限约束——大视频按实际字节数
 /// 加权，不再出现"3 条 4K 视频"式的条数掩盖内存失控；超预算从最旧
 /// 条目开始回收。
+final class _VerifiedMediaBytes {
+  const _VerifiedMediaBytes(this.digest, this.namespace);
+  final String digest;
+  final Object namespace;
+}
+
 final class MediaMemoryCache {
   MediaMemoryCache({
     this.maxEntries = 48,
     this.maxBytes = 64 * 1024 * 1024,
-  });
+    this.budget,
+    this.accountNamespace,
+  }) {
+    budget?.register(_budgetOwner, clear);
+  }
 
   final int maxEntries;
   final int maxBytes;
+  final MediaMemoryBudget? budget;
+  final String? accountNamespace;
+  final _budgetOwner = Object();
+  static final _verified = Expando<_VerifiedMediaBytes>();
+  bool _disposed = false;
 
   final _entries = <String, Uint8List>{};
   final _inFlight = <String, Future<Uint8List>>{};
@@ -355,6 +372,9 @@ final class MediaMemoryCache {
   int _generation = 0;
   void clear() {
     _generation++;
+    for (final key in _entries.keys) {
+      budget?.forget(_budgetOwner, key);
+    }
     _entries.clear();
     _inFlight.clear();
     _totalBytes = 0;
@@ -363,9 +383,19 @@ final class MediaMemoryCache {
   /// 当前内存占用（字节；诊断/测试）。
   int get totalBytes => _totalBytes;
 
+  /// Token for external asynchronous local reads that seed this cache.
+  int get generation => _generation;
+
+  void dispose() {
+    clear();
+    budget?.unregister(_budgetOwner);
+    _disposed = true;
+  }
+
   /// Seed an outgoing local preview before network work. This preserves any
   /// existing source flight and enforces the same byte/entry budget as loads.
   Uint8List put(String eventId, Uint8List bytes) {
+    if (_disposed) throw StateError('Media cache disposed');
     final owned = _ownVerifiedBytes(eventId, bytes);
     _store(eventId, owned);
     return owned;
@@ -378,26 +408,65 @@ final class MediaMemoryCache {
   // verified bytes. Warm reads can then reuse the same image identity in O(1).
   Uint8List _ownVerifiedBytes(String key, Uint8List bytes) {
     if (identical(_entries[key], bytes)) return bytes;
-    final owned = Uint8List.fromList(bytes).asUnmodifiableView();
+    final namespace = _namespace(key);
     final hash = _contentKey.firstMatch(key)?.group(1);
-    if (hash != null && sha256.convert(owned).toString() != hash) {
+    final known = _verified[bytes];
+    final owned = known != null && known.namespace == namespace
+        ? bytes
+        : Uint8List.fromList(bytes).asUnmodifiableView();
+    final digest = known?.digest ??
+        (hash != null || budget != null
+            ? sha256.convert(owned).toString()
+            : null);
+    if (hash != null && digest != hash) {
       throw const FormatException('Media content hash mismatch');
     }
-    return owned;
+    if (digest == null) return owned;
+    final canonical = budget?.find(namespace, digest) ?? owned;
+    _verified[canonical] = _VerifiedMediaBytes(digest, namespace);
+    return canonical;
+  }
+
+  Object _namespace(String key) {
+    if (accountNamespace != null) return accountNamespace!;
+    final raw = key.startsWith('thumb:') ? key.substring(6) : key;
+    try {
+      final separator = raw.lastIndexOf(':content:');
+      final parsed =
+          jsonDecode(separator < 0 ? raw : raw.substring(0, separator));
+      if (parsed is String) return parsed;
+      if (parsed is List && parsed.isNotEmpty && parsed.first is String) {
+        return parsed.first as String;
+      }
+    } on FormatException {/* Unscoped legacy keys remain cache-local. */}
+    return _budgetOwner;
   }
 
   void _store(String key, Uint8List bytes) {
+    budget?.forget(_budgetOwner, key);
     final previous = _entries.remove(key);
     if (previous != null) _totalBytes -= previous.length;
     _entries[key] = bytes;
     _totalBytes += bytes.length;
     _evictToBudget();
+    if (identical(_entries[key], bytes) && budget != null) {
+      final verified = _verified[bytes]!;
+      budget!.retain(_budgetOwner, key, verified.namespace, verified.digest,
+          bytes, () => _removeEntry(key));
+    }
+  }
+
+  void _removeEntry(String key) {
+    final bytes = _entries.remove(key);
+    if (bytes != null) _totalBytes -= bytes.length;
+    budget?.forget(_budgetOwner, key);
   }
 
   Uint8List? get(String eventId) {
     final bytes = _entries.remove(eventId);
     if (bytes == null) return null;
     _entries[eventId] = bytes;
+    budget?.touch(_budgetOwner, eventId);
     return bytes;
   }
 
@@ -405,6 +474,7 @@ final class MediaMemoryCache {
     String eventId,
     Future<Uint8List> Function() load,
   ) {
+    if (_disposed) return Future.error(StateError('Media cache disposed'));
     final cached = get(eventId);
     if (cached != null) return SynchronousFuture<Uint8List>(cached);
     final existing = _inFlight[eventId];
@@ -425,17 +495,17 @@ final class MediaMemoryCache {
     while (_entries.isNotEmpty &&
         (_totalBytes > maxBytes || _entries.length > maxEntries)) {
       final oldestKey = _entries.keys.first;
-      final removed = _entries.remove(oldestKey);
-      if (removed != null) _totalBytes -= removed.length;
+      _removeEntry(oldestKey);
     }
   }
 }
 
 /// 解密并缓存媒体附件：优先命中本地缓存；未命中时调用 loader 解密、
 /// 落盘后返回字节。
-final _sharedMediaBytes = MediaMemoryCache();
+final _sharedMediaBytes = MediaMemoryCache(budget: sharedMediaMemoryBudget);
 final contentMediaMemoryCache = _sharedMediaBytes;
 final _mediaLoads = <String, Future<Uint8List>>{};
+final _mediaPriorities = <String, MediaLoadPriority>{};
 int _mediaGeneration = 0;
 final _decodedMediaCacheClearers = <VoidCallback>{};
 
@@ -449,16 +519,20 @@ void registerDecodedMediaCacheClearer(VoidCallback clear) {
 /// the shared memory cache after this boundary.
 void clearMediaMemoryCaches() {
   _mediaGeneration++;
+  sharedMediaMemoryBudget.clear();
   _sharedMediaBytes.clear();
   videoMemoryCache.clear();
   _mediaLoads.clear();
+  _mediaPriorities.clear();
+  mediaLoadScheduler.cancelAll();
   for (final clear in _decodedMediaCacheClearers) {
     clear();
   }
 }
 
 Future<Uint8List> loadMediaWithCache(
-    MediaCacheKey key, Future<Uint8List> Function() decrypt) async {
+    MediaCacheKey key, Future<Uint8List> Function() decrypt,
+    {MediaLoadPriority? priority, bool? isVideo}) async {
   final generation = _mediaGeneration;
   final root = await MediaCache._root(key.accountId);
   if (generation != _mediaGeneration) {
@@ -475,6 +549,13 @@ Future<Uint8List> loadMediaWithCache(
     return warm;
   }
   final existing = _mediaLoads[identity];
+  final demand = priority ?? currentMediaLoadPriority;
+  final previousPriority = _mediaPriorities[identity];
+  if (previousPriority == null || demand.index < previousPriority.index) {
+    _mediaPriorities[identity] = demand;
+  }
+  final taskKey = '$generation:$identity';
+  mediaLoadScheduler.promote(taskKey, demand);
   final flight = existing ??
       (() async {
         var disk = await MediaCache.cached(key.roomId, key.eventId,
@@ -483,7 +564,16 @@ Future<Uint8List> loadMediaWithCache(
           disk = await MediaCache.cached('source', key.sourceIdentity!,
               accountId: key.accountId, contentSha256: key.contentSha256);
         }
-        final bytes = disk == null ? await decrypt() : null;
+        if (generation != _mediaGeneration) {
+          throw StateError('Media cache session changed');
+        }
+        final bytes = disk == null
+            ? await mediaLoadScheduler
+                .request(taskKey, decrypt,
+                    priority: _mediaPriorities[identity] ?? demand,
+                    isVideo: isVideo ?? currentMediaLoadIsVideo)
+                .value
+            : null;
         if (bytes != null) verifyMediaContent(bytes, key.contentSha256);
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
@@ -531,7 +621,10 @@ Future<Uint8List> loadMediaWithCache(
     }
     return bytes;
   } finally {
-    if (identical(_mediaLoads[identity], flight)) _mediaLoads.remove(identity);
+    if (identical(_mediaLoads[identity], flight)) {
+      _mediaLoads.remove(identity);
+      _mediaPriorities.remove(identity);
+    }
   }
 }
 
@@ -571,11 +664,12 @@ Future<Uint8List> cacheOutgoingMedia({
       () async => bytes);
 }
 
-/// 视频播放的页级共享内存缓存（在途去重 + LRU）；视频字节大，
-/// 按字节预算（256MB）与条目上限双重约束，大视频优先经磁盘文件播放。
+/// Video source flights share the same 32 MiB encoded-byte budget as images.
+/// Playback uses persistent files; resident bytes are evicted under that budget.
 final videoMemoryCache = MediaMemoryCache(
   maxEntries: 6,
-  maxBytes: 256 * 1024 * 1024,
+  maxBytes: 32 * 1024 * 1024,
+  budget: sharedMediaMemoryBudget,
 );
 
 /// 解析视频播放文件（E2E 修复：重复打开全量下载 + 临时文件泄漏）。
@@ -586,18 +680,29 @@ Future<File> resolveCachedVideoFile({
   required MediaCacheKey key,
   required Future<Uint8List> Function() decrypt,
   MediaMemoryCache? memoryCache,
+  // SDK attachment loaders already own the content-cache flight. They must
+  // not be wrapped in another same-key content-cache request.
+  bool loaderCachesContent = false,
 }) async {
   final generation = _mediaGeneration;
   final disk = await MediaCache.cached(key.roomId, key.eventId,
       accountId: key.accountId, contentSha256: key.contentSha256);
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
   if (disk != null) {
-    if (generation != _mediaGeneration) {
-      throw StateError('Media cache session changed');
-    }
     return disk;
   }
-  final bytes = await (memoryCache ?? videoMemoryCache)
-      .putIfAbsent(key.identity, () => loadMediaWithCache(key, decrypt));
+  final bytes = await (memoryCache ?? videoMemoryCache).putIfAbsent(
+      key.identity,
+      () => loaderCachesContent
+          ? withMediaLoadPriority(MediaLoadPriority.interactive, decrypt,
+              isVideo: true)
+          : loadMediaWithCache(key, decrypt,
+              priority: MediaLoadPriority.interactive, isVideo: true));
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
   if (await MediaCache.cached(key.roomId, key.eventId,
           accountId: key.accountId, contentSha256: key.contentSha256) ==
       null) {
@@ -607,8 +712,12 @@ Future<File> resolveCachedVideoFile({
     await MediaCache.store(key.roomId, key.eventId, bytes,
         accountId: key.accountId, contentSha256: key.contentSha256);
   }
-  return MediaCache.preparePlaybackFile(key.roomId, key.eventId,
+  final playback = await MediaCache.preparePlaybackFile(key.roomId, key.eventId,
       accountId: key.accountId, contentSha256: key.contentSha256);
+  if (generation != _mediaGeneration) {
+    throw StateError('Media cache session changed');
+  }
+  return playback;
 }
 
 final class MediaCacheKey {

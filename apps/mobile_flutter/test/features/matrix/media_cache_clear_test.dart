@@ -40,6 +40,47 @@ void main() {
     PathProviderPlatform.instance = oldPaths;
     await root.delete(recursive: true);
   });
+  for (final cachedLoader in [false, true]) {
+    test('video miss cannot cross a clear boundary (cached=$cachedLoader)',
+        () async {
+      final paths = PathProviderPlatform.instance as _Paths;
+      paths.blockAt = 1;
+      var sources = 0;
+      final loading = resolveCachedVideoFile(
+          key: const MediaCacheKey(
+              accountId: 'a', roomId: 'r', eventId: 'video'),
+          loaderCachesContent: cachedLoader,
+          decrypt: () async {
+            sources++;
+            return Uint8List.fromList([1]);
+          });
+      final assertion = expectLater(loading, throwsStateError);
+      await paths.blocked.future;
+      clearMediaMemoryCaches();
+      paths.release.complete();
+      await assertion;
+      expect(sources, 0);
+    });
+  }
+  test('clear during disk lookup prevents an old source from starting',
+      () async {
+    final paths = PathProviderPlatform.instance as _Paths;
+    // Initial root, legacy cleanup, then the actual disk cache lookup.
+    paths.blockAt = 3;
+    var downloads = 0;
+    final load = loadMediaWithCache(
+        const MediaCacheKey(accountId: 'a', roomId: 'r', eventId: 'e'),
+        () async {
+      downloads++;
+      return Uint8List.fromList([1]);
+    });
+    final assertion = expectLater(load, throwsStateError);
+    await paths.blocked.future;
+    clearMediaMemoryCaches();
+    paths.release.complete();
+    await assertion;
+    expect(downloads, 0);
+  });
   test('clear removes only selected account objects and all its refs',
       () async {
     final bytes = Uint8List.fromList([1, 2, 3]);

@@ -4,6 +4,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'room_draft_store.dart';
+import 'media_load_scheduler.dart';
+import 'media_memory_budget.dart';
 
 import 'package:flutter/cupertino.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
@@ -323,6 +325,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final _stableMessageKeys = <String, GlobalKey>{};
   late final roomImagePreviewCache = RoomImagePreviewCache(
     accountId: '${roomInfo.homeserver}|${roomInfo.currentUserId}',
+    memoryNamespace: roomInfo.currentUserId ?? '',
     roomId: roomInfo.id,
   );
   bool _locatingMessage = false;
@@ -337,11 +340,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final recalledDrafts = <String, String>{};
   final selection = MessageSelectionController();
   // 会话级图片内存缓存：滚动往复时同步命中，杜绝重复解密与布局抖动。
-  final imageMemoryCache = MediaMemoryCache();
+  late final imageMemoryCache = MediaMemoryCache(
+      budget: sharedMediaMemoryBudget,
+      accountNamespace: roomInfo.currentUserId ?? '');
 
   // 缩略图独立缓存（键前缀 thumb:）：消息气泡优先渲染发送端压缩演绎版，
-  // 与全量原图缓存互不挤占。
-  final thumbnailMemoryCache = MediaMemoryCache();
+  // 与原图、视频和房间预览共享编码字节预算。
+  late final thumbnailMemoryCache = MediaMemoryCache(
+      budget: sharedMediaMemoryBudget,
+      accountNamespace: roomInfo.currentUserId ?? '');
 
   final _posterDisk = VideoPosterDiskStore();
   final Map<String, String> _posterKeys = {};
@@ -1162,6 +1169,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         fullscreenDialog: true,
         builder: (_) => VideoViewerPage(
           loadFile: () => resolveCachedVideoFile(
+            loaderCachesContent: true,
             key: _mediaKey(message.id),
             decrypt: () => _downloadMedia(message.id),
           ),
@@ -1184,7 +1192,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         return timeline.loadThumbnail(messageId);
       }
       final file = await resolveCachedVideoFile(
-          key: _mediaKey(messageId), decrypt: () => _downloadMedia(messageId));
+          loaderCachesContent: true,
+          key: _mediaKey(messageId),
+          decrypt: () => _downloadMedia(messageId));
       return extractVideoPoster(file.path);
     }
     final key = _posterKeys.putIfAbsent(
@@ -1203,6 +1213,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final poster = await timeline.loadThumbnail(messageId);
         if (poster != null && poster.isNotEmpty) return poster;
         final file = await resolveCachedVideoFile(
+          loaderCachesContent: true,
           key: _mediaKey(messageId),
           decrypt: () => _downloadMedia(messageId),
         );
@@ -2404,7 +2415,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           RoomGalleryImage(
             id: message.id,
             loadPreview: () => _loadImagePreview(message),
-            loadOriginal: () => controller!.loadAttachment(message.id),
+            loadOriginal: () => withMediaLoadPriority(
+                MediaLoadPriority.interactive,
+                () => controller!.loadAttachment(message.id)),
             originalSize: message.attachmentSize,
             onForward: () => _forwardMessages([message]),
           ),
@@ -3244,6 +3257,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     latestMessageAnchor.dispose();
     messageListScrolling.dispose();
     roomImagePreviewCache.dispose();
+    imageMemoryCache.dispose();
+    thumbnailMemoryCache.dispose();
     unawaited(videoPosterCache
         .clearAll()
         .whenComplete(_posterDisk.dispose)
