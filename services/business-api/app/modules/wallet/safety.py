@@ -185,21 +185,10 @@ class WalletSafetyMixin:
                 if existing.direction != direction or existing.requested_amount != requested_amount:
                     raise ValueError('conversion idempotency payload conflict')
                 return self._conversion_result(existing)
-            require_coverage(session, reserve, policy=self.reserve_policy)
-            row = WalletConversion(id=str(uuid4()), user_id=user_id, idempotency_key=idempotency_key, direction=direction,
-                requested_amount=requested_amount, source_amount=amount, target_amount=amount, status='COMPLETED', created_at=datetime.now(timezone.utc))
-            ledger = LedgerService(self.factory)
-            ledger.reserve_policy = self.reserve_policy
-            common = dict(actor_id=user_id, reason_code=direction, idempotency_key=f'convert:{row.id}', scope='wallet.conversion', session=session)
-            if direction == 'USDT_TO_CAIBI':
-                self.wallet_ledger.post(entries={user_id: -amount, 'PLATFORM_CONVERSION': amount}, **common)
-                ledger.post(entries={user_id: amount, 'PLATFORM_CLEARING': -amount}, **common)
-            else:
-                ledger.post(entries={user_id: -amount, 'PLATFORM_CLEARING': amount}, **common)
-                self.wallet_ledger.post(entries={user_id: amount, 'PLATFORM_CONVERSION': -amount}, **common)
-            session.add(row)
-            audit_write(session, user_id, row.id, 'wallet.converted', direction)
-            session.flush()
+            from app.modules.wallet.conversions import convert_in_session
+            row = convert_in_session(session, self.factory, user_id=user_id, direction=direction,
+                amount=amount, requested_amount=requested_amount, idempotency_key=idempotency_key,
+                reserve_policy=self.reserve_policy)
             return self._conversion_result(row)
 
     @staticmethod

@@ -1236,7 +1236,7 @@
     }
   },
   "screens": {
-    "expectedCount": 338
+    "expectedCount": 344
   },
   "adminCompletion20260910": {
     "html": [
@@ -1279,5 +1279,58 @@
     "interaction": "五工具底部、撤销重做右上、完成右下；生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
     "tokens": "Reuse existing color, spacing, typography, radius and touch-size tokens; landscape canvas colors are fixture artwork, not UI tokens",
     "verification": "Source review only; user explicitly requested no self testing"
+  },
+  "walletBindingPaymentRevision": {
+    "date": "2026-09-11",
+    "plan": "docs/superpowers/plans/2026-09-11-wallet-binding-payment.md",
+    "flutter": [
+      "lib/features/wallet/wallet_page.dart",
+      "lib/features/wallet/manual_wallet_page.dart",
+      "lib/features/payment_pin/payment_pin_dialog.dart"
+    ],
+    "html": [
+      "frontend/src/screens/wallet-binding.js",
+      "frontend/src/screens/finance.js",
+      "frontend/src/styles/primitives.css"
+    ],
+    "htmlTags": [
+      "app-navigation-bar",
+      "app-action-button",
+      "app-status-chip"
+    ],
+    "props": [
+      "binding status",
+      "official deposit address readiness",
+      "current point balance",
+      "amount draft",
+      "payment PIN state"
+    ],
+    "variants": [
+      "wallet home TRON card",
+      "independent deposit page",
+      "independent withdrawal page",
+      "existing six-digit payment PIN page"
+    ],
+    "states": [
+      "unbound",
+      "binding",
+      "bound",
+      "unavailable",
+      "amount-invalid",
+      "insufficient",
+      "payment-pin",
+      "pin-error",
+      "pin-cancelled",
+      "demo-complete"
+    ],
+    "tokens": [
+      "WeChatColors.brandPrimary = --color-brand-primary",
+      "WeChatColors.textSecondary = --color-text-secondary",
+      "WeChatColors.elevatedSurface = --color-surface-elevated",
+      "existing spacing/radius/touch/typography tokens"
+    ],
+    "acceptance": "Title stays 钱包; rebind icon inside TRON card; deposit/withdraw disabled until ACTIVE and ready; current point balance and full amount; 1 point = 1 USDT, zero fee, minimum 10 USDT; explicit PIN confirm/cancel/error.",
+    "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
+    "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
   }
 }

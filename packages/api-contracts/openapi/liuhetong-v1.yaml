@@ -590,7 +590,8 @@
           "action": {
             "enum": [
               "chat_transfer.create",
-              "red_packet.create"
+              "red_packet.create",
+              "wallet.payout.create"
             ],
             "title": "Action",
             "type": "string"
@@ -1473,6 +1474,15 @@
             "title": "Amount",
             "type": "string"
           },
+          "cancellation_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Cancellation Asset",
+            "type": "string"
+          },
           "candidate_txid": {
             "anyOf": [
               {
@@ -1486,6 +1496,26 @@
           },
           "digest": {
             "title": "Digest",
+            "type": "string"
+          },
+          "funding_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Amount"
+          },
+          "funding_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Funding Asset",
             "type": "string"
           },
           "id": {
@@ -4505,6 +4535,21 @@
             ],
             "title": "Mfa Proof"
           },
+          "payment_authorization": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 256,
+                "minLength": 20,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Authorization"
+          },
           "quote_id": {
             "maxLength": 36,
             "minLength": 1,
@@ -4516,6 +4561,36 @@
           "quote_id"
         ],
         "title": "PayoutBody",
+        "type": "object"
+      },
+      "PayoutQuoteBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "pattern": "^(0|[1-9][0-9]{0,23})\\.[0-9]{6}$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "expected_binding_version": {
+            "minimum": 1.0,
+            "title": "Expected Binding Version",
+            "type": "integer"
+          },
+          "funding_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Funding Asset",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "expected_binding_version"
+        ],
+        "title": "PayoutQuoteBody",
         "type": "object"
       },
       "PayoutReconciliationPreviewBody": {
@@ -4559,6 +4634,15 @@
             "title": "Amount",
             "type": "string"
           },
+          "cancellation_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Cancellation Asset",
+            "type": "string"
+          },
           "candidate_txid": {
             "anyOf": [
               {
@@ -4572,6 +4656,26 @@
           },
           "digest": {
             "title": "Digest",
+            "type": "string"
+          },
+          "funding_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Amount"
+          },
+          "funding_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Funding Asset",
             "type": "string"
           },
           "id": {
@@ -5437,8 +5541,27 @@
             "title": "Binding Version",
             "type": "integer"
           },
+          "cancellation_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Cancellation Asset",
+            "type": "string"
+          },
           "contract": {
             "title": "Contract",
+            "type": "string"
+          },
+          "conversion_fee": {
+            "default": "0.000000",
+            "title": "Conversion Fee",
+            "type": "string"
+          },
+          "conversion_rate": {
+            "default": "1",
+            "title": "Conversion Rate",
             "type": "string"
           },
           "created_at": {
@@ -5459,6 +5582,26 @@
           },
           "finality_policy": {
             "title": "Finality Policy",
+            "type": "string"
+          },
+          "funding_amount": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Amount"
+          },
+          "funding_asset": {
+            "default": "USDT",
+            "enum": [
+              "CAIBI",
+              "USDT"
+            ],
+            "title": "Funding Asset",
             "type": "string"
           },
           "global_24h": {
@@ -21804,7 +21947,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AmountBody"
+                "$ref": "#/components/schemas/PayoutQuoteBody"
               }
             }
           },
@@ -21858,6 +22001,74 @@
           }
         ],
         "summary": "Quote",
+        "tags": [
+          "wallet",
+          "manual-wallet"
+        ]
+      }
+    },
+    "/api/v1/wallet/manual/payout-quotes/{quote_id}": {
+      "get": {
+        "operationId": "quote_status_api_v1_wallet_manual_payout_quotes__quote_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "quote_id",
+            "required": true,
+            "schema": {
+              "title": "Quote Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuoteView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Quote Status",
         "tags": [
           "wallet",
           "manual-wallet"

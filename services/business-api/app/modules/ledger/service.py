@@ -45,9 +45,14 @@ class LedgerService:
         return release_manual(session, actor_id=actor_id, reason_code=reason_code, expected_epoch=expected_epoch)
 
     def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None, session=None) -> LedgerTransaction:
+        return self._post(entries=entries, actor_id=actor_id, reason_code=reason_code,
+            idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=session)
+
+    def _post(self, *, entries, actor_id, reason_code, idempotency_key, scope,
+              reversal_of_id=None, session=None, conversion_release_id=None):
         if session is None:
             with self.session_factory.begin() as owned_session:
-                return self.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=owned_session)
+                return self._post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=owned_session, conversion_release_id=conversion_release_id)
         if not idempotency_key or not reason_code or not actor_id:
             raise ValueError("idempotency key, actor and reason code are required")
         normalized = {account: money(amount) for account, amount in entries.items() if money(amount) != 0}
@@ -65,7 +70,11 @@ class LedgerService:
             raise ValueError('redeemable outgoing globally restricted')
         liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CLEARING', 'PLATFORM_FEE'}), Decimal('0'))
         if liability_delta > 0:
-            require_coverage(session, reserve, caibi_delta=liability_delta, policy=self.reserve_policy)
+            if conversion_release_id is None:
+                require_coverage(session, reserve, caibi_delta=liability_delta, policy=self.reserve_policy)
+            else:
+                self._require_conversion_replacement(session, normalized, actor_id, reason_code,
+                    scope, idempotency_key, reversal_of_id, conversion_release_id)
         if reserve is not None:
             reserve.version += 1
         # 并发扣减防护：先对被扣账户取事务级锁再做余额校验，
@@ -90,6 +99,45 @@ class LedgerService:
         session.flush()
         _ = tx.entries
         return tx
+
+    def _require_conversion_replacement(self, session, normalized, actor_id, reason_code,
+                                        scope, idempotency_key, original_id, release_id):
+        """Only a verified, exact paired USDT decrease may replace CAIBI debt.
+
+        No reserve evidence is fabricated and no unrestricted issuance bypass is
+        exposed by post(). Every other positive-liability write keeps coverage.
+        """
+        from app.modules.wallet.service import WalletLedger
+        original = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries))
+            .where(LedgerTransaction.id == original_id))
+        if (original is None or original.scope != 'wallet.conversion'
+                or original.reason_code != 'CAIBI_TO_USDT' or original.actor_id != actor_id
+                or not original.idempotency_key.startswith('convert:')
+                or scope != 'wallet.conversion_reversal' or reason_code != 'MANUAL_PAYOUT_CANCELLED'):
+            raise ValueError('invalid conversion reversal source')
+        conversion_id = original.idempotency_key.removeprefix('convert:')
+        if idempotency_key != 'reverse:'+conversion_id:
+            raise ValueError('invalid conversion reversal link')
+        source = {entry.account_id: money(entry.amount) for entry in original.entries}
+        amount = normalized.get(actor_id, Decimal('0'))
+        if (amount <= 0 or normalized != {actor_id: amount, 'PLATFORM_CLEARING': -amount}
+                or source != {actor_id: -amount, 'PLATFORM_CLEARING': amount}
+                or session.scalar(select(LedgerTransaction.id).where(LedgerTransaction.reversal_of_id == original_id))):
+            raise ValueError('conversion debit already reversed or mismatched')
+        WalletLedger(self.session_factory).require_conversion_release(session=session,
+            user_id=actor_id, conversion_id=conversion_id, release_id=release_id, amount=amount)
+
+    def reverse_conversion_debit(self, *, session, user_id, conversion_id, wallet_release_id):
+        """Public exact linked reversal, inside the caller's global-budget lock."""
+        lock_budget(session)
+        original = session.scalar(select(LedgerTransaction).options(selectinload(LedgerTransaction.entries)).where(
+            LedgerTransaction.scope == 'wallet.conversion', LedgerTransaction.idempotency_key == 'convert:'+conversion_id))
+        if original is None:
+            raise ValueError('conversion debit not found')
+        return self._post(entries={entry.account_id: -entry.amount for entry in original.entries},
+            actor_id=user_id, reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key='reverse:'+conversion_id,
+            scope='wallet.conversion_reversal', reversal_of_id=original.id, session=session,
+            conversion_release_id=wallet_release_id)
 
     def adjust(self, *, user_id: str, amount: Decimal, actor_id: str, reason_code: str, idempotency_key: str, session=None) -> LedgerTransaction:
         amount = money(amount)

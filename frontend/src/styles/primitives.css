@@ -614,6 +614,7 @@ app-red-packet-card {
 .p-redpacket-create,
 .p-redpacket-detail,
 .p-wallet-home,
+.p-wallet-binding,
 .p-wallet-history,
 .p-wallet-deposit,
 .p-wallet-withdrawal,
@@ -914,3 +915,48 @@ app-red-packet-card {
 }
 
 
+
+/* Wallet binding/payment demo: reuse existing Flutter-mapped semantic tokens. */
+.c-wallet-demo { color: var(--color-text-primary); gap: var(--space-lg); }
+.c-wallet-demo h2 { margin: 0; font-size: var(--type-title-1-size); }
+.c-wallet-demo p { margin: 0; }
+.c-wallet-demo__notice, .c-wallet-demo__muted {
+  color: var(--color-text-secondary); font-size: var(--type-subhead-size);
+  line-height: var(--type-subhead-line);
+}
+.c-wallet-demo__notice { font-size: var(--type-caption-size); }
+.c-wallet-demo__card {
+  padding: var(--space-xl); border-radius: var(--radius-control);
+  background: var(--color-brand-primary); color: var(--color-on-accent);
+  display: grid; gap: var(--space-md);
+}
+.c-wallet-demo__card-heading { display: flex; align-items: center; justify-content: space-between; }
+.c-wallet-demo__address { overflow-wrap: anywhere; font-size: var(--type-subhead-size); }
+.c-wallet-demo__shortcuts { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-lg); }
+.c-wallet-demo__button {
+  min-height: var(--size-touch); padding: var(--space-md) var(--space-lg);
+  border: 0; border-radius: var(--radius-card); cursor: pointer;
+  background: var(--color-brand-primary); color: var(--color-on-accent);
+  font: inherit;
+}
+.c-wallet-demo__button--secondary { background: var(--color-surface-elevated); color: var(--color-text-primary); }
+.c-wallet-demo__button:disabled {
+  color: var(--color-text-tertiary); background: var(--color-divider);
+  opacity: var(--opacity-muted); cursor: not-allowed;
+}
+.c-wallet-demo__button:focus-visible { outline: 2px solid var(--color-social-link); outline-offset: 2px; }
+.c-wallet-demo__button:active:not(:disabled) { opacity: var(--opacity-pressed); }
+.c-wallet-demo__change { width: var(--size-touch); padding: var(--space-sm); background: transparent; color: inherit; }
+.c-wallet-demo__change svg { width: var(--size-icon-lg); height: var(--size-icon-lg); }
+.c-wallet-demo__pin-summary { text-align: center; display: grid; gap: var(--space-lg); }
+.c-wallet-demo__amount { font-size: var(--type-brand-size) !important; }
+.c-wallet-demo__pin-boxes { display: grid; grid-template-columns: repeat(6, 1fr); }
+.c-wallet-demo__pin-boxes span {
+  display: grid; place-items: center; min-height: var(--size-action-primary);
+  background: var(--color-surface-elevated); border: var(--size-hairline) solid var(--color-divider);
+  font-size: var(--type-title-2-size);
+}
+.c-wallet-demo__keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); }
+.c-wallet-demo__keys .c-wallet-demo__button { font-size: var(--type-title-2-size); }
+.c-wallet-demo__error { color: var(--color-danger); }
+.c-wallet-demo__feedback { min-height: var(--type-body-line); }

@@ -168,7 +168,9 @@ register("caibi", "transaction", [["detail", "点钻交易 / 详情"]]);
 register("redpacket", "create", [["group-equal", "红包 / 普通红包"], ["group-random", "红包 / 拼手气红包"], ["group-exclusive", "红包 / 专属红包"], ["direct-equal", "红包 / 私聊普通红包"], ["fields", "红包 / 输入字段"], ["amount-invalid", "红包 / 金额错误"], ["count-invalid", "红包 / 份数错误"], ["minimum-invalid", "红包 / 最低金额错误"], ["confirm", "红包 / 创建确认"], ["submitting", "红包 / 创建中"], ["failed", "红包 / 创建失败"], ["success", "红包 / 创建成功"]]);
 register("redpacket", "detail", [["available", "红包详情 / 可领取"], ["claiming", "红包详情 / 领取中"], ["claimed", "红包详情 / 已领取"], ["exhausted", "红包详情 / 已领完"], ["expired", "红包详情 / 已过期"], ["withdrawn", "红包详情 / 已撤回"], ["duplicate", "红包详情 / 重复领取"], ["concurrent-exhausted", "红包详情 / 并发领完"], ["unknown-result", "红包详情 / 未知结果"], ["history", "红包详情 / 领取明细", 1040]]);
 
-register("wallet", "home", [["default", "USDT 钱包 / 默认"]]);
+register("wallet", "home", [["default", "钱包 / 已绑定"], ["unbound", "钱包 / 未绑定"], ["unavailable", "钱包 / 暂不可用"]]);
+register("wallet", "binding", [["binding", "钱包 / 绑定控制权验证"]]);
+register("wallet", "withdrawal", [["payment-pin", "提现 / 支付密码"], ["pin-error", "提现 / 支付密码错误"], ["pin-cancelled", "提现 / 取消支付"]]);
 register("wallet", "history", [["all", "钱包记录 / 全部"], ["deposit", "钱包记录 / 充值"], ["withdrawal", "钱包记录 / 提现"], ["empty", "钱包记录 / 空"]], { height: 980 });
 register("wallet", "deposit", [["allocating", "充值地址 / 分配中"], ["address", "充值地址 / 已生成"], ["copied", "充值地址 / 已复制"], ["allocation-failed", "充值地址 / 分配失败"], ["below-minimum", "充值 / 低于最低金额"], ["detected", "充值 / 已检测"], ["confirming", "充值 / 确认中"], ["credited", "充值 / 已入账"], ["manual-review", "充值 / 人工复核"]]);
 register("wallet", "withdrawal", [["default", "提现 / 默认"], ["input", "提现 / 输入"], ["fee", "提现 / 费用摘要"], ["confirm", "提现 / 确认"], ["address-invalid", "提现 / 地址错误"], ["amount-invalid", "提现 / 金额错误"], ["insufficient", "提现 / 余额不足"], ["reviewing", "提现 / 管理员处理中"], ["direct-execution", "提现 / 管理员直接执行"], ["provider-processing", "提现 / 托管处理中"], ["broadcast", "提现 / 链上广播"], ["confirmed", "提现 / 已确认"], ["failed-refunded", "提现 / 失败退款"], ["unknown-result", "提现 / 未知结果"], ["unavailable", "提现 / 钱包不可用"]]);

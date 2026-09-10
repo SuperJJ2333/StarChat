@@ -68,6 +68,8 @@ def create_manual_wallet_runtime(settings, factory, rate_limiter):
         receipts.reserve_policy = settings.wallet_reserve_policy
         receipts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
         payouts.reserve_policy = settings.wallet_reserve_policy
+        payouts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
+        payouts.conversions_enabled = settings.wallet_conversions_enabled
         if settings.wallet_user_auth_mode == 'address_only':
             binding.address_registration_enabled = True
             binding.barrier_verifier = verifier.registration_barrier

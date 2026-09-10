@@ -99,9 +99,12 @@ final class _ScopedWalletTransport {
   Future<Map<String, dynamic>> getJson(String path) async =>
       client.getJson(path, expectedWalletScope: await scope);
   Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body,
-          {required String idempotencyKey}) async =>
+          {required String idempotencyKey,
+          String? expectedPaymentScope}) async =>
       client.postJson(path, body,
-          idempotencyKey: idempotencyKey, expectedWalletScope: await scope);
+          idempotencyKey: idempotencyKey,
+          expectedWalletScope: await scope,
+          expectedPaymentScope: expectedPaymentScope);
 }
 
 final class ManualWalletApi {
@@ -195,22 +198,34 @@ final class ManualWalletApi {
   Future<ManualPayoutQuote> createPayoutQuote(
           {required String amount,
           required int expectedBindingVersion,
+          String fundingAsset = 'USDT',
           required String idempotencyKey}) async =>
       ManualPayoutQuote.fromJson(await _client.postJson(
           '/wallet/manual/payout-quotes',
-          _amountBody(amount, expectedBindingVersion),
+          {
+            ..._amountBody(amount, expectedBindingVersion),
+            if (fundingAsset != 'USDT') 'funding_asset': fundingAsset
+          },
           idempotencyKey: _key(idempotencyKey)));
+  Future<ManualPayoutQuote> payoutQuote(String id) async =>
+      ManualPayoutQuote.fromJson(
+          await _client.getJson('/wallet/manual/payout-quotes/${_id(id)}'));
   Future<ManualPayout> createPayout(
           {required String quoteId,
           String? mfaProof,
+          String? paymentAuthorization,
+          String? expectedPaymentScope,
           required String idempotencyKey}) async =>
       ManualPayout.fromJson(await _client.postJson(
           '/wallet/manual/payouts',
           {
             'quote_id': _id(quoteId),
-            if (mfaProof != null) 'mfa_proof': mfaProof
+            if (mfaProof != null) 'mfa_proof': mfaProof,
+            if (paymentAuthorization != null)
+              'payment_authorization': paymentAuthorization
           },
-          idempotencyKey: _key(idempotencyKey)));
+          idempotencyKey: _key(idempotencyKey),
+          expectedPaymentScope: expectedPaymentScope));
   Future<ManualPayout> payout(String id) async => ManualPayout.fromJson(
       await _client.getJson('/wallet/manual/payouts/${_id(id)}'));
   Future<ManualPayout> cancelPayout(String id,
@@ -427,7 +442,9 @@ final class ManualPayoutQuote {
       this.global24h,
       this.safetyEpoch,
       this.createdAt,
-      this.expiresAt);
+      this.expiresAt,
+      this.fundingAsset,
+      this.fundingAmount);
   final String id;
   final String digest;
   final String bindingId;
@@ -452,6 +469,8 @@ final class ManualPayoutQuote {
   final int safetyEpoch;
   final DateTime createdAt;
   final DateTime expiresAt;
+  final String fundingAsset;
+  final String fundingAmount;
   factory ManualPayoutQuote.fromJson(Map<String, dynamic> json) =>
       ManualPayoutQuote._(
           _string(json, 'id'),
@@ -477,7 +496,26 @@ final class ManualPayoutQuote {
           _money(json, 'global_24h'),
           _integer(json, 'safety_epoch', 0),
           _date(json, 'created_at'),
-          _date(json, 'expires_at'));
+          _date(json, 'expires_at'),
+          _fundingAsset(json),
+          _fundingAmount(json));
+}
+
+String _fundingAsset(Map<String, dynamic> json) {
+  final asset = json['funding_asset'] ?? 'USDT';
+  if (asset != 'USDT' && asset != 'CAIBI') _invalid();
+  return asset as String;
+}
+
+String _fundingAmount(Map<String, dynamic> json) {
+  if (_fundingAsset(json) == 'USDT') {
+    return json.containsKey('funding_amount')
+        ? _money(json, 'funding_amount')
+        : _money(json, 'amount');
+  }
+  final value = _string(json, 'funding_amount');
+  if (!RegExp(r'^(0|[1-9][0-9]{0,23})\.[0-9]{2}$').hasMatch(value)) _invalid();
+  return value;
 }
 
 final class ManualPayout {

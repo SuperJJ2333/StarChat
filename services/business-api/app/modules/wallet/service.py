@@ -63,6 +63,22 @@ class WalletLedger:
     def balance(self, account_id):
         with self.factory() as session: return usdt(Decimal(session.scalar(select(func.coalesce(func.sum(WalletLedgerEntry.amount),0)).where(WalletLedgerEntry.account_id==account_id, WalletLedgerEntry.asset=="USDT-TRC20"))))
 
+    def require_conversion_release(self, *, session, user_id, conversion_id, release_id, amount):
+        """Public proof for an exact conversion rollback, never a raw ledger read by callers."""
+        from app.modules.wallet.models import WalletConversion
+        original = session.get(WalletConversion, conversion_id)
+        release = session.get(WalletLedgerTransaction, release_id)
+        if (original is None or original.user_id != user_id or original.direction != 'CAIBI_TO_USDT'
+                or original.status != 'COMPLETED' or original.source_amount != amount or original.target_amount != amount
+                or not original.idempotency_key.startswith('payout:')
+                or release is None or release.actor_id != user_id or release.scope != 'wallet.conversion_reversal'
+                or release.reason_code != 'MANUAL_PAYOUT_CANCELLED' or release.idempotency_key != 'reverse:'+conversion_id):
+            raise ValueError('conversion release proof invalid')
+        entries = {entry.account_id: entry.amount for entry in session.scalars(select(WalletLedgerEntry).where(
+            WalletLedgerEntry.transaction_id == release_id))}
+        if entries != {user_id: -amount, 'PLATFORM_CONVERSION': amount}:
+            raise ValueError('conversion release amount mismatch')
+
 class WalletService(WalletSafetyMixin):
     def __init__(self, session_factory, provider, *, withdrawal_admin_threshold=Decimal("1000.000000"), confirmation_threshold=20, conversions_enabled=False, manual_runtime=None):
         self.factory=session_factory; self.provider=provider; self.wallet_ledger=WalletLedger(session_factory); self.admin_threshold=usdt(withdrawal_admin_threshold); self.confirmation_threshold=confirmation_threshold
