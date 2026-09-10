@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_home.dart';
 import 'core/app_config.dart';
 import 'core/business_api_client.dart';
+import 'core/installation_container_probe.dart';
 import 'core/installation_marker.dart';
 import 'core/installation_reconciler.dart';
 import 'core/session_bootstrap_controller.dart';
@@ -40,6 +41,7 @@ Future<void> main() async {
     marker: SharedPreferencesInstallationMarker(
       await SharedPreferences.getInstance(),
     ),
+    probe: FileSystemInstallationContainerProbe(),
     store: store,
   ).reconcile();
   if (installationReset == InstallationResetOutcome.failed && kDebugMode) {

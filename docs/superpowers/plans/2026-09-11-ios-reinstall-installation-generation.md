@@ -743,6 +743,425 @@ git commit -m "docs: record the installation-generation fix evidence"
 
 ---
 
+### Task 5: 容器证据判断（修补覆盖升级路径）
+
+**背景：** Task 1–4 把"标记缺失"直接等同于"全新安装"。标记由本次变更引入，因此
+**存量安装升级到含本修复的版本时标记必然缺失而容器完好**，会走清除分支删掉正在
+使用的数据库密钥，导致本地聊天记录永久不可解密、用户被强制登出，且对 ADR-0063
+之前的空槽布局会拿新密钥重开同一文件、在 `runApp` 之前抛异常使启动失败。
+详见设计 §3.1.1 与 §3.2、ADR-0068 决定 2。
+
+**Files:**
+- Create: `apps/mobile_flutter/lib/core/installation_container_probe.dart`
+- Modify: `apps/mobile_flutter/lib/core/installation_reconciler.dart`（新增 `probe` 依赖、`adopted` 结果与分支）
+- Modify: `apps/mobile_flutter/lib/main.dart`（构造真实探测器）
+- Test: `apps/mobile_flutter/test/core/installation_container_probe_test.dart`（新）
+- Test: `apps/mobile_flutter/test/core/installation_reconciler_test.dart`（补 T9–T11、T6 重试、T2 收紧）
+- Test: `apps/mobile_flutter/test/features/matrix/ios_reinstall_continuity_test.dart`（补 T9 端到端）
+- Test: `apps/mobile_flutter/test/core/installation_clear_test.dart`（补作用域键名一致性断言）
+
+**Interfaces:**
+- Consumes: `InstallationMarkerStore`、`SecureSessionStore.clearInstallation()`（Task 1–2）
+- Produces:
+  - `abstract interface class InstallationContainerProbe { Future<bool> hasPreviousMatrixStore(); }`
+  - `final class FileSystemInstallationContainerProbe implements InstallationContainerProbe`，构造参数 `Future<String> Function()? supportDirectoryPath`（默认 `getApplicationSupportDirectory().path`）
+  - `enum InstallationResetOutcome { notNeeded, adopted, cleared, failed }`
+  - `InstallationReconciler({required InstallationMarkerStore marker, required InstallationContainerProbe probe, required SecureSessionStore store})`
+
+- [ ] **Step 1: 写失败用例**
+
+创建 `test/core/installation_container_probe_test.dart`：
+
+```dart
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/installation_container_probe.dart';
+import 'package:path/path.dart' as p;
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory directory;
+
+  setUp(() async {
+    directory =
+        await Directory.systemTemp.createTemp('liuhetong-container-probe');
+  });
+
+  tearDown(() async {
+    if (await directory.exists()) await directory.delete(recursive: true);
+  });
+
+  Future<void> write(String name) async =>
+      File(p.join(directory.path, name)).writeAsString('x');
+
+  FileSystemInstallationContainerProbe probe() =>
+      FileSystemInstallationContainerProbe(
+          supportDirectoryPath: () async => directory.path);
+
+  test('识别空槽与带槽的加密库文件', () async {
+    await write('liuhetong_matrix.sqlite');
+    expect(await probe().hasPreviousMatrixStore(), isTrue);
+  });
+
+  test('识别带 64 位十六进制槽后缀的库文件', () async {
+    await write('liuhetong_matrix_${'a' * 64}.sqlite');
+    expect(await probe().hasPreviousMatrixStore(), isTrue);
+  });
+
+  test('识别迁移期临时文件', () async {
+    await write('liuhetong_matrix.sqlite.encrypted');
+    expect(await probe().hasPreviousMatrixStore(), isTrue);
+  });
+
+  test('目录不存在时报告没有产物', () async {
+    final missing =
+        FileSystemInstallationContainerProbe(supportDirectoryPath: () async =>
+            p.join(directory.path, 'never-created'));
+    expect(await missing.hasPreviousMatrixStore(), isFalse);
+  });
+
+  test('只有无关文件时报告没有产物', () async {
+    await write('account_chat_store.json');
+    await write('media_cache.db');
+    expect(await probe().hasPreviousMatrixStore(), isFalse);
+  });
+
+  test('目录读取失败时抛出而不是谎报没有产物', () async {
+    final failing = FileSystemInstallationContainerProbe(
+        supportDirectoryPath: () async => directory.path);
+    await directory.delete(recursive: true);
+    await File(directory.path).writeAsBytes(const []);
+    await expectLater(failing.hasPreviousMatrixStore(), throwsA(isA<Object>()));
+  });
+}
+```
+
+在 `test/core/installation_reconciler_test.dart` 中：新增假探测器、给现有用例补上探测器参数，
+并追加 T9–T11、T6 重试与 T2 收紧用例。
+
+```dart
+final class _FakeProbe implements InstallationContainerProbe {
+  _FakeProbe({this.hasPrevious = false, this.error});
+  final bool hasPrevious;
+  final Object? error;
+  var calls = 0;
+
+  @override
+  Future<bool> hasPreviousMatrixStore() async {
+    calls++;
+    if (error != null) throw error!;
+    return hasPrevious;
+  }
+}
+```
+
+现有五个用例的 `InstallationReconciler(...)` 调用补上 `probe: _FakeProbe()`；
+「标记已存在时不清除任何键」另断言 `probe.calls == 0`（标记已存在时不得探测）。
+追加：
+
+```dart
+  test('覆盖升级：容器仍有加密库时只播种标记，一个键都不删', () async {
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+
+    final outcome = await InstallationReconciler(
+            marker: marker, probe: _FakeProbe(hasPrevious: true),
+            store: SecureSessionStore(memory))
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.adopted);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 1);
+  });
+
+  test('探测器抛错时不清除也不写标记', () async {
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+
+    final outcome = await InstallationReconciler(
+            marker: marker,
+            probe: _FakeProbe(error: StateError('container unreadable')),
+            store: SecureSessionStore(memory))
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.failed);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 0);
+  });
+
+  test('清除失败后解除故障再次核对，重试成功并写入标记', () async {
+    final memory = await _retainedKeychain();
+    memory.deleteErrors['liuhetong.business_session.v1'] =
+        StateError('keychain unavailable');
+    final marker = _FakeMarker();
+    final store = SecureSessionStore(memory);
+    final reconciler = InstallationReconciler(
+        marker: marker, probe: _FakeProbe(), store: store);
+
+    expect(await reconciler.reconcile(), InstallationResetOutcome.failed);
+    expect(marker.registerCalls, 0);
+
+    memory.deleteErrors.clear();
+    expect(await reconciler.reconcile(), InstallationResetOutcome.cleared);
+    expect(marker.registerCalls, 1);
+    expect(memory.values.keys.where((k) => k.startsWith('liuhetong.')), isEmpty);
+  });
+```
+
+把「Android 式干净重装」这条现有用例的键集断言从"空库上断言为空"改为断言**清除确实
+被调用过**（空库上断言为空是恒真的，抓不到回归）：
+
+```dart
+    expect(memory.attemptedDeletes,
+        containsAll(<String>['liuhetong.business_session.v1']));
+```
+
+在 `test/features/matrix/ios_reinstall_continuity_test.dart` 补 T9 端到端：
+探测器报告容器仍有库文件时，清除不发生，且升级后的连续性校验照常通过。
+
+```dart
+final class _Probe implements InstallationContainerProbe {
+  _Probe({required this.hasPrevious});
+  final bool hasPrevious;
+  @override
+  Future<bool> hasPreviousMatrixStore() async => hasPrevious;
+}
+```
+
+```dart
+  test('覆盖升级不删除密钥，且连续性校验仍与绑定一致', () async {
+    final memory = await retainedKeychain();
+    final store = SecureSessionStore(memory);
+    final before = Map<String, String>.from(memory.values);
+    final factory = _factory(store);
+
+    final outcome = await InstallationReconciler(
+            marker: _Marker(), probe: _Probe(hasPrevious: true), store: store)
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.adopted);
+    expect(memory.values, before);
+    // 升级后库仍带着绑定身份，连续性校验按原样通过而不是抛错。
+    final next = await factory.create();
+    // 空库不会被当成损坏，因为绑定未被误删后又被清掉；此处只断言未被清除。
+    expect(await store.matrixBinding(), isNotNull);
+    expect(next.userID, isNull);
+  });
+```
+
+在 `test/core/installation_clear_test.dart` 追加作用域键名一致性断言（该列表目前
+重复了三处，加键时漏改会静默少清——正是本次要修的错误类型）：
+
+```dart
+  test('清除覆盖的按槽键名与存储层的作用域集合一致', () async {
+    final memory = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(memory);
+    final suffix = 'b' * 64;
+    for (final name in const [
+      'liuhetong.matrix_database_key.v1',
+      'liuhetong.matrix_local_binding.v1',
+      'liuhetong.encrypted_recovery_key',
+      'liuhetong.diagnostic_salt.v1',
+      'liuhetong.matrix_clear_tombstone.v1',
+    ]) {
+      await memory.write('$name.$suffix', 'value');
+    }
+    await memory.write('liuhetong.matrix_account_slots.v1',
+        '{"$suffix":"$suffix"}');
+
+    await store.clearInstallation();
+
+    expect(
+        memory.values.keys.where((k) => k.contains(suffix)), isEmpty);
+  });
+```
+
+- [ ] **Step 2: 运行用例确认失败**
+
+Run: `flutter test test/core/installation_container_probe_test.dart test/core/installation_reconciler_test.dart test/features/matrix/ios_reinstall_continuity_test.dart test/core/installation_clear_test.dart`
+Expected: FAIL — `Couldn't resolve the package ... installation_container_probe.dart`，
+且协调器用例因缺少必填参数 `probe` 无法编译。
+
+- [ ] **Step 3: 写最小实现**
+
+创建 `lib/core/installation_container_probe.dart`：
+
+```dart
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+/// 回答"上一次安装是否在应用容器里留下了 Matrix 加密库"。
+///
+/// 容器随卸载消失、钥匙串不会，因此这是区分"覆盖升级的延续"与"全新安装"的
+/// 可靠证据：加密库文件不可能在卸载后留下，故对全新安装没有假阳性；而只要
+/// 应用成功启动过一次，MatrixClientFactory.create() 就会建立该文件，
+/// 故对覆盖升级几乎不会漏判。
+abstract interface class InstallationContainerProbe {
+  Future<bool> hasPreviousMatrixStore();
+}
+
+final class FileSystemInstallationContainerProbe
+    implements InstallationContainerProbe {
+  FileSystemInstallationContainerProbe({
+    Future<String> Function()? supportDirectoryPath,
+  }) : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath;
+
+  final Future<String> Function() supportDirectoryPath;
+
+  /// 与 MatrixClientFactory.databaseFileName 及其按槽后缀的拼法保持一致。
+  /// 改名时必须同时更新这里，否则探测会永远看不到产物。
+  static final _storeFileName = RegExp(r'^liuhetong_matrix.*\.sqlite(\.encrypted)?$');
+
+  static Future<String> _defaultSupportPath() async =>
+      (await getApplicationSupportDirectory()).path;
+
+  @override
+  Future<bool> hasPreviousMatrixStore() async {
+    final directory = Directory(await supportDirectoryPath());
+    if (!await directory.exists()) return false;
+    await for (final entry in directory.list()) {
+      if (entry is File && _storeFileName.hasMatch(p.basename(entry.path))) {
+        return true;
+      }
+    }
+    return false;
+  }
+}
+```
+
+修改 `lib/core/installation_reconciler.dart`：新增 `probe` 依赖、`adopted` 结果与分支，
+并把 `failed` 的语义写清楚（它覆盖四步中任一步失败，其中只有清除失败意味着遗留仍在）。
+
+```dart
+enum InstallationResetOutcome {
+  /// 标记已存在：同一安装的延续，未做任何清理。
+  notNeeded,
+
+  /// 标记缺失但容器仍有上一次安装的加密库：覆盖升级的延续。
+  /// 只播种了标记，未删除任何密钥。
+  adopted,
+
+  /// 全新安装：遗留已清除且标记已写入。
+  cleared,
+
+  /// 状态未落定：标记读取、容器探测、清除或播种中任一步失败。
+  /// 注意只有"清除失败"意味着遗留仍在；探测或读取失败时什么都没动。
+  failed,
+}
+```
+
+```dart
+final class InstallationReconciler {
+  InstallationReconciler({
+    required this.marker,
+    required this.probe,
+    required this.store,
+  });
+
+  final InstallationMarkerStore marker;
+  final InstallationContainerProbe probe;
+  final SecureSessionStore store;
+
+  Future<InstallationResetOutcome> reconcile() async {
+    final bool registered;
+    try {
+      registered = await marker.isRegistered();
+    } catch (_) {
+      // 不确定是否为全新安装时，绝不抹掉可能是有效的会话与密钥。
+      return InstallationResetOutcome.failed;
+    }
+    if (registered) return InstallationResetOutcome.notNeeded;
+
+    final bool continuation;
+    try {
+      continuation = await probe.hasPreviousMatrixStore();
+    } catch (_) {
+      // 探测回答的是"密钥是否还有效"，探测不出来就不能删任何东西。
+      return InstallationResetOutcome.failed;
+    }
+    if (continuation) {
+      // 覆盖升级：标记由本次发布引入，容器完好意味着这些密钥仍在使用。
+      // 只播种标记，绝不删除。
+      try {
+        await marker.register();
+      } catch (_) {
+        return InstallationResetOutcome.failed;
+      }
+      return InstallationResetOutcome.adopted;
+    }
+
+    try {
+      await store.clearInstallation();
+    } catch (_) {
+      // 清除未完成就不写标记，否则残留会被永久化，下次启动不再重试。
+      // 部分清除是安全的：任一残留都不会让状态比修复前更差。
+      return InstallationResetOutcome.failed;
+    }
+    try {
+      await marker.register();
+    } catch (_) {
+      return InstallationResetOutcome.failed;
+    }
+    return InstallationResetOutcome.cleared;
+  }
+}
+```
+
+- [ ] **Step 4: 运行用例确认通过**
+
+Run: `flutter test test/core/installation_container_probe_test.dart test/core/installation_reconciler_test.dart test/features/matrix/ios_reinstall_continuity_test.dart test/core/installation_clear_test.dart`
+Expected: PASS。
+
+- [ ] **Step 5: 接线 `main.dart`**
+
+把 Task 4 插入的调用补上探测器：
+
+```dart
+  final installationReset = await InstallationReconciler(
+    marker: SharedPreferencesInstallationMarker(
+      await SharedPreferences.getInstance(),
+    ),
+    probe: FileSystemInstallationContainerProbe(),
+    store: store,
+  ).reconcile();
+```
+
+并在 import 区（`core/installation_marker.dart` 之前）加入：
+
+```dart
+import 'core/installation_container_probe.dart';
+```
+
+- [ ] **Step 6: 运行受影响回归与静态检查**
+
+Run:
+```bash
+flutter test test/core/installation_marker_test.dart test/core/installation_container_probe_test.dart test/core/installation_clear_test.dart test/core/installation_reconciler_test.dart test/core/session_store_test.dart test/core/account_chat_store_test.dart test/core/ios_secure_session_test.dart test/core/session_bootstrap_controller_test.dart test/features/matrix/matrix_client_factory_test.dart test/features/matrix/account_client_selection_test.dart test/features/matrix/ios_reinstall_continuity_test.dart
+flutter analyze
+```
+Expected: 全部 PASS；`flutter analyze` 无新增 issue。
+
+- [ ] **Step 7: 提交**
+
+```bash
+git add apps/mobile_flutter/lib/core/installation_container_probe.dart apps/mobile_flutter/lib/core/installation_reconciler.dart apps/mobile_flutter/lib/main.dart apps/mobile_flutter/test/core/installation_container_probe_test.dart apps/mobile_flutter/test/core/installation_reconciler_test.dart apps/mobile_flutter/test/core/installation_clear_test.dart apps/mobile_flutter/test/features/matrix/ios_reinstall_continuity_test.dart
+git commit -m "fix(mobile): tell an upgrade apart from a reinstall before clearing keys
+
+The installation marker is introduced by this change, so every existing
+installation lacks it while its container is intact. Treating a missing
+marker as a fresh installation would delete the live database keys of
+the installed base on the first update. The container probe makes that
+case an adoption: seed the marker, delete nothing."
+```
+
+---
+
 ## 计划自审
 
 - **规格覆盖**：§3.2 四个部件 → Task 1/2/3/4；§3.3 清除范围 → Task 2 的
@@ -758,3 +1177,17 @@ git commit -m "docs: record the installation-generation fix evidence"
   `InstallationResetOutcome` 在四个任务中名称与签名一致；
   `SharedPreferencesInstallationMarker.key` 在 Task 1 定义、Task 1 测试使用。
 - **未覆盖项**：A06 真机确认无法由本计划完成，已在任务记录中标为未完成。
+
+### Task 5 追加后的自审（规格符合性审查发现 Critical 后）
+
+- **规格覆盖**：§3.1.1 与 §3.2（覆盖升级不得清除）→ Task 5 全任务；§3.5 四条失败
+  规则 → Task 5 的 T9/T11 用例与现有 T7 用例；§4 的 T9–T12 → Task 5。
+- **为什么是 Task 5 而不是改写 Task 1–4**：Task 1–4 的代码在修正后仍然成立，
+  缺的只是"标记缺失之后、清除之前"那一步判断。新增一个任务比重写四个更小、
+  更容易审。Task 1–4 的提交保留在历史里，由 Task 5 修补其前提。
+- **前提修正的诚实记录**：Task 1–4 期间"1945 用例全绿"是在错误前提下达成的，
+  不能作为本次修复有效的证据；Task 5 完成后必须重跑全量门禁并重跑两层审查。
+- **仍存在的实现级缺口**（来自同一次审查，按重要度处理）：
+  T6 复试用例在 Task 5 中补齐；T2 恒真断言在 Task 5 中收紧；
+  `InstallationResetOutcome.failed` 的语义已在 Task 5 的文档注释中澄清；
+  诊断在 release 不可见一项按设计 §6 记录为已知限制，本计划不处理。

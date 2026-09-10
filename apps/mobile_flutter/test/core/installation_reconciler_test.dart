@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/installation_container_probe.dart';
 import 'package:liuhetong_mobile/core/installation_marker.dart';
 import 'package:liuhetong_mobile/core/installation_reconciler.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
@@ -28,6 +29,20 @@ final class _FakeMarker implements InstallationMarkerStore {
   }
 }
 
+final class _FakeProbe implements InstallationContainerProbe {
+  _FakeProbe({this.hasPrevious = false, this.error});
+  final bool hasPrevious;
+  final Object? error;
+  var calls = 0;
+
+  @override
+  Future<bool> hasPreviousMatrixStore() async {
+    calls++;
+    if (error != null) throw error!;
+    return hasPrevious;
+  }
+}
+
 Future<MemorySecureKeyValueStore> _retainedKeychain() async {
   final memory = MemorySecureKeyValueStore();
   final store = SecureSessionStore(memory);
@@ -41,25 +56,30 @@ Future<MemorySecureKeyValueStore> _retainedKeychain() async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('标记已存在时不清除任何键', () async {
+  test('标记已存在时不清除也不探测', () async {
     final memory = await _retainedKeychain();
     final before = Map<String, String>.from(memory.values);
+    final probe = _FakeProbe(hasPrevious: true);
 
     final outcome = await InstallationReconciler(
             marker: _FakeMarker(registered: true),
+            probe: probe,
             store: SecureSessionStore(memory))
         .reconcile();
 
     expect(outcome, InstallationResetOutcome.notNeeded);
     expect(memory.values, before);
+    expect(probe.calls, 0);
   });
 
-  test('标记缺失时清除全部遗留并写入标记', () async {
+  test('标记缺失且容器无库文件时清除全部遗留并写入标记', () async {
     final memory = await _retainedKeychain();
     final marker = _FakeMarker();
 
     final outcome = await InstallationReconciler(
-            marker: marker, store: SecureSessionStore(memory))
+            marker: marker,
+            probe: _FakeProbe(),
+            store: SecureSessionStore(memory))
         .reconcile();
 
     expect(outcome, InstallationResetOutcome.cleared);
@@ -68,13 +88,47 @@ void main() {
     expect(marker.registerCalls, 1);
   });
 
+  test('覆盖升级：容器仍有加密库时只播种标记，一个键都不删', () async {
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+
+    final outcome = await InstallationReconciler(
+            marker: marker,
+            probe: _FakeProbe(hasPrevious: true),
+            store: SecureSessionStore(memory))
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.adopted);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 1);
+  });
+
   test('标记读取失败时不清除也不写标记', () async {
     final memory = await _retainedKeychain();
     final before = Map<String, String>.from(memory.values);
     final marker = _FakeMarker(readError: StateError('prefs unavailable'));
+    final probe = _FakeProbe();
 
     final outcome = await InstallationReconciler(
-            marker: marker, store: SecureSessionStore(memory))
+            marker: marker, probe: probe, store: SecureSessionStore(memory))
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.failed);
+    expect(memory.values, before);
+    expect(marker.registerCalls, 0);
+    expect(probe.calls, 0);
+  });
+
+  test('探测器抛错时不清除也不写标记', () async {
+    final memory = await _retainedKeychain();
+    final before = Map<String, String>.from(memory.values);
+    final marker = _FakeMarker();
+
+    final outcome = await InstallationReconciler(
+            marker: marker,
+            probe: _FakeProbe(error: StateError('container unreadable')),
+            store: SecureSessionStore(memory))
         .reconcile();
 
     expect(outcome, InstallationResetOutcome.failed);
@@ -89,7 +143,9 @@ void main() {
     final marker = _FakeMarker();
 
     final outcome = await InstallationReconciler(
-            marker: marker, store: SecureSessionStore(memory))
+            marker: marker,
+            probe: _FakeProbe(),
+            store: SecureSessionStore(memory))
         .reconcile();
 
     expect(outcome, InstallationResetOutcome.failed);
@@ -97,12 +153,32 @@ void main() {
     expect(marker.registered, isFalse);
   });
 
+  test('清除失败后解除故障再次核对，重试成功并写入标记', () async {
+    final memory = await _retainedKeychain();
+    memory.deleteErrors['liuhetong.business_session.v1'] =
+        StateError('keychain unavailable');
+    final marker = _FakeMarker();
+    final reconciler = InstallationReconciler(
+        marker: marker, probe: _FakeProbe(), store: SecureSessionStore(memory));
+
+    expect(await reconciler.reconcile(), InstallationResetOutcome.failed);
+    expect(marker.registerCalls, 0);
+
+    memory.deleteErrors.clear();
+    expect(await reconciler.reconcile(), InstallationResetOutcome.cleared);
+    expect(marker.registerCalls, 1);
+    expect(
+        memory.values.keys.where((k) => k.startsWith('liuhetong.')), isEmpty);
+  });
+
   test('标记写入失败报告为未落定', () async {
     final memory = await _retainedKeychain();
     final marker = _FakeMarker(writeError: StateError('prefs write failed'));
 
     final outcome = await InstallationReconciler(
-            marker: marker, store: SecureSessionStore(memory))
+            marker: marker,
+            probe: _FakeProbe(),
+            store: SecureSessionStore(memory))
         .reconcile();
 
     expect(outcome, InstallationResetOutcome.failed);

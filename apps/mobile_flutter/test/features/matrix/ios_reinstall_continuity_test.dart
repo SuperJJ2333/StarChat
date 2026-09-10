@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/installation_container_probe.dart';
 import 'package:liuhetong_mobile/core/installation_marker.dart';
 import 'package:liuhetong_mobile/core/installation_reconciler.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
@@ -41,9 +42,20 @@ final class _Marker implements InstallationMarkerStore {
   }
 }
 
+final class _Probe implements InstallationContainerProbe {
+  _Probe({this.hasPrevious = false});
+  final bool hasPrevious;
+
+  @override
+  Future<bool> hasPreviousMatrixStore() async => hasPrevious;
+}
+
 /// iOS 卸载会删掉应用沙盒（含 SQLCipher 库）但保留钥匙串，因此账号注册表、
 /// 绑定与数据库密钥仍在，而库已不存在。重装后登录必须能正常建立新的加密设备，
 /// 而不是被判成完整性损坏（登录流程的 account_storage 阶段 = L07）。
+///
+/// 反过来，覆盖升级时容器完好、标记却由本次发布才引入，因此必须判成延续，
+/// 绝不能删除仍然有效的密钥。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -67,9 +79,9 @@ void main() {
         throwsA(isA<StateError>().having((error) => error.message, 'message',
             'Matrix continuity identity is unavailable')));
 
-    final outcome =
-        await InstallationReconciler(marker: _Marker(), store: store)
-            .reconcile();
+    final outcome = await InstallationReconciler(
+            marker: _Marker(), probe: _Probe(), store: store)
+        .reconcile();
     expect(outcome, InstallationResetOutcome.cleared);
 
     final next = await factory.create();
@@ -82,7 +94,9 @@ void main() {
   test('重装后首次登录不再阻断在 account_storage 阶段', () async {
     final memory = await retainedKeychain();
     final store = SecureSessionStore(memory);
-    await InstallationReconciler(marker: _Marker(), store: store).reconcile();
+    await InstallationReconciler(
+            marker: _Marker(), probe: _Probe(), store: store)
+        .reconcile();
     final factory = _factory(store);
     final matrix = MatrixSdkE2eeClient(
       LogoutTrackingClient('liuhetong_mobile'),
@@ -98,17 +112,34 @@ void main() {
     expect(matrix.userId, isNull);
   });
 
-  test('Android 式干净重装：清除为空操作且检查不抛错', () async {
+  test('覆盖升级：容器仍有加密库时不删任何密钥', () async {
+    final memory = await retainedKeychain();
+    final store = SecureSessionStore(memory);
+    final before = Map<String, String>.from(memory.values);
+
+    final outcome = await InstallationReconciler(
+            marker: _Marker(), probe: _Probe(hasPrevious: true), store: store)
+        .reconcile();
+
+    expect(outcome, InstallationResetOutcome.adopted);
+    expect(memory.values, before);
+    // 绑定与库密钥都还在：升级后原有的加密库仍可解密。
+    expect(await store.matrixBinding(), isNotNull);
+    expect(await store.matrixDatabaseKey(), isNotEmpty);
+  });
+
+  test('Android 式干净重装：走全新安装分支且检查不抛错', () async {
     final memory = MemorySecureKeyValueStore();
     final store = SecureSessionStore(memory);
     final factory = _factory(store);
 
-    final outcome =
-        await InstallationReconciler(marker: _Marker(), store: store)
-            .reconcile();
+    final outcome = await InstallationReconciler(
+            marker: _Marker(), probe: _Probe(), store: store)
+        .reconcile();
     expect(outcome, InstallationResetOutcome.cleared);
-    expect(
-        memory.values.keys.where((k) => k.startsWith('liuhetong.')), isEmpty);
+    // 空库上断言"键集为空"是恒真的，抓不到回归；改为断言清除确实被调用过。
+    expect(memory.attemptedDeletes,
+        containsAll(<String>['liuhetong.business_session.v1']));
 
     final metadata = await factory.continuityMetadata(await factory.create());
     expect(metadata.isLoggedIn, isFalse);
@@ -121,6 +152,7 @@ void main() {
 
     final outcome = await InstallationReconciler(
             marker: _Marker(readError: StateError('prefs unavailable')),
+            probe: _Probe(),
             store: store)
         .reconcile();
 

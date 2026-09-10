@@ -69,4 +69,26 @@ void main() {
 
     await expectLater(store.clearInstallation(), throwsStateError);
   });
+
+  test('清除覆盖的按槽键名与存储层的作用域集合一致', () async {
+    final memory = MemorySecureKeyValueStore();
+    final store = SecureSessionStore(memory);
+    final suffix = 'b' * 64;
+    // 该列表在存储层重复出现三处：加键时漏改会静默少清，正是本次要修的错误类型。
+    for (final name in const [
+      'liuhetong.matrix_database_key.v1',
+      'liuhetong.matrix_local_binding.v1',
+      'liuhetong.encrypted_recovery_key',
+      'liuhetong.diagnostic_salt.v1',
+      'liuhetong.matrix_clear_tombstone.v1',
+    ]) {
+      await memory.write('$name.$suffix', 'value');
+    }
+    await memory.write(
+        'liuhetong.matrix_account_slots.v1', '{"$suffix":"$suffix"}');
+
+    await store.clearInstallation();
+
+    expect(memory.values.keys.where((k) => k.contains(suffix)), isEmpty);
+  });
 }
