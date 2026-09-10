@@ -40,7 +40,25 @@ Settings are single global rows shared by Android and iOS clients (`app_latest_v
 - Publish with the app's own `SettingService` inside the business-api container (same audit trail as the admin API without minting an admin JWT):
   `docker exec -i -e PYTHONUTF8=1 -w /opt/business-api starchat-business-api-1 python3 - < publish_script.py <inspect|apply|rollback>`
   Use the inspect → apply pattern with a preflight backup, an audit-count assertion, and an endpoint projection check (see `docs/verification/artifacts/2026-09-10/android-release-2077-distribution/publish_settings_2077_pageurl.py`).
-- **`app_apk_url` must stay the platform-aware download page (`https://www.liuhetong888.com/download`)**, never a direct APK or `itms-services://` URL: a single row feeds both platforms, and a platform-specific URL breaks the other platform's 更新 button. Per-platform URLs/versions require an API contract change first.
+- Since the 2026-09-10 platform-aware endpoint deployment (commit `8bec689e`,
+  image `starchat-business-api:app-update-platform-20260910`; see
+  `docs/verification/2026-09-10-mobile-0380-2084-release.md`), the five
+  legacy keys feed Android clients and the five `app_ios_*` keys
+  (`app_ios_latest_version/build/min_supported_build/update_notes/download_url`)
+  feed iOS clients; the response carries `platform: "ios"` so legacy servers
+  are rejected by new clients. Publish each platform in its own `set_many`
+  with its own audit trace.
+- **Platform paths differ on purpose**: the Android `app_apk_url` may point at
+  the immutable versioned APK (0.3.80+ convention), while
+  `app_ios_download_url` must stay the download page
+  (`https://www.liuhetong888.com/download`) — its primary button triggers the
+  `itms-services://` install; a scheme URL in the setting would break the
+  iOS 更新 button. Before the endpoint was platform-aware, both platforms read
+  the same rows, so `app_apk_url` had to be the download page then; that
+  constraint is gone.
+- Publish the iOS keys **only after** the enterprise-signed IPA is installed
+  and `manifest.plist` points at it; an early publication would show iOS users
+  an update dialog for a package that cannot install yet.
 - `app_update_notes` ≤ 255 characters (DB column is VARCHAR(255) while the admin API contract allows 2000 — known mismatch, do not exceed 255 until it is fixed).
 - `min_supported_build`: only raise with explicit product approval; it turns the dialog into an unclosable barrier.
 - Popup math: the client compares `latest_version` semantically against its own version name first (build number fallback). One global latest therefore targets both platforms at once — expect the dialog on every platform below latest.
@@ -95,3 +113,11 @@ Release only the listed static files and the API reporting overlay. Preserve the
 running API configuration, existing Worker, gateway routes, mobile downloads and
 app-update settings. Database backup/isolated restore, SHA256 and candidate/rollback
 configuration checks precede the API switch. This release adds no migration.
+
+## 12. Wallet page verification releases
+
+For the separately approved 60-minute wallet access verification, follow
+[wallet-access-deployment.md](wallet-access-deployment.md). This changes the wallet
+verification scope, not the global administrator login duration. Use the isolated
+expand migration `0062_wallet_access_grant`, matching migration/rehearsal evidence,
+and the API-only rollback; do not apply unrelated local migration heads.
