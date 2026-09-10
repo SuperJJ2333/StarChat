@@ -21,7 +21,7 @@ from test_manual_reserve_monitor import digest_cut
 
 
 @pytest.fixture
-def handover(tmp_path):
+def handover(tmp_path, monkeypatch):
     assert find_spec('app.modules.wallet.handover') is not None, 'exact legacy handover application service required'
     from app.modules.wallet.handover import LegacyWalletHandover
     from app.core.outbox_handover import OutboxHandover
@@ -64,6 +64,8 @@ def handover(tmp_path):
     file = tmp_path/'deployment.json'
     file.write_text(json.dumps(record), encoding='utf-8')
     file.chmod(0o600)
+    from deployment_evidence_fixtures import trust_fixture_owner
+    trust_fixture_owner(monkeypatch, file)
     service = LegacyWalletHandover(factory, monitor=monitor, deployment_record_path=str(file),
         clock=clock, preparation_mode=lambda: True, funds_enabled=lambda: False)
     yield service, factory, OutboxHandover(factory, clock=clock), now, source, file
