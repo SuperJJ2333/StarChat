@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_home.dart';
 import 'core/app_config.dart';
 import 'core/business_api_client.dart';
+import 'core/installation_marker.dart';
+import 'core/installation_reconciler.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
@@ -31,6 +34,17 @@ Future<void> main() async {
   );
   await themeController.load();
   final store = SecureSessionStore();
+  // 必须在打开加密库、构造业务客户端之前：iOS 的钥匙串不随卸载删除，重装后
+  // 会留下上一安装的密钥与绑定，而它们保护的加密库已随沙盒消失。
+  final installationReset = await InstallationReconciler(
+    marker: SharedPreferencesInstallationMarker(
+      await SharedPreferences.getInstance(),
+    ),
+    store: store,
+  ).reconcile();
+  if (installationReset == InstallationResetOutcome.failed && kDebugMode) {
+    debugPrint('[installation] generation reset did not settle');
+  }
   final api = BusinessApiClient(
     baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
     sessionStore: store,

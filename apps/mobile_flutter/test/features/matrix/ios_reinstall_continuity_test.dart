@@ -23,8 +23,8 @@ MatrixClientFactory _factory(SecureSessionStore store) => MatrixClientFactory(
     );
 
 final class _Marker implements InstallationMarkerStore {
-  _Marker({this.registered = false, this.readError});
-  bool registered;
+  _Marker({this.readError});
+  bool registered = false;
   final Object? readError;
   var registerCalls = 0;
 
