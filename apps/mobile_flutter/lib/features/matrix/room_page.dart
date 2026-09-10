@@ -70,7 +70,6 @@ import '../../ui/chat/voice_recording_overlay.dart';
 import '../../features/emoji/fluent_emoji_catalog.dart';
 import '../../ui/chat/emoji_text.dart';
 import '../../ui/chat/contain_image_bubble.dart';
-import '../../ui/chat/encrypted_media_view.dart';
 import '../../ui/chat/super_emoji_message.dart';
 import '../statistics/statistics_room_scope.dart';
 import '../statistics/statistics_tool.dart';
@@ -306,7 +305,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      _readReceiptDebounce?.cancel();
       unawaited(RoomDraftStore.shared.flush(_draftKey));
+    } else {
+      _syncReadReceiptWhileViewing();
+      if (_readReceiptDirty) _scheduleReadReceipt(Duration.zero);
     }
   }
 
@@ -685,15 +688,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
       WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
       setState(() => loading = false);
-      await controller!.markRead();
-      ConversationReadState.shared().markCleared(
-        roomInfo.id,
-        eventId:
-            controller!.messages.isEmpty ? null : controller!.messages.first.id,
-      );
-      await _loadEmojiVault();
-      await _loadReminderService();
-      await _loadIdentities();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -701,7 +695,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           errorMessage = '会话加载失败，请检查网络后重试';
         });
       }
+      return;
     }
+    // The SDK's local timeline and privacy gates are ready. Optional network
+    // work must neither hide that history nor serialize unrelated features.
+    if (!mounted || widget.roomLease.canceled) return;
+    _syncReadReceiptWhileViewing(immediate: true);
+    unawaited(_trackMatrixOperation(_loadEmojiVault()));
+    unawaited(_trackMatrixOperation(_loadReminderService()));
+    unawaited(_trackMatrixOperation(_loadIdentities()));
   }
 
   Future<void> _loadIdentities() async {
@@ -2419,7 +2421,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (!mounted) return const [];
       final added = _galleryImages()
           .takeWhile((image) => image.id != boundary)
-          .where((image) => !known.contains(image.id)).toList();
+          .where((image) => !known.contains(image.id))
+          .toList();
       if (added.isNotEmpty) return added;
       if (token == widget.roomLease.historyToken &&
           oldest == widget.roomLease.oldestTimelineEventId) {
@@ -3271,21 +3274,68 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Timer? _readReceiptDebounce;
+  String? _readReceiptTargetId;
+  bool _readReceiptDirty = false;
+  bool _readReceiptInFlight = false;
+  int _readReceiptFailures = 0;
 
-  /// 查看中收到新消息：立即本地清零，防抖推进服务器已读回执（m.read）。
-  void _syncReadReceiptWhileViewing() {
-    if (!ConversationReadState.shared().isRoomOpen(roomInfo.id)) return;
+  bool get _canSyncReadReceipt =>
+      mounted &&
+      !_disposing &&
+      !widget.roomLease.canceled &&
+      (WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState ==
+              AppLifecycleState.resumed) &&
+      ConversationReadState.shared().isRoomOpen(roomInfo.id);
+
+  /// Local viewing state is independent of the SDK's server acknowledgement.
+  void _syncReadReceiptWhileViewing({bool immediate = false}) {
+    if (!_canSyncReadReceipt) return;
     final messages = controller?.messages;
     if (messages == null || messages.isEmpty) return;
     ConversationReadState.shared()
-        .markCleared(roomInfo.id, eventId: messages.first.id);
+        .markCleared(roomInfo.id, eventId: messages.last.id);
+    if (_readReceiptTargetId == messages.last.id) return;
+    _readReceiptTargetId = messages.last.id;
+    _readReceiptDirty = true;
+    if (immediate) {
+      unawaited(_trackMatrixOperation(_sendReadReceipt()));
+    } else {
+      _scheduleReadReceipt(const Duration(milliseconds: 800));
+    }
+  }
+
+  void _scheduleReadReceipt(Duration delay) {
+    if (!_canSyncReadReceipt || _readReceiptInFlight) return;
     _readReceiptDebounce?.cancel();
-    _readReceiptDebounce = Timer(const Duration(milliseconds: 800), () {
-      if (!mounted || !ConversationReadState.shared().isRoomOpen(roomInfo.id)) {
-        return;
-      }
-      unawaited(controller?.markRead());
+    _readReceiptDebounce = Timer(delay, () {
+      if (!_canSyncReadReceipt || !_readReceiptDirty) return;
+      unawaited(_trackMatrixOperation(_sendReadReceipt()));
     });
+  }
+
+  Future<void> _sendReadReceipt() async {
+    if (!_canSyncReadReceipt || _readReceiptInFlight) return;
+    final timeline = controller;
+    if (timeline == null) return;
+    _readReceiptInFlight = true;
+    _readReceiptDirty = false;
+    try {
+      await timeline.markRead();
+      _readReceiptFailures = 0;
+    } catch (_) {
+      // Preserve the pending receipt for retry; only the Matrix SDK may advance
+      // server read markers. Offline failure never invalidates cached content.
+      _readReceiptDirty = true;
+      _readReceiptFailures = (_readReceiptFailures + 1).clamp(1, 6);
+    } finally {
+      _readReceiptInFlight = false;
+      if (_readReceiptDirty) {
+        _scheduleReadReceipt(_readReceiptFailures == 0
+            ? const Duration(milliseconds: 800)
+            : Duration(seconds: 5 * _readReceiptFailures));
+      }
+    }
   }
 
   /// 上滑接近顶部（reverse 列表像素增大方向）→ 自动加载更早历史。
