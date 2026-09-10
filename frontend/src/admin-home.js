@@ -129,9 +129,9 @@ function platformButtons() {
   actions.append(row);
   const ios = element("a", "land-btn land-btn-primary");
   ios.href = "/download";
-  ios.setAttribute("aria-label", "下载 iOS 企业测试版 0.3.69（2073）");
+  ios.setAttribute("aria-label", "下载 iOS 企业测试版 0.3.81（2085）");
   const iosLabel = element("span", "land-platform-chip", "iOS 版下载");
-  iosLabel.append(element("span", "land-platform-status", "0.3.69（2073）· 企业测试版"));
+  iosLabel.append(element("span", "land-platform-status", "0.3.81（2085）· 企业测试版"));
   ios.append(iosLabel);
   actions.append(ios);
   return actions;
@@ -216,7 +216,7 @@ function homeView() {
   const downloadCopy = element("div");
   const downloadHead = element("div", "land-section-head");
   downloadHead.append(element("p", "land-kicker", "立即开始"), element("h2", null, "下载畅聊 ChatFlow"));
-  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 企业测试版 0.3.69（2073）请前往安装页，使用 Safari 安装或扫码下载。"));
+  downloadCopy.append(downloadHead, element("p", "land-download-note", "Android 安装包由官方渠道分发；iOS 企业测试版 0.3.81（2085）请前往安装页，使用 Safari 安装或扫码下载。"));
   downloadCard.append(downloadCopy, platformButtons());
   download.append(downloadCard);
   page.append(download);
