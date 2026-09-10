@@ -127,7 +127,7 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(create_group_router(settings, session_factory, matrix_gateway=matrix_gateway), prefix="/api/v1")
-    app.include_router(create_admin_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_admin_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
     return app
 
 

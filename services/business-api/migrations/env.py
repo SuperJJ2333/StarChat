@@ -21,6 +21,7 @@ from app.modules.ledger import adjustment_models as _adjustment_models  # noqa: 
 from app.modules.redpacket import models as _redpacket_models  # noqa: F401
 from app.modules.redpacket import claims as _redpacket_claims  # noqa: F401
 from app.modules.wallet import models as _wallet_models  # noqa: F401
+from app.modules.wallet import repair_models as _repair_models  # noqa: F401
 from app.modules.wallet import binding_models as _wallet_binding_models  # noqa: F401
 from app.modules.wallet import funding_models as _wallet_funding_models  # noqa: F401
 from app.modules.wallet import funding_scan_models as _wallet_funding_scan_models  # noqa: F401

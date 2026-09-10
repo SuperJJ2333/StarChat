@@ -13,6 +13,7 @@ from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.closing import WalletClosingService
 from app.modules.wallet.incidents import WalletIncidentService
+from app.modules.wallet.incident_reports import WalletIncidentReports
 from app.modules.wallet.monitoring import WalletMonitoringService
 
 
@@ -44,6 +45,25 @@ class ClosedWalletReport(BaseModel):
     report: DailyWalletReport
 
 
+class WalletIncidentTimelineItem(BaseModel):
+    id: str
+    created_at: str
+    action: str
+    actor_id: str | None
+    reason_code: str
+    result: str
+    status: str | None
+    generation: int | None
+    version: int | None
+    condition_active: bool | None
+
+
+class WalletIncidentRelatedRecord(BaseModel):
+    kind: Literal['WITHDRAWAL', 'DEPOSIT_RECEIPT', 'MANUAL_PAYOUT', 'USER']
+    id: str
+    relation: Literal['EXPLICIT_INCIDENT_LINK']
+
+
 class WalletIncidentView(BaseModel):
     id: str
     fingerprint: str
@@ -63,11 +83,16 @@ class WalletIncidentView(BaseModel):
     resolved_by: str | None
     clearance_digest: str | None
     last_escalation_slot: int
+    timeline: list[WalletIncidentTimelineItem] = Field(default_factory=list)
+    timeline_has_more: bool = False
+    related_records: list[WalletIncidentRelatedRecord] = Field(default_factory=list)
 
 
 class WalletIncidentList(BaseModel):
     items: list[WalletIncidentView]
     next_cursor: str | None
+    total: int
+    snapshot: str
 
 
 class WalletMonitorStatus(BaseModel):
@@ -87,6 +112,8 @@ def create_wallet_operations_router(settings, factory, wallet_service):
     audit = AuditWriter(factory)
     closes = WalletClosingService(factory)
     incidents = WalletIncidentService(factory)
+    incident_reports = WalletIncidentReports(factory,
+        cursor_secret=settings.jwt_secret or 'development-jwt-secret-at-least-thirty-two-bytes')
     monitor = WalletMonitoringService(factory, wallet_service=wallet_service if wallet_service.provider is not None else None)
 
     def finance(authorization: Annotated[str | None, Header()] = None):
@@ -129,12 +156,17 @@ def create_wallet_operations_router(settings, factory, wallet_service):
 
     @router.get('/incidents', response_model=WalletIncidentList)
     def listing(request: Request, user: str = Depends(finance), limit: int = Query(50, ge=1, le=100),
-                cursor: str | None = Query(None, max_length=128)):
-        return read(incidents.list_incidents(limit=limit, cursor=cursor), user, 'incidents', request)
+                cursor: str | None = Query(None, max_length=2048),
+                status: list[Literal['OPEN','ACKNOWLEDGED','RESOLVED']] | None = Query(None),
+                severity: list[Literal['P0','P1']] | None = Query(None), code: list[str] | None = Query(None),
+                sort: Literal['opened_desc','opened_asc','updated_desc'] = Query('opened_desc'),
+                condition_active: bool | None = Query(None)):
+        return read(incident_reports.list(limit=limit, cursor=cursor, status=status, severity=severity,
+            code=code,sort=sort,condition_active=condition_active), user, 'incidents', request)
 
     @router.get('/incidents/{id}', response_model=WalletIncidentView)
     def incident(id: str, request: Request, user: str = Depends(finance)):
-        return read(incidents.get(id), user, id, request)
+        return read(incident_reports.detail(id), user, id, request)
 
     @router.post('/incidents/{id}/ack', response_model=WalletIncidentView)
     def ack(id: str, body: IncidentCommandBody,

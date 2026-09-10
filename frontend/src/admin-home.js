@@ -1,14 +1,15 @@
 import {adminSession} from "./admin-session.js?v=20260908-modern";
-import {createAdminShell} from "./admin-dashboard.js?v=20260910-wallet-access";
+import {createAdminShell} from "./admin-dashboard.js?v=20260910-completion";
 import {loginView, sessionExpiredDialog, stepUpDialog} from "./admin-login.js?v=20260910-readability";
 import { element, button } from "./components/base.js";
-import { browserAdminApi, can } from "./admin-api.js?v=20260910-wallet-access";
+import { browserAdminApi, can } from "./admin-api.js?v=20260910-completion";
 import { presentModuleRows } from "./admin-presenters.js";
 import { userPanel } from "./admin-user-panel.js";
+import { ledgerPanel } from './admin-ledger-panel.js';
 import { statusLabel } from "./admin-formatters.js";
-import { chainPanel } from "./admin-chain-panel.js?v=20260910-readability";
-import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-wallet-access";
-import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-wallet-access';
+import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
+import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-completion";
+import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
 
 const modules = [
   ["发点钻给客服", "批次与审计记录", "finance", "admin.adjustments.read"],
@@ -54,6 +55,7 @@ function tableFor(key, dataset = {}) {
   return table;
 }
 function modulePanel(key, title, context) {
+  if(key==='ledger')return ledgerPanel(browserAdminApi());
   if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
     actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,
     renderSetup:(api,onSecurityChanged)=>manualWalletPanel(api,{actor:context.actor,securityOnly:true,onSecurityChanged,onReauthenticate:reauthenticateManualWallet}),
@@ -72,8 +74,8 @@ function modulePanel(key, title, context) {
 function walletContent(api,context,walletAccess){
   const panel=element('section','admin-card admin-module-panel');
   panel.append(element('h2',null,'USDT提现与支付'));
-  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess}),chain=chainPanel(api);
-  panel.append(table,wallet,chain);let disposed=false,revision=0;
+  const table=element('div'),wallet=manualWalletPanel(api,{actor:context.actor,onReauthenticate:reauthenticateManualWallet,unifiedRefresh:true,walletAccess}),chain=chainPanel(api,{actorId:context.actor?.id});
+  panel.append(chain,wallet,table);let disposed=false,revision=0;
   const loadTable=async()=>{const version=++revision;try{const payload=await api.getModule('wallet');if(!disposed&&version===revision)table.replaceChildren(tableFor('wallet',{headers:headerFallbacks.wallet,rows:presentModuleRows('wallet',payload.items??[])}));return true;}catch(error){if(!disposed)table.replaceChildren(element('p','admin-load-error',error.message??'钱包记录加载失败，请重试。'));return false;}};
   panel.dispose=()=>{disposed=true;++revision;wallet.dispose?.();chain.dispose?.();table.replaceChildren();};
   panel.refresh=async()=>{const results=await Promise.allSettled([wallet.refresh(),chain.refresh(),loadTable()]);return results.every(r=>r.status==='fulfilled'&&r.value!==false);};

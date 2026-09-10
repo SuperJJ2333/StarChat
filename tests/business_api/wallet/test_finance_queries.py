@@ -32,6 +32,9 @@ def test_unmatched_deposit_does_not_invent_user(receipt_core):
     assert link['ledger_status'] == 'REVIEW'
     assert link['user_id'] is None
     assert link['ledger_transaction_id'] is None
+    assert link['attribution_status'] == 'BOUND_ORDER_UNMATCHED'
+    assert '尚无通过匹配核验的充值订单' in link['attribution_reason_text']
+    assert link['user_username'] is None
 
 
 def test_payout_candidates_are_not_reported_as_settlement(payout_core):

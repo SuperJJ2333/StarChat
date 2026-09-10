@@ -10,13 +10,11 @@ Server: `root@207.56.8.8`, SSH port `23421`. Containers: `starchat-gateway-1` (n
 - Content gates: statistics HTML hash must equal the published Android bytes; SQLCipher present; no unexpected extra native libraries versus the previously published package of the same signing channel.
 - Hash baseline: compute the artifact SHA256 locally and carry it through every later step as the install gate.
 
-## 2. Network routes (check in this order)
+## 2. Default network route
 
-The workstation's default SSH route runs through the local proxy (`127.0.0.1:7897`). It can degrade to "TCP connects but SSH banner times out" for hours.
+Use the persistent workflow in [admin-production-workflow.md](admin-production-workflow.md). The default SSH route is `ssh -J jumper -p 23421 root@207.56.8.8`; SCP uses `-J jumper -P 23421`. Prefer `scripts/starchat-server.ps1`, which enforces the configured jumper, UTF-8 and connection checks. Do not first cycle through the workstation proxy route or introduce third-party proxy subscriptions.
 
-1. Diagnose: `ssh -v -p 23421 root@207.56.8.8 true` — "banner exchange timeout" with a successful `Test-NetConnection -Port 23421` means the route is degraded, not the server.
-2. **Fallback route (use this)**: `ssh -J jumper -p 23421 root@207.56.8.8` (jump host `8.163.93.151`, configured in `~/.ssh/config`). It is independent of the local proxy, typically faster (~700KB/s vs ~100KB/s), and is the proven route for large uploads.
-3. Do NOT improvise with third-party proxy subscriptions mid-incident. The 2026-09-10 HK subscription was diagnosed dead (inconsistent cross-resolver DNS, websocket backends not answering) — validating a stranger's node pool costs more time than the jumper route. If the default route is broken, report it and continue on the jumper.
+Preserve SSH host-key checking and HTTPS certificate/hostname verification. If workstation HTTPS is unreliable, use the existing jumper's temporary loopback-only SOCKS route for verification, then close the tunnel. A failed connection must be distinguished between the jumper, target SSH and remote command before retrying.
 
 ## 3. Large-file upload procedure (APK/IPA)
 
@@ -121,3 +119,9 @@ For the separately approved 60-minute wallet access verification, follow
 verification scope, not the global administrator login duration. Use the isolated
 expand migration `0062_wallet_access_grant`, matching migration/rehearsal evidence,
 and the API-only rollback; do not apply unrelated local migration heads.
+
+## 13. Admin completion and guarded manual repair release
+
+For the 2026-09-10 ledger filtering, detail dialogs and guarded manual financial repair release, follow [admin-completion-deployment.md](admin-completion-deployment.md). This is an API/static release from the independently verified live API baseline, with the expand-only migration `0063_merge_wallet_access` → `0064_admin_deposit_repairs`. The Worker stays unchanged. The manual-repair flag defaults to false in code and was explicitly enabled for this deployment after the migration and rehearsal gates.
+
+Clock discipline and its reviewed frequency recovery are a separate host change documented in [ADR 0067](../adr/0067-production-clock-discipline.md). Neither deployment nor enabling the feature authorizes an actual financial repair or automatic incident closure. Rollback retains expanded schema and audit history.

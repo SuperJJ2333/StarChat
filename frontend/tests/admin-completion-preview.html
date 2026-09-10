@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>后台交付验收 · 合成数据</title>
+<link rel="stylesheet" href="/src/styles/reset.css"><link rel="stylesheet" href="/src/styles/tokens.css"><link rel="stylesheet" href="/src/styles/gallery.css"><link rel="stylesheet" href="/src/styles/admin-wallet.css"><link rel="stylesheet" href="/src/styles/admin-modern.css"><link rel="stylesheet" href="/src/styles/admin-users.css"></head>
+<body class="admin-modern"><main class="admin-content"><header class="admin-topbar" style="flex-wrap:wrap"><h1 style="flex-basis:100%">管理后台 · 交付验收</h1><span>隔离合成数据</span><button id="ledger-tab">点钻流水</button><button id="wallet-tab">USDT提现与支付</button></header><div id="app"></div><p id="result" role="status">合成数据演示，不连接生产资金接口</p></main>
+<script type="module">
+import {ledgerPanel} from '../src/admin-ledger-panel.js';
+import {chainPanel} from '../src/admin-chain-panel.js';
+import {manualWalletPanel} from '../src/admin-manual-wallet-panel.js';
+import {walletRepairDialog} from '../src/admin-wallet-repair-dialog.js';
+const stamp='2026-09-10T06:02:03Z',txid='a'.repeat(64),digest='b'.repeat(64),calls=[],data=new Map();
+const storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};
+const records=[{txid,log_index:0,timestamp_ms:Date.parse(stamp),direction:'INFLOW',amount:'10.000000',platform_record:{kind:'DEPOSIT',ledger_status:'REVIEW',attribution_reason_text:'付款地址有绑定记录，但尚无通过匹配核验的充值订单'}},{txid:'c'.repeat(64),log_index:1,timestamp_ms:Date.parse(stamp),direction:'UNMATCHED_OUTFLOW',amount:'25.000000'}];
+const incident={id:'incident-fixture',code:'MANUAL_SOURCE_UNHEALTHY',severity:'P0',status:'RESOLVED',version:3,generation:1,condition_active:false,opened_at:stamp,last_seen_at:stamp,resolved_at:stamp,subject_id:'global',timeline:[{id:'audit-fixture',created_at:stamp,action:'wallet.incident.resolved',reason_code:'MANUAL_REVIEW',status:'RESOLVED'}],related_records:[]};
+const api={
+ getLedgerEntries:async filters=>{calls.push({ledger:filters});return {items:[{entry_id:'entry1',transaction_id:'txn1',created_at:stamp,username:'changliao_001',nickname:'晨曦',amount:'-25.00',scene:'UNKNOWN',mode:'RANDOM',reason_text:'发出红包',anomalies:['SCENE_UNVERIFIED']},{entry_id:'entry2',transaction_id:'txn2',created_at:stamp,username:'changliao_002',nickname:'若水',amount:'100.00',scene:'OTHER',mode:'OTHER',reason_text:'原因待补充',anomalies:['MISSING_REASON']}],total:52,next_cursor:filters.cursor?null:'page2'};},
+ getChainSummary:async()=>({balance:'1250.000000',last_success_ms:Date.parse(stamp),checkpoint_ms:Date.parse(stamp),coverage_start_ms:Date.parse(stamp),observer_status:'OK',reconciliation:'SOURCE_MATCHED'}),
+ getChainTransactions:async filters=>{calls.push({chain:filters});return {items:records,total:30,snapshot:1};},
+ getChainTransaction:async(id,index)=>({...records.find(r=>r.txid===id),block_number:86103000,from_address:'synthetic-source-address',to_address:'synthetic-target-address'}),
+ getWalletOperationSecurity:async()=>({auth_mode:'operation_password',configured:true,version:1}),getWalletMfaStatus:async()=>({configured:false,enabled:false}),
+ getManualPayouts:async()=>({items:[]}),getWalletIncidents:async()=>({items:[incident],total:1}),getWalletIncident:async()=>incident,
+ getWalletMonitorStatus:async()=>({last_success_at:stamp,stale:false,external_delivery_configured:true}),
+ getManualWalletDiagnostics:async()=>({source_status:'HEALTHY',coverage_status:'CURRENT',reserve_policy:'manual_liquidity',checked_at:stamp}),
+ getManualWalletControl:async()=>({status:'PAUSED',epoch:1,snapshot_digest:digest,unresolved_incidents:0,restriction_scopes:['manual_tron']}),
+ previewWalletRepair:async(kind,body)=>{calls.push({preview:body});return {preview_id:'preview-fixture',digest,expected_version:1,expires_at:stamp,blockers:[],confirmation:{...body,user_id:'synthetic-user',amount:'25.000000',asset:'USDT',network:'TRON',target_address:'synthetic-recipient-target',order_status:'CLAIMED'}};},
+ executeWalletRepair:async(kind,body)=>{calls.push({execute:body});return {operation_id:body.operation_id,status:'SUBMITTED',payout_status:'UNKNOWN'};},
+ getWalletRepair:async(kind,id)=>{calls.push({lookup:id});return {operation_id:id,status:'SUBMITTED',payout_status:'NEEDS_REVIEW',review_reason:'人工核对中'};}
+};
+let current=[];function mount(kind){for(const panel of current)panel.dispose?.();current=kind==='ledger'?[ledgerPanel(api)]:[chainPanel(api,{actorId:'preview-owner'}),manualWalletPanel(api,{actor:{id:'preview-owner'},walletAccess:true,storage})];document.querySelector('#app').replaceChildren(...current);}
+document.querySelector('#ledger-tab').onclick=()=>mount('ledger');document.querySelector('#wallet-tab').onclick=()=>mount('wallet');
+const params=new URLSearchParams(location.search);mount(params.get('panel')??'wallet');
+const tick=()=>new Promise(resolve=>setTimeout(resolve,20)),assert=(value,message)=>{if(!value)throw Error(message);};
+if(params.has('verify'))try{
+ mount('ledger');await tick();const form=document.querySelector('#app form');form.querySelector('[name=username]').value='changliao';form.querySelector('[name=nickname]').value='晨曦';form.requestSubmit();await tick();assert(calls.at(-1).ledger.username==='changliao'&&calls.at(-1).ledger.nickname==='晨曦','combined ledger filters');
+ mount('wallet');await tick();const detail=[...document.querySelectorAll('#app button')].find(b=>b.textContent==='详情');detail.focus();detail.click();await tick();assert(document.querySelector('dialog[open]')?.textContent.includes('synthetic-target-address'),'chain modal details');document.querySelector('dialog[open] button').click();assert(document.activeElement===detail,'focus restored');
+ const inc=[...document.querySelectorAll('#app button')].find(b=>b.textContent==='查看事故');inc.click();await tick();assert(document.querySelector('dialog[open]')?.textContent.includes('处理时间线'),'incident modal timeline');document.querySelector('dialog[open] button').click();
+ let modal=walletRepairDialog(api,records[1],{actorId:'preview-owner',storage});await tick();const payoutForm=document.querySelector('dialog[open] form');payoutForm.querySelector('input').value='synthetic-order';payoutForm.querySelector('textarea').value='已核对提现订单及收款地址';payoutForm.requestSubmit();await tick();assert(document.querySelector('dialog[open]').textContent.includes('synthetic-recipient-target'),'target address before confirmation');assert(calls.filter(c=>c.execute).length===0,'preview cannot execute');const check=document.querySelector('dialog[open] input[type=checkbox]');check.checked=true;check.dispatchEvent(new Event('change'));[...document.querySelectorAll('dialog[open] button')].find(b=>b.textContent==='确认提交').click();await tick();assert(data.size===1,'submitted payout journal retained');modal.close();modal=walletRepairDialog(api,records[1],{actorId:'preview-owner',storage});await tick();assert(calls.filter(c=>c.execute).length===1,'reopen never replays');[...document.querySelectorAll('dialog[open] button')].find(b=>b.textContent==='刷新当前操作状态').click();await tick();assert(document.querySelector('dialog[open]').textContent.includes('NEEDS_REVIEW'),'pending payout state visible');modal.close();mount('wallet');
+ document.body.dataset.verification='PASS';document.querySelector('#result').textContent='PASS · 组合筛选 / 弹窗与焦点 / 预检不执行 / 二次确认 / 待结算恢复 / 无自动重放';
+}catch(error){document.body.dataset.verification='FAIL';document.querySelector('#result').textContent='FAIL '+error.message;}
+if(params.get('modal')==='chain'){await tick();[...document.querySelectorAll('#app button')].find(b=>b.textContent==='详情').click();}
+if(params.get('modal')==='incident'){await tick();[...document.querySelectorAll('#app button')].find(b=>b.textContent==='查看事故').click();}
+</script></body></html>

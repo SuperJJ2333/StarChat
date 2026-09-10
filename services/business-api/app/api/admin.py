@@ -9,6 +9,9 @@ from app.modules.wallet.reporting import ReportDataError, WalletReportService, t
 from app.api.wallet_report_contracts import DailyWalletReport
 from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage
 from app.modules.admin.user_reports import user_page
+from app.modules.admin.ledger_entries import ledger_page
+from app.api.admin_wallet_repairs import create_admin_wallet_repairs_router
+from app.modules.wallet.clock_health import ClockHealth
 from app.modules.admin.dashboard_reports import registration_trend
 from app.modules.ledger.supply_reports import point_supply, issuance_page, issuance_detail
 from app.core.config import Settings
@@ -102,7 +105,7 @@ MODULE_PERMISSIONS = {
     "wallet": Permission.FINANCE_REVIEW,
 }
 
-def create_admin_router(settings: Settings, session_factory) -> APIRouter:
+def create_admin_router(settings: Settings, session_factory, *, manual_runtime=None) -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["admin"])
     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     rbac = RbacService(session_factory)
@@ -119,6 +122,8 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
     router.include_router(create_manual_wallet_operations_router(settings, session_factory))
     router.include_router(create_manual_wallet_handover_router(settings, session_factory))
     router.include_router(create_admin_wallet_security_router(settings, session_factory))
+    router.include_router(create_admin_wallet_repairs_router(settings, session_factory,
+        runtime=manual_runtime, clock_trusted=ClockHealth().trusted))
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -358,6 +363,29 @@ def create_admin_router(settings: Settings, session_factory) -> APIRouter:
             supply = point_supply(session, now=report_now)
         audit.record(actor_id=user_id, subject_type="admin", subject_id=user_id, action="admin.overview.viewed", result="SUCCESS", reason_code="ADMIN_DASHBOARD_VIEW", trace_id=getattr(request.state, "trace_id", "unknown"), source_ip=request.client.host if request.client else None)
         return {"registered_users": registered, "active_users": active, "online_customers": online, "pending_withdrawals": pending_withdrawals, "today_point_volume": f"{today_point_volume:.2f}", "brand": "ChatFlow", "registration_trend": trend, "registration_timezone": "Asia/Hong_Kong", "registration_today_partial": True, "point_supply": supply}
+
+    @router.get('/ledger-entries')
+    def ledger_entries(request: Request, user_id: str = Depends(actor),
+                       limit: int = Query(default=50, ge=1, le=100),
+                       cursor: str | None = Query(default=None, max_length=1024),
+                       username: str | None = Query(default=None, max_length=128),
+                       nickname: str | None = Query(default=None, max_length=128),
+                       email: str | None = Query(default=None, max_length=128),
+                       scene: Literal['GROUP', 'EXCLUSIVE', 'DIRECT', 'TRANSFER', 'OTHER', 'UNKNOWN'] | None = None,
+                       mode: Literal['RANDOM', 'EQUAL', 'EXCLUSIVE', 'OTHER'] | None = None,
+                       start_at: str | None = Query(default=None, max_length=40),
+                       end_at: str | None = Query(default=None, max_length=40)):
+        require(user_id, Permission.AUDIT_VIEW)
+        with session_factory() as session:
+            try:
+                result = ledger_page(session, limit=limit, cursor=cursor, filters=dict(
+                    username=username, nickname=nickname, email=email, scene=scene, mode=mode,
+                    start_at=start_at, end_at=end_at))
+            except ValueError as exc:
+                raise AppError(code='ADMIN_REPORT_FILTER_INVALID', message='流水筛选或分页参数无效', status_code=422) from exc
+        audit.record(actor_id=user_id, subject_type='admin', subject_id=user_id,
+            action='admin.ledger.viewed', result='SUCCESS', reason_code='ADMIN_LEDGER_VIEW', trace_id=trace(request))
+        return JSONResponse(result, headers={'Cache-Control': 'no-store'})
 
     @router.get("/point-issuance", response_model=PointIssuancePage)
     def point_issuance(user_id: str = Depends(actor), limit: int = Query(default=50, ge=1, le=100),

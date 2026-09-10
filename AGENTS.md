@@ -2,6 +2,9 @@
 
 ## Deployment access
 
+- For admin-console changes, server investigation or deployment, read `docs/runbooks/admin-production-workflow.md` first. This is the persistent user-approved cross-session workflow; use the `starchat-admin-production` skill when available.
+- Default server access is the configured jumper: `ssh -J jumper -p 23421 root@207.56.8.8` (SCP uses `-P`). Prefer `scripts/starchat-server.ps1`. Do not repeatedly try the workstation proxy route before using the jumper. Preserve host-key and HTTPS certificate verification.
+
 - SSH target: `root@207.56.8.8`
 - SSH port: `23421`
 - Authentication: passwordless SSH configured locally; private keys and tokens are not stored in this repository.

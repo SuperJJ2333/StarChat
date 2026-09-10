@@ -23,6 +23,10 @@ class PlatformRecord(BaseModel):
     intent_id: str | None
     reason_code: str
     evidence_status: Literal['VERIFIED', 'UNVERIFIED', 'CONFLICT']
+    attribution_status: str | None = None
+    attribution_reason_text: str | None = None
+    user_username: str | None = None
+    user_nickname: str | None = None
 
 
 class ChainTransaction(BaseModel):

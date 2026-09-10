@@ -26,3 +26,12 @@
 .wallet-access-dialog form, .wallet-access-dialog label { display: grid; gap: 12px; }
 .wallet-access-dialog > button { margin: 4px 8px 4px 0; }
 .wallet-access-dialog .wallet-workspace { display: block; }
+/* Admin completion: bounded tables, consistent filters and clear anomalies. */
+.admin-chain-panel,.admin-ledger-panel{min-width:0;max-width:100%;overflow:hidden}
+.admin-ledger-panel .admin-filters,.admin-chain-panel .admin-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin:16px 0}
+.admin-ledger-panel .admin-filters label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--admin-muted)}
+.admin-chain-panel td:last-child{white-space:nowrap}.admin-chain-panel td:last-child button+button{margin-left:8px}
+.admin-data-anomaly td:nth-child(6){color:var(--admin-modern-color-19)}
+.admin-proof-dialog .admin-command-form{display:grid;gap:16px}.admin-proof-dialog .admin-proof-fields dd{overflow-wrap:anywhere}
+.admin-proof-dialog .admin-command-form textarea{min-height:100px;width:100%}.admin-proof-dialog .admin-proof-body>div>label{display:flex;gap:10px;align-items:flex-start;margin:20px 0;line-height:1.6}
+@media(max-width:640px){.admin-ledger-panel .admin-filters>label{flex:1 1 100%;min-width:0}.admin-ledger-panel .admin-filter{width:100%;min-width:0}.admin-proof-dialog .admin-proof-fields{grid-template-columns:1fr;gap:4px}.admin-proof-dialog .admin-proof-fields dd{margin-bottom:12px}}

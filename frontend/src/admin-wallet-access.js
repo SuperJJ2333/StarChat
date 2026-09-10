@@ -79,7 +79,7 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
       dialog.append(button('配置完成，检查验证状态',()=>gate.check()));
     }else if(state.kind==='login')dialog.append(button('重新登录',()=>{close();onLogin?.();}));
     else if(state.kind==='network')dialog.append(button('重试验证状态',()=>gate.check()));
-    dialog.append(make('p','未确认请求按账号保留。验证后仅查询当前状态，不会自动重放资金操作。'),button('返回其他后台页面',exit));
+    dialog.append(make('p','未确认请求按账号保留。验证后仅查询当前状态，不会自动重放资金操作。'),button('刷新当前操作状态',()=>gate.check()),button('返回其他后台页面',exit));
   }
   const gate=createWalletAccess({api,actorId:actor?.id,onChange:show});
   const guarded=new Proxy(api,{get(target,key){const value=target[key];if(typeof value!=='function')return value;return async(...args)=>{const credentialChange=['setWalletOperationPassword','enrollWalletMfa','enableWalletMfa','abortWalletMfaEnrollment'].includes(key);const result=await gate.guard(()=>value.apply(target,args),{credentialChange});if(credentialChange){gate.lock();channel?.postMessage('changed');await gate.check();}return result;};}});

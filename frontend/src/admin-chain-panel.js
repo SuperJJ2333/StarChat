@@ -1,4 +1,6 @@
 import { formatBeijingTime, parseBeijingInput } from './admin-formatters.js';
+import {detailDialog} from './admin-detail-dialog.js';
+import {walletRepairDialog} from './admin-wallet-repair-dialog.js';
 
 function node(tag, text, className) {
   const result = document.createElement(tag);
@@ -26,7 +28,7 @@ function directionLabel(record) {
     ? "提现转出" : "未匹配转出";
 }
 
-export function chainPanel(api) {
+export function chainPanel(api, {actorId}={}) {
   const panel = node("section", undefined, "admin-card admin-chain-panel");
   panel.append(node("h3", "官方钱包链上流水"), node("p",
     "TronGrid 单源监控。平台入账与提现结算以关联账本为准；待处理或证据冲突的流水需核查。", "admin-audit-note"));
@@ -54,7 +56,8 @@ export function chainPanel(api) {
   const previous = node("button", "上一页", "admin-secondary"); previous.type = "button";
   const next = node("button", "下一页", "admin-secondary"); next.type = "button";
   const paging = node("div", undefined, "admin-filters"); paging.append(previous, next);
-  panel.append(summary, form, state, rows, paging, detail);
+  panel.append(summary, form, state, rows, paging);
+  let detailModal,repairModal;
   let offset = 0, snapshot, activeFilters = {}, generation = 0, detailGeneration = 0, selectedRecord, loading = false, disposed = false;
   const limit = 25;
   function staleDetail(message) {
@@ -63,6 +66,7 @@ export function chainPanel(api) {
   }
   async function showDetail(item, preserve = false) {
     if(disposed)return false;
+    if(!detailModal)detailModal=detailDialog('流水详情',detail,{onClose:()=>{detailModal=null;selectedRecord=undefined;++detailGeneration;}});
     selectedRecord=item;
     const current = generation;
     const selected = ++detailGeneration;
@@ -77,6 +81,8 @@ export function chainPanel(api) {
       }
       const link = record.platform_record;
       if (link) {
+        list.append(node('dt','用户归属说明'),node('dd',link.attribution_reason_text??(link.user_id?'已关联业务记录':'尚无通过核验的用户关联，请核查绑定及订单匹配原因')));
+        if(link.user_username)list.append(node('dt','畅聊号'),node('dd',link.user_username),node('dt','用户名'),node('dd',link.user_nickname??'—'));
         for (const [key, label] of [["record_id", "关联收款 / 提现单"], ["user_id", "用户归属"],
           ["ledger_transaction_id", "账本交易编号"], ["intent_id", "充值意图编号"], ["reason_code", "核定原因码"]]) {
           list.append(node("dt", label), node("dd", link[key] ?? "尚未关联"));
@@ -89,16 +95,16 @@ export function chainPanel(api) {
       return true;
     } catch (error) { if (!disposed && current === generation && selected === detailGeneration) staleDetail(`详情读取失败：${error.message}`);return false; }
   }
-  async function load({fresh = false, preserveSelection = false} = {}) {
-    if(disposed)return false;
+  async function load({fresh = false, preserveSelection = false, requestedOffset = offset, filters = activeFilters} = {}) {
+    if(disposed||loading)return false;
     const current = ++generation;loading=true;
     const priorPaging=[previous.disabled,next.disabled];
     previous.disabled = next.disabled = submit.disabled = true;
     state.textContent = "正在加载流水…";
     try {
-      const [health, page] = await Promise.all([api.getChainSummary(), api.getChainTransactions({ ...activeFilters, limit, offset, snapshot:fresh?undefined:snapshot })]);
+      const [health, page] = await Promise.all([api.getChainSummary(), api.getChainTransactions({ ...filters, limit, offset:requestedOffset, snapshot:fresh?undefined:snapshot })]);
       if (disposed || current !== generation) return false;
-      snapshot = page.snapshot;
+      snapshot = page.snapshot;offset=requestedOffset;activeFilters=filters;
       summary.textContent = `链上余额：${health.balance ?? "暂无"} USDT；最近成功扫描：${time(health.last_success_ms)}；扫描水位：${time(health.checkpoint_ms)}；覆盖起点：${time(health.coverage_start_ms)}；观察器：${health.observer_status}；对账：${health.reconciliation}。`;
       state.textContent = page.total ? `共 ${page.total} 笔，显示 ${offset + 1}–${offset + page.items.length}。新流水请点击刷新。` : "当前筛选范围内暂无流水。";
       const table = node("table", undefined, "admin-table"), head = node("thead"), body = node("tbody"), headers = node("tr");
@@ -109,6 +115,7 @@ export function chainPanel(api) {
         for (const value of [time(item.timestamp_ms), directionLabel(item), item.amount, `${item.txid} / ${item.log_index}`, accounting(item)]) tr.append(node("td", value));
         const cell = node("td"), action = node("button", "详情", "admin-secondary"); action.type = "button";
         action.addEventListener("click", () => showDetail(item)); cell.append(action); tr.append(cell); body.append(tr);
+        if(actorId){const repair=node('button',item.direction==='INFLOW'?'充值补入账':'提现核对','admin-secondary');repair.type='button';repair.addEventListener('click',()=>{repairModal?.close();repairModal=walletRepairDialog(api,item,{actorId,onClose:()=>{repairModal=null;}});});cell.append(repair);}
       }
       table.append(head, body); rows.replaceChildren(table);
       previous.disabled = offset === 0; next.disabled = offset + page.items.length >= page.total;
@@ -132,13 +139,13 @@ export function chainPanel(api) {
       state.textContent = "请输入有效的北京时间。"; return;
     }
     if (start !== undefined && end !== undefined && start > end) { state.textContent = "开始时间不能晚于结束时间。"; return; }
-    activeFilters = { direction: direction.value, txid: txid.value.trim(), start_ms: start, end_ms: end };
-    offset = 0; snapshot = undefined; load();
+    const filters = { direction: direction.value, txid: txid.value.trim(), start_ms: start, end_ms: end };
+    void load({filters,requestedOffset:0,fresh:true});
   });
-  previous.addEventListener("click", () => { offset = Math.max(0, offset - limit); load(); });
-  next.addEventListener("click", () => { offset += limit; load(); });
+  previous.addEventListener("click", () => load({requestedOffset:Math.max(0,offset-limit)}));
+  next.addEventListener("click", () => load({requestedOffset:offset+limit}));
   panel.refresh=()=>loading||disposed?Promise.resolve(false):load({fresh:true,preserveSelection:true});
-  panel.dispose=()=>{disposed=true;++generation;++detailGeneration;};
+  panel.dispose=()=>{disposed=true;++generation;++detailGeneration;detailModal?.close();repairModal?.close();};
   load();
   return panel;
 }

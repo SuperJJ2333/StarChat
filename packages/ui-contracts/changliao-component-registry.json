@@ -1172,5 +1172,33 @@
   },
   "screens": {
     "expectedCount": 332
+  },
+  "adminCompletion20260910": {
+    "html": [
+      "frontend/src/admin-ledger-panel.js",
+      "frontend/src/admin-chain-panel.js",
+      "frontend/src/admin-wallet-repair-dialog.js",
+      "frontend/src/admin-detail-dialog.js"
+    ],
+    "states": [
+      "loading",
+      "empty",
+      "error",
+      "filtered",
+      "paged",
+      "modal",
+      "verification-expired",
+      "preview-blocked",
+      "confirmation",
+      "unknown-result"
+    ],
+    "scope": "administrator-web-only",
+    "tokens": "existing admin and wallet tokens; no new primitives",
+    "directions": {
+      "INFLOW": "deposit-repairs",
+      "UNMATCHED_OUTFLOW": "payout-reconciliations"
+    },
+    "walletValidation": "fixed 60 minutes; global login unchanged",
+    "demo": "frontend/tests/admin-completion-preview.html"
   }
 }

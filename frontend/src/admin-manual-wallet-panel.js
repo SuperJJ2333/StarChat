@@ -1,5 +1,6 @@
 // Manual operations never sign or broadcast; API/ledger state is authoritative.
 import {processIncident, incidentSummary, incidentError, incidentTime, diagnosticSummary, fundControlError} from './wallet-incident-workflow.js?v=20260910-readability';
+import {detailDialog} from './admin-detail-dialog.js';
 const SAFE_METADATA = new Set(['expected_digest', 'txid', 'reason_code', 'expected_version', 'clearance_digest', 'credential_id', 'expected_epoch', 'snapshot_digest','preparation_id','manifest_digest','no_unregistered_payments','notice_received']);
 export function exactUsdt(value) {
   if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)\.[0-9]{6}$/.test(value)) throw new Error('金额格式异常，操作已关闭');
@@ -66,7 +67,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   const credentialPayload=values=>walletAccess?{}:authMode==='operation_password'?{operation_password:values.operation_password}:{mfa_proof:values.mfa_proof};
   const secretInputs = new Set(); let disposed = false, refreshing = false, writing = false, reading = 0, reauthenticating = false;
   const descendants = el => [el, ...Array.from(el.children ?? []).flatMap(descendants)];
-  const forms = () => descendants(root).filter(el => el.tagName === 'FORM' || el.tag === 'form');
+  const forms = () => [...descendants(root), ...(incidentModal ? descendants(incidentDetail) : [])].filter(el => el.tagName === 'FORM' || el.tag === 'form');
   const inputsOf = el => descendants(el).filter(el => el.tagName === 'INPUT' || el.tag === 'input');
   const rawApi=api;
   api=new Proxy(rawApi,{get(target,key){const value=target[key];
@@ -321,13 +322,20 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     } catch (error) { if(disposed||generation!==detailGeneration)return;authFailure(error); if(generation===detailGeneration) return stale(detail,'详情读取或金额校验失败，付款操作已关闭。'); }
   }
   const incidents=node('section'), incidentDetail=node('section'), monitor=node('p'),diagnostics=node('p'),fundSummary=node('p');
-  const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents()),incidents,incidentDetail);primary.append(monitoring);
+  let incidentModal;
+  const incidentFilters=node('form');incidentFilters.name='monitoring-filters';incidentFilters.className='admin-filters';const incidentInputs={};
+  for(const [key,label,values] of [['status','处理状态',[['','全部状态'],['OPEN','未处理'],['ACKNOWLEDGED','已确认'],['RESOLVED','已结案']]],['severity','事故等级',[['','全部等级'],['P0','P0'],['P1','P1']]],['sort','排序',[['opened_desc','发生时间：新到旧'],['opened_asc','发生时间：旧到新'],['updated_desc','最近发现：新到旧']]]]){const select=node('select');select.className='admin-filter';select.setAttribute('aria-label',label);for(const [value,text] of values){const option=node('option',text);option.value=value;select.append(option);}incidentInputs[key]=select;incidentFilters.append(select);}
+  const incidentSearch=node('input');incidentSearch.className='admin-filter';incidentSearch.placeholder='事故代码';incidentSearch.setAttribute('aria-label','事故代码');incidentSearch.maxLength=100;incidentInputs.code=incidentSearch;incidentFilters.append(incidentSearch);
+  let activeIncidentFilters={},incidentPages=[undefined],incidentPage=0;
+  incidentFilters.append(action('查询',()=>loadIncidents(null,{filters:Object.fromEntries(Object.entries(incidentInputs).map(([k,v])=>[k,v.value])),page:0,pages:[null]})),action('重置',()=>loadIncidents(null,{filters:{},page:0,pages:[null],reset:true})));
+  incidentFilters.addEventListener('submit',event=>event.preventDefault());
+  const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})),incidentFilters,incidents);primary.append(monitoring);
   let reservePolicy;
   let incidentGeneration=0, incidentSelection=0;
-  async function loadIncidents(cursor = incidentCursor) {
+  async function loadIncidents(cursor = incidentCursor,{filters=activeIncidentFilters,page=incidentPage,pages=incidentPages,reset=false}={}) {
     if (disposed) return;
-    const generation=++incidentGeneration; incidentCursor=cursor;
-    const results=await Promise.allSettled([api.getWalletIncidents({limit:25,cursor}),api.getWalletMonitorStatus(),api.getManualWalletDiagnostics?api.getManualWalletDiagnostics():Promise.resolve(null)]);
+    const generation=++incidentGeneration;
+    const results=await Promise.allSettled([api.getWalletIncidents({...filters,limit:25,cursor}),api.getWalletMonitorStatus(),api.getManualWalletDiagnostics?api.getManualWalletDiagnostics():Promise.resolve(null)]);
     if(generation!==incidentGeneration) return;
     const [list,status,diagnostic]=results;
     for (const result of results) if (result.status === 'rejected') authFailure(result.reason);
@@ -335,14 +343,20 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     reservePolicy=diagnostic.status==='fulfilled'?diagnostic.value?.reserve_policy:undefined;
     diagnostics.textContent=diagnosticSummary(diagnostic.status==='fulfilled'?diagnostic.value:null)+(diagnostic.value?.checked_at?` 检查时间：${incidentTime(diagnostic.value.checked_at)}`:'');
     if(list.status==='rejected') return stale(incidents,'事故加载失败。');
+    incidentCursor=cursor;activeIncidentFilters=filters;incidentPage=page;incidentPages=pages;
+    if(reset)for(const [key,input] of Object.entries(incidentInputs))input.value=key==='sort'?'opened_desc':'';
     incidents.replaceChildren();
     if(!list.value.items.length) incidents.append(node('p','暂无事故记录'));
-    for(const item of list.value.items) { const summary=incidentSummary(item,reservePolicy),row=node('article'); row.append(node('h5',summary.title),node('p',`首次发生：${incidentTime(item.opened_at)} · ${summary.status}`),node('p',summary.impact),action('查看事故',()=>showIncident(item.id))); incidents.append(row); }
-    if(list.value.next_cursor) incidents.append(action('下一页事故',()=>loadIncidents(list.value.next_cursor)));
+    const table=node('table');table.className='admin-table';const headers=node('tr'),head=node('thead'),body=node('tbody');for(const label of ['事故','发生时间（北京时间）','等级','处理状态','影响范围','操作'])headers.append(node('th',label));head.append(headers);
+    for(const item of list.value.items) { const summary=incidentSummary(item,reservePolicy),row=node('tr');for(const value of [summary.title,incidentTime(item.opened_at),item.severity,summary.status,summary.impact])row.append(node('td',value));const cell=node('td');cell.append(action('查看事故',()=>showIncident(item.id)));row.append(cell);body.append(row); }
+    table.append(head,body);const scroll=node('div');scroll.className='admin-table-scroll';scroll.append(table);incidents.append(scroll,node('p',`第 ${incidentPage+1} 页${list.value.total!==undefined?' · 共 '+list.value.total+' 起事故':''}`));
+    if(incidentPage>0)incidents.append(action('上一页事故',()=>loadIncidents(incidentPages[incidentPage-1],{page:incidentPage-1})));
+    if(list.value.next_cursor) incidents.append(action('下一页事故',()=>loadIncidents(list.value.next_cursor,{page:incidentPage+1,pages:[...incidentPages.slice(0,incidentPage+1),list.value.next_cursor]})));
     return status.status==='fulfilled'&&diagnostic.status==='fulfilled';
   }
   async function showIncident(id) {
     if (disposed) return;
+    if(!incidentModal)incidentModal=detailDialog('事故详情',incidentDetail,{onClose:()=>{incidentModal=null;selectedIncident=undefined;++incidentSelection;}});
     const selection=++incidentSelection; selectedIncident=id;
     try {
       const item=await api.getWalletIncident(id); if(selection!==incidentSelection) return;
@@ -351,6 +365,8 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
       incidentDetail.append(node('p',summary.explanation));
       describe(incidentDetail,[['首次发生',incidentTime(item.opened_at)],['处理状态',summary.status],['影响范围',summary.impact],['最近异常记录',summary.condition]]);
       incidentDetail.append(node('p','首次发生时间描述历史记录，不代表当前仍然故障。历史详细原因未记录时，不能据当前结果推断。'));
+      const related=node('section');related.append(node('h4','关联交易与用户'));for(const record of item.related_records??[])related.append(node('p',`${record.kind}：${record.id}（${record.relation}）`));if(!item.related_records?.length)related.append(node('p','暂无可核验的直接关联记录；全局监控事故不推测用户归属。'));incidentDetail.append(related);
+      const timeline=node('section');timeline.append(node('h4','处理时间线'));for(const event of item.timeline??[])timeline.append(node('p',`${incidentTime(event.created_at)} · ${event.action} · ${event.reason_code} · ${event.status??event.result}`));if(!item.timeline?.length)timeline.append(node('p','暂无已记录的处理事件'));if(item.timeline_has_more)timeline.append(node('p','当前展示最近200条处理事件；更早记录保留在审计系统。'));incidentDetail.append(timeline);
       const technical=node('details');technical.append(node('summary','技术详情与时间线'));
       describe(technical,[['事故编号',item.id],['技术代码',item.code],['级别',item.severity],['版本',item.version],['复核证据摘要',item.clearance_digest],['确认人',item.acknowledged_by],['结案人',item.resolved_by],['最近发现',incidentTime(item.last_seen_at)],['接手时间',incidentTime(item.acknowledged_at)],['异常消失时间',incidentTime(item.cleared_at)],['结案时间',incidentTime(item.resolved_at)]]);incidentDetail.append(technical);
       if(item.status==='RESOLVED'||summary.advisory)return;
@@ -476,6 +492,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   monitoring.append(node('p','检查当前状态无需操作密码，仅刷新当前状态，不会结案或恢复资金。'),check);
   root.dispose = () => {
     disposed=true;++mfaGeneration;++listGeneration;++detailGeneration;++incidentGeneration;++incidentSelection;++controlGeneration;++handoverGeneration;
+    incidentModal?.close();
     if(queuedRefresh){queuedRefresh.resolve(false);queuedRefresh=null;}
     for(const input of secretInputs)input.value='';secretInputs.clear();
   };

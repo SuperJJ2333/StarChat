@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     tron_observer_database_path: str | None = None
     wallet_binding_domain: str | None = None
     wallet_real_mode: Literal['disabled', 'manual_tron'] = 'disabled'
+    wallet_manual_repairs_enabled: bool = False
     wallet_user_auth_mode: Literal['wallet_proof', 'address_only'] = 'wallet_proof'
     wallet_real_funds_enabled: bool = False
     wallet_deposits_enabled: bool | None = None

@@ -60,6 +60,11 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     return request(path, { method, headers, cache: "no-store", body: JSON.stringify(body ?? {}) });
   };
   return {
+    getLedgerEntries: async (filters={})=>{const query=new URLSearchParams();for(const [key,value] of Object.entries(filters))if(value!==undefined&&value!==null&&value!=='')query.set(key,String(value));return request(`/api/v1/admin/ledger-entries?${query}`,{cache:'no-store'});},
+    getDepositRepairCandidates: async filters=>request(`/api/v1/admin/wallet/manual/deposit-repairs/candidates?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    previewWalletRepair: async (kind,body)=>request(`/api/v1/admin/wallet/manual/${kind}/preview`,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
+    executeWalletRepair: async (kind,body,options)=>command(`/api/v1/admin/wallet/manual/${kind}`,body,options),
+    getWalletRepair: async (kind,id)=>request(`/api/v1/admin/wallet/manual/${kind}/${encodeURIComponent(id)}`,{cache:'no-store'}),
     getManualWalletDiagnostics: async () => request('/api/v1/admin/wallet/manual/operations/diagnostics', {cache:'no-store'}),
     getWalletAccess: async () => request('/api/v1/wallet/manual/access', {cache:'no-store'}),
     verifyWalletAccess: async proof => request('/api/v1/wallet/manual/access/verify', {method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(proof)}),
@@ -69,9 +74,10 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     getPointIssuanceDetail: async id=>request(`/api/v1/admin/point-issuance/${encodeURIComponent(id)}`,{cache:'no-store'}),
     getLoginCaptcha: async () => request('/api/v1/auth/admin-captcha', {cache:'no-store'}),
     adminLogin: async body => request('/api/v1/auth/admin-login', {method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store', body:JSON.stringify({...body, device_key:'admin-browser', device_name:'ChatFlow Admin'})}),
-    getWalletIncidents: async ({limit = 25, cursor} = {}) => {
+    getWalletIncidents: async ({limit = 25, cursor, status, severity, code, sort} = {}) => {
       const query = new URLSearchParams({limit: String(limit)});
       if (cursor) query.set('cursor', cursor);
+      for(const [key,value] of Object.entries({status,severity,code,sort}))if(value)query.set(key,value);
       return request(`/api/v1/admin/wallet/incidents?${query}`, {cache: 'no-store'});
     },
     getWalletIncident: async id => request(`/api/v1/admin/wallet/incidents/${encodeURIComponent(id)}`, {cache: 'no-store'}),

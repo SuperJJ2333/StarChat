@@ -37,11 +37,12 @@ def test_group_auto_join_migration_extends_friend_request_reuse() -> None:
 
 
 def test_wallet_and_moments_merge_is_the_only_head() -> None:
-    assert _alembic("heads").strip() == "0063_merge_wallet_access (wallet_access) (head)"
+    assert _alembic("heads").strip() == "0064_admin_deposit_repairs (wallet_access) (head)"
     history = _alembic("history", "-r", "0060_merge_release_parity:head")
     assert "0060_merge_release_parity -> 0061_mobile_matrix_session" in history
     assert "0061_mobile_matrix_session -> 0062_matrix_login_broker" in history
     assert "0063_merge_wallet_access" in history
+    assert "0063_merge_wallet_access -> 0064_admin_deposit_repairs" in history
 
 
 def test_direct_room_reservation_upgrade_preserves_canonical_rooms() -> None:
