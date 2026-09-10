@@ -28,11 +28,11 @@ enum IOSSecureSessionError: Error {
   case verification
 }
 
-// ADR0011: only these two existing, device-local entries can be migrated.
+// ADR0011/0063: explicit device-local session keys and strictly scoped DB keys.
 // No recovery keys, Matrix room keys or other secure-storage items are queried.
 final class IOSSecureSessionStore {
   private let security: IOSSessionSecurityOperations
-  private static let keys: Set<String> = ["liuhetong.matrix_database_key.v1", "liuhetong.business_session.v1"]
+  private static let keys: Set<String> = ["liuhetong.matrix_database_key.v1", "liuhetong.business_session.v1", "liuhetong.active_matrix_scope.v1", "liuhetong.matrix_account_slots.v1"]
   private static let service = "flutter_secure_storage_service"
   private let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
 
@@ -40,7 +40,7 @@ final class IOSSecureSessionStore {
   convenience init() { self.init(security: IOSSystemSessionSecurity()) }
 
   private func query(key: String) throws -> [String: Any] {
-    guard Self.keys.contains(key) else { throw IOSSecureSessionError.invalidKey }
+    guard Self.keys.contains(key) || key.range(of: #"^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$"#, options: .regularExpression) != nil else { throw IOSSecureSessionError.invalidKey }
     // Accessibility is deliberately NOT a search filter: an old WhenUnlocked
     // item must return its real locked error, not masquerade as absent.
     return [kSecClass as String: kSecClassGenericPassword,

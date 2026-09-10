@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 import 'package:matrix/matrix.dart';
 import 'package:matrix/encryption/utils/key_verification.dart';
@@ -55,9 +56,23 @@ final class MatrixClientFactory {
   final String Function() databaseGenerationFactory;
   String? _unboundDatabaseGeneration;
 
+  Future<String> _databasePath(String directory) async {
+    final scope = await sessionStore.matrixStorageScope();
+    return p.join(directory,
+        scope.isEmpty ? databaseFileName : 'liuhetong_matrix_$scope.sqlite');
+  }
+
+  Future<void> selectAccount(String selectedHomeserver, String userId) async {
+    if (selectedHomeserver != homeserver.toString()) {
+      throw StateError('Matrix account homeserver mismatch');
+    }
+    await sessionStore.selectMatrixAccount(selectedHomeserver, userId);
+    _unboundDatabaseGeneration = null;
+  }
+
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
-    final databasePath = p.join(directory, databaseFileName);
+    final databasePath = await _databasePath(directory);
     if (await sessionStore.matrixClearPending()) {
       await _completePendingClear(databasePath);
     }
@@ -67,8 +82,13 @@ final class MatrixClientFactory {
       databasePath: databasePath,
       cipher: cipher,
     );
-    await clientMigrator(client, homeserver);
-    return client;
+    try {
+      await clientMigrator(client, homeserver);
+      return client;
+    } catch (_) {
+      await disposer(client);
+      rethrow;
+    }
   }
 
   Future<MatrixClientContinuityMetadata> continuityMetadata(
@@ -76,7 +96,10 @@ final class MatrixClientFactory {
     final binding = await sessionStore.matrixBinding();
     final generation = binding?.databaseGeneration ??
         (_unboundDatabaseGeneration ??= databaseGenerationFactory());
-    if (!client.isLogged()) {
+    if (!client.isLogged() &&
+        client.userID == null &&
+        client.deviceID == null &&
+        binding == null) {
       return MatrixClientContinuityMetadata(
         isLoggedIn: false,
         userId: null,
@@ -121,7 +144,7 @@ final class MatrixClientFactory {
       throw StateError('Matrix client does not match the local binding');
     }
     return MatrixClientContinuityMetadata(
-      isLoggedIn: true,
+      isLoggedIn: client.isLogged(),
       userId: userId,
       deviceId: deviceId,
       ed25519Fingerprint: fingerprint,
@@ -135,7 +158,7 @@ final class MatrixClientFactory {
 
   Future<void> clearLocalChatData(Client? client) async {
     final directory = await supportDirectoryPath();
-    final databasePath = p.join(directory, databaseFileName);
+    final databasePath = await _databasePath(directory);
     await sessionStore.markMatrixClearPending();
     if (client != null) {
       // Explicit local clear is entirely local. SDK logout may issue an
@@ -220,6 +243,7 @@ final class MatrixClientFactory {
     await encryption.ensureDatabaseFileEncrypted();
     final client = Client(
       clientName,
+      preserveStoreOnInvalidToken: true,
       verificationMethods: {
         KeyVerificationMethod.emoji,
         KeyVerificationMethod.numbers,
@@ -234,11 +258,32 @@ final class MatrixClientFactory {
           database: database,
           sqfliteFactory: databaseFactory,
         );
-        await matrixDatabase.open();
-        return matrixDatabase;
+        return initializeDatabase(matrixDatabase, database.close);
       },
     );
-    await client.init();
-    return client;
+    return initializeClient(client);
+  }
+
+  @visibleForTesting
+  static Future<Client> initializeClient(Client client) async {
+    try {
+      await client.init();
+      return client;
+    } catch (_) {
+      await client.dispose();
+      rethrow;
+    }
+  }
+
+  @visibleForTesting
+  static Future<MatrixSdkDatabase> initializeDatabase(
+      MatrixSdkDatabase database, Future<void> Function() close) async {
+    try {
+      await database.open();
+      return database;
+    } catch (_) {
+      await close();
+      rethrow;
+    }
   }
 }

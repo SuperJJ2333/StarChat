@@ -121,7 +121,6 @@ final class MatrixClientContinuityMetadata {
   final String databaseGeneration;
 
   bool hasSameContinuity(MatrixClientContinuityMetadata other) =>
-      isLoggedIn == other.isLoggedIn &&
       userId == other.userId &&
       deviceId == other.deviceId &&
       ed25519Fingerprint == other.ed25519Fingerprint &&
@@ -2391,6 +2390,7 @@ final class MatrixSdkE2eeClient
         MatrixRecoveryClient,
         MatrixRecoveryBackend,
         MatrixTokenLoginGateway,
+        MatrixAccountSelectionGateway,
         AvatarMediaCapability {
   Future<void>? _memberRefresh;
   SharedPreferencesLocalHiddenEvents? _localHistoryStore;
@@ -2411,6 +2411,8 @@ final class MatrixSdkE2eeClient
     required this.homeserver,
     Future<void> Function(Client client)? suspendClient,
     Future<Client> Function()? resumeClient,
+    Future<void> Function(String homeserver, String userId)?
+        selectClientAccount,
     Future<void> Function(Client? client)? clearClientData,
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
@@ -2419,6 +2421,7 @@ final class MatrixSdkE2eeClient
   })  : _client = client,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
+        _selectClientAccount = selectClientAccount,
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
@@ -2430,6 +2433,8 @@ final class MatrixSdkE2eeClient
   Client? _pendingCloseClient;
   final Future<void> Function(Client client) _suspendClient;
   final Future<Client> Function()? _resumeClient;
+  final Future<void> Function(String homeserver, String userId)?
+      _selectClientAccount;
   final Future<void> Function(Client? client) _clearClientData;
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
@@ -2444,6 +2449,7 @@ final class MatrixSdkE2eeClient
   bool _freshLoginAfterClear = false;
   bool _activeContinuityValidated = false;
   bool _credentialsInvalid = false;
+  Future<void> _accountSelectionQueue = Future<void>.value();
   final Uri homeserver;
   final StreamController<void> _syncEvents = StreamController.broadcast();
   final StreamController<MatrixDecryptionUpdate> _decryptionUpdates =
@@ -2473,7 +2479,9 @@ final class MatrixSdkE2eeClient
   bool get isLoggedIn =>
       _client?.isLogged() ?? _suspendedMetadata?.isLoggedIn ?? false;
   @override
-  bool get credentialsInvalid => _credentialsInvalid;
+  bool get credentialsInvalid =>
+      _credentialsInvalid ||
+      _client?.onLoginStateChanged.value == LoginState.softLoggedOut;
   @override
   String? get userId {
     final active = _client;
@@ -2504,7 +2512,10 @@ final class MatrixSdkE2eeClient
           String? deviceId}) =>
       _withClient((active) async {
         await active.checkHomeserver(homeserver);
-        if (_credentialsInvalid && active.isLogged()) {
+        if (credentialsInvalid &&
+            active.userID != null &&
+            active.deviceID != null) {
+          _credentialsInvalid = true;
           final expectedUserId = active.userID;
           final expectedDeviceId = active.deviceID;
           if (expectedUserId == null || expectedDeviceId == null) {
@@ -2540,6 +2551,16 @@ final class MatrixSdkE2eeClient
             newDeviceID: expectedDeviceId,
             newDeviceName: active.deviceName ?? '畅聊移动端',
           );
+          // Revoking a remote device removes its public keys. Re-register the
+          // retained identity, without generating a replacement Olm account.
+          final encryption = active.encryption;
+          if (encryption != null &&
+              !await encryption.olmManager.uploadKeys(
+                  uploadDeviceKeys: true,
+                  oldKeyCount: null,
+                  unusedFallbackKey: null)) {
+            throw StateError('Matrix device key registration failed');
+          }
         } else {
           await active.login(
             'm.login.token',
@@ -2674,6 +2695,9 @@ final class MatrixSdkE2eeClient
       final active = _client;
       if (active == null) return;
       await _waitForClientOperationsToDrain();
+      // Reopening the retained store can restore the old token from disk.
+      // Keep its invalid status after the SDK object and stream are disposed.
+      _credentialsInvalid = credentialsInvalid;
       _decryptedTimelineEvents.clear();
       _lastRecoveryKey = null;
       final metadata = await _readContinuityMetadata(active);
@@ -2691,10 +2715,74 @@ final class MatrixSdkE2eeClient
     });
   }
 
+  @override
+  Future<void> selectAccount(String matrixUserId, Uri selectedHomeserver) {
+    final operation = _accountSelectionQueue
+        .then((_) => _selectAccount(matrixUserId, selectedHomeserver));
+    _accountSelectionQueue =
+        operation.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return operation;
+  }
+
+  Future<void> _selectAccount(
+      String matrixUserId, Uri selectedHomeserver) async {
+    final select = _selectClientAccount;
+    final resume = _resumeClient;
+    if (select == null || resume == null || selectedHomeserver != homeserver) {
+      throw StateError('Retained account storage is not configured');
+    }
+    await suspend();
+    await _serializeLifecycle(() async {
+      // Old UI capabilities must never be rebound to another identity.
+      for (final registration in _managedSubscriptions) {
+        registration.canceled = true;
+      }
+      for (final resource in _managedResources) {
+        resource.canceled = true;
+      }
+      _managedSubscriptions.clear();
+      _managedResources.clear();
+      await select(selectedHomeserver.toString(), matrixUserId);
+      _suspendedMetadata = null;
+      _activeContinuityValidated = false;
+      final next = await resume();
+      try {
+        if (next.userID != null && next.userID != matrixUserId) {
+          throw StateError(
+              'Stored Matrix identity does not match authenticated account');
+        }
+        final metadata = await _readContinuityMetadata(next);
+        _client = next;
+        _suspendedMetadata = metadata;
+        _activeContinuityValidated = true;
+        _credentialsInvalid = next.isLogged();
+        _freshLoginAfterClear = false;
+        _localHistoryStore = null;
+        _decryptedTimelineEvents.clear();
+        _lastRecoveryKey = null;
+        _bindDecryptionCache(metadata);
+        _attachDecryptionListener(next);
+      } catch (_) {
+        await _suspendClient(next);
+        rethrow;
+      }
+    });
+  }
+
+  Future<({String token, String deviceId})> currentSessionCredentials() =>
+      _withClient((client) async {
+        final token = client.accessToken;
+        final deviceId = client.deviceID;
+        if (token == null || deviceId == null) {
+          throw StateError('Matrix session is unavailable');
+        }
+        return (token: token, deviceId: deviceId);
+      });
+
   String? _localPreferenceAccountIdToClear;
 
   /// Destructively removes this device's Matrix session and encrypted store.
-  /// Only explicit account-switch or confirmed local-clear flows may call it.
+  /// Only a separately confirmed local-clear flow may call it.
   @override
   Future<void> clearLocalChatData() {
     _accessRevoked = true;
@@ -3309,8 +3397,10 @@ final class MatrixSdkE2eeClient
         ]);
       });
 
-  Future<DirectChatRoom> openCanonicalDirectRoom(String id, {String? matrixUserId}) => _withClient(
-      (client) => MatrixDirectChatBackend(client).openCanonicalRoom(id, matrixUserId: matrixUserId));
+  Future<DirectChatRoom> openCanonicalDirectRoom(String id,
+          {String? matrixUserId}) =>
+      _withClient((client) => MatrixDirectChatBackend(client)
+          .openCanonicalRoom(id, matrixUserId: matrixUserId));
 
   /// Recovery after an uncertain create may only reuse an existing room.
   Future<DirectChatRoom?> findExistingDirectChat(String peer) => _withClient(

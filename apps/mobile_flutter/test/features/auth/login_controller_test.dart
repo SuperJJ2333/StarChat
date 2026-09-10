@@ -21,23 +21,6 @@ void main() {
     await cancellation;
   });
 
-  test('expired pending grant is replaced before confirmed clear', () async {
-    var clock = DateTime.utc(2026, 9, 9);
-    final business = FakeDualDomainBusiness()..currentIdentity = null;
-    final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
-      ..userId = '@bob:matrix.example.test';
-    final service = DualDomainLoginService(
-        business: business,
-        matrix: matrix,
-        deviceKey: () => 'device',
-        now: () => clock);
-    await expectLater(service.login('alice', 'password'),
-        throwsA(isA<MatrixAccountSwitchRequired>()));
-    clock = clock.add(const Duration(seconds: 61));
-    await service.confirmAccountSwitchAndLogin();
-    expect(business.tokenRequests, 2);
-    expect(matrix.clears, 1);
-  });
   test('cancel invalidates pending grant and cannot clear old account',
       () async {
     final business = FakeDualDomainBusiness()..currentIdentity = null;
@@ -65,39 +48,6 @@ void main() {
     expect(business.tokenRequests, 1);
     expect(matrix.suspends, 1);
   });
-  test('unknown-outcome token consumption cannot reuse pending grant',
-      () async {
-    final business = FakeDualDomainBusiness()..currentIdentity = null;
-    final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
-      ..userId = '@bob:matrix.example.test'
-      ..failLogin = true;
-    final service = DualDomainLoginService(
-        business: business, matrix: matrix, deviceKey: () => 'device');
-    await expectLater(service.login('alice', 'password'),
-        throwsA(isA<MatrixAccountSwitchRequired>()));
-    await expectLater(service.confirmAccountSwitchAndLogin(),
-        throwsA(isA<LoginStageException>()));
-    await expectLater(service.confirmAccountSwitchAndLogin(), throwsStateError);
-    expect(business.tokenRequests, 1);
-    expect(matrix.tokens, hasLength(1));
-    expect(business.logouts, 0);
-  });
-
-  test('legacy unknown identity switch consumes its initial grant only once',
-      () async {
-    final business = FakeDualDomainBusiness()..currentIdentity = null;
-    final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
-      ..userId = '@bob:matrix.example.test';
-    final service = DualDomainLoginService(
-        business: business, matrix: matrix, deviceKey: () => 'device');
-    await expectLater(service.login('alice', 'password'),
-        throwsA(isA<MatrixAccountSwitchRequired>()));
-    await service.confirmAccountSwitchAndLogin();
-    expect(business.tokenRequests, 1);
-    expect(matrix.clears, 1);
-    expect(matrix.tokens, hasLength(1));
-  });
-
   test(
       'concurrent login attempts cannot perform duplicate password or grant exchange',
       () async {
@@ -247,7 +197,7 @@ void main() {
   );
 
   test(
-    'confirmed account switch requests a fresh target token then clears once',
+    'legacy gateway without retained storage refuses destructive switch',
     () async {
       final business = FakeDualDomainBusiness();
       final matrix = FakeMatrixTokenLogin(isLoggedIn: true)
@@ -262,13 +212,11 @@ void main() {
         throwsA(isA<MatrixAccountSwitchRequired>()),
       );
 
-      await service.confirmAccountSwitchAndLogin();
-
-      expect(business.tokenRequests, 1);
-      expect(matrix.clears, 1);
-      expect(matrix.loginDeviceIds, [null]);
-      expect(matrix.userId, '@alice:matrix.example.test');
-      expect(business.boundMatrixUsers, ['@alice:matrix.example.test']);
+      await expectLater(service.confirmAccountSwitchAndLogin(),
+          throwsA(isA<BusinessApiException>().having((e) => e.code, 'code', 'ACCOUNT_STORAGE_UNAVAILABLE')));
+      expect(matrix.clears, 0);
+      expect(matrix.tokens, isEmpty);
+      expect(matrix.userId, '@bob:matrix.example.test');
     },
   );
 

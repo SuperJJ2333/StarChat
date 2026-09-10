@@ -1,7 +1,8 @@
 name: iOS signed compatibility candidate
 on:
+  workflow_dispatch:
   push:
-    branches: [codex/ios-0353-testflight, codex/mobile-parity-20260909]
+    branches: [main, codex/ios-0353-testflight, codex/mobile-parity-20260909]
     paths:
       - apps/mobile_flutter/**
       - .github/workflows/ios-0353.yml
@@ -12,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
     runs-on: macos-15
     timeout-minutes: 40
     env:

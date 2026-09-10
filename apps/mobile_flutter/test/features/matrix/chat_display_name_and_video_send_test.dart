@@ -84,25 +84,17 @@ void main() {
   });
 
   group('transcodeForChat（拍摄录像发送的压缩策略）', () {
-    test('平台转码不可用时回退原始视频并给出明确提示', () async {
-      // flutter test 环境无平台通道：VideoCompress 调用必然失败，
-      // 策略必须回退原文件且携带 fallbackNotice（不静默）。
-      final temp = File('${Directory.systemTemp.path}/chat-video-test-'
-          '${DateTime.now().microsecondsSinceEpoch}.mp4');
-      await temp.writeAsBytes(List<int>.filled(1024, 7), flush: true);
+    test('平台转码不可用时明确失败且保留原片', () async {
+      final root = Directory(
+          '../../docs/verification/artifacts/2026-09-10/chat-reliability-2084/video');
+      final dir = await root.createTemp('unavailable-');
+      final temp = await File('${dir.path}/source.mp4').writeAsBytes([1]);
       try {
-        var progressCalls = 0;
-        final rendition = await transcodeForChat(
-          temp,
-          onProgress: (_) => progressCalls++,
-        );
-        expect(rendition.usedCompressed, isFalse);
-        expect(rendition.fallbackNotice, contains('压缩版不可用'));
-        expect(rendition.fallbackNotice, contains('原始视频'));
-        expect(rendition.compressionRatio, isNull);
-        expect(rendition.file.path, temp.path);
+        await expectLater(
+            transcodeForChat(temp), throwsA(isA<VideoCompressionException>()));
+        expect(await temp.exists(), isTrue);
       } finally {
-        await temp.delete();
+        await dir.delete(recursive: true);
       }
     });
   });

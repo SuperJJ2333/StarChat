@@ -47,6 +47,25 @@ class SnapshotClient extends LogoutTrackingClient {
   }
 }
 
+class FailedInitClient extends Client {
+  FailedInitClient()
+      : super('failed-init',
+            preserveStoreOnInvalidToken: true,
+            databaseBuilder: (_) async =>
+                throw StateError('synthetic open failure'));
+  bool disposed = false;
+  @override
+  Future<void> dispose({bool closeDatabase = true}) async {
+    disposed = true;
+    await super.dispose(closeDatabase: closeDatabase);
+  }
+}
+
+class FailedOpenDatabase extends Fake implements MatrixSdkDatabase {
+  @override
+  Future<void> open() async => throw StateError('synthetic schema failure');
+}
+
 class SnapshotRoom extends Room {
   SnapshotRoom(
       {required super.id, required super.client, required this.joined});
@@ -499,6 +518,82 @@ void main() {
         ed25519Fingerprint: 'FINGERPRINT-A',
       ),
     );
+  });
+
+  test('soft logged out continuity retains identity and validates binding',
+      () async {
+    final store = SecureSessionStore(MemoryStore());
+    final client = LogoutTrackingClient('retained',
+        loggedIn: true,
+        matrixUserId: '@alice:matrix.test',
+        matrixDeviceId: 'DEVICE-A');
+    final factory = MatrixClientFactory(
+        sessionStore: store,
+        homeserver: Uri.parse('https://matrix.test'),
+        fingerprintReader: (_) => 'FINGERPRINT-A');
+    await factory.continuityMetadata(client);
+    client.loggedIn = false;
+    final retained = await factory.continuityMetadata(client);
+    expect(retained.isLoggedIn, isFalse);
+    expect(retained.userId, '@alice:matrix.test');
+    expect(retained.deviceId, 'DEVICE-A');
+    expect(retained.ed25519Fingerprint, 'FINGERPRINT-A');
+    client.matrixDeviceId = 'UNEXPECTED';
+    await expectLater(factory.continuityMetadata(client), throwsStateError);
+    client.matrixUserId = null;
+    client.matrixDeviceId = null;
+    await expectLater(factory.continuityMetadata(client), throwsStateError,
+        reason: 'a bound database cannot silently become a new identity');
+  });
+
+  test('failed migration closes client without deleting store', () async {
+    final client = Client('failed-migration');
+    final disposed = <Client>[];
+    var deletes = 0;
+    final factory = MatrixClientFactory(
+        sessionStore: SecureSessionStore(MemoryStore()),
+        homeserver: Uri.parse('https://matrix.test'),
+        supportDirectoryPath: () async => '/support',
+        opener: (
+                {required clientName,
+                required databasePath,
+                required cipher}) async =>
+            client,
+        clientMigrator: (_, __) async => throw StateError('migration failed'),
+        disposer: (value) async {
+          disposed.add(value);
+          await value.dispose();
+        },
+        databaseDeleter: (_) async {
+          deletes++;
+        });
+    await expectLater(factory.create(), throwsStateError);
+    expect(disposed, [client]);
+    expect(deletes, 0);
+  });
+
+  test('failed SDK init closes retained client handle', () async {
+    final client = FailedInitClient();
+    final errors = client.onLoginStateChanged.stream
+        .listen((_) {}, onError: (Object _) {});
+    try {
+      await expectLater(
+          MatrixClientFactory.initializeClient(client), throwsException);
+      expect(client.disposed, isTrue);
+    } finally {
+      await errors.cancel();
+      if (!client.disposed) await client.dispose();
+    }
+  });
+
+  test('failed SDK database open closes raw SQLite handle', () async {
+    var closes = 0;
+    await expectLater(
+        MatrixClientFactory.initializeDatabase(FailedOpenDatabase(), () async {
+          closes++;
+        }),
+        throwsStateError);
+    expect(closes, 1);
   });
 
   test('new factory rejects a changed persisted Ed25519 fingerprint', () async {

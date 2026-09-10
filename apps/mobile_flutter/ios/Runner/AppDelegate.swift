@@ -1,6 +1,8 @@
 import Flutter
 import UIKit
 import UserNotifications
+import AVFoundation
+import CallKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -11,6 +13,7 @@ import UserNotifications
   private var apnsToken: String?
   private var apnsListening = false
   private var pendingTap: [String: String]?
+  private let voiceCallObserver = CXCallObserver()
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -34,6 +37,36 @@ import UserNotifications
   private func configureChannels(messenger: FlutterBinaryMessenger) {
     iosCalls.attach(messenger: messenger)
     secureSession.attach(messenger: messenger)
+
+    FlutterMethodChannel(name: "chatflow/voice_audio_session", binaryMessenger: messenger)
+      .setMethodCallHandler { [weak self] call, result in
+        guard let self = self else { result(nil); return }
+        guard call.method == "checkPlaybackAllowed" || call.method == "preparePlayback" else {
+          result(FlutterMethodNotImplemented); return
+        }
+        // This handler runs on the main queue, shared with CallKit ownership.
+        // Never change the global audio session while a call owns it.
+        guard !self.iosCalls.hasActiveCall,
+              !self.voiceCallObserver.calls.contains(where: { !$0.hasEnded }) else {
+          result(FlutterError(code: "VOICE_CALL_ACTIVE", message: "Voice playback unavailable during a call", details: nil))
+          return
+        }
+        if call.method == "checkPlaybackAllowed" { result(nil); return }
+        guard let args = call.arguments as? [String: Any], let earpiece = args["earpiece"] as? Bool else {
+          result(FlutterError(code: "VOICE_INVALID_ROUTE", message: "Invalid audio route", details: nil)); return
+        }
+        do {
+          let session = AVAudioSession.sharedInstance()
+          try session.setCategory(.playAndRecord, mode: .default,
+                                  options: earpiece ? [] : [.defaultToSpeaker])
+          try session.overrideOutputAudioPort(earpiece ? .none : .speaker)
+          try session.setActive(true)
+          result(nil)
+        } catch {
+          // Do not expose audio source URLs or decrypted media in errors.
+          result(FlutterError(code: "VOICE_SESSION_FAILED", message: "Could not prepare voice playback", details: nil))
+        }
+      }
 
     // 桌面角标通道（PRD §35）：与 Android 侧 MainActivity 同名约定
     // chatflow/badge。iOS 直接写 UIApplication 角标数字。

@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart';
 import '../../features/matrix/voice_playback_controller.dart';
 import '../foundation/wechat_tokens.dart';
 
-enum VoicePlaybackState { idle, playing, paused, failed }
+enum VoicePlaybackState { idle, loading, playing, paused, failed }
 
 /// 语音气泡（QQ 语音样式）：
 /// - 文字/图标为黑色（#000000），与普通文字消息气泡一致；
@@ -84,41 +84,81 @@ final class _WeChatVoiceBubbleState extends State<WeChatVoiceBubble>
 
   @override
   Widget build(BuildContext context) {
+    if (_usesRealProgress) {
+      return AnimatedBuilder(
+          animation: widget.playback!,
+          builder: (context, _) => _buildBubble(context));
+    }
+    return _buildBubble(context);
+  }
+
+  VoicePlaybackState get _state {
+    if (!_usesRealProgress) return widget.state;
+    final playback = widget.playback!;
+    final id = widget.messageId!;
+    if (playback.isLoading(id)) return VoicePlaybackState.loading;
+    if (playback.hasFailed(id)) return VoicePlaybackState.failed;
+    if (playback.isPlaying(id)) return VoicePlaybackState.playing;
+    if (playback.isPaused(id)) return VoicePlaybackState.paused;
+    return VoicePlaybackState.idle;
+  }
+
+  Widget _buildBubble(BuildContext context) {
     final seconds = widget.duration.inSeconds.clamp(1, 60);
     final width = 96 + (120 * (seconds / 60));
-    return CupertinoButton(
-        padding: EdgeInsets.zero,
-        onPressed: widget.onTap,
-        child: Container(
-            width: width,
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.md),
-            decoration: BoxDecoration(
-                color: WeChatColors.bubbleOutgoing,
-                borderRadius: BorderRadius.circular(WeChatRadius.bubble)),
-            child: Row(children: [
-              const Icon(CupertinoIcons.speaker_2_fill,
-                  size: 12, color: CupertinoColors.black),
-              const SizedBox(width: 6),
-              Expanded(
-                child: _usesRealProgress
-                    ? AnimatedBuilder(
-                        animation: widget.playback!,
-                        builder: (_, __) => CustomPaint(
-                          painter: _VoiceWavePainter(progress: _realProgress),
-                        ),
-                      )
-                    : AnimatedBuilder(
-                        animation: _sweep,
-                        builder: (_, __) => CustomPaint(
-                          painter: _VoiceWavePainter(progress: _sweep.value),
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 6),
-              Text('$seconds″',
-                  style: const TextStyle(color: CupertinoColors.black))
-            ])));
+    return Semantics(
+        label: switch (_state) {
+          VoicePlaybackState.loading => '正在加载语音，再次点击取消',
+          VoicePlaybackState.failed => '播放失败，点击重试',
+          VoicePlaybackState.playing => '暂停语音',
+          VoicePlaybackState.paused => '继续播放语音',
+          VoicePlaybackState.idle => '播放语音',
+        },
+        child: CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: widget.onTap,
+            child: Container(
+                width: width,
+                height: 42,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: WeChatSpacing.md),
+                decoration: BoxDecoration(
+                    color: WeChatColors.bubbleOutgoing,
+                    borderRadius: BorderRadius.circular(WeChatRadius.bubble)),
+                child: Row(children: [
+                  if (_state == VoicePlaybackState.loading)
+                    const CupertinoActivityIndicator(radius: 6)
+                  else
+                    Icon(
+                        _state == VoicePlaybackState.failed
+                            ? CupertinoIcons.exclamationmark_circle
+                            : widget.playback?.earpiece == true
+                                ? CupertinoIcons.phone
+                                : CupertinoIcons.speaker_2_fill,
+                        size: 12,
+                        color: CupertinoColors.black),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _usesRealProgress
+                        ? AnimatedBuilder(
+                            animation: widget.playback!,
+                            builder: (_, __) => CustomPaint(
+                              painter:
+                                  _VoiceWavePainter(progress: _realProgress),
+                            ),
+                          )
+                        : AnimatedBuilder(
+                            animation: _sweep,
+                            builder: (_, __) => CustomPaint(
+                              painter:
+                                  _VoiceWavePainter(progress: _sweep.value),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(_state == VoicePlaybackState.failed ? '重试' : '$seconds″',
+                      style: const TextStyle(color: CupertinoColors.black))
+                ]))));
   }
 
   double get _realProgress {

@@ -196,6 +196,19 @@ final class IOSSecureSessionTests: XCTestCase {
     XCTAssertThrowsError(try store.delete(key: "recovery-key"))
     XCTAssertTrue(ops.queries.isEmpty); XCTAssertTrue(ops.additions.isEmpty); XCTAssertTrue(ops.updates.isEmpty); XCTAssertTrue(ops.deletions.isEmpty)
   }
+  func testAccountDatabaseScopeAcceptsOnlyExactHexSuffix() throws {
+    let ops = FakeSessionSecurity(); let store = IOSSecureSessionStore(security: ops)
+    let prefix = "liuhetong.matrix_database_key.v1."
+    for suffix in ["", String(repeating: "a", count: 63), String(repeating: "A", count: 64), "../other", String(repeating: "a", count: 64) + ".extra"] {
+      XCTAssertThrowsError(try store.delete(key: prefix + suffix))
+    }
+    XCTAssertTrue(ops.deletions.isEmpty)
+    let scopedKey = prefix + String(repeating: "a", count: 64)
+    try store.delete(key: scopedKey)
+    XCTAssertEqual(ops.deletions.count, 1)
+    XCTAssertEqual(ops.deletions[0][kSecAttrAccount as String] as? String, scopedKey)
+    XCTAssertEqual(ops.deletions[0][kSecAttrSynchronizable as String] as? Bool, false)
+  }
   func testMigrationVerificationLockedErrorIsNotAbsence() {
     let ops = FakeSessionSecurity()
     ops.copies = [(errSecSuccess, item() as CFDictionary), (errSecInteractionNotAllowed, nil)]

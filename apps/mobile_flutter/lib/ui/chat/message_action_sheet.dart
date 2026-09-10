@@ -13,6 +13,8 @@ final class MessageActionSheet extends StatelessWidget {
   final ValueChanged<MessageAction> onSelected;
 
   static const _presentation = <MessageAction, (IconData, String)>{
+    MessageAction.voiceEarpiece: (CupertinoIcons.phone, '听筒播放'),
+    MessageAction.voiceSpeaker: (CupertinoIcons.speaker_2, '扬声器播放'),
     MessageAction.addToEmoji: (CupertinoIcons.star, '收藏'),
     MessageAction.forward: (CupertinoIcons.arrowshape_turn_up_right, '转发'),
     MessageAction.deleteLocal: (CupertinoIcons.delete, '删除'),

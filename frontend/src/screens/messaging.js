@@ -53,6 +53,18 @@ function chatContent(definition) {
   const content = element("div", "p-chat-room__messages");
   if (definition.page === "voice") {
     content.append(component("app-voice-bubble", { duration: definition.state === "limit" ? "60" : "8", playback: definition.state === "preview" ? "playing" : "idle" }));
+    if (definition.state === "preview") {
+      content.append(component("app-voice-bubble", { duration: "8", playback: "loading" }), component("app-voice-bubble", { duration: "8", playback: "failed" }));
+      const options = [{ id: "voice-route", label: "听筒播放" }, { id: "reply", label: "引用" }, { id: "select", label: "多选" }, { id: "delete", label: "删除" }];
+      const menu = component("app-anchored-action-menu", { options: JSON.stringify(options), "arrow-at-top": "true" });
+      menu.addEventListener("click", (event) => {
+        if (!event.target.closest('[data-action="voice-route"]')) return;
+        options[0].label = options[0].label === "听筒播放" ? "扬声器播放" : "听筒播放";
+        menu.setAttribute("options", JSON.stringify(options));
+        menu.renderContract();
+      });
+      content.append(menu);
+    }
     content.append(component("app-toast", { kind: definition.state === "too-short" ? "warning" : "info", message: definition.state === "too-short" ? "录音不足 1 秒，未发送" : `语音状态：${definition.title}` }));
   } else if (definition.page === "attachment") {
     if (definition.state === "permission-denied") {

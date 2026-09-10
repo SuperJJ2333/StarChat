@@ -16,6 +16,36 @@ on:
 permissions:
   contents: read
 jobs:
+  production-compile:
+    name: Complete production iOS native compile
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.9'
+          channel: stable
+          cache: true
+      - name: Compile complete device app without signing
+        working-directory: apps/mobile_flutter
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/production-compile"
+          xcodebuild -version | tee "$RUNNER_TEMP/production-compile/toolchain.txt"
+          flutter --version >> "$RUNNER_TEMP/production-compile/toolchain.txt"
+          flutter config --no-enable-swift-package-manager
+          flutter pub get
+          flutter build ios --release --no-codesign 2>&1 | tee "$RUNNER_TEMP/production-compile/production-compile.log"
+      - name: Preserve full production compilation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-production-ios-compile
+          path: ${{ runner.temp }}/production-compile/
+          retention-days: 14
   simulator:
     name: iPhone 15 iOS ${{ matrix.ios }}
     runs-on: macos-15

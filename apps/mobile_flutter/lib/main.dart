@@ -45,6 +45,7 @@ Future<void> main() async {
     homeserver: Uri.parse(AppConfig.matrixHomeserver),
     suspendClient: matrixFactory.suspend,
     resumeClient: matrixFactory.create,
+    selectClientAccount: matrixFactory.selectAccount,
     clearClientData: matrixFactory.clearLocalChatData,
     readContinuityMetadata: matrixFactory.continuityMetadata,
   );
@@ -54,10 +55,18 @@ Future<void> main() async {
     securityLogger: matrix.securityLogger,
   );
   final recovery = MatrixRecoveryService(matrix);
+  final installationDeviceKey = await store.registrationDeviceKey();
   final login = DualDomainLoginService(
     business: api,
     matrix: matrix,
-    deviceKey: () => 'flutter-${DateTime.now().millisecondsSinceEpoch}',
+    deviceKey: () => installationDeviceKey,
+    retainedHomeserver: Uri.parse(AppConfig.matrixHomeserver),
+    completeMatrixSession: () async {
+      final credentials = await matrix.currentSessionCredentials();
+      await api.completeMatrixSession(
+          matrixAccessToken: credentials.token,
+          matrixDeviceId: credentials.deviceId);
+    },
   );
   final gate = SessionGate(
     controller: session,

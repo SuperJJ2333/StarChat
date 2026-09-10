@@ -28,11 +28,17 @@ export class AppMessageBubble extends StrictElement {
 
 export class AppVoiceBubble extends StrictElement {
   render() {
-    const root = button("c-voice-bubble", "播放语音", "play-voice");
-    root.dataset.playback = this.attr("playback", "idle");
+    const state = this.attr("playback", "idle");
+    const labels = { loading: "正在加载语音，再次点击取消", failed: "播放失败，点击重试", paused: "继续播放语音", playing: "暂停语音" };
+    const root = button("c-voice-bubble", labels[state] || "播放语音", "play-voice");
+    root.dataset.playback = state;
     const wave = element("span", "c-voice-bubble__wave");
     wave.append(...Array.from({ length: 12 }, (_, index) => element("i", `c-voice-bubble__bar c-voice-bubble__bar--${(index % 4) + 1}`)));
-    root.append(wave, element("span", "c-voice-bubble__duration", `${this.attr("duration", "8")}″`));
+    root.append(wave, element("span", "c-voice-bubble__duration", state === "failed" ? "重试" : state === "loading" ? "加载中" : `${this.attr("duration", "8")}″`));
+    root.addEventListener("click", () => {
+      this.setAttribute("playback", state === "playing" ? "paused" : "playing");
+      this.renderContract();
+    });
     return root;
   }
 }

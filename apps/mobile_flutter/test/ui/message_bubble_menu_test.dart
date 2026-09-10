@@ -4,6 +4,20 @@ import 'package:liuhetong_mobile/ui/chat/message_action.dart';
 import 'package:liuhetong_mobile/ui/chat/message_bubble_menu.dart';
 
 void main() {
+  testWidgets('voice route action uses the compact existing message menu',
+      (tester) async {
+    MessageAction? selected;
+    await tester.pumpWidget(CupertinoApp(
+        home: CupertinoPageScaffold(
+            child: MessageBubbleMenu(actions: const {
+      MessageAction.voiceEarpiece,
+      MessageAction.reply
+    }, onSelected: (action) => selected = action))));
+    expect(find.text('听筒播放'), findsOneWidget);
+    expect(find.text('扬声器播放'), findsNothing);
+    await tester.tap(find.text('听筒播放'));
+    expect(selected, MessageAction.voiceEarpiece);
+  });
   testWidgets('copy is presented FIRST in the bubble menu', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: CupertinoPageScaffold(

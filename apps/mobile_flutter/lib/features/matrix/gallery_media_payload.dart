@@ -16,10 +16,11 @@ final class GalleryMediaPayload {
 
 Future<GalleryMediaPayload> prepareGalleryMedia(GalleryPhoto photo,
     {required bool original, bool isGroup = false}) async {
-  if (isGroup && photo.isVideo) {
-    final size = await photo.originalSizeBytes?.call();
-    if (size == null || size <= 0) throw StateError('无法读取视频大小，请重新选择');
-    validateGroupVideoSize(size);
+  if (photo.isVideo) {
+    final bytes = await photo.compressedBytes();
+    if (bytes.isEmpty) throw const VideoCompressionException();
+    validateGroupVideoSize(bytes.length);
+    return GalleryMediaPayload(bytes, 'video/mp4', 'video.mp4');
   }
   if (!photo.isVideo &&
       original &&

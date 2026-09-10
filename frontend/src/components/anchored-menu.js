@@ -1,7 +1,7 @@
 import { StrictElement, button, element } from "./base.js";
 import { icon } from "../icons/icons.js";
 
-const symbols = {copy:"copy",delete:"delete",pin:"upload",unread:"chat",hide:"close",group:"contact",add:"user-add",scan:"search"};
+const symbols = {copy:"copy",delete:"delete",pin:"upload",unread:"chat",hide:"close",group:"contact",add:"user-add",scan:"search", "voice-route":"call",reply:"back",select:"check"};
 export class AppAnchoredActionMenu extends StrictElement {
   render() {
     const root = element("div", "c-anchored-menu");

@@ -117,6 +117,7 @@ void main() {
     await tester.pumpWidget(
         CupertinoApp(navigatorKey: key, home: const Text('login-root')));
     await _emit(tester, backend.events, _incoming());
+    expect(callAudioActivity.value, isTrue);
     await tester.pumpAndSettle();
     expect(manager.isIncomingPageOpen, isTrue);
     final unrelated =

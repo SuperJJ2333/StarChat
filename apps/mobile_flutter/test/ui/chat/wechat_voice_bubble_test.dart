@@ -4,6 +4,32 @@ import 'package:liuhetong_mobile/ui/chat/wechat_voice_bubble.dart';
 
 /// 语音气泡播放动画（QQ 式）：高亮进度随播放从左到右扫过音纹。
 void main() {
+  testWidgets('loading voice remains cancellable with an activity indicator',
+      (tester) async {
+    var cancelled = false;
+    await tester.pumpWidget(CupertinoApp(
+        home: CupertinoPageScaffold(
+            child: WeChatVoiceBubble(
+                duration: const Duration(seconds: 8),
+                state: VoicePlaybackState.loading,
+                onTap: () => cancelled = true))));
+    expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+    await tester.tap(find.byType(CupertinoButton));
+    expect(cancelled, isTrue);
+  });
+  testWidgets('failed voice shows a retry action and invokes playback',
+      (tester) async {
+    var attempts = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: CupertinoPageScaffold(
+            child: WeChatVoiceBubble(
+                duration: const Duration(seconds: 8),
+                state: VoicePlaybackState.failed,
+                onTap: () => attempts++))));
+    expect(find.text('重试'), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    expect(attempts, 1);
+  });
   testWidgets('idle bubble keeps the sweep at zero', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: CupertinoPageScaffold(

@@ -509,7 +509,7 @@ void main() {
   });
 
   testWidgets(
-      'group compressed video selection and preview reject original over 20MiB',
+      'group video selection accepts original over 20MiB for automatic compression',
       (tester) async {
     var work = 0;
     final oversized = GalleryPhoto(
@@ -541,17 +541,13 @@ void main() {
     await tester.pump();
     await tester.tap(find.byKey(const Key('image-picker-send')));
     await tester.pumpAndSettle();
-    expect(find.text('视频大小不能超过20MB'), findsOneWidget);
-    expect(work, 0);
-    await tester.tap(find.text('知道了'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('image-picker-item-group-large')));
-    await tester.pumpAndSettle();
-    expect(find.text('视频大小不能超过20MB'), findsOneWidget);
+    expect(find.text('视频大小不能超过20MB'), findsNothing);
+    expect(find.byKey(const Key('image-picker-send')), findsNothing);
     expect(work, 0);
   });
 
-  testWidgets('original mode blocks videos above 20MB with a prompt',
+  testWidgets(
+      'original image toggle does not block automatic video compression',
       (tester) async {
     final oversized = GalleryPhoto(
       id: 'big-video',
@@ -578,11 +574,10 @@ void main() {
     await tester.tap(find.byKey(const Key('image-picker-send')));
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.byKey(const Key('image-picker-video-limit-dialog')),
-        findsOneWidget,
-        reason: '原图模式下超 20MB 视频被拦截并提示');
-    expect(find.byKey(const Key('image-picker-send')), findsOneWidget,
-        reason: '页面未关闭，发送被拦截');
+    expect(
+        find.byKey(const Key('image-picker-video-limit-dialog')), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('image-picker-send')), findsNothing);
   });
 
   testWidgets('compressed send is not blocked by the video size cap',

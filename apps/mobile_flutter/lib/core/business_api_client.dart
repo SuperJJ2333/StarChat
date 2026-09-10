@@ -42,6 +42,8 @@ final class _BusinessSessionRevocation implements BusinessSessionRevocation {
 final class BusinessApiClient
     implements
         BusinessSessionGateway,
+        BusinessSessionMonitor,
+        MatrixSessionCompletionGateway,
         RegistrationGateway,
         DualDomainBusinessGateway,
         ProfileGateway,
@@ -60,6 +62,82 @@ final class BusinessApiClient
   final http.Client _client;
   final Uuid _uuid = const Uuid();
   final Map<String, String> _pendingIdempotencyKeys = {};
+  final _invalidations =
+      StreamController<BusinessSessionInvalidation>.broadcast(sync: true);
+  @override
+  Stream<BusinessSessionInvalidation> get sessionInvalidations =>
+      _invalidations.stream;
+  @override
+  int get sessionEpoch => _sessionEpoch;
+  Future<void> _sessionWrites = Future<void>.value();
+  Future<T> _writeSession<T>(Future<T> Function() action) {
+    final result = _sessionWrites.then((_) => action());
+    _sessionWrites =
+        result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<T> _writeCurrentSession<T>(int epoch, Future<T> Function() action) =>
+      _writeSession(() {
+        if (epoch != _sessionEpoch) throw _ended;
+        return action();
+      });
+
+  @override
+  Future<void> checkSessionValidity() => sendPresenceHeartbeat();
+
+  @override
+  Future<void> completeMatrixSession(
+      {required String matrixAccessToken,
+      required String matrixDeviceId}) async {
+    final response = await _authorized((headers) => _client.post(
+        _uri('/auth/matrix-session'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'matrix_access_token': matrixAccessToken,
+          'matrix_device_id': matrixDeviceId
+        })));
+    final body = _decode(response);
+    if (body['status'] != 'ACTIVE') {
+      throw const BusinessApiException(
+          statusCode: 503,
+          code: 'MATRIX_SESSION_REVOKE_PENDING',
+          message: '旧设备退出尚未完成，请重试');
+    }
+  }
+
+  static const _ended = BusinessApiException(
+      statusCode: 401, code: 'AUTH_SESSION_ENDED', message: '会话已结束');
+
+  Future<void> _invalidateSession(int epoch, String code) async {
+    if (epoch != _sessionEpoch) return;
+    final invalidatedEpoch = ++_sessionEpoch;
+    _refreshFlight = null;
+    await _writeSession(() async {
+      if (invalidatedEpoch == _sessionEpoch) {
+        await sessionStore.clearBusinessSession();
+      }
+    });
+    if (invalidatedEpoch != _sessionEpoch) return;
+    _invalidations
+        .add(BusinessSessionInvalidation(epoch: invalidatedEpoch, code: code));
+  }
+
+  Future<void> _checkReplacement(http.Response response, int epoch) async {
+    if (epoch != _sessionEpoch) throw _ended;
+    if (response.statusCode != 401) return;
+    try {
+      _decode(response);
+    } on BusinessApiException catch (error) {
+      if (error.code == 'SESSION_REPLACED') {
+        await _invalidateSession(epoch, error.code);
+        rethrow;
+      }
+    } on FormatException {
+      // A proxy may return non-JSON 401; ordinary refresh still decides validity.
+    }
+  }
+
   String newIdempotencyKey() => _uuid.v4();
   String _pendingIdempotencyKey(String operation) =>
       _pendingIdempotencyKeys.putIfAbsent(operation, newIdempotencyKey);
@@ -77,6 +155,10 @@ final class BusinessApiClient
     required String deviceKey,
     required String deviceName,
   }) async {
+    final loginEpoch = ++_sessionEpoch;
+    _refreshFlight = null;
+    _matrixGrantFlight = null;
+    _matrixGrantRetryAt = null;
     final response = await _client.post(
       _uri('/auth/login'),
       headers: {'Content-Type': 'application/json'},
@@ -88,15 +170,19 @@ final class BusinessApiClient
       }),
     );
     final body = _decode(response);
+    if (loginEpoch != _sessionEpoch) throw _ended;
     final returnedMatrixUserId = body['matrix_user_id']?.toString();
-    await sessionStore.saveSession(
-      accessToken: body['access_token'] as String,
-      refreshToken: body['refresh_token'] as String,
-      deviceKey: deviceKey,
-      matrixUserId: returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
-          ? null
-          : returnedMatrixUserId,
-    );
+    await _writeCurrentSession(
+        loginEpoch,
+        () => sessionStore.saveSession(
+              accessToken: body['access_token'] as String,
+              refreshToken: body['refresh_token'] as String,
+              deviceKey: deviceKey,
+              matrixUserId:
+                  returnedMatrixUserId == null || returnedMatrixUserId.isEmpty
+                      ? null
+                      : returnedMatrixUserId,
+            ));
     return body;
   }
 
@@ -162,6 +248,7 @@ final class BusinessApiClient
 
   @override
   Future<void> bindMatrixUserId(String matrixUserId) async {
+    final epoch = _sessionEpoch;
     final stored = await sessionStore.session();
     if (stored == null) {
       throw const BusinessApiException(
@@ -170,11 +257,13 @@ final class BusinessApiClient
         message: '需要登录',
       );
     }
-    await sessionStore.saveSession(
-      accessToken: stored.accessToken,
-      refreshToken: stored.refreshToken,
-      matrixUserId: matrixUserId,
-    );
+    await _writeCurrentSession(
+        epoch,
+        () => sessionStore.saveSession(
+              accessToken: stored.accessToken,
+              refreshToken: stored.refreshToken,
+              matrixUserId: matrixUserId,
+            ));
   }
 
   @override
@@ -388,6 +477,7 @@ final class BusinessApiClient
 
   @override
   Future<BusinessSessionRestore> restoreSession() async {
+    final epoch = _sessionEpoch;
     final stored = await sessionStore.session();
     if (stored == null) return BusinessSessionRestore.absent;
     try {
@@ -395,7 +485,7 @@ final class BusinessApiClient
       return BusinessSessionRestore.authenticated;
     } on BusinessApiException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
-        await sessionStore.clearBusinessSession();
+        if (epoch == _sessionEpoch) await _invalidateSession(epoch, error.code);
         return BusinessSessionRestore.invalid;
       }
       if (error.statusCode >= 500) return BusinessSessionRestore.offline;
@@ -441,7 +531,16 @@ final class BusinessApiClient
           body: jsonEncode({'refresh_token': stored.refreshToken}),
         )
         .timeout(_httpTimeout);
-    final body = _decode(response);
+    if (epoch != _sessionEpoch) throw _ended;
+    late final Map<String, dynamic> body;
+    try {
+      body = _decode(response);
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await _invalidateSession(epoch, error.code);
+      }
+      rethrow;
+    }
     if (epoch != _sessionEpoch) {
       // A03：登出已发生——迟到的刷新结果不得恢复已清除的会话。
       throw const BusinessApiException(
@@ -457,12 +556,14 @@ final class BusinessApiClient
       matrixUserId: stored.matrixUserId,
       deviceKey: stored.deviceKey,
     );
-    await sessionStore.saveSession(
-      accessToken: replacement.accessToken,
-      refreshToken: replacement.refreshToken,
-      matrixUserId: replacement.matrixUserId,
-      deviceKey: replacement.deviceKey,
-    );
+    await _writeCurrentSession(
+        epoch,
+        () => sessionStore.saveSession(
+              accessToken: replacement.accessToken,
+              refreshToken: replacement.refreshToken,
+              matrixUserId: replacement.matrixUserId,
+              deviceKey: replacement.deviceKey,
+            ));
     return replacement;
   }
 
@@ -507,9 +608,15 @@ final class BusinessApiClient
 
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async {
-    _sessionEpoch++;
-    final stored = await sessionStore.session();
-    await sessionStore.clearBusinessSession();
+    final epoch = ++_sessionEpoch;
+    _refreshFlight = null;
+    final stored = await _writeSession(() async {
+      if (epoch != _sessionEpoch) return null;
+      final previous = await sessionStore.session();
+      if (epoch != _sessionEpoch) return null;
+      await sessionStore.clearBusinessSession();
+      return previous;
+    });
     if (stored == null) return null;
     return _BusinessSessionRevocation(() async {
       await _client.post(
@@ -633,6 +740,7 @@ final class BusinessApiClient
     }
     return response;
   }
+
   Future<Map<String, dynamic>> createChatTransfer({
     required String receiverId,
     required String amount,
@@ -887,6 +995,7 @@ final class BusinessApiClient
     momentsPrivacyChanges.changed();
     return result;
   }
+
   @override
   Future<void> blockContact(String userId) async {
     await blockUser(userId);
@@ -962,20 +1071,30 @@ final class BusinessApiClient
   }
 
   Future<Map<String, dynamic>> claimDirectConversation(
-    String peerUserId, String attemptId,
-  ) => postJson('/direct-conversations/claim', {
-    'peer_user_id': peerUserId,
-    'attempt_id': attemptId,
-  }, idempotencyKey: attemptId);
+    String peerUserId,
+    String attemptId,
+  ) =>
+      postJson(
+          '/direct-conversations/claim',
+          {
+            'peer_user_id': peerUserId,
+            'attempt_id': attemptId,
+          },
+          idempotencyKey: attemptId);
 
   Future<String> publishDirectConversation(
-    String peerUserId, String attemptId, String roomId,
+    String peerUserId,
+    String attemptId,
+    String roomId,
   ) async {
-    final body = await postJson('/direct-conversations/publish', {
-      'peer_user_id': peerUserId,
-      'attempt_id': attemptId,
-      'matrix_room_id': roomId,
-    }, idempotencyKey: attemptId);
+    final body = await postJson(
+        '/direct-conversations/publish',
+        {
+          'peer_user_id': peerUserId,
+          'attempt_id': attemptId,
+          'matrix_room_id': roomId,
+        },
+        idempotencyKey: attemptId);
     final published = body['matrix_room_id'];
     if (published is! String || published.isEmpty) {
       throw StateError('规范私聊登记响应不完整');
@@ -1308,11 +1427,13 @@ final class BusinessApiClient
     String? expectedWalletScope,
     String? expectedPaymentScope,
   }) async {
+    final epoch = _sessionEpoch;
     // A03：整次授权操作（初次请求 + 刷新 + 重试）受总截止时间约束，
     // 每个阶段都有独立超时——不再出现"刷新/重试无限等待"。
     final deadline = DateTime.now().add(_authorizedTotalTimeout);
     Future<Duration> remaining() async => deadline.difference(DateTime.now());
     final initial = await sessionStore.session();
+    if (epoch != _sessionEpoch) throw _ended;
     void guardPayment(StoredBusinessSession? session) {
       if (expectedPaymentScope != null &&
           _paymentSessionScope(session) != expectedPaymentScope) {
@@ -1338,6 +1459,7 @@ final class BusinessApiClient
     if (response.statusCode >= 400) {
       _logRequest('REQUEST', requestUrl, 'HTTP ${response.statusCode}');
     }
+    await _checkReplacement(response, epoch);
     if (response.statusCode != 401 || initial == null) {
       if (expectedPaymentScope != null) {
         guardPayment(await sessionStore.session());
@@ -1345,6 +1467,7 @@ final class BusinessApiClient
       return response;
     }
     final replacement = await refreshSession();
+    if (epoch != _sessionEpoch) throw _ended;
     guardPayment(replacement);
     if (expectedWalletScope != null &&
         _walletSessionScope(replacement) != expectedWalletScope) {
@@ -1357,6 +1480,7 @@ final class BusinessApiClient
     final retried = await operation({
       'Authorization': 'Bearer ${replacement.accessToken}',
     }).timeout(budget < timeout ? budget : timeout);
+    await _checkReplacement(retried, epoch);
     if (expectedPaymentScope != null) {
       guardPayment(await sessionStore.session());
     }
@@ -1373,7 +1497,9 @@ final class BusinessApiClient
         code: body['error']?['code']?.toString() ?? 'BUSINESS_REQUEST_FAILED',
         message: body['error']?['message']?.toString() ?? '业务请求失败',
         fieldErrors: _parseFieldErrors(body['error']?['fields']),
-        retryAfterSeconds: response.statusCode == 429 ? _retrySeconds(response.headers['retry-after']) : null,
+        retryAfterSeconds: response.statusCode == 429
+            ? _retrySeconds(response.headers['retry-after'])
+            : null,
       );
     }
     return body;

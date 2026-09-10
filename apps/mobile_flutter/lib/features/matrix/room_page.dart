@@ -36,8 +36,8 @@ import '../../ui/chat/message_scroll_locator.dart';
 import '../../ui/chat/latest_message_anchor.dart';
 import 'room_image_preview_cache.dart';
 import 'group_announcement_page.dart';
-import 'package:video_compress/video_compress.dart';
 import 'video_send_stage.dart';
+import 'prepared_chat_video.dart';
 import 'video_transcode.dart';
 import '../../ui/chat/message_action_sheet.dart' show MessageSelectionBar;
 import '../../ui/chat/wechat_attachment_tile.dart';
@@ -62,6 +62,7 @@ import 'matrix_e2ee_client.dart';
 import 'image_picker_page.dart';
 import 'gallery_media_payload.dart';
 import 'voice_recording_controller.dart';
+import 'call_ui_manager.dart' show callAudioActivity;
 import 'voice_playback_controller.dart' hide VoicePlaybackState;
 import 'voice_transcriber.dart';
 import '../../ui/chat/wechat_hold_to_talk.dart';
@@ -316,6 +317,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   VoicePlaybackController? _voicePlayback;
   VoicePlaybackController get voicePlayback =>
       _voicePlayback ??= VoicePlaybackController(
+        canPlay: () => _canPlayVoice,
         // 语音附件经本地缓存：首次解密下载，重播直接读缓存（无重复网络）。
         loadAttachment: (eventId) => loadMediaWithCache(
           MediaCacheKey(
@@ -435,8 +437,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ContactDetails? peer;
   bool loading = true;
 
-  // 「拍摄」长按录像（需求 2）：待确认发送的视频与其压缩进度。
-  ({String path, int originalBytes})? pendingVideoSend;
+  // Camera capture and automatic video preparation state.
+  bool _capturingVideo = false;
 
   /// 视频发送阶段（转码→加密→上传→发送事件；转码有真实进度，
   /// 其余阶段按 SDK 上传伪事件状态显示）。
@@ -457,6 +459,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     roomInfo = widget.roomLease.roomInfo;
     peer = widget.initialContact;
@@ -1365,6 +1368,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       } on GroupVideoTooLargeException catch (error) {
         if (mounted && !_disposing) _showMediaMessage(error.toString());
         rethrow;
+      } on VideoCompressionException catch (error) {
+        if (mounted && !_disposing) _showMediaMessage(error.toString());
+        rethrow;
       }
     });
     _outgoingMediaQueue =
@@ -1372,188 +1378,74 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return task;
   }
 
-  /// 待发视频预览条（发送区域上方）：封面 + 体积 + 压缩进度 + 取消/发送。
-  Widget _pendingVideoSendBar() {
-    final pending = pendingVideoSend!;
-    final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    return Container(
-      key: const Key('pending-video-bar'),
-      margin: const EdgeInsets.fromLTRB(
-          WeChatSpacing.md, WeChatSpacing.sm, WeChatSpacing.md, 0),
-      padding: const EdgeInsets.all(WeChatSpacing.sm),
-      decoration: BoxDecoration(
-        color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
-        borderRadius: BorderRadius.circular(WeChatRadius.dialog),
-      ),
-      child: Row(children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(WeChatRadius.control),
-          child: SizedBox(
-            width: 56,
-            height: 56,
-            child: FutureBuilder<Uint8List?>(
-              future: _pendingVideoPoster(pending.path),
-              builder: (context, snapshot) {
-                final poster = snapshot.data;
-                if (poster != null) {
-                  return Image.memory(poster,
-                      fit: BoxFit.cover, gaplessPlayback: true);
-                }
-                return const ColoredBox(
-                  color: CupertinoColors.black,
-                  child: Center(
-                      child: Icon(CupertinoIcons.videocam_fill,
-                          size: 22, color: CupertinoColors.systemGrey)),
-                );
-              },
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('视频 ${formatBytes(pending.originalBytes)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14)),
-              const SizedBox(height: 4),
-              if (videoSend.busy)
-                Row(children: [
-                  const CupertinoActivityIndicator(radius: 7),
-                  const SizedBox(width: 6),
-                  Text(
-                    videoSend.label,
-                    key: const Key('pending-video-progress'),
-                    style: const TextStyle(
-                        fontSize: 12, color: WeChatColors.textSecondary),
-                  ),
-                ])
-              else
-                Text(VideoSendState().label,
-                    style: const TextStyle(
-                        fontSize: 12, color: WeChatColors.textSecondary)),
-            ],
-          ),
-        ),
-        CupertinoButton(
-          key: const Key('pending-video-cancel'),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          onPressed: videoSend.busy ? null : _cancelPendingVideo,
-          child: const Text('取消', style: TextStyle(fontSize: 14)),
-        ),
-        CupertinoButton(
-          key: const Key('pending-video-send'),
-          color: WeChatColors.brandPrimary,
-          borderRadius: BorderRadius.circular(WeChatRadius.control),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          onPressed:
-              videoSend.busy ? null : () => _trackAction(_sendPendingVideo),
-          child: const Text('发送',
-              style: TextStyle(fontSize: 14, color: CupertinoColors.white)),
-        ),
-      ]),
-    );
-  }
-
-  /// 「拍摄」长按（需求 2）：调起系统相机录像；完成后视频自动带回
-  /// 发送区域，用户确认后再压缩并发送，无需从相册/文件中二次选择。
+  /// Camera completion immediately prepares a bounded payload, then enqueues
+  /// the encrypted send. Validation failures do not create a broken retry echo.
   Future<void> _startVideoCapture() async {
+    if (_capturingVideo) return;
     final matrix = widget.roomLease;
+    final timeline = controller;
+    if (timeline == null) return;
     final service = MediaMessageService(matrix, isGroup: isGroup);
+    setState(() => _capturingVideo = true);
+    String? capturePath;
     try {
-      final path = await service.captureVideoToFile();
-      if (path == null || !mounted) return; // 用户取消
-      final size = await File(path).length();
+      capturePath = await service.captureVideoToFile();
+      if (capturePath == null || !mounted || _disposing) return;
       _dismissComposerExtensions();
       setState(() {
-        pendingVideoSend = (path: path, originalBytes: size);
-        videoSend = const VideoSendState();
+        videoSend = const VideoSendState(phase: VideoSendPhase.transcoding);
       });
-    } on GroupVideoTooLargeException catch (error) {
-      if (mounted) _showMediaMessage(error.toString());
-    } catch (_) {
-      if (mounted) _showMediaMessage('录像启动失败，请重试');
-    } finally {
-      await service.dispose();
-    }
-  }
-
-  void _cancelPendingVideo() {
-    if (videoSend.busy) {
-      // 可取消边界=转码开始前与发送结束（见 docs/VIDEO_SEND_PIPELINE.md）。
-      return;
-    }
-    setState(() => pendingVideoSend = null);
-  }
-
-  /// 确认发送待发视频：先压缩（进度提示，480p 策略与相册一致），
-  /// 再加密上传并附带封面帧与时长。
-  Future<void> _sendPendingVideo() async {
-    final pending = pendingVideoSend;
-    final timeline = controller;
-    if (pending == null || timeline == null) return;
-    final matrix = widget.roomLease;
-    setState(() {
-      pendingVideoSend = null;
-      videoSend = const VideoSendState();
-    });
-    await timeline.sendText(
-      '[视频消息]',
-      kind: RoomMessageKind.video,
-      mimeType: 'video/mp4',
-      send: (txid) => _enqueueMedia(() async {
-        if (isGroup) await validateGroupVideoFile(File(pending.path));
-        final rendition = await transcodeForChat(File(pending.path));
-        if (!rendition.usedCompressed &&
-            await rendition.file.length() > maxOriginalVideoBytes) {
-          throw StateError('视频过大且压缩失败，无法发送');
+      final prepared = await prepareCapturedChatVideo(File(capturePath),
+          onProgress: (value) {
+        if (mounted && !_disposing) {
+          setState(() => videoSend = VideoSendState(
+              phase: VideoSendPhase.transcoding, progress: value));
         }
-        final bytes = await rendition.file.readAsBytes();
-        ({Uint8List bytes, int? width, int? height})? poster;
-        try {
-          final frame = await VideoCompress.getByteThumbnail(
-              rendition.file.path,
-              quality: 60,
-              position: 0);
-          if (frame != null && frame.isNotEmpty) {
-            final dims = await decodeImageDimensions(frame);
-            poster = (bytes: frame, width: dims?.$1, height: dims?.$2);
-          }
-        } catch (_) {/* Optional poster; preserve original encrypted video. */}
-        final duration = rendition.durationMs ?? 0;
-        return matrix.sendEncryptedMedia(
-            roomInfo.id,
-            bytes,
-            rendition.usedCompressed
-                ? 'video/mp4'
-                : mimeFromFileName(pending.path),
-            txid: txid,
-            extraContent: duration <= 0
-                ? null
-                : {
-                    'info': {'duration': duration}
-                  },
-            thumbnailBytes: poster?.bytes,
-            thumbnailWidth: poster?.width,
-            thumbnailHeight: poster?.height);
-      }),
-    );
-  }
-
-  /// 待发视频封面帧（缓存于缩略图内存缓存，键前缀 vcap:）。
-  Future<Uint8List?> _pendingVideoPoster(String path) async {
-    try {
-      final frame = await VideoCompress.getByteThumbnail(
-        path,
-        quality: 55,
-        position: 0,
-      );
-      return frame == null || frame.isEmpty ? null : frame;
+      });
+      if (!mounted || _disposing) return;
+      final posterDimensions = prepared.poster == null
+          ? null
+          : await decodeImageDimensions(prepared.poster!);
+      if (!mounted || _disposing) return;
+      setState(() {
+        videoSend = const VideoSendState(phase: VideoSendPhase.sendingEvent);
+      });
+      await timeline.sendText('[视频消息]',
+          kind: RoomMessageKind.video,
+          mimeType: 'video/mp4',
+          send: (txid) => _enqueueMedia(() => matrix.sendEncryptedMedia(
+              roomInfo.id, prepared.bytes, 'video/mp4',
+              txid: txid,
+              extraContent: prepared.durationMs == null
+                  ? null
+                  : {
+                      'info': {'duration': prepared.durationMs}
+                    },
+              thumbnailBytes: prepared.poster,
+              thumbnailWidth: posterDimensions?.$1,
+              thumbnailHeight: posterDimensions?.$2)));
+    } on GroupVideoTooLargeException catch (error) {
+      if (mounted && !_disposing) _showMediaMessage(error.toString());
+    } on VideoCompressionException catch (error) {
+      if (mounted && !_disposing) _showMediaMessage(error.toString());
     } catch (_) {
-      return null;
+      if (mounted && !_disposing) _showMediaMessage('视频准备失败，请重试');
+    } finally {
+      // Covers navigation away while the system camera is still returning.
+      try {
+        if (capturePath != null) {
+          final capture = File(capturePath);
+          if (await capture.exists()) await capture.delete();
+        }
+      } finally {
+        await service.dispose();
+        if (mounted && !_disposing) {
+          setState(() {
+            _capturingVideo = false;
+            videoSend = const VideoSendState();
+          });
+        }
+      }
     }
   }
 
@@ -1608,15 +1500,31 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       'liuhetong-voice-${DateTime.now().microsecondsSinceEpoch}.m4a';
 
   Future<void> _onVoiceStart() async {
+    if (callAudioActivity.value) {
+      _showMediaMessage('通话中暂时不能录制语音');
+      throw StateError('Call owns audio');
+    }
+    _startingVoice = true;
+    _voiceStartCancelled = false;
     final service = MediaMessageService(
       widget.roomLease,
     );
     try {
+      await _voicePlayback?.stopAll();
       await service.startVoiceRecording(_voicePath);
+      if (!mounted ||
+          _disposing ||
+          _voiceStartCancelled ||
+          callAudioActivity.value) {
+        await service.cancelVoiceRecording();
+        throw StateError('Recording interrupted');
+      }
     } catch (_) {
+      _startingVoice = false;
+      await service.dispose();
       // 麦克风不可用是语音无声的常见根因：用对话框强提示，避免用户
       // 只看到一闪而过的 toast 而以为“按住说话没有反应”。
-      if (mounted) {
+      if (mounted && !callAudioActivity.value && !_disposing) {
         unawaited(showCupertinoDialog<void>(
           context: context,
           builder: (dialogContext) => CupertinoAlertDialog(
@@ -1634,6 +1542,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       rethrow;
     }
     voiceService = service;
+    _startingVoice = false;
     _voiceStartedAt = DateTime.now();
     // 并行开启语音识别：松手“转文字”时取回识别文本（不可用时静默降级）。
     unawaited(voiceTranscriber.start());
@@ -1652,6 +1561,31 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _onVoiceStop(Duration elapsed) => _finishVoice(send: true);
+
+  bool _startingVoice = false;
+  bool _voiceStartCancelled = false;
+  bool get _canPlayVoice =>
+      !callAudioActivity.value && !_startingVoice && voiceService == null;
+
+  void _handleCallAudioActivity() {
+    if (!callAudioActivity.value || _disposing) return;
+    if (_startingVoice) _voiceStartCancelled = true;
+    unawaited(_voicePlayback?.stopAll().catchError((Object _) {}));
+    if (voiceService != null) {
+      unawaited(_finishVoice(send: false).catchError((Object _) {}));
+    }
+  }
+
+  Future<void> _toggleVoiceMessage(RoomMessageViewModel message) async {
+    if (!_canPlayVoice) {
+      _showMediaMessage('通话或录音中暂时不能播放语音');
+      return;
+    }
+    await voicePlayback.toggle(message);
+    if (mounted && !_disposing && voicePlayback.hasFailed(message.id)) {
+      _showMediaMessage('语音播放失败，点击语音重试');
+    }
+  }
 
   Future<void> _onVoiceCancel(VoiceArmedTarget target) async {
     if (target != VoiceArmedTarget.text) {
@@ -2437,12 +2371,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           ),
         RoomMessageKind.voice => WeChatVoiceBubble(
             duration: message.voiceDuration,
-            state: voicePlayback.isPlaying(message.id)
-                ? VoicePlaybackState.playing
-                : voicePlayback.isPaused(message.id)
-                    ? VoicePlaybackState.paused
-                    : VoicePlaybackState.idle,
-            onTap: () => unawaited(voicePlayback.toggle(message)),
+            state: voicePlayback.isLoading(message.id)
+                ? VoicePlaybackState.loading
+                : voicePlayback.hasFailed(message.id)
+                    ? VoicePlaybackState.failed
+                    : voicePlayback.isPlaying(message.id)
+                        ? VoicePlaybackState.playing
+                        : voicePlayback.isPaused(message.id)
+                            ? VoicePlaybackState.paused
+                            : VoicePlaybackState.idle,
+            onTap: () => unawaited(_toggleVoiceMessage(message)),
             playback: voicePlayback,
             messageId: message.id,
           ),
@@ -2834,6 +2772,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         serverNow: menuNow,
       ),
     );
+    if (message.kind == RoomMessageKind.voice &&
+        message.deliveryState == RoomDeliveryState.sent) {
+      actions.add(voicePlayback.earpiece
+          ? MessageAction.voiceSpeaker
+          : MessageAction.voiceEarpiece);
+    }
     if (actions.isEmpty) return;
     dismissActionMenu();
     final isOwn = message.isOwn;
@@ -2921,6 +2865,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       return;
     }
     switch (action) {
+      case MessageAction.voiceEarpiece:
+      case MessageAction.voiceSpeaker:
+        if (!_canPlayVoice) {
+          _showMediaMessage('通话或录音中暂时不能切换语音播放方式');
+          return;
+        }
+        await voicePlayback.setEarpiece(action == MessageAction.voiceEarpiece);
+        if (mounted && !_disposing) {
+          _showMediaMessage(voicePlayback.hasFailed(message.id)
+              ? '播放方式切换失败，请重试'
+              : voicePlayback.earpiece
+                  ? '已切换为听筒播放'
+                  : '已切换为扬声器播放');
+        }
       case MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.text));
         if (mounted) _showMediaMessage('已复制');
@@ -3098,6 +3056,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    callAudioActivity.removeListener(_handleCallAudioActivity);
     _disposing = true;
     dismissActionMenu();
     WidgetsBinding.instance.removeObserver(this);
@@ -3382,9 +3341,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     onCancel: () => setState(selection.exit),
                   )
                 else ...[
-                  // 「拍摄」长按录像带回的待发视频：确认后压缩发送（需求 2）。
-                  if (pendingVideoSend != null && !videoSend.busy)
-                    _pendingVideoSendBar(),
+                  // Automatic camera compression progress; no confirmation step.
+                  if (_capturingVideo && videoSend.busy)
+                    Padding(
+                      key: const Key('video-automatic-compression-progress'),
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CupertinoActivityIndicator(radius: 7),
+                            const SizedBox(width: 8),
+                            Text(videoSend.label)
+                          ]),
+                    ),
                   ChatComposerBar(
                     controller: input,
                     focusNode: inputFocusNode,

@@ -22,6 +22,7 @@ final class IOSCallsBridge: NSObject, PKPushRegistryDelegate, CXProviderDelegate
   private let pip = IOSCallPictureInPicture()
   private var audioActivated = false
   private var generation = 0
+  var hasActiveCall: Bool { !state.calls.isEmpty || audioActivated }
 
   override init() {
     let config = CXProviderConfiguration(localizedName: "ChatFlow")

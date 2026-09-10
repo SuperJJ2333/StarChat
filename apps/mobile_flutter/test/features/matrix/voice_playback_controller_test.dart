@@ -10,19 +10,25 @@ final class FakeVoiceAudioEngine implements VoiceAudioEngine {
   int stopCalls = 0;
   int pauseCalls = 0;
   int resumeCalls = 0;
+  Completer<void>? playGate;
+  bool failResume = false;
   final completedController = StreamController<void>.broadcast();
   final positionController = StreamController<Duration>.broadcast();
 
   @override
   Future<void> play(Uint8List bytes, {required bool earpiece}) async {
     played.add(earpiece);
+    await playGate?.future;
   }
 
   @override
   Future<void> pause() async => pauseCalls++;
 
   @override
-  Future<void> resume() async => resumeCalls++;
+  Future<void> resume() async {
+    resumeCalls++;
+    if (failResume) throw StateError('resume failed');
+  }
 
   @override
   Future<void> stop() async {
@@ -52,6 +58,100 @@ RoomMessageViewModel _voice(String id) => RoomMessageViewModel(
     );
 
 void main() {
+  test('active call blocks playback without downloading media', () async {
+    var downloads = 0;
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+        loadAttachment: (_) async {
+          downloads++;
+          return Uint8List.fromList([1]);
+        },
+        canPlay: () => false,
+        engine: engine);
+    await controller.toggle(_voice('a'));
+    expect(downloads, 0);
+    expect(engine.played, isEmpty);
+    expect(controller.hasFailed('a'), isTrue);
+    controller.dispose();
+  });
+
+  test('switching to a slow attachment stops the previous audio immediately',
+      () async {
+    final gate = Completer<Uint8List>();
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+        loadAttachment: (id) =>
+            id == 'a' ? Future.value(Uint8List.fromList([1])) : gate.future,
+        engine: engine);
+    await controller.toggle(_voice('a'));
+    final next = controller.toggle(_voice('b'));
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.stopCalls, 1);
+    gate.complete(Uint8List.fromList([2]));
+    await next;
+    controller.dispose();
+  });
+
+  test('call beginning during download prevents late playback', () async {
+    var allowed = true;
+    final gate = Completer<Uint8List>();
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+        loadAttachment: (_) => gate.future,
+        canPlay: () => allowed,
+        engine: engine);
+    final play = controller.toggle(_voice('a'));
+    allowed = false;
+    gate.complete(Uint8List.fromList([1]));
+    await play;
+    expect(engine.played, isEmpty);
+    expect(controller.hasFailed('a'), isTrue);
+    controller.dispose();
+  });
+  test('tap again during download cancels the pending playback', () async {
+    final gate = Completer<Uint8List>();
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+        loadAttachment: (_) => gate.future, engine: engine);
+    final first = controller.toggle(_voice('pending'));
+    await controller.toggle(_voice('pending'));
+    gate.complete(Uint8List.fromList([1]));
+    await first;
+    expect(engine.played, isEmpty);
+    expect(controller.isPaused('pending'), isFalse);
+    controller.dispose();
+  });
+
+  test('a late native play cannot stop the newer voice', () async {
+    final gate = Completer<void>();
+    final engine = FakeVoiceAudioEngine()..playGate = gate;
+    final controller = VoicePlaybackController(
+        loadAttachment: (_) async => Uint8List.fromList([1]), engine: engine);
+    final first = controller.toggle(_voice('a'));
+    await Future<void>.delayed(Duration.zero);
+    final second = controller.toggle(_voice('b'));
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.played, hasLength(1),
+        reason: 'native source operations serialize');
+    gate.complete();
+    await Future.wait([first, second]);
+    expect(controller.isPlaying('b'), isTrue);
+    controller.dispose();
+  });
+
+  test('resume failure leaves a retryable idle voice without throwing',
+      () async {
+    final engine = FakeVoiceAudioEngine();
+    final controller = VoicePlaybackController(
+        loadAttachment: (_) async => Uint8List.fromList([1]), engine: engine);
+    await controller.toggle(_voice('a'));
+    await controller.toggle(_voice('a'));
+    engine.failResume = true;
+    await controller.toggle(_voice('a'));
+    expect(controller.isPlaying('a'), isFalse);
+    expect(controller.isPaused('a'), isFalse);
+    controller.dispose();
+  });
   test('native stream errors clear playback without an uncaught exception',
       () async {
     final engine = FakeVoiceAudioEngine();

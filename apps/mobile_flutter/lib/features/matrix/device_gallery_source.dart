@@ -47,15 +47,14 @@ final class GalleryPhoto {
   final Future<Uint8List> Function() originalBytes;
   final String mimeType;
 
-  /// 视频条目：网格带时长角标；发送默认压缩，
-  /// 勾选“原图”时受 [maxOriginalVideoBytes] 上限拦截。
+  /// 视频条目：网格带时长角标；所有发送均自动压缩，原图开关仅影响图片。
   final bool isVideo;
   final Duration? duration;
 
-  /// 原始文件大小（惰性读取），用于“原图”模式下 20MB 视频拦截。
+  /// 原始文件大小（惰性读取），只用于媒体信息，不作为视频发送大小。
   final Future<int> Function()? originalSizeBytes;
 
-  /// 视频预览/发送共用的压缩产物及回退信息（预览页播放与发送复用同一份）。
+  /// 视频预览与发送使用同一压缩策略；调用方独立拥有并释放产物。
   /// 仅视频条目提供。
   final Future<VideoRendition> Function()? compressedPreviewFile;
 
@@ -252,7 +251,7 @@ final class GalleryAlbum {
 ///
 /// - 网格一律按**创建时间倒序**（最新创建的显示在最上方）；
 /// - 缩略图统一按 200px 解码，压缩图/原图仅在发送时按需读取；
-/// - 视频发送默认压缩（480p，减轻服务器负担），原图模式有 20MB 上限。
+/// - 视频统一自动压缩，最终输出不得超过20MiB。
 // DateTimeCond defaults capture now at construction. Never share the filter
 // across openings: a process-wide instance excludes all later screenshots.
 FilterOptionGroup get _sortedByCreateDateDesc => FilterOptionGroup(
@@ -650,31 +649,21 @@ class DeviceGalleryPager {
     }
   }
 
-  /// 视频压缩：预览播放与发送复用同一份产物，不二次转码。
-  /// 策略统一收敛在 `transcodeForChat`（480p，≥50% 减量目标，降档重试）；
-  /// 这里只负责缓存与 >20MB 兜底拦截（回退原文件过大时拒绝发送）。
+  /// Each consumer owns its rendition. A preview cannot delete a send's file.
   Future<VideoRendition> _resolveVideoRendition(AssetEntity asset) async {
-    final cached = _compressedVideoFiles[asset.id];
-    if (cached != null) return cached;
     final origin = await asset.originFile;
     if (origin == null) throw StateError('video unavailable');
-    final originSize = await origin.length();
-    final rendition = await transcodeForChat(origin);
-    if (!rendition.usedCompressed && originSize > maxOriginalVideoBytes) {
-      // 原文件过大压不动的情况不应静默把巨大文件推给服务器。
-      throw StateError('compressed video unavailable');
-    }
-    return _compressedVideoFiles[asset.id] = rendition;
+    return transcodeForChat(origin);
   }
 
-  final Map<String, VideoRendition> _compressedVideoFiles = {};
-
-  /// 读取已解析的压缩产物信息（预览页用于提示回退状态）；未解析过返回 null。
-  VideoRendition? cachedVideoRendition(String assetId) =>
-      _compressedVideoFiles[assetId];
-
-  Future<Uint8List> _readCompressedVideo(AssetEntity asset) async =>
-      (await _resolveVideoRendition(asset)).file.readAsBytes();
+  Future<Uint8List> _readCompressedVideo(AssetEntity asset) async {
+    final rendition = await _resolveVideoRendition(asset);
+    try {
+      return await rendition.file.readAsBytes();
+    } finally {
+      await rendition.dispose();
+    }
+  }
 }
 
 /// 视频首帧采样位置：按时长选取合法多时间点（片头 200ms 常为黑场，

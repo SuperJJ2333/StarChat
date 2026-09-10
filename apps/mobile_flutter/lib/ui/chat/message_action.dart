@@ -7,6 +7,8 @@ enum MessageAction {
   reply,
   reminder,
   recall,
+  voiceEarpiece,
+  voiceSpeaker,
 }
 
 enum MessageContentKind {
@@ -94,6 +96,8 @@ abstract final class MessageActionPolicy {
   /// 提醒/撤回/多选/删除（Set 无序，展示前必须归一化）。
   static const displayOrder = <MessageAction>[
     MessageAction.copy,
+    MessageAction.voiceEarpiece,
+    MessageAction.voiceSpeaker,
     MessageAction.forward,
     MessageAction.addToEmoji,
     MessageAction.reply,

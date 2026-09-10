@@ -17,12 +17,12 @@ void main() {
       expect(retry, isFalse);
     });
 
-    test('below 50% reduction on large video: retry at lower quality', () {
+    test('output within 20MiB stops regardless of reduction', () {
       final retry = shouldRetryVideoAtLowerQuality(
         originalBytes: 20 * 1024 * 1024,
-        compressedBytes: 12 * 1024 * 1024, // 40% 减量
+        compressedBytes: 12 * 1024 * 1024,
       );
-      expect(retry, isTrue);
+      expect(retry, isFalse);
     });
 
     test('small original video: never retry (quality first)', () {
@@ -33,10 +33,10 @@ void main() {
       expect(retry, isFalse);
     });
 
-    test('compressed larger than original: retry on large video', () {
+    test('output above 20MiB retries', () {
       final retry = shouldRetryVideoAtLowerQuality(
         originalBytes: 16 * 1024 * 1024,
-        compressedBytes: 14 * 1024 * 1024,
+        compressedBytes: 21 * 1024 * 1024,
       );
       expect(retry, isTrue);
     });

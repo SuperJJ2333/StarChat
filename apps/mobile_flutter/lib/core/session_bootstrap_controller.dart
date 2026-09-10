@@ -9,6 +9,7 @@ import 'package:matrix/matrix.dart';
 import '../features/matrix/matrix_e2ee_client.dart';
 import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
+import 'business_auth_contracts.dart';
 import 'cache/cache_repository.dart';
 
 enum SessionBootstrapStatus {
@@ -32,13 +33,67 @@ final class SessionBootstrapController extends ChangeNotifier {
     MatrixSecurityLogger? securityLogger,
     this.remoteLogoutTimeout = const Duration(seconds: 5),
   }) : securityLogger =
-            securityLogger ?? MatrixSecurityLogger.create(sink: (_) {});
+            securityLogger ?? MatrixSecurityLogger.create(sink: (_) {}) {
+    final gateway = business;
+    if (gateway is BusinessSessionMonitor) {
+      final monitor = gateway as BusinessSessionMonitor;
+      _sessionSubscription = monitor.sessionInvalidations.listen((event) {
+        if (event.epoch == monitor.sessionEpoch) {
+          unawaited(_sessionInvalidated(event.code));
+        }
+      });
+    }
+  }
 
   final BusinessSessionGateway business;
   final MatrixSessionGateway matrix;
   bool canShowCachedMessages = false;
   int _generation = 0;
   Future<void>? _bootstrapFlight;
+  StreamSubscription<BusinessSessionInvalidation>? _sessionSubscription;
+  Timer? _sessionMonitorTimer;
+  bool _sessionCheckInProgress = false;
+  bool _disposed = false;
+
+  Future<void> checkSessionValidity() async {
+    final gateway = business;
+    if (!_authenticated ||
+        _sessionCheckInProgress ||
+        gateway is! BusinessSessionMonitor) {
+      return;
+    }
+    _sessionCheckInProgress = true;
+    try {
+      await (gateway as BusinessSessionMonitor).checkSessionValidity();
+    } catch (_) {
+      // Network failure preserves the local session. Auth invalidation arrives
+      // through the gateway's epoch-checked event, never through this catch.
+    } finally {
+      _sessionCheckInProgress = false;
+    }
+  }
+
+  Future<void> _sessionInvalidated(String code) async {
+    if (_disposed) return;
+    ++_generation;
+    _bootstrapFlight = null;
+    clearMediaMemoryCaches();
+    _set(SessionBootstrapState(SessionBootstrapStatus.unauthenticated,
+        message: code == 'SESSION_REPLACED'
+            ? '账号已在其他设备登录，当前设备已退出。本地聊天记录已保留。'
+            : '登录状态已失效，请重新登录。本地聊天记录已保留。'));
+    await _bestEffortMatrixSuspend();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    ++_generation;
+    _sessionMonitorTimer?.cancel();
+    unawaited(_sessionSubscription?.cancel());
+    super.dispose();
+  }
+
   final MatrixSecurityLogger securityLogger;
   final Duration remoteLogoutTimeout;
   SessionBootstrapState state = const SessionBootstrapState(
@@ -302,11 +357,19 @@ final class SessionBootstrapController extends ChangeNotifier {
   static const _suspendFailureMessage = '聊天会话暂停失败，请重新打开应用后重试';
 
   void _set(SessionBootstrapState next) {
+    if (_disposed) return;
     if (next.status == SessionBootstrapStatus.unauthenticated ||
         next.status == SessionBootstrapStatus.fatalError) {
       canShowCachedMessages = false;
     }
     state = next;
+    if (_authenticated && business is BusinessSessionMonitor) {
+      _sessionMonitorTimer ??= Timer.periodic(const Duration(seconds: 60),
+          (_) => unawaited(checkSessionValidity()));
+    } else {
+      _sessionMonitorTimer?.cancel();
+      _sessionMonitorTimer = null;
+    }
     notifyListeners();
   }
 }

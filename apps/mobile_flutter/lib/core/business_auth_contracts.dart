@@ -31,6 +31,26 @@ abstract interface class DualDomainBusinessGateway {
   Future<void> logoutBusiness();
 }
 
+/// Completing Matrix authentication also confirms previous devices were revoked.
+abstract interface class MatrixSessionCompletionGateway {
+  Future<void> completeMatrixSession({
+    required String matrixAccessToken,
+    required String matrixDeviceId,
+  });
+}
+
+final class BusinessSessionInvalidation {
+  const BusinessSessionInvalidation({required this.epoch, required this.code});
+  final int epoch;
+  final String code;
+}
+
+abstract interface class BusinessSessionMonitor {
+  Stream<BusinessSessionInvalidation> get sessionInvalidations;
+  int get sessionEpoch;
+  Future<void> checkSessionValidity();
+}
+
 final class RegistrationReceipt {
   const RegistrationReceipt({
     required this.registrationSession,

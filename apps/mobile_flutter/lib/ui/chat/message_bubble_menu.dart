@@ -28,6 +28,8 @@ final class MessageBubbleMenu extends StatelessWidget {
   final double? arrowX;
 
   static const _presentation = <MessageAction, (IconData, String)>{
+    MessageAction.voiceEarpiece: (CupertinoIcons.phone, '听筒播放'),
+    MessageAction.voiceSpeaker: (CupertinoIcons.speaker_2, '扬声器播放'),
     MessageAction.copy: (CupertinoIcons.doc_on_doc, '复制'),
     MessageAction.forward: (CupertinoIcons.arrowshape_turn_up_right, '转发'),
     MessageAction.addToEmoji: (CupertinoIcons.star, '收藏'),

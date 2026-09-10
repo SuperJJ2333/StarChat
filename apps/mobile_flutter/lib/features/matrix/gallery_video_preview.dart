@@ -10,9 +10,9 @@ import '../../ui/foundation/wechat_tokens.dart';
 import 'device_gallery_source.dart';
 
 /// 相册视频预览页：点击图片页中的视频条目进入。
-/// - 优先播放**压缩产物文件**（480p 减缩版，与发送复用同一份，预览即所见即所发）；
+/// - 播放按发送策略生成的独立压缩产物；退出或失败后释放该产物；
 ///   压缩产物准备阶段显示**进度百分比**（转码进行中）；
-/// - 压缩版不可用时**回退原始视频**并给出明确提示（不静默）；
+/// - 压缩版不可用时显示失败，可重试；
 /// - 准备失败提供「重试」；
 /// - 播放/暂停、进度与时长展示；
 /// - 右下角“选择/已选择”胶囊与网格左上角圆圈等效；
@@ -28,7 +28,7 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
     required this.onToggle,
   });
 
-  /// 解析压缩产物（480p 减缩版；不可用时回退原始视频并在结果中说明）。
+  /// 解析并转移压缩产物所有权；页面负责释放。
   final Future<VideoRendition> Function() loadRendition;
   final Uint8List thumbnailBytes;
   final Duration? duration;
@@ -56,6 +56,7 @@ final class _GalleryVideoPreviewPageState
 
   /// 准备阶段文案（压缩中/解码中）。
   String _prepareLabel = '正在准备压缩版…';
+  VideoRendition? _ownedRendition;
 
   @override
   void initState() {
@@ -83,21 +84,27 @@ final class _GalleryVideoPreviewPageState
         },
       );
       final rendition = await widget.loadRendition();
-      if (!mounted) return false;
+      if (!mounted) {
+        await rendition.dispose();
+        return false;
+      }
+      _ownedRendition = rendition;
       if (!rendition.usedCompressed && rendition.fallbackNotice != null) {
         _showNotice(rendition.fallbackNotice!);
       }
       _prepareLabel = '正在解码视频…';
       final controller = VideoPlayerController.file(rendition.file);
+      _controller = controller;
       await controller.initialize();
       if (!mounted) {
-        await controller.dispose();
+        await _releasePreview();
         return false;
       }
       setState(() => _controller = controller);
       await controller.play();
       return true;
     } catch (_) {
+      await _releasePreview();
       if (mounted) setState(() {});
       return false; // 解码不支持：降级静态预览。
     } finally {
@@ -115,12 +122,24 @@ final class _GalleryVideoPreviewPageState
   }
 
   /// 「重试」：重置状态后重新解析压缩产物并初始化播放器。
-  void _retry() {
-    _controller?.dispose();
-    _controller = null;
+  Future<void> _retry() async {
+    await _releasePreview();
+    if (!mounted) return;
     setState(() {
       _initFuture = _initialize();
     });
+  }
+
+  Future<void> _releasePreview() async {
+    final player = _controller;
+    final rendition = _ownedRendition;
+    _controller = null;
+    _ownedRendition = null;
+    try {
+      await player?.dispose();
+    } finally {
+      await rendition?.dispose();
+    }
   }
 
   Future<void> _togglePlay() async {
@@ -138,7 +157,7 @@ final class _GalleryVideoPreviewPageState
   void dispose() {
     _noticeTimer?.cancel();
     _progressSubscription?.unsubscribe();
-    _controller?.dispose();
+    unawaited(_releasePreview());
     super.dispose();
   }
 

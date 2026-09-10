@@ -22,11 +22,15 @@ final class SessionGate extends StatefulWidget {
   State<SessionGate> createState() => _SessionGateState();
 }
 
-final class _SessionGateState extends State<SessionGate> {
+final class _SessionGateState extends State<SessionGate>
+    with WidgetsBindingObserver {
+  String? _shownSessionMessage;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.controller.addListener(_changed);
+    _showSessionMessage();
   }
 
   @override
@@ -40,11 +44,51 @@ final class _SessionGateState extends State<SessionGate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.removeListener(_changed);
     super.dispose();
   }
 
-  void _changed() => setState(() {});
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.controller.checkSessionValidity();
+    }
+  }
+
+  void _changed() {
+    setState(() {});
+    _showSessionMessage();
+  }
+
+  void _showSessionMessage() {
+    final state = widget.controller.state;
+    final message = state.message;
+    if (state.status != SessionBootstrapStatus.unauthenticated) {
+      _shownSessionMessage = null;
+      return;
+    }
+    if (message == null || message == _shownSessionMessage) return;
+    _shownSessionMessage = message;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          widget.controller.state.message != message ||
+          widget.controller.state.status !=
+              SessionBootstrapStatus.unauthenticated) {
+        return;
+      }
+      showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+                  title: const Text('账号已退出'),
+                  content: Text(message),
+                  actions: [
+                    CupertinoDialogAction(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('知道了'))
+                  ]));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -43,16 +43,27 @@ abstract interface class MatrixTokenLoginGateway {
   Future<void> clearLocalChatData();
 }
 
+abstract interface class MatrixAccountSelectionGateway {
+  Future<void> selectAccount(String matrixUserId, Uri homeserver);
+}
+
 final class DualDomainLoginService {
   DualDomainLoginService({
     required this.business,
     required this.matrix,
     required this.deviceKey,
+    this.retainedHomeserver,
+    this.completeMatrixSession,
     DateTime Function()? now,
   }) : now = now ?? DateTime.now;
   final DualDomainBusinessGateway business;
   final MatrixTokenLoginGateway matrix;
   final String Function() deviceKey;
+  final Uri? retainedHomeserver;
+  final Future<void> Function()? completeMatrixSession;
+  String get _retainedHomeserver =>
+      retainedHomeserver?.toString() ??
+      (throw StateError('Account homeserver is not configured'));
   final DateTime Function() now;
   MatrixAccountSwitchRequired? _pendingAccountSwitch;
   MatrixLoginGrant? _pendingGrant;
@@ -160,6 +171,10 @@ final class DualDomainLoginService {
       deviceName: '畅聊移动端',
     );
     try {
+      if (matrix is MatrixAccountSelectionGateway) {
+        await _loginRetained();
+        return;
+      }
       _stage = 'local_identity';
       final boundMatrixUserId = await business.currentMatrixUserId();
       if (matrix.isLoggedIn && !matrix.credentialsInvalid) {
@@ -210,7 +225,9 @@ final class DualDomainLoginService {
           error is SocketException ||
           error is TimeoutException ||
           error is http.ClientException;
-      if (!network) await _compensate();
+      final pendingCompletion = error is BusinessApiException &&
+          error.code == 'MATRIX_SESSION_REVOKE_PENDING';
+      if (!network && !pendingCompletion) await _compensate();
       if (error is BusinessApiException || error is LoginStageException) {
         Error.throwWithStackTrace(error, stackTrace);
       }
@@ -218,6 +235,51 @@ final class DualDomainLoginService {
       Error.throwWithStackTrace(
           LoginStageException(_stage, network: network), stackTrace);
     }
+  }
+
+  Future<void> _loginRetained() async {
+    final selector = matrix as MatrixAccountSelectionGateway;
+    _stage = 'local_identity';
+    var target = await business.currentMatrixUserId();
+    MatrixLoginGrant? grant;
+    if (target == null) {
+      grant = await _issueGrant();
+      target = grant.matrixUserId;
+    }
+    if (matrix.userId != target) {
+      _stage = 'account_storage';
+      await selector.selectAccount(
+          target, Uri.parse(grant?.homeserver ?? _retainedHomeserver));
+    }
+    if (!matrix.isLoggedIn || matrix.credentialsInvalid) {
+      if (grant == null ||
+          _pendingGrantExpiresAt == null ||
+          !now().isBefore(_pendingGrantExpiresAt!)) {
+        grant = await _issueGrant();
+      }
+      if (grant.matrixUserId != target) {
+        throw StateError('Matrix login target changed');
+      }
+      _pendingGrant = null;
+      _pendingGrantExpiresAt = null;
+      _stage = 'matrix_login';
+      await matrix.loginWithToken(
+          loginToken: grant.loginToken,
+          homeserver: Uri.parse(grant.homeserver),
+          deviceId: matrix.deviceId);
+    }
+    if (matrix.userId != target || matrix.deviceId == null) {
+      throw StateError('Matrix login returned an unexpected identity');
+    }
+    _stage = 'identity_binding';
+    await business.bindMatrixUserId(target);
+    if (completeMatrixSession != null) {
+      _stage = 'matrix_session';
+      await completeMatrixSession!();
+    }
+    _stage = 'matrix_sync';
+    await matrix.sync();
+    _forgetPending();
   }
 
   Future<void> confirmAccountSwitchAndLogin() => _run(() async {
@@ -240,7 +302,14 @@ final class DualDomainLoginService {
         _forgetPending();
         try {
           _stage = 'switch_local_clear';
-          await matrix.clearLocalChatData();
+          if (matrix is! MatrixAccountSelectionGateway) {
+            throw const BusinessApiException(
+                statusCode: 409,
+                code: 'ACCOUNT_STORAGE_UNAVAILABLE',
+                message: '此客户端无法安全切换账号，请升级后重试');
+          }
+          await (matrix as MatrixAccountSelectionGateway)
+              .selectAccount(pending.toMxid, Uri.parse(grant.homeserver));
           _stage = 'matrix_login';
           await matrix.loginWithToken(
               loginToken: grant.loginToken,
@@ -290,6 +359,8 @@ final class LoginStageException implements Exception {
         'matrix_login': 'L04',
         'matrix_sync': 'L05',
         'identity_binding': 'L06',
+        'account_storage': 'L07',
+        'matrix_session': 'L08',
       }[stage] ??
       'L00';
   String get message => network

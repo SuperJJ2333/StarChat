@@ -422,7 +422,7 @@
   min-height: var(--size-voice);
   padding: var(--space-sm) var(--space-md);
   border-radius: var(--radius-card);
-  background: var(--color-bubble-incoming);
+  background: var(--color-bubble-outgoing);
 }
 
 .c-voice-bubble__wave {

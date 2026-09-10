@@ -158,7 +158,7 @@ typedef GalleryPagerFactory = DeviceGalleryPager Function(GalleryAlbum? album);
 
 /// 微信风格的图片/视频选择页：每行 4 张缩略图、左上角圆点勾选（含序号）、
 /// 顶部“最近图片(↓)”相册子列表（本地视频/Camera/Screenshots…）、
-/// 左下角“原图”开关（默认关闭，发送压缩内容；勾选后视频超 20MB 拦截）、
+/// 左下角“原图”开关（仅影响图片；视频始终自动压缩）、
 /// 最多 9 项。
 ///
 /// 加载策略：首屏先返回最新 12 项元数据，可见单元格按需加载 200px 缩略图，
@@ -459,35 +459,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       for (final id in selection.orderedIds)
         photos.firstWhere((photo) => photo.id == id),
     ];
-    // “原图”模式下单个视频不得超过 20MB：拦截发送并提示
-    //（关闭“原图”走压缩发送不受此限）。
-    if (selection.original || widget.isGroup) {
-      for (final item in chosen) {
-        if (!item.isVideo) continue;
-        final size = await item.originalSizeBytes?.call() ?? 0;
-        if (size > maxOriginalVideoBytes) {
-          if (!mounted) return;
-          await showCupertinoDialog<void>(
-            context: context,
-            builder: (dialogContext) => CupertinoAlertDialog(
-              key: const Key('image-picker-video-limit-dialog'),
-              title: const Text('视频过大'),
-              content: Text(widget.isGroup
-                  ? '视频大小不能超过20MB'
-                  : '单个视频超过20MB，无法以原图发送。请关闭“原图”后重试'
-                      '（将自动压缩后发送）。'),
-              actions: [
-                CupertinoDialogAction(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('知道了'),
-                ),
-              ],
-            ),
-          );
-          return;
-        }
-      }
-    }
+    // Videos always use the shared automatic compression pipeline after selection.
     if (!mounted) return;
     Navigator.pop(context, (photos: chosen, original: selection.original));
   }
@@ -790,22 +762,6 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
   Future<void> _openPreview(GalleryPhoto photo) async {
     if (refreshing) return;
     if (photo.isVideo) {
-      if (widget.isGroup &&
-          (await photo.originalSizeBytes?.call() ?? 0) >
-              maxOriginalVideoBytes) {
-        if (!mounted) return;
-        await showCupertinoDialog<void>(
-            context: context,
-            builder: (dialogContext) => CupertinoAlertDialog(
-                  content: const Text('视频大小不能超过20MB'),
-                  actions: [
-                    CupertinoDialogAction(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: const Text('知道了'))
-                  ],
-                ));
-        return;
-      }
       if (!mounted) return;
       final previewFile = photo.compressedPreviewFile;
       if (previewFile != null) {

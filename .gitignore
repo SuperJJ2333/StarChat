@@ -51,6 +51,7 @@ docs/verification/artifacts/2026-09-05/privacy-forward/
 # Keep local third-party scratch packages ignored, but ship the patched Matrix
 # path dependency required by clean CI checkouts.
 apps/mobile_flutter/third_party/*
+!apps/mobile_flutter/third_party/video_compress/
 !apps/mobile_flutter/third_party/matrix/
 apps/mobile_flutter/third_party/matrix/*
 !apps/mobile_flutter/third_party/matrix/lib/

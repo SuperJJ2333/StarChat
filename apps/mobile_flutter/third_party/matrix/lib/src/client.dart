@@ -225,6 +225,10 @@ class Client extends MatrixApi {
     /// You can also perform a new login here by passing the existing deviceId.
     this.onSoftLogout,
 
+    /// Opt in to retaining the local store when a sync reports an invalid token.
+    /// The application must require fresh authentication before exposing data.
+    this.preserveStoreOnInvalidToken = false,
+
     /// Experimental feature which allows to send a custom refresh token
     /// lifetime to the server which overrides the default one. Needs server
     /// support.
@@ -320,6 +324,11 @@ class Client extends MatrixApi {
 
   /// The required name for this client.
   final String clientName;
+
+  /// Invalid server credentials never authorize continued access. When enabled,
+  /// keep the device's store for explicit same-account reauthentication instead
+  /// of deleting it. Default preserves the upstream destructive-logout behavior.
+  final bool preserveStoreOnInvalidToken;
 
   /// The Matrix ID of the current logged user.
   String? get userID => _userID;
@@ -1962,7 +1971,7 @@ class Client extends MatrixApi {
 
       // If we are refreshing the session, we are done here:
       if (onLoginStateChanged.value == LoginState.softLoggedOut) {
-        if (newRefreshToken != null && accessToken != null && userID != null) {
+        if (accessToken != null && userID != null) {
           // Store the new tokens:
           await _database?.updateClient(
             homeserver.toString(),
@@ -1973,7 +1982,9 @@ class Client extends MatrixApi {
             _deviceID,
             _deviceName,
             prevBatch,
-            encryption?.pickledOlmAccount,
+            encryption?.pickledOlmAccount ??
+                olmAccount ??
+                account?.tryGet<String>('olm_account'),
           );
         }
         onLoginStateChanged.add(LoginState.loggedIn);
@@ -2084,7 +2095,16 @@ class Client extends MatrixApi {
         deviceName: deviceName,
         olmAccount: olmAccount,
       );
-      await clear();
+      if (preserveStoreOnInvalidToken) {
+        // A failed credential write or store initialization must not destroy
+        // recoverable identity/key material. Fail closed until reauthentication.
+        accessToken = this.accessToken = null;
+        _accessTokenExpiresAt = null;
+        await abortSync();
+        onLoginStateChanged.add(LoginState.softLoggedOut);
+      } else {
+        await clear();
+      }
       throw clientInitException;
     } finally {
       _initLock = false;
@@ -2301,7 +2321,16 @@ class Client extends MatrixApi {
       onSyncStatus.add(SyncStatusUpdate(SyncStatus.error,
           error: SdkError(exception: e, stackTrace: s)));
       if (e.error == MatrixError.M_UNKNOWN_TOKEN) {
-        if (e.raw.tryGet<bool>('soft_logout') == true) {
+        if (preserveStoreOnInvalidToken) {
+          // A revoked device must stop using its credentials immediately, but
+          // loss of server authorization must not erase offline room keys or
+          // history. Do not call _handleSoftLogout: without a refresh callback
+          // (or when it fails), that path calls destructive logout()/clear().
+          accessToken = null;
+          _accessTokenExpiresAt = null;
+          await abortSync();
+          onLoginStateChanged.add(LoginState.softLoggedOut);
+        } else if (e.raw.tryGet<bool>('soft_logout') == true) {
           Logs().w(
             'The user has been soft logged out! Calling client.onSoftLogout() if present.',
           );

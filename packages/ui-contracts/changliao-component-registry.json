@@ -832,6 +832,36 @@
           ]
         }
       ]
+    },
+    {
+      "id": "voice-bubble",
+      "flutter": {
+        "name": "WeChatVoiceBubble",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_voice_bubble.dart",
+        "props": [
+          "duration",
+          "state",
+          "onTap",
+          "playback",
+          "messageId"
+        ],
+        "variants": {},
+        "states": [
+          "idle",
+          "loading",
+          "playing",
+          "paused",
+          "failed"
+        ]
+      },
+      "html": {
+        "tag": "app-voice-bubble"
+      },
+      "tokens": [
+        "WeChatSpacing.md",
+        "WeChatRadius.bubble",
+        "WeChatColors.bubbleOutgoing"
+      ]
     }
   ],
   "tokenParity": [

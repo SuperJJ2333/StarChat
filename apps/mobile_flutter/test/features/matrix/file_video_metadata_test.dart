@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/media_message_service.dart';
+import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
 
 class _Picker extends FileSelectorPlatform {
   _Picker(this.path, this.mime);
@@ -56,17 +57,18 @@ void main() {
             const MethodChannel('com.llfbandit.record/messages'),
             (call) async => null);
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-06/room-flow/images/file-send');
+        '../../docs/verification/artifacts/2026-09-10/chat-reliability-2084/video');
     await root.create(recursive: true);
     dir = await root.createTemp('metadata-');
     video = await File('${dir.path}/clip.mp4').writeAsBytes([1, 2, 3]);
+    final encoded = await File('${dir.path}/encoded.mp4').writeAsBytes([1, 2]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             channel,
             (call) async => call.method == 'getByteThumbnail'
                 ? null
                 : jsonEncode({
-                    'path': video.path,
+                    'path': encoded.path,
                     'duration': 12500.0,
                     'width': 1920,
                     'height': 1080
@@ -82,8 +84,7 @@ void main() {
     await dir.delete(recursive: true);
   });
   for (final size in [20971519, 20971520, 20971521]) {
-    test(
-        'group captured video original $size checked before returning preview file',
+    test('group captured video original $size reaches automatic compression',
         () async {
       final handle = await video.open(mode: FileMode.write);
       await handle.truncate(size);
@@ -95,16 +96,11 @@ void main() {
           .instance.defaultBinaryMessenger
           .setMockMethodCallHandler(camera, null));
       final service = MediaMessageService(_Matrix(), isGroup: true);
-      if (size > 20971520) {
-        await expectLater(service.captureVideoToFile(),
-            throwsA(predicate((e) => e.toString() == '视频大小不能超过20MB')));
-      } else {
-        expect(await service.captureVideoToFile(), video.path);
-      }
+      expect(await service.captureVideoToFile(), video.path);
     });
   }
   for (final size in [20971519, 20971520, 20971521]) {
-    test('group file video original $size checked before transcode/upload',
+    test('group file video original $size does not bypass compression',
         () async {
       final handle = await video.open(mode: FileMode.write);
       await handle.truncate(size);
@@ -118,14 +114,9 @@ void main() {
       final matrix = _Matrix();
       final service = MediaMessageService(matrix, isGroup: true);
       final selected = XFile(video.path, mimeType: 'application/octet-stream');
-      if (size > 20971520) {
-        await expectLater(service.sendSelectedFile('group', selected),
-            throwsA(predicate((e) => e.toString() == '视频大小不能超过20MB')));
-        expect(matrix.sentBytes, isNull);
-        expect(calls, 0);
-      } else {
-        await service.validateSelectedFile(selected);
-      }
+      await service.validateSelectedFile(selected);
+      expect(matrix.sentBytes, isNull);
+      expect(calls, 0);
     });
   }
   for (final mime in ['video/mp4', 'application/octet-stream']) {
@@ -176,14 +167,15 @@ void main() {
     expect(matrix.sentBytes, [9]);
     expect(matrix.content?['info']?['duration'], 12500);
   });
-  test('读取视频元数据失败仍加密发送原文件，不伪造时长', () async {
+  test('转码失败拒绝发送原文件并保留原片', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel,
             (call) async => throw PlatformException(code: 'unsupported'));
     FileSelectorPlatform.instance = _Picker(video.path, 'video/mp4');
     final matrix = _Matrix();
-    await MediaMessageService(matrix).sendFile('test-room');
-    expect(matrix.mime, 'video/mp4');
-    expect(matrix.content, isNull);
+    await expectLater(MediaMessageService(matrix).sendFile('test-room'),
+        throwsA(isA<VideoCompressionException>()));
+    expect(matrix.sentBytes, isNull);
+    expect(await video.exists(), isTrue);
   });
 }

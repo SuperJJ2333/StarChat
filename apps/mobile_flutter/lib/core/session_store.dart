@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -21,10 +22,14 @@ final class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   bool _nativeSessionKey(String key) =>
       !kIsWeb &&
       defaultTargetPlatform == TargetPlatform.iOS &&
-      const {
-        'liuhetong.matrix_database_key.v1',
-        'liuhetong.business_session.v1'
-      }.contains(key);
+      (const {
+            'liuhetong.matrix_database_key.v1',
+            'liuhetong.business_session.v1',
+            'liuhetong.active_matrix_scope.v1',
+            'liuhetong.matrix_account_slots.v1',
+          }.contains(key) ||
+          RegExp(r'^liuhetong\.matrix_database_key\.v1\.[a-f0-9]{64}$')
+              .hasMatch(key));
 
   @override
   Future<void> delete(String key) => _nativeSessionKey(key)
@@ -73,9 +78,10 @@ final class StoredBusinessSession {
 
 final class SecureSessionStore {
   SecureSessionStore([SecureKeyValueStore? storage])
-      : _storage = storage ?? FlutterSecureKeyValueStore();
+      : _storage =
+            _AccountScopedSecureStore(storage ?? FlutterSecureKeyValueStore());
 
-  final SecureKeyValueStore _storage;
+  final _AccountScopedSecureStore _storage;
   Future<void> _matrixIdentityOperations = Future<void>.value();
 
   static const _sessionKey = 'liuhetong.business_session.v1';
@@ -88,6 +94,37 @@ final class SecureSessionStore {
   static const _registrationDeviceKey = 'liuhetong.registration_device_key.v1';
   static const _matrixClearTombstoneKey = 'liuhetong.matrix_clear_tombstone.v1';
   static const _matrixClearTombstoneValue = '{"version":1,"pending":true}';
+
+  Future<String> matrixStorageScope() =>
+      _runMatrixIdentityOperation(_storage.scope);
+
+  /// Only called after business authentication and the old client has closed.
+  Future<void> selectMatrixAccount(String homeserver, String userId) =>
+      _runMatrixIdentityOperation(() async {
+        if (Uri.tryParse(homeserver)?.hasAuthority != true ||
+            !userId.startsWith('@') ||
+            !userId.contains(':')) {
+          throw const FormatException('Invalid Matrix account identity');
+        }
+        final slots = await _storage.slots();
+        final current = await _storage.scope();
+        final old = await _matrixBindingUnlocked();
+        if (old != null) {
+          final identity = _AccountScopedSecureStore.identity(
+              old.homeserver, old.matrixUserId);
+          if (slots.containsKey(identity) && slots[identity] != current) {
+            throw const FormatException('Conflicting Matrix account registry');
+          }
+          slots[identity] = current;
+        }
+        final target = _AccountScopedSecureStore.identity(homeserver, userId);
+        // An unclaimed legacy store stays untouched. New identities use new slots.
+        final selected = slots[target] ?? target;
+        slots[target] = selected;
+        await _storage.raw
+            .write(_AccountScopedSecureStore.registryKey, jsonEncode(slots));
+        await _storage.raw.write(_AccountScopedSecureStore.activeKey, selected);
+      });
 
   Future<void> markMatrixClearPending() => _runMatrixIdentityOperation(
         () => _storage.write(
@@ -312,4 +349,64 @@ final class SecureSessionStore {
     await _storage.delete(_legacyAccessKey);
     await _storage.delete(_legacyRefreshKey);
   }
+}
+
+/// Matrix material is scoped; the single current business session is not.
+final class _AccountScopedSecureStore implements SecureKeyValueStore {
+  _AccountScopedSecureStore(this.raw);
+  final SecureKeyValueStore raw;
+  static const activeKey = 'liuhetong.active_matrix_scope.v1';
+  static const registryKey = 'liuhetong.matrix_account_slots.v1';
+  static final _hash = RegExp(r'^[a-f0-9]{64}$');
+  static const _scoped = {
+    'liuhetong.matrix_database_key.v1',
+    'liuhetong.matrix_local_binding.v1',
+    'liuhetong.encrypted_recovery_key',
+    'liuhetong.diagnostic_salt.v1',
+    'liuhetong.matrix_clear_tombstone.v1',
+  };
+  static String identity(String homeserver, String userId) =>
+      sha256.convert(utf8.encode(jsonEncode([homeserver, userId]))).toString();
+  Future<Map<String, String>> slots() async {
+    final encoded = await raw.read(registryKey);
+    if (encoded == null) return {};
+    final parsed = jsonDecode(encoded);
+    if (parsed is! Map<String, dynamic> ||
+        parsed.entries.any((entry) =>
+            !_hash.hasMatch(entry.key) ||
+            entry.value is! String ||
+            (entry.value != '' && !_hash.hasMatch(entry.value as String)))) {
+      throw const FormatException('Invalid Matrix account registry');
+    }
+    final result = parsed.cast<String, String>();
+    if (result.values.toSet().length != result.length) {
+      throw const FormatException('Aliased Matrix account registry');
+    }
+    return result;
+  }
+
+  Future<String> scope() async {
+    final value = await raw.read(activeKey);
+    final registered = await slots();
+    if (value == null) return '';
+    if ((value.isNotEmpty && !_hash.hasMatch(value)) ||
+        !registered.containsValue(value)) {
+      throw const FormatException('Invalid active Matrix account');
+    }
+    return value;
+  }
+
+  Future<String> _key(String key) async {
+    if (!_scoped.contains(key)) return key;
+    final suffix = await scope();
+    return suffix.isEmpty ? key : '$key.$suffix';
+  }
+
+  @override
+  Future<String?> read(String key) async => raw.read(await _key(key));
+  @override
+  Future<void> write(String key, String value) async =>
+      raw.write(await _key(key), value);
+  @override
+  Future<void> delete(String key) async => raw.delete(await _key(key));
 }

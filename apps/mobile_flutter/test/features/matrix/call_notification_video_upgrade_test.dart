@@ -22,10 +22,19 @@ void main() {
     expect(
         channelSpecFor(SystemNotificationChannel.silent).soundResource, isNull);
   });
-  test('中等大小视频也降档压缩，减少传输体积', () {
+  test('普通压缩后符合20MB限制即可发送，超限才自动激进压缩', () {
     expect(
         shouldRetryVideoAtLowerQuality(
             originalBytes: 5 * 1024 * 1024, compressedBytes: 4 * 1024 * 1024),
+        isFalse);
+    expect(
+        shouldRetryVideoAtLowerQuality(
+            originalBytes: 30 * 1024 * 1024, compressedBytes: 20 * 1024 * 1024),
+        isFalse);
+    expect(
+        shouldRetryVideoAtLowerQuality(
+            originalBytes: 30 * 1024 * 1024,
+            compressedBytes: 20 * 1024 * 1024 + 1),
         isTrue);
   });
 }

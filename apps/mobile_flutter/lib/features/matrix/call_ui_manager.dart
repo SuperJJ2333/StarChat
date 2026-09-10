@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 
 import 'call_controller.dart';
 import 'call_notifications.dart';
@@ -14,6 +15,10 @@ import '../../ui/components/modern_action_button.dart';
 /// CallUiManager 用它在任意页面/路由之上推来电页；统计助手等
 /// 无上下文导航复用同一根 Navigator。
 final GlobalKey<NavigatorState> callNavigatorKey = GlobalKey<NavigatorState>();
+final ValueNotifier<bool> _callAudioActivity = ValueNotifier<bool>(false);
+
+/// Read-only audio ownership signal; consumers never present call UI.
+ValueListenable<bool> get callAudioActivity => _callAudioActivity;
 
 /// 全局通话 UI 管理器（规格 §一）：**唯一**有权呈现/关闭来电页面的
 /// 组件——普通页面禁止自听 CallController 呈现通话 UI。
@@ -155,6 +160,7 @@ final class CallUiManager {
     _mediaBackend = mediaBackend;
     _outgoingCallPageVisible = outgoingCallPageVisible ?? () => false;
     _lastPhase = controller.state.phase;
+    _updateAudioActivity(controller.state.phase);
     controller.addListener(_handleCallState);
   }
 
@@ -185,6 +191,7 @@ final class CallUiManager {
     _outgoingSession = false;
     _controller?.removeListener(_handleCallState);
     _controller = null;
+    _callAudioActivity.value = false;
     _mediaBackend = null;
     _outgoingCallPageVisible = () => false;
     _cancelClose();
@@ -239,6 +246,7 @@ final class CallUiManager {
     final controller = _controller;
     if (controller == null) return;
     final phase = controller.state.phase;
+    _updateAudioActivity(phase);
     final previous = _lastPhase;
     _lastPhase = phase;
     _overlay.update(phase, outgoingCallPageVisible: _outgoingCallPageVisible());
@@ -315,6 +323,15 @@ final class CallUiManager {
       case CallPhase.requestingPermission:
         break;
     }
+  }
+
+  void _updateAudioActivity(CallPhase phase) {
+    _callAudioActivity.value = {
+      CallPhase.requestingPermission,
+      CallPhase.ringing,
+      CallPhase.connecting,
+      CallPhase.connected,
+    }.contains(phase);
   }
 
   bool _incomingOpen() => _incomingRoute?.isActive ?? false;

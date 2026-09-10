@@ -146,7 +146,6 @@ final class MediaMessageService implements RoomPickedMediaSender {
   Future<String?> captureVideoToFile() async {
     final video = await _imagePicker.pickVideo(source: ImageSource.camera);
     if (video == null) return null;
-    if (isGroup) await validateGroupVideoFile(File(video.path));
     return video.path;
   }
 
@@ -183,8 +182,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
     final mime = file.mimeType;
     final isVideo = (mime?.startsWith('video/') ?? false) ||
         mimeFromFileName(file.name).startsWith('video/');
-    if (isGroup && isVideo) await validateGroupVideoFile(File(file.path));
-    await ensureWithinSendLimit(File(file.path));
+    if (!isVideo) await ensureWithinSendLimit(File(file.path));
   }
 
   Future<String> sendSelectedFile(String roomId, XFile file,
@@ -193,6 +191,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
     // 读取前预检（大小/存在性），再进入有界并发槽上传。
     await validateSelectedFile(file);
     await _sendSlots.acquire();
+    VideoRendition? videoRendition;
     try {
       final selectedMime = file.mimeType;
       var mime = selectedMime == null ||
@@ -205,12 +204,9 @@ final class MediaMessageService implements RoomPickedMediaSender {
       Uint8List? poster;
       if (mime.startsWith('video/')) {
         final rendition = await transcodeForChat(local);
+        videoRendition = rendition;
         upload = rendition.file;
-        if (rendition.usedCompressed) mime = 'video/mp4';
-        if (!rendition.usedCompressed &&
-            await upload.length() > maxOriginalVideoBytes) {
-          throw StateError('视频压缩失败且文件过大，请选择较短的视频');
-        }
+        mime = 'video/mp4';
         poster = await extractVideoPoster(upload.path);
         try {
           final metadata = await VideoCompress.getMediaInfo(upload.path)
@@ -222,7 +218,7 @@ final class MediaMessageService implements RoomPickedMediaSender {
           if ((metadata.width ?? 0) > 0) info['w'] = metadata.width;
           if ((metadata.height ?? 0) > 0) info['h'] = metadata.height;
         } catch (_) {
-          // Unsupported metadata must not prevent sending the original file.
+          // Optional metadata must not prevent sending the validated output.
         }
       }
       final bytes = await upload.readAsBytes();
@@ -234,7 +230,11 @@ final class MediaMessageService implements RoomPickedMediaSender {
           thumbnailBytes: poster,
           extraContent: info.isEmpty ? null : {'info': info});
     } finally {
-      _sendSlots.release();
+      try {
+        await videoRendition?.dispose();
+      } finally {
+        _sendSlots.release();
+      }
     }
   }
 
