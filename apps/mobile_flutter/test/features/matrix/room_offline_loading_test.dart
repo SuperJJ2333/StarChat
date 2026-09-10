@@ -119,6 +119,25 @@ void _newEvent(_OfflineRoom room) {
 }
 
 void main() {
+  testWidgets('ordinary typing leaves existing message widgets unchanged',
+      (tester) async {
+    await _mount(tester, _OfflineClient());
+    final field = tester
+        .widget<CupertinoTextField>(find.byKey(const Key('composer-input')));
+    final cachedText = tester.widget(find.text('cached offline message'));
+    for (final value in ['n', 'ni', '你好', '你好🙂']) {
+      field.controller!.value = TextEditingValue(
+          text: value,
+          selection: TextSelection.collapsed(offset: value.length));
+      await tester.pump();
+      expect(
+          tester.widget(find.text('cached offline message')), same(cachedText));
+    }
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('canceled account lease stops pending receipt retry',
       (tester) async {
     final client = _OfflineClient();

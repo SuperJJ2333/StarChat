@@ -9,6 +9,25 @@ final class RoomDraft {
   final String text;
   final List<MentionToken> tokens;
 
+  /// Freeze only mutable mention metadata; String already has value semantics.
+  RoomDraft snapshot() => RoomDraft(text,
+      tokens: List<MentionToken>.unmodifiable([
+        for (final token in tokens)
+          if (token.start >= 0 &&
+              token.end > token.start &&
+              token.end <= text.length &&
+              text.substring(token.start, token.end) == '@${token.display}')
+            MentionToken(
+              start: token.start,
+              end: token.end,
+              display: token.display,
+              userId: token.userId,
+              mentionAllUserIds: token.mentionAllUserIds == null
+                  ? null
+                  : List<String>.unmodifiable(token.mentionAllUserIds!),
+            )
+      ]));
+
   Map<String, Object?> toJson() => {
         'text': text,
         'tokens': [
@@ -50,7 +69,7 @@ final class RoomDraft {
           mentionAllUserIds:
               (item['all'] as List?)?.whereType<String>().toList()));
     }
-    return RoomDraft(text, tokens: List.unmodifiable(tokens));
+    return RoomDraft(text, tokens: tokens).snapshot();
   }
 }
 
@@ -71,9 +90,7 @@ final class RoomDraftStore {
 
   void save(String key, RoomDraft draft) {
     // Snapshot metadata: the composer mutates its token list on the next edit.
-    _cache[key] = draft.text.isEmpty
-        ? null
-        : RoomDraft.decode(jsonEncode(draft.toJson()));
+    _cache[key] = draft.text.isEmpty ? null : draft.snapshot();
     _timers.remove(key)?.cancel();
     _timers[key] =
         Timer(const Duration(milliseconds: 300), () => unawaited(flush(key)));

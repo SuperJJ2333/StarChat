@@ -47,6 +47,7 @@ class WeChatComposer extends StatefulWidget {
 final class _WeChatComposerState extends State<WeChatComposer> {
   late final FocusNode _ownedFocusNode;
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode;
+  (bool, bool)? _renderedChromeState;
 
   @override
   void initState() {
@@ -70,7 +71,11 @@ final class _WeChatComposerState extends State<WeChatComposer> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    final next =
+        (_focusNode.hasFocus, widget.controller.text.trim().isNotEmpty);
+    // EditableText owns text, selection and composing updates. Only rebuild
+    // surrounding controls when their presentation actually changes.
+    if (mounted && next != _renderedChromeState) setState(() {});
   }
 
   @override
@@ -83,9 +88,11 @@ final class _WeChatComposerState extends State<WeChatComposer> {
 
   @override
   Widget build(BuildContext context) {
+    _renderedChromeState =
+        (_focusNode.hasFocus, widget.controller.text.trim().isNotEmpty);
     final state = ChatComposerState(
-      focused: _focusNode.hasFocus,
-      hasText: widget.controller.text.trim().isNotEmpty,
+      focused: _renderedChromeState!.$1,
+      hasText: _renderedChromeState!.$2,
       panel: widget.panel,
     );
     return Container(
@@ -114,24 +121,24 @@ final class _WeChatComposerState extends State<WeChatComposer> {
           Expanded(child: widget.voiceField!)
         else
           Expanded(
-            child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 40),
-          child: CupertinoTextField(
-            key: const Key('composer-input'),
-            controller: widget.controller,
-            focusNode: _focusNode,
-            placeholder: '输入加密消息',
-            minLines: 1,
-            maxLines: 4,
-            onTap: widget.onInputTap,
-            onSubmitted: widget.onSubmitted,
-            padding: const EdgeInsets.symmetric(
-                horizontal: WeChatSpacing.md, vertical: 10),
-            decoration: BoxDecoration(
-                color: CupertinoTheme.of(context).scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(WeChatRadius.control)),
-          ),
-        )),
+              child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 40),
+            child: CupertinoTextField(
+              key: const Key('composer-input'),
+              controller: widget.controller,
+              focusNode: _focusNode,
+              placeholder: '输入加密消息',
+              minLines: 1,
+              maxLines: 4,
+              onTap: widget.onInputTap,
+              onSubmitted: widget.onSubmitted,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: WeChatSpacing.md, vertical: 10),
+              decoration: BoxDecoration(
+                  color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(WeChatRadius.control)),
+            ),
+          )),
         TapRegion(
             groupId: chatComposerPanelGroupId,
             child: _ComposerIconButton(

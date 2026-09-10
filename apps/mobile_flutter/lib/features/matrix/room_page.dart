@@ -10,6 +10,7 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/performance_metrics.dart';
 import '../../core/chat_payment_intent.dart';
 import 'chat_payment_flow.dart';
 import '../contacts/contact_models.dart';
@@ -2644,6 +2645,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       );
 
   Widget _messageRow(RoomMessageViewModel message, DateTime? previousTime) {
+    PerformanceMetrics.instance.increment(PerformanceCounter.messageRowBuild);
     final displayName = _senderDisplayName(message);
     final publicDisplayName = _publicSenderName(message);
     if (message.isRecalled) {
