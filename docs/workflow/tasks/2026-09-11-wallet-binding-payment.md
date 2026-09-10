@@ -37,3 +37,5 @@
 - 真机步骤与预期见完整验证表；未执行全仓verify（本地Docker daemon缺失），不声明全仓通过。
 - 生产备份/回退配置仅服务器0700目录 `/opt/starchat/releases/wallet-points-pin-20260911/`，不得下载或提交敏感数据。
 - 临时PG容器及两个自建SSH隧道均已清理。
+
+源码提交：6947bb7c（code + contract + 初始交付证据）；未合并主分支。最终10文件hash、API200/401、其他容器不变与错误0均已复核，见quote-compat/verify.log。历史投影补丁4项新增回归有red/green证据，总159项；完整记录目录仍在本任务artifact下。
