@@ -65,6 +65,10 @@ class _UploadRoom extends Room {
   @override
   bool get encrypted => true;
   @override
+  Membership get membership => Membership.join;
+  @override
+  bool get canSendDefaultMessages => true;
+  @override
   Future<String?> sendEvent(
     Map<String, dynamic> content, {
     String type = EventTypes.Message,
@@ -147,9 +151,10 @@ void main() {
   final bytes = Uint8List.fromList(utf8.encode('abc'));
   final hash = sha256.convert(bytes).toString();
   setUp(() async {
+    clearMediaMemoryCaches();
     SharedPreferences.setMockInitialValues({});
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-09/media-dedup-implementation/mobile/cache');
+        '../../docs/verification/artifacts/2026-09-11/performance/media-cache-fixtures');
     await root.create(recursive: true);
     final scratch = await root.createTemp('case-');
     PathProviderPlatform.instance = _Paths(scratch.absolute.path);
@@ -255,6 +260,7 @@ void main() {
         await MediaCache.cached(b.roomId, b.eventId, contentSha256: hash);
     expect(file!.path.replaceAll('\\', '/'), contains('/objects/$hash'));
     await file.writeAsBytes([3, 2, 1]);
+    clearMediaMemoryCaches(); // Exercise corrupted disk, not a valid warm copy.
     var downloads = 0;
     expect(
         await loadMediaWithCache(b, () async {
@@ -273,14 +279,14 @@ void main() {
             contentSha256: wrongHash),
         isNull);
   });
-  test('memory mutation is a miss and concurrent cross-room loads coalesce',
+  test('producer mutation cannot corrupt memory and cross-room loads coalesce',
       () async {
     final memory = MediaMemoryCache();
     final key = MediaCacheKey(roomId: '!a', eventId: 'a', contentSha256: hash);
     final mutable = Uint8List.fromList(bytes);
     memory.put(key.cacheId, mutable);
     mutable[0] = 0;
-    expect(memory.get(key.cacheId), isNull);
+    expect(memory.get(key.cacheId), bytes);
     var downloads = 0;
     Future<Uint8List> source() async {
       downloads++;
@@ -439,6 +445,7 @@ void main() {
     expect(hot.path, file.path);
     final changed = Uint8List.fromList(payload)..[0] = 1;
     await file.writeAsBytes(changed);
+    clearMediaMemoryCaches(); // Force the disk-integrity repair path.
     final memory = MediaMemoryCache();
     var downloads = 0;
     final repaired = await resolveCachedVideoFile(

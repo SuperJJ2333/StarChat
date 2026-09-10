@@ -23,11 +23,12 @@ void main() {
         [cache.readCached('event'), cache.readCached('event')]);
     expect(results, [bytes, bytes]);
     expect(reads, 1);
-    expect(cache.get('event'), same(bytes));
+    expect(cache.get('event'), same(results.first));
+    expect(() => results.first![0] = 9, throwsUnsupportedError);
     expect(
         await cache.load(
             'event', () async => throw StateError('must not load source')),
-        same(bytes));
+        same(results.first));
     cache.dispose();
   });
 
@@ -63,7 +64,9 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     final local = Uint8List.fromList([1]);
     cache.seed('tx', local);
-    expect(cache.get('tx'), same(local));
+    expect(cache.get('tx'), local);
+    local[0] = 9;
+    expect(cache.get('tx'), [1]);
     cache.seed('next', Uint8List.fromList([2]));
     expect(cache.get('tx'), isNull);
     expect(cache.load('tx', () async => throw StateError('duplicate source')),
@@ -77,7 +80,7 @@ void main() {
   test('encrypted local preview survives reopen without plaintext disk data',
       () async {
     final root = Directory(
-        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-06/room-flow/images/encrypted-store');
+        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-11/performance/encrypted-preview-store');
     final keys = _Keys();
     final store = EncryptedEmojiPreviewStore('test-room-image-account',
         keys: keys, directory: () async => root);

@@ -161,7 +161,9 @@ final class MediaCache {
     final previous = _atomicWrites[file.path];
     final flight = (() async {
       if (previous != null) {
-        try { await previous; } catch (_) { /* A failed reference can retry. */ }
+        try {
+          await previous;
+        } catch (_) {/* A failed reference can retry. */}
       }
       if (generation != null && generation != _mediaGeneration) {
         throw StateError('Media cache session changed');
@@ -363,10 +365,31 @@ final class MediaMemoryCache {
 
   /// Seed an outgoing local preview before network work. This preserves any
   /// existing source flight and enforces the same byte/entry budget as loads.
-  void put(String eventId, Uint8List bytes) {
-    final previous = _entries.remove(eventId);
+  Uint8List put(String eventId, Uint8List bytes) {
+    final owned = _ownVerifiedBytes(eventId, bytes);
+    _store(eventId, owned);
+    return owned;
+  }
+
+  static final _contentKey =
+      RegExp(r'(?:content:|[/\\])([a-f0-9]{64})(?:\.mp4|\.mov)?$');
+
+  // Copy before validating: neither the producer nor a consumer may mutate
+  // verified bytes. Warm reads can then reuse the same image identity in O(1).
+  Uint8List _ownVerifiedBytes(String key, Uint8List bytes) {
+    if (identical(_entries[key], bytes)) return bytes;
+    final owned = Uint8List.fromList(bytes).asUnmodifiableView();
+    final hash = _contentKey.firstMatch(key)?.group(1);
+    if (hash != null && sha256.convert(owned).toString() != hash) {
+      throw const FormatException('Media content hash mismatch');
+    }
+    return owned;
+  }
+
+  void _store(String key, Uint8List bytes) {
+    final previous = _entries.remove(key);
     if (previous != null) _totalBytes -= previous.length;
-    _entries[eventId] = bytes;
+    _entries[key] = bytes;
     _totalBytes += bytes.length;
     _evictToBudget();
   }
@@ -374,14 +397,7 @@ final class MediaMemoryCache {
   Uint8List? get(String eventId) {
     final bytes = _entries.remove(eventId);
     if (bytes == null) return null;
-    final hash = RegExp(r'(?:content:|[/\\])([a-f0-9]{64})(?:\.mp4|\.mov)?$')
-        .firstMatch(eventId)
-        ?.group(1);
-    if (hash != null && sha256.convert(bytes).toString() != hash) {
-      _totalBytes -= bytes.length;
-      return null;
-    }
-    _entries[eventId] = bytes; // 刷新 LRU 访问顺序
+    _entries[eventId] = bytes;
     return bytes;
   }
 
@@ -394,25 +410,14 @@ final class MediaMemoryCache {
     final existing = _inFlight[eventId];
     if (existing != null) return existing;
     final generation = _generation;
-    final flight = load();
+    final flight = Future<Uint8List>.sync(load).then((bytes) {
+      final owned = _ownVerifiedBytes(eventId, bytes);
+      if (generation == _generation) _store(eventId, owned);
+      return owned;
+    }).whenComplete(() {
+      if (generation == _generation) _inFlight.remove(eventId);
+    });
     _inFlight[eventId] = flight;
-    // 成功转正式缓存并做字节加权 LRU 收缩；失败仅清除在途记录，允许
-    // 后续重试（失败不占预算）。
-    unawaited(flight.then(
-      (bytes) {
-        if (generation != _generation) return;
-        _inFlight.remove(eventId);
-        final previous = _entries.remove(eventId);
-        if (previous != null) _totalBytes -= previous.length;
-        _entries[eventId] = bytes;
-        _totalBytes += bytes.length;
-        _evictToBudget();
-      },
-      onError: (_) {
-        if (generation != _generation) return;
-        _inFlight.remove(eventId);
-      },
-    ));
     return flight;
   }
 
@@ -461,11 +466,10 @@ Future<Uint8List> loadMediaWithCache(
   }
   unawaited(MediaCache.discardLegacyCache().catchError((_) {}));
   final identity = '${root.path}/${key.identity}';
-  // Trusted content bytes are already verified in get(). Do not read the same
+  // Immutable content bytes are verified at insertion. Do not read the same
   // multi-megabyte GIF from disk for every event that references its digest.
-  final warm = key.contentSha256 == null
-      ? null
-      : _sharedMediaBytes.get(key.cacheId);
+  final warm =
+      key.contentSha256 == null ? null : _sharedMediaBytes.get(key.cacheId);
   if (warm != null) {
     await _linkMediaReference(key, warm, generation);
     return warm;
@@ -506,9 +510,12 @@ Future<Uint8List> loadMediaWithCache(
         }
         // Legacy sources discover their digest after decrypting; converge on
         // the same memory identity as newer events carrying a trusted digest.
-        final memoryKey = MediaCacheKey(accountId: key.accountId,
-            roomId: key.roomId, eventId: key.eventId,
-            contentSha256: file.uri.pathSegments.last.split('.').first).cacheId;
+        final memoryKey = MediaCacheKey(
+                accountId: key.accountId,
+                roomId: key.roomId,
+                eventId: key.eventId,
+                contentSha256: file.uri.pathSegments.last.split('.').first)
+            .cacheId;
         return _sharedMediaBytes.putIfAbsent(memoryKey, () async {
           final result = bytes ?? await file.readAsBytes();
           verifyMediaContent(result, key.contentSha256);
@@ -528,8 +535,8 @@ Future<Uint8List> loadMediaWithCache(
   }
 }
 
-Future<void> _linkMediaReference(MediaCacheKey key,
-    Uint8List bytes, int generation) async {
+Future<void> _linkMediaReference(
+    MediaCacheKey key, Uint8List bytes, int generation) async {
   final hash = key.contentSha256 ?? sha256.convert(bytes).toString();
   final name = '$hash${MediaCache._videoContainerSuffix(bytes) ?? ''}';
   for (final reference in [
@@ -537,8 +544,10 @@ Future<void> _linkMediaReference(MediaCacheKey key,
     if (key.sourceIdentity != null) ('source', key.sourceIdentity!),
   ]) {
     final ref = await MediaCache._reference(
-        key.accountId, reference.$1, reference.$2, generation: generation);
-    await MediaCache._atomicBytes(ref, utf8.encode(name), generation: generation);
+        key.accountId, reference.$1, reference.$2,
+        generation: generation);
+    await MediaCache._atomicBytes(ref, utf8.encode(name),
+        generation: generation);
   }
   if (generation != _mediaGeneration) {
     throw StateError('Media cache session changed');
@@ -554,8 +563,11 @@ Future<Uint8List> cacheOutgoingMedia({
 }) {
   final hash = sha256.convert(bytes).toString();
   return loadMediaWithCache(
-      MediaCacheKey(accountId: accountId, roomId: roomId,
-          eventId: 'outgoing:$hash', contentSha256: hash),
+      MediaCacheKey(
+          accountId: accountId,
+          roomId: roomId,
+          eventId: 'outgoing:$hash',
+          contentSha256: hash),
       () async => bytes);
 }
 

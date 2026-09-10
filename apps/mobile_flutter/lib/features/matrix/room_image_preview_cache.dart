@@ -64,8 +64,7 @@ final class RoomImagePreviewCache {
         final seeded = _memory!.get(key);
         if (seeded != null) return seeded;
         if (bytes != null && bytes.isNotEmpty) {
-          _memory!.put(key, bytes);
-          return bytes;
+          return _memory!.put(key, bytes);
         }
         return null;
       } catch (_) {
