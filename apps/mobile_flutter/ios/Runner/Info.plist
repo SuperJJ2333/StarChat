@@ -5,7 +5,14 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>zh-Hans</string>
+	<!-- 声明支持简体中文：否则 WKWebView 的“复制/粘贴”编辑菜单会回退为英文。
+	     系统语言为简体中文时，编辑菜单即显示中文。 -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hans</string>
+		<string>en</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>畅聊 ChatFlow</string>
 	<key>CFBundleExecutable</key>
