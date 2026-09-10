@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app_home.dart';
 import 'core/app_config.dart';
 import 'core/business_api_client.dart';
+import 'core/performance_metrics.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
@@ -23,6 +24,7 @@ import 'ui/theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  PerformanceMetrics.instance.startFrameObservation();
   await AppConfig.loadRuntimeVersion();
   final themeController = ThemeController(
     store: SharedPreferencesThemePreferenceStore(
