@@ -323,7 +323,7 @@ void main() {
             initialItem: MomentItem.fromJson(json),
             currentUsername: 'alice_id')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('moment-comment-mine')));
+    await tester.longPress(find.byKey(const ValueKey('moment-comment-mine')));
     await tester.pumpAndSettle();
     expect(find.text('复制'), findsOneWidget);
     await tester.tap(find.text('复制'));

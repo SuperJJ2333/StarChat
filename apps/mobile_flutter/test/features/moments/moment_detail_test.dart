@@ -166,7 +166,7 @@ void main() {
               confirmed = item;
             })));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('moment-comment-mine')));
+    await tester.longPress(find.byKey(const ValueKey('moment-comment-mine')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
@@ -198,7 +198,7 @@ void main() {
             initialItem: MomentItem.fromJson(json),
             currentUsername: 'alice_id')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('moment-comment-mine')));
+    await tester.longPress(find.byKey(const ValueKey('moment-comment-mine')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('moment-comment-input')), findsNothing);
     await tester.tap(find.text('删除'));

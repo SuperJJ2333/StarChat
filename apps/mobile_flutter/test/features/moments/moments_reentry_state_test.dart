@@ -115,6 +115,78 @@ Future<Widget> _page((BusinessApiClient, ProfileRepository) client) async =>
             api: client.$1, identityCache: client.$2));
 
 void main() {
+  testWidgets('local pagination does not wait for pending head refresh',
+      (tester) async {
+    final cache =
+        (await CacheRepository.instance()).momentsFor('matrix:@me:test');
+    await cache.saveHead({..._feed(), 'next_cursor': 'older'});
+    await cache.savePage(
+        'older',
+        {
+          'items': [
+            {
+              ...(_feed(text: 'local older')['items'] as List).single as Map,
+              'id': 'post-2'
+            }
+          ]
+        },
+        ticket: cache.currentRevision,
+        expectedGeneration: 0);
+    final pending = Completer<http.Response>();
+    final client = await _client((request) async {
+      if (request.url.path.endsWith('/feed')) {
+        if (request.url.queryParameters['cursor'] == null) {
+          return pending.future;
+        }
+        throw StateError('offline');
+      }
+      return _json({});
+    });
+    await tester.pumpWidget(await _page(client));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moments-load-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('local older'), findsOneWidget);
+    pending.complete(_json({}, 503));
+    await tester.pumpAndSettle();
+    expect(find.text('local older'), findsOneWidget);
+  });
+
+  testWidgets('browsed older page survives offline reentry', (tester) async {
+    var offline = false;
+    final client = await _client((request) async {
+      if (request.url.path.endsWith('/feed')) {
+        if (offline) throw StateError('offline');
+        if (request.url.queryParameters['cursor'] != null) {
+          return _json({
+            'items': [
+              {
+                ...(_feed(text: 'persisted older post')['items'] as List).single
+                    as Map,
+                'id': 'post-2'
+              }
+            ],
+            'next_cursor': null
+          });
+        }
+        return _json({..._feed(), 'next_cursor': 'older'});
+      }
+      return _json({});
+    });
+    await tester.pumpWidget(await _page(client));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moments-load-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('persisted older post'), findsOneWidget);
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    offline = true;
+    await tester.pumpWidget(await _page(client));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('moments-load-more')));
+    await tester.pumpAndSettle();
+    expect(find.text('persisted older post'), findsOneWidget);
+  });
+
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     await CacheRepository.resetForTest();
