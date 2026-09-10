@@ -8,7 +8,9 @@ final class ResolvedAvatarUrl {
 }
 
 abstract final class MatrixAvatarUrlResolver {
-  static final Map<String, Future<ResolvedAvatarUrl?>> _resolved = {};
+  // Only cache server capabilities. Resolved URLs carry session headers and
+  // must be assembled with the caller's current credentials on every request.
+  static final Map<String, Future<bool>> _authenticatedMedia = {};
 
   /// 全应用统一的头像缩略图请求尺寸：消息页、通讯录、群成员等任何渲染
   /// 尺寸都请求同一 URL，命中同一缓存条目，杜绝同头像重复下载。
@@ -43,19 +45,31 @@ abstract final class MatrixAvatarUrlResolver {
     required String? accessToken,
     required Future<bool> Function() authenticatedMediaSupported,
     required double size,
-  }) {
-    if (avatarUri == null) return Future.value(null);
-    final key = '${homeserver ?? ''}|$avatarUri|'
-        '${accessToken == null ? 'public' : 'authenticated'}';
-    return _resolved.putIfAbsent(
-      key,
-      () => resolve(
-        avatarUri: avatarUri,
-        homeserver: homeserver,
-        accessToken: accessToken,
-        authenticatedMediaSupported: authenticatedMediaSupported,
-        size: size,
-      ),
+  }) async {
+    if (avatarUri == null) return null;
+    if (avatarUri.scheme == 'http' || avatarUri.scheme == 'https') {
+      return ResolvedAvatarUrl(avatarUri.toString());
+    }
+    if (avatarUri.scheme != 'mxc' || homeserver == null) return null;
+    var authenticated = false;
+    if (accessToken?.isNotEmpty == true) {
+      final key = homeserver.toString();
+      final pending = _authenticatedMedia.putIfAbsent(
+          key, () => Future<bool>.sync(authenticatedMediaSupported));
+      try {
+        authenticated = await pending;
+      } catch (_) {
+        if (identical(_authenticatedMedia[key], pending)) {
+          _authenticatedMedia.remove(key);
+        }
+        rethrow;
+      }
+    }
+    return _thumbnail(
+      avatarUri: avatarUri,
+      homeserver: homeserver,
+      accessToken: accessToken,
+      authenticated: authenticated,
     );
   }
 

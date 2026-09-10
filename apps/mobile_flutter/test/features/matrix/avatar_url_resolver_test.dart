@@ -1,7 +1,43 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/ui/foundation/avatar_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 
 void main() {
+  test('unversioned disk key uses a process-stable URL digest', () {
+    expect(
+        AvatarCache.avatarVersion(
+            'https://cdn.test/avatar.jpg?token=ephemeral'),
+        '1b2fcb337f59b31e4377d1a6dceb2976ad0bd4afdebf298c9f5b5cf7ad5b7917');
+  });
+  test('failed cached capability resolution can succeed on retry', () async {
+    var calls = 0;
+    Future<ResolvedAvatarUrl?> request() =>
+        MatrixAvatarUrlResolver.resolveCached(
+            avatarUri: Uri.parse('mxc://media.test/failure-retry'),
+            homeserver: Uri.parse('https://matrix.test'),
+            accessToken: 'test-token',
+            size: 40,
+            authenticatedMediaSupported: () async {
+              if (++calls == 1) throw StateError('offline');
+              return true;
+            });
+    await expectLater(request(), throwsStateError);
+    expect((await request())?.url, contains('/_matrix/client/v1/'));
+    expect(calls, 2);
+  });
+  test('cached resolution uses the current session credentials', () async {
+    Future<ResolvedAvatarUrl?> request(String token) =>
+        MatrixAvatarUrlResolver.resolveCached(
+            avatarUri: Uri.parse('mxc://media.test/rotation'),
+            homeserver: Uri.parse('https://matrix.test'),
+            accessToken: token,
+            size: 40,
+            authenticatedMediaSupported: () async => true);
+    await request('old-session');
+    expect((await request('new-session'))?.headers,
+        {'authorization': 'Bearer new-session'});
+  });
+
   test('keeps a normal HTTPS avatar URL and no Matrix-only headers', () async {
     final resolved = await MatrixAvatarUrlResolver.resolve(
       avatarUri: Uri.parse('https://cdn.example.test/avatar.png?v=3'),
@@ -105,7 +141,8 @@ void main() {
       size: 48,
     );
 
-    expect(await first, await second);
+    expect((await first)?.url, (await second)?.url);
+    expect((await first)?.headers, (await second)?.headers);
     expect(capabilityChecks, 1);
   });
 

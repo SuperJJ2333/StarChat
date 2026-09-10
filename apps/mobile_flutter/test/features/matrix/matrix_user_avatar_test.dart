@@ -20,6 +20,150 @@ final class FakeAvatarMediaCapability implements AvatarMediaCapability {
 }
 
 void main() {
+  testWidgets('resuming during a retry does not start a competing resolution',
+      (tester) async {
+    var calls = 0;
+    final pending = Completer<ResolvedAvatarUrl?>();
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      if (++calls == 1) throw StateError('offline');
+      return pending.future;
+    });
+    await tester.pumpWidget(CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: avatars,
+            nickname: 'Alice',
+            fallbackSeed: 'account:alice',
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/retry'))));
+    await tester.pump(const Duration(seconds: 1));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 10));
+    final observedCalls = calls;
+    pending.complete(null);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    expect(observedCalls, 2);
+  });
+
+  testWidgets('retry pauses in background and resumes with unchanged props',
+      (tester) async {
+    var calls = 0;
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      if (++calls == 1) throw StateError('offline');
+      return const ResolvedAvatarUrl('https://safe/resumed');
+    });
+    await tester.pumpWidget(CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: avatars,
+            nickname: 'Alice',
+            fallbackSeed: 'account:alice',
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/retry'))));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 10));
+    expect(calls, 1);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(calls, 2);
+    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl,
+        'https://safe/resumed');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('avatar deletion cancels retries and rejects stale resolution',
+      (tester) async {
+    final pending = Completer<ResolvedAvatarUrl?>();
+    var calls = 0;
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      calls++;
+      return uri == null ? null : pending.future;
+    });
+    Widget build(Uri? uri) => CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: avatars,
+            nickname: 'Alice',
+            fallbackSeed: 'account:alice',
+            matrixAvatarUri: uri));
+    await tester.pumpWidget(build(Uri.parse('mxc://matrix.test/removed')));
+    await tester.pumpWidget(build(null));
+    pending.complete(const ResolvedAvatarUrl('https://safe/stale'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    expect(
+        tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl, isNull);
+    expect(calls, 2);
+  });
+
+  testWidgets('account capability swap cancels previous retry', (tester) async {
+    var oldCalls = 0;
+    final old = FakeAvatarMediaCapability((uri, _) async {
+      oldCalls++;
+      throw StateError('offline');
+    });
+    final fresh = FakeAvatarMediaCapability(
+        (uri, _) async => const ResolvedAvatarUrl('https://safe/new-account'));
+    Widget build(AvatarMediaCapability media) => CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: media,
+            nickname: 'Alice',
+            fallbackSeed: 'alice',
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/shared')));
+    await tester.pumpWidget(build(old));
+    await tester.pumpWidget(build(fresh));
+    await tester.pump(const Duration(seconds: 10));
+    expect(oldCalls, 1);
+    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl,
+        'https://safe/new-account');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('failed resolution retries and paints without changing props',
+      (tester) async {
+    var calls = 0;
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      if (++calls == 1) throw StateError('offline');
+      return const ResolvedAvatarUrl('https://safe/recovered');
+    });
+    await tester.pumpWidget(CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: avatars,
+            nickname: 'Alice',
+            fallbackSeed: 'account:alice',
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/retry'))));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(calls, 2);
+    expect(tester.widget<UserAvatar>(find.byType(UserAvatar)).avatarUrl,
+        'https://safe/recovered');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('retry stops after budget and disposal cancels pending timer',
+      (tester) async {
+    var calls = 0;
+    final avatars = FakeAvatarMediaCapability((uri, _) async {
+      calls++;
+      throw StateError('offline');
+    });
+    Widget build() => CupertinoApp(
+        home: MatrixUserAvatar(
+            avatarMedia: avatars,
+            nickname: 'Alice',
+            fallbackSeed: 'account:alice',
+            matrixAvatarUri: Uri.parse('mxc://matrix.test/retry')));
+    await tester.pumpWidget(build());
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(seconds: 10));
+    }
+    expect(calls, 3);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(build());
+    final beforeDispose = calls;
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 10));
+    expect(calls, beforeDispose);
+  });
+
   testWidgets('same user retains avatar during a non-null URI refresh',
       (tester) async {
     final pending = Completer<ResolvedAvatarUrl?>();

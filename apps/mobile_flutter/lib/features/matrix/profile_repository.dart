@@ -343,6 +343,7 @@ final class ProfileRepository extends ChangeNotifier {
 
   final BusinessApiClient? api;
   final String? _accountKey;
+
   /// Stable namespace of this account-scoped projection; never credentials.
   String? get accountKey => _accountKey;
   final ProfileStore? _store;
@@ -355,8 +356,11 @@ final class ProfileRepository extends ChangeNotifier {
   // Local successful mutations supersede reads started before those mutations.
   int _contactsMutation = 0;
   // Shared across full and quiet reads: the latest initiated request owns the
-  // next remote snapshot, even if it fails or older requests finish later.
+  // next contacts snapshot, even if it fails or older requests finish later.
   int _remoteReadGeneration = 0;
+  int _profileReadGeneration = 0;
+  bool _disposed = false;
+  Future<void> _persistTail = Future.value();
 
   ProfileData? profile;
   List<ContactSummary> contacts = const [];
@@ -425,7 +429,7 @@ final class ProfileRepository extends ChangeNotifier {
     if (store == null || key == null) return;
     final mutation = _contactsMutation;
     final snapshot = await store.read(key);
-    if (snapshot == null) return;
+    if (_disposed || snapshot == null) return;
     _apply(_preserveContactMutations(snapshot, mutation),
         invalidateChangedAvatars: false);
     if (mutation != _contactsMutation) {
@@ -448,6 +452,7 @@ final class ProfileRepository extends ChangeNotifier {
     Duration minInterval = const Duration(seconds: 15),
     DateTime Function()? now,
   }) async {
+    if (_disposed) return;
     final clock = now ?? DateTime.now;
     final last = _lastContactsRefreshAt;
     if (last != null && clock().difference(last) < minInterval) return;
@@ -469,7 +474,8 @@ final class ProfileRepository extends ChangeNotifier {
     final mutation = _contactsMutation;
     try {
       final fresh = _mergeMissingAvatars(await loadContacts());
-      if (generation != _remoteReadGeneration ||
+      if (_disposed ||
+          generation != _remoteReadGeneration ||
           mutation != _contactsMutation) {
         return;
       }
@@ -487,34 +493,51 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> _load({required String operation}) async {
+    if (_disposed) return;
     final generation = ++_remoteReadGeneration;
+    final profileGeneration = ++_profileReadGeneration;
     await hydrate();
-    if (generation != _remoteReadGeneration) return;
+    if (_disposed || profileGeneration != _profileReadGeneration) return;
     final loadProfile = _loadProfile;
     final loadContacts = _loadContacts;
     if (loadProfile == null || loadContacts == null) return;
     final mutation = _contactsMutation;
     try {
-      final results = await Future.wait<Object>([
-        loadProfile(),
-        loadContacts(),
+      // Publish each domain as it arrives. Quiet contacts refreshes may
+      // supersede contacts, but cannot invalidate an in-flight owner profile.
+      await Future.wait<void>([
+        Future<ProfileData>.sync(loadProfile).then((fresh) async {
+          if (_disposed || profileGeneration != _profileReadGeneration) return;
+          await _applyAndPersist(ProfileSnapshot(
+            profile: fresh,
+            contacts: contacts,
+            contactsRevision: contactsRevision,
+          ));
+        }),
+        Future<List<ContactSummary>>.sync(loadContacts).then((incoming) async {
+          if (_disposed ||
+              generation != _remoteReadGeneration ||
+              mutation != _contactsMutation) {
+            return;
+          }
+          final fresh = _mergeMissingAvatars(incoming);
+          if (_contactsEqual(contacts, fresh)) return;
+          _applyContacts(fresh, contactsRevision + 1);
+          await _persist(operation: 'profile.persist');
+        }),
       ]);
-      if (generation != _remoteReadGeneration) return;
-      final freshContacts =
-          _mergeMissingAvatars(results[1] as List<ContactSummary>);
-      await _applyAndPersist(_preserveContactMutations(
-          ProfileSnapshot(
-            profile: results[0] as ProfileData,
-            contacts: freshContacts,
-            contactsRevision: _contactsEqual(contacts, freshContacts)
-                ? contactsRevision
-                : contactsRevision + 1,
-          ),
-          mutation));
     } catch (error, stackTrace) {
       _report(operation, error, stackTrace);
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _remoteReadGeneration++;
+    _profileReadGeneration++;
+    super.dispose();
   }
 
   /// BUG 3：accept 后乐观写入（也用于备注/标签等单点更新）。
@@ -626,30 +649,42 @@ final class ProfileRepository extends ChangeNotifier {
     await _persist(operation: 'profile.persist');
   }
 
-  Future<void> _persist({required String operation}) async {
+  Future<void> _persist({required String operation}) {
     final store = _store;
     final key = _accountKey;
-    if (store != null && key != null && profile != null) {
+    final currentProfile = profile;
+    if (_disposed || store == null || key == null || currentProfile == null) {
+      return Future.value();
+    }
+    final snapshot = ProfileSnapshot(
+      profile: currentProfile,
+      contacts: contacts,
+      contactsRevision: contactsRevision,
+    );
+    // Profile, contacts and local mutations can publish concurrently. Preserve
+    // publication order on disk even if the storage implementation is async.
+    return _persistTail = _persistTail.then((_) async {
+      if (_disposed) return;
       try {
-        await store.write(
-          key,
-          ProfileSnapshot(
-            profile: profile!,
-            contacts: contacts,
-            contactsRevision: contactsRevision,
-          ),
-        );
+        await store.write(key, snapshot);
       } catch (error, stackTrace) {
         _report(operation, error, stackTrace);
       }
-    }
+    });
   }
 
   void _apply(ProfileSnapshot snapshot,
       {bool invalidateChangedAvatars = true}) {
-    final previous = contacts;
+    if (_disposed) return;
     profile = snapshot.profile;
-    contacts = snapshot.contacts;
+    _applyContacts(snapshot.contacts, snapshot.contactsRevision,
+        invalidateChangedAvatars: invalidateChangedAvatars);
+  }
+
+  void _applyContacts(List<ContactSummary> fresh, int revision,
+      {bool invalidateChangedAvatars = true}) {
+    final previous = contacts;
+    contacts = List.unmodifiable(fresh);
     contactsByUserId = {
       for (final contact in contacts) contact.userId: contact
     };
@@ -659,9 +694,7 @@ final class ProfileRepository extends ChangeNotifier {
     if (invalidateChangedAvatars) {
       _invalidateChangedContactAvatars(previous, contacts);
     }
-    if (!_contactsEqual(previous, contacts)) {
-      contactsRevision = snapshot.contactsRevision;
-    }
+    if (!_contactsEqual(previous, contacts)) contactsRevision = revision;
     notifyListeners();
   }
 

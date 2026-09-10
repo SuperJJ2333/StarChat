@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
@@ -36,7 +39,7 @@ abstract final class AvatarCache {
     final queryVersion =
         uri?.queryParameters['v'] ?? uri?.queryParameters['version'];
     return queryVersion == null
-        ? sanitizedUrl(avatarUrl).hashCode.toRadixString(16)
+        ? sha256.convert(utf8.encode(sanitizedUrl(avatarUrl))).toString()
         : 'v=$queryVersion';
   }
 
