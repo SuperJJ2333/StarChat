@@ -45,48 +45,52 @@ class RetainedDevice extends LogoutTrackingClient {
 }
 
 void main() {
-  test(
-      'suspended invalid credentials survive disk-token reopen and reauthenticate',
-      () async {
-    var logins = 0;
-    final transport = MockClient((request) async {
-      expect(request.url.path, endsWith('/login'));
-      expect(jsonDecode(request.body)['device_id'], 'original-device');
-      logins++;
-      return http.Response(
-          jsonEncode({
-            'access_token': 'new-token',
-            'user_id': '@a:test',
-            'device_id': 'original-device'
-          }),
-          200,
-          headers: {'content-type': 'application/json'});
+  for (final invalidated in [true, false]) {
+    test(
+        'suspended credentials reauthenticate through broker: invalid=$invalidated',
+        () async {
+      var logins = 0;
+      final transport = MockClient((request) async {
+        expect(request.url.path, endsWith('/login'));
+        expect(jsonDecode(request.body)['device_id'], 'original-device');
+        logins++;
+        return http.Response(
+            jsonEncode({
+              'access_token': 'new-token',
+              'user_id': '@a:test',
+              'device_id': 'original-device'
+            }),
+            200,
+            headers: {'content-type': 'application/json'});
+      });
+      final invalid = RetainedDevice(transport)..loggedIn = !invalidated;
+      if (invalidated) {
+        invalid.onLoginStateChanged.add(LoginState.softLoggedOut);
+      }
+      final reopened = RetainedDevice(transport)..loggedIn = true;
+      final matrix = MatrixSdkE2eeClient(invalid,
+          homeserver: Uri.parse('https://matrix.example'),
+          suspendClient: (_) async {},
+          resumeClient: () async => reopened,
+          readContinuityMetadata: (client) async =>
+              MatrixClientContinuityMetadata(
+                  isLoggedIn: client.isLogged(),
+                  userId: client.userID,
+                  deviceId: client.deviceID,
+                  ed25519Fingerprint: 'original-fingerprint',
+                  databaseGeneration: 'original-db'));
+      await matrix.suspend();
+      expect(matrix.credentialsInvalid, invalidated);
+      await matrix.loginWithToken(
+          loginToken: 'grant',
+          homeserver: Uri.parse('https://matrix.example'),
+          deviceId: 'original-device');
+      expect(logins, 1);
+      expect(reopened.encryption.olmManager.uploads, 1);
+      expect(matrix.credentialsInvalid, isFalse);
+      expect(reopened.logoutCalls, 0);
     });
-    final invalid = RetainedDevice(transport);
-    invalid.onLoginStateChanged.add(LoginState.softLoggedOut);
-    final reopened = RetainedDevice(transport)..loggedIn = true;
-    final matrix = MatrixSdkE2eeClient(invalid,
-        homeserver: Uri.parse('https://matrix.example'),
-        suspendClient: (_) async {},
-        resumeClient: () async => reopened,
-        readContinuityMetadata: (client) async =>
-            MatrixClientContinuityMetadata(
-                isLoggedIn: client.isLogged(),
-                userId: client.userID,
-                deviceId: client.deviceID,
-                ed25519Fingerprint: 'original-fingerprint',
-                databaseGeneration: 'original-db'));
-    await matrix.suspend();
-    expect(matrix.credentialsInvalid, isTrue);
-    await matrix.loginWithToken(
-        loginToken: 'grant',
-        homeserver: Uri.parse('https://matrix.example'),
-        deviceId: 'original-device');
-    expect(logins, 1);
-    expect(reopened.encryption.olmManager.uploads, 1);
-    expect(matrix.credentialsInvalid, isFalse);
-    expect(reopened.logoutCalls, 0);
-  });
+  }
   for (final succeeds in [true, false]) {
     test(
         'soft logout restores existing public device keys; upload success=$succeeds',

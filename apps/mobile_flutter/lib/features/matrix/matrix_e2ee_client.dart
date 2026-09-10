@@ -2512,9 +2512,7 @@ final class MatrixSdkE2eeClient
           String? deviceId}) =>
       _withClient((active) async {
         await active.checkHomeserver(homeserver);
-        if (credentialsInvalid &&
-            active.userID != null &&
-            active.deviceID != null) {
+        if (active.userID != null && active.deviceID != null) {
           _credentialsInvalid = true;
           final expectedUserId = active.userID;
           final expectedDeviceId = active.deviceID;

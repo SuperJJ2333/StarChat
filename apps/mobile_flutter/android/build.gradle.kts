@@ -1,4 +1,13 @@
 allprojects {
+    configurations.configureEach {
+        // Pin integration_test's dynamic selectors to the resolved test stack.
+        // Reproducible builds must not require Maven version-list refreshes.
+        resolutionStrategy.force(
+            "androidx.test:runner:1.3.0",
+            "androidx.test:rules:1.2.0",
+            "androidx.test.espresso:espresso-core:3.3.0",
+        )
+    }
     buildscript {
         repositories {
             // 阿里云镜像优先（国内构建环境），官方源回退（海外 CI：

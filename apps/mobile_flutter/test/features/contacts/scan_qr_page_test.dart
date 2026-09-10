@@ -36,7 +36,8 @@ class ScannerPlatformFake extends MobileScannerPlatform {
   Uint8List? decodedBytes;
   String? decodedPath;
   @override
-  Future<BarcodeCapture?> analyzeImage(String path) async {
+  Future<BarcodeCapture?> analyzeImage(String path,
+      {List<BarcodeFormat> formats = const []}) async {
     decodedPath = path;
     decodedBytes = await File(path).readAsBytes();
     return imageResult;

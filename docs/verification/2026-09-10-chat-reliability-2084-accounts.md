@@ -21,3 +21,9 @@ MatrixClientFactory与MatrixSdkE2eeClient关闭旧句柄后串行切换，撤销
 - Windows环境不能声称iPhone15/iOS26.6已通过。旧账号没有任何可用解密密钥时，不能仅凭服务端密文恢复可读内容；本修改保留已有本机密钥并沿用标准密钥备份恢复。
 
 video_2084对账户保留代码做规范及Quality/Security复核，修复两项生命周期阻塞后通过。未修改财务状态或向业务服务上传恢复密钥、房间密钥、消息明文。
+
+## Broker闭环补充
+
+每次新的业务登录都消费broker grant，即使原Matrix token仍有效；同设备号采用软重认证保留本地身份，同时由Synapse撤销旧访问/刷新令牌。现有业务family的启动恢复仍可复用有效会话。两条新增用例先红后绿，82项登录/存储专项通过；随后完整Flutter测试1922项通过，lib/test静态分析无问题。版本默认值与pubspec统一0.3.80/2084，两项构建身份契约测试通过。
+
+Android构建首次遇到integration_test动态Maven测试依赖元数据TLS失败。将既有测试栈runner1.3.0、rules1.2.0、espresso-core3.3.0固定版本后原生构建通过，未关闭TLS。新扫码兼容版本和最终代码的产物另按交付校验记录。

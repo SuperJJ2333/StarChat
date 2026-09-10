@@ -2014,6 +2014,17 @@ void main() {
       loggedIn: true,
       matrixUserId: '@alice:matrix.test',
       matrixDeviceId: 'DEVICE-A',
+      httpClient: MockClient((request) async {
+        expect(request.url.path, endsWith('/login'));
+        return http.Response(
+            jsonEncode({
+              'access_token': 'replacement-token',
+              'user_id': '@alice:matrix.test',
+              'device_id': 'DEVICE-A',
+            }),
+            200,
+            headers: {'content-type': 'application/json'});
+      }),
       syncError: MatrixException.fromJson(
         {'errcode': 'M_UNKNOWN_TOKEN', 'error': 'expired'},
       ),

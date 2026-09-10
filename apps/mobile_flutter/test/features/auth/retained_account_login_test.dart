@@ -52,6 +52,24 @@ class RetainedMatrix
 }
 
 void main() {
+  test('new business login reauthenticates even a valid retained Matrix token',
+      () async {
+    final business = FakeDualDomainBusiness();
+    final matrix = RetainedMatrix()..userId = '@alice:matrix.example.test';
+    var completions = 0;
+    final service = DualDomainLoginService(
+        business: business,
+        matrix: matrix,
+        deviceKey: () => 'installation',
+        retainedHomeserver: Uri.parse('https://matrix.example.test'),
+        completeMatrixSession: () async {
+          completions++;
+          expect(business.tokenRequests, 1);
+        });
+    await service.login('alice', 'password');
+    expect(completions, 1);
+    expect(matrix.deletes, 0);
+  });
   test('account reopen delay renews expired one-time grant', () async {
     var clock = DateTime.utc(2026, 9, 10);
     final business = FakeDualDomainBusiness()..currentIdentity = null;

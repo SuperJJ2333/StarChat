@@ -99,10 +99,10 @@ jobs:
           import pathlib
           p = pathlib.Path('pubspec.yaml')
           content = p.read_text()
-          assert content.count('  mobile_scanner: 5.2.3\n') == 1
-          p.write_text(content.replace('  mobile_scanner: 5.2.3\n', ''))
+          assert content.count('  mobile_scanner: 6.0.11\n') == 1
+          p.write_text(content.replace('  mobile_scanner: 6.0.11\n', ''))
           PY
-          echo 'Diagnostic-only exclusion: mobile_scanner 5.2.3 (MLKit lacks arm64 simulator); scanning and full production plugin combination not covered.' > "$RUNNER_TEMP/compatibility/limitations.txt"
+          echo 'Diagnostic-only exclusion: mobile_scanner 6.0.11 (MLKit lacks arm64 simulator); scanning and full production plugin combination not covered.' > "$RUNNER_TEMP/compatibility/limitations.txt"
           flutter config --no-enable-swift-package-manager
           flutter pub get
           flutter build ios --simulator --debug --config-only --no-codesign -t integration_test/ios_compatibility_test.dart --dart-define=COMPAT_PHASE=seed

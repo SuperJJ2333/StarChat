@@ -251,23 +251,23 @@ final class DualDomainLoginService {
       await selector.selectAccount(
           target, Uri.parse(grant?.homeserver ?? _retainedHomeserver));
     }
-    if (!matrix.isLoggedIn || matrix.credentialsInvalid) {
-      if (grant == null ||
-          _pendingGrantExpiresAt == null ||
-          !now().isBefore(_pendingGrantExpiresAt!)) {
-        grant = await _issueGrant();
-      }
-      if (grant.matrixUserId != target) {
-        throw StateError('Matrix login target changed');
-      }
-      _pendingGrant = null;
-      _pendingGrantExpiresAt = null;
-      _stage = 'matrix_login';
-      await matrix.loginWithToken(
-          loginToken: grant.loginToken,
-          homeserver: Uri.parse(grant.homeserver),
-          deviceId: matrix.deviceId);
+    // A new business family must consume a broker grant even if the previous
+    // Matrix token still works. Otherwise its older tokens would stay online.
+    if (grant == null ||
+        _pendingGrantExpiresAt == null ||
+        !now().isBefore(_pendingGrantExpiresAt!)) {
+      grant = await _issueGrant();
     }
+    if (grant.matrixUserId != target) {
+      throw StateError('Matrix login target changed');
+    }
+    _pendingGrant = null;
+    _pendingGrantExpiresAt = null;
+    _stage = 'matrix_login';
+    await matrix.loginWithToken(
+        loginToken: grant.loginToken,
+        homeserver: Uri.parse(grant.homeserver),
+        deviceId: matrix.deviceId);
     if (matrix.userId != target || matrix.deviceId == null) {
       throw StateError('Matrix login returned an unexpected identity');
     }
