@@ -2564,6 +2564,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         RoomMessageKind.image => LayoutBuilder(
             builder: (context, constraints) => ContainImageBubble(
               key: ValueKey('image-${message.stableId}'),
+              sourceIdentity: (message.stableId, _previewKey(message).identity),
               initialBytes: _cachedImagePreview(message),
               loadCached: () => _readCachedImagePreview(message),
               load: () => _loadImagePreview(message),
@@ -2869,6 +2870,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     GlobalKey.new,
                   ),
                   key: ValueKey('image-${message.stableId}'),
+                  sourceIdentity: (
+                    message.stableId,
+                    _previewKey(message).identity
+                  ),
                   initialBytes: _cachedImagePreview(message),
                   loadCached: () => _readCachedImagePreview(message),
                   isScrolling: messageListScrolling,
