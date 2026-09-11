@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
@@ -6,6 +7,9 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/chat/shared_video_playback.dart';
+import '../../ui/chat/video_playback_arbiter.dart';
+import '../../ui/chat/video_playback_lease_coordinator.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'device_gallery_source.dart';
 
@@ -26,6 +30,7 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
     required this.duration,
     required this.selected,
     required this.onToggle,
+    this.controllerFactory,
   });
 
   /// 解析并转移压缩产物所有权；页面负责释放。
@@ -34,17 +39,34 @@ final class GalleryVideoPreviewPage extends StatefulWidget {
   final Duration? duration;
   final bool selected;
   final VoidCallback onToggle;
+  final VideoPlayerController Function(File file)? controllerFactory;
 
   @override
   State<GalleryVideoPreviewPage> createState() =>
       _GalleryVideoPreviewPageState();
 }
 
-final class _GalleryVideoPreviewPageState
-    extends State<GalleryVideoPreviewPage> {
+final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
+    with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   Future<bool>? _initFuture;
   bool selected = false;
+  var _generation = 0;
+  var _appActive = true;
+  var _routeCurrent = true;
+  var _manualPaused = false;
+  Future<void>? _playInFlight;
+  Future<void>? _activationInFlight;
+  var _activationRevision = 0;
+  int? _lease;
+  VideoPlaybackReservation? _activationReservation;
+  Future<void>? _pauseInFlight;
+  final _disposedControllers = Expando<bool>();
+  VideoPlayerController? _retiringController;
+  late final Future<void> Function() _ownerPause = _pauseForLifecycle;
+
+  VideoPlaybackLeaseCoordinator get _leaseCoordinator =>
+      SharedVideoPlayback.wakelockCoordinator;
 
   /// 压缩产物准备进度（0~1；无进度事件时为 null，展示活动指示器）。
   double? _prepareProgress;
@@ -61,21 +83,53 @@ final class _GalleryVideoPreviewPageState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final lifecycleState = WidgetsBinding.instance.lifecycleState;
+    _appActive =
+        lifecycleState == null || lifecycleState == AppLifecycleState.resumed;
     selected = widget.selected;
     _initFuture = _initialize();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final routeCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+    if (_routeCurrent == routeCurrent) return;
+    _routeCurrent = routeCurrent;
+    if (!routeCurrent) _pauseForInactivitySafely();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    if (!_appActive) _pauseForInactivitySafely();
+  }
+
+  bool _isCurrentAttempt(int generation) =>
+      mounted && generation == _generation;
+
+  bool get _mayPlay => _appActive && _routeCurrent && !_manualPaused;
+
   Future<bool> _initialize() async {
-    _prepareProgress = null;
-    _prepareLabel = '正在准备压缩版…';
-    _fallbackNotice = null;
+    final generation = _generation;
+    VideoPlayerController? controller;
+    VideoRendition? rendition;
+    if (_isCurrentAttempt(generation)) {
+      _prepareProgress = null;
+      _prepareLabel = '正在准备压缩版…';
+      _fallbackNotice = null;
+    }
+    final previousSubscription = _progressSubscription;
+    _progressSubscription = null;
+    previousSubscription?.unsubscribe();
+    Subscription? progressSubscription;
     try {
       // 先订阅进度流再触发转码，确保不丢事件。
-      _progressSubscription?.unsubscribe();
-      _progressSubscription = VideoCompress.compressProgress$.subscribe(
+      progressSubscription = VideoCompress.compressProgress$.subscribe(
         (value) {
           final normalized = value > 1 ? value / 100 : value;
-          if (mounted &&
+          if (_isCurrentAttempt(generation) &&
               normalized >= 0 &&
               normalized <= 1 &&
               _controller == null) {
@@ -83,33 +137,50 @@ final class _GalleryVideoPreviewPageState
           }
         },
       );
-      final rendition = await widget.loadRendition();
-      if (!mounted) {
-        await rendition.dispose();
+      _progressSubscription = progressSubscription;
+      final loadedRendition = await widget.loadRendition();
+      rendition = loadedRendition;
+      if (!_isCurrentAttempt(generation)) {
+        try {
+          await loadedRendition.dispose();
+        } finally {
+          rendition = null;
+        }
         return false;
       }
-      _ownedRendition = rendition;
-      if (!rendition.usedCompressed && rendition.fallbackNotice != null) {
-        _showNotice(rendition.fallbackNotice!);
+      if (!loadedRendition.usedCompressed &&
+          loadedRendition.fallbackNotice != null) {
+        _showNotice(loadedRendition.fallbackNotice!);
       }
       _prepareLabel = '正在解码视频…';
-      final controller = VideoPlayerController.file(rendition.file);
-      _controller = controller;
-      await controller.initialize();
-      if (!mounted) {
-        await _releasePreview();
+      final initializedController =
+          widget.controllerFactory?.call(loadedRendition.file) ??
+              VideoPlayerController.file(loadedRendition.file);
+      controller = initializedController;
+      await initializedController.initialize();
+      if (!_isCurrentAttempt(generation)) {
+        try {
+          await _releaseAttempt(initializedController, loadedRendition);
+        } finally {
+          controller = null;
+          rendition = null;
+        }
         return false;
       }
-      setState(() => _controller = controller);
-      await controller.play();
+      _controller = initializedController;
+      _ownedRendition = loadedRendition;
+      setState(() => _controller = initializedController);
+      await _playIfAllowed(initializedController, generation);
       return true;
     } catch (_) {
-      await _releasePreview();
-      if (mounted) setState(() {});
+      await _releaseAttempt(controller, rendition);
+      if (_isCurrentAttempt(generation)) setState(() {});
       return false; // 解码不支持：降级静态预览。
     } finally {
-      _progressSubscription?.unsubscribe();
-      _progressSubscription = null;
+      progressSubscription?.unsubscribe();
+      if (identical(_progressSubscription, progressSubscription)) {
+        _progressSubscription = null;
+      }
     }
   }
 
@@ -123,8 +194,9 @@ final class _GalleryVideoPreviewPageState
 
   /// 「重试」：重置状态后重新解析压缩产物并初始化播放器。
   Future<void> _retry() async {
+    final retryGeneration = ++_generation;
     await _releasePreview();
-    if (!mounted) return;
+    if (!mounted || retryGeneration != _generation) return;
     setState(() {
       _initFuture = _initialize();
     });
@@ -133,12 +205,262 @@ final class _GalleryVideoPreviewPageState
   Future<void> _releasePreview() async {
     final player = _controller;
     final rendition = _ownedRendition;
+    final reservation = _activationReservation;
+    final lease = _lease;
     _controller = null;
     _ownedRendition = null;
+    var nativeDisposeSucceeded = false;
     try {
       await player?.dispose();
+      nativeDisposeSucceeded = player != null;
+      if (player != null) _disposedControllers[player] = true;
+    } catch (error, stackTrace) {
+      _retiringController = player;
+      if (player != null) {
+        SharedVideoPlayback.arbiter.recordFailedPause(_ownerPause);
+      }
+      FlutterError.reportError(FlutterErrorDetails(
+        exception: error,
+        stack: stackTrace,
+        library: 'gallery video preview',
+        context: ErrorDescription('disposing a gallery video controller'),
+      ));
     } finally {
-      await rendition?.dispose();
+      try {
+        await rendition?.dispose();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'gallery video preview',
+            context: ErrorDescription('disposing a gallery rendition')));
+      }
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
+      if (_lease == lease) _lease = null;
+      if (lease != null) _leaseCoordinator.revoke(lease);
+      if (nativeDisposeSucceeded) {
+        if (identical(_retiringController, player)) {
+          _retiringController = null;
+        }
+        if (_retiringController == null) {
+          SharedVideoPlayback.arbiter.clearFailedPause(_ownerPause);
+        }
+      }
+    }
+  }
+
+  Future<void> _releaseAttempt(
+    VideoPlayerController? controller,
+    VideoRendition? rendition,
+  ) async {
+    final ownsController = identical(_controller, controller);
+    final ownsRendition = identical(_ownedRendition, rendition);
+    final reservation = ownsController ? _activationReservation : null;
+    final lease = ownsController ? _lease : null;
+    if (ownsController) _controller = null;
+    if (ownsRendition) _ownedRendition = null;
+    var nativeDisposeSucceeded = false;
+    try {
+      await controller?.dispose();
+      nativeDisposeSucceeded = controller != null;
+      if (controller != null) _disposedControllers[controller] = true;
+    } catch (error, stackTrace) {
+      if (ownsController) {
+        _retiringController = controller;
+        if (controller != null) {
+          SharedVideoPlayback.arbiter.recordFailedPause(_ownerPause);
+        }
+      }
+      FlutterError.reportError(FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'gallery video preview',
+          context: ErrorDescription('disposing a gallery video controller')));
+    } finally {
+      try {
+        await rendition?.dispose();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'gallery video preview',
+            context: ErrorDescription('disposing a gallery rendition')));
+      }
+      if (ownsController && identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
+      if (ownsController && _lease == lease) _lease = null;
+      if (lease != null) _leaseCoordinator.revoke(lease);
+      if (ownsController && nativeDisposeSucceeded) {
+        if (identical(_retiringController, controller)) {
+          _retiringController = null;
+        }
+        if (_retiringController == null) {
+          SharedVideoPlayback.arbiter.clearFailedPause(_ownerPause);
+        }
+      }
+    }
+  }
+
+  Future<void> _pauseForInactivity() async {
+    await _pauseForLifecycle();
+  }
+
+  void _pauseForInactivitySafely() {
+    unawaited(_pauseForInactivity().catchError((_) {}));
+  }
+
+  Future<void> _pauseForLifecycle() {
+    final existing = _pauseInFlight;
+    if (existing != null) return existing;
+    final pause = _pauseForLifecycleImpl();
+    _pauseInFlight = pause;
+    return pause.whenComplete(() {
+      if (identical(_pauseInFlight, pause)) _pauseInFlight = null;
+    });
+  }
+
+  Future<void> _pauseForLifecycleImpl() async {
+    final retiring = _retiringController;
+    if (retiring != null) {
+      try {
+        await retiring.pause();
+      } catch (_) {
+        if (_disposedControllers[retiring] != true) {
+          SharedVideoPlayback.arbiter.recordFailedPause(_ownerPause);
+          rethrow;
+        }
+      }
+      if (identical(_retiringController, retiring)) {
+        _retiringController = null;
+        SharedVideoPlayback.arbiter.clearFailedPause(_ownerPause);
+      }
+      return;
+    }
+    _activationRevision++;
+    final controller = _controller;
+    final lease = _lease;
+    _lease = null;
+    if (lease != null) _leaseCoordinator.revoke(lease);
+    final reservation = _activationReservation;
+    final retryPause = _ownerPause;
+    if (controller == null) {
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
+      return;
+    }
+    final pendingPlay = _playInFlight;
+    if (pendingPlay != null) {
+      try {
+        await pendingPlay;
+      } catch (_) {
+        // Initialization uses its own static-preview fallback for play errors.
+      }
+    }
+    try {
+      await controller.pause();
+      SharedVideoPlayback.arbiter.clearFailedPause(retryPause);
+      if (identical(_retiringController, controller)) {
+        _retiringController = null;
+      }
+    } catch (_) {
+      if (_disposedControllers[controller] == true) return;
+      SharedVideoPlayback.arbiter.recordFailedPause(retryPause);
+      rethrow;
+    } finally {
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _playIfAllowed(
+    VideoPlayerController controller,
+    int generation,
+  ) {
+    final existing = _activationInFlight;
+    if (existing != null) return existing;
+    late final Future<void> tracked;
+    tracked = _playIfAllowedImpl(controller, generation).whenComplete(() {
+      if (identical(_activationInFlight, tracked)) {
+        _activationInFlight = null;
+      }
+    });
+    _activationInFlight = tracked;
+    return tracked;
+  }
+
+  Future<void> _playIfAllowedImpl(
+    VideoPlayerController controller,
+    int generation,
+  ) async {
+    if (!_isCurrentAttempt(generation) || !_mayPlay) return;
+    final intent = ++_activationRevision;
+    final pendingPause = _pauseInFlight;
+    if (pendingPause != null) await pendingPause;
+    if (!_isCurrentAttempt(generation) ||
+        !_mayPlay ||
+        intent != _activationRevision) {
+      return;
+    }
+    final reservation = SharedVideoPlayback.arbiter.reserve(this, _ownerPause);
+    _activationReservation = reservation;
+    try {
+      await reservation.waitUntilReady();
+    } catch (_) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      rethrow;
+    }
+    if (!_isCurrentAttempt(generation) ||
+        !_mayPlay ||
+        intent != _activationRevision ||
+        !reservation.isCurrent) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      return;
+    }
+    final lease = _leaseCoordinator.acquire();
+    _lease = lease;
+    final play = controller.play();
+    _playInFlight = play;
+    try {
+      await play;
+    } catch (_) {
+      _leaseCoordinator.revoke(lease);
+      if (_lease == lease) _lease = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      rethrow;
+    } finally {
+      if (identical(_playInFlight, play)) _playInFlight = null;
+    }
+    if (!_isCurrentAttempt(generation) ||
+        !_mayPlay ||
+        intent != _activationRevision ||
+        !reservation.isCurrent ||
+        _leaseCoordinator.current != lease) {
+      await controller.pause();
+      _leaseCoordinator.revoke(lease);
+      if (_lease == lease) _lease = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
     }
   }
 
@@ -146,15 +468,19 @@ final class _GalleryVideoPreviewPageState
     final controller = _controller;
     if (controller == null) return;
     if (controller.value.isPlaying) {
-      await controller.pause();
+      _manualPaused = true;
+      await _pauseForInactivity();
     } else {
-      await controller.play();
+      _manualPaused = false;
+      await _playIfAllowed(controller, _generation);
     }
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _generation++;
+    WidgetsBinding.instance.removeObserver(this);
     _noticeTimer?.cancel();
     _progressSubscription?.unsubscribe();
     unawaited(_releasePreview());
@@ -181,6 +507,7 @@ final class _GalleryVideoPreviewPageState
                 final controller = _controller;
                 if (controller != null && controller.value.isInitialized) {
                   return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: _togglePlay,
                     child: Center(
                       child: AspectRatio(

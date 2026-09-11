@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/gallery_video_preview.dart';
+import 'package:liuhetong_mobile/features/matrix/video_transcode.dart';
+import 'package:liuhetong_mobile/ui/chat/shared_video_playback.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -590,5 +594,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(second.value.isPlaying, isTrue);
     await _disposeWidgets(tester);
+  });
+  testWidgets('gallery yields to viewer', (tester) async {
+    final a = _HeldPlayer(), b = _HeldPlayer(); a.initialized.complete(); b.initialized.complete();
+    Widget page(bool ga, bool vb) => CupertinoApp(home: Stack(children: [if (ga) GalleryVideoPreviewPage(key: const ValueKey('g'), loadRendition: () async => VideoRendition(file: File('g'), usedCompressed: false), thumbnailBytes: Uint8List(0), duration: null, selected: false, onToggle: () {}, controllerFactory: (_) => a), if (vb) VideoViewerPage(key: const ValueKey('v'), loadFile: () async => File('v'), controllerFactory: (_) => b)]));
+    await tester.pumpWidget(page(true, false)); await tester.pumpAndSettle();
+    await tester.pumpWidget(page(true, true)); await tester.pumpAndSettle();
+    expect(a.pauses, greaterThanOrEqualTo(1)); expect(b.value.isPlaying, isTrue);
+    await tester.pumpWidget(page(false, true)); await _flushWakelock(tester); expect(wakelock.values.last, isTrue);
+    await _disposeWidgets(tester); expect(wakelock.values.last, isFalse);
+  });
+  testWidgets('viewer yields to gallery', (tester) async {
+    final a = _HeldPlayer(), b = _HeldPlayer(); a.initialized.complete(); b.initialized.complete();
+    Widget page(bool va, bool gb) => CupertinoApp(home: Stack(children: [if (va) VideoViewerPage(key: const ValueKey('v'), loadFile: () async => File('v'), controllerFactory: (_) => a), if (gb) GalleryVideoPreviewPage(key: const ValueKey('g'), loadRendition: () async => VideoRendition(file: File('g'), usedCompressed: false), thumbnailBytes: Uint8List(0), duration: null, selected: false, onToggle: () {}, controllerFactory: (_) => b)]));
+    await tester.pumpWidget(page(true, false)); await tester.pumpAndSettle();
+    await tester.pumpWidget(page(true, true)); await tester.pumpAndSettle();
+    expect(b.value.isInitialized, isTrue);
+    expect(b.plays, 1, reason: 'gallery did not reach native play');
+    expect(SharedVideoPlayback.arbiter.debugHasCurrent, isTrue);
+    expect(a.pauses, greaterThanOrEqualTo(1)); expect(b.value.isPlaying, isTrue);
+    await tester.pumpWidget(page(false, true)); await _flushWakelock(tester); expect(wakelock.values.last, isTrue);
+    expect(b.value.isPlaying, isTrue, reason: 'removing viewer paused gallery');
+    await _disposeWidgets(tester); expect(wakelock.values.last, isFalse);
   });
 }

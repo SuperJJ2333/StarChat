@@ -7,11 +7,11 @@ import 'package:video_player/video_player.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
-import '../../core/screen_on_lease_coordinator.dart';
 
 import '../foundation/wechat_tokens.dart';
-import 'video_playback_arbiter.dart';
 import 'video_playback_lease_coordinator.dart';
+import 'video_playback_arbiter.dart';
+import 'shared_video_playback.dart';
 
 /// 视频消息媒体卡（微信式，无气泡）：封面海报帧 + 播放按钮 + 时长角标。
 /// 海报帧来自发送端附带的加密缩略图（[posterLoader]，≤480px 小图），
@@ -161,17 +161,15 @@ final class VideoViewerPage extends StatefulWidget {
   final Future<void> Function()? onForward;
   final VideoPlayerController Function(File file)? controllerFactory;
 
-  static final _screenOnDemand = ScreenOnDemand(screenOnLeaseCoordinator);
-  static final _wakelockCoordinator =
-      VideoPlaybackLeaseCoordinator(_screenOnDemand.setEnabled);
-
   @visibleForTesting
-  static Future<void> debugWakelockSettled() => _wakelockCoordinator.settled;
+  static Future<void> debugWakelockSettled() =>
+      SharedVideoPlayback.wakelockCoordinator.settled;
   @visibleForTesting
   static ({bool current, bool pending, bool retry}) get debugArbiterState => (
-      current: _VideoViewerPageState._activationArbiter.debugHasCurrent,
-      pending: _VideoViewerPageState._activationArbiter.debugHasPendingBarrier,
-      retry: _VideoViewerPageState._activationArbiter.debugHasRetryPause);
+        current: SharedVideoPlayback.arbiter.debugHasCurrent,
+        pending: SharedVideoPlayback.arbiter.debugHasPendingBarrier,
+        retry: SharedVideoPlayback.arbiter.debugHasRetryPause
+      );
 
   @override
   State<VideoViewerPage> createState() => _VideoViewerPageState();
@@ -179,7 +177,6 @@ final class VideoViewerPage extends StatefulWidget {
 
 final class _VideoViewerPageState extends State<VideoViewerPage>
     with WidgetsBindingObserver {
-  static final _activationArbiter = VideoPlaybackArbiter();
   VideoPlayerController? _controller;
   VideoPlayerController? _pendingController;
   Future<bool>? _initFuture;
@@ -202,7 +199,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   var _controllerDisposeConfirmed = false;
 
   VideoPlaybackLeaseCoordinator get _leaseCoordinator =>
-      VideoViewerPage._wakelockCoordinator;
+      SharedVideoPlayback.wakelockCoordinator;
 
   /// 加载/初始化失败后可重试（弱网大文件场景）。
   bool loadFailed = false;
@@ -264,7 +261,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
       return;
     }
     final localIntent = ++_activationRevision;
-    final reservation = _activationArbiter.reserve(this, _ownerPause);
+    final reservation = SharedVideoPlayback.arbiter.reserve(this, _ownerPause);
     _activationReservation = reservation;
     try {
       await reservation.waitUntilReady();
@@ -363,10 +360,12 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
     final controller = _controller ?? _pendingController;
     try {
       await controller?.pause();
-      _activationArbiter.clearFailedPause(retryPause);
+      SharedVideoPlayback.arbiter.clearFailedPause(retryPause);
     } catch (_) {
       if (_controllerDisposeConfirmed) return;
-      if (!_controllerDisposeConfirmed) _activationArbiter.recordFailedPause(retryPause);
+      if (!_controllerDisposeConfirmed) {
+        SharedVideoPlayback.arbiter.recordFailedPause(retryPause);
+      }
       rethrow;
     } finally {
       if (identical(_activationReservation, reservation)) {
@@ -526,7 +525,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
     if (controller != null) {
       unawaited(controller.dispose().then((_) {
         _controllerDisposeConfirmed = true;
-        _activationArbiter.clearFailedPause(_ownerPause);
+        SharedVideoPlayback.arbiter.clearFailedPause(_ownerPause);
       }, onError: (Object error, StackTrace stackTrace) {
         FlutterError.reportError(FlutterErrorDetails(
             exception: error, stack: stackTrace, library: 'video_playback'));
