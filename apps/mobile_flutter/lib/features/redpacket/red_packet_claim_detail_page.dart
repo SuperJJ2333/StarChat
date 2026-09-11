@@ -25,7 +25,12 @@ final class RedPacketClaimRecord {
   final String? username;
   final String? avatarUrl;
 
-  double get amountValue => double.tryParse(amount) ?? 0;
+  BigInt get amountCents {
+    final parts = amount.split('.');
+    final whole = BigInt.tryParse(parts.first) ?? BigInt.zero;
+    final cents = parts.length > 1 ? '${parts[1]}00'.substring(0, 2) : '00';
+    return whole * BigInt.from(100) + (BigInt.tryParse(cents) ?? BigInt.zero);
+  }
 }
 
 /// Parses the business detail payload into ordered claim records
@@ -70,11 +75,28 @@ String redPacketDisplayName({
 }
 
 /// Index of the 手气最佳 record: the earliest claim with the highest amount.
-int? bestLuckRecordIndex(List<RedPacketClaimRecord> records) {
+int? bestLuckRecordIndex(List<RedPacketClaimRecord> records,
+    {Map<String, dynamic>? detail}) {
+  if (detail != null) {
+    final status = detail['status'];
+    final serverTime = DateTime.tryParse('${detail['server_time']}');
+    final expiresAt = DateTime.tryParse('${detail['expires_at']}');
+    final terminal = status == 'COMPLETED' || status == 'EXPIRED';
+    final expired = serverTime != null &&
+        expiresAt != null &&
+        !expiresAt.isAfter(serverTime);
+    if (!(detail['room_id'] != null &&
+        detail['mode'] == 'RANDOM' &&
+        detail['best_luck_eligible'] == true &&
+        status != 'CANCELLED' &&
+        (terminal || expired))) {
+      return null;
+    }
+  }
   if (records.isEmpty) return null;
   var best = 0;
   for (var i = 1; i < records.length; i++) {
-    if (records[i].amountValue > records[best].amountValue) best = i;
+    if (records[i].amountCents > records[best].amountCents) best = i;
   }
   return best;
 }
@@ -122,14 +144,14 @@ final class _RedPacketClaimDetailPageState
   Future<void> _loadContacts() async {
     try {
       final loaded = await widget.api.listContacts();
-      if (mounted) {
+      if (mounted && controller.isAlive) {
         setState(() {
           contacts = loaded;
           contactsLoaded = true;
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && controller.isAlive) {
         setState(() => contactsLoaded = true);
       }
     }
@@ -156,7 +178,7 @@ final class _RedPacketClaimDetailPageState
   Widget build(BuildContext context) {
     final detail = controller.detail;
     final records = parseRedPacketClaims(detail);
-    final bestIndex = bestLuckRecordIndex(records);
+    final bestIndex = bestLuckRecordIndex(records, detail: detail);
     final senderId = detail?['sender_id']?.toString();
     final senderContact = _contactOf(senderId);
     final senderName = redPacketDisplayName(
@@ -168,22 +190,32 @@ final class _RedPacketClaimDetailPageState
         detail?['sender_avatar_url']?.toString().isNotEmpty == true
             ? detail!['sender_avatar_url'].toString()
             : senderContact?.avatarUrl;
-    final status = detail?['status']?.toString();
+    final status = effectiveRedPacketStatus(detail);
     return WeChatPageScaffold.navigation(
       navigationBar: const CupertinoNavigationBar(
         middle: Text('领取详情'),
       ),
       child: controller.loading && detail == null
           ? const Center(child: CupertinoActivityIndicator())
-          : controller.error != null && detail == null
+          : (controller.ended || (controller.error != null && detail == null))
               ? Center(
-                  child: Text(
-                    '红包详情加载失败，请稍后重试',
-                    style: TextStyle(
-                      color: WeChatColors.textSecondary,
-                      fontSize: 14,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                      controller.ended ? '会话已结束' : '红包详情加载失败，请稍后重试',
+                      style: TextStyle(
+                        color: WeChatColors.textSecondary,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
+                    if (!controller.ended) ...[
+                      const SizedBox(height: 12),
+                      CupertinoButton(
+                        key: const Key('red-packet-claim-detail-retry'),
+                        onPressed: () => controller.load(widget.packetId),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ]),
                 )
               : SafeArea(
                   child: ListView(
@@ -249,6 +281,12 @@ final class _RedPacketClaimDetailPageState
                 color: WeChatColors.textSecondary,
               ),
             ),
+          ],
+          if (detail != null && status == 'OPEN') ...[
+            const SizedBox(height: 4),
+            const Text('领取中',
+                style:
+                    TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
           ],
         ]),
       );

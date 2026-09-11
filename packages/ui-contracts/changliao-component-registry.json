@@ -947,6 +947,34 @@
         "textPrimary",
         "textSecondary"
       ]
+    },
+    {
+      "id": "red-packet-card",
+      "flutter": {
+        "name": "WeChatRedPacketCard",
+        "file": "apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart",
+        "props": ["greeting", "state", "labelOverride", "onTap"],
+        "variants": {"scene": ["group-random", "group-equal", "direct", "exclusive"]},
+        "states": ["available", "claimed", "viewer-claimed", "exhausted", "expired", "withdrawn", "claiming", "error"]
+      },
+      "html": {
+        "tag": "app-red-packet-card",
+        "attributes": ["state", "greeting", "viewer-claim", "status-label", "action"],
+        "attributeMappings": {"labelOverride": "status-label"}
+      },
+      "tokens": ["WeChatColors.warning", "WeChatColors.redPacketMuted", "WeChatRadius.redPacket", "spacing", "typography"]
+    },
+    {
+      "id": "transfer-card",
+      "flutter": {
+        "name": "WeChatTransferCard",
+        "file": "apps/mobile_flutter/lib/ui/finance/wechat_transfer_card.dart",
+        "props": ["amount", "state", "isOwn", "labelOverride", "onTap"],
+        "variants": {"viewerRole": ["sender", "receiver"]},
+        "states": ["pending", "accepted", "returned", "loading", "error"]
+      },
+      "html": {"tag": "app-transfer-card"},
+      "tokens": ["WeChatColors.warning", "WeChatRadius.redPacket", "spacing", "typography"]
     }
   ],
   "tokenParity": [
@@ -974,6 +1002,11 @@
       "category": "colors",
       "html": "--color-divider: #d9d9d9",
       "flutter": "static const divider = Color(0xFFD9D9D9);"
+    },
+    {
+      "category": "colors",
+      "html": "--color-red-packet-muted: #f2b7a8",
+      "flutter": "static const redPacketMuted = Color(0xFFF2B7A8);"
     },
     {
       "category": "typography",
@@ -1236,7 +1269,7 @@
     }
   },
   "screens": {
-    "expectedCount": 344
+    "expectedCount": 355
   },
   "adminCompletion20260910": {
     "html": [
@@ -1332,5 +1365,12 @@
     "acceptance": "Title stays 钱包; rebind icon inside TRON card; deposit/withdraw disabled until ACTIVE and ready; current point balance and full amount; 1 point = 1 USDT, zero fee, minimum 10 USDT; explicit PIN confirm/cancel/error.",
     "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
     "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
+  },
+  "financeChatB4b20260911": {
+    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],
+    "demo": ["redpacket-detail-viewer-claimed", "redpacket-detail-claiming", "redpacket-detail-unknown-result", "redpacket-detail-group-random-completed", "redpacket-detail-group-random-expired", "redpacket-create-group-random", "caibi-transfer-receiver-accepted", "caibi-ledger-all", "caibi-ledger-filtered", "caibi-ledger-loading", "caibi-ledger-empty", "caibi-ledger-error", "caibi-ledger-paged", "caibi-transaction-detail"],
+    "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
+    "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
+    "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
   }
 }

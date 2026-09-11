@@ -1,8 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
+
 import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../finance/finance_message_presentation.dart';
+import '../ledger/ledger_business_gateway.dart';
+import '../ledger/ledger_gateway.dart';
+import '../ledger/ledger_pages.dart';
+import 'chat_transfer_detail_controller.dart';
 
 String chatTransferStatusLabel(String? status) => switch (status) {
       'ACCEPTED' => '对方已收款',
@@ -14,15 +23,21 @@ String chatTransferStatusLabel(String? status) => switch (status) {
 final class ChatTransferDetailSheet extends StatefulWidget {
   const ChatTransferDetailSheet({
     super.key,
-    required this.api,
+    this.api,
     required this.transferId,
     required this.viewerId,
     this.onSettled,
-  });
-  final BusinessApiClient api;
+    this.gateway,
+    this.ledgerGateway,
+  }) : assert(api != null || gateway != null);
+
+  final BusinessApiClient? api;
   final String transferId;
   final String viewerId;
   final VoidCallback? onSettled;
+  final ChatTransferDetailGateway? gateway;
+  final LedgerGateway? ledgerGateway;
+
   @override
   State<ChatTransferDetailSheet> createState() =>
       _ChatTransferDetailSheetState();
@@ -30,142 +45,212 @@ final class ChatTransferDetailSheet extends StatefulWidget {
 
 final class _ChatTransferDetailSheetState
     extends State<ChatTransferDetailSheet> {
-  Map<String, dynamic>? detail;
-  String? error;
-  bool working = false;
+  late final ChatTransferDetailController _controller;
+  late final LedgerGateway? _ledgerGateway;
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final loaded = await widget.api.chatTransferDetail(widget.transferId);
-      if (mounted) setState(() => detail = loaded);
-    } catch (businessError) {
-      if (mounted) {
-        setState(() =>
-            error = businessError is BusinessApiException
-                ? businessError.message
-                : '转账状态查询失败，请稍后重试');
-      }
-    }
-  }
-
-  Future<void> _act(Future<Map<String, dynamic>> Function() action) async {
-    if (working) return;
-    setState(() => working = true);
-    try {
-      final updated = await action();
-      if (mounted) setState(() => detail = updated);
-      widget.onSettled?.call();
-    } catch (businessError) {
-      if (mounted) {
-        setState(() {
-          error = businessError is BusinessApiException
-              ? businessError.message
-              : '操作失败，请稍后重试';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => working = false);
-    }
+    final api = widget.api;
+    _controller = ChatTransferDetailController(
+      gateway: widget.gateway ?? BusinessChatTransferDetailGateway(api!),
+      transferId: widget.transferId,
+      viewerId: widget.viewerId,
+      onSettled: widget.onSettled,
+    );
+    _ledgerGateway = widget.ledgerGateway ??
+        (api == null ? null : BusinessLedgerGateway(api));
+    unawaited(_controller.load());
   }
 
   @override
-  Widget build(BuildContext context) {
-    final isReceiver = detail?['receiver_id']?.toString() == widget.viewerId;
-    final isSender = detail?['sender_id']?.toString() == widget.viewerId;
-    final status = detail?['status']?.toString();
-    final pending = status == null || status == 'PENDING';
-    return CupertinoPopupSurface(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: detail == null && error == null
-              ? const SizedBox(
-                  height: 220,
-                  child: Center(child: CupertinoActivityIndicator()))
-              : Column(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: WeChatColors.warning,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(children: [
-                      const Icon(ChangliaoIcons.transferFilled,
-                          color: CupertinoColors.white, size: 30),
-                      const SizedBox(height: 8),
-                      Text(
-                          '${detail?['amount'] ?? '--'} 点钻',
-                          style: const TextStyle(
-                              color: CupertinoColors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 6),
-                      Text(chatTransferStatusLabel(status),
-                          style: const TextStyle(
-                              color: CupertinoColors.white, fontSize: 14)),
-                      if (detail?['note']?.toString().isNotEmpty == true) ...[
-                        const SizedBox(height: 6),
-                        Text(detail!['note'].toString(),
-                            style: TextStyle(
-                                color: CupertinoColors.white
-                                    .withValues(alpha: .9),
-                                fontSize: 13)),
-                      ],
-                    ]),
-                  ),
-                  const SizedBox(height: 12),
-                  if (detail != null)
-                    Text(
-                      isSender
-                          ? '手续费 ${detail!['fee']} 点钻 · 24小时未收款将自动退回'
-                          : '24小时内未收款将自动退回给对方',
-                      style: const TextStyle(
-                          color: WeChatColors.textSecondary, fontSize: 12),
-                    ),
-                  if (error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(error!,
-                        style: const TextStyle(color: WeChatColors.danger)),
-                  ],
-                  const SizedBox(height: 16),
-                  if (pending && isReceiver)
-                    Row(children: [
-                      Expanded(
-                        child: ModernActionButton(
-                          icon: ChangliaoIcons.close,
-                          label: '退还',
-                          onPressed: working
-                              ? null
-                              : () => _act(() => widget.api
-                                  .declineChatTransfer(widget.transferId)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ModernActionButton(
-                          icon: ChangliaoIcons.confirm,
-                          label: '收款',
-                          onPressed: working
-                              ? null
-                              : () => _act(() => widget.api
-                                  .acceptChatTransfer(widget.transferId)),
-                        ),
-                      ),
-                    ])
-                  else if (pending && isSender)
-                    const Text('等待对方收款',
-                        style:
-                            TextStyle(color: WeChatColors.textSecondary)),
-                ]),
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => WeChatPageScaffold(
+        title: '收款',
+        child: ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) => _body(_controller.state),
         ),
-      ),
+      );
+
+  Widget _body(ChatTransferDetailState state) {
+    if (state.ended) {
+      return const Center(child: Text('会话已结束，请重新打开转账详情'));
+    }
+    if (state.detail == null) {
+      if (state.loading) {
+        return const Center(child: CupertinoActivityIndicator());
+      }
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text(state.message ?? '转账状态查询失败，请稍后重试'),
+        const SizedBox(height: WeChatSpacing.md),
+        ModernActionButton(
+          key: const Key('chat-transfer-detail-retry'),
+          icon: ChangliaoIcons.retry,
+          label: '重试',
+          onPressed: _controller.retry,
+        ),
+      ]));
+    }
+    final detail = state.detail!;
+    final status = '${detail['status'] ?? ''}';
+    final sender = '${detail['sender_id'] ?? ''}';
+    final receiver = '${detail['receiver_id'] ?? ''}';
+    final isReceiver = receiver == widget.viewerId;
+    final pending = status == 'PENDING';
+    final label = transferLabel(
+      status: status,
+      viewerId: widget.viewerId,
+      senderId: sender,
+      receiverId: receiver,
     );
+    final billId = detail['bill_id'];
+    final hasBillId =
+        billId is String && billId.isNotEmpty && _ledgerGateway != null;
+    return ListView(
+      key: const Key('chat-transfer-detail-page'),
+      padding: const EdgeInsets.all(WeChatSpacing.lg),
+      children: [
+        _receiptHeader(_amount(detail['amount']), label),
+        const SizedBox(height: WeChatSpacing.lg),
+        _detailRows(detail, status),
+        if (state.message != null) ...[
+          const SizedBox(height: WeChatSpacing.md),
+          Text(state.message!,
+              key: const Key('chat-transfer-detail-message'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: WeChatColors.textSecondary)),
+          CupertinoButton(
+            key: const Key('chat-transfer-detail-refresh-retry'),
+            onPressed: _controller.retry,
+            child: const Text('重试'),
+          ),
+        ],
+        const SizedBox(height: WeChatSpacing.xl),
+        if (pending && isReceiver)
+          Row(children: [
+            Expanded(
+              child: ModernActionButton(
+                key: const Key('chat-transfer-detail-decline'),
+                icon: ChangliaoIcons.close,
+                label: '退还',
+                kind: ModernActionKind.secondary,
+                loading: state.loading,
+                onPressed: state.loading ? null : _controller.decline,
+              ),
+            ),
+            const SizedBox(width: WeChatSpacing.md),
+            Expanded(
+              child: ModernActionButton(
+                key: const Key('chat-transfer-detail-accept'),
+                icon: ChangliaoIcons.confirm,
+                label: '收款',
+                loading: state.loading,
+                onPressed: state.loading ? null : _controller.accept,
+              ),
+            ),
+          ]),
+        if (hasBillId)
+          CupertinoButton(
+            key: const Key('chat-transfer-detail-ledger'),
+            onPressed: () => _openLedgerDetail(billId),
+            child: const Text('账单详情'),
+          ),
+        if (_ledgerGateway != null)
+          CupertinoButton(
+            key: const Key('chat-transfer-detail-all-bills'),
+            onPressed: _openAllBills,
+            child: const Text('全部账单'),
+          ),
+      ],
+    );
+  }
+
+  Widget _receiptHeader(String amount, String label) => Container(
+        padding: const EdgeInsets.all(WeChatSpacing.lg),
+        decoration: BoxDecoration(
+          color: WeChatColors.warning,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(children: [
+          const Icon(ChangliaoIcons.transferFilled,
+              color: CupertinoColors.white, size: 30),
+          const SizedBox(height: WeChatSpacing.sm),
+          Text(amount,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: CupertinoColors.white,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: WeChatSpacing.xs),
+          Text(label,
+              style:
+                  const TextStyle(color: CupertinoColors.white, fontSize: 14)),
+        ]),
+      );
+
+  Widget _detailRows(Map<String, dynamic> detail, String status) {
+    final rows = <(String, String)>[
+      ('说明', _text(detail['note'])),
+      ('转账时间', _time(detail['created_at'])),
+      (
+        '收款时间',
+        status == 'ACCEPTED' ? _time(detail['accepted_at']) : '尚未收款',
+      ),
+    ];
+    return Column(
+      children: rows.map((row) => _row(row.$1, row.$2)).toList(),
+    );
+  }
+
+  Widget _row(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: WeChatSpacing.sm),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(
+            width: 88,
+            child: Text(label,
+                style: const TextStyle(color: WeChatColors.textSecondary)),
+          ),
+          Expanded(child: Text(value, textAlign: TextAlign.right)),
+        ]),
+      );
+
+  String _amount(Object? value) => formatLedgerAmount(value);
+
+  String _text(Object? value) =>
+      value is String && value.isNotEmpty ? value : '--';
+
+  String _time(Object? value) {
+    final date = value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    if (date == null) return '--';
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} '
+        '${two(date.hour)}:${two(date.minute)}:${two(date.second)}';
+  }
+
+  void _openLedgerDetail(String billId) {
+    if (!mounted || !_controller.isAlive) return;
+    final gateway = _ledgerGateway;
+    if (gateway == null) return;
+    Navigator.of(context).push(CupertinoPageRoute<void>(
+        builder: (_) => LedgerDetailPage(
+              gateway: gateway,
+              transactionId: billId,
+            )));
+  }
+
+  void _openAllBills() {
+    if (!mounted || !_controller.isAlive) return;
+    final gateway = _ledgerGateway;
+    if (gateway == null) return;
+    Navigator.of(context).push(CupertinoPageRoute<void>(
+        builder: (_) => LedgerListPage(gateway: gateway)));
   }
 }

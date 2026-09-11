@@ -78,17 +78,9 @@ function chatContent(definition) {
       if (["unsupported", "oversize"].includes(definition.state)) content.append(component("app-toast", { kind: "error", message: definition.state === "unsupported" ? "不支持此文件格式" : "文件超过允许大小" }));
     }
   } else if (definition.page === "redpacket") {
-    content.append(component("app-red-packet-card", { state: definition.state, greeting: "周末愉快" }));
+    content.append(component("app-red-packet-card", { state: definition.state, greeting: "周末愉快", "viewer-claim": definition.state === "claimed", action: definition.state === "claimed" ? "open:redpacket-detail-history" : "open:redpacket-detail-available" }));
   } else if (definition.page === "transfer") {
-    const statusLabels = { pending: "待收款 · 点击卡片收款", accepted: "已收款", returned: "已退回" };
-    const card = element("div", "c-transfer-card");
-    const body = element("div", "c-transfer-card__body");
-    body.append(
-      element("p", "c-transfer-card__amount", "200.00 点钻"),
-      element("p", "c-transfer-card__status", statusLabels[definition.state] ?? statusLabels.pending)
-    );
-    card.append(body, element("footer", "c-transfer-card__footer", "畅聊点钻转账"));
-    content.append(card);
+    content.append(component("app-transfer-card", { amount: "200.00", state: definition.state === "insufficient" ? "pending" : definition.state, "viewer-role": definition.state === "accepted" ? "receiver" : "sender", action: "open:caibi-transfer-receiver-accepted" }));
     if (definition.state === "insufficient") content.append(component("app-toast", { kind: "error", message: "转账失败，账户余额不足" }));
   } else if (definition.page === "composer") {
     content.append(component("app-empty-state", { title: "输入区状态", message: definition.title }));

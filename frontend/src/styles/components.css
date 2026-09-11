@@ -684,9 +684,15 @@
 .c-red-packet {
   width: var(--size-red-packet-width);
   height: var(--size-red-packet-height);
+  border: 0;
   overflow: hidden;
   border-radius: var(--radius-red-packet);
   background: var(--color-warning);
+  text-align: start;
+}
+
+.c-red-packet[data-viewer-claim="true"] {
+  background: var(--color-red-packet-muted);
 }
 
 .c-red-packet__body {
@@ -719,9 +725,11 @@
 .c-transfer-card {
   width: var(--size-red-packet-width);
   height: var(--size-red-packet-height);
+  border: 0;
   overflow: hidden;
   border-radius: var(--radius-red-packet);
   background: var(--color-warning);
+  text-align: start;
 }
 
 .c-transfer-card__body {

@@ -1,8 +1,9 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import APIRouter, Depends, Header, Query, Response
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -11,6 +12,7 @@ from app.modules.identity.tokens import TokenService
 from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.adjustments import AdjustmentWorkflow
 from app.modules.ledger.service import LedgerService, PointTransferService
+from app.modules.ledger.statements import StatementService
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -32,9 +34,30 @@ class PolicyBody(StrictModel):
     per_day: Decimal = Field(gt=0, decimal_places=2)
     allowed_users: set[str]
 
+class StatementItem(StrictModel):
+    id: str
+    asset: str
+    amount: str
+    kind: str
+    reason_code: str
+    created_at: datetime
+    reversal_of_id: str | None
+    status: str | None
+    note: str | None
+    business_id: str | None
+    transfer_amount: str | None
+    fee: str | None
+    accepted_at: datetime | None
+    transfer_created_at: datetime | None
+
+class StatementPage(StrictModel):
+    items: list[StatementItem]
+    next_cursor: str | None
+
 def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/ledger", tags=["ledger"])
     ledger = LedgerService(session_factory)
+    statements = StatementService(session_factory)
     transfers = PointTransferService(ledger)
     payment_pin = PaymentPinService(session_factory, require_all=settings.payment_pin_require_all)
     workflow = AdjustmentWorkflow(session_factory, ledger, admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
@@ -49,6 +72,28 @@ def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
     @router.get("/balances/me")
     def balance(user_id: str = Depends(actor)):
         return {"asset": "CAIBI", "balance": str(ledger.balance(user_id))}
+
+    @router.get("/transactions/me", response_model=StatementPage)
+    def my_transactions(response: Response, kind: Annotated[str | None, Query(pattern="^(redpacket|transfer|withdrawal|deposit|other)$")] = None,
+                        start_at: AwareDatetime | None = None, end_at: AwareDatetime | None = None,
+                        q: Annotated[str | None, Query(max_length=100)] = None,
+                        cursor: Annotated[str | None, Query(max_length=256)] = None, limit: Annotated[int, Query(ge=1, le=100)] = 50,
+                        user_id: str = Depends(actor)):
+        response.headers["Cache-Control"] = "private, no-store"
+        if start_at and end_at and start_at >= end_at:
+            raise AppError(code="LEDGER_STATEMENT_INVALID_RANGE", message="账单时间范围无效", status_code=422)
+        try:
+            return statements.list(user_id=user_id, kind=kind, start_at=start_at, end_at=end_at, q=q.strip() if q else None, cursor=cursor, limit=limit)
+        except ValueError as error:
+            raise AppError(code="LEDGER_STATEMENT_INVALID_CURSOR", message="账单游标无效", status_code=422) from error
+
+    @router.get("/transactions/me/{transaction_id}", response_model=StatementItem)
+    def my_transaction(transaction_id: str, response: Response, user_id: str = Depends(actor)):
+        response.headers["Cache-Control"] = "private, no-store"
+        item = statements.get(user_id=user_id, transaction_id=transaction_id)
+        if item is None:
+            raise AppError(code="LEDGER_STATEMENT_NOT_FOUND", message="账单不存在", status_code=404)
+        return item
 
     @router.post("/transfers", status_code=201)
     def transfer(body: TransferRequest, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):

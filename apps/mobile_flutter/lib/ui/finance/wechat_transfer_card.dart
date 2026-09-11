@@ -10,18 +10,20 @@ final class WeChatTransferCard extends StatelessWidget {
     required this.amount,
     required this.state,
     required this.isOwn,
+    this.labelOverride,
     this.onTap,
   });
   final String amount;
   final TransferCardState state;
   final bool isOwn;
   final VoidCallback? onTap;
+  final String? labelOverride;
 
-  String get label => switch (state) {
-        TransferCardState.pending =>
-          isOwn ? '等待收款' : '点击收款',
-        TransferCardState.accepted =>
-          isOwn ? '对方已收款' : '已收款',
+  String get label =>
+      labelOverride ??
+      switch (state) {
+        TransferCardState.pending => isOwn ? '等待收款' : '点击收款',
+        TransferCardState.accepted => isOwn ? '对方已收款' : '转账已收款',
         TransferCardState.returned => '已退回',
       };
 

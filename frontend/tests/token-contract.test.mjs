@@ -29,6 +29,7 @@ test("light and dark themes expose the same semantic color keys", async () => {
     "--color-divider",
     "--color-on-accent",
     "--color-page-background",
+    "--color-red-packet-muted",
     "--color-scrim",
     "--color-social-link",
     "--color-surface-elevated",
@@ -38,6 +39,26 @@ test("light and dark themes expose the same semantic color keys", async () => {
     "--color-text-tertiary",
     "--color-warning"
   ]);
+});
+
+test("red packet muted token matches Flutter in both themes", async () => {
+  const css = await readFile(new URL("src/styles/tokens.css", root), "utf8");
+  const flutter = await readFile(
+    new URL("../apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart", root),
+    "utf8"
+  );
+
+  for (const theme of ["light", "dark"]) {
+    assert.match(
+      themeBlock(css, theme),
+      /--color-red-packet-muted:\s*#f2b7a8;/u,
+      `${theme} red packet muted token drifted`
+    );
+  }
+  assert.match(
+    flutter,
+    /static const redPacketMuted = Color\(0xFFF2B7A8\);/u
+  );
 });
 
 test("index loads the approved style layers in fixed order", async () => {

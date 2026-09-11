@@ -32,11 +32,28 @@ final class ChatRedPacketController extends ChangeNotifier {
       {required this.business,
       required this.references,
       this.roomId,
-      this.recipientId})
-      : assert((roomId == null) != (recipientId == null));
+      this.recipientId,
+      int? joinedMemberCount,
+      this.refreshJoinedMemberCount})
+      : _joinedMemberCount = joinedMemberCount,
+        assert((roomId == null) != (recipientId == null));
   final ChatRedPacketBusinessGateway business;
   final ChatRedPacketReferenceGateway references;
   final String? roomId, recipientId;
+  final Future<int> Function()? refreshJoinedMemberCount;
+  int? _joinedMemberCount;
+  bool _disposed = false;
+
+  /// Current group total, including the sender. This is intentionally
+  /// independent from the exclusive-recipient selection list.
+  int? get joinedMemberCount => _joinedMemberCount;
+
+  int? get joinedMemberShareLimit {
+    final count = _joinedMemberCount;
+    if (count == null) return null;
+    return count < 500 ? count : 500;
+  }
+
   ChatRedPacketState state = const ChatRedPacketState();
   Future<void> submit(
       {required String total,
@@ -44,6 +61,7 @@ final class ChatRedPacketController extends ChangeNotifier {
       String mode = 'EQUAL',
       int shareCount = 1,
       String? exclusiveRecipientId}) async {
+    if (_disposed) return;
     if (state.status == ChatRedPacketStatus.creating ||
         state.status == ChatRedPacketStatus.sharing) {
       return;
@@ -57,6 +75,15 @@ final class ChatRedPacketController extends ChangeNotifier {
     }
     _set(const ChatRedPacketState(status: ChatRedPacketStatus.creating));
     try {
+      if (roomId != null) {
+        final count = await _refreshMemberCount();
+        if (_disposed) return;
+        if (count != null && shareCount > (count < 500 ? count : 500)) {
+          _set(const ChatRedPacketState(
+              status: ChatRedPacketStatus.failed, message: '红包个数不能超过群成员人数'));
+          return;
+        }
+      }
       final id = await business.create(
           mode: mode,
           total: total,
@@ -68,6 +95,11 @@ final class ChatRedPacketController extends ChangeNotifier {
           packetId: id,
           greeting: greeting));
       await _share(id, greeting);
+    } on _MemberCountRefreshFailure {
+      if (!_disposed) {
+        _set(const ChatRedPacketState(
+            status: ChatRedPacketStatus.failed, message: '群成员加载失败，请稍后重试'));
+      }
     } on ChatPaymentCancelled {
       _set(const ChatRedPacketState());
     } catch (error) {
@@ -79,6 +111,7 @@ final class ChatRedPacketController extends ChangeNotifier {
   }
 
   Future<void> retryShare() async {
+    if (_disposed) return;
     final id = state.packetId, greeting = state.greeting;
     if (id == null || greeting == null) return;
     _set(ChatRedPacketState(
@@ -109,6 +142,9 @@ final class ChatRedPacketController extends ChangeNotifier {
       if (error.code == 'RED_PACKET_LIMIT_EXCEEDED') {
         return error.message;
       }
+      if (error.code == 'RED_PACKET_SHARE_COUNT_EXCEEDS_MEMBERS') {
+        return '红包个数不能超过群成员人数';
+      }
     }
     final text = error.toString();
     if (text.contains('RED_PACKET_BALANCE_INSUFFICIENT') ||
@@ -119,7 +155,33 @@ final class ChatRedPacketController extends ChangeNotifier {
   }
 
   void _set(ChatRedPacketState value) {
+    if (_disposed) return;
     state = value;
     notifyListeners();
   }
+
+  Future<int?> _refreshMemberCount() async {
+    final refresh = refreshJoinedMemberCount;
+    if (refresh == null) return _joinedMemberCount;
+    try {
+      final count = await refresh();
+      if (_disposed) return null;
+      _joinedMemberCount = count;
+      _set(const ChatRedPacketState(status: ChatRedPacketStatus.creating));
+      return count;
+    } catch (_) {
+      throw const _MemberCountRefreshFailure();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    super.dispose();
+  }
+}
+
+final class _MemberCountRefreshFailure implements Exception {
+  const _MemberCountRefreshFailure();
 }

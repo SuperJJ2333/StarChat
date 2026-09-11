@@ -20,7 +20,6 @@ import '../contacts/contact_models.dart';
 import '../contacts/add_friend_profile_page.dart';
 import '../contacts/contacts_page.dart';
 import '../profile/profile_controller.dart';
-import '../redpacket/red_packet_claim_dialog.dart';
 import '../../ui/chat/chat_composer_bar.dart';
 import '../../ui/chat/wechat_composer.dart' show chatComposerPanelGroupId;
 import '../../ui/chat/chat_composer_state.dart';
@@ -61,7 +60,6 @@ import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../transfer/chat_transfer_adapters.dart';
 import '../transfer/chat_transfer_controller.dart';
-import '../transfer/chat_transfer_detail_sheet.dart';
 import '../transfer/chat_transfer_sheet.dart';
 import 'matrix_e2ee_client.dart';
 import 'image_picker_page.dart';
@@ -113,6 +111,23 @@ import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
 import '../../ui/chat/room_image_gallery.dart';
 import '../contacts/contact_actions.dart';
+import '../finance/finance_card_store.dart';
+import '../finance/finance_message_entry.dart';
+
+/// Counts the authoritative joined snapshot exactly once per Matrix member.
+/// The local account must be present in that snapshot; callers must not infer
+/// membership from a stale room object.
+int redPacketJoinedMemberCount(
+    Iterable<MatrixRoomMemberSnapshot> members, String? selfId) {
+  final ids = <String>{
+    for (final member in members)
+      if (member.isJoined) member.id,
+  };
+  if (selfId == null || selfId.isEmpty || !ids.contains(selfId)) {
+    throw StateError('群成员状态已失效');
+  }
+  return ids.length;
+}
 
 class RoomPage extends StatefulWidget {
   const RoomPage({
@@ -449,6 +464,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ProfileData? ownProfile;
   late final ProfileRepository _identityCache =
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
+  late final FinanceCardStore _financeCardStore =
+      FinanceCardStore(BusinessFinanceCardGateway(widget.api));
   ContactDetails? peer;
   bool loading = true;
 
@@ -632,6 +649,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       // Preserve the synchronized local count if a transient member request
       // fails; the next room sync refreshes the title.
     }
+  }
+
+  Future<int> _refreshJoinedMemberCountForRedPacket() async {
+    final epoch = widget.api.sessionEpoch;
+    final refreshed = await widget.roomLease.refreshRoomInfo();
+    if (!mounted ||
+        widget.roomLease.canceled ||
+        widget.api.sessionEpoch != epoch) {
+      throw StateError('群成员状态已失效');
+    }
+    final count =
+        redPacketJoinedMemberCount(refreshed.members, refreshed.currentUserId);
+    roomInfo = refreshed;
+    if (mounted) setState(() => joinedMemberCount = count);
+    return count;
   }
 
   String get _navigationTitle => isGroup
@@ -1787,50 +1819,85 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _showRedPacket() async {
+    final apiEpoch = widget.api.sessionEpoch;
     final timeline = controller;
     if (timeline == null) return;
     if (!isGroup && peer == null) {
       await _showError('好友资料尚未加载，暂时无法发送定向红包');
       return;
     }
+    int? groupMemberCount;
+    if (isGroup) {
+      try {
+        groupMemberCount = await _refreshJoinedMemberCountForRedPacket();
+      } catch (_) {
+        if (mounted) await _showError('无法确认群成员人数，请稍后重试');
+        return;
+      }
+    }
+    if (!mounted ||
+        widget.roomLease.canceled ||
+        widget.api.sessionEpoch != apiEpoch) {
+      return;
+    }
     List<ChatRoomMember> members() => <ChatRoomMember>[
-          for (final participant in roomInfo.members)
-            if (participant.id != roomInfo.currentUserId)
-              ChatRoomMember(
-                participant.id,
-                _identityCache
-                    .resolveIdentity(
-                      matrixUserId: participant.id,
-                      displayName: participant.displayName,
-                    )
-                    .displayName,
-              ),
+          for (final participant in _joinedMembers
+              .where((member) => member.id != roomInfo.currentUserId))
+            ChatRoomMember(
+              participant.id,
+              _identityCache
+                  .resolveIdentity(
+                    matrixUserId: participant.id,
+                    displayName: participant.displayName,
+                  )
+                  .displayName,
+            ),
         ];
     final payment = await _preparePayment();
-    if (payment == null || !mounted) return;
+    if (payment == null) return;
+    if (!mounted ||
+        widget.roomLease.canceled ||
+        widget.api.sessionEpoch != apiEpoch) {
+      payment.clear();
+      return;
+    }
     final redPacketController = ChatRedPacketController(
       business: BusinessChatRedPacketGateway(widget.api, payment: payment),
       references: TimelineRedPacketReferenceGateway(timeline),
       roomId: isGroup ? roomInfo.id : null,
       recipientId: isGroup ? null : peer!.userId,
+      joinedMemberCount: groupMemberCount,
+      refreshJoinedMemberCount: isGroup
+          ? () async {
+              if (!mounted ||
+                  widget.roomLease.canceled ||
+                  widget.api.sessionEpoch != apiEpoch) {
+                throw StateError('群成员状态已失效');
+              }
+              return _refreshJoinedMemberCountForRedPacket();
+            }
+          : null,
     );
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
-        builder: (pageContext) => ListenableBuilder(
-          listenable: _identityCache,
-          builder: (context, child) => ChatRedPacketSheet(
-            controller: redPacketController,
-            isGroup: isGroup,
-            support: BusinessChatRedPacketSupport(widget.api),
-            members: members(),
-            onSent: () => Navigator.pop(pageContext),
+    try {
+      await Navigator.push<void>(
+        context,
+        CupertinoPageRoute(
+          builder: (pageContext) => ListenableBuilder(
+            listenable: _identityCache,
+            builder: (context, child) => ChatRedPacketSheet(
+              controller: redPacketController,
+              isGroup: isGroup,
+              support: BusinessChatRedPacketSupport(widget.api),
+              members: members(),
+              onSent: () => Navigator.pop(pageContext),
+            ),
           ),
         ),
-      ),
-    );
-    redPacketController.dispose();
-    payment.clear();
+      );
+    } finally {
+      redPacketController.dispose();
+      payment.clear();
+    }
   }
 
   Future<void> _showTransfer() async {
@@ -1861,21 +1928,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     transferController.dispose();
     payment.clear();
-  }
-
-  Future<void> _openTransferDetail(String transferId) async {
-    final viewerId = await widget.api.currentUserId();
-    if (!mounted) return;
-    await showCupertinoModalPopup<void>(
-      context: context,
-      builder: (_) => ChatTransferDetailSheet(
-        api: widget.api,
-        transferId: transferId,
-        viewerId: viewerId ?? '',
-        onSettled: () => controller?.refresh(),
-      ),
-    );
-    controller?.refresh();
   }
 
   void _insertEmoji(String selected) {
@@ -2598,28 +2650,47 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             playback: voicePlayback,
             messageId: message.id,
           ),
-        RoomMessageKind.redPacket => WeChatRedPacketCard(
-            greeting: message.greeting ?? '恭喜发财',
-            state: RedPacketVisualState.available,
-            onTap: message.packetId == null
-                ? null
-                : () => showRedPacketClaimDialog(
-                      context,
-                      api: widget.api,
-                      packetId: message.packetId!,
-                      senderName: _senderDisplayName(message),
-                      greeting: message.greeting ?? '恭喜发财，大吉大利',
-                      senderAvatar: _avatar(message),
-                    ),
-          ),
-        RoomMessageKind.transfer => WeChatTransferCard(
-            amount: message.transferAmount ?? '--',
-            state: TransferCardState.pending,
-            isOwn: message.isOwn,
-            onTap: message.transferId == null
-                ? null
-                : () => _openTransferDetail(message.transferId!),
-          ),
+        RoomMessageKind.redPacket => message.packetId == null
+            ? WeChatRedPacketCard(
+                greeting: message.greeting ?? '恭喜发财',
+                state: RedPacketVisualState.available,
+                labelOverride: '状态未知',
+                onTap: null,
+              )
+            : FinanceMessageEntry(
+                key: ValueKey(
+                    'finance:red-packet:${message.packetId}:${message.id}'),
+                store: _financeCardStore,
+                api: widget.api,
+                kind: FinanceCardKind.redPacket,
+                id: message.packetId!,
+                greeting: message.greeting ?? '恭喜发财，大吉大利',
+                amount: '--',
+                isOwn: message.isOwn,
+                senderName: _senderDisplayName(message),
+                senderAvatar: _avatar(message),
+              ),
+        RoomMessageKind.transfer => message.transferId == null
+            ? WeChatTransferCard(
+                amount: message.transferAmount ?? '--',
+                state: TransferCardState.pending,
+                isOwn: message.isOwn,
+                labelOverride: '状态未知',
+                onTap: null,
+              )
+            : FinanceMessageEntry(
+                key: ValueKey(
+                    'finance:transfer:${message.transferId}:${message.id}'),
+                store: _financeCardStore,
+                api: widget.api,
+                kind: FinanceCardKind.transfer,
+                id: message.transferId!,
+                greeting: message.greeting ?? '',
+                amount: message.transferAmount ?? '--',
+                isOwn: message.isOwn,
+                senderName: _senderDisplayName(message),
+                senderAvatar: _avatar(message),
+              ),
         RoomMessageKind.system => Text(
             message.text,
             style: const TextStyle(
@@ -3323,6 +3394,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .clearAll()
         .whenComplete(_posterDisk.dispose)
         .catchError((Object _) {}));
+    _financeCardStore.dispose();
     _identityCache.removeListener(_identityChanged);
     final playback = _voicePlayback;
     if (playback != null) {

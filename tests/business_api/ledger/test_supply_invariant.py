@@ -96,7 +96,7 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
     # 红包：alice 发 10.00 拼手气红包（无手续费），bravo 领取一份。
     from app.modules.redpacket.membership import StaticRoomMembershipAuthority
     _membership = StaticRoomMembershipAuthority()
-    _membership.set_members("!room:test", {"bravo"})
+    _membership.set_members("!room:test", {"alice", "bravo"})
     packets = RedPacketService(factory, ledger, max_total=Decimal("20000.00"), room_membership=_membership)
     packet = packets.create_random(
         sender_id="alice",

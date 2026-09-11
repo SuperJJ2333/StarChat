@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, create_session_factory
 from app.modules.ledger.service import LedgerService
+from app.modules.redpacket.membership import StaticRoomMembershipAuthority
 from app.modules.redpacket.service import RedPacketService
 from tasks.redpacket_expiry import RedPacketExpiryTask
 
@@ -20,7 +21,10 @@ def test_expiry_task_refunds_due_packets_only():
     ledger = LedgerService(factory)
     ledger.adjust(user_id="sender", amount=Decimal("5.00"), actor_id="finance", reason_code="INITIAL_CREDIT", idempotency_key="worker-seed")
     now = datetime.now(timezone.utc)
-    packets = RedPacketService(factory, ledger)
+    membership = StaticRoomMembershipAuthority({
+        "!due:test": {"sender"}, "!future:test": {"sender"},
+    })
+    packets = RedPacketService(factory, ledger, room_membership=membership)
     due = packets.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1, room_id="!due:test", idempotency_key="due", expires_at=now - timedelta(seconds=1))
     future = packets.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1, room_id="!future:test", idempotency_key="future", expires_at=now + timedelta(hours=1))
     count = RedPacketExpiryTask(factory, packets).run_batch(now=now, limit=10)

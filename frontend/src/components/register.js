@@ -5,7 +5,7 @@ import { AppActionButton, AppComposer } from "./actions.js";
 import { AppAttachmentTile, AppMessageBubble, AppTimestamp, AppUnreadBadge, AppVoiceBubble } from "./chat.js";
 import { AppNavigationBar, AppStatusBar, AppTabBar } from "./chrome.js";
 import { AppActionSheet, AppDialog, AppEmptyState, AppNetworkCapsule, AppNudgeNotice, AppStatusChip, AppToast } from "./feedback.js";
-import { AppAmountSummary, AppRedPacketCard, AppTransactionRow } from "./finance.js";
+import { AppAmountSummary, AppRedPacketCard, AppTransactionRow, AppTransferCard } from "./finance.js";
 import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagManagement, AppContactTagMembers, AppIdentityHeader, AppListTile } from "./identity.js";
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
 
@@ -34,6 +34,7 @@ const implementations = new Map([
   ["app-empty-state", AppEmptyState],
   ["app-network-capsule", AppNetworkCapsule],
   ["app-red-packet-card", AppRedPacketCard],
+  ["app-transfer-card", AppTransferCard],
   ["app-amount-summary", AppAmountSummary],
   ["app-transaction-row", AppTransactionRow],
   ["app-moment-tile", AppMomentTile],

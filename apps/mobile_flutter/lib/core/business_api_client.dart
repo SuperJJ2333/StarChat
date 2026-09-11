@@ -642,6 +642,29 @@ final class BusinessApiClient
   Future<String?> currentMatrixUserId() async =>
       (await sessionStore.session())?.matrixUserId;
   Future<Map<String, dynamic>> caibiBalance() => getJson('/ledger/balances/me');
+  Future<Map<String, dynamic>> ledgerTransactions({
+    String? kind,
+    DateTime? startAt,
+    DateTime? endAt,
+    String? q,
+    String? cursor,
+    int limit = 50,
+  }) {
+    final parameters = <String, String>{'limit': '$limit'};
+    if (kind != null) parameters['kind'] = kind;
+    if (startAt != null) {
+      parameters['start_at'] = startAt.toUtc().toIso8601String();
+    }
+    if (endAt != null) {
+      parameters['end_at'] = endAt.toUtc().toIso8601String();
+    }
+    if (q != null && q.isNotEmpty) parameters['q'] = q;
+    if (cursor != null) parameters['cursor'] = cursor;
+    return getJson(
+        '/ledger/transactions/me?${Uri(queryParameters: parameters).query}');
+  }
+  Future<Map<String, dynamic>> ledgerTransactionDetail(String id) =>
+      getJson('/ledger/transactions/me/${Uri.encodeComponent(id)}');
   Future<Map<String, dynamic>> transferCaibi(
     String receiverId,
     String amount,
