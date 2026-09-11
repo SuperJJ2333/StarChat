@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
+import 'package:liuhetong_mobile/core/cache/moments_page_store.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,38 +39,57 @@ void main() {
   test(
       'feed and cover hydrate synchronously, stay isolated, and clear together',
       () async {
-    final repository = await CacheRepository.instance();
-    final a = repository.momentsFor('matrix:@a:test');
-    final b = repository.momentsFor('matrix:@b:test');
-    await a.save({
-      'items': [
-        {'id': 'a'}
-      ]
-    });
-    await a.savePreferences({'cover_url': 'cover-a'});
-    await b.save({
-      'items': [
-        {'id': 'b'}
-      ]
-    });
-    final snapshot = a.snapshot!;
-    (snapshot['items'] as List).clear();
-    expect(a.snapshot!['items'], hasLength(1),
-        reason: 'Readers cannot mutate shared state');
-    await CacheRepository.resetForTest();
-    final restarted = await CacheRepository.instance();
-    final restored = restarted.momentsFor('matrix:@a:test');
-    expect(restored.snapshot!['items'], hasLength(1));
-    expect(restored.preferencesSnapshot!['cover_url'], 'cover-a');
-    final request = restored.beginRefresh();
-    final coverRequest = restored.beginPreferencesRefresh();
-    await restored.clear();
-    expect(restored.isCurrent(request), isFalse);
-    expect(restored.preferencesAreCurrent(coverRequest), isFalse);
-    expect(restored.snapshot, isNull);
-    expect(restored.preferencesSnapshot, isNull);
-    expect(restarted.momentsFor('matrix:@b:test').snapshot!['items'],
-        hasLength(1));
+    sqfliteFfiInit();
+    final directory = Directory(p.join('..', '..', 'docs', 'verification',
+        'artifacts', '2026-09-11', 'performance', 'r1-moments'));
+    await directory.create(recursive: true);
+    final database = File(p.join(
+        directory.path, 'moments-${DateTime.now().microsecondsSinceEpoch}.db'));
+    final store = MomentsPageStore(
+        databasePath: database.path, factory: databaseFactoryFfi);
+    final restartedStore = MomentsPageStore(
+        databasePath: database.path, factory: databaseFactoryFfi);
+    try {
+      await CacheRepository.resetForTest(pageStore: store);
+      final repository = await CacheRepository.instance();
+      final a = repository.momentsFor('matrix:@a:test');
+      final b = repository.momentsFor('matrix:@b:test');
+      await a.save({
+        'items': [
+          {'id': 'a'}
+        ]
+      });
+      await a.savePreferences({'cover_url': 'cover-a'});
+      await b.save({
+        'items': [
+          {'id': 'b'}
+        ]
+      });
+      final snapshot = a.snapshot!;
+      (snapshot['items'] as List).clear();
+      expect(a.snapshot!['items'], hasLength(1),
+          reason: 'Readers cannot mutate shared state');
+      await store.close();
+      await CacheRepository.resetForTest(pageStore: restartedStore);
+      final restarted = await CacheRepository.instance();
+      final restored = restarted.momentsFor('matrix:@a:test');
+      expect(restored.snapshot!['items'], hasLength(1));
+      expect(restored.preferencesSnapshot!['cover_url'], 'cover-a');
+      final request = restored.beginRefresh();
+      final coverRequest = restored.beginPreferencesRefresh();
+      await restored.clear();
+      expect(restored.isCurrent(request), isFalse);
+      expect(restored.preferencesAreCurrent(coverRequest), isFalse);
+      expect(restored.snapshot, isNull);
+      expect(restored.preferencesSnapshot, isNull);
+      expect(restarted.momentsFor('matrix:@b:test').snapshot!['items'],
+          hasLength(1));
+    } finally {
+      await store.close();
+      await restartedStore.close();
+      await CacheRepository.resetForTest();
+      if (await database.exists()) await database.delete();
+    }
   });
 
   test('profile exposes only its existing immutable account namespace', () {

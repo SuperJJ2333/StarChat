@@ -14,6 +14,7 @@ final class FakeMatrixEmojiVaultBackend
   final sentTypes = <String>[];
   List<EmojiVaultEvent>? cachedEvents;
   bool offline = false;
+  Uint8List? uploaded;
   @override
   Future<List<EmojiVaultEvent>?> readCachedEvents(String roomId) async =>
       cachedEvents;
@@ -47,18 +48,20 @@ final class FakeMatrixEmojiVaultBackend
     String roomId,
     Map<String, Object?> encryptedFile,
   ) async =>
-      Uint8List.fromList([9, 8, 7]);
+      Uint8List.fromList(uploaded ?? const [9, 8, 7]);
 
   @override
   Future<Map<String, Object?>> uploadEncrypted(
     String roomId,
     Uint8List bytes,
     String mimeType,
-  ) async =>
-      {
-        'url': 'mxc://example.test/encrypted',
-        'key': const {'k': 'secret'}
-      };
+  ) async {
+    uploaded = Uint8List.fromList(bytes);
+    return {
+      'url': 'mxc://example.test/encrypted',
+      'key': const {'k': 'secret'}
+    };
+  }
 
   @override
   Future<void> sendEncryptedEvent(
@@ -191,6 +194,6 @@ void main() {
       mimeType: 'image/gif',
     );
 
-    expect(await session.loadBytes(item), [9, 8, 7]);
+    expect(await session.loadBytes(item), [1, 2, 3]);
   });
 }

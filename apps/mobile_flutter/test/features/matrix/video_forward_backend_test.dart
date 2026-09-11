@@ -33,6 +33,10 @@ class ForwardRoom extends Room {
   final bool direct;
   @override
   bool get isDirectChat => direct;
+  @override
+  Membership get membership => Membership.join;
+  @override
+  bool get canSendDefaultMessages => true;
   final bool secure;
   late ForwardTimeline timeline;
   @override
