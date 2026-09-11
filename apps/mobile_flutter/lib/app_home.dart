@@ -146,12 +146,17 @@ final class AppHome extends StatefulWidget {
     required this.matrix,
     required this.onLogout,
     required this.themeController,
+    this.profileRepositoryFactory,
   });
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final Future<void> Function() onLogout;
   final ThemeController themeController;
+  /// Test seam for the account-scoped repository; AppHome retains hydration,
+  /// preload, ownership checks and disposal of the returned repository.
+  final Future<ProfileRepository> Function(
+      BusinessApiClient api, String? accountKey)? profileRepositoryFactory;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -1056,7 +1061,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final accountKey = widget.matrix.userId;
     ProfileRepository cache;
     try {
-      cache = accountKey == null
+      final factory = widget.profileRepositoryFactory;
+      cache = factory != null
+          ? await factory(widget.api, accountKey)
+          : accountKey == null
           ? ProfileRepository(widget.api)
           : await ProfileRepository.create(
               api: widget.api,
@@ -1433,13 +1441,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Future<void> _createGroupChat() async {
+    final matrix = widget.matrix;
     String currentUserDisplayName = '我';
     try {
       final cache = await _identityCache();
-      await cache.preload();
-      final profile = cache.profile!;
-      currentUserDisplayName =
-          profile.nickname.isEmpty ? profile.username : profile.nickname;
+      if (!mounted || !identical(matrix, widget.matrix)) return;
+      final profile = cache.profile;
+      if (profile != null) {
+        currentUserDisplayName =
+            profile.nickname.isEmpty ? profile.username : profile.nickname;
+      }
+      unawaited(cache.preload().catchError((_) {}));
     } catch (_) {
       // Group creation remains available when the cached profile is offline.
     }
@@ -1447,7 +1459,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final controller = GroupChatController(
       contacts: widget.api,
       groups:
-          ServerAutoJoinGroupGateway(api: widget.api, matrix: widget.matrix),
+          ServerAutoJoinGroupGateway(api: widget.api, matrix: matrix),
       currentUserDisplayName: currentUserDisplayName,
     );
     final roomId = await Navigator.push<String>(
@@ -1461,18 +1473,26 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       ),
     );
     controller.dispose();
-    if (!mounted || roomId == null) return;
-    final roomName = await widget.matrix.conversations.roomDisplayName(roomId);
+    if (!mounted || roomId == null || !identical(matrix, widget.matrix)) return;
+    final roomName = await matrix.conversations.roomDisplayName(roomId);
     final identityCache = await _identityCache();
-    await identityCache.preload();
-    if (!mounted) return;
-    await identityCache.precacheAvatarImages(context);
-    if (!mounted) return;
-    final lease = await widget.matrix.openRoomLease(roomId);
-    if (!mounted) {
+    if (!mounted || !identical(matrix, widget.matrix)) return;
+    final lease = await matrix.openRoomLease(roomId);
+    if (!mounted || !identical(matrix, widget.matrix)) {
       await lease.cancel();
       return;
     }
+    unawaited(() async {
+      try {
+        await identityCache.preload();
+        if (mounted && identical(matrix, widget.matrix) &&
+            identical(identityCache, _chatIdentityCache)) {
+          await identityCache.precacheAvatarImages(context,
+              shouldContinue: () => mounted && identical(matrix, widget.matrix) &&
+                  identical(identityCache, _chatIdentityCache));
+        }
+      } catch (_) {}
+    }());
     final navigator = Navigator.of(context, rootNavigator: true);
     late final Route<void> route;
     route = CupertinoPageRoute<void>(

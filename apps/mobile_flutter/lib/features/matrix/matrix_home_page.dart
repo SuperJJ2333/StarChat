@@ -736,11 +736,18 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     } catch (_) {/* The next sync makes the room available in the list. */}
   }
 
-  Future<void> _warmChatIdentity() async {
+  Future<void> _warmChatIdentity([Iterable<String> matrixUserIds = const []]) async {
+    final cache = _identityCache;
+    final matrix = widget.matrix;
     try {
-      await _identityCache.preload();
-      if (!mounted) return;
-      await _identityCache.precacheAvatarImages(context);
+      await cache.preload();
+      if (!mounted || !identical(cache, _identityCache) ||
+          !identical(matrix, widget.matrix)) {
+        return;
+      }
+      await cache.precacheAvatarImages(context, matrixUserIds: matrixUserIds,
+          shouldContinue: () => mounted && identical(cache, _identityCache) &&
+              identical(matrix, widget.matrix));
     } catch (_) {
       // Keep the last successful identity snapshot while offline.
     }
@@ -751,7 +758,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
     MatrixRoomLease? lease;
-    unawaited(_warmChatIdentity());
+    unawaited(_warmChatIdentity(
+        snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
       lease = await widget.matrix.openRoomLease(snapshot.id);
       if (!mounted) return;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
@@ -265,5 +267,51 @@ void main() {
     repository.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('warmup selects at most nine explicit unique avatars from 50k',
+      (tester) async {
+    final contacts = List.generate(
+        50000,
+        (index) => _contact('u$index',
+            avatarUrl: 'https://cdn.test/$index.png'));
+    final repository = _repository(contacts);
+    addTearDown(repository.dispose);
+    await repository.preload();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    final context = tester.element(find.byType(SizedBox));
+    final warmed = <String>[];
+    await repository.precacheAvatarImages(context,
+        matrixUserIds: [
+          '@u1:test', '@u1:test', '@u2:test', '@u3:test', '@u4:test',
+          '@u5:test', '@u6:test', '@u7:test', '@u8:test', '@u9:test',
+          '@u10:test'
+        ], prefetch: (key, _) async => warmed.add(key));
+    expect(warmed, [for (var i = 1; i <= 8; i++) 'identity:profile-selector:u$i']);
+  });
+
+  testWidgets('warmup stops after a held request loses its owner',
+      (tester) async {
+    final repository = _repository([
+      _contact('a'), _contact('b'), _contact('c')
+    ]);
+    addTearDown(repository.dispose);
+    await repository.preload();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    final context = tester.element(find.byType(SizedBox));
+    final held = Completer<void>();
+    var active = true;
+    var requests = 0;
+    final warming = repository.precacheAvatarImages(context,
+        matrixUserIds: ['@a:test', '@b:test', '@c:test'],
+        shouldContinue: () => active, prefetch: (_, __) async {
+      requests++;
+      if (requests == 1) await held.future;
+    });
+    await tester.pump();
+    active = false;
+    held.complete();
+    await warming;
+    expect(requests, 1);
   });
 }

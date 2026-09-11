@@ -834,25 +834,50 @@ final class ProfileRepository extends ChangeNotifier {
   /// Decodes known profile/contact avatar bytes before a chat route transition.
   /// Failed prewarming is non-blocking: the route still uses its metadata URL.
   Future<void> precacheAvatarImages(BuildContext context,
-      {double size = 40}) async {
-    final images = <(String, String)>[
-      if (profile?.avatarUrl case final url?)
-        (resolveIdentity(username: profile!.username).cacheKey, url),
-      for (final contact in contacts)
-        if (contact.avatarUrl case final url?)
-          (resolveIdentity(userId: contact.userId).cacheKey, url),
-    ];
+      {double size = 40,
+      Iterable<String> matrixUserIds = const [],
+      int maxImages = 9,
+      Future<void> Function(String key, String url)? prefetch,
+      bool Function()? shouldContinue}) async {
+    if (_disposed || !context.mounted || maxImages <= 0 ||
+        shouldContinue?.call() == false) {
+      return;
+    }
+    final images = <(String, String)>[];
+    final seen = <String>{};
+    void add(String key, String? url) {
+      if (url == null || images.length >= maxImages || !seen.add(key)) return;
+      images.add((key, url));
+    }
+    if (profile?.avatarUrl case final url?) {
+      add(resolveIdentity(username: profile!.username).cacheKey, url);
+    }
+    for (final matrixUserId in matrixUserIds.take(maxImages)) {
+      if (_disposed || !context.mounted || images.length >= maxImages) break;
+      final contact = contactsByMatrixId[matrixUserId];
+      if (contact != null) {
+        add(resolveIdentity(userId: contact.userId).cacheKey, contact.avatarUrl);
+      }
+    }
     for (final image in images) {
+      if (_disposed || !context.mounted || shouldContinue?.call() == false) {
+        return;
+      }
       try {
-        await precacheImage(
-          AvatarCache.imageProvider(
-            userId: image.$1,
-            avatarUrl: image.$2,
-            size: size,
-          ),
-          context,
-          onError: (_, __) {},
-        );
+        final override = prefetch;
+        if (override != null) {
+          await override(image.$1, image.$2);
+        } else {
+          await precacheImage(
+            AvatarCache.imageProvider(
+              userId: image.$1,
+              avatarUrl: image.$2,
+              size: size,
+            ),
+            context,
+            onError: (_, __) {},
+          );
+        }
       } catch (_) {
         // A subsequent network attempt and the retained image cache handle it.
       }
