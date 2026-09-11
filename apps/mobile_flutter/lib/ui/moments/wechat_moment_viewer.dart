@@ -4,8 +4,10 @@ import 'package:flutter/cupertino.dart';
 
 import '../components/wechat_scaffold.dart';
 import 'moment_media_cache.dart';
+import 'moment_image_prefetcher.dart';
+import 'moment_viewer_source.dart';
 
-final class WeChatMomentViewer extends StatelessWidget {
+final class WeChatMomentViewer extends StatefulWidget {
   const WeChatMomentViewer(
       {super.key,
       required this.urls,
@@ -18,32 +20,136 @@ final class WeChatMomentViewer extends StatelessWidget {
   final String? mediaAccountKey, mediaOrigin;
   final int initialIndex;
   @override
+  State<WeChatMomentViewer> createState() => _WeChatMomentViewerState();
+}
+
+final class _WeChatMomentViewerState extends State<WeChatMomentViewer> {
+  late PageController _controller = PageController(
+      initialPage: _clamp(widget.initialIndex, widget.urls.length));
+  late final MomentImagePrefetcher _prefetcher =
+      MomentImagePrefetcher(_providerAt);
+  late int _index = _clamp(widget.initialIndex, widget.urls.length);
+
+  static int _clamp(int value, int length) =>
+      length == 0 ? 0 : value.clamp(0, length - 1);
+
+  ImageProvider _providerAt(int index) =>
+      MomentMediaCache.imageProvider(widget.urls[index],
+          accountKey: widget.mediaAccountKey,
+          trustedOrigin: widget.mediaOrigin,
+          cacheKey: index < widget.imageCacheKeys.length
+              ? widget.imageCacheKeys[index]
+              : null);
+
+  void _prefetchCurrentWindow() => _prefetcher.update(
+      currentIndex: _index,
+      itemCount: widget.urls.length,
+      identityAt: (index) => MomentViewerSource.identityAt(
+          urls: widget.urls,
+          cacheKeys: widget.imageCacheKeys,
+          index: index,
+          accountKey: widget.mediaAccountKey ?? '',
+          trustedOrigin: widget.mediaOrigin));
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _prefetchCurrentWindow();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant WeChatMomentViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentIndex = _controller.hasClients
+        ? _controller.page?.round() ??
+            _clamp(widget.initialIndex, oldWidget.urls.length)
+        : _clamp(widget.initialIndex, oldWidget.urls.length);
+    final matched = MomentViewerSource.matchingIndex(
+      oldUrls: oldWidget.urls,
+      oldCacheKeys: oldWidget.imageCacheKeys,
+      newUrls: widget.urls,
+      newCacheKeys: widget.imageCacheKeys,
+      currentIndex: currentIndex,
+      oldAccountKey: oldWidget.mediaAccountKey ?? '',
+      newAccountKey: widget.mediaAccountKey ?? '',
+      oldOrigin: oldWidget.mediaOrigin,
+      newOrigin: widget.mediaOrigin,
+    );
+    final target = matched >= 0
+        ? matched
+        : _clamp(widget.initialIndex, widget.urls.length);
+    if (!MomentViewerSource.same(
+      oldUrls: oldWidget.urls,
+      oldCacheKeys: oldWidget.imageCacheKeys,
+      newUrls: widget.urls,
+      newCacheKeys: widget.imageCacheKeys,
+      oldAccountKey: oldWidget.mediaAccountKey ?? '',
+      newAccountKey: widget.mediaAccountKey ?? '',
+      oldOrigin: oldWidget.mediaOrigin,
+      newOrigin: widget.mediaOrigin,
+    )) {
+      _controller.dispose();
+      _controller = PageController(initialPage: target);
+      _index = target;
+      _prefetcher.dispose();
+    }
+    _prefetchCurrentWindow();
+  }
+
+  @override
+  void dispose() {
+    _prefetcher.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
         navigationBar: const CupertinoNavigationBar(),
-        child: PageView.builder(
-            key: const Key('moment-image-viewer'),
-            controller: PageController(initialPage: initialIndex),
-            itemCount: urls.length,
-            itemBuilder: (_, index) => InteractiveViewer(
-                child: Center(
-                    child: Image(
-                        key: ValueKey(MomentMediaCache.imageIdentity(
-                            urls[index],
-                            accountKey: mediaAccountKey,
-                            trustedOrigin: mediaOrigin,
-                            cacheKey: index < imageCacheKeys.length
-                                ? imageCacheKeys[index]
-                                : null)),
-                        gaplessPlayback: true,
-                        image: MomentMediaCache.imageProvider(urls[index],
-                            accountKey: mediaAccountKey,
-                            trustedOrigin: mediaOrigin,
-                            cacheKey: index < imageCacheKeys.length
-                                ? imageCacheKeys[index]
-                                : null),
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) =>
-                            const Icon(CupertinoIcons.photo, size: 48))))),
+        child: widget.urls.isEmpty
+            ? const Center(
+                child: Icon(CupertinoIcons.photo,
+                    key: Key('moment-image-viewer-empty'), size: 48))
+            : KeyedSubtree(
+                key: ValueKey((
+                  'moment-image-viewer-account',
+                  widget.mediaAccountKey,
+                  widget.mediaOrigin
+                )),
+                child: PageView.builder(
+                    key: const Key('moment-image-viewer'),
+                    controller: _controller,
+                    itemCount: widget.urls.length,
+                    onPageChanged: (value) {
+                      _index = value;
+                      _prefetchCurrentWindow();
+                    },
+                    itemBuilder: (_, index) => InteractiveViewer(
+                        child: Center(
+                            child: Image(
+                                key: ValueKey(MomentMediaCache.imageIdentity(
+                                    widget.urls[index],
+                                    accountKey: widget.mediaAccountKey,
+                                    trustedOrigin: widget.mediaOrigin,
+                                    cacheKey: index < widget.imageCacheKeys.length
+                                        ? widget.imageCacheKeys[index]
+                                        : null)),
+                                gaplessPlayback: true,
+                                image: MomentMediaCache.imageProvider(
+                                    widget.urls[index],
+                                    accountKey: widget.mediaAccountKey,
+                                    trustedOrigin: widget.mediaOrigin,
+                                    cacheKey:
+                                        index < widget.imageCacheKeys.length
+                                            ? widget.imageCacheKeys[index]
+                                            : null),
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    CupertinoIcons.photo,
+                                    size: 48))))),
+              ),
       );
 }
 
