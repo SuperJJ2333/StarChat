@@ -37,6 +37,8 @@ final class _InviteCodePageState extends State<InviteCodePage> {
     if (widget.controller.state.status == InviteCodeStatus.idle) {
       widget.controller.load();
     }
+    // 邀请历史（规格 #4）：与邀请码同页加载，独立失败可重试。
+    widget.controller.loadHistory();
   }
 
   @override
@@ -213,6 +215,8 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _historySection(context, state, dark),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               child: Text(
@@ -319,6 +323,93 @@ final class _InviteCodePageState extends State<InviteCodePage> {
     );
   }
 
+  String _historyTime(DateTime value) {
+    final local = value.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  /// 邀请历史（规格 #4）：倒序列表 + 空/加载/失败/加载更多状态。
+  Widget _historySection(
+      BuildContext context, InviteCodeState state, bool dark) {
+    final sectionColor = dark
+        ? WeChatColors.darkPageBackground
+        : WeChatColors.lightPageBackground;
+    return CupertinoListSection.insetGrouped(
+      key: const Key('invite-history-section'),
+      backgroundColor: sectionColor,
+      header: const Text('邀请历史'),
+      children: switch (state.historyStatus) {
+        // idle：无历史网关（如个人信息页复用控制器）时不渲染动画，
+        // 避免常驻加载圈；真实页面有网关，立即进入 loading。
+        InviteHistoryStatus.idle => const [
+            _HistoryPlaceholder(key: Key('invite-history-idle')),
+          ],
+        InviteHistoryStatus.loading => const [
+            _HistoryPlaceholder(
+                key: Key('invite-history-loading'),
+                child: CupertinoActivityIndicator()),
+          ],
+        InviteHistoryStatus.failed => [
+            _HistoryPlaceholder(
+              key: const Key('invite-history-error'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('邀请历史加载失败',
+                      style: TextStyle(
+                          fontSize: 13, color: WeChatColors.textSecondary)),
+                  CupertinoButton(
+                    key: const Key('invite-history-retry'),
+                    onPressed: () => widget.controller.loadHistory(refresh: true),
+                    child: const Text('重试',
+                        style: TextStyle(color: WeChatColors.brandPrimary)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        InviteHistoryStatus.ready => state.history.isEmpty
+            ? const [
+                _HistoryPlaceholder(
+                    key: Key('invite-history-empty'),
+                    child: Text('暂无邀请记录',
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: WeChatColors.textSecondary))),
+              ]
+            : [
+                for (final item in state.history)
+                  CupertinoListTile(
+                    key: Key('invite-history-${item.username}'),
+                    title: Text(item.displayNickname,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    additionalInfo: Text(
+                      '畅聊号：${item.username}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 12, color: WeChatColors.textSecondary),
+                    ),
+                    subtitle: Text(_historyTime(item.boundAt),
+                        style: const TextStyle(
+                            fontSize: 12, color: WeChatColors.textSecondary)),
+                  ),
+                if (state.historyNextOffset != null)
+                  CupertinoButton(
+                    key: const Key('invite-history-load-more'),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    onPressed: widget.controller.loadMoreHistory,
+                    child: const Text('加载更多',
+                        style: TextStyle(
+                            fontSize: 13, color: WeChatColors.brandPrimary)),
+                  ),
+              ],
+      },
+    );
+  }
+
   Widget _actionTile({
     required Key key,
     required IconData icon,
@@ -350,4 +441,18 @@ final class _InviteCodePageState extends State<InviteCodePage> {
       ),
     );
   }
+}
+
+/// 历史区占位（加载/空/失败态共用容器：同列表组的内边距与高度）。
+final class _HistoryPlaceholder extends StatelessWidget {
+  const _HistoryPlaceholder({super.key, this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 64,
+        alignment: Alignment.center,
+        child: child,
+      );
 }

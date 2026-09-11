@@ -2023,6 +2023,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
                       enableBackgroundFilterBlur: false,
                       middle: Text('钱包')),
                   child: WalletPage(api: widget.api)))),
+      inviteGateway: widget.api,
       onInvite: () => Navigator.push(
           context,
           CupertinoPageRoute(

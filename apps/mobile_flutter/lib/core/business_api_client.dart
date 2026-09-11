@@ -51,7 +51,8 @@ final class BusinessApiClient
         AddFriendGateway,
         ComplaintGateway,
         RedPacketViewGateway,
-        PersonalInvitationGateway {
+        PersonalInvitationGateway,
+        InviteHistoryGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
@@ -292,6 +293,21 @@ final class BusinessApiClient
       maxUses: (body['max_uses'] as num?)?.toInt() ?? 0,
       useCount: (body['use_count'] as num?)?.toInt() ?? 0,
       shareUrl: body['share_url'] as String,
+    );
+  }
+
+  @override
+  Future<InviteHistoryPage> fetchInviteHistory(
+      {int limit = 20, int offset = 0}) async {
+    final body = await getJson(
+        '/invitations/history?limit=$limit&offset=$offset');
+    final next = (body['next_offset'] as num?)?.toInt();
+    return InviteHistoryPage(
+      items: (body['items'] as List? ?? const [])
+          .map((value) =>
+              InviteHistoryItem.fromJson((value as Map).cast<String, dynamic>()))
+          .toList(growable: false),
+      nextOffset: next,
     );
   }
 

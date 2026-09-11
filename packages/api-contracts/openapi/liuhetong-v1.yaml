@@ -15912,6 +15912,92 @@
         ]
       }
     },
+    "/api/v1/invitations/history": {
+      "get": {
+        "description": "当前用户邀请码被使用的记录（邀请历史，按使用时间倒序）。
+
+数据源：个人邀请码消耗时写入的邀请关系绑定。offset 分页：返回
+`next_offset` 为 null 表示已到末页。每条记录含使用时间（ISO）、被邀请
+用户昵称与畅聊号（公开资料）。",
+        "operationId": "get_my_invitation_history_api_v1_invitations_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get My Invitation History Api V1 Invitations History Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Get My Invitation History",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/v1/invitations/mine": {
       "get": {
         "description": "当前用户的固定个人注册邀请码（统一邀请码体系，规格 §6.2）。\n\n首次读取派生并落库；此后仅滚动续期。该码与注册页唯一「邀请码」\n字段同一体系，经 /invitations/validate 校验、注册时消耗并据此\n推导邀请关系。30 分钟轮换推荐码端点仅为旧客户端兼容保留。",

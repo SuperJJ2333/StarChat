@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
@@ -7,6 +8,7 @@ import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
+import 'invite_controller.dart';
 import 'profile_avatar_page.dart';
 
 final class ProfileExperiencePage extends StatefulWidget {
@@ -19,6 +21,7 @@ final class ProfileExperiencePage extends StatefulWidget {
     required this.onInvite,
     required this.onSettings,
     this.onQrCode,
+    this.inviteGateway,
   });
 
   final ProfileController controller;
@@ -28,6 +31,10 @@ final class ProfileExperiencePage extends StatefulWidget {
 
   /// 邀请码入口：好友注册填写邀请码，建立邀请关系。
   final VoidCallback onInvite;
+
+  /// 邀请码数据源（转发给个人信息页“一键复制/剩余次数/全称”区域）；
+  /// 缺省时该区域整体隐藏（保持旧页面行为）。
+  final PersonalInvitationGateway? inviteGateway;
 
   /// “我的二维码”入口（身份卡右上角）；缺省时隐藏角标。
   final VoidCallback? onQrCode;
@@ -61,6 +68,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
           builder: (_) => ProfileDetailsPage(
             controller: widget.controller,
             onInvite: widget.onInvite,
+            inviteGateway: widget.inviteGateway,
           ),
         ),
       );
@@ -299,16 +307,22 @@ final class ProfileDetailsPage extends StatefulWidget {
     super.key,
     required this.controller,
     this.onInvite,
+    this.inviteGateway,
   });
 
   final ProfileController controller;
   final VoidCallback? onInvite;
+
+  /// 邀请码数据源（个人信息页邀请码区域：全称/剩余次数/一键复制）。
+  final PersonalInvitationGateway? inviteGateway;
 
   @override
   State<ProfileDetailsPage> createState() => _ProfileDetailsPageState();
 }
 
 final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
+  InviteCodeController? _inviteController;
+
   late final nickname = TextEditingController(
     text: widget.controller.state.profile?.nickname ?? '',
   );
@@ -322,11 +336,20 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
     widget.controller.addListener(_change);
     nickname.addListener(_change);
     signature.addListener(_change);
+    final gateway = widget.inviteGateway;
+    if (gateway != null) {
+      final controller = InviteCodeController(gateway: gateway);
+      _inviteController = controller;
+      controller.addListener(_change);
+      controller.load();
+    }
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_change);
+    _inviteController?.removeListener(_change);
+    _inviteController?.dispose();
     nickname.dispose();
     signature.dispose();
     super.dispose();
@@ -414,6 +437,12 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                 label: '邀请码',
                 onTap: widget.onInvite!,
               ),
+              if (_inviteController != null) ...[
+                const SizedBox(height: 12),
+                _InviteSummarySection(
+                    key: const Key('profile-invite-summary'),
+                    controller: _inviteController!),
+              ],
               const SizedBox(height: 12),
             ],
             CupertinoTextField(
@@ -518,4 +547,178 @@ final class _ProfileNudgePageState extends State<_ProfileNudgePage> {
       ),
     );
   }
+}
+
+/// 个人信息页邀请码区域（规格 #3）：邀请码全称 + 剩余可用次数 +
+/// 一键复制。样式与“邀请码入口”行一致（同高度/圆角/背景/内边距），
+/// 适配暗黑模式；数据来自 /invitations/mine，含加载/失败/重试状态。
+final class _InviteSummarySection extends StatefulWidget {
+  const _InviteSummarySection({super.key, required this.controller});
+
+  final InviteCodeController controller;
+
+  @override
+  State<_InviteSummarySection> createState() => _InviteSummarySectionState();
+}
+
+final class _InviteSummarySectionState extends State<_InviteSummarySection> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _copyCode(String code) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: code));
+      widget.controller.showMessage('邀请码已复制');
+    } catch (_) {
+      widget.controller.showMessage('复制失败，请重试');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
+    final state = widget.controller.state;
+    final invite = state.invite;
+    final background =
+        dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
+    final foreground =
+        dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
+    return Container(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...switch (state.status) {
+            InviteCodeStatus.idle || InviteCodeStatus.loading => [
+                const SizedBox(
+                    height: 57,
+                    child: Center(child: CupertinoActivityIndicator())),
+              ],
+            InviteCodeStatus.failed => [
+                SizedBox(
+                  height: 57,
+                  child: Center(
+                    child: CupertinoButton(
+                      key: const Key('profile-invite-summary-retry'),
+                      onPressed: widget.controller.load,
+                      child: const Text('邀请码加载失败，点击重试',
+                          style: TextStyle(
+                              fontSize: 14,
+                              color: WeChatColors.textSecondary)),
+                    ),
+                  ),
+                ),
+              ],
+            InviteCodeStatus.ready => _rows(invite!, foreground),
+          },
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _rows(PersonalInvitation invite, Color foreground) => [
+        _summaryRow(
+          key: const Key('profile-invite-code-full'),
+          leading: const Icon(CupertinoIcons.ticket,
+              size: 21, color: WeChatColors.brandPrimary),
+          label: '邀请码全称',
+          trailing: Text(
+            invite.code,
+            key: const Key('profile-invite-code-full-value'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: 15, letterSpacing: 1.5, color: foreground),
+          ),
+        ),
+        _divider(),
+        _summaryRow(
+          key: const Key('profile-invite-remaining'),
+          leading: const Icon(CupertinoIcons.person_2,
+              size: 21, color: WeChatColors.brandPrimary),
+          label: '剩余可用次数',
+          trailing: Text(
+            '${invite.remainingUses}',
+            key: const Key('profile-invite-remaining-count'),
+            style: TextStyle(fontSize: 15, color: foreground),
+          ),
+        ),
+        _divider(),
+        CupertinoButton(
+          key: const Key('profile-invite-one-click-copy'),
+          padding: EdgeInsets.zero,
+          onPressed: () => _copyCode(invite.code),
+          child: Container(
+            height: 57,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: 40,
+                  child: Icon(CupertinoIcons.doc_on_doc,
+                      size: 21, color: WeChatColors.brandPrimary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('一键复制',
+                      style: TextStyle(fontSize: 16, color: foreground)),
+                ),
+                const Icon(CupertinoIcons.chevron_right,
+                    size: 12, color: WeChatColors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+      ];
+
+  Widget _summaryRow({
+    required Key key,
+    required Widget leading,
+    required String label,
+    required Widget trailing,
+  }) =>
+      Container(
+        key: key,
+        height: 57,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            SizedBox(width: 40, child: leading),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label,
+                  style: DefaultTextStyle.of(context)
+                      .style
+                      .copyWith(fontSize: 16)),
+            ),
+            const SizedBox(width: 8),
+            trailing,
+          ],
+        ),
+      );
+
+  Widget _divider() => Container(
+        margin: const EdgeInsets.only(left: 68),
+        height: .5,
+        color: CupertinoTheme.of(context).brightness == Brightness.dark
+            ? WeChatColors.darkDivider
+            : WeChatColors.divider,
+      );
 }

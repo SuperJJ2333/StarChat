@@ -2,12 +2,13 @@ from datetime import datetime,timezone
 from hashlib import sha256
 import json
 from uuid import uuid4
-from sqlalchemy import delete,or_,select
+from sqlalchemy import delete,func,or_,select
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
 from app.modules.audit.models import AuditEvent
 from app.modules.friendship.models import ContactProfile,ContactTag,DirectConversation,FriendRequest,Friendship,UserBlock
+from app.modules.identity.models import Device
 from app.modules.friendship.direct_room_coordinator import lock_pair
 
 class FriendshipService:
@@ -73,11 +74,15 @@ class FriendshipService:
     def list(self,actor):
         with self.factory() as s:
             rows=s.scalars(select(Friendship).where(or_(Friendship.user_low_id==actor,Friendship.user_high_id==actor)).order_by(Friendship.created_at,Friendship.id)).all();ids=[r.user_high_id if r.user_low_id==actor else r.user_low_id for r in rows];contact_rows=s.scalars(select(ContactProfile).where(ContactProfile.owner_id==actor,ContactProfile.contact_id.in_(ids))).all() if ids else [];contacts={row.contact_id:row for row in contact_rows}
+            # 好友最近一次使用 App 的时间（未撤销设备的 last_seen_at 最大值），
+            # 供好友资料页在线状态栏动态展示；无记录时为 None。
+            seen=(select(Device.user_id,func.max(Device.last_seen_at).label('last_seen')).where(Device.revoked_at.is_(None),Device.user_id.in_(ids)).group_by(Device.user_id) if ids else None)
+            last_seen={row[0]:row[1] for row in s.execute(seen).all()} if seen is not None else {}
         profiles=self.profile_reader.read_public_profiles(ids);items=[]
         for user_id in ids:
             profile=profiles.get(user_id)
             if profile is None:continue
-            contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'nudge_suffix':profile.nudge_suffix,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else []})
+            contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'nudge_suffix':profile.nudge_suffix,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else [],'last_seen_at':last_seen.get(user_id).isoformat() if last_seen.get(user_id) else None})
         return items
     def requests(self,actor):
         with self.factory() as s:

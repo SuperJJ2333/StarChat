@@ -239,6 +239,59 @@ def create_identity_router(
         )
         return {"valid": reason == "OK", "reason": reason}
 
+    @router.get("/invitations/history")
+    async def get_my_invitation_history(
+        request: Request,
+        claims: Annotated[dict, Depends(current_claims)],
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict:
+        """当前用户邀请码被使用的记录（邀请历史，按使用时间倒序）。
+
+        数据源：个人邀请码消耗时写入的 ReferralBinding（管理员签发码
+        不建立关系，因此不出现）。offset 分页（与既有列表一致）：
+        返回 `next_offset` 为 null 表示已到末页。每条记录含使用时间
+        （ISO）、被邀请用户昵称与畅聊号（公开资料）。
+        """
+        user_id = claims["sub"]
+        page_size = min(max(limit, 1), 50)
+        page_offset = max(offset, 0)
+        rate_limiter.hit(
+            f"invitation:history:{user_id}", limit=60, window_seconds=60
+        )
+
+        def _run() -> dict:
+            from app.modules.identity.models import ReferralBinding
+
+            statement = (
+                select(ReferralBinding, User)
+                .join(User, User.id == ReferralBinding.invited_user_id)
+                .where(ReferralBinding.inviter_user_id == user_id)
+                .order_by(
+                    ReferralBinding.bound_at.desc(),
+                    ReferralBinding.id.desc(),
+                )
+                .offset(page_offset)
+                .limit(page_size + 1)
+            )
+            with session_factory() as session:
+                rows = session.execute(statement).all()
+            has_more = len(rows) > page_size
+            rows = rows[:page_size]
+            return {
+                "items": [
+                    {
+                        "bound_at": binding.bound_at.isoformat(),
+                        "nickname": user.nickname,
+                        "username": user.username,
+                    }
+                    for binding, user in rows
+                ],
+                "next_offset": page_offset + page_size if has_more else None,
+            }
+
+        return await anyio.to_thread.run_sync(_run)
+
     @router.get("/invitations/mine")
     async def get_my_invitation(
         request: Request,

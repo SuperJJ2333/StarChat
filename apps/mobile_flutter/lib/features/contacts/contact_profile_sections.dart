@@ -23,7 +23,7 @@ final class FriendIdentityCard extends StatelessWidget {
         remark: contact.remark,
         avatarUrl: contact.avatarUrl,
         identityCache: identityCache,
-        statusLabel: '刚刚在线',
+        statusLabel: formatLastSeenLabel(contact.lastSeenAt),
       );
 }
 
@@ -94,6 +94,20 @@ final class ProfileIdentityCard extends StatelessWidget {
                     height: 30 / 22,
                   ),
                 ),
+                if (remark != null && remark!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '昵称：${remark!.trim()}',
+                    key: const Key('profile-remark-row'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: WeChatColors.textSecondary,
+                      fontSize: WeChatTypography.subhead,
+                      height: 20 / 14,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 Text(
                   '畅聊号：$username',

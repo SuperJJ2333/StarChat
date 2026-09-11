@@ -402,11 +402,19 @@ void main() {
     expect(find.byIcon(CupertinoIcons.phone), findsOneWidget);
     expect(find.byIcon(CupertinoIcons.video_camera), findsOneWidget);
 
+    // 备注昵称行（规格 #1）：仅设置备注时出现，位于畅聊号上方；
+    // 在线状态（规格 #2）：无 last_seen 数据时为“暂无在线记录”。
+    expect(find.text('昵称：产品小艾'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('昵称：产品小艾')).dy,
+      lessThan(tester.getTopLeft(find.text('畅聊号：alice')).dy),
+    );
     expect(
       tester.getSize(find.byKey(const Key('friend-identity-card'))).height,
-      126,
+      greaterThanOrEqualTo(126),
     );
-    expect(find.text('刚刚在线'), findsOneWidget);
+    expect(find.text('暂无在线记录'), findsOneWidget);
+    expect(find.text('刚刚在线'), findsNothing);
     final actionTops = ['message', 'voice', 'video']
         .map(
           (action) =>
