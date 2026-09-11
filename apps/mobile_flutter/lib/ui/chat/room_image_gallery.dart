@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import '../../features/matrix/media_consumer_scope.dart';
 import '../../features/matrix/media_load_scheduler.dart';
 import 'encrypted_media_view.dart';
+import 'media_visibility.dart';
 
 class RoomGalleryImage {
   const RoomGalleryImage({
@@ -55,11 +57,130 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
   final _historyIds = <String>{};
   int _epoch = 0;
   int _anchorRevision = 0;
+  int _gestureRevision = 0;
   bool _loading = false,
       _exhausted = false,
       _zoomed = false,
       _anchoring = false;
+  bool _visible = false;
   String? _error;
+  Object? _gestureOwner;
+  Offset? _gestureStart;
+  Drag? _pageDrag;
+
+  Object _viewerOwner(RoomGalleryImage image) =>
+      (widget.sourceScope, image.id, image.sourceIdentity);
+
+  bool _canStartPageDrag(Object owner) =>
+      _visible &&
+      !_zoomed &&
+      !_anchoring &&
+      _pages.hasClients &&
+      _images.isNotEmpty &&
+      owner == _viewerOwner(_images[_index]);
+
+  void _clearPageDrag([Object? owner]) {
+    if (owner != null && _gestureOwner != owner) return;
+    _pageDrag = null;
+    _gestureOwner = null;
+    _gestureStart = null;
+    _gestureRevision++;
+  }
+
+  void _cancelPageDrag([Object? owner]) {
+    if (owner != null && _gestureOwner != owner) return;
+    final drag = _pageDrag;
+    _clearPageDrag(owner);
+    drag?.cancel();
+  }
+
+  void _interactionStart(Object owner, ScaleStartDetails details) {
+    _cancelPageDrag();
+    if (details.pointerCount != 1 || !_canStartPageDrag(owner)) return;
+    _gestureOwner = owner;
+    _gestureStart = details.focalPoint;
+  }
+
+  void _interactionUpdate(Object owner, ScaleUpdateDetails details) {
+    if (_gestureOwner != owner) return;
+    if (details.pointerCount != 1 ||
+        (details.scale - 1).abs() > .001 ||
+        _zoomed ||
+        !_visible) {
+      _cancelPageDrag(owner);
+      return;
+    }
+    final start = _gestureStart;
+    if (start == null) return;
+    var drag = _pageDrag;
+    if (drag == null) {
+      final traveled = details.focalPoint - start;
+      if (traveled.dx.abs() < kTouchSlop ||
+          traveled.dx.abs() <= traveled.dy.abs() ||
+          !_canStartPageDrag(owner)) {
+        return;
+      }
+      final revision = _gestureRevision;
+      drag = _pages.position.drag(
+          DragStartDetails(
+              globalPosition: details.focalPoint,
+              localPosition: details.localFocalPoint), () {
+        if (_gestureOwner == owner && _gestureRevision == revision) {
+          _clearPageDrag(owner);
+        }
+      });
+      _pageDrag = drag;
+    }
+    final delta = Offset(details.focalPointDelta.dx, 0);
+    drag.update(DragUpdateDetails(
+        globalPosition: details.focalPoint,
+        localPosition: details.localFocalPoint,
+        delta: delta,
+        primaryDelta: delta.dx));
+  }
+
+  void _interactionEnd(Object owner, ScaleEndDetails details) {
+    if (_gestureOwner != owner) return;
+    final drag = _pageDrag;
+    _clearPageDrag(owner);
+    final velocityX = details.velocity.pixelsPerSecond.dx;
+    drag?.end(DragEndDetails(
+        velocity: Velocity(pixelsPerSecond: Offset(velocityX, 0)),
+        primaryVelocity: velocityX));
+  }
+
+  void _pointerUp(Object owner) {
+    final revision = _gestureRevision;
+    scheduleMicrotask(() {
+      if (mounted && _gestureOwner == owner && _gestureRevision == revision) {
+        _cancelPageDrag(owner);
+      }
+    });
+  }
+
+  void _visibilityChanged(bool visible) {
+    if (!mounted || _visible == visible) return;
+    _visible = visible;
+    if (visible) {
+      _warmPreviewWindow();
+      if (_index == 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _earlier());
+      }
+    } else {
+      _cancelPageDrag();
+      _cancelPendingPreviews();
+    }
+    setState(() {});
+  }
+
+  void _cancelPendingPreviews() {
+    for (final entry in _previews.entries.toList()) {
+      if (entry.value.settled) continue;
+      _previews.remove(entry.key);
+      entry.value.scope.cancel();
+    }
+  }
+
   void _trimPreviews() {
     final keep = <String>{
       for (var i = _index - 1; i <= _index + 1; i++)
@@ -82,14 +203,20 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
     }
     final scope = MediaConsumerScope(priority: priority);
     final future = scope.run(image.loadPreview);
-    _previews[image.id] = _GalleryPreview(scope, future, image.sourceIdentity);
-    // initState starts the current image before FutureBuilder subscribes; a
-    // side handler also keeps unseen neighbor failures from becoming uncaught.
+    final preview = _GalleryPreview(scope, future, image.sourceIdentity);
+    _previews[image.id] = preview;
+    future.then<void>((_) {
+      if (identical(_previews[image.id], preview)) preview.settled = true;
+    }, onError: (_) {
+      if (identical(_previews[image.id], preview)) preview.settled = true;
+    });
+    // A side handler keeps unseen neighbor failures from becoming uncaught.
     unawaited(future.catchError((_) => Uint8List(0)));
     return future;
   }
 
   void _warmPreviewWindow() {
+    if (!_visible) return;
     for (var index = _index - 1; index <= _index + 1; index++) {
       if (index < 0 || index >= _images.length) continue;
       _previewFor(
@@ -97,15 +224,6 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
           index == _index
               ? MediaLoadPriority.interactive
               : MediaLoadPriority.prefetch);
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _warmPreviewWindow();
-    if (_index == 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _earlier());
     }
   }
 
@@ -119,6 +237,7 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
     final oldIndex = _index;
     late final List<RoomGalleryImage> updated;
     if (scopeChanged) {
+      _cancelPageDrag();
       updated = List<RoomGalleryImage>.of(widget.images);
       _historyIds.clear();
     } else {
@@ -160,7 +279,10 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
         }
       }
     }
-    if (scopeChanged || initialChanged || currentSourceChanged) _zoomed = false;
+    if (scopeChanged || initialChanged || currentSourceChanged) {
+      _cancelPageDrag();
+      _zoomed = false;
+    }
     _images = updated;
     final preferredId =
         scopeChanged || initialChanged ? widget.initialId : currentId;
@@ -169,6 +291,7 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
     final changedIndex = resolvedIndex != oldIndex;
     _index = resolvedIndex;
     if (changedIndex) {
+      _cancelPageDrag();
       _anchoring = true;
       final anchorRevision = ++_anchorRevision;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -186,6 +309,7 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
 
   @override
   void dispose() {
+    _cancelPageDrag();
     for (final preview in _previews.values) {
       preview.scope.cancel();
     }
@@ -195,7 +319,7 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
   }
 
   Future<void> _earlier() async {
-    if (_loading || _exhausted || !mounted) return;
+    if (_loading || _exhausted || !mounted || !_visible) return;
     final epoch = _epoch;
     setState(() {
       _loading = true;
@@ -217,6 +341,7 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
             : _images.indexWhere((image) => image.id == current);
         _anchoring = added.isNotEmpty;
       });
+      if (added.isNotEmpty) _cancelPageDrag();
       _trimPreviews();
       _warmPreviewWindow();
       if (added.isNotEmpty) {
@@ -237,158 +362,189 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
   }
 
   @override
-  Widget build(BuildContext context) => _images.isEmpty
-      ? CupertinoPageScaffold(
-          backgroundColor: CupertinoColors.black,
-          navigationBar: CupertinoNavigationBar(
-            backgroundColor: CupertinoColors.black,
-            leading: CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ),
-          child: Center(
-            child: _loading
-                ? const CupertinoActivityIndicator()
-                : CupertinoButton(
-                    onPressed: _error == null ? null : _earlier,
-                    child: Text(_error ?? '暂无可查看的图片'),
+  Widget build(BuildContext context) => MediaVisibility(
+      onChanged: _visibilityChanged,
+      child: SizedBox.expand(
+          child: _images.isEmpty
+              ? CupertinoPageScaffold(
+                  backgroundColor: CupertinoColors.black,
+                  navigationBar: CupertinoNavigationBar(
+                    backgroundColor: CupertinoColors.black,
+                    leading: CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('关闭'),
+                    ),
                   ),
-          ),
-        )
-      : Stack(
-          children: [
-            NotificationListener<OverscrollNotification>(
-              onNotification: (event) {
-                if (event.overscroll < 0 && _index == 0) _earlier();
-                return false;
-              },
-              child: PageView.builder(
-                controller: _pages,
-                physics: _zoomed || _anchoring
-                    ? const NeverScrollableScrollPhysics()
-                    : const BouncingScrollPhysics(),
-                itemCount: _images.length,
-                findChildIndexCallback: (key) {
-                  if (key is! ValueKey<String>) return null;
-                  final index = _images.indexWhere(
-                    (image) => image.id == key.value,
-                  );
-                  return index < 0 ? null : index;
-                },
-                onPageChanged: (index) {
-                  if (_anchoring) return;
-                  setState(() {
-                    _index = index;
-                    _zoomed = false;
-                    _trimPreviews();
-                  });
-                  _warmPreviewWindow();
-                  if (index == 0) _earlier();
-                },
-                itemBuilder: (context, index) {
-                  final image = _images[index];
-                  final preview = _previews[image.id];
-                  return KeyedSubtree(
-                    key: ValueKey(image.id),
-                    child: preview == null
-                        ? const SizedBox.expand()
-                        : FutureBuilder<Uint8List>(
-                            key: ValueKey((
-                              widget.sourceScope,
-                              image.id,
-                              image.sourceIdentity,
-                            )),
-                            future: preview.future,
-                            builder: (context, snapshot) {
-                              if (!snapshot.hasData) {
-                                return CupertinoPageScaffold(
-                                  backgroundColor: CupertinoColors.black,
-                                  navigationBar: CupertinoNavigationBar(
-                                    backgroundColor: CupertinoColors.black,
-                                    transitionBetweenRoutes: false,
-                                    leading: CupertinoButton(
-                                      padding: EdgeInsets.zero,
-                                      onPressed: () => Navigator.pop(context),
-                                      child: const Text('关闭'),
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: snapshot.hasError
-                                        ? CupertinoButton(
-                                            onPressed: () => setState(() {
-                                              _previews
-                                                  .remove(image.id)
-                                                  ?.scope
-                                                  .cancel();
-                                              _warmPreviewWindow();
-                                            }),
-                                            child: const Text('图片加载失败，点击重试'),
-                                          )
-                                        : const CupertinoActivityIndicator(),
-                                  ),
-                                );
-                              }
-                              return ImageViewerPage(
-                                key: ValueKey('viewer-${image.id}'),
-                                previewBytes: snapshot.data!,
-                                loadOriginal: image.loadOriginal,
-                                originalSizeHint: image.originalSize,
-                                onForward: image.onForward,
-                                onForwardEdited: widget.onForwardEdited,
-                                onFavorite: widget.onFavorite,
-                                onZoomChanged: (value) {
-                                  if (mounted &&
-                                      _images[_index].id == image.id &&
-                                      _zoomed != value) {
-                                    setState(() => _zoomed = value);
-                                  }
-                                },
-                              );
-                            },
+                  child: Center(
+                    child: _loading
+                        ? const CupertinoActivityIndicator()
+                        : CupertinoButton(
+                            onPressed: _error == null ? null : _earlier,
+                            child: Text(_error ?? '暂无可查看的图片'),
                           ),
-                  );
-                },
-              ),
-            ),
-            Positioned(
-              top: MediaQuery.paddingOf(context).top + 12,
-              left: 90,
-              right: 90,
-              child: IgnorePointer(
-                child: Text(
-                  '${_index + 1} / ${_images.length}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: CupertinoColors.white,
-                    fontSize: 15,
-                    decoration: TextDecoration.none,
                   ),
-                ),
-              ),
-            ),
-            if (_loading || _error != null)
-              Positioned(
-                left: 16,
-                right: 16,
-                top: MediaQuery.paddingOf(context).top + 56,
-                child: Center(
-                  child: _loading
-                      ? const CupertinoActivityIndicator()
-                      : CupertinoButton(
-                          onPressed: _earlier,
-                          child: Text(_error!),
+                )
+              : Stack(
+                  children: [
+                    Listener(
+                      onPointerUp: (_) {
+                        final owner = _gestureOwner;
+                        if (owner != null) _pointerUp(owner);
+                      },
+                      onPointerCancel: (_) => _cancelPageDrag(),
+                      child: NotificationListener<OverscrollNotification>(
+                        onNotification: (event) {
+                          if (event.overscroll < 0 && _index == 0) _earlier();
+                          return false;
+                        },
+                        child: PageView.builder(
+                          controller: _pages,
+                          physics: _zoomed || _anchoring
+                              ? const NeverScrollableScrollPhysics()
+                              : const BouncingScrollPhysics(),
+                          itemCount: _images.length,
+                          findChildIndexCallback: (key) {
+                            if (key is! ValueKey<String>) return null;
+                            final index = _images.indexWhere(
+                              (image) => image.id == key.value,
+                            );
+                            return index < 0 ? null : index;
+                          },
+                          onPageChanged: (index) {
+                            if (_anchoring) return;
+                            setState(() {
+                              _index = index;
+                              _zoomed = false;
+                              _trimPreviews();
+                            });
+                            _warmPreviewWindow();
+                            if (index == 0) _earlier();
+                          },
+                          itemBuilder: (context, index) {
+                            final image = _images[index];
+                            final preview = _previews[image.id];
+                            return KeyedSubtree(
+                              key: ValueKey(image.id),
+                              child: preview == null
+                                  ? const SizedBox.expand()
+                                  : FutureBuilder<Uint8List>(
+                                      key: ValueKey((
+                                        widget.sourceScope,
+                                        image.id,
+                                        image.sourceIdentity,
+                                      )),
+                                      future: preview.future,
+                                      builder: (context, snapshot) {
+                                        if (!snapshot.hasData) {
+                                          return CupertinoPageScaffold(
+                                            backgroundColor:
+                                                CupertinoColors.black,
+                                            navigationBar:
+                                                CupertinoNavigationBar(
+                                              backgroundColor:
+                                                  CupertinoColors.black,
+                                              transitionBetweenRoutes: false,
+                                              leading: CupertinoButton(
+                                                padding: EdgeInsets.zero,
+                                                onPressed: () =>
+                                                    Navigator.pop(context),
+                                                child: const Text('关闭'),
+                                              ),
+                                            ),
+                                            child: Center(
+                                              child: snapshot.hasError
+                                                  ? CupertinoButton(
+                                                      onPressed: () =>
+                                                          setState(() {
+                                                        _previews
+                                                            .remove(image.id)
+                                                            ?.scope
+                                                            .cancel();
+                                                        _warmPreviewWindow();
+                                                      }),
+                                                      child: const Text(
+                                                          '图片加载失败，点击重试'),
+                                                    )
+                                                  : const CupertinoActivityIndicator(),
+                                            ),
+                                          );
+                                        }
+                                        final owner = _viewerOwner(image);
+                                        return ImageViewerPage(
+                                          key: ValueKey('viewer-${image.id}'),
+                                          sourceIdentity: owner,
+                                          active: _visible && index == _index,
+                                          previewBytes: snapshot.data!,
+                                          loadOriginal: image.loadOriginal,
+                                          originalSizeHint: image.originalSize,
+                                          onForward: image.onForward,
+                                          onForwardEdited:
+                                              widget.onForwardEdited,
+                                          onFavorite: widget.onFavorite,
+                                          onInteractionStart: (details) =>
+                                              _interactionStart(owner, details),
+                                          onInteractionUpdate: (details) =>
+                                              _interactionUpdate(
+                                                  owner, details),
+                                          onInteractionEnd: (details) =>
+                                              _interactionEnd(owner, details),
+                                          onZoomChanged: (value) {
+                                            if (mounted &&
+                                                _images.isNotEmpty &&
+                                                _images[_index].id ==
+                                                    image.id &&
+                                                _zoomed != value) {
+                                              if (value) _cancelPageDrag();
+                                              setState(() => _zoomed = value);
+                                            }
+                                          },
+                                        );
+                                      },
+                                    ),
+                            );
+                          },
                         ),
-                ),
-              ),
-          ],
-        );
+                      ),
+                    ),
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top + 12,
+                      left: 90,
+                      right: 90,
+                      child: IgnorePointer(
+                        child: Text(
+                          '${_index + 1} / ${_images.length}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: CupertinoColors.white,
+                            fontSize: 15,
+                            decoration: TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_loading || _error != null)
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        top: MediaQuery.paddingOf(context).top + 56,
+                        child: Center(
+                          child: _loading
+                              ? const CupertinoActivityIndicator()
+                              : CupertinoButton(
+                                  onPressed: _earlier,
+                                  child: Text(_error!),
+                                ),
+                        ),
+                      ),
+                  ],
+                )));
 }
 
 final class _GalleryPreview {
-  const _GalleryPreview(this.scope, this.future, this.sourceIdentity);
+  _GalleryPreview(this.scope, this.future, this.sourceIdentity);
   final MediaConsumerScope scope;
   final Future<Uint8List> future;
   final Object sourceIdentity;
+  bool settled = false;
 }

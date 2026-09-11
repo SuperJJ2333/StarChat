@@ -164,6 +164,9 @@ final class ImageViewerPage extends StatefulWidget {
     this.onForwardEdited,
     this.onFavorite,
     this.onZoomChanged,
+    this.onInteractionStart,
+    this.onInteractionUpdate,
+    this.onInteractionEnd,
     this.sourceIdentity,
     this.active = true,
   });
@@ -186,6 +189,9 @@ final class ImageViewerPage extends StatefulWidget {
   final Future<bool> Function(Uint8List)? onForwardEdited;
   final Future<void> Function(Uint8List)? onFavorite;
   final ValueChanged<bool>? onZoomChanged;
+  final GestureScaleStartCallback? onInteractionStart;
+  final GestureScaleUpdateCallback? onInteractionUpdate;
+  final GestureScaleEndCallback? onInteractionEnd;
   final Object? sourceIdentity;
   final bool active;
 
@@ -525,6 +531,9 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
                     onDoubleTap: _toggleZoom,
                     child: InteractiveViewer(
                       transformationController: _transform,
+                      onInteractionStart: widget.onInteractionStart,
+                      onInteractionUpdate: widget.onInteractionUpdate,
+                      onInteractionEnd: widget.onInteractionEnd,
                       panEnabled: _zoomed,
                       maxScale: 4,
                       child: BudgetedMediaImage(
