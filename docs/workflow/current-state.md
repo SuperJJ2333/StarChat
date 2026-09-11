@@ -25,4 +25,4 @@
 
 | 事项 | 状态 | 证据 |
 | --- | --- | --- |
-| 性能专项 Android/iOS | 按最新授权由 Astra 审查、明确指定 Terra 执行，本地分批实施与自动化验证进行中；禁止自动 push/部署/生产重启或迁移，真机由用户验收；历史线上读回不是当前生产事实 | [任务记录](tasks/2026-09-11-performance.md)；无新版本发布声明 |
+| 性能专项 Android/iOS | Astra 实际差异审查、显式 Terra 执行已完成本地性能批次；Flutter 2199通过/29钱包用例失败，全量分析及Android arm64源码编译通过；全量验收仍未通过，iOS原生与真机待验收；未push/部署/生产操作 | [任务记录](tasks/2026-09-11-performance.md) · [本地验收记录](../verification/2026-09-11-performance-local-acceptance.md)；无新版本安装或发布 |
