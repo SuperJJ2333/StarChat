@@ -14,7 +14,7 @@ void main() {
       'real disk timelines survive A B A reopen and repeated offline event delivery',
       () async {
     final evidence = Directory(
-        '../../docs/verification/artifacts/2026-09-10/chat-reliability-2084/accounts/disk');
+        '../../docs/verification/artifacts/2026-09-11/integrate-deploy-mi6/disk');
     await evidence.create(recursive: true);
     final root = await evidence.createTemp('histories-');
     final store = SecureSessionStore(MemorySecureKeyValueStore());
