@@ -10,6 +10,7 @@ import '../../core/gallery_save_access.dart';
 import '../../core/screen_on_lease_coordinator.dart';
 
 import '../foundation/wechat_tokens.dart';
+import 'video_playback_arbiter.dart';
 import 'video_playback_lease_coordinator.dart';
 
 /// 视频消息媒体卡（微信式，无气泡）：封面海报帧 + 播放按钮 + 时长角标。
@@ -166,6 +167,11 @@ final class VideoViewerPage extends StatefulWidget {
 
   @visibleForTesting
   static Future<void> debugWakelockSettled() => _wakelockCoordinator.settled;
+  @visibleForTesting
+  static ({bool current, bool pending, bool retry}) get debugArbiterState => (
+      current: _VideoViewerPageState._activationArbiter.debugHasCurrent,
+      pending: _VideoViewerPageState._activationArbiter.debugHasPendingBarrier,
+      retry: _VideoViewerPageState._activationArbiter.debugHasRetryPause);
 
   @override
   State<VideoViewerPage> createState() => _VideoViewerPageState();
@@ -173,8 +179,7 @@ final class VideoViewerPage extends StatefulWidget {
 
 final class _VideoViewerPageState extends State<VideoViewerPage>
     with WidgetsBindingObserver {
-  static _VideoViewerPageState? _activePage;
-  static var _activationIntent = 0;
+  static final _activationArbiter = VideoPlaybackArbiter();
   VideoPlayerController? _controller;
   VideoPlayerController? _pendingController;
   Future<bool>? _initFuture;
@@ -191,6 +196,10 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   var _appActive = true;
   var _routeCurrent = true;
   int? _lease;
+  VideoPlaybackReservation? _activationReservation;
+  Future<void>? _pauseInFlight;
+  late final Future<void> Function() _ownerPause = _pauseForLifecycle;
+  var _controllerDisposeConfirmed = false;
 
   VideoPlaybackLeaseCoordinator get _leaseCoordinator =>
       VideoViewerPage._wakelockCoordinator;
@@ -245,6 +254,8 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
 
   Future<void> _activate(
       VideoPlayerController controller, int generation) async {
+    final pendingPause = _pauseInFlight;
+    if (pendingPause != null) await pendingPause;
     if (!mounted ||
         generation != _generation ||
         !_appActive ||
@@ -252,22 +263,31 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
         _manualPaused) {
       return;
     }
-    final globalIntent = ++_activationIntent;
     final localIntent = ++_activationRevision;
-    final previous = _activePage;
-    if (previous != null && !identical(previous, this)) {
-      await previous._pauseForLifecycle();
+    final reservation = _activationArbiter.reserve(this, _ownerPause);
+    _activationReservation = reservation;
+    try {
+      await reservation.waitUntilReady();
+    } catch (_) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      rethrow;
     }
     if (!mounted ||
         generation != _generation ||
-        globalIntent != _activationIntent ||
         localIntent != _activationRevision ||
         !_appActive ||
         !_routeCurrent ||
-        _manualPaused) {
+        _manualPaused ||
+        !reservation.isCurrent) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
       return;
     }
-    _activePage = this;
     final lease = _leaseCoordinator.acquire();
     _lease = lease;
     try {
@@ -275,21 +295,28 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
     } catch (_) {
       _leaseCoordinator.revoke(lease);
       if (_lease == lease) _lease = null;
-      if (identical(_activePage, this)) _activePage = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
       _uiTicker?.cancel();
       rethrow;
     }
     if (!mounted ||
         generation != _generation ||
-        globalIntent != _activationIntent ||
         localIntent != _activationRevision ||
         !_appActive ||
         !_routeCurrent ||
         _manualPaused ||
+        !reservation.isCurrent ||
         _leaseCoordinator.current != lease) {
       await controller.pause();
       _leaseCoordinator.revoke(lease);
       if (_lease == lease) _lease = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
       return;
     }
     _startTicker();
@@ -303,12 +330,26 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
         setState(() {});
       } else {
         _uiTicker?.cancel();
-        unawaited(_pauseForLifecycle());
+        _pauseForLifecycleSafely();
       }
     });
   }
 
-  Future<void> _pauseForLifecycle() async {
+  Future<void> _pauseForLifecycle() {
+    final existing = _pauseInFlight;
+    if (existing != null) return existing;
+    final pause = _pauseForLifecycleImpl();
+    _pauseInFlight = pause;
+    return pause.whenComplete(() {
+      if (identical(_pauseInFlight, pause)) _pauseInFlight = null;
+    });
+  }
+
+  void _pauseForLifecycleSafely() {
+    unawaited(_pauseForLifecycle().catchError((_) {}));
+  }
+
+  Future<void> _pauseForLifecycleImpl() async {
     // Invalidate this page's activation without cancelling a newer page.
     _activationRevision++;
     _uiTicker?.cancel();
@@ -317,19 +358,28 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
     if (lease != null) {
       _leaseCoordinator.revoke(lease);
     }
-    if (identical(_activePage, this)) _activePage = null;
+    final reservation = _activationReservation;
+    final retryPause = _ownerPause;
     final controller = _controller ?? _pendingController;
     try {
       await controller?.pause();
+      _activationArbiter.clearFailedPause(retryPause);
     } catch (_) {
-      // A controller can be disposed by a newer retry while this pause awaits.
+      if (_controllerDisposeConfirmed) return;
+      if (!_controllerDisposeConfirmed) _activationArbiter.recordFailedPause(retryPause);
+      rethrow;
+    } finally {
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
     }
   }
 
   /// 「重试」：重新下载解密并初始化播放器。
   void _retry() {
     _generation++;
-    unawaited(_pauseForLifecycle());
+    _pauseForLifecycleSafely();
     _controller?.dispose();
     _controller = null;
     setState(() {
@@ -389,7 +439,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appActive = state == AppLifecycleState.resumed;
-    if (!_appActive) unawaited(_pauseForLifecycle());
+    if (!_appActive) _pauseForLifecycleSafely();
   }
 
   @override
@@ -399,7 +449,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
     if (_routeCurrent == current) return;
     _routeCurrent = current;
     if (!current) {
-      unawaited(_pauseForLifecycle());
+      _pauseForLifecycleSafely();
     } else if (!_manualPaused) {
       final controller = _controller;
       if (controller != null) unawaited(_resume(controller));
@@ -471,8 +521,17 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   void dispose() {
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
-    unawaited(_pauseForLifecycle());
-    _controller?.dispose();
+    _pauseForLifecycleSafely();
+    final controller = _controller;
+    if (controller != null) {
+      unawaited(controller.dispose().then((_) {
+        _controllerDisposeConfirmed = true;
+        _activationArbiter.clearFailedPause(_ownerPause);
+      }, onError: (Object error, StackTrace stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+            exception: error, stack: stackTrace, library: 'video_playback'));
+      }));
+    }
     super.dispose();
   }
 

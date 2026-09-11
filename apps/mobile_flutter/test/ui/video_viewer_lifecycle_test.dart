@@ -11,15 +11,23 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 
 final class _HeldPlayer extends VideoPlayerController {
   _HeldPlayer(
-      {this.holdPlay = false, this.throwOnPlay = false, this.failAtPlay})
+      {this.holdPlay = false,
+      this.holdPause = false,
+      this.throwOnPlay = false,
+      this.failAtPlay,
+      this.failAtPause})
       : super.file(File('unused'));
 
   final initialized = Completer<void>();
   final playStarted = Completer<void>();
   final playRelease = Completer<void>();
+  final pauseStarted = Completer<void>();
+  final pauseRelease = Completer<void>();
   bool holdPlay;
+  bool holdPause;
   final bool throwOnPlay;
   final int? failAtPlay;
+  final int? failAtPause;
   var plays = 0;
   var activePlays = 0;
   var peakActivePlays = 0;
@@ -50,6 +58,11 @@ final class _HeldPlayer extends VideoPlayerController {
   @override
   Future<void> pause() async {
     pauses++;
+    if (holdPause) {
+      if (!pauseStarted.isCompleted) pauseStarted.complete();
+      await pauseRelease.future;
+    }
+    if (failAtPause == pauses) throw StateError('pause failed');
     value = value.copyWith(isPlaying: false);
   }
 
@@ -91,6 +104,8 @@ Future<void> _flushWakelock(WidgetTester tester) async {
 Future<void> _disposeWidgets(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox());
   await _flushWakelock(tester);
+  expect(VideoViewerPage.debugArbiterState,
+      (current: false, pending: false, retry: false));
 }
 
 void main() {
@@ -164,7 +179,7 @@ void main() {
         home: VideoViewerPage(
             loadFile: () async => File('first'),
             controllerFactory: (_) => first)));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     await first.playStarted.future;
 
     unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
@@ -433,6 +448,147 @@ void main() {
     await tester.pumpAndSettle();
     expect(player.value.isPlaying, isTrue);
     expect(player.peakActivePlays, 1);
+    await _disposeWidgets(tester);
+  });
+
+  testWidgets('next route waits for a held previous native pause',
+      (tester) async {
+    final first = _HeldPlayer(holdPause: true);
+    final second = _HeldPlayer();
+    first.initialized.complete();
+    second.initialized.complete();
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(CupertinoApp(
+        navigatorKey: navigator,
+        home: VideoViewerPage(
+            loadFile: () async => File('first'), controllerFactory: (_) => first)));
+    await tester.pumpAndSettle();
+    unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
+        builder: (_) => VideoViewerPage(
+            loadFile: () async => File('second'), controllerFactory: (_) => second))));
+    await tester.pump();
+    await first.pauseStarted.future;
+    expect(second.value.isInitialized, isTrue);
+    expect(second.plays, 0);
+    first.pauseRelease.complete();
+    await tester.pumpAndSettle();
+    expect(second.value.isPlaying, isTrue);
+    await _disposeWidgets(tester);
+  });
+
+  testWidgets('returning to the same page waits for its held native pause',
+      (tester) async {
+    final player = _HeldPlayer(holdPause: true);
+    player.initialized.complete();
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(CupertinoApp(
+        navigatorKey: navigator,
+        home: VideoViewerPage(
+            loadFile: () async => File('first'), controllerFactory: (_) => player)));
+    await tester.pumpAndSettle();
+    final plays = player.plays;
+    unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
+        builder: (_) => const SizedBox())));
+    await tester.pump();
+    await player.pauseStarted.future;
+    navigator.currentState!.pop();
+    await tester.pump();
+    expect(player.plays, plays);
+    player.pauseRelease.complete();
+    await tester.pumpAndSettle();
+    expect(player.plays, greaterThan(plays));
+    await _disposeWidgets(tester);
+  });
+
+  testWidgets('next viewer retries a failed held previous native pause',
+      (tester) async {
+    final first = _HeldPlayer(holdPause: true, failAtPause: 1);
+    final second = _HeldPlayer();
+    first.initialized.complete();
+    second.initialized.complete();
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(CupertinoApp(
+        navigatorKey: navigator,
+        home: VideoViewerPage(
+            loadFile: () async => File('first'), controllerFactory: (_) => first)));
+    await tester.pumpAndSettle();
+    unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
+        builder: (_) => VideoViewerPage(
+            loadFile: () async => File('second'), controllerFactory: (_) => second))));
+    await tester.pump();
+    await first.pauseStarted.future;
+    expect(second.value.isInitialized, isTrue);
+    expect(second.plays, 0);
+    first.pauseRelease.complete();
+    await tester.pumpAndSettle();
+    expect(second.plays, 0);
+    expect(find.byKey(const Key('video-viewer-retry')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('video-viewer-retry')));
+    await tester.pumpAndSettle();
+    expect(first.pauses, 2);
+    expect(second.value.isPlaying, isTrue);
+    await _disposeWidgets(tester);
+  });
+
+  testWidgets('viewer opened after a completed prior pause failure retries it',
+      (tester) async {
+    final first = _HeldPlayer(holdPause: true, failAtPause: 1);
+    final second = _HeldPlayer();
+    first.initialized.complete();
+    second.initialized.complete();
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(CupertinoApp(
+        navigatorKey: navigator,
+        home: VideoViewerPage(
+            loadFile: () async => File('first'), controllerFactory: (_) => first)));
+    await tester.pumpAndSettle();
+    unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
+        builder: (_) => const SizedBox())));
+    await tester.pump();
+    await first.pauseStarted.future;
+    first.pauseRelease.complete();
+    await tester.pumpAndSettle();
+
+    unawaited(navigator.currentState!.push(CupertinoPageRoute<void>(
+        builder: (_) => VideoViewerPage(
+            loadFile: () async => File('second'), controllerFactory: (_) => second))));
+    await tester.pumpAndSettle();
+    expect(first.pauses, 2);
+    expect(second.value.isPlaying, isTrue);
+    await _disposeWidgets(tester);
+  });
+
+  testWidgets('disposed previous owner does not block waiting viewer after late pause error',
+      (tester) async {
+    final first = _HeldPlayer(holdPause: true, failAtPause: 1);
+    final second = _HeldPlayer();
+    first.initialized.complete();
+    second.initialized.complete();
+    Widget build(bool a, bool b) => CupertinoApp(home: Stack(children: [
+          if (a)
+            VideoViewerPage(
+                key: const ValueKey('A'),
+                loadFile: () async => File('a'),
+                controllerFactory: (_) => first),
+          if (b)
+            VideoViewerPage(
+                key: const ValueKey('B'),
+                loadFile: () async => File('b'),
+                controllerFactory: (_) => second),
+        ]));
+    await tester.pumpWidget(build(true, false));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(build(true, true));
+    await tester.pump();
+    expect(second.value.isInitialized, isTrue);
+    expect(second.plays, 0);
+    await first.pauseStarted.future;
+    await tester.pumpWidget(build(false, true));
+    await tester.pump();
+    expect(first.disposals, greaterThanOrEqualTo(1));
+    first.pauseRelease.complete();
+    await tester.pumpAndSettle();
+    expect(second.value.isPlaying, isTrue);
     await _disposeWidgets(tester);
   });
 }
