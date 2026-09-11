@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../ui/components/call_control_button.dart';
+import '../../core/screen_on_lease_coordinator.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -64,6 +64,7 @@ final class _CallPageState extends State<CallPage> {
   bool _renderersReady = false;
   bool _disposed = false;
   StreamSubscription<void>? _streamChangesSub;
+  ScreenOnLease? _screenOnLease;
 
   /// P1-3：绑定单元（读 backend 流 → 写 renderer，幂等/可注入测试）。
   late final MediaRendererBinding _localBinding = MediaRendererBinding(
@@ -81,20 +82,8 @@ final class _CallPageState extends State<CallPage> {
     if (widget.mediaBackend != null) _initializeRenderers();
     widget.controller.addListener(_changed);
     // 通话界面打开期间屏幕常亮（微信语义），退出即恢复。
-    unawaited(_setScreenOn(true));
+    _screenOnLease = screenOnLeaseCoordinator.acquire();
     _syncDurationTicker();
-  }
-
-  Future<void> _setScreenOn(bool on) async {
-    try {
-      if (on) {
-        await WakelockPlus.enable();
-      } else {
-        await WakelockPlus.disable();
-      }
-    } catch (_) {
-      // 平台不支持（如测试环境）时忽略，不影响通话。
-    }
   }
 
   Future<void> _initializeRenderers() async {
@@ -226,7 +215,8 @@ final class _CallPageState extends State<CallPage> {
     widget.controller.removeListener(_changed);
     _durationTicker?.cancel();
     _endGraceTimer?.cancel();
-    unawaited(_setScreenOn(false));
+    _screenOnLease?.release();
+    _screenOnLease = null;
     _localRenderer.dispose();
     _remoteRenderer.dispose();
     super.dispose();

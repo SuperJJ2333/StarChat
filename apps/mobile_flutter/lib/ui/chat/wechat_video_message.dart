@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
+import '../../core/screen_on_lease_coordinator.dart';
 
 import '../foundation/wechat_tokens.dart';
 import 'video_playback_lease_coordinator.dart';
@@ -160,8 +160,9 @@ final class VideoViewerPage extends StatefulWidget {
   final Future<void> Function()? onForward;
   final VideoPlayerController Function(File file)? controllerFactory;
 
-  static final _wakelockCoordinator = VideoPlaybackLeaseCoordinator(
-      (enabled) => WakelockPlus.toggle(enable: enabled));
+  static final _screenOnDemand = ScreenOnDemand(screenOnLeaseCoordinator);
+  static final _wakelockCoordinator =
+      VideoPlaybackLeaseCoordinator(_screenOnDemand.setEnabled);
 
   @visibleForTesting
   static Future<void> debugWakelockSettled() => _wakelockCoordinator.settled;
