@@ -45,6 +45,11 @@ final class MediaLoadScheduler {
   final int maxConcurrent, maxVideos;
   final _tasks = <String, _MediaTask>{};
   int _active = 0, _videos = 0, _sequence = 0;
+  int get debugActiveCount => _active;
+  int get debugQueuedCount =>
+      _tasks.values.where((task) => !task.running).length;
+  int get debugConsumerCount =>
+      _tasks.values.fold(0, (count, task) => count + task.consumers.length);
   bool _scheduled = false;
 
   MediaLoadLease request(String key, Future<Uint8List> Function() load,

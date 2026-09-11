@@ -47,8 +47,10 @@ final class MediaConsumerScope {
 
   Future<T> run<T>(Future<T> Function() action) {
     if (_closed) return Future.error(MediaLoadCanceled());
-    return runZoned(() => Future<T>.sync(action),
-        zoneValues: {_scopeZoneKey: this});
+    return withMediaLoadPriority(
+        _priority,
+        () => runZoned(() => Future<T>.sync(action),
+            zoneValues: {_scopeZoneKey: this}));
   }
 
   static MediaConsumerScope? get current =>

@@ -63,7 +63,7 @@ void main() {
     final mutable = Uint8List.fromList(bytes);
     memory.put(key('alice', 'one').cacheId, mutable);
     mutable[0] = 99;
-    expect(memory.get(key('alice', 'one').cacheId), isNull);
+    expect(memory.get(key('alice', 'one').cacheId), bytes);
   });
   test('outgoing content returns across rooms without downloading, after restart',
       () async {

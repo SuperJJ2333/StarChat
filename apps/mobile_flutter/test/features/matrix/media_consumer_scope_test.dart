@@ -142,4 +142,16 @@ void main() {
     expect(await reentrant, 5);
     expect(calls, 1);
   });
+
+  test('scope zone exposes its prefetch priority and live promotion', () async {
+    final scope = MediaConsumerScope(priority: MediaLoadPriority.prefetch);
+    final observed = <MediaLoadPriority>[];
+    scope.addPriorityListener(observed.add);
+    await scope.run(() async {
+      expect(currentMediaLoadPriority, MediaLoadPriority.prefetch);
+      scope.promote(MediaLoadPriority.interactive);
+      expect(scope.priority, MediaLoadPriority.interactive);
+    });
+    expect(observed, [MediaLoadPriority.interactive]);
+  });
 }

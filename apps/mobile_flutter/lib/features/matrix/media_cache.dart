@@ -488,6 +488,7 @@ final class MediaMemoryCache {
     late final OwnedMediaFlight<Uint8List> flight;
     flight = OwnedMediaFlight<Uint8List>(() async {
       final bytes = await load();
+      if (!flight.isActive) throw MediaLoadCanceled();
       final owned = _ownVerifiedBytes(eventId, bytes);
       if (generation == _generation && flight.isActive) _store(eventId, owned);
       return owned;
@@ -512,8 +513,7 @@ final class MediaMemoryCache {
 /// 落盘后返回字节。
 final _sharedMediaBytes = MediaMemoryCache(budget: sharedMediaMemoryBudget);
 final contentMediaMemoryCache = _sharedMediaBytes;
-final _mediaLoads = <String, Future<Uint8List>>{};
-final _mediaPriorities = <String, MediaLoadPriority>{};
+final _mediaLoads = <String, OwnedMediaFlight<Uint8List>>{};
 int _mediaGeneration = 0;
 final _decodedMediaCacheClearers = <VoidCallback>{};
 
@@ -531,7 +531,6 @@ void clearMediaMemoryCaches() {
   _sharedMediaBytes.clear();
   videoMemoryCache.clear();
   _mediaLoads.clear();
-  _mediaPriorities.clear();
   mediaLoadScheduler.cancelAll();
   for (final clear in _decodedMediaCacheClearers) {
     clear();
@@ -541,8 +540,11 @@ void clearMediaMemoryCaches() {
 Future<Uint8List> loadMediaWithCache(
     MediaCacheKey key, Future<Uint8List> Function() decrypt,
     {MediaLoadPriority? priority, bool? isVideo}) async {
+  final scope = MediaConsumerScope.current;
+  if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   final generation = _mediaGeneration;
   final root = await MediaCache._root(key.accountId);
+  if (scope != null && !scope.isActive) throw MediaLoadCanceled();
   if (generation != _mediaGeneration) {
     throw StateError('Media cache session changed');
   }
@@ -554,18 +556,18 @@ Future<Uint8List> loadMediaWithCache(
       key.contentSha256 == null ? null : _sharedMediaBytes.get(key.cacheId);
   if (warm != null) {
     await _linkMediaReference(key, warm, generation);
+    if (scope != null && !scope.isActive) throw MediaLoadCanceled();
     return warm;
   }
   final existing = _mediaLoads[identity];
-  final demand = priority ?? currentMediaLoadPriority;
-  final previousPriority = _mediaPriorities[identity];
-  if (previousPriority == null || demand.index < previousPriority.index) {
-    _mediaPriorities[identity] = demand;
+  var demand = priority ?? currentMediaLoadPriority;
+  if (scope != null && scope.priority.index < demand.index) {
+    demand = scope.priority;
   }
   final taskKey = '$generation:$identity';
-  mediaLoadScheduler.promote(taskKey, demand);
-  final flight = existing ??
-      (() async {
+  late final OwnedMediaFlight<Uint8List> flight;
+  flight = existing ??
+      OwnedMediaFlight<Uint8List>(() async {
         var disk = await MediaCache.cached(key.roomId, key.eventId,
             accountId: key.accountId, contentSha256: key.contentSha256);
         if (disk == null && key.sourceIdentity != null) {
@@ -575,13 +577,26 @@ Future<Uint8List> loadMediaWithCache(
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
         }
-        final bytes = disk == null
-            ? await mediaLoadScheduler
-                .request(taskKey, decrypt,
-                    priority: _mediaPriorities[identity] ?? demand,
-                    isVideo: isVideo ?? currentMediaLoadIsVideo)
-                .value
-            : null;
+        final child = MediaConsumerScope.current!;
+        if (!child.isActive) throw MediaLoadCanceled();
+        Uint8List? bytes;
+        if (disk == null) {
+          final lease = mediaLoadScheduler.request(taskKey, decrypt,
+              priority: child.priority,
+              isVideo: isVideo ?? currentMediaLoadIsVideo);
+          void promote(MediaLoadPriority priority) =>
+              mediaLoadScheduler.promote(taskKey, priority);
+          child.addCancelListener(lease.cancel);
+          child.addPriorityListener(promote);
+          try {
+            if (!child.isActive) throw MediaLoadCanceled();
+            bytes = await lease.value;
+          } finally {
+            child.removeCancelListener(lease.cancel);
+            child.removePriorityListener(promote);
+          }
+        }
+        if (!child.isActive) throw MediaLoadCanceled();
         if (bytes != null) verifyMediaContent(bytes, key.contentSha256);
         if (generation != _mediaGeneration) {
           throw StateError('Media cache session changed');
@@ -619,21 +634,24 @@ Future<Uint8List> loadMediaWithCache(
           verifyMediaContent(result, key.contentSha256);
           return result;
         });
-      })();
-  if (existing == null) _mediaLoads[identity] = flight;
-  try {
-    final bytes = await flight;
-    // A source flight can serve a different message: persist its reference too.
-    if (existing != null && generation == _mediaGeneration) {
-      await _linkMediaReference(key, bytes, generation);
-    }
-    return bytes;
-  } finally {
-    if (identical(_mediaLoads[identity], flight)) {
-      _mediaLoads.remove(identity);
-      _mediaPriorities.remove(identity);
-    }
+      });
+  flight.childScope.promote(demand);
+  if (existing == null) {
+    flight.onInactive = () {
+      if (identical(_mediaLoads[identity], flight)) {
+        _mediaLoads.remove(identity);
+      }
+    };
+    _mediaLoads[identity] = flight;
   }
+  final bytes = await withMediaLoadPriority(demand, () => flight.join(scope));
+  if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+  // A source flight can serve a different message: persist its reference too.
+  if (existing != null && generation == _mediaGeneration) {
+    await _linkMediaReference(key, bytes, generation);
+    if (scope != null && !scope.isActive) throw MediaLoadCanceled();
+  }
+  return bytes;
 }
 
 Future<void> _linkMediaReference(
