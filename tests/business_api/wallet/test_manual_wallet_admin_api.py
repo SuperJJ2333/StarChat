@@ -78,9 +78,12 @@ def test_actual_session_required(api,core,fault):
         else: claims['exp'] = int((datetime.now(timezone.utc)-timedelta(seconds=1)).timestamp())
         headers['Authorization'] = 'Bearer '+jwt.encode(claims,settings.jwt_secret,algorithm='HS256')
     else:
+        # 吊销必须命中请求 actor 自己的会话行；表里还有其他用户的行，
+        # 无 WHERE 的 select 首行在支付 PIN fixture 引入后不再指向 owner。
+        claims = jwt.decode(headers['Authorization'][7:],settings.jwt_secret,algorithms=['HS256'],options={'verify_aud':False})
         with core[1].begin() as s:
-            if fault == 'revoked_family': s.scalar(select(RefreshTokenFamily)).revoked_at = datetime.now(timezone.utc)
-            elif fault == 'revoked_device': s.scalar(select(Device)).revoked_at = datetime.now(timezone.utc)
+            if fault == 'revoked_family': s.get(RefreshTokenFamily,claims['family_id']).revoked_at = datetime.now(timezone.utc)
+            elif fault == 'revoked_device': s.get(Device,claims['device_id']).revoked_at = datetime.now(timezone.utc)
             else: s.get(User,'owner').status = AccountStatus.SUSPENDED
     assert client.get(URL,headers=headers).status_code == 401
 

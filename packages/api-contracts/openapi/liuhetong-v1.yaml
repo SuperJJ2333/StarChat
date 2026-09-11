@@ -3775,9 +3775,48 @@
             "title": "Binding Version",
             "type": "integer"
           },
+          "cancellation_asset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USDT",
+                  "CAIBI"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellation Asset"
+          },
           "contract": {
             "title": "Contract",
             "type": "string"
+          },
+          "conversion_fee": {
+            "anyOf": [
+              {
+                "pattern": "^\\d+\\.\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Fee"
+          },
+          "conversion_rate": {
+            "anyOf": [
+              {
+                "pattern": "^\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Rate"
           },
           "created_at": {
             "title": "Created At",
@@ -3795,6 +3834,33 @@
           "finality_policy": {
             "title": "Finality Policy",
             "type": "string"
+          },
+          "funding_amount": {
+            "anyOf": [
+              {
+                "pattern": "^\\d+\\.\\d{2,6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Amount"
+          },
+          "funding_asset": {
+            "anyOf": [
+              {
+                "enum": [
+                  "USDT",
+                  "CAIBI"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Asset"
           },
           "global_24h": {
             "title": "Global 24H",
@@ -15914,11 +15980,7 @@
     },
     "/api/v1/invitations/history": {
       "get": {
-        "description": "当前用户邀请码被使用的记录（邀请历史，按使用时间倒序）。
-
-数据源：个人邀请码消耗时写入的邀请关系绑定。offset 分页：返回
-`next_offset` 为 null 表示已到末页。每条记录含使用时间（ISO）、被邀请
-用户昵称与畅聊号（公开资料）。",
+        "description": "当前用户邀请码被使用的记录（邀请历史，按使用时间倒序）。\n\n数据源：个人邀请码消耗时写入的 ReferralBinding（管理员签发码\n不建立关系，因此不出现）。offset 分页（与既有列表一致）：\n返回 `next_offset` 为 null 表示已到末页。每条记录含使用时间\n（ISO）、被邀请用户昵称与畅聊号（公开资料）。",
         "operationId": "get_my_invitation_history_api_v1_invitations_history_get",
         "parameters": [
           {
@@ -15929,6 +15991,7 @@
               "default": 20,
               "maximum": 50,
               "minimum": 1,
+              "title": "Limit",
               "type": "integer"
             }
           },
@@ -15939,6 +16002,7 @@
             "schema": {
               "default": 0,
               "minimum": 0,
+              "title": "Offset",
               "type": "integer"
             }
           }

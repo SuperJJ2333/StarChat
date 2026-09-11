@@ -56,6 +56,13 @@ class ManualPayoutSnapshot(PayoutReadModel):
     safety_epoch: int
     created_at: str
     expires_at: str
+    # Multi-asset funding fields (2026-09 引入)；此前的历史报价快照没有这些键，
+    # 只能为 None，财务审查按 USDT 单币种口径理解。
+    funding_asset: Literal['USDT', 'CAIBI'] | None = None
+    funding_amount: str | None = Field(default=None, pattern=r'^\d+\.\d{2,6}$')
+    conversion_rate: str | None = Field(default=None, pattern=r'^\d+(\.\d+)?$')
+    conversion_fee: str | None = Field(default=None, pattern=r'^\d+\.\d{6}$')
+    cancellation_asset: Literal['USDT', 'CAIBI'] | None = None
 
 
 class ManualPayoutCandidateRead(PayoutReadModel):

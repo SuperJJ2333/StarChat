@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import anyio.to_thread
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
@@ -243,8 +243,8 @@ def create_identity_router(
     async def get_my_invitation_history(
         request: Request,
         claims: Annotated[dict, Depends(current_claims)],
-        limit: int = 20,
-        offset: int = 0,
+        limit: Annotated[int, Query(ge=1, le=50)] = 20,
+        offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict:
         """当前用户邀请码被使用的记录（邀请历史，按使用时间倒序）。
 
