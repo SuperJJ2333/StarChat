@@ -111,7 +111,8 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
   int _anchorEnd = 0;
   bool _fullSelection = true;
   _Handle _dragging = _Handle.none;
-  Offset? _magnifierAnchor;
+  Offset? _finger;
+  static const Size _magnifierSize = Size(116, 64);
   Rect _compactMenuRect = Rect.zero;
 
   late final List<int> _boundaries = _graphemeBoundaries(widget.session.text);
@@ -232,6 +233,13 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
 
   void _cancel() => widget.session.dismiss();
 
+  /// 拖动结束仍为整条选择：恢复原长按功能菜单（撤回/删除等）。
+  void _notifyDragSettled() {
+    if (_isFull) {
+      widget.session.onFullSelectionRestored();
+    }
+  }
+
   Rect _compactMenuPlacement(Rect selectionBounds) {
     final media = MediaQuery.of(context);
     final overlayBox = _overlay.context.findRenderObject() as RenderBox?;
@@ -275,6 +283,16 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
     if (showCompactMenu && _compactMenuRect == Rect.zero) {
       _compactMenuRect = _compactMenuPlacement(bounds);
     }
+    // 放大镜位置先按屏幕钳位，再以钳位后的镜片中心计算焦点，
+    // 保证任何位置都精确放大手指覆盖区域。
+    final media = MediaQuery.of(context);
+    final magnifierLeft = _finger == null
+        ? 0.0
+        : (_finger!.dx - _magnifierSize.width / 2)
+            .clamp(4.0, media.size.width - _magnifierSize.width - 4);
+    final magnifierTop = _finger == null
+        ? 0.0
+        : (_finger!.dy - _magnifierSize.height - 20).clamp(8.0, double.infinity);
     return Stack(children: [
       // 半透明遮罩：点击空白取消；纵向滚动穿透并触发取消。
       Positioned.fill(
@@ -311,10 +329,19 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
       if (showCompactMenu && _compactMenuRect != Rect.zero)
         Positioned.fromRect(
           rect: _compactMenuRect,
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: MessageBubbleMenu(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 120),
+            builder: (_, value, child) => Opacity(
+                opacity: value,
+                child: Transform.scale(
+                    scale: .96 + .04 * value, child: child)),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: MessageBubbleMenu(
                 orderOverride: const [
                   MessageAction.copy,
                   MessageAction.selectAll,
@@ -329,27 +356,34 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
                   MessageAction.reply,
                   MessageAction.forward,
                 },
-                onSelected: (action) {
-                  if (action == MessageAction.selectAll) {
-                    resetToFull();
-                    return;
-                  }
-                  final (start, end) = _normalized;
-                  final selected = widget.session.text.substring(start, end);
-                  widget.session.dismiss();
-                  widget.session.onAction(action, selected);
-                },
+                  onSelected: (action) {
+                    if (action == MessageAction.selectAll) {
+                      resetToFull();
+                      return;
+                    }
+                    final (start, end) = _normalized;
+                    final selected =
+                        widget.session.text.substring(start, end);
+                    widget.session.dismiss();
+                    widget.session.onAction(action, selected);
+                  },
+                ),
               ),
             ),
           ),
         ),
-      // 放大镜：拖动手柄时跟随手柄所在选区边缘，上移避让手指。
-      if (dragging && _magnifierAnchor != null)
+      // 放大镜：拖动手柄期间跟随手指，放大手指覆盖的文字区域
+      // （镜片悬于手指上方避让）；松手/取消立即消失（不残留）。
+      if (dragging && _finger != null)
         Positioned(
-          left: (_magnifierAnchor!.dx - 60)
-              .clamp(4.0, MediaQuery.of(context).size.width - 124),
-          top: _magnifierAnchor!.dy - 118,
-          child: const CupertinoMagnifier(),
+          left: magnifierLeft,
+          top: magnifierTop,
+          child: _SelectionMagnifier(
+            size: _magnifierSize,
+            focalPointOffset: _finger! -
+                Offset(magnifierLeft + _magnifierSize.width / 2,
+                    magnifierTop + _magnifierSize.height / 2),
+          ),
         ),
     ]);
   }
@@ -370,44 +404,45 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
   }) {
     final active = _dragging == handle;
     return Positioned(
-      left: anchor.dx - 14,
-      top: dotAtBottom ? anchor.dy - 4 : anchor.dy - anchor.height - 14,
-      width: 28,
-      height: anchor.height + 18,
+      left: anchor.dx - 22,
+      top: dotAtBottom ? anchor.dy - 18 : anchor.dy - anchor.height - 14,
+      width: 44,
+      height: anchor.height + 36,
       child: GestureDetector(
         key: key,
         behavior: HitTestBehavior.opaque,
         onPanStart: (details) {
           widget.session.onDragStart();
-          setState(() => _dragging = handle);
+          setState(() {
+            _dragging = handle;
+            _finger = details.globalPosition;
+          });
         },
         onPanUpdate: (details) {
           if (_dragging != handle) return;
           _setAnchor(handle, details.globalPosition);
-          setState(() {
-            final rects = _selectionRects();
-            if (rects.isEmpty) {
-              _magnifierAnchor = null;
-            } else {
-              final rect = handle == _Handle.start ? rects.first : rects.last;
-              _magnifierAnchor = Offset(
-                  handle == _Handle.start ? rect.left : rect.right,
-                  rect.top + rect.height / 2);
-            }
-          });
+          setState(() => _finger = details.globalPosition);
         },
-        onPanEnd: (_) => setState(() {
-          _dragging = _Handle.none;
-          _magnifierAnchor = null;
-          _compactMenuRect = Rect.zero;
-        }),
+        // 松手：放大镜立即消失；仍为整条选择时恢复原功能菜单，
+        // 局部选择时显示紧凑菜单（复制/全选/引用/转发）。
+        onPanEnd: (_) {
+          setState(() {
+            _dragging = _Handle.none;
+            _finger = null;
+            _compactMenuRect = Rect.zero;
+          });
+          _notifyDragSettled();
+        },
         onPanCancel: () => setState(() {
           _dragging = _Handle.none;
-          _magnifierAnchor = null;
+          _finger = null;
+          _compactMenuRect = Rect.zero;
         }),
+        // 命中区 44×(行高+36)，视觉元素（竖线+圆点）居中不变：
+        // 无需精确点按也能拖动手柄（微信手感）。
         child: SizedBox(
-          width: 28,
-          height: anchor.height + 18,
+          width: 44,
+          height: anchor.height + 36,
           child: Column(children: [
             if (!dotAtBottom) _handleDot(active: active),
             Expanded(
@@ -439,3 +474,37 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
 }
 
 enum _Handle { none, start, end }
+
+
+/// 微信风格选择放大镜：RawMagnifier 采样镜片下方真实画面，
+/// 焦点为手指覆盖区域；白色描边胶囊外形，随手指移动。
+final class _SelectionMagnifier extends StatelessWidget {
+  const _SelectionMagnifier({
+    required this.size,
+    required this.focalPointOffset,
+  });
+
+  final Size size;
+  final Offset focalPointOffset;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: size.width + 6,
+        height: size.height + 6,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(size.height / 2 + 3),
+          border: Border.all(color: const Color(0xFFFFFFFF), width: 3),
+          boxShadow: const [
+            BoxShadow(color: Color(0x33000000), blurRadius: 8),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(size.height / 2),
+          child: RawMagnifier(
+            magnificationScale: 1.75,
+            focalPointOffset: focalPointOffset,
+            size: size,
+          ),
+        ),
+      );
+}
