@@ -20,13 +20,18 @@ def test_user_request_retains_totp_but_admin_claim_submit_correct_require_passwo
     with core[1].begin() as session:
         session.add(AdminOperationCredential(user_id='owner',password_hash=PasswordHasher().hash('operation-password-123'),version=1,created_at=now,updated_at=now))
     app=FastAPI(); install_error_handlers(app)
+    from app.api.payment_pin import create_payment_pin_router
+    app.include_router(create_payment_pin_router(settings,core[1],None))
+    core[0].payment_pin.clock=lambda: datetime.now(timezone.utc)
     app.include_router(create_manual_wallet_router(settings,core[1],runtime=runtime))
     tokens=TokenService(core[1],jwt_secret=settings.jwt_secret,jwt_issuer=settings.jwt_issuer)
     headers={user:{'Authorization':'Bearer '+tokens.issue_pair(user_id=user,device_key=user,display_name='fixture').access_token,'Idempotency-Key':'fixture'} for user in ('alice','owner')}
     client=TestClient(app)
     quote=client.post('/manual/payout-quotes',headers=headers['alice'],json=dict(amount='10.000000',expected_binding_version=1)).json()
     assert client.post('/manual/payouts',headers=headers['alice'],json=dict(quote_id=quote['id'],operation_password='operation-password-123')).status_code==422
-    order=client.post('/manual/payouts',headers=headers['alice'],json=dict(quote_id=quote['id'],mfa_proof='123456')).json()
+    pin=client.post('/payment-pin/authorize',headers=headers['alice'],json=dict(pin='654321',action='wallet.payout.create',payload={'quote_id':quote['id']},idempotency_key='fixture'))
+    assert pin.status_code==200,pin.text
+    order=client.post('/manual/payouts',headers=headers['alice'],json=dict(quote_id=quote['id'],mfa_proof='123456',payment_authorization=pin.json()['authorization'])).json()
     path='/manual/payouts/'+order['id']
     assert client.post(path+'/claim',headers=headers['owner'],json=dict(expected_digest=order['digest'],mfa_proof='123456')).status_code==403
     password=dict(operation_password='operation-password-123')

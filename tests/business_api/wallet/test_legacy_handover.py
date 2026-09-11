@@ -194,6 +194,12 @@ def test_changed_preparation_reports_invalid_and_deterministic_manifest_conflict
 
 
 def test_real_sender_failure_never_records_summary_delivery(handover):
+    # tasks 包属于 business-worker；CI 的 PYTHONPATH 只含 business-api 与仓库根。
+    import sys
+    from pathlib import Path
+    worker_app = str(Path(__file__).resolve().parents[3] / 'services' / 'business-worker' / 'app')
+    if worker_app not in sys.path:
+        sys.path.insert(0, worker_app)
     from tasks.wallet_alert_email import WalletAlertEmailHandler
     result=prepared(handover)
     handover[0].notify(preparation_id=result['id'],manifest_digest=result['manifest_digest'],**common('notify'))

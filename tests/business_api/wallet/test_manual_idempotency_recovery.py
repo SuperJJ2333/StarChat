@@ -23,7 +23,13 @@ def command(api, core, kind):
     if kind == 'request':
         quote = client.post(path, headers=headers['alice'], json=body)
         assert quote.status_code == 201
-        path, body = '/manual/payouts', {'quote_id': quote.json()['id'], 'mfa_proof': '123456'}
+        # 2026-09 起 payout request 强制支付 PIN 授权（manual_payouts.request）。
+        authorization = client.post('/payment-pin/authorize', headers=headers['alice'], json={
+            'pin': '654321', 'action': 'wallet.payout.create', 'payload': {'quote_id': quote.json()['id']},
+            'idempotency_key': headers['alice']['Idempotency-Key']})
+        assert authorization.status_code == 200
+        path, body = '/manual/payouts', {'quote_id': quote.json()['id'], 'mfa_proof': '123456',
+            'payment_authorization': authorization.json()['authorization']}
     response = client.post(path, headers=headers['alice'], json=body)
     assert response.status_code == 201
     runtime.funds_enabled = False
