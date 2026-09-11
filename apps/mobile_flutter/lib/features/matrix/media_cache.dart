@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'content_addressed_media.dart';
 import 'media_load_scheduler.dart';
+import 'media_consumer_scope.dart';
 import 'media_memory_budget.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -367,7 +368,7 @@ final class MediaMemoryCache {
   bool _disposed = false;
 
   final _entries = <String, Uint8List>{};
-  final _inFlight = <String, Future<Uint8List>>{};
+  final _inFlight = <String, OwnedMediaFlight<Uint8List>>{};
   int _totalBytes = 0;
   int _generation = 0;
   void clear() {
@@ -477,18 +478,25 @@ final class MediaMemoryCache {
     if (_disposed) return Future.error(StateError('Media cache disposed'));
     final cached = get(eventId);
     if (cached != null) return SynchronousFuture<Uint8List>(cached);
+    final scope = MediaConsumerScope.current;
+    if (scope != null && !scope.isActive) {
+      return Future.error(MediaLoadCanceled());
+    }
     final existing = _inFlight[eventId];
-    if (existing != null) return existing;
+    if (existing != null) return existing.join(scope);
     final generation = _generation;
-    final flight = Future<Uint8List>.sync(load).then((bytes) {
+    late final OwnedMediaFlight<Uint8List> flight;
+    flight = OwnedMediaFlight<Uint8List>(() async {
+      final bytes = await load();
       final owned = _ownVerifiedBytes(eventId, bytes);
-      if (generation == _generation) _store(eventId, owned);
+      if (generation == _generation && flight.isActive) _store(eventId, owned);
       return owned;
-    }).whenComplete(() {
-      if (generation == _generation) _inFlight.remove(eventId);
     });
+    flight.onInactive = () {
+      if (identical(_inFlight[eventId], flight)) _inFlight.remove(eventId);
+    };
     _inFlight[eventId] = flight;
-    return flight;
+    return flight.join(scope);
   }
 
   void _evictToBudget() {

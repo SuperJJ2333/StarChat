@@ -3,11 +3,52 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/media_consumer_scope.dart';
+import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 
 Uint8List _bytes(int seed) => Uint8List.fromList([seed, seed, seed]);
 
 void main() {
+  test('scoped callers isolate cancellation on one cache flight', () async {
+    final cache = MediaMemoryCache();
+    final source = Completer<Uint8List>();
+    final a = MediaConsumerScope();
+    final b = MediaConsumerScope();
+    MediaConsumerScope? child;
+    final first = a.run(() => cache.putIfAbsent('scoped', () {
+          child = MediaConsumerScope.current;
+          return source.future;
+        }));
+    final second =
+        b.run(() => cache.putIfAbsent('scoped', () => source.future));
+    final canceled = expectLater(first, throwsA(isA<MediaLoadCanceled>()));
+    a.cancel();
+    final childActiveAfterCancel = child?.isActive;
+    source.complete(_bytes(6));
+    await canceled;
+    expect(await second, _bytes(6));
+    expect(childActiveAfterCancel, isTrue);
+  });
+
+  test('old canceled flight cannot overwrite a newer same-key cache value',
+      () async {
+    final cache = MediaMemoryCache();
+    final oldSource = Completer<Uint8List>();
+    final oldScope = MediaConsumerScope();
+    final old = oldScope
+        .run(() => cache.putIfAbsent('replace', () => oldSource.future));
+    final oldCanceled = expectLater(old, throwsA(isA<MediaLoadCanceled>()));
+    oldScope.cancel();
+    final freshScope = MediaConsumerScope();
+    final fresh = freshScope
+        .run(() => cache.putIfAbsent('replace', () async => _bytes(8)));
+    final newBytes = await fresh;
+    await oldCanceled;
+    oldSource.complete(_bytes(1));
+    await Future<void>.delayed(Duration.zero);
+    expect(cache.get('replace'), same(newBytes));
+  });
   test('seed owns its bytes and invalid replacement retains valid entry', () {
     final cache = MediaMemoryCache();
     final source = _bytes(7);
