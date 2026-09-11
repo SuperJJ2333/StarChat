@@ -94,6 +94,7 @@ final class MessageSelectionBar extends StatelessWidget {
     required this.onForward,
     required this.onDelete,
     required this.onCancel,
+    this.onCopy,
   });
 
   final int count;
@@ -101,6 +102,10 @@ final class MessageSelectionBar extends StatelessWidget {
   final VoidCallback onForward;
   final VoidCallback onDelete;
   final VoidCallback onCancel;
+
+  /// 多选复制：合并所选文本消息（emoji 按映射表转 [表情名称]）。
+  /// 传入即显示复制按钮；未传（如纯媒体场景）保持原布局。
+  final VoidCallback? onCopy;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -120,6 +125,12 @@ final class MessageSelectionBar extends StatelessWidget {
               onPressed: onCancel,
               child: const Text('取消'),
             ),
+            if (onCopy != null)
+              CupertinoButton(
+                key: const Key('selection-copy'),
+                onPressed: count == 0 ? null : onCopy,
+                child: const Icon(CupertinoIcons.doc_on_doc),
+              ),
             Expanded(
               child: Text(
                 '已选择 $count 条',

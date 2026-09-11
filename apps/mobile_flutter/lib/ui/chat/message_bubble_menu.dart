@@ -20,6 +20,7 @@ final class MessageBubbleMenu extends StatelessWidget {
     required this.onSelected,
     this.arrowAtTop = false,
     this.arrowX,
+    this.orderOverride,
   });
 
   final Set<MessageAction> actions;
@@ -27,10 +28,15 @@ final class MessageBubbleMenu extends StatelessWidget {
   final bool arrowAtTop;
   final double? arrowX;
 
+  /// 文本选择模式的局部菜单顺序（复制/全选/引用/转发，规格 #5）；
+  /// 不传则按长按菜单默认顺序。
+  final List<MessageAction>? orderOverride;
+
   static const _presentation = <MessageAction, (IconData, String)>{
     MessageAction.voiceEarpiece: (CupertinoIcons.phone, '听筒播放'),
     MessageAction.voiceSpeaker: (CupertinoIcons.speaker_2, '扬声器播放'),
     MessageAction.copy: (CupertinoIcons.doc_on_doc, '复制'),
+    MessageAction.selectAll: (CupertinoIcons.checkmark_rectangle, '全选'),
     MessageAction.forward: (CupertinoIcons.arrowshape_turn_up_right, '转发'),
     MessageAction.addToEmoji: (CupertinoIcons.star, '收藏'),
     MessageAction.reply: (CupertinoIcons.reply, '引用'),
@@ -42,9 +48,8 @@ final class MessageBubbleMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ordered = MessageActionPolicy.ordered(
-      actions.where(_presentation.containsKey),
-    );
+    final ordered = orderOverride ??
+        MessageActionPolicy.ordered(actions.where(_presentation.containsKey));
     return WeChatAnchoredActionMenu<MessageAction>(
       key: const Key('message-bubble-menu'),
       items: [

@@ -30,6 +30,11 @@ import 'package:flutter/services.dart';
 import '../../ui/chat/message_action.dart';
 import '../../ui/chat/message_bubble_menu.dart';
 import '../../ui/chat/message_menu_placement.dart';
+import '../../ui/chat/emoji_text_controller.dart';
+import '../../ui/chat/message_highlight_pulse.dart';
+import '../../ui/chat/message_text_selection.dart';
+import '../../ui/chat/quote_return_banner.dart';
+import '../../features/emoji/emoji_shortcode.dart';
 import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
 import 'media_thumbnail.dart';
@@ -334,12 +339,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   bool _disposing = false;
-  final input = TextEditingController();
+  // 输入框控制器：表情目录内 emoji 以彩色/动态字形渲染（与气泡一致），
+  // 修复老系统字体缺字导致的空白/方框；光标、选区、IME 行为不变。
+  final input = EmojiEditingController();
   final inputFocusNode = FocusNode();
   final messageScrollController = ScrollController();
   late final latestMessageAnchor = LatestMessageAnchor(messageScrollController);
   final messageListScrolling = ValueNotifier<bool>(false);
   final _stableMessageKeys = <String, GlobalKey>{};
+  // 文本消息渲染对象的 key：长按选择（规格 #5）用它定位选区/手柄。
+  final _messageTextKeys = <String, GlobalKey>{};
   late final roomImagePreviewCache = RoomImagePreviewCache(
     accountId: '${roomInfo.homeserver}|${roomInfo.currentUserId}',
     memoryNamespace: roomInfo.currentUserId ?? '',
@@ -485,6 +494,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   late int joinedMemberCount;
   late final announcementService = widget.roomLease.openAnnouncementService();
   String? highlightedMessageId;
+
+  /// “回到引用位置”弹窗目标：引用发起消息的事件 ID。
+  /// 点击引用跳转成功后置位；点击弹窗返回发起消息并清空。
+  String? quoteReturnMessageId;
 
   bool get isGroup => !roomInfo.isDirect;
 
@@ -1079,6 +1092,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // recipientUserIds 已空——旧顺序丢失 m.mentions。）
     final reply = replyingTo;
     final mentions = mentionComposer.recipientUserIds();
+    // 规格取消场景：发送消息即取消文本选区与菜单（若处于选择模式）。
+    MessageTextSelectionSession.dismissActive();
     _programmaticComposerEdit = true;
     try {
       input.clear();
@@ -2386,8 +2401,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  Future<void> _scrollToMessage(String eventId) async {
-    if (_locatingMessage) return;
+  Future<bool> _scrollToMessage(String eventId) async {
+    if (_locatingMessage) return false;
     _locatingMessage = true;
     var found = false;
     try {
@@ -2404,7 +2419,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           break;
         }
       }
-      if (!mounted) return;
+      if (!mounted) return false;
       await WidgetsBinding.instance.endOfFrame;
       final all = controller?.messages ?? const <RoomMessageViewModel>[];
       final visible = hiddenEvents?.visibleItems(
@@ -2426,14 +2441,33 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     if (!found) {
       if (mounted) _showMediaMessage('未找到该消息，请稍后重试');
-      return;
+      return false;
     }
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() => highlightedMessageId = eventId);
     await Future<void>.delayed(const Duration(milliseconds: 1400));
     if (mounted && highlightedMessageId == eventId) {
       setState(() => highlightedMessageId = null);
     }
+    return true;
+  }
+
+  /// 规格 #4：点击引用跳转到被引用消息；成功后屏幕右下方出现
+  /// “回到引用位置”弹窗（样式与 @提醒弹窗一致），点击弹窗返回
+  /// 引用发起消息并高亮。再次引用跳转会替换弹窗目标。
+  Future<void> _jumpFromQuote(RoomMessageViewModel message) async {
+    final target = message.replyToEventId;
+    if (target == null) return;
+    final found = await _scrollToMessage(target);
+    if (!mounted || !found) return;
+    setState(() => quoteReturnMessageId = message.id);
+  }
+
+  Future<void> _returnToQuoteOrigin() async {
+    final origin = quoteReturnMessageId;
+    if (origin == null) return;
+    setState(() => quoteReturnMessageId = null);
+    await _scrollToMessage(origin);
   }
 
   String _displayName(String matrixUserId, bool own) {
@@ -2708,7 +2742,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             connected: message.callConnected,
             duration: message.callDuration,
           ),
-        RoomMessageKind.text => EmojiText(message.text),
+        RoomMessageKind.text => KeyedSubtree(
+            key: _messageTextKeys.putIfAbsent(
+                message.stableId, GlobalKey.new),
+            child: EmojiText(message.text)),
       };
 
   String _formatTime(DateTime timestamp) {
@@ -3013,7 +3050,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 displayName: replied == null
                     ? '引用消息'
                     : _displayName(replied.senderId, replied.isOwn),
-                onTap: () => _scrollToMessage(message.replyToEventId!),
+                onTap: () => unawaited(_jumpFromQuote(message)),
               ),
             ),
           ),
@@ -3106,6 +3143,27 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ancestor: overlayBox,
     );
     final anchorRect = position & messageBox.size;
+    // 规格 #5：文本消息长按 = 复制选框 + 菜单同时出现。选择会话内部
+    // 负责菜单显隐（拖动时淡出/放大镜）、局部选择的菜单切换与取消，
+    // 动作最终回到 _handleMessageAction 并携带选中的文字。
+    if (message.kind == RoomMessageKind.text &&
+        message.deliveryState == RoomDeliveryState.sent) {
+      MessageTextSelectionSession.show(
+        roomContext: context,
+        text: message.text,
+        textKey: _messageTextKeys.putIfAbsent(
+            message.stableId, GlobalKey.new),
+        messageRect: anchorRect,
+        fullActions: actions,
+        isOwn: isOwn,
+        onAction: (action, selectedText) {
+          unawaited(_handleMessageAction(message, action,
+              overrideText: selectedText));
+        },
+        onDismissed: () {},
+      );
+      return;
+    }
     actionMenuEntry = OverlayEntry(
       builder: (overlayContext) {
         final media = MediaQuery.of(overlayContext);
@@ -3169,10 +3227,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     actionMenuEntry = null;
   }
 
+  /// 局部选择模式下的“引用/转发”以选中文字为操作对象：
+  /// 构造仅文字替换的消息视图副本（事件 ID 不变，供引用关联）。
+  RoomMessageViewModel _withSelectedText(
+      RoomMessageViewModel message, String selectedText) {
+    return RoomMessageViewModel(
+      id: message.id,
+      senderId: message.senderId,
+      text: selectedText,
+      isOwn: message.isOwn,
+      deliveryState: message.deliveryState,
+      timestamp: message.timestamp,
+      kind: RoomMessageKind.text,
+    );
+  }
+
   Future<void> _handleMessageAction(
     RoomMessageViewModel message,
-    MessageAction action,
-  ) async {
+    MessageAction action, {
+    String? overrideText,
+  }) async {
     if (message.deliveryState != RoomDeliveryState.sent &&
         action != MessageAction.copy) {
       return;
@@ -3195,8 +3269,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           );
         }
       case MessageAction.copy:
-        await Clipboard.setData(ClipboardData(text: message.text));
+        // 规格 #2：导出纯文本时按表情映射表把 emoji 转为 [表情名称]；
+        // 整条复制与局部选择复制共用此路径。
+        final copyText = emojiToShortcodes(overrideText ?? message.text);
+        await Clipboard.setData(ClipboardData(text: copyText));
         if (mounted) _showMediaMessage('已复制');
+      case MessageAction.selectAll:
+        // 仅文本选择模式可达：会话内部已恢复整条选择，这里无需动作。
+        break;
       case MessageAction.deleteLocal:
         if (hiddenEvents == null) return;
         await hiddenEvents!.hide(roomInfo.id, message.id);
@@ -3208,9 +3288,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       case MessageAction.multiSelect:
         setState(() => selection.startWith(message.id));
       case MessageAction.forward:
-        await _forwardMessages([message]);
+        // 局部选择：转发内容为选中文字（按表情映射转换为纯文本）。
+        await _forwardMessages([
+          if (overrideText != null)
+            _withSelectedText(message, emojiToShortcodes(overrideText))
+          else
+            message,
+        ]);
       case MessageAction.reply:
-        setState(() => replyingTo = message);
+        // 局部选择：引用以选中文字为引用片段（事件 ID 保持关联原消息）。
+        setState(() => replyingTo = overrideText != null
+            ? _withSelectedText(message, overrideText)
+            : message);
       case MessageAction.recall:
         final interaction = _interaction;
         final serverNow = await _serverNow();
@@ -3273,6 +3362,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   /// 转发：独立“选择聊天”页选择接收对象，再确认发送。
+  /// 多选复制（规格 #2）：按时间线顺序合并所选文本消息，
+  /// emoji 按表情映射表转 [表情名称] 纯文本后写入剪贴板。
+  Future<void> _copySelectedMessages() async {
+    final all = controller?.messages ?? const <RoomMessageViewModel>[];
+    final copied = [
+      for (final message in all)
+        if (selection.selectedIds.contains(message.id) &&
+            message.kind == RoomMessageKind.text &&
+            !message.isRecalled)
+          emojiToShortcodes(message.text),
+    ];
+    if (copied.isEmpty) {
+      if (mounted) _showMediaMessage('所选内容中没有可复制的文字');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: copied.join('\n')));
+    if (mounted) _showMediaMessage('已复制 ${copied.length} 条文字');
+  }
+
   Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
     final interaction = _interaction;
     if (interaction == null) {
@@ -3383,6 +3491,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     callAudioActivity.removeListener(_handleCallAudioActivity);
     _disposing = true;
     dismissActionMenu();
+    // 切换会话/退出会话页：取消文本选择弹层（根 Overlay 不随页面销毁）。
+    MessageTextSelectionSession.dismissActive();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(RoomDraftStore.shared.flush(_draftKey));
     latestMessageAnchor.dispose();
@@ -3635,12 +3745,29 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         child: KeyedSubtree(
             key: messageKeys[message.id] =
                 _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
-            child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                color: highlightedMessageId == message.id
-                    ? WeChatColors.resolve(context, WeChatColors.divider)
-                    : const Color(0x00000000),
-                child: _messageRow(message, previous))));
+            child: Stack(clipBehavior: Clip.none, children: [
+              // 规格 #3：高亮背景从屏幕左缘覆盖到右缘（负偏移抵消列表
+              // 水平内边距），上下各外扩 4pt——正好到相邻气泡 8pt 间隙的
+              // 中线，不会覆盖相邻消息；闪烁后归零，不残留。
+              Positioned(
+                left: -WeChatSpacing.md,
+                right: -WeChatSpacing.md,
+                top: -4,
+                bottom: -4,
+                child: IgnorePointer(
+                  child: MessageHighlightPulse(
+                    active: highlightedMessageId == message.id,
+                    child: DecoratedBox(
+                        decoration: BoxDecoration(
+                            color: highlightedMessageId == message.id
+                                ? WeChatColors.resolve(
+                                    context, WeChatColors.divider)
+                                : const Color(0x00000000))),
+                  ),
+                ),
+              ),
+              _messageRow(message, previous),
+            ])));
     _rowCache[message.stableId] = (message, previous, reply, row);
     return row;
   }
@@ -3691,6 +3818,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     return Stack(children: [
       Positioned.fill(child: list),
+      // 规格 #4：“回到引用位置”弹窗——屏幕右下方、输入框之上，
+      // 样式与 @提醒弹窗（MentionBannerButton）完全一致。
+      if (quoteReturnMessageId != null)
+        Positioned(
+          right: 12,
+          bottom: 76,
+          child: QuoteReturnBannerButton(
+            key: const Key('quote-return-banner-button'),
+            onTap: () => unawaited(_returnToQuoteOrigin()),
+          ),
+        ),
       if (controller?.hasLaterWindow ?? false)
         Positioned(
             right: 12,
@@ -3811,6 +3949,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                             case final RoomMessageViewModel message)
                           message,
                     ]),
+                    onCopy: () => unawaited(_copySelectedMessages()),
                     onDelete: _deleteSelection,
                     onCancel: () => setState(selection.exit),
                   )

@@ -1,5 +1,6 @@
 enum MessageAction {
   copy,
+  selectAll,
   addToEmoji,
   forward,
   deleteLocal,
@@ -94,8 +95,10 @@ abstract final class MessageActionPolicy {
 
   /// 气泡菜单的展示顺序：“复制”固定第一位，其后为转发/收藏/引用/
   /// 提醒/撤回/多选/删除（Set 无序，展示前必须归一化）。
+  /// “全选”仅在长按文本选择模式的局部选择菜单中出现（规格 #5）。
   static const displayOrder = <MessageAction>[
     MessageAction.copy,
+    MessageAction.selectAll,
     MessageAction.voiceEarpiece,
     MessageAction.voiceSpeaker,
     MessageAction.forward,
