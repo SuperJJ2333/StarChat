@@ -43,3 +43,17 @@
 
 回退命令（如需）：
 `docker compose --project-directory /opt/starchat --env-file /opt/starchat/.env -p starchat -f /opt/starchat/releases/profile4feat-20260912/business-api-rollback.json up -d --no-deps --no-build --pull never --wait business-api`
+
+## 2089 覆盖事件与 2090 合并修复（2026-09-12 03:2x）
+
+现象：用户发现 Mi 6 变为 0.3.85-debug/2089 且缺少四项功能。根因：并行
+会话从 `codex/chat-selection-20260912`（基于 `1da11922`，含聊天选择
+r1–r3 但不含 `1f957444`）构建 2089 并于 02:42 覆盖安装。
+
+处置：审查该分支两笔提交（选择/emoji 偏移修复 48fe7475 + 文档），与
+`1f957444` 文件集不相交，`--no-ff` 合并进 main（`0d89cbff`，零冲突，
+122 项相关测试全绿）；从合并后 main 构建 `0.3.85-debug/2090`
+（final.apk SHA256 `e151da7a…383da14`，27,305 类零变更、固定签名），
+03:23 覆盖安装 Mi 6。实机复核：好友资料页“昵称：小彭”+“21小时前在线”
+在位（merged2090-friend.png），个人信息页邀请码区（全称/剩余 8/一键
+复制）在位（merged2090-invite.png）。已删除已合并分支与 select12 工作树。
