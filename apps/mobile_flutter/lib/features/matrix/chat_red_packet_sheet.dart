@@ -408,6 +408,17 @@ final class _State extends State<ChatRedPacketSheet> {
               style: const TextStyle(
                   color: WeChatColors.textSecondary, fontSize: 12),
             ),
+            if (widget.isGroup && !exclusive)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  _memberCountHint(),
+                  key: const Key('chat-red-packet-member-count-hint'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      color: WeChatColors.textSecondary, fontSize: 12),
+                ),
+              ),
             const SizedBox(height: 16),
             CupertinoButton(
               key: const Key('chat-red-packet-send'),
@@ -458,6 +469,13 @@ final class _State extends State<ChatRedPacketSheet> {
       height: .5,
       margin: const EdgeInsets.only(left: 16),
       color: WeChatColors.resolve(context, WeChatColors.divider));
+
+  String _memberCountHint() {
+    final count = widget.controller.joinedMemberCount;
+    final limit = widget.controller.joinedMemberShareLimit;
+    if (count == null || limit == null) return '红包个数最多 500 个';
+    return '群成员共 $count 人，最多可发 $limit 个红包';
+  }
 
   Widget _field({
     required String label,

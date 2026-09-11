@@ -79,6 +79,8 @@ def create_wallet_router(settings: Settings, session_factory, *, custody_provide
                 withdrawal_user_24h=str(manual_runtime.payouts.policy.user_24h),
                 withdrawal_global_24h=str(manual_runtime.payouts.policy.global_24h))
         payload["conversion_enabled"] = service.conversions_enabled
+        payload['caibi_payout_enabled'] = bool(manual_runtime is not None
+            and manual_runtime.payout_requests_enabled and manual_runtime.payouts.conversions_enabled)
         return payload
 
     @router.get("/balances/me")

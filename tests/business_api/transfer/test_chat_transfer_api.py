@@ -40,6 +40,8 @@ async def test_chat_transfer_create_accept_and_decline_flow(context):
         body = created.json()
         assert body["status"] == "PENDING"
         assert body["fee"] == "0.10"
+        assert body["bill_id"]
+        assert body["accepted_at"] is None
         transfer_id = body["id"]
         detail = await client.get(f"/api/v1/chat-transfers/{transfer_id}", headers=bearer(settings, "receiver"))
         assert detail.status_code == 200
@@ -47,6 +49,8 @@ async def test_chat_transfer_create_accept_and_decline_flow(context):
         accepted = await client.post(f"/api/v1/chat-transfers/{transfer_id}/accept", headers={**bearer(settings, "receiver"), "Idempotency-Key": "tr-api-accept"})
         assert accepted.status_code == 200
         assert accepted.json()["status"] == "ACCEPTED"
+        assert accepted.json()["bill_id"]
+        assert accepted.json()["accepted_at"]
 
 
 @pytest.mark.asyncio

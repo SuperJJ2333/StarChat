@@ -882,6 +882,99 @@
         "tag": "app-dialog"
       },
       "tokens": []
+    },
+    {
+      "id": "image-editor",
+      "flutter": {
+        "name": "WeChatImageEditorPage",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_image_editor.dart",
+        "props": [
+          "bytes",
+          "onForward",
+          "onFavorite"
+        ],
+        "variants": {},
+        "states": [
+          "ready",
+          "drawing",
+          "emoji",
+          "text",
+          "crop",
+          "mosaic",
+          "undo",
+          "redo",
+          "complete-sheet",
+          "saving",
+          "error",
+          "cancelled"
+        ]
+      },
+      "html": {
+        "tag": "app-image-editor"
+      },
+      "tokens": [
+        "brandPrimary",
+        "textPrimary",
+        "textSecondary"
+      ]
+    },
+    {
+      "id": "room-image-gallery",
+      "flutter": {
+        "name": "RoomImageGalleryPage",
+        "file": "apps/mobile_flutter/lib/ui/chat/room_image_gallery.dart",
+        "props": [
+          "images",
+          "initialId",
+          "loadEarlier",
+          "onForwardEdited",
+          "onFavorite"
+        ],
+        "variants": {},
+        "states": [
+          "ready",
+          "loading",
+          "error",
+          "paging",
+          "editing"
+        ]
+      },
+      "html": {
+        "tag": "app-room-image-gallery"
+      },
+      "tokens": [
+        "brandPrimary",
+        "textPrimary",
+        "textSecondary"
+      ]
+    },
+    {
+      "id": "red-packet-card",
+      "flutter": {
+        "name": "WeChatRedPacketCard",
+        "file": "apps/mobile_flutter/lib/ui/finance/wechat_red_packet_card.dart",
+        "props": ["greeting", "state", "labelOverride", "onTap"],
+        "variants": {"scene": ["group-random", "group-equal", "direct", "exclusive"]},
+        "states": ["available", "claimed", "viewer-claimed", "exhausted", "expired", "withdrawn", "claiming", "error"]
+      },
+      "html": {
+        "tag": "app-red-packet-card",
+        "attributes": ["state", "greeting", "viewer-claim", "status-label", "action"],
+        "attributeMappings": {"labelOverride": "status-label"}
+      },
+      "tokens": ["WeChatColors.warning", "WeChatColors.redPacketMuted", "WeChatRadius.redPacket", "spacing", "typography"]
+    },
+    {
+      "id": "transfer-card",
+      "flutter": {
+        "name": "WeChatTransferCard",
+        "file": "apps/mobile_flutter/lib/ui/finance/wechat_transfer_card.dart",
+        "props": ["amount", "state", "isOwn", "labelOverride", "onTap"],
+        "variants": {"viewerRole": ["sender", "receiver"]},
+        "states": ["pending", "accepted", "returned", "loading", "error"]
+      },
+      "html": {"tag": "app-transfer-card"},
+      "tokens": ["WeChatColors.warning", "WeChatRadius.redPacket", "spacing", "typography"]
     }
   ],
   "tokenParity": [
@@ -909,6 +1002,11 @@
       "category": "colors",
       "html": "--color-divider: #d9d9d9",
       "flutter": "static const divider = Color(0xFFD9D9D9);"
+    },
+    {
+      "category": "colors",
+      "html": "--color-red-packet-muted: #f2b7a8",
+      "flutter": "static const redPacketMuted = Color(0xFFF2B7A8);"
     },
     {
       "category": "typography",
@@ -1171,7 +1269,7 @@
     }
   },
   "screens": {
-    "expectedCount": 332
+    "expectedCount": 355
   },
   "adminCompletion20260910": {
     "html": [
@@ -1200,5 +1298,79 @@
     },
     "walletValidation": "fixed 60 minutes; global login unchanged",
     "demo": "frontend/tests/admin-completion-preview.html"
+  },
+  "mobileImageEditing20260910": {
+    "demo": [
+      "chat-image-editor-ready",
+      "chat-image-editor-complete-sheet",
+      "chat-image-editor-loading",
+      "chat-image-editor-error",
+      "chat-image-gallery-ready",
+      "moments-detail-own-comment"
+    ],
+    "html": "frontend/src/components/image-editor.js",
+    "interaction": "五工具底部、撤销重做右上、完成右下；生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
+    "tokens": "Reuse existing color, spacing, typography, radius and touch-size tokens; landscape canvas colors are fixture artwork, not UI tokens",
+    "verification": "Source review only; user explicitly requested no self testing"
+  },
+  "walletBindingPaymentRevision": {
+    "date": "2026-09-11",
+    "plan": "docs/superpowers/plans/2026-09-11-wallet-binding-payment.md",
+    "flutter": [
+      "lib/features/wallet/wallet_page.dart",
+      "lib/features/wallet/manual_wallet_page.dart",
+      "lib/features/payment_pin/payment_pin_dialog.dart"
+    ],
+    "html": [
+      "frontend/src/screens/wallet-binding.js",
+      "frontend/src/screens/finance.js",
+      "frontend/src/styles/primitives.css"
+    ],
+    "htmlTags": [
+      "app-navigation-bar",
+      "app-action-button",
+      "app-status-chip"
+    ],
+    "props": [
+      "binding status",
+      "official deposit address readiness",
+      "current point balance",
+      "amount draft",
+      "payment PIN state"
+    ],
+    "variants": [
+      "wallet home TRON card",
+      "independent deposit page",
+      "independent withdrawal page",
+      "existing six-digit payment PIN page"
+    ],
+    "states": [
+      "unbound",
+      "binding",
+      "bound",
+      "unavailable",
+      "amount-invalid",
+      "insufficient",
+      "payment-pin",
+      "pin-error",
+      "pin-cancelled",
+      "demo-complete"
+    ],
+    "tokens": [
+      "WeChatColors.brandPrimary = --color-brand-primary",
+      "WeChatColors.textSecondary = --color-text-secondary",
+      "WeChatColors.elevatedSurface = --color-surface-elevated",
+      "existing spacing/radius/touch/typography tokens"
+    ],
+    "acceptance": "Title stays 钱包; rebind icon inside TRON card; deposit/withdraw disabled until ACTIVE and ready; current point balance and full amount; 1 point = 1 USDT, zero fee, minimum 10 USDT; explicit PIN confirm/cancel/error.",
+    "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
+    "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
+  },
+  "financeChatB4b20260911": {
+    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],
+    "demo": ["redpacket-detail-viewer-claimed", "redpacket-detail-claiming", "redpacket-detail-unknown-result", "redpacket-detail-group-random-completed", "redpacket-detail-group-random-expired", "redpacket-create-group-random", "caibi-transfer-receiver-accepted", "caibi-ledger-all", "caibi-ledger-filtered", "caibi-ledger-loading", "caibi-ledger-empty", "caibi-ledger-error", "caibi-ledger-paged", "caibi-transaction-detail"],
+    "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
+    "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
+    "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
   }
 }

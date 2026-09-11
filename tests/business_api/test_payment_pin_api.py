@@ -17,6 +17,10 @@ from app.modules.identity.passwords import PasswordHasher
 from app.modules.identity.tokens import TokenService
 from app.modules.ledger.service import LedgerService
 
+class StaticRoomMembershipAuthority:
+    def get_room_members(self, room_id):
+        return {'@user:test', '@other:test'} if room_id == '!test:example' else set()
+
 
 @pytest.fixture
 def setup():
@@ -29,7 +33,7 @@ def setup():
     factory = create_session_factory(engine)
     now = datetime.now(timezone.utc)
     with factory.begin() as session:
-        session.add(User(id='user', username='user', username_normalized='user', email='u@example.test',
+        session.add(User(id='user', username='user', username_normalized='user', email='u@example.test', matrix_user_id='@user:test',
             email_normalized='u@example.test', password_hash=PasswordHasher().hash('test-password-only'),
             status=AccountStatus.ACTIVE, created_at=now, updated_at=now))
     ledger = LedgerService(factory)
@@ -40,7 +44,7 @@ def setup():
         install_error_handlers(app)
         app.include_router(create_payment_pin_router(settings, factory, NoopRateLimiter()))
         app.include_router(create_transfer_router(settings, factory))
-        app.include_router(create_redpacket_router(settings, factory))
+        app.include_router(create_redpacket_router(settings, factory, matrix_gateway=StaticRoomMembershipAuthority()))
         app.include_router(create_ledger_router(settings, factory))
         pair = TokenService(factory, jwt_secret=settings.jwt_secret, jwt_issuer=settings.jwt_issuer).issue_pair(user_id='user', device_key='test', display_name='test')
         return TestClient(app), {'Authorization': 'Bearer '+pair.access_token, 'Idempotency-Key': 'payment-key'}

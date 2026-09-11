@@ -13,7 +13,22 @@ abstract interface class LocalClearedHistory {
   DateTime? clearedThrough(String roomId);
 }
 
+typedef LocalHistoryFilter = bool Function(String eventId, DateTime? timestamp);
+
+abstract interface class LocalHistoryFilterSnapshots {
+  LocalHistoryFilter readFilter(String roomId);
+}
+
 extension LocalHiddenEventsFiltering on LocalHiddenEvents {
+  LocalHistoryFilter readFilter(String roomId) {
+    final store = this;
+    if (store is LocalHistoryFilterSnapshots) {
+      return (store as LocalHistoryFilterSnapshots).readFilter(roomId);
+    }
+    return (id, timestamp) =>
+        isEventHidden(roomId, id, eventTimestamp: timestamp);
+  }
+
   bool isEventHidden(String roomId, String eventId,
       {DateTime? eventTimestamp}) {
     if (isHidden(roomId, eventId)) return true;
@@ -28,15 +43,19 @@ extension LocalHiddenEventsFiltering on LocalHiddenEvents {
     Iterable<T> items, {
     required String Function(T item) eventId,
     DateTime Function(T item)? eventTimestamp,
-  }) =>
-      items
-          .where((item) => !isEventHidden(roomId, eventId(item),
-              eventTimestamp: eventTimestamp?.call(item)))
-          .toList(growable: false);
+  }) {
+    final hidden = readFilter(roomId);
+    return items
+        .where((item) => !hidden(eventId(item), eventTimestamp?.call(item)))
+        .toList(growable: false);
+  }
 }
 
 final class SharedPreferencesLocalHiddenEvents
-    implements LocalHiddenEvents, LocalClearedHistory {
+    implements
+        LocalHiddenEvents,
+        LocalClearedHistory,
+        LocalHistoryFilterSnapshots {
   const SharedPreferencesLocalHiddenEvents({
     required this.preferences,
     required this.accountId,
@@ -44,6 +63,21 @@ final class SharedPreferencesLocalHiddenEvents
 
   final SharedPreferences preferences;
   final String accountId;
+
+  @override
+  LocalHistoryFilter readFilter(String roomId) {
+    final key = _key(roomId);
+    final ids = preferences.getStringList(key)?.toSet() ?? const <String>{};
+    final milliseconds = preferences.getInt('$key.cleared-through');
+    final cutoff = milliseconds == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+    return (id, timestamp) =>
+        ids.contains(id) ||
+        (cutoff != null &&
+            timestamp != null &&
+            !timestamp.isAfter(cutoff));
+  }
 
   String _key(String roomId) {
     final scope = sha256.convert(utf8.encode('$accountId\u0000$roomId'));

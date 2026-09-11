@@ -1,11 +1,118 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/media_consumer_scope.dart';
+import 'package:liuhetong_mobile/features/matrix/media_load_scheduler.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 
 Uint8List _bytes(int seed) => Uint8List.fromList([seed, seed, seed]);
 
 void main() {
+  test('scoped callers isolate cancellation on one cache flight', () async {
+    final cache = MediaMemoryCache();
+    final source = Completer<Uint8List>();
+    final a = MediaConsumerScope();
+    final b = MediaConsumerScope();
+    MediaConsumerScope? child;
+    final first = a.run(() => cache.putIfAbsent('scoped', () {
+          child = MediaConsumerScope.current;
+          return source.future;
+        }));
+    final second =
+        b.run(() => cache.putIfAbsent('scoped', () => source.future));
+    final canceled = expectLater(first, throwsA(isA<MediaLoadCanceled>()));
+    a.cancel();
+    final childActiveAfterCancel = child?.isActive;
+    source.complete(_bytes(6));
+    await canceled;
+    expect(await second, _bytes(6));
+    expect(childActiveAfterCancel, isTrue);
+  });
+
+  test('old canceled flight cannot overwrite a newer same-key cache value',
+      () async {
+    final cache = MediaMemoryCache();
+    final oldSource = Completer<Uint8List>();
+    final oldScope = MediaConsumerScope();
+    final old = oldScope
+        .run(() => cache.putIfAbsent('replace', () => oldSource.future));
+    final oldCanceled = expectLater(old, throwsA(isA<MediaLoadCanceled>()));
+    oldScope.cancel();
+    final freshScope = MediaConsumerScope();
+    final fresh = freshScope
+        .run(() => cache.putIfAbsent('replace', () async => _bytes(8)));
+    final newBytes = await fresh;
+    await oldCanceled;
+    oldSource.complete(_bytes(1));
+    await Future<void>.delayed(Duration.zero);
+    expect(cache.get('replace'), same(newBytes));
+  });
+  test('seed owns its bytes and invalid replacement retains valid entry', () {
+    final cache = MediaMemoryCache();
+    final source = _bytes(7);
+    final key = 'content:${sha256.convert(source)}';
+    cache.put(key, source);
+    source[0] = 0;
+    final cached = cache.get(key)!;
+    expect(cached, _bytes(7));
+    expect(() => cached[0] = 0, throwsUnsupportedError);
+    expect(() => cache.put(key, _bytes(8)), throwsFormatException);
+    expect(cache.get(key), same(cached));
+    expect(cache.totalBytes, 3);
+  });
+
+  test('old flight cannot repopulate or remove new flight after clear',
+      () async {
+    final cache = MediaMemoryCache();
+    final oldSource = Completer<Uint8List>();
+    final newSource = Completer<Uint8List>();
+    final oldFlight = cache.putIfAbsent('event', () => oldSource.future);
+    cache.clear();
+    final newFlight = cache.putIfAbsent('event', () => newSource.future);
+    oldSource.complete(_bytes(1));
+    await oldFlight;
+    expect(cache.get('event'), isNull);
+    expect(cache.putIfAbsent('event', () => throw StateError('duplicate')),
+        same(newFlight));
+    newSource.complete(_bytes(2));
+    expect(await newFlight, _bytes(2));
+    expect(cache.get('event'), _bytes(2));
+  });
+
+  test('synchronous loader failure is retryable', () async {
+    final cache = MediaMemoryCache();
+    await expectLater(
+        cache.putIfAbsent('event', () => throw StateError('fail')),
+        throwsStateError);
+    expect(await cache.putIfAbsent('event', () async => _bytes(1)), _bytes(1));
+  });
+
+  test('cache owns immutable verified bytes including the first load',
+      () async {
+    final cache = MediaMemoryCache();
+    final source = _bytes(7);
+    final key = 'content:${sha256.convert(source)}';
+    final loaded = await cache.putIfAbsent(key, () async => source);
+    source[0] = 0;
+    expect(loaded, _bytes(7));
+    expect(() => loaded[0] = 2, throwsUnsupportedError);
+    expect(() => loaded.buffer.asUint8List()[0] = 2, throwsUnsupportedError);
+    expect(cache.get(key), same(loaded));
+  });
+
+  test('wrong content is rejected before entering the cache', () async {
+    final cache = MediaMemoryCache();
+    final key = 'content:${sha256.convert(_bytes(7))}';
+    expect(() => cache.put(key, _bytes(8)), throwsFormatException);
+    await expectLater(
+        cache.putIfAbsent(key, () async => _bytes(8)), throwsFormatException);
+    expect(cache.totalBytes, 0);
+    final recovered = await cache.putIfAbsent(key, () async => _bytes(7));
+    expect(cache.get(key), same(recovered));
+  });
+
   test('putIfAbsent caches bytes and returns synchronously on hit', () async {
     final cache = MediaMemoryCache();
     var loads = 0;

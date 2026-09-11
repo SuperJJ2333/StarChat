@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, create_session_factory
 from app.core.errors import AppError
 from app.modules.identity.enums import AccountStatus, HoldType, RoleCode
-from app.modules.identity.models import SecurityHold, User, UserRole
+from app.modules.identity.models import Device, RefreshTokenFamily, SecurityHold, User, UserRole
 from app.modules.wallet.binding_models import WalletAddressOwner, WalletBinding, WalletBindingState
 from app.modules.wallet.models import WalletControl
 from app.modules.wallet.service import WalletLedger
@@ -60,6 +60,16 @@ def core():
     svc = ManualPayoutService(factory, official_config=OfficialFundingConfig(official, 'official-v1'),
         policy=ManualPayoutPolicy('test-v1', timedelta(minutes=5), Decimal('100'), Decimal('200'), Decimal('500')),
         owner_admin_id='owner', mfa_verifier=lambda **kw: kw['proof'] == '123456', finality=finality, clock=lambda: now[0])
+    from app.modules.identity.payment_pin_models import PaymentPinCredential
+    with factory.begin() as session:
+        session.add(Device(id='device', user_id='alice', device_key='fixture', display_name='fixture',
+            last_seen_at=now[0], created_at=now[0]))
+        session.add(RefreshTokenFamily(id='session', user_id='alice', device_id='device', created_at=now[0]))
+        session.add(PaymentPinCredential(user_id='alice', pin_hash=svc.payment_pin.hasher.hash('654321'),
+            version=1, failed_attempts=0, setup_key_hash='fixture', setup_family_id='session', created_at=now[0]))
+    svc.fixture_claims = dict(sub='alice', family_id='session', device_id='device',
+        iat=int(now[0].timestamp()), exp=int((now[0]+timedelta(hours=2)).timestamp()))
+    svc.fixture_tickets = {}
     yield svc, factory, now, target, official, ledger, finality
     engine.dispose()
 
@@ -88,7 +98,14 @@ def test_user_history_contains_manual_request_but_not_other_users(core):
 
 def request(c, q=None, **kw):
     q = q or quote(c)
-    return c[0].request(**(dict(user_id='alice', session_id='session', mfa_proof='123456', quote_id=q['id'], idempotency_key='r') | kw))
+    key = kw.get('idempotency_key', 'r')
+    identity = (key, q['id'])
+    if identity not in c[0].fixture_tickets:
+        c[0].fixture_tickets[identity] = c[0].payment_pin.authorize(claims=c[0].fixture_claims,
+            pin='654321', action='wallet.payout.create', payload={'quote_id': q['id']},
+            idempotency_key=key)['authorization']
+    return c[0].request(**(dict(user_id='alice', session_id='session', mfa_proof='123456', quote_id=q['id'],
+        claims=c[0].fixture_claims, payment_authorization=c[0].fixture_tickets[identity], idempotency_key=key) | kw))
 
 
 def claim(c, order=None, **kw):

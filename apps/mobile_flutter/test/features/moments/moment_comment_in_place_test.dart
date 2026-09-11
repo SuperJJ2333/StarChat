@@ -17,6 +17,61 @@ import 'package:liuhetong_mobile/ui/moments/wechat_moment_tile.dart';
 import 'moments_flow_test.dart' as fixtures;
 
 void main() {
+  testWidgets('own comment repeated long press opens one copy/delete menu', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await CacheRepository.resetForTest();
+    final json = fixtures.momentJson(liked: false, likeCount: 0);
+    json['comments'] = [
+      {'id': 'own-comment', 'text': 'own text', 'author': json['author']},
+    ];
+    final item = MomentItem.fromJson(json);
+    final api = await fixtures.momentsApi(
+      (_) async => http.Response('{}', 200),
+    );
+    late BuildContext pageContext;
+    await tester.pumpWidget(
+      CupertinoApp(
+        home: Builder(
+          builder: (context) {
+            pageContext = context;
+            return const CupertinoPageScaffold(child: SizedBox());
+          },
+        ),
+      ),
+    );
+    Future<void> openMenu() => interactWithMomentComment(
+          pageContext,
+          api: api,
+          momentId: item.id,
+          currentUsername: item.author.username,
+          comment: item.comments.first,
+          longPress: true,
+          currentItem: () => item,
+          onChanged: (_) {},
+          onSelectionChanged: (_) {},
+          onError: (_) {},
+        );
+    final first = openMenu();
+    final repeated = openMenu();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('anchored-action-menu'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(find.text('复制'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    Navigator.of(pageContext, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+    await Future.wait([first, repeated]);
+    final reopened = openMenu();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('anchored-action-menu')), findsOneWidget);
+    Navigator.of(pageContext, rootNavigator: true).pop();
+    await tester.pumpAndSettle();
+    await reopened;
+  });
   testWidgets(
       'post owner deletion keeps comment on failure and prevents duplicate requests',
       (tester) async {
@@ -225,7 +280,16 @@ void main() {
           await tester.pumpAndSettle();
           expect(
               find.byType(MomentDetailPage, skipOffstage: false), findsNothing);
-          if (own) {
+          if (own && !longPress) {
+              expect(find.text('复制'), findsNothing);
+              expect(find.text('删除'), findsNothing);
+              expect(
+                find.byKey(const Key('moment-comment-input')),
+                findsNothing,
+              );
+              expect(deleted, isNull);
+              expect(submitted, isNull);
+            } else if (own) {
             expect(find.text('复制'), findsOneWidget);
             expect(find.text('删除'), findsOneWidget);
             expect(find.byKey(const Key('moment-comment-input')), findsNothing);

@@ -5,6 +5,7 @@ import 'package:liuhetong_mobile/ui/chat/wechat_unread_badge.dart';
 import 'package:liuhetong_mobile/ui/chat/group_avatar_mosaic.dart';
 import 'package:liuhetong_mobile/ui/finance/wechat_red_packet_card.dart';
 import 'package:liuhetong_mobile/ui/finance/wechat_transfer_card.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/ui/components/modern_action_button.dart';
 import 'package:liuhetong_mobile/ui/components/immersive_auth_scaffold.dart';
 import 'package:liuhetong_mobile/ui/components/user_avatar.dart';
@@ -19,7 +20,8 @@ void main() {
     final box = tester.widget<DecoratedBox>(find.byType(DecoratedBox).last);
     expect((box.decoration as BoxDecoration).color, const Color(0xFF95EC69));
   });
-  testWidgets('red packet card is rendered without the outgoing green message bubble',
+  testWidgets(
+      'red packet card is rendered without the outgoing green message bubble',
       (tester) async {
     await tester.pumpWidget(const CupertinoApp(
       home: WeChatMessageBubble(
@@ -50,10 +52,9 @@ void main() {
     expect(find.text('20.00 点钻'), findsOneWidget);
     expect(find.text('畅聊点钻转账'), findsOneWidget);
     expect(find.text('等待收款'), findsOneWidget);
-    final box = tester.widget<Container>(
-        find.byKey(const Key('wechat-transfer-card')));
-    expect(
-        (box.decoration! as BoxDecoration).color, const Color(0xFFFA9D3B));
+    final box =
+        tester.widget<Container>(find.byKey(const Key('wechat-transfer-card')));
+    expect((box.decoration! as BoxDecoration).color, const Color(0xFFFA9D3B));
   });
   testWidgets('transfer card labels follow role and settlement state',
       (tester) async {
@@ -67,9 +68,14 @@ void main() {
     expect(find.text('对方已收款'), findsOneWidget);
     await tester.pumpWidget(const CupertinoApp(
         home: WeChatTransferCard(
+            amount: '6.60', state: TransferCardState.accepted, isOwn: false)));
+    expect(find.text('转账已收款'), findsOneWidget);
+    await tester.pumpWidget(const CupertinoApp(
+        home: WeChatTransferCard(
             amount: '6.60', state: TransferCardState.returned, isOwn: true)));
     expect(find.text('已退回'), findsOneWidget);
-  });  testWidgets('message row exposes a 40px tappable avatar', (tester) async {
+  });
+  testWidgets('message row exposes a 40px tappable avatar', (tester) async {
     var avatarTaps = 0;
     await tester.pumpWidget(
       CupertinoApp(
@@ -131,6 +137,34 @@ void main() {
     expect(find.text('已过期'), findsOneWidget);
   });
   testWidgets(
+      'red packet card claimed state uses muted cover and remains tappable',
+      (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: WeChatRedPacketCard(
+            greeting: '恭喜发财',
+            state: RedPacketVisualState.available,
+            onTap: () => taps++)));
+    var card = tester
+        .widget<Container>(find.byKey(const Key('wechat-red-packet-card')));
+    expect((card.decoration! as BoxDecoration).color, WeChatColors.warning);
+    await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
+    await tester.pump();
+    await tester.pumpWidget(CupertinoApp(
+        home: WeChatRedPacketCard(
+            greeting: '恭喜发财',
+            state: RedPacketVisualState.claimed,
+            onTap: () => taps++)));
+    expect(find.text('已领取'), findsOneWidget);
+    card = tester
+        .widget<Container>(find.byKey(const Key('wechat-red-packet-card')));
+    expect(
+        (card.decoration! as BoxDecoration).color, WeChatColors.redPacketMuted);
+    await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
+    await tester.pump();
+    expect(taps, 2);
+  });
+  testWidgets(
       'modern action button is white bordered icon text with a 44dp target',
       (tester) async {
     await tester.pumpWidget(CupertinoApp(
@@ -180,8 +214,7 @@ void main() {
         home: UserAvatar(nickname: 'Alice', fallbackSeed: 'seed', size: 48)));
     expect(find.text('A'), findsOneWidget);
   });
-  test('avatar cache key is size-independent so pages share one download',
-      () {
+  test('avatar cache key is size-independent so pages share one download', () {
     // 头像一致性：消息页(48)与通讯录(40)渲染尺寸不同，也必须命中
     // 同一条缓存，避免同头像跨页面重复下载。
     final key48 = AvatarCache.cacheKey(
@@ -307,6 +340,3 @@ void main() {
     expect(retries, 1);
   });
 }
-
-
-

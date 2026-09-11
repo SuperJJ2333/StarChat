@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 
+import '../../core/performance_metrics.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/foundation/avatar_retry.dart';
 import 'avatar_url_resolver.dart';
 
 /// Minimal managed capability for resolving Matrix media without exposing a
@@ -41,6 +43,13 @@ final class MatrixUserAvatar extends StatefulWidget {
 final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
   ResolvedAvatarUrl? resolved;
   int _resolutionGeneration = 0;
+  final _retry = AvatarRetry();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _retry.setActive(TickerMode.valuesOf(context).enabled);
+  }
 
   @override
   void initState() {
@@ -61,33 +70,55 @@ final class _MatrixUserAvatarState extends State<MatrixUserAvatar> {
           oldWidget.avatarMedia != widget.avatarMedia) {
         resolved = null;
       }
+      _retry.reset();
       _resolve();
     }
   }
 
   Future<void> _resolve() async {
+    final metrics = PerformanceMetrics.instance;
+    final watch = metrics.enabled ? (Stopwatch()..start()) : null;
     final generation = ++_resolutionGeneration;
     final avatarUri = widget.matrixAvatarUri;
     final size = widget.size;
     try {
-      final value = await widget.avatarMedia.resolveAvatar(
-        avatarUri: avatarUri,
-        size: size,
+      ResolvedAvatarUrl? value;
+      await _retry.runAfter(
+        widget.avatarMedia
+            .resolveAvatar(avatarUri: avatarUri, size: size)
+            .then((fresh) {
+          value = fresh;
+        }),
+        () {
+          if (!mounted || generation != _resolutionGeneration) return;
+          _retry.reset();
+          setState(() => resolved = value);
+          _diagnose('resolved');
+        },
       );
-      if (!mounted || generation != _resolutionGeneration) return;
-      setState(() => resolved = value);
-      _diagnose('resolved');
     } catch (_) {
       if (!mounted || generation != _resolutionGeneration) return;
+      if (avatarUri != null) {
+        _retry.schedule(() {
+          PerformanceMetrics.instance.increment(PerformanceCounter.avatarRetry);
+          _resolve();
+        });
+      }
       _diagnose('resolution-failed');
       // Retain the HTTP profile fallback or local text avatar while Matrix
       // media capability discovery is temporarily unavailable.
+    } finally {
+      if (watch != null) {
+        metrics.record(
+            PerformanceOperation.avatarResolve, watch.elapsedMicroseconds);
+      }
     }
   }
 
   @override
   void dispose() {
     _resolutionGeneration++;
+    _retry.reset();
     super.dispose();
   }
 

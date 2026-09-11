@@ -65,6 +65,10 @@ class _UploadRoom extends Room {
   @override
   bool get encrypted => true;
   @override
+  Membership get membership => Membership.join;
+  @override
+  bool get canSendDefaultMessages => true;
+  @override
   Future<String?> sendEvent(
     Map<String, dynamic> content, {
     String type = EventTypes.Message,
@@ -144,12 +148,66 @@ Future<MatrixRoomTimelineAdapter> _adapter(
 }
 
 void main() {
+  test('video loader that already caches its content never awaits itself',
+      () async {
+    final payload = Uint8List.fromList(
+        [0, 0, 0, 24, ...ascii.encode('ftypisom'), ...List<int>.filled(12, 0)]);
+    final key = MediaCacheKey(
+        roomId: '!nested-video',
+        eventId: 'v',
+        contentSha256: sha256.convert(payload).toString());
+    var downloads = 0;
+    final load = resolveCachedVideoFile(
+        key: key,
+        loaderCachesContent: true,
+        decrypt: () => loadMediaWithCache(key, () async {
+              downloads++;
+              return payload;
+            }));
+    try {
+      final file = await load.timeout(const Duration(seconds: 1));
+      expect(await file.readAsBytes(), payload);
+      expect(downloads, 1);
+    } finally {
+      clearMediaMemoryCaches();
+      await load.then<void>((_) {}, onError: (Object _) {});
+    }
+  });
+
+  test('cold cache source work has a shared three-request limit', () async {
+    final gates = List.generate(4, (_) => Completer<Uint8List>());
+    final threeStarted = Completer<void>();
+    var started = 0;
+    final loads = [
+      for (var i = 0; i < 4; i++)
+        loadMediaWithCache(
+            MediaCacheKey(
+                roomId: '!scheduler',
+                eventId: '$i',
+                contentSha256: sha256.convert([i]).toString()), () {
+          started++;
+          if (started == 3) threeStarted.complete();
+          return gates[i].future;
+        })
+    ];
+    await threeStarted.future.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    final beforeRelease = started;
+    for (var i = 0; i < gates.length; i++) {
+      gates[i].complete(Uint8List.fromList([i]));
+    }
+    await Future.wait(loads);
+    expect(beforeRelease, 3);
+    expect(started, 4);
+  });
+
   final bytes = Uint8List.fromList(utf8.encode('abc'));
   final hash = sha256.convert(bytes).toString();
   setUp(() async {
+    clearMediaMemoryCaches();
     SharedPreferences.setMockInitialValues({});
     final root = Directory(
-        '../../docs/verification/artifacts/2026-09-09/media-dedup-implementation/mobile/cache');
+        '../../docs/verification/artifacts/2026-09-11/performance/media-cache-fixtures');
     await root.create(recursive: true);
     final scratch = await root.createTemp('case-');
     PathProviderPlatform.instance = _Paths(scratch.absolute.path);
@@ -255,6 +313,7 @@ void main() {
         await MediaCache.cached(b.roomId, b.eventId, contentSha256: hash);
     expect(file!.path.replaceAll('\\', '/'), contains('/objects/$hash'));
     await file.writeAsBytes([3, 2, 1]);
+    clearMediaMemoryCaches(); // Exercise corrupted disk, not a valid warm copy.
     var downloads = 0;
     expect(
         await loadMediaWithCache(b, () async {
@@ -273,14 +332,14 @@ void main() {
             contentSha256: wrongHash),
         isNull);
   });
-  test('memory mutation is a miss and concurrent cross-room loads coalesce',
+  test('producer mutation cannot corrupt memory and cross-room loads coalesce',
       () async {
     final memory = MediaMemoryCache();
     final key = MediaCacheKey(roomId: '!a', eventId: 'a', contentSha256: hash);
     final mutable = Uint8List.fromList(bytes);
     memory.put(key.cacheId, mutable);
     mutable[0] = 0;
-    expect(memory.get(key.cacheId), isNull);
+    expect(memory.get(key.cacheId), bytes);
     var downloads = 0;
     Future<Uint8List> source() async {
       downloads++;
@@ -439,6 +498,7 @@ void main() {
     expect(hot.path, file.path);
     final changed = Uint8List.fromList(payload)..[0] = 1;
     await file.writeAsBytes(changed);
+    clearMediaMemoryCaches(); // Force the disk-integrity repair path.
     final memory = MediaMemoryCache();
     var downloads = 0;
     final repaired = await resolveCachedVideoFile(

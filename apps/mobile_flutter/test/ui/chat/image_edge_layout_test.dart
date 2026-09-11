@@ -31,6 +31,23 @@ Rect paintedImage(WidgetTester tester) {
       .inscribe(fitted.destination, tester.getRect(finder));
 }
 
+Future<void> settleDecodedImage(
+  WidgetTester tester,
+  Uint8List bytes, {
+  required Finder contextFinder,
+  int maxEdge = 720,
+}) async {
+  // MediaVisibility publishes after layout, and Image's stream resolves after
+  // that publication. Precache the same bounded provider rather than racing a
+  // wall-clock delay before reading RenderImage.image.
+  await tester.pump();
+  await tester.runAsync(() => precacheImage(
+      boundedChatImageProvider(bytes, maxEdge: maxEdge),
+      tester.element(contextFinder)));
+  await tester.pump();
+  await tester.pumpAndSettle();
+}
+
 void main() {
   for (final direction in MessageDirection.values) {
     for (final size in [
@@ -60,9 +77,8 @@ void main() {
                     )),
           ),
         ))));
-        await tester.runAsync(() async =>
-            Future<void>.delayed(const Duration(milliseconds: 100)));
-        await tester.pumpAndSettle();
+        await settleDecodedImage(tester, bytes,
+            contextFinder: find.byType(ContainImageBubble));
         final image = paintedImage(tester);
         final avatar =
             tester.getRect(find.byKey(const Key('message-avatar-slot')));
@@ -84,9 +100,8 @@ void main() {
     final bytes = (await tester.runAsync(() => picture(160, 90)))!;
     await tester
         .pumpWidget(CupertinoApp(home: ImageViewerPage(previewBytes: bytes)));
-    await tester.runAsync(
-        () async => Future<void>.delayed(const Duration(milliseconds: 100)));
-    await tester.pumpAndSettle();
+    await settleDecodedImage(tester, bytes,
+        contextFinder: find.byType(ImageViewerPage), maxEdge: 2048);
     expect(paintedImage(tester).width, closeTo(400, .01));
     final viewer =
         tester.widget<InteractiveViewer>(find.byType(InteractiveViewer));

@@ -1,9 +1,9 @@
 """Session-authenticated manual TRON operations; evidence submission is not payment."""
-from typing import Annotated
+from typing import Annotated, Literal
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Response
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
@@ -16,10 +16,20 @@ class AmountBody(BaseModel):
     expected_binding_version: int = Field(ge=1, strict=True)
 
 
+class PayoutQuoteBody(AmountBody):
+    funding_asset: Literal['CAIBI', 'USDT'] = 'USDT'
+
+
+class PayoutPaymentIntent(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    quote_id: str = Field(min_length=1, max_length=36)
+
+
 class PayoutBody(BaseModel):
     model_config = ConfigDict(extra='forbid')
     quote_id: str = Field(min_length=1, max_length=36)
     mfa_proof: SecretStr | None = Field(default=None, min_length=6, max_length=6, repr=False)
+    payment_authorization: SecretStr | None = Field(default=None, min_length=20, max_length=256, repr=False)
 
 
 class ClaimBody(AdminWalletProofBody):
@@ -46,6 +56,9 @@ class PayoutView(BaseModel):
     candidate_txid: str | None
     settlement_txid: str | None = None
     review_reason: str | None
+    funding_asset: Literal['CAIBI', 'USDT'] = 'USDT'
+    funding_amount: str | None = None
+    cancellation_asset: Literal['CAIBI', 'USDT'] = 'USDT'
 
 
 class InstructionView(BaseModel):
@@ -87,6 +100,21 @@ class QuoteView(BaseModel):
     safety_epoch: int
     created_at: str
     expires_at: str
+    funding_asset: Literal['CAIBI', 'USDT'] = 'USDT'
+    funding_amount: str | None = None
+    conversion_rate: str = '1'
+    conversion_fee: str = '0.000000'
+    cancellation_asset: Literal['CAIBI', 'USDT'] = 'USDT'
+
+    @model_validator(mode='after')
+    def project_legacy_funding_amount(self):
+        # Response-only compatibility: stored quote snapshots/digests and
+        # idempotency evidence must remain byte-for-byte unchanged.
+        if self.funding_amount is None:
+            if self.funding_asset != 'USDT':
+                raise ValueError('CAIBI quote requires explicit funding amount')
+            self.funding_amount = self.amount
+        return self
 
 
 class IntentView(BaseModel):
@@ -157,12 +185,19 @@ def create_manual_wallet_router(settings, factory, *, runtime):
         return call(ready().intents.status, user_id=identity[0], intent_id=intent_id)
 
     @router.post('/payout-quotes', response_model=QuoteView, status_code=201)
-    def quote(body: AmountBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
+    def quote(body: PayoutQuoteBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
+        payload = dict(amount=body.amount, binding_version=body.expected_binding_version)
+        if body.funding_asset != 'USDT':
+            payload['funding_asset'] = body.funding_asset
         recovered = recover_closed('payout_requests_enabled', 'payouts', user_id=identity[0], operation='QUOTE',
-            payload=dict(amount=body.amount, binding_version=body.expected_binding_version), idempotency_key=idempotency_key)
+            payload=payload, idempotency_key=idempotency_key)
         if recovered is not None:
             return recovered
         return call(ready(capability='payout_requests_enabled').payouts.quote, user_id=identity[0], **body.model_dump(), idempotency_key=idempotency_key)
+
+    @router.get('/payout-quotes/{quote_id}', response_model=QuoteView)
+    def quote_status(quote_id: str, identity=Depends(actor)):
+        return call(ready().payouts.quote_status, user_id=identity[0], quote_id=quote_id)
 
     @router.post('/payouts', response_model=PayoutView, status_code=201)
     def request(body: PayoutBody, idempotency_key: IdempotencyKey, identity=Depends(actor)):
@@ -171,7 +206,9 @@ def create_manual_wallet_router(settings, factory, *, runtime):
         if recovered is not None:
             return recovered
         return call(ready(capability='payout_requests_enabled').payouts.request, user_id=identity[0], session_id=identity[1],
-            quote_id=body.quote_id, mfa_proof=body.mfa_proof.get_secret_value() if body.mfa_proof is not None else None, idempotency_key=idempotency_key)
+            quote_id=body.quote_id, mfa_proof=body.mfa_proof.get_secret_value() if body.mfa_proof is not None else None,
+            payment_authorization=body.payment_authorization.get_secret_value() if body.payment_authorization is not None else None,
+            claims=identity[2], idempotency_key=idempotency_key)
 
     @router.get('/payouts/{order_id}', response_model=PayoutView)
     def status(order_id: str, identity=Depends(actor)):

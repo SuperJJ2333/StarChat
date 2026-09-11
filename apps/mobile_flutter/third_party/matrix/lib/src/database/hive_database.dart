@@ -944,12 +944,14 @@ class FamedlySdkHiveDatabase extends DatabaseApi with ZoneTransactionMixin {
   Future<void> storeEventUpdate(EventUpdate eventUpdate, Client client) async {
     // Ephemerals should not be stored
     if (eventUpdate.type == EventUpdateType.ephemeral) return;
+    final tmpRoom = client.getRoomById(eventUpdate.roomID) ??
+        Room(id: eventUpdate.roomID, client: client);
 
     // In case of this is a redaction event
     if (eventUpdate.content['type'] == EventTypes.Redaction) {
-      final tmpRoom = client.getRoomById(eventUpdate.roomID) ??
-          Room(id: eventUpdate.roomID, client: client);
-      final eventId = eventUpdate.content.tryGet<String>('redacts');
+      final redaction = Event.fromJson(eventUpdate.content, tmpRoom);
+      final eventId = eventUpdate.content.tryGet<String>('redacts') ??
+          redaction.content.tryGet<String>('redacts');
       final event =
           eventId != null ? await getEventById(eventId, tmpRoom) : null;
       if (event != null) {
@@ -1001,6 +1003,21 @@ class FamedlySdkHiveDatabase extends DatabaseApi with ZoneTransactionMixin {
       // there is nothing to do here.
       if (!newStatus.isSynced && prevStatus != null && prevStatus.isSynced) {
         return;
+      }
+
+      // Redaction is irreversible, but still restore timeline fragments after
+      // a limited sync. Sanitize stale content and continue normal persistence.
+      final priorRedaction = prevEvent == null
+          ? null
+          : Event.fromJson(convertToJson(prevEvent), tmpRoom).redactedBecause;
+      if (priorRedaction != null &&
+          !Event.fromJson(eventUpdate.content, tmpRoom).redacted) {
+        final sanitized = Event.fromJson(eventUpdate.content, tmpRoom)
+          ..setRedactionEvent(priorRedaction);
+        final sanitizedJson = sanitized.toJson();
+        eventUpdate.content
+          ..clear()
+          ..addAll(sanitizedJson);
       }
 
       final status = newStatus.isError || prevStatus == null

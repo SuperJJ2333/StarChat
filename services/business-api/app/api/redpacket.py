@@ -81,6 +81,10 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
                 raise AppError(code="RED_PACKET_BALANCE_INSUFFICIENT", message="红包创建失败，账户余额不足", status_code=422) from error
             if str(error) == "RED_PACKET_LIMIT_EXCEEDED":
                 raise AppError(code="RED_PACKET_LIMIT_EXCEEDED", message=f"单个红包金额不能超过 {max_total} 点钻", status_code=422) from error
+            if str(error) == "room membership required":
+                raise AppError(code="RED_PACKET_ROOM_FORBIDDEN", message="只有群成员可以发群红包", status_code=403) from error
+            if str(error) == "share count exceeds room members":
+                raise AppError(code="RED_PACKET_SHARE_COUNT_EXCEEDS_MEMBERS", message="红包个数不能超过当前群成员数", status_code=422) from error
             raise
         return {"id": packet.id, "mode": packet.mode, "asset": "CAIBI", "total": str(packet.total), "share_count": packet.share_count, "expires_at": packet.expires_at}
 

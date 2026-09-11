@@ -5,11 +5,18 @@ enum RedPacketVisualState { available, claimed, exhausted, expired, withdrawn }
 
 final class WeChatRedPacketCard extends StatelessWidget {
   const WeChatRedPacketCard(
-      {super.key, required this.greeting, required this.state, this.onTap});
+      {super.key,
+      required this.greeting,
+      required this.state,
+      this.onTap,
+      this.labelOverride});
   final String greeting;
   final RedPacketVisualState state;
   final VoidCallback? onTap;
-  String get label => switch (state) {
+  final String? labelOverride;
+  String get label =>
+      labelOverride ??
+      switch (state) {
         RedPacketVisualState.available => '领取红包',
         RedPacketVisualState.claimed => '已领取',
         RedPacketVisualState.exhausted => '已领完',
@@ -21,10 +28,13 @@ final class WeChatRedPacketCard extends StatelessWidget {
       padding: EdgeInsets.zero,
       onPressed: onTap,
       child: Container(
+          key: const Key('wechat-red-packet-card'),
           width: 236,
           height: 96,
           decoration: BoxDecoration(
-              color: WeChatColors.warning,
+              color: state == RedPacketVisualState.claimed
+                  ? WeChatColors.redPacketMuted
+                  : WeChatColors.warning,
               borderRadius: BorderRadius.circular(WeChatRadius.redPacket)),
           child: Column(children: [
             Expanded(

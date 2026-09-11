@@ -23,7 +23,7 @@ def services(membership):
     ledger = LedgerService(factory)
     ledger.adjust(user_id="sender", amount=Decimal("100.00"), actor_id="finance", reason_code="INITIAL_CREDIT", idempotency_key="seed-red")
     # F06：群红包查看/领取需要权威房间成员校验（测试注入静态成员表）。
-    membership.set_members("!room:test", {"alice", "bob"})
+    membership.set_members("!room:test", {"sender", "alice", "bob"})
     yield RedPacketService(factory, ledger, room_membership=membership), ledger, membership
     engine.dispose()
 
@@ -100,17 +100,39 @@ def test_f06_sender_and_exclusive_recipient_still_allowed(services):
     assert service.claim(exclusive.id, user_id="friend", idempotency_key="claim-friend").amount == Decimal("1.00")
 
 def test_f06_fail_closed_without_authority():
-    """未配置成员权威（None）时群红包仅发起人本人——fail closed。"""
+    """创建后若成员权威不可用，非发起人的领取仍 fail closed。"""
     engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     ledger = LedgerService(factory)
     ledger.adjust(user_id="sender", amount=Decimal("5.00"), actor_id="finance", reason_code="INITIAL_CREDIT", idempotency_key="seed-f06")
-    service = RedPacketService(factory, ledger, room_membership=None)
-    packet = service.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1, room_id="!room:test", idempotency_key="rp-f06-e", expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    membership = StaticRoomMembershipAuthority({"!room:test": {"sender", "alice"}})
+    service = RedPacketService(factory, ledger, room_membership=membership)
+    packet = service.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1,
+        room_id="!room:test", idempotency_key="rp-f06-e",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    unavailable = RedPacketService(factory, ledger, room_membership=None)
     with pytest.raises(ValueError, match="room membership required"):
-        service.claim(packet.id, user_id="anyone", idempotency_key="claim-x")
-    assert service.claim(packet.id, user_id="sender", idempotency_key="claim-s").amount == Decimal("1.00")
+        unavailable.claim(packet.id, user_id="alice", idempotency_key="claim-f06-e")
+    assert ledger.balance("alice") == Decimal("0.00")
+    engine.dispose()
+
+
+def test_group_create_without_authority_fails_before_debit():
+    engine = create_engine("sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    ledger = LedgerService(factory)
+    ledger.adjust(user_id="sender", amount=Decimal("5.00"), actor_id="finance",
+        reason_code="INITIAL_CREDIT", idempotency_key="seed-no-authority")
+    service = RedPacketService(factory, ledger, room_membership=None)
+
+    with pytest.raises(ValueError, match="room membership required"):
+        service.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1,
+            room_id="!room:test", idempotency_key="no-authority",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+
+    assert ledger.balance("sender") == Decimal("5.00")
     engine.dispose()
 
 def test_f06_unauthorized_claim_writes_nothing(services):
@@ -124,3 +146,118 @@ def test_f06_unauthorized_claim_writes_nothing(services):
         claims = session.scalars(select(RedPacketClaim).where(RedPacketClaim.user_id == "stranger")).all()
     assert claims == []
     assert ledger.balance("stranger") == Decimal("0.00")
+
+
+def test_group_create_uses_one_authoritative_snapshot_before_debit(services):
+    service, ledger, membership = services
+    class SnapshotSpy:
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.calls = 0
+
+        def is_member(self, room_id, user_id):
+            return self.delegate.is_member(room_id, user_id)
+
+        def creation_snapshot(self, room_id, user_id):
+            self.calls += 1
+            return self.delegate.creation_snapshot(room_id, user_id)
+
+    spy = SnapshotSpy(membership)
+    service = RedPacketService(service.session_factory, ledger, room_membership=spy)
+    packet = service.create_equal(sender_id="sender", total=Decimal("2.00"), share_count=3,
+        room_id="!room:test", idempotency_key="group-size-ok",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    assert packet.share_count == 3
+    assert spy.calls == 1
+    before = ledger.balance("sender")
+    with pytest.raises(ValueError, match="share count exceeds room members"):
+        service.create_equal(sender_id="sender", total=Decimal("2.00"), share_count=4,
+            room_id="!room:test", idempotency_key="group-size-rejected",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    assert ledger.balance("sender") == before
+    membership.set_members("!room:test", {"alice", "bob"})
+    with pytest.raises(ValueError, match="room membership required"):
+        service.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1,
+            room_id="!room:test", idempotency_key="sender-left",
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+
+
+class RecordingPaymentPin:
+    def __init__(self):
+        self.existing = []
+
+    def lock_account(self, *_args, **_kwargs):
+        pass
+
+    def consume(self, *_args, **kwargs):
+        self.existing.append(kwargs["existing"])
+
+
+def test_group_create_replays_before_later_membership_shrink(services):
+    service, ledger, membership = services
+    payment_pin = RecordingPaymentPin()
+    service = RedPacketService(service.session_factory, ledger, room_membership=membership,
+        payment_pin=payment_pin)
+    first = service.create_equal(sender_id="sender", total=Decimal("2.00"), share_count=3,
+        room_id="!room:test", idempotency_key="group-replay",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    membership.set_members("!room:test", {"sender"})
+    replay = service.create_equal(sender_id="sender", total=Decimal("2.00"), share_count=3,
+        room_id="!room:test", idempotency_key="group-replay",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24))
+    assert replay.id == first.id
+    assert payment_pin.existing == [False, True]
+
+
+def test_detail_viewer_claim_and_best_luck_projection_matrix(services):
+    service, _ledger, _membership = services
+    future = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    open_packet = service.create_random(sender_id="sender", total=Decimal("3.00"), share_count=3,
+        room_id="!room:test", idempotency_key="detail-open", expires_at=future)
+    service.claim(open_packet.id, user_id="alice", idempotency_key="detail-open-alice")
+    open_detail = service.detail(open_packet.id, user_id="sender")
+    assert open_detail["viewer_claim"] is None
+    assert open_detail["best_luck_eligible"] is False
+
+    service.claim(open_packet.id, user_id="sender", idempotency_key="detail-open-sender")
+    service.claim(open_packet.id, user_id="bob", idempotency_key="detail-open-bob")
+    completed_detail = service.detail(open_packet.id, user_id="sender")
+    assert completed_detail["viewer_claim"]["user_id"] == "sender"
+    assert completed_detail["best_luck_eligible"] is True
+
+    others_completed = service.create_random(sender_id="sender", total=Decimal("2.00"),
+        share_count=2, room_id="!room:test", idempotency_key="detail-others-completed",
+        expires_at=future)
+    service.claim(others_completed.id, user_id="alice", idempotency_key="detail-others-alice")
+    service.claim(others_completed.id, user_id="bob", idempotency_key="detail-others-bob")
+    others_detail = service.detail(others_completed.id, user_id="sender")
+    assert others_detail["viewer_claim"] is None
+    assert others_detail["best_luck_eligible"] is True
+
+    equal_packet = service.create_equal(sender_id="sender", total=Decimal("2.00"),
+        share_count=2, room_id="!room:test", idempotency_key="detail-equal-completed",
+        expires_at=future)
+    service.claim(equal_packet.id, user_id="alice", idempotency_key="detail-equal-alice")
+    service.claim(equal_packet.id, user_id="bob", idempotency_key="detail-equal-bob")
+    assert service.detail(equal_packet.id, user_id="sender")["best_luck_eligible"] is False
+
+    expired_packet = service.create_random(sender_id="sender", total=Decimal("3.00"), share_count=3,
+        room_id="!room:test", idempotency_key="detail-expired",
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    assert service.detail(expired_packet.id, user_id="sender")["best_luck_eligible"] is True
+
+    cancelled_packet = service.create_random(sender_id="sender", total=Decimal("3.00"), share_count=3,
+        room_id="!room:test", idempotency_key="detail-cancelled",
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    service.cancel_unclaimed(cancelled_packet.id, actor_id="supervisor",
+        reason_code="ABNORMAL_RED_PACKET", idempotency_key="detail-cancelled-refund")
+    assert service.detail(cancelled_packet.id, user_id="sender")["best_luck_eligible"] is False
+
+    direct_packet = service.create_equal(sender_id="sender", total=Decimal("1.00"), share_count=1,
+        recipient_id="friend", idempotency_key="detail-direct", expires_at=future)
+    exclusive_packet = service.create_exclusive(sender_id="sender", total=Decimal("1.00"),
+        share_count=1, room_id="!room:test", recipient_id="friend",
+        idempotency_key="detail-exclusive", expires_at=future)
+    assert service.detail(direct_packet.id, user_id="sender")["best_luck_eligible"] is False
+    assert service.detail(exclusive_packet.id, user_id="sender")["best_luck_eligible"] is False

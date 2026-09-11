@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Finance chat contract pending</title>
+    <link rel="stylesheet" href="/src/styles/reset.css">
+    <link rel="stylesheet" href="/src/styles/tokens.css">
+    <link rel="stylesheet" href="/src/styles/primitives.css">
+    <link rel="stylesheet" href="/src/styles/components.css">
+  </head>
+  <body data-test-result="pending">
+    <main id="test-root"></main>
+    <script type="module">
+      try {
+        const [{ registerComponents }, { getScreen }] = await Promise.all([
+          import("/src/components/register.js"),
+          import("/src/catalog/screens.js")
+        ]);
+        registerComponents();
+        const ids = [
+          "redpacket-detail-viewer-claimed",
+          "redpacket-detail-claiming",
+          "redpacket-detail-unknown-result",
+          "redpacket-detail-group-random-completed",
+          "redpacket-detail-group-random-expired",
+          "redpacket-create-group-random",
+          "redpacket-create-direct-equal",
+          "redpacket-create-minimum-invalid",
+          "redpacket-create-amount-invalid",
+          "caibi-transfer-receiver-accepted",
+          "caibi-ledger-all",
+          "caibi-ledger-loading",
+          "caibi-ledger-empty",
+          "caibi-ledger-error",
+          "caibi-transaction-detail"
+        ];
+        const root = document.querySelector("#test-root");
+        const unhandled = [];
+        window.addEventListener("unhandledrejection", event => { unhandled.push(event.reason); event.preventDefault(); });
+        for (const id of ids) root.append(await getScreen(id).component());
+        const opened = [];
+        let createActions = 0;
+        root.addEventListener("click", event => {
+          const action = event.target.closest("[data-action]")?.dataset.action;
+          if (action === "redpacket:create") createActions += 1;
+          if (action) opened.push(action);
+        });
+        const viewerClaim = root.querySelector('[data-screen-id="redpacket-detail-viewer-claimed"] .c-red-packet');
+        viewerClaim.click();
+        if (viewerClaim.dataset.viewerClaim !== "true" || opened.at(-1) !== "open:redpacket-detail-history") throw new Error("viewer claim must enter detail");
+        const claimingPacket = root.querySelector('[data-screen-id="redpacket-detail-claiming"] .c-red-packet');
+        const unknownPacket = root.querySelector('[data-screen-id="redpacket-detail-unknown-result"] .c-red-packet');
+        if (!claimingPacket.textContent.includes("领取中") || !unknownPacket.textContent.includes("状态未知")) throw new Error("red packet status labels must override the available action for loading and unknown states");
+        const randomComplete = root.querySelector('[data-screen-id="redpacket-detail-group-random-completed"]');
+        const randomExpired = root.querySelector('[data-screen-id="redpacket-detail-group-random-expired"]');
+        for (const [screen, state] of [[randomComplete, "exhausted"], [randomExpired, "expired"]]) {
+          const packet = screen.querySelector(".c-red-packet");
+          if (packet.dataset.state !== state || packet.dataset.viewerClaim !== "false") throw new Error("group random terminal state must map to its exhausted or expired visual");
+          const best = screen.querySelector(".c-transaction-row");
+          if (!best?.textContent.includes("陈默 · 手气最佳") || !best.textContent.includes("32.18 点钻")) throw new Error("best luck must appear on its actual claimant row");
+        }
+        if (getComputedStyle(viewerClaim).backgroundColor !== "rgb(242, 183, 168)") throw new Error("viewer claimed packet must use the claimed muted token");
+        const groupCreate = root.querySelector('[data-screen-id="redpacket-create-group-random"]');
+        const countInput = groupCreate.querySelector('input[aria-label="红包个数"]');
+        if (countInput.max !== "8" || !countInput.placeholder.includes("群成员共 8 人，最多可发 8 个红包")) throw new Error("group red packet count must use the fixture joined-member limit");
+        const createButton = groupCreate.querySelector('[data-action="redpacket:create"]');
+        countInput.value = "9";
+        createButton.click();
+        if (createActions !== 0 || !groupCreate.textContent.includes("红包份数不能超过当前群聊人数（含发送者）：8")) throw new Error("a count above joined members must block creation without dispatching the action");
+        countInput.value = "1.5";
+        createButton.click();
+        if (createActions !== 0) throw new Error("a fractional red packet count must not dispatch creation");
+        countInput.value = "8";
+        createButton.click();
+        if (createActions !== 1 || groupCreate.textContent.includes("红包份数不能超过当前群聊人数（含发送者）：8")) throw new Error("a count equal to joined members must dispatch exactly once");
+        const directCreate = root.querySelector('[data-screen-id="redpacket-create-direct-equal"] input[aria-label="红包个数"]');
+        if (directCreate.max !== "1" || !directCreate.placeholder.includes("仅限 1 份")) throw new Error("direct red packets must remain a single fixed part");
+        if (!root.querySelector('[data-screen-id="redpacket-create-minimum-invalid"]').textContent.includes("每份至少 0.01 点钻") || !root.querySelector('[data-screen-id="redpacket-create-amount-invalid"]').textContent.includes("红包金额格式错误")) throw new Error("amount and minimum validation must retain their specific errors");
+        const receiver = root.querySelector('[data-screen-id="caibi-transfer-receiver-accepted"] .c-transfer-card');
+        receiver.click();
+        if (!receiver.textContent.includes("转账已收款") || opened.at(-1) !== "open:caibi-transaction-detail") throw new Error("receiver transfer detail action missing");
+        if (!root.querySelector('[data-screen-id="caibi-transfer-receiver-accepted"]').querySelector("app-navigation-bar").textContent.includes("收款")) throw new Error("receiver transfer page must be titled 收款");
+        if (!root.querySelector('[data-screen-id="caibi-transaction-detail"]').querySelector("app-navigation-bar").textContent.includes("账单详情")) throw new Error("transaction detail must be titled 账单详情");
+        const ledger = root.querySelector('[data-screen-id="caibi-ledger-all"]');
+        const more = ledger.querySelector('[data-action="ledger:more"]');
+        if (ledger.querySelectorAll(".c-ledger-row").length !== 2) throw new Error("ledger first page is incorrect");
+        more.click();
+        if (ledger.querySelectorAll(".c-ledger-row").length !== 4) throw new Error("ledger next page must append earlier rows");
+        const form = ledger.querySelector("form");
+        const [kind, start, end, query] = form.querySelectorAll("select, input");
+        kind.value = "转账"; start.value = "2026-09-10"; end.value = "2026-09-12"; query.value = "转账";
+        form.querySelector('[data-action="ledger:apply"]').click();
+        const selectedRow = ledger.querySelector('.c-ledger-row[data-transaction-id="3c40c1aa-836b-4dae-8c49-cd73c2ebbc10"]');
+        if (ledger.querySelectorAll(".c-ledger-row").length !== 1 || !selectedRow) throw new Error("ledger combined filters are not applied");
+        selectedRow.click();
+        const ledgerId = "3c40c1aa-836b-4dae-8c49-cd73c2ebbc10";
+        if (!ledger.querySelector("app-navigation-bar").textContent.includes("账单详情")) throw new Error("selected ledger row must switch to the bill detail title");
+        if (getComputedStyle(form).display !== "none") throw new Error("ledger filters must be hidden while bill detail is selected");
+        for (const detail of ["+200.00 点钻", "已完成", "2026-09-10 18:20", "转账已收款", "账单ID", ledgerId]) {
+          if (!ledger.textContent.includes(detail)) throw new Error(`selected bill detail misses ${detail}`);
+        }
+        const copy = ledger.querySelector('[data-action="ledger:copy"]');
+        let copied = "";
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async value => { copied = value; } } });
+        copy.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (copied !== ledgerId || !ledger.textContent.includes("账单ID已复制")) throw new Error("selected ledger id copy success is incorrect");
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } });
+        copy.click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (!ledger.textContent.includes("无法访问剪贴板")) throw new Error("selected ledger id copy failure is not visible");
+        ledger.querySelector('[data-action="ledger:back"]').click();
+        if (!ledger.querySelector("app-navigation-bar").textContent.includes("全部账单") || getComputedStyle(form).display === "none") throw new Error("returning from bill detail must restore the ledger title and filters");
+        const standalone = root.querySelector('[data-screen-id="caibi-transaction-detail"]');
+        standalone.querySelector(`[data-action="open:caibi-ledger-all"]`).click();
+        if (opened.at(-1) !== "open:caibi-ledger-all") throw new Error("standalone bill detail must navigate to all bills");
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async value => { copied = value; } } });
+        standalone.querySelector(`[data-action="ledger:copy-single"]`).click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (copied !== ledgerId || !standalone.textContent.includes("账单ID已复制")) throw new Error("standalone bill copy success feedback is missing");
+        Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => { throw new Error("denied"); } } });
+        standalone.querySelector(`[data-action="ledger:copy-single"]`).click();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        if (!standalone.textContent.includes("无法访问剪贴板")) throw new Error("standalone bill copy failure feedback is missing");
+        if (unhandled.length) throw new Error("bill copy must not leak an unhandled clipboard rejection");
+        query.value = "未命中"; form.querySelector('[data-action="ledger:apply"]').click();
+        const reset = ledger.querySelector('[data-action="ledger:reset"]'); reset.click();
+        if (ledger.querySelectorAll(".c-ledger-row").length !== 2) throw new Error("empty state reset does not restore the first page");
+        const retry = root.querySelector('[data-screen-id="caibi-ledger-error"] [data-action="ledger:retry"]'); retry.click();
+        if (!root.querySelector('[data-screen-id="caibi-ledger-error"] .c-ledger-row')) throw new Error("error retry does not restore rows");
+        for (const state of ["loading", "empty", "error"]) {
+          if (!root.querySelector(`[data-screen-id="caibi-ledger-${state}"]`)) throw new Error(`missing ledger ${state} state`);
+        }
+        document.body.dataset.testResult = "passed";
+        document.title = "Finance chat contract passed";
+      } catch (error) {
+        document.body.dataset.testResult = "failed";
+        document.body.dataset.testMessage = error.message;
+        document.title = "Finance chat contract failed";
+      }
+    </script>
+  </body>
+</html>

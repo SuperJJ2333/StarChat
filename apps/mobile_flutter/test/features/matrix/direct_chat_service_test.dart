@@ -59,7 +59,8 @@ void main() {
     test('消息通知一级菜单默认收起（AnimatedSize）', () {
       final direct = readFile('lib/features/matrix/direct_chat_info_page.dart');
       expect(direct.contains('ConversationNotificationSection('), isTrue);
-      final shared = readFile('lib/ui/notification/conversation_notification_mode_tile.dart');
+      final shared = readFile(
+          'lib/ui/notification/conversation_notification_mode_tile.dart');
       expect(shared.contains('bool expanded = false'), isTrue);
       expect(shared.contains('AnimatedSize'), isTrue);
     });
@@ -99,7 +100,7 @@ void main() {
 
     test('打开聊天先 push 再后台预热（5 秒延迟根因修复）', () {
       final home = readFile('lib/features/matrix/matrix_home_page.dart');
-      final warm = home.indexOf('unawaited(_warmChatIdentity());');
+      final warm = home.indexOf('unawaited(_warmChatIdentity(');
       final push = home.indexOf('await navigator.push(');
       expect(warm, greaterThan(0));
       expect(push, greaterThan(0));

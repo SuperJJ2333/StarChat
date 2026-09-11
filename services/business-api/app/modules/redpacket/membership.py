@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 class RoomMembershipAuthority(Protocol):
     def is_member(self, room_id: str, user_id: str) -> bool: ...
+    def creation_snapshot(self, room_id: str, user_id: str) -> tuple[bool, int]: ...
 
 
 class MatrixRoomMembershipAuthority:
@@ -33,15 +34,19 @@ class MatrixRoomMembershipAuthority:
             )
 
     def is_member(self, room_id: str, user_id: str) -> bool:
+        member, _count = self.creation_snapshot(room_id, user_id)
+        return member
+
+    def creation_snapshot(self, room_id: str, user_id: str) -> tuple[bool, int]:
         matrix_id = self.matrix_user_id(user_id)
         if not matrix_id:
-            return False
+            return False, 0
         try:
-            members = self._gateway.get_room_members(room_id)
+            members = set(self._gateway.get_room_members(room_id))
         except Exception:
             # 权威源不可达：fail closed（不得在无法验证成员身份时放行）。
-            return False
-        return matrix_id in members
+            return False, 0
+        return matrix_id in members, len(members)
 
 
 class StaticRoomMembershipAuthority:
@@ -55,3 +60,7 @@ class StaticRoomMembershipAuthority:
 
     def is_member(self, room_id: str, user_id: str) -> bool:
         return user_id in self._members_by_room.get(room_id, set())
+
+    def creation_snapshot(self, room_id: str, user_id: str) -> tuple[bool, int]:
+        members = self._members_by_room.get(room_id, set())
+        return user_id in members, len(members)

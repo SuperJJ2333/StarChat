@@ -81,6 +81,7 @@ void main() {
       (tester) async {
     await tester.pumpWidget(
         CupertinoApp(home: ImageViewerPage(previewBytes: pngBytes())));
+    await tester.pump();
     final image = tester.widget<Image>(find.byType(Image).first);
     final resize = image.image as ResizeImage;
     expect(resize.width, 2048);
@@ -96,6 +97,7 @@ void main() {
         'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
     await tester
         .pumpWidget(CupertinoApp(home: ImageViewerPage(previewBytes: gif)));
+    await tester.pump();
     final image = tester.widget<Image>(find.byType(Image).first);
     final resize = image.image as ResizeImage;
     expect(resize.width, 720);

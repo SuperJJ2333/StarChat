@@ -49,13 +49,18 @@ final class ManualOperationStore {
       'quote_id',
       'address',
       'method',
-      'confirm_key'
+      'confirm_key',
+      'funding_asset'
     };
     if (record.keys.any((key) => !allowed.contains(key))) {
       throw ArgumentError('Secret or unsupported operation metadata');
     }
     if (record.containsKey('method') && record['method'] != 'address_only') {
       throw ArgumentError('Unsupported operation method');
+    }
+    if (record.containsKey('funding_asset') &&
+        !const {'CAIBI', 'USDT'}.contains(record['funding_asset'])) {
+      throw ArgumentError('Unsupported funding asset');
     }
     if (!await _prefs!.setString(await _key(slot), jsonEncode(record))) {
       throw StateError('无法保存操作记录，尚未发送请求');

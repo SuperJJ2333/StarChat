@@ -53,10 +53,22 @@ class RedPacketService:
                 {"user_id": share.claimed_by, "amount": str(share.amount), "claimed_at": share.claimed_at}
                 for share in packet.shares if share.claimed_by is not None
             ]
+            server_time = datetime.now(timezone.utc)
+            viewer_claim = next((claim for claim in claims if claim["user_id"] == user_id), None)
+            best_luck_eligible = (
+                packet.room_id is not None
+                and packet.mode == "RANDOM"
+                and (
+                    packet.status == "COMPLETED"
+                    or (packet.status != "CANCELLED" and self._aware(packet.expires_at) <= server_time)
+                )
+            )
             payload = {
                 "id": packet.id, "sender_id": packet.sender_id, "mode": packet.mode,
                 "asset": "CAIBI", "total": str(packet.total), "share_count": packet.share_count,
                 "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
+                "room_id": packet.room_id, "server_time": server_time.isoformat(),
+                "viewer_claim": viewer_claim, "best_luck_eligible": best_luck_eligible,
                 "claims": claims,
             }
             self._attach_public_profiles(payload, claims, sender_id=packet.sender_id)
@@ -134,6 +146,8 @@ class RedPacketService:
                 if existing.total != total or existing.mode != mode or existing.room_id != room_id or existing.recipient_id != recipient_id or existing.share_count != len(amounts):
                     raise ValueError("idempotency key reused with different payload")
                 return existing
+            if room_id:
+                self._authorize_group_creation(room_id, sender_id, len(amounts))
             self.ledger.post(entries={sender_id: -total, escrow: total}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)
             packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
             packet.shares = [RedPacketShare(id=str(uuid4()), ordinal=i, amount=money(amount)) for i, amount in enumerate(amounts)]
@@ -213,6 +227,16 @@ class RedPacketService:
         authority = self.room_membership
         if authority is None or not authority.is_member(packet.room_id, user_id):
             raise ValueError("room membership required")
+
+    def _authorize_group_creation(self, room_id: str, sender_id: str, share_count: int) -> None:
+        authority = self.room_membership
+        if authority is None:
+            raise ValueError("room membership required")
+        sender_is_member, member_count = authority.creation_snapshot(room_id, sender_id)
+        if not sender_is_member:
+            raise ValueError("room membership required")
+        if share_count > member_count:
+            raise ValueError("share count exceeds room members")
 
     @staticmethod
     def _aware(value):

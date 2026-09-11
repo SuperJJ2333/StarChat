@@ -14,6 +14,7 @@ import 'package:liuhetong_mobile/core/matrix_local_binding.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/auth/login_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_client_factory.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
 import 'package:matrix/matrix.dart';
@@ -38,12 +39,58 @@ class SnapshotClient extends LogoutTrackingClient {
 
   @override
   List<Room> get rooms => snapshotRooms;
+
+  void emitMembershipChange(String roomId) => onEvent.add(EventUpdate(
+      roomID: roomId,
+      type: EventUpdateType.state,
+      content: {'type': EventTypes.RoomMember}));
+
   final deletedPushers = <String>[];
   @override
   Future<void> postPusher(Pusher pusher, {bool? append}) async {}
   @override
   Future<void> deletePusher(PusherId id) async {
     deletedPushers.add(id.pushkey);
+  }
+}
+
+class HydratingMembersClient extends SnapshotClient {
+  int memberHttpCalls = 0;
+
+  @override
+  Future<List<MatrixEvent>?> getMembersByRoom(String roomId,
+      {String? at, Membership? membership, Membership? notMembership}) async {
+    memberHttpCalls++;
+    return [
+      MatrixEvent(
+          type: EventTypes.RoomMember,
+          content: {'membership': 'join'},
+          senderId: '@member:test',
+          stateKey: '@member:test',
+          eventId: r'$hydrated-member',
+          roomId: roomId,
+          originServerTs: DateTime.utc(2026, 9, 11)),
+    ];
+  }
+}
+
+class TrackingHydratedRoom extends Room {
+  TrackingHydratedRoom(
+      {required super.id, required super.client, super.summary});
+
+  int participantRequests = 0;
+
+  @override
+  Future<List<User>> requestParticipants(
+      [List<Membership> memberships = const [
+        Membership.join,
+        Membership.invite,
+        Membership.knock,
+      ],
+      bool suppressWarning = false,
+      bool cache = true]) {
+    participantRequests++;
+    return super.requestParticipants(memberships, suppressWarning, cache);
   }
 }
 
@@ -72,6 +119,7 @@ class SnapshotRoom extends Room {
   final bool joined;
   int refreshCalls = 0;
   final refresh = Completer<List<User>>();
+  Future<List<User>> Function()? onRefresh;
   Event? snapshotEvent;
   @override
   User unsafeGetUserFromMemoryOrFallback(String id) =>
@@ -92,7 +140,28 @@ class SnapshotRoom extends Room {
       bool suppressWarning = false,
       bool cache = true]) {
     refreshCalls++;
-    return refresh.future;
+    return onRefresh?.call() ?? refresh.future;
+  }
+}
+
+class CountingSnapshotRoom extends SnapshotRoom {
+  CountingSnapshotRoom(
+      {required super.id, required super.client, required super.joined});
+
+  final users = <User>[];
+  int participantReads = 0;
+
+  @override
+  List<User> getParticipants(
+      [List<Membership> membershipFilter = const [
+        Membership.join,
+        Membership.invite,
+        Membership.knock,
+      ]]) {
+    participantReads++;
+    return users
+        .where((user) => membershipFilter.contains(user.membership))
+        .toList();
   }
 }
 
@@ -281,10 +350,14 @@ final class EncryptedMediaTrackingClient extends LogoutTrackingClient {
 }
 
 final class MediaTrackingRoom extends Room {
-  MediaTrackingRoom({required super.id, required super.client});
+  MediaTrackingRoom({required super.id, required super.client})
+      : super(membership: Membership.join);
 
   @override
   bool get encrypted => true;
+
+  @override
+  bool get canSendDefaultMessages => true;
 
   MatrixFile? sentFile;
   MatrixImageFile? sentThumbnail;
@@ -1570,6 +1643,325 @@ void main() {
     expect(room.refreshCalls, 1);
     room.refresh.complete([]);
     await Future.wait([first, second]);
+
+    await matrix.conversations.refreshMembers();
+    expect(room.refreshCalls, 1,
+        reason: 'an unchanged completed sync must retain the cached members');
+  });
+
+  test('conversation snapshots reuse unchanged room member projections',
+      () async {
+    final client = SnapshotClient();
+    final room =
+        CountingSnapshotRoom(id: '!members:test', client: client, joined: true);
+    room.users.addAll([
+      User('@alice:test', membership: 'join', displayName: 'Alice', room: room),
+      User('@bob:test', membership: 'join', displayName: 'Bob', room: room),
+    ]);
+    client.snapshotRooms.add(room);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    final first = (await matrix.conversations.snapshot()).rooms.single;
+    expect(first.members.length, 2);
+    expect(room.participantReads, 1);
+    final second = (await matrix.conversations.snapshot()).rooms.single;
+    expect(room.participantReads, 1,
+        reason: 'an unchanged snapshot must not rematerialize members');
+    expect(identical(first.members, second.members), isTrue);
+    expect(() => second.members.clear(), throwsUnsupportedError);
+
+    final renamed = User('@bob:test',
+        membership: 'join', displayName: 'Robert', room: room);
+    room.users[1] = renamed;
+    room.setState(renamed);
+    final changed = (await matrix.conversations.snapshot()).rooms.single;
+    expect(room.participantReads, 2);
+    expect(changed.members[1].displayName, 'Robert');
+    expect(first.members[1].displayName, 'Bob');
+
+    await saveLocalConversationPreference(
+        room,
+        preferenceForRoom(room)
+            .copyWith(memberOrderIds: ['@bob:test', '@alice:test']));
+    final reordered = (await matrix.conversations.snapshot()).rooms.single;
+    expect(room.participantReads, 3);
+    expect(reordered.members.map((member) => member.id),
+        ['@bob:test', '@alice:test']);
+
+    client.matrixUserId = '@other:test';
+    await matrix.conversations.snapshot();
+    expect(room.participantReads, 4);
+
+    final replacement =
+        CountingSnapshotRoom(id: room.id, client: client, joined: true);
+    replacement.users.add(User('@carol:test',
+        membership: 'join', displayName: 'Carol', room: replacement));
+    client.snapshotRooms[0] = replacement;
+    final replaced = (await matrix.conversations.snapshot()).rooms.single;
+    expect(replacement.participantReads, 1);
+    expect(replaced.members.single.id, '@carol:test');
+  });
+
+  test('conversation member projection is pruned and reset with its client',
+      () async {
+    final client = SnapshotClient();
+    final room =
+        CountingSnapshotRoom(id: '!shared:test', client: client, joined: true);
+    room.users.add(User('@alice:test',
+        membership: 'join', displayName: 'Alice', room: room));
+    client.snapshotRooms.add(room);
+    late final SnapshotClient resumedClient;
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => resumedClient,
+        readContinuityMetadata: testContinuityMetadata);
+    resumedClient = SnapshotClient();
+    final resumedRoom = CountingSnapshotRoom(
+        id: '!shared:test', client: resumedClient, joined: true);
+    resumedRoom.users.add(User('@bob:test',
+        membership: 'join', displayName: 'Bob', room: resumedRoom));
+    resumedClient.snapshotRooms.add(resumedRoom);
+
+    await matrix.conversations.snapshot();
+    client.snapshotRooms.clear();
+    await matrix.conversations.snapshot();
+    client.snapshotRooms.add(room);
+    await matrix.conversations.snapshot();
+    expect(room.participantReads, 2,
+        reason:
+            'pruning must remove an absent room even if its object returns');
+
+    await matrix.suspend();
+    await matrix.sync();
+    final resumed = (await matrix.conversations.snapshot()).rooms.single;
+    expect(resumedRoom.participantReads, 1);
+    expect(resumed.members.single.displayName, 'Bob');
+  });
+
+  test('conversation snapshots keep dynamic room metadata current', () async {
+    final client = SnapshotClient();
+    final room =
+        CountingSnapshotRoom(id: '!dynamic:test', client: client, joined: true);
+    room.users.add(User('@alice:test',
+        membership: 'join', displayName: 'Alice', room: room));
+    room.snapshotEvent = Event(
+        room: room,
+        type: EventTypes.Message,
+        eventId: r'$first',
+        senderId: '@alice:test',
+        originServerTs: DateTime.utc(2026),
+        content: {'body': 'first'});
+    client.snapshotRooms.add(room);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    final first = (await matrix.conversations.snapshot()).rooms.single;
+    room.notificationCount = 7;
+    room.snapshotEvent = Event(
+        room: room,
+        type: EventTypes.Message,
+        eventId: r'$second',
+        senderId: '@alice:test',
+        originServerTs: DateTime.utc(2026, 1, 2),
+        content: {'body': 'second'});
+    final second = (await matrix.conversations.snapshot()).rooms.single;
+
+    expect(second.notificationCount, 7);
+    expect(second.lastEvent!.eventId, r'$second');
+    expect(identical(first.members, second.members), isTrue);
+    expect(room.participantReads, 1);
+  });
+
+  test('member refresh revalidates new, changed, and expired group rooms',
+      () async {
+    var now = DateTime.utc(2026, 9, 11, 12);
+    final client = SnapshotClient();
+    final first = SnapshotRoom(id: '!first:test', client: client, joined: true)
+      ..onRefresh = () async => const [];
+    client.snapshotRooms.add(first);
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        memberRefreshNow: () => now,
+        memberRefreshTtl: const Duration(minutes: 1));
+
+    await matrix.conversations.refreshMembers();
+    await matrix.conversations.refreshMembers();
+    expect(first.refreshCalls, 1);
+
+    final added = SnapshotRoom(id: '!added:test', client: client, joined: true)
+      ..onRefresh = () async => const [];
+    client.snapshotRooms.add(added);
+    await matrix.conversations.refreshMembers();
+    expect((first.refreshCalls, added.refreshCalls), (1, 1));
+
+    client.emitMembershipChange(first.id);
+    await matrix.conversations.refreshMembers();
+    expect((first.refreshCalls, added.refreshCalls), (2, 1));
+
+    now = now.add(const Duration(minutes: 1));
+    await matrix.conversations.refreshMembers();
+    expect((first.refreshCalls, added.refreshCalls), (3, 2));
+
+    client.snapshotRooms.remove(added);
+    await matrix.conversations.refreshMembers();
+    client.snapshotRooms.add(added);
+    await matrix.conversations.refreshMembers();
+    expect((first.refreshCalls, added.refreshCalls), (3, 3),
+        reason: 'a departed room must not retain freshness after it rejoins');
+  });
+
+  test('member hydration does not reissue its completed server request',
+      () async {
+    final client = HydratingMembersClient();
+    final room = TrackingHydratedRoom(
+        id: '!hydrated:test',
+        client: client,
+        summary: RoomSummary.fromJson({
+          'm.joined_member_count': 1,
+          'm.invited_member_count': 0,
+          'm.heroes': [],
+        }));
+    client.snapshotRooms.add(room);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    await matrix.conversations.refreshMembers();
+    await matrix.conversations.refreshMembers();
+
+    expect(client.memberHttpCalls, 1,
+        reason: 'SDK hydration must not mark its own cached state as dirty');
+    expect(room.participantRequests, 1,
+        reason: 'an unchanged sync must not repeat SDK member materialization');
+  });
+
+  test('member refresh retries an offline failure after its retry window',
+      () async {
+    var now = DateTime.utc(2026, 9, 11, 12);
+    final client = SnapshotClient();
+    var shouldFail = false;
+    final room = SnapshotRoom(id: '!offline:test', client: client, joined: true)
+      ..onRefresh = () async {
+        if (shouldFail) throw StateError('offline');
+        return const [];
+      };
+    client.snapshotRooms.add(room);
+    final matrix = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        memberRefreshNow: () => now,
+        memberRefreshRetryDelay: const Duration(seconds: 10));
+
+    await matrix.conversations.refreshMembers();
+    client.emitMembershipChange(room.id);
+    shouldFail = true;
+    await matrix.conversations.refreshMembers();
+    expect(room.refreshCalls, 2);
+
+    client.emitMembershipChange(room.id);
+    await matrix.conversations.refreshMembers();
+    expect(room.refreshCalls, 2,
+        reason: 'a new member event must still respect bounded retry backoff');
+
+    shouldFail = false;
+    now = now.add(const Duration(seconds: 10));
+    await matrix.conversations.refreshMembers();
+    expect(room.refreshCalls, 3);
+  });
+
+  test('member refresh retains a sync membership change during a held request',
+      () async {
+    final client = SnapshotClient();
+    final room = SnapshotRoom(id: '!race:test', client: client, joined: true);
+    client.snapshotRooms.add(room);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    final first = matrix.conversations.refreshMembers();
+    await Future<void>.delayed(Duration.zero);
+    expect(room.refreshCalls, 1);
+    client.emitMembershipChange(room.id);
+    room.refresh.complete(const []);
+    await first;
+
+    await matrix.conversations.refreshMembers();
+    expect(room.refreshCalls, 2,
+        reason: 'a later sync member event must not be erased by the fetch');
+  });
+
+  test('member refresh state does not cross accounts on one SDK client',
+      () async {
+    final client = SnapshotClient();
+    final room = SnapshotRoom(id: '!shared:test', client: client, joined: true)
+      ..onRefresh = () async => const [];
+    client.snapshotRooms.add(room);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    await matrix.conversations.refreshMembers();
+    await matrix.conversations.refreshMembers();
+    client.matrixUserId = '@other:test';
+    await matrix.conversations.refreshMembers();
+
+    expect(room.refreshCalls, 2,
+        reason: 'the next account must not inherit room freshness');
+  });
+
+  test('member refresh state resets after resume with a new SDK client',
+      () async {
+    final firstClient = SnapshotClient();
+    final firstRoom =
+        SnapshotRoom(id: '!shared:test', client: firstClient, joined: true)
+          ..onRefresh = () async => const [];
+    firstClient.snapshotRooms.add(firstRoom);
+    final resumedClient = SnapshotClient();
+    final resumedRoom =
+        SnapshotRoom(id: '!shared:test', client: resumedClient, joined: true)
+          ..onRefresh = () async => const [];
+    resumedClient.snapshotRooms.add(resumedRoom);
+    final matrix = MatrixSdkE2eeClient(firstClient,
+        homeserver: Uri.parse('https://test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => resumedClient,
+        readContinuityMetadata: testContinuityMetadata);
+
+    await matrix.conversations.refreshMembers();
+    await matrix.suspend();
+    await matrix.sync();
+    await matrix.conversations.refreshMembers();
+
+    expect(firstRoom.refreshCalls, 1);
+    expect(resumedRoom.refreshCalls, 1,
+        reason: 'a resumed client must not inherit the prior cache policy');
+  });
+
+  test('member refresh limits held requests to three workers', () async {
+    final client = SnapshotClient();
+    final release = Completer<void>();
+    var active = 0;
+    var peak = 0;
+    final rooms = [
+      for (var index = 0; index < 4; index++)
+        SnapshotRoom(id: '!worker$index:test', client: client, joined: true)
+          ..onRefresh = () async {
+            active++;
+            peak = peak > active ? peak : active;
+            await release.future;
+            active--;
+            return const [];
+          },
+    ];
+    client.snapshotRooms.addAll(rooms);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    final refresh = matrix.conversations.refreshMembers();
+    await Future<void>.delayed(Duration.zero);
+    expect(peak, 3);
+    expect(rooms.map((room) => room.refreshCalls), [1, 1, 1, 0]);
+    release.complete();
+    await refresh;
+    expect(rooms.map((room) => room.refreshCalls), [1, 1, 1, 1]);
   });
 
   test(

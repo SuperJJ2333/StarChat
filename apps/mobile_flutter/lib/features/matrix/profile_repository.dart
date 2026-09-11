@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -299,6 +300,65 @@ final class ProfileRepositoryError {
 
 typedef ProfileErrorReporter = void Function(ProfileRepositoryError error);
 
+/// A disposable view of one contact. Repositories retain it only while its
+/// consumer owns it, so opening many different profiles does not leave a
+/// permanent notifier behind for each user.
+final class ContactSelection implements ValueListenable<ContactSummary?> {
+  ContactSelection._(this._value, this._onDispose);
+
+  ContactSummary? _value;
+  VoidCallback? _onDispose;
+  final Set<VoidCallback> _listeners = {};
+  bool _isDisposed = false;
+
+  bool get isDisposed => _isDisposed;
+
+  @override
+  ContactSummary? get value => _value;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_isDisposed) _listeners.add(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+
+  void _setOnDispose(VoidCallback onDispose) => _onDispose = onDispose;
+
+  void _replace(ContactSummary? next) {
+    if (_sameContact(_value, next)) return;
+    _value = next;
+    for (final listener in List<VoidCallback>.of(_listeners)) {
+      if (_isDisposed) return;
+      if (!_listeners.contains(listener)) continue;
+      try {
+        listener();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'ProfileRepository',
+          context: ErrorDescription('while notifying a selected contact'),
+        ));
+      }
+    }
+  }
+
+  void _disposeFromRepository() {
+    _onDispose = null;
+  }
+
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    final onDispose = _onDispose;
+    _onDispose = null;
+    onDispose?.call();
+    _listeners.clear();
+  }
+}
+
 final class ProfileRepository extends ChangeNotifier {
   ProfileRepository(BusinessApiClient api,
       {String? accountKey, ProfileStore? store})
@@ -343,6 +403,7 @@ final class ProfileRepository extends ChangeNotifier {
 
   final BusinessApiClient? api;
   final String? _accountKey;
+
   /// Stable namespace of this account-scoped projection; never credentials.
   String? get accountKey => _accountKey;
   final ProfileStore? _store;
@@ -355,15 +416,37 @@ final class ProfileRepository extends ChangeNotifier {
   // Local successful mutations supersede reads started before those mutations.
   int _contactsMutation = 0;
   // Shared across full and quiet reads: the latest initiated request owns the
-  // next remote snapshot, even if it fails or older requests finish later.
+  // next contacts snapshot, even if it fails or older requests finish later.
   int _remoteReadGeneration = 0;
+  int _profileReadGeneration = 0;
+  bool _disposed = false;
+  Future<void> _persistTail = Future.value();
 
   ProfileData? profile;
   List<ContactSummary> contacts = const [];
   Map<String, ContactDetails> contactsByMatrixId = const {};
   Map<String, ContactSummary> contactsByUserId = const {};
+  final Map<String, Set<ContactSelection>> _contactSelections = {};
   bool wasHydratedFromDisk = false;
   int contactsRevision = 0;
+
+  /// Select one contact through the existing O(1) user-ID projection. The
+  /// caller owns the returned selection and must dispose it with its widget.
+  ContactSelection selectContact(String userId) {
+    if (_disposed) {
+      throw StateError('ProfileRepository has been disposed');
+    }
+    final selection = ContactSelection._(contactsByUserId[userId], null);
+    selection._setOnDispose(() {
+      final selections = _contactSelections[userId];
+      selections?.remove(selection);
+      if (selections != null && selections.isEmpty) {
+        _contactSelections.remove(userId);
+      }
+    });
+    (_contactSelections[userId] ??= {}).add(selection);
+    return selection;
+  }
 
   /// Resolve at paint time and subscribe to this repository for later changes.
   /// Incoming public names are fallbacks, never a replacement for a local remark.
@@ -425,7 +508,7 @@ final class ProfileRepository extends ChangeNotifier {
     if (store == null || key == null) return;
     final mutation = _contactsMutation;
     final snapshot = await store.read(key);
-    if (snapshot == null) return;
+    if (_disposed || snapshot == null) return;
     _apply(_preserveContactMutations(snapshot, mutation),
         invalidateChangedAvatars: false);
     if (mutation != _contactsMutation) {
@@ -448,6 +531,7 @@ final class ProfileRepository extends ChangeNotifier {
     Duration minInterval = const Duration(seconds: 15),
     DateTime Function()? now,
   }) async {
+    if (_disposed) return;
     final clock = now ?? DateTime.now;
     final last = _lastContactsRefreshAt;
     if (last != null && clock().difference(last) < minInterval) return;
@@ -469,7 +553,8 @@ final class ProfileRepository extends ChangeNotifier {
     final mutation = _contactsMutation;
     try {
       final fresh = _mergeMissingAvatars(await loadContacts());
-      if (generation != _remoteReadGeneration ||
+      if (_disposed ||
+          generation != _remoteReadGeneration ||
           mutation != _contactsMutation) {
         return;
       }
@@ -487,34 +572,56 @@ final class ProfileRepository extends ChangeNotifier {
   }
 
   Future<void> _load({required String operation}) async {
+    if (_disposed) return;
     final generation = ++_remoteReadGeneration;
+    final profileGeneration = ++_profileReadGeneration;
     await hydrate();
-    if (generation != _remoteReadGeneration) return;
+    if (_disposed || profileGeneration != _profileReadGeneration) return;
     final loadProfile = _loadProfile;
     final loadContacts = _loadContacts;
     if (loadProfile == null || loadContacts == null) return;
     final mutation = _contactsMutation;
     try {
-      final results = await Future.wait<Object>([
-        loadProfile(),
-        loadContacts(),
+      // Publish each domain as it arrives. Quiet contacts refreshes may
+      // supersede contacts, but cannot invalidate an in-flight owner profile.
+      await Future.wait<void>([
+        Future<ProfileData>.sync(loadProfile).then((fresh) async {
+          if (_disposed || profileGeneration != _profileReadGeneration) return;
+          await _applyAndPersist(ProfileSnapshot(
+            profile: fresh,
+            contacts: contacts,
+            contactsRevision: contactsRevision,
+          ));
+        }),
+        Future<List<ContactSummary>>.sync(loadContacts).then((incoming) async {
+          if (_disposed ||
+              generation != _remoteReadGeneration ||
+              mutation != _contactsMutation) {
+            return;
+          }
+          final fresh = _mergeMissingAvatars(incoming);
+          if (_contactsEqual(contacts, fresh)) return;
+          _applyContacts(fresh, contactsRevision + 1);
+          await _persist(operation: 'profile.persist');
+        }),
       ]);
-      if (generation != _remoteReadGeneration) return;
-      final freshContacts =
-          _mergeMissingAvatars(results[1] as List<ContactSummary>);
-      await _applyAndPersist(_preserveContactMutations(
-          ProfileSnapshot(
-            profile: results[0] as ProfileData,
-            contacts: freshContacts,
-            contactsRevision: _contactsEqual(contacts, freshContacts)
-                ? contactsRevision
-                : contactsRevision + 1,
-          ),
-          mutation));
     } catch (error, stackTrace) {
       _report(operation, error, stackTrace);
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _remoteReadGeneration++;
+    _profileReadGeneration++;
+    for (final selection
+        in _contactSelections.values.expand((items) => items)) {
+      selection._disposeFromRepository();
+    }
+    _contactSelections.clear();
+    super.dispose();
   }
 
   /// BUG 3：accept 后乐观写入（也用于备注/标签等单点更新）。
@@ -541,6 +648,7 @@ final class ProfileRepository extends ChangeNotifier {
       };
       _invalidateChangedContactAvatars(previous, contacts);
       contactsRevision += 1;
+      _notifyContactSelections();
       notifyListeners();
       return;
     }
@@ -581,6 +689,7 @@ final class ProfileRepository extends ChangeNotifier {
           contact.matrixUserId: contact.toDetails(),
       };
       contactsRevision += 1;
+      _notifyContactSelections();
       notifyListeners();
       return;
     }
@@ -626,30 +735,42 @@ final class ProfileRepository extends ChangeNotifier {
     await _persist(operation: 'profile.persist');
   }
 
-  Future<void> _persist({required String operation}) async {
+  Future<void> _persist({required String operation}) {
     final store = _store;
     final key = _accountKey;
-    if (store != null && key != null && profile != null) {
+    final currentProfile = profile;
+    if (_disposed || store == null || key == null || currentProfile == null) {
+      return Future.value();
+    }
+    final snapshot = ProfileSnapshot(
+      profile: currentProfile,
+      contacts: contacts,
+      contactsRevision: contactsRevision,
+    );
+    // Profile, contacts and local mutations can publish concurrently. Preserve
+    // publication order on disk even if the storage implementation is async.
+    return _persistTail = _persistTail.then((_) async {
+      if (_disposed) return;
       try {
-        await store.write(
-          key,
-          ProfileSnapshot(
-            profile: profile!,
-            contacts: contacts,
-            contactsRevision: contactsRevision,
-          ),
-        );
+        await store.write(key, snapshot);
       } catch (error, stackTrace) {
         _report(operation, error, stackTrace);
       }
-    }
+    });
   }
 
   void _apply(ProfileSnapshot snapshot,
       {bool invalidateChangedAvatars = true}) {
-    final previous = contacts;
+    if (_disposed) return;
     profile = snapshot.profile;
-    contacts = snapshot.contacts;
+    _applyContacts(snapshot.contacts, snapshot.contactsRevision,
+        invalidateChangedAvatars: invalidateChangedAvatars);
+  }
+
+  void _applyContacts(List<ContactSummary> fresh, int revision,
+      {bool invalidateChangedAvatars = true}) {
+    final previous = contacts;
+    contacts = List.unmodifiable(fresh);
     contactsByUserId = {
       for (final contact in contacts) contact.userId: contact
     };
@@ -659,10 +780,20 @@ final class ProfileRepository extends ChangeNotifier {
     if (invalidateChangedAvatars) {
       _invalidateChangedContactAvatars(previous, contacts);
     }
-    if (!_contactsEqual(previous, contacts)) {
-      contactsRevision = snapshot.contactsRevision;
-    }
+    if (!_contactsEqual(previous, contacts)) contactsRevision = revision;
+    _notifyContactSelections();
     notifyListeners();
+  }
+
+  void _notifyContactSelections() {
+    for (final entry in List<MapEntry<String, Set<ContactSelection>>>.of(
+        _contactSelections.entries)) {
+      final next = contactsByUserId[entry.key];
+      for (final selection in List<ContactSelection>.of(entry.value)) {
+        if (selection.isDisposed) continue;
+        selection._replace(next);
+      }
+    }
   }
 
   void _invalidateChangedContactAvatars(
@@ -703,25 +834,50 @@ final class ProfileRepository extends ChangeNotifier {
   /// Decodes known profile/contact avatar bytes before a chat route transition.
   /// Failed prewarming is non-blocking: the route still uses its metadata URL.
   Future<void> precacheAvatarImages(BuildContext context,
-      {double size = 40}) async {
-    final images = <(String, String)>[
-      if (profile?.avatarUrl case final url?)
-        (resolveIdentity(username: profile!.username).cacheKey, url),
-      for (final contact in contacts)
-        if (contact.avatarUrl case final url?)
-          (resolveIdentity(userId: contact.userId).cacheKey, url),
-    ];
+      {double size = 40,
+      Iterable<String> matrixUserIds = const [],
+      int maxImages = 9,
+      Future<void> Function(String key, String url)? prefetch,
+      bool Function()? shouldContinue}) async {
+    if (_disposed || !context.mounted || maxImages <= 0 ||
+        shouldContinue?.call() == false) {
+      return;
+    }
+    final images = <(String, String)>[];
+    final seen = <String>{};
+    void add(String key, String? url) {
+      if (url == null || images.length >= maxImages || !seen.add(key)) return;
+      images.add((key, url));
+    }
+    if (profile?.avatarUrl case final url?) {
+      add(resolveIdentity(username: profile!.username).cacheKey, url);
+    }
+    for (final matrixUserId in matrixUserIds.take(maxImages)) {
+      if (_disposed || !context.mounted || images.length >= maxImages) break;
+      final contact = contactsByMatrixId[matrixUserId];
+      if (contact != null) {
+        add(resolveIdentity(userId: contact.userId).cacheKey, contact.avatarUrl);
+      }
+    }
     for (final image in images) {
+      if (_disposed || !context.mounted || shouldContinue?.call() == false) {
+        return;
+      }
       try {
-        await precacheImage(
-          AvatarCache.imageProvider(
-            userId: image.$1,
-            avatarUrl: image.$2,
-            size: size,
-          ),
-          context,
-          onError: (_, __) {},
-        );
+        final override = prefetch;
+        if (override != null) {
+          await override(image.$1, image.$2);
+        } else {
+          await precacheImage(
+            AvatarCache.imageProvider(
+              userId: image.$1,
+              avatarUrl: image.$2,
+              size: size,
+            ),
+            context,
+            onError: (_, __) {},
+          );
+        }
       } catch (_) {
         // A subsequent network attempt and the retained image cache handle it.
       }
@@ -739,6 +895,7 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
         a[i].remark != b[i].remark ||
         a[i].avatarUrl != b[i].avatarUrl ||
         a[i].avatarIsKnown != b[i].avatarIsKnown ||
+        a[i].nudgeSuffix != b[i].nudgeSuffix ||
         a[i].momentsPermission != b[i].momentsPermission ||
         a[i].starred != b[i].starred) {
       return false;
@@ -749,4 +906,10 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
     }
   }
   return true;
+}
+
+bool _sameContact(ContactSummary? a, ContactSummary? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return false;
+  return _contactsEqual([a], [b]);
 }

@@ -54,7 +54,9 @@ try {
 
   const gallery = await dump("/?module=auth");
   assert.match(gallery, /data-app-ready="true"/u);
-  assert.match(gallery, /data-visible-count="24"/u);
+  const authCount = screens.filter(screen => screen.module === "auth").length;
+  assert.ok(authCount > 0);
+  assert.match(gallery, new RegExp(`data-visible-count="${authCount}"`, "u"));
   assert.doesNotMatch(gallery, /六合通/u);
   assert.doesNotMatch(gallery, /data-render-error/u);
 
@@ -79,6 +81,9 @@ try {
   const errors = await dump("/?module=wallet&state=error");
   assert.match(errors, /data-visible-count="[1-9][0-9]*"/u);
   assert.doesNotMatch(errors, /data-visible-count="0"/u);
+
+  const financeChat = await dump("/tests/finance-chat-browser.html");
+  assert.match(financeChat, /data-test-result="passed"/u);
 
   const chain = await dump("/tests/admin-chain-browser.html");
   assert.match(chain, /data-result="PASS"/u);

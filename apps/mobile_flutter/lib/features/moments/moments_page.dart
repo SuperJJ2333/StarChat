@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 export 'moments_settings_page.dart';
 import 'moments_settings_page.dart';
 import 'moments_privacy_changes.dart';
@@ -32,6 +33,7 @@ final class MomentsPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.identityCache,
+    this.contactActions,
     this.onPostsDisplayed,
     this.unreadChanges,
   }) : _preparedAccount = null;
@@ -40,6 +42,7 @@ final class MomentsPage extends StatefulWidget {
     super.key,
     required this.api,
     required this.identityCache,
+    this.contactActions,
     required String? account,
     this.onPostsDisplayed,
     this.unreadChanges,
@@ -51,6 +54,7 @@ final class MomentsPage extends StatefulWidget {
     Key? key,
     required BusinessApiClient api,
     required ProfileRepository identityCache,
+    ContactActions? contactActions,
     void Function(Iterable<String> ids)? onPostsDisplayed,
     Listenable? unreadChanges,
   }) async {
@@ -74,6 +78,7 @@ final class MomentsPage extends StatefulWidget {
       key: key,
       api: api,
       identityCache: identityCache,
+      contactActions: contactActions,
       account: account,
       onPostsDisplayed: onPostsDisplayed,
       unreadChanges: unreadChanges,
@@ -82,6 +87,7 @@ final class MomentsPage extends StatefulWidget {
 
   final String? _preparedAccount;
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final ProfileRepository identityCache;
   final void Function(Iterable<String> ids)? onPostsDisplayed;
   final Listenable? unreadChanges;
@@ -119,6 +125,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   final _deletedIds = <String>{};
   Map<String, dynamic>? _feedData;
   MomentsCache? _moments;
+  Future<void>? _invalidationsReady;
   String? _accountKey;
   String? _viewerUserId;
   int _feedRequest = 0;
@@ -140,40 +147,84 @@ final class _MomentsPageState extends State<MomentsPage> {
   }
 
   Future<void> _loadMorePosts() async {
-    if (_loadingMore || _loadMoreFailed || _refreshing) return;
+    if (_loadingMore || _loadMoreFailed) return;
     final current = _feedData;
     if (current == null) return;
     final request = _feedRequest;
     final mutation = _mutation;
     final epoch = _accountEpoch;
+    final cache = _moments;
+    final ticket = cache?.currentRevision;
+    final generation = _accountKey == null
+        ? null
+        : CacheRepository.momentsGeneration(_accountKey!);
     final cursor = current['next_cursor'] as String?;
     if (!mounted || cursor == null) return;
     final operation = _loadMoreOperation = Object();
     setState(() => _loadingMore = true);
+    bool valid() =>
+        mounted &&
+        epoch == _accountEpoch &&
+        request == _feedRequest &&
+        mutation == _mutation &&
+        (ticket == null || cache!.isCurrent(ticket));
+    void display(Map<String, dynamic> next) {
+      // Replace this page's cached projection on refresh (including removed
+      // rows), retaining the preceding pages and their fresher duplicates.
+      final merged = <String, dynamic>{};
+      for (final item in [
+        ...(current['items'] as List? ?? []),
+        ...(next['items'] as List? ?? [])
+      ]) {
+        merged.putIfAbsent((item as Map)['id'].toString(), () => item);
+      }
+      setState(() => _feedData = {...next, 'items': merged.values.toList()});
+    }
+
+    var displayedCache = false;
     try {
-      final next = await widget.api.momentsFeed(mode: 'latest', cursor: cursor);
+      final cached = await cache?.loadPage(cursor);
+      if (!valid() || !await _stillSameAccount() || !valid()) return;
+      if (cached != null) {
+        display(cached);
+        displayedCache = true;
+      }
+      // A pending head refresh may reset the cursor chain. Local pages remain
+      // usable meanwhile; defer competing network pagination until it settles.
+      if (_refreshing) return;
+      var next = await widget.api.momentsFeed(mode: 'latest', cursor: cursor);
+      await _invalidationsReady;
       final sameAccount = await _stillSameAccount();
       if (!mounted ||
           !sameAccount ||
           epoch != _accountEpoch ||
           request != _feedRequest ||
-          mutation != _mutation) {
+          mutation != _mutation ||
+          !valid()) {
         return;
       }
-      final merged = <String, dynamic>{
-        for (final item in [
-          ...(current['items'] as List? ?? []),
-          ...(next['items'] as List? ?? []),
-        ])
-          (item as Map)['id'].toString(): item,
-      };
-      setState(() => _feedData = {...next, 'items': merged.values.toList()});
+      next = cache?.project(next) ?? next;
+      if (next['next_cursor'] == cursor) next = {...next, 'next_cursor': null};
+      display(next);
+      if (cache != null && ticket != null && generation != null) {
+        await cache.savePage(cursor, next,
+            ticket: ticket, expectedGeneration: generation);
+        if (valid() && cache.persistenceError != null) {
+          setState(() => _interactionError = '本地缓存保存失败，离线内容可能不完整');
+        }
+      }
     } catch (_) {
       if (mounted &&
           epoch == _accountEpoch &&
           request == _feedRequest &&
           mutation == _mutation) {
-        setState(() => _loadMoreFailed = true);
+        setState(() {
+          if (!displayedCache) {
+            _loadMoreFailed = true;
+          } else {
+            _interactionError = '刷新失败，已保留本地动态';
+          }
+        });
       }
     } finally {
       if (mounted &&
@@ -222,6 +273,12 @@ final class _MomentsPageState extends State<MomentsPage> {
         };
       }
     });
+    final cache = _moments;
+    if (cache != null) {
+      unawaited(cache
+          .mutateItem(change.momentId, deletedComment: change.commentId)
+          .catchError((Object _) {}));
+    }
   }
 
   @override
@@ -246,6 +303,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     _postKeys.clear();
     _feedData = null;
     _moments = null;
+    _invalidationsReady = null;
     _accountKey = null;
     _viewerUserId = null;
     _coverUrl = null;
@@ -361,6 +419,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     // clear invalidates memory synchronously and serializes its disk deletion
     // before later writes; a fresh authorized request need not wait for disk.
     final clearing = _moments?.clear();
+    _invalidationsReady = null;
     if (clearing != null) unawaited(clearing.catchError((Object _) {}));
     if (epoch == _accountEpoch) unawaited(_refreshFeed());
   }
@@ -415,6 +474,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     });
     unawaited(_loadViewerUserId());
     unawaited(_loadPreferences());
+    _invalidationsReady = _moments?.restoreInvalidations();
     await _refreshFeed();
   }
 
@@ -451,6 +511,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     final mutation = _mutation;
     final cache = _moments;
     final ticket = cache?.beginRefresh();
+    final invalidationsReady = _invalidationsReady;
     setState(() {
       _refreshing = true;
       _initialFailed = false;
@@ -458,7 +519,8 @@ final class _MomentsPageState extends State<MomentsPage> {
       _loadingMore = false;
     });
     try {
-      final fresh = await widget.api.momentsFeed(mode: 'latest');
+      var fresh = await widget.api.momentsFeed(mode: 'latest');
+      await invalidationsReady;
       final sameAccount = await _stillSameAccount();
       if (!mounted ||
           !sameAccount ||
@@ -469,7 +531,16 @@ final class _MomentsPageState extends State<MomentsPage> {
       }
       // Pending local edits remain overlays; a successful write invalidates
       // this request before it can replace the confirmed cached state.
-      if (cache != null) unawaited(cache.save(fresh).catchError((Object _) {}));
+      fresh = cache?.project(fresh) ?? fresh;
+      if (cache != null) {
+        unawaited(cache.saveHead(fresh).then((_) {
+          if (mounted &&
+              request == _feedRequest &&
+              cache.persistenceError != null) {
+            setState(() => _interactionError = '本地缓存保存失败，离线内容可能不完整');
+          }
+        }).catchError((Object _) {}));
+      }
       setState(() {
         _feedData = fresh;
         _loadMoreFailed = false;
@@ -521,12 +592,22 @@ final class _MomentsPageState extends State<MomentsPage> {
     }
 
     final cache = _moments;
-    final cached = cache?.snapshot;
-    if (cache != null && cached != null) {
-      unawaited(cache.save(updated(cached)).catchError((Object _) {}));
+    if (cache != null) {
+      unawaited(cache.mutateItem(item.id,
+          deleted: write == _ConfirmedMomentWrite.deletion,
+          fields: {
+            if (write == _ConfirmedMomentWrite.likes) ...{
+              'viewer_has_liked': item.liked,
+              'like_count': item.likeCount,
+              'like_users':
+                  item.likeUsers.map((user) => user.toJson()).toList(),
+            },
+            if (write == _ConfirmedMomentWrite.comments)
+              'comments':
+                  item.comments.map((comment) => comment.toJson()).toList(),
+          }).catchError((Object _) {}));
     }
-    // The disk snapshot contains only the first page; keep loaded older pages
-    // in the current view instead of replacing them with that shorter snapshot.
+    // Keep the displayed window while updating every persisted reference.
     final displayed = _feedData;
     if (mounted && displayed != null) {
       setState(() => _feedData = updated(displayed));
@@ -704,6 +785,7 @@ final class _MomentsPageState extends State<MomentsPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => MomentDetailPage(
+          contactActions: widget.contactActions,
           identityCache: _identityCache,
           viewerUserId: _viewerUserId,
           api: widget.api,
@@ -748,6 +830,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     try {
       await openMomentPerson(
         context,
+        contactActions: widget.contactActions,
         api: widget.api,
         identityCache: _identityCache,
         person: author,

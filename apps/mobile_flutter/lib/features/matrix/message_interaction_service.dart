@@ -38,7 +38,7 @@ final class MessageInteractionService {
   bool canRecall(MessageInteractionEvent event, DateTime serverNow) {
     if (event.senderId != currentUserId) return false;
     final age = serverNow.difference(event.originServerTs);
-    return !age.isNegative && age <= const Duration(minutes: 2);
+    return !age.isNegative && age <= const Duration(minutes: 3);
   }
 
   Future<void> recall(
@@ -46,7 +46,7 @@ final class MessageInteractionService {
     required DateTime serverNow,
   }) {
     if (!canRecall(event, serverNow)) {
-      throw StateError('消息已超过两分钟撤回期限或不属于当前账号');
+      throw StateError('消息已超过三分钟撤回期限或不属于当前账号');
     }
     return backend.redact(roomId, event.id, '用户撤回了一条消息');
   }

@@ -80,6 +80,129 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
 }
 
 void main() {
+  testWidgets('SDK burst publishes once per frame and local echo is immediate',
+      (tester) async {
+    final adapter = FakeTimelineAdapter();
+    final controller = RoomTimelineController(adapter);
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    for (var i = 0; i < 100; i++) {
+      adapter.items.add(RoomMessageViewModel(
+          id: '$i',
+          senderId: 'peer',
+          text: 'fixture',
+          isOwn: false,
+          deliveryState: RoomDeliveryState.sent,
+          timestamp: DateTime.utc(2026)));
+      controller.scheduleRefresh();
+    }
+    expect(notifications, 0);
+    await tester.pump();
+    expect(notifications, 1);
+    final send = controller.sendText('local fixture');
+    expect(controller.messages.last.text, 'local fixture');
+    expect(notifications, 2);
+    await send;
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(controller.messages.length, 101);
+    controller.dispose();
+  });
+
+  test(
+      'acknowledged server ID retains transaction index without stale local retry',
+      () async {
+    final adapter = FakeTimelineAdapter();
+    final controller = RoomTimelineController(adapter);
+    await controller.sendText('fixture');
+    final tx = controller.messages.single.stableId;
+    adapter.items.add(RoomMessageViewModel(
+        id: 'event-1',
+        senderId: 'me',
+        text: 'fixture',
+        isOwn: true,
+        deliveryState: RoomDeliveryState.sent,
+        timestamp: DateTime.utc(2026)));
+    await controller.refresh();
+    expect(controller.messages.single.stableId, tx);
+    expect(controller.indexOf('event-1'), 0);
+    expect(controller.indexOf(tx), 0);
+    await controller.retry('event-1');
+    expect(controller.messages, hasLength(1));
+    controller.dispose();
+  });
+
+  test(
+      'stable index and row identity survive append update history and removal',
+      () async {
+    final adapter = FakeTimelineAdapter();
+    RoomMessageViewModel item(String id, {bool recalled = false}) =>
+        RoomMessageViewModel(
+            id: id,
+            senderId: 'peer',
+            text: recalled ? '' : id,
+            isOwn: false,
+            deliveryState: RoomDeliveryState.sent,
+            timestamp: DateTime.utc(2026),
+            isRecalled: recalled);
+    adapter.items.addAll([item('a'), item('b')]);
+    final controller = RoomTimelineController(adapter);
+    final first = controller.messages.first;
+    adapter.items.add(item('c'));
+    await controller.refresh();
+    expect(controller.indexOf('c'), 2);
+    expect(identical(controller.messages.first, first), isTrue);
+    adapter.items[1] = item('b', recalled: true);
+    await controller.refresh();
+    expect(controller.messages[controller.indexOf('b')!].isRecalled, isTrue);
+    expect(identical(controller.messages.first, first), isTrue);
+    adapter.items.insert(0, item('history'));
+    await controller.refresh();
+    expect(controller.indexOf('a'), 1);
+    expect(identical(controller.messages[1], first), isTrue);
+    adapter.items.removeAt(1);
+    await controller.refresh();
+    expect(controller.indexOf('a'), isNull);
+    expect(controller.indexOf('b'), 1);
+    controller.dispose();
+  });
+
+  test('unchanged refresh retains list and models without notifying', () async {
+    final adapter = FakeTimelineAdapter();
+    adapter.items.add(RoomMessageViewModel(
+        id: 'a',
+        senderId: 'peer',
+        text: 'a',
+        isOwn: false,
+        deliveryState: RoomDeliveryState.sent,
+        timestamp: DateTime.utc(2026)));
+    final controller = RoomTimelineController(adapter);
+    final before = controller.messages;
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    adapter.items[0] = adapter.items[0].copyWith();
+    await controller.refresh();
+    expect(notifications, 0);
+    expect(identical(controller.messages, before), isTrue);
+    controller.dispose();
+  });
+
+  test('refresh preserves SDK order across nonmonotonic timestamps', () async {
+    final adapter = FakeTimelineAdapter();
+    for (final i in [2, 1, 3]) {
+      adapter.items.add(RoomMessageViewModel(
+          id: '$i',
+          senderId: 'peer',
+          text: '$i',
+          isOwn: false,
+          deliveryState: RoomDeliveryState.sent,
+          timestamp: DateTime.utc(2026).add(Duration(seconds: i))));
+    }
+    final controller = RoomTimelineController(adapter);
+    await controller.refresh();
+    expect(controller.messages.map((m) => m.id), ['2', '1', '3']);
+    controller.dispose();
+  });
+
   test('retry respects current permission and deduplicates concurrent taps',
       () async {
     final adapter = FakeTimelineAdapter();

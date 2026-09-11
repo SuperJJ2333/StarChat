@@ -18,6 +18,7 @@ Future<void> showRedPacketClaimDialog(
   String senderName = '好友',
   String greeting = '恭喜发财，大吉大利',
   Widget? senderAvatar,
+  VoidCallback? onClaimed,
 }) {
   return showGeneralDialog(
     context: context,
@@ -32,6 +33,7 @@ Future<void> showRedPacketClaimDialog(
       senderName: senderName,
       greeting: greeting,
       senderAvatar: senderAvatar,
+      onClaimed: onClaimed,
     ),
     transitionBuilder:
         (dialogContext, animation, secondaryAnimation, dialogChild) {
@@ -56,6 +58,7 @@ final class RedPacketClaimDialog extends StatefulWidget {
     this.senderName = '好友',
     this.greeting = '恭喜发财，大吉大利',
     this.senderAvatar,
+    this.onClaimed,
   });
 
   final RedPacketViewGateway api;
@@ -63,6 +66,7 @@ final class RedPacketClaimDialog extends StatefulWidget {
   final String senderName;
   final String greeting;
   final Widget? senderAvatar;
+  final VoidCallback? onClaimed;
 
   @override
   State<RedPacketClaimDialog> createState() => _RedPacketClaimDialogState();
@@ -74,8 +78,13 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
   bool claiming = false;
   String? claimedAmount;
   String? claimError;
+  bool _notifiedClaimed = false;
 
   void _changed() {
+    if (controller.ended) {
+      claimedAmount = null;
+      claimError = null;
+    }
     if (mounted) setState(() {});
   }
 
@@ -93,12 +102,22 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
   }
 
   bool get _available {
-    final status = controller.detail?['status']?.toString();
-    return status == null || status == 'OPEN';
+    final status = effectiveRedPacketStatus(controller.detail);
+    return controller.detail != null &&
+        status == 'OPEN' &&
+        controller.detail?['viewer_claim'] == null &&
+        !controller.loading &&
+        controller.error == null &&
+        !controller.ended;
   }
 
   Future<void> _claim() async {
-    if (claiming || claimedAmount != null || !_available) return;
+    if (claiming ||
+        claimedAmount != null ||
+        !_available ||
+        !controller.isAlive) {
+      return;
+    }
     setState(() {
       claiming = true;
       claimError = null;
@@ -106,9 +125,23 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
     try {
       final amount = await controller.claim(widget.packetId);
       // 红包开启音（PRD §4）：经统一通知入口的纯前台反馈。
+      if (!controller.isAlive || !mounted) {
+        return;
+      }
       NotificationFeedback.shared.play(SoundType.redpacketOpen);
-      if (mounted) setState(() => claimedAmount = amount);
+      if (mounted) {
+        setState(() => claimedAmount = amount);
+        if (!_notifiedClaimed) {
+          _notifiedClaimed = true;
+          try {
+            widget.onClaimed?.call();
+          } catch (_) {}
+        }
+      }
     } catch (businessError) {
+      if (!controller.isAlive || !mounted) {
+        return;
+      }
       if (mounted) {
         setState(() {
           claimError = businessError.toString();
@@ -120,6 +153,7 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
   }
 
   void _openClaimRecords() {
+    if (!mounted || !controller.isAlive) return;
     final navigator = Navigator.of(context);
     navigator.pop();
     navigator.push(
@@ -135,7 +169,16 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
   @override
   Widget build(BuildContext context) {
     final detail = controller.detail;
-    final status = detail?['status']?.toString();
+    final status = effectiveRedPacketStatus(detail);
+    if (controller.ended) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(),
+        child: const Center(
+            child:
+                Text('会话已结束', style: TextStyle(color: CupertinoColors.white))),
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => Navigator.of(context).pop(),
@@ -262,9 +305,30 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
       );
 
   Widget _openButton() {
-    final showResult = claimedAmount != null || !_available;
+    final detail = controller.detail;
+    final status = effectiveRedPacketStatus(detail);
+    final ownClaim = claimedAmount != null || detail?['viewer_claim'] != null;
+    final label = controller.loading && detail == null
+        ? '加载中'
+        : ownClaim
+            ? '已领取'
+            : status == 'COMPLETED'
+                ? '已领完'
+                : status == 'EXPIRED'
+                    ? '已过期'
+                    : status == 'CANCELLED'
+                        ? '已撤回'
+                        : controller.error != null
+                            ? '重试'
+                            : _available
+                                ? '開'
+                                : '加载中';
     return GestureDetector(
-      onTap: _claim,
+      onTap: ownClaim
+          ? _openClaimRecords
+          : controller.error != null
+              ? () => controller.load(widget.packetId)
+              : _claim,
       child: Container(
         key: const Key('red-packet-claim-open-button'),
         width: 76,
@@ -280,10 +344,10 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
         child: claiming
             ? const CupertinoActivityIndicator(color: CupertinoColors.white)
             : Text(
-                showResult ? '已领取' : '開',
+                label,
                 style: TextStyle(
                   color: const Color(0xFF7A4A0D),
-                  fontSize: showResult ? 16 : 30,
+                  fontSize: label == '開' ? 30 : 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),

@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
@@ -19,11 +20,13 @@ final class GlobalSearchPage extends StatefulWidget {
     required this.api,
     this.matrix,
     this.identityCache,
+    this.contactActions,
     this.contactsLoader,
     this.rooms = const [],
     this.messages = const [],
   });
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
 
   /// 搜索入口统一数据源：提供 Matrix 客户端时页面自行加载群聊与最后一条
@@ -176,7 +179,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                               context,
                               CupertinoPageRoute(
                                   builder: (_) => ContactProfilePage(
-                                      api: widget.api,
+                                  onMessage: widget.contactActions?.onMessage,
+                                  onVoice: widget.contactActions?.onVoice,
+                                  onVideo: widget.contactActions?.onVideo,
+                                  api: widget.api,
                                       initialContact: item.toDetails(),
                                       identityCache: widget.identityCache))),
                           subtitle: Text('畅聊号：${item.username}')),

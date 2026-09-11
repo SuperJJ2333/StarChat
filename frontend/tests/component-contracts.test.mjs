@@ -12,6 +12,7 @@ const mappedTags = [
   "app-attachment-tile",
   "app-composer",
   "app-red-packet-card",
+  "app-transfer-card",
   "app-status-chip",
   "app-dialog",
   "app-action-sheet",

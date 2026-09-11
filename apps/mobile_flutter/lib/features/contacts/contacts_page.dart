@@ -1,3 +1,4 @@
+import 'contact_actions.dart';
 import '../../ui/components/top_more_menu.dart';
 import 'scan_qr_page.dart';
 import 'dart:async';
@@ -200,6 +201,11 @@ final class _ContactsPageState extends State<ContactsPage> {
                     context,
                     CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
+                        contactActions: ContactActions(
+                          onMessage: widget.onMessage,
+                          onVoice: widget.onVoice,
+                          onVideo: widget.onVideo,
+                        ),
                         identityCache: widget.identityCache,
                         api: businessApi,
                         matrix: widget.matrix,
@@ -219,6 +225,11 @@ final class _ContactsPageState extends State<ContactsPage> {
                           context,
                           CupertinoPageRoute(
                               builder: (_) => AddFriendPage(
+                                  contactActions: ContactActions(
+                                    onMessage: widget.onMessage,
+                                    onVoice: widget.onVoice,
+                                    onVideo: widget.onVideo,
+                                  ),
                                   api: businessApi,
                                   identityCache: widget.identityCache)));
                     },
@@ -445,17 +456,24 @@ final class ContactProfilePage extends StatefulWidget {
 
 final class _ContactProfilePageState extends State<ContactProfilePage> {
   late ContactDetails contact = widget.initialContact;
+  ContactSelection? _contactSelection;
+
   @override
   void initState() {
     super.initState();
-    widget.identityCache?.addListener(_identityChanged);
+    _bindIdentity();
     _readIdentity();
   }
 
+  void _bindIdentity() {
+    _contactSelection?.removeListener(_identityChanged);
+    _contactSelection?.dispose();
+    _contactSelection = widget.identityCache?.selectContact(contact.userId);
+    _contactSelection?.addListener(_identityChanged);
+  }
+
   void _readIdentity() {
-    final updated = widget.identityCache?.contacts
-        .where((c) => c.userId == contact.userId)
-        .firstOrNull;
+    final updated = _contactSelection?.value;
     if (updated != null) contact = updated.toDetails();
   }
 
@@ -466,16 +484,20 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   void didUpdateWidget(covariant ContactProfilePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.identityCache != widget.identityCache) {
-      oldWidget.identityCache?.removeListener(_identityChanged);
-      widget.identityCache?.addListener(_identityChanged);
+    final contactChanged =
+        oldWidget.initialContact.userId != widget.initialContact.userId;
+    final repositoryChanged = oldWidget.identityCache != widget.identityCache;
+    if (contactChanged || repositoryChanged) contact = widget.initialContact;
+    if (repositoryChanged || contactChanged) {
+      _bindIdentity();
       _readIdentity();
     }
   }
 
   @override
   void dispose() {
-    widget.identityCache?.removeListener(_identityChanged);
+    _contactSelection?.removeListener(_identityChanged);
+    _contactSelection?.dispose();
     super.dispose();
   }
 
@@ -529,6 +551,11 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
                   contact: contact, identityCache: widget.identityCache),
               if (widget.api is BusinessApiClient)
                 MomentProfilePreview(
+                    contactActions: ContactActions(
+                      onMessage: widget.onMessage,
+                      onVoice: widget.onVoice,
+                      onVideo: widget.onVideo,
+                    ),
                     identityCache: widget.identityCache,
                     api: widget.api as BusinessApiClient,
                     userId: contact.userId,
@@ -1038,7 +1065,13 @@ final class _ContactTagsPageState extends State<LegacyContactTagsPage> {
 }
 
 final class AddFriendPage extends StatefulWidget {
-  const AddFriendPage({super.key, required this.api, this.identityCache});
+  const AddFriendPage({
+    super.key,
+    required this.api,
+    this.identityCache,
+    this.contactActions,
+  });
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final AddFriendGateway api;
   @override
@@ -1146,6 +1179,7 @@ final class _AddFriendState extends State<AddFriendPage> {
       context,
       CupertinoPageRoute(
         builder: (_) => AddFriendProfilePage(
+          contactActions: widget.contactActions,
           identityCache: widget.identityCache,
           api: widget.api,
           userId: user['user_id'].toString(),

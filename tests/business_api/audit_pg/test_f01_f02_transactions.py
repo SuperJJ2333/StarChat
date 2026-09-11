@@ -24,6 +24,7 @@ from app.modules.ledger.adjustments import AdjustmentWorkflow
 from app.modules.ledger.models import LedgerTransaction
 from app.modules.ledger.service import LedgerService
 from app.modules.redpacket.models import RedPacket
+from app.modules.redpacket.membership import StaticRoomMembershipAuthority
 from app.modules.redpacket.service import RedPacketService
 from app.modules.transfer.models import ChatTransfer
 from app.modules.transfer.service import ChatTransferService
@@ -66,7 +67,7 @@ def test_f01_redpacket_crash_before_business_insert_rolls_back_everything(pg):
     from sqlalchemy.orm import Session as OrmSession
 
     _seed(pg)
-    service = RedPacketService(pg, LedgerService(pg))
+    service = RedPacketService(pg, LedgerService(pg), room_membership=StaticRoomMembershipAuthority({"!room:test": {"alice", "bob"}}))
 
     def crash_before_packet_insert(session, _flush_context, _instances):
         if any(isinstance(obj, RedPacket) for obj in session.new):
@@ -157,7 +158,7 @@ def _scope_rows(pg):
 def test_f01_concurrent_same_business_key_single_packet_and_entries(pg):
     """并发同业务键：只产生一个红包与一组分录，重试返回同一 ID。"""
     _seed(pg)
-    service = RedPacketService(pg, LedgerService(pg))
+    service = RedPacketService(pg, LedgerService(pg), room_membership=StaticRoomMembershipAuthority({"!room:test": {"alice", "bob"}}))
     results: list = []
     barrier = threading.Barrier(4)
 

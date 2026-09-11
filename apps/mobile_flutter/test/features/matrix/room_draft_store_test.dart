@@ -24,6 +24,33 @@ class MemoryStore implements SecureKeyValueStore {
 }
 
 void main() {
+  test('saved mention snapshots cannot be changed by producers or readers',
+      () async {
+    final disk = MemoryStore();
+    final store = RoomDraftStore(disk);
+    final recipients = ['@a:s'];
+    final tokens = [
+      MentionToken(
+          start: 0,
+          end: 4,
+          display: '所有人',
+          userId: '@all',
+          mentionAllUserIds: recipients)
+    ];
+    store.save('k', RoomDraft('@所有人 ', tokens: tokens));
+    recipients.add('@b:s');
+    tokens.clear();
+    final snapshot = (await store.read('k'))!;
+    expect(snapshot.tokens.single.mentionAllUserIds, ['@a:s']);
+    expect(() => snapshot.tokens.single.mentionAllUserIds!.add('@c:s'),
+        throwsUnsupportedError);
+    await store.flush('k');
+    final restored = (await RoomDraftStore(disk).read('k'))!;
+    expect(restored.tokens.single.mentionAllUserIds, ['@a:s']);
+    expect(() => restored.tokens.single.mentionAllUserIds!.clear(),
+        throwsUnsupportedError);
+  });
+
   test('in flight old write finishes before send clear and new draft',
       () async {
     final disk = MemoryStore()..blockedWrite = Completer<void>();

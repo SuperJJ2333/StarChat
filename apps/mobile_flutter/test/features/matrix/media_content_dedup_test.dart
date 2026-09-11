@@ -15,6 +15,7 @@ class _Paths extends PathProviderPlatform {
 
 void main() {
   setUp(() async {
+    clearMediaMemoryCaches();
     final root = await Directory(
             '../../docs/verification/artifacts/2026-09-09/redmi-polish')
         .create(recursive: true);
@@ -46,6 +47,7 @@ void main() {
     final file = (await MediaCache.cached('one', 'event',
         accountId: 'alice', contentSha256: hash))!;
     await file.writeAsBytes([3, 2, 1]);
+    clearMediaMemoryCaches(); // Exercise disk corruption, not verified hot bytes.
     await loadMediaWithCache(key('alice', 'three'), load);
     expect(calls, 3);
     await expectLater(
@@ -61,7 +63,50 @@ void main() {
     final mutable = Uint8List.fromList(bytes);
     memory.put(key('alice', 'one').cacheId, mutable);
     mutable[0] = 99;
-    expect(memory.get(key('alice', 'one').cacheId), isNull);
+    expect(memory.get(key('alice', 'one').cacheId), bytes);
+  });
+  test('outgoing content returns across rooms without downloading, after restart',
+      () async {
+    final bytes = Uint8List.fromList([0, 0, 0, 24, 102, 116, 121, 112,
+      109, 112, 52, 50, 0, 0, 0, 0]);
+    final hash = sha256.convert(bytes).toString();
+    await cacheOutgoingMedia(accountId: 'alice', roomId: 'sent', bytes: bytes);
+    clearMediaMemoryCaches();
+    final returned = await resolveCachedVideoFile(
+        key: MediaCacheKey(accountId: 'alice', roomId: 'returned',
+            eventId: 'other-sender', contentSha256: hash),
+        decrypt: () async => throw StateError('must reuse sent content'));
+    expect(await returned.readAsBytes(), bytes);
+    expect(await MediaCache.totalCachedBytes(), bytes.length);
+  });
+  test('ten references share a single byte instance and survive account clear',
+      () async {
+    final payload = Uint8List(2 * 1024 * 1024)..[0] = 71;
+    final hash = sha256.convert(payload).toString();
+    var downloads = 0;
+    Future<Uint8List> download() async { downloads++; return payload; }
+    MediaCacheKey key(int i) => MediaCacheKey(accountId: 'alice',
+        roomId: 'room-$i', eventId: 'renamed-$i.gif', contentSha256: hash);
+    final values = await Future.wait([
+      for (var i = 0; i < 10; i++) loadMediaWithCache(key(i), download),
+    ]);
+    expect(downloads, 1);
+    expect(values.every((bytes) => identical(bytes, values.first)), isTrue);
+    expect(contentMediaMemoryCache.totalBytes, payload.length);
+    expect(await MediaCache.totalCachedBytes(), payload.length);
+    await MediaCache.clearAccount('alice');
+    await loadMediaWithCache(key(11), download);
+    expect(downloads, 2);
+  });
+  test('concurrent same-name different bytes retain separate content objects',
+      () async {
+    final files = await Future.wait([
+      MediaCache.store('room', 'same-name', Uint8List.fromList([1])),
+      MediaCache.store('room', 'same-name', Uint8List.fromList([2])),
+    ]);
+    expect(files.first.path, isNot(files.last.path));
+    expect(await files.first.readAsBytes(), [1]);
+    expect(await files.last.readAsBytes(), [2]);
   });
   test('identical decrypted content across rooms occupies one physical object',
       () async {

@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import 'moment_comment_interaction.dart';
 import 'moment_reactions.dart';
 import 'moment_person_navigation.dart';
@@ -15,10 +16,12 @@ class PersonalMomentsPage extends StatefulWidget {
       {super.key,
       required this.api,
       this.identityCache,
-      required this.userId,
+    this.contactActions,
+    required this.userId,
       required this.displayName,
       this.initialItems = const []});
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final String userId, displayName;
   final List<MomentItem> initialItems;
@@ -123,7 +126,8 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
         context,
         CupertinoPageRoute(
             builder: (_) => MomentDetailPage(
-                  identityCache: widget.identityCache,
+          contactActions: widget.contactActions,
+          identityCache: widget.identityCache,
                   api: widget.api,
                   initialItem: item,
                   currentUsername:
@@ -233,7 +237,8 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     _openingPerson = true;
     try {
       await openMomentPerson(context,
-          api: widget.api, identityCache: widget.identityCache, person: person);
+        contactActions: widget.contactActions,
+        api: widget.api, identityCache: widget.identityCache, person: person);
     } catch (_) {
       if (mounted) setState(() => _error = '资料加载失败，请重试');
     } finally {

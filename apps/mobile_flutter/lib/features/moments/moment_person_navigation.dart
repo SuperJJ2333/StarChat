@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../contacts/contacts_page.dart';
@@ -10,6 +11,7 @@ Future<void> openMomentPerson(
   required BusinessApiClient api,
   required ProfileRepository? identityCache,
   required MomentAuthor person,
+  ContactActions? contactActions,
 }) async {
   final viewerId = await api.currentUserId();
   final own = (person.userId.isNotEmpty && person.userId == viewerId) ||
@@ -34,7 +36,10 @@ Future<void> openMomentPerson(
       CupertinoPageRoute(
           builder: (_) => contact != null
               ? ContactProfilePage(
-                  api: api,
+              onMessage: contactActions?.onMessage,
+              onVoice: contactActions?.onVoice,
+              onVideo: contactActions?.onVideo,
+              api: api,
                   identityCache: identityCache,
                   initialContact: contact.toDetails(),
                   onContactUpdated: (updated) async {
@@ -45,7 +50,8 @@ Future<void> openMomentPerson(
                     await identityCache?.removeContact(id);
                   })
               : AddFriendProfilePage(
-                  api: api,
+              contactActions: contactActions,
+              api: api,
                   identityCache: identityCache,
                   userId: own ? viewerId ?? person.userId : person.userId,
                   username: person.username,

@@ -1,6 +1,10 @@
 import '../../features/matrix/media_thumbnail.dart';
 import '../../features/matrix/gif_image_policy.dart';
+import '../../features/matrix/media_consumer_scope.dart';
+import '../../features/matrix/media_load_scheduler.dart';
 import 'contain_image_bubble.dart';
+import 'budgeted_media_image.dart';
+import 'media_visibility.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +13,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../foundation/wechat_tokens.dart';
 import '../components/wechat_scaffold.dart';
 import 'chat_forward_picker_page.dart';
+import 'wechat_image_editor.dart';
 import '../../core/gallery_save_access.dart';
 
 /// 原图大小展示格式：≥1MB 用 MB（10MB 以上取整），否则用 KB。
@@ -156,6 +161,14 @@ final class ImageViewerPage extends StatefulWidget {
     this.forwardTargets = const [],
     this.forwardTo,
     this.onForward,
+    this.onForwardEdited,
+    this.onFavorite,
+    this.onZoomChanged,
+    this.onInteractionStart,
+    this.onInteractionUpdate,
+    this.onInteractionEnd,
+    this.sourceIdentity,
+    this.active = true,
   });
 
   /// 占位缩略图/预览字节：点击“查看原图”前仅展示它。
@@ -173,6 +186,14 @@ final class ImageViewerPage extends StatefulWidget {
   /// 转发动作：把当前图片转发到目标会话。
   final Future<void> Function(String roomId)? forwardTo;
   final Future<void> Function()? onForward;
+  final Future<bool> Function(Uint8List)? onForwardEdited;
+  final Future<void> Function(Uint8List)? onFavorite;
+  final ValueChanged<bool>? onZoomChanged;
+  final GestureScaleStartCallback? onInteractionStart;
+  final GestureScaleUpdateCallback? onInteractionUpdate;
+  final GestureScaleEndCallback? onInteractionEnd;
+  final Object? sourceIdentity;
+  final bool active;
 
   @override
   State<ImageViewerPage> createState() => _ImageViewerPageState();
@@ -182,6 +203,59 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   final _transform = TransformationController();
   Offset _doubleTapPosition = Offset.zero;
   Size? _viewportSize;
+  bool _zoomed = false;
+  bool _editing = false;
+  int _editGeneration = 0;
+  bool _visible = false;
+  int _sourceGeneration = 0;
+  int _requestGeneration = 0;
+  MediaConsumerScope? _originalScope;
+  MediaConsumerScope? _saveScope;
+  bool get _eligible => widget.active && _visible;
+
+  void _zoomChanged() {
+    final zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed == _zoomed || !mounted) return;
+    setState(() => _zoomed = zoomed);
+    widget.onZoomChanged?.call(zoomed);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_zoomChanged);
+  }
+
+  Future<void> _edit() async {
+    if (loadingOriginal || _editing) return;
+    setState(() => _editing = true);
+    final edit = ++_editGeneration;
+    try {
+      if (originalBytes == null && widget.loadOriginal != null) {
+        if (!await _loadOriginal()) return;
+      }
+      if (!mounted ||
+          edit != _editGeneration ||
+          originalFailed ||
+          originalBytes == null && widget.loadOriginal != null) {
+        return;
+      }
+      final editBytes = originalBytes ?? widget.previewBytes;
+      final editForward = widget.onForwardEdited;
+      final editFavorite = widget.onFavorite;
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          builder: (_) => WeChatImageEditorPage(
+            bytes: editBytes,
+            onForward: editForward,
+            onFavorite: editFavorite,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted && edit == _editGeneration) setState(() => _editing = false);
+    }
+  }
 
   void _toggleZoom() {
     if (_transform.value.getMaxScaleOnAxis() > 1.01) {
@@ -204,6 +278,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
 
   @override
   void dispose() {
+    _originalScope?.cancel();
+    _saveScope?.cancel();
     _transform.dispose();
     super.dispose();
   }
@@ -215,6 +291,54 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   bool forwarding = false;
   String? hint;
 
+  Object _sourceToken(ImageViewerPage page) =>
+      page.sourceIdentity ?? page.previewBytes;
+
+  @override
+  void didUpdateWidget(covariant ImageViewerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_sourceToken(oldWidget) != _sourceToken(widget)) {
+      _sourceGeneration++;
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      _saveScope?.cancel();
+      _saveScope = null;
+      originalBytes = null;
+      dimensions = null;
+      hint = null;
+      originalFailed = false;
+      loadingOriginal = false;
+      _transform.removeListener(_zoomChanged);
+      _transform.value = Matrix4.identity();
+      _transform.addListener(_zoomChanged);
+      _zoomed = false;
+      _editGeneration++;
+      _editing = false;
+    }
+    if (!_eligible) {
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      loadingOriginal = false;
+      _editGeneration++;
+      _editing = false;
+    }
+  }
+
+  void _visibilityChanged(bool visible) {
+    if (_visible == visible) return;
+    setState(() => _visible = visible);
+    if (!_eligible) {
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      loadingOriginal = false;
+      _editGeneration++;
+      _editing = false;
+    }
+  }
+
   /// 原图大小按本次实际字节动态计算；未加载时以提示值/预览字节兜底。
   int get originalSizeBytes {
     final loaded = originalBytes;
@@ -224,15 +348,31 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
     return widget.previewBytes.lengthInBytes;
   }
 
-  Future<void> _loadOriginal() async {
+  Future<bool> _loadOriginal() async {
     final loader = widget.loadOriginal;
-    if (loader == null || loadingOriginal || originalBytes != null) return;
+    if (!_eligible ||
+        loader == null ||
+        loadingOriginal ||
+        originalBytes != null) {
+      return false;
+    }
     setState(() {
       loadingOriginal = true;
       originalFailed = false;
     });
+    final source = _sourceGeneration;
+    final request = ++_requestGeneration;
+    final scope = _originalScope =
+        MediaConsumerScope(priority: MediaLoadPriority.interactive);
     try {
-      final bytes = await loader();
+      final bytes = await scope.run(loader);
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !scope.isActive ||
+          !_eligible) {
+        return false;
+      }
       ({int width, int height})? decoded;
       try {
         final size = await decodeImageDimensions(bytes);
@@ -240,39 +380,67 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       } catch (_) {
         // 尺寸解码失败不影响原图展示。
       }
-      if (!mounted) return;
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !_eligible) {
+        return false;
+      }
       setState(() {
         originalBytes = bytes;
         dimensions = decoded;
         loadingOriginal = false;
       });
+      return true;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !scope.isActive) {
+        return false;
+      }
       setState(() {
         loadingOriginal = false;
         originalFailed = true;
         hint = '原图加载失败，点击「查看原图」重试';
       });
+      return false;
+    } finally {
+      if (identical(_originalScope, scope)) {
+        _originalScope = null;
+      }
+      scope.cancel();
     }
   }
 
   Future<void> _download() async {
+    if (_saveScope != null) return;
+    final source = _sourceGeneration;
+    final loader = widget.loadOriginal;
+    final preview = widget.previewBytes;
+    final loadedOriginal = originalBytes;
+    final scope = _saveScope =
+        MediaConsumerScope(priority: MediaLoadPriority.interactive);
     try {
       await ensureGallerySaveAccess();
-      final bytes = originalBytes ??
-          await (widget.loadOriginal?.call() ??
-              Future<Uint8List>.value(widget.previewBytes));
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
+      final bytes = loadedOriginal ??
+          await scope.run(loader ?? () => Future<Uint8List>.value(preview));
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       final result = await PhotoManager.editor.saveImage(
-        bytes,
+        bytes!,
         filename: 'changliao-${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
-      if (!mounted) return;
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       setState(() {
         hint = result.id.isNotEmpty ? '已保存到相册' : '保存失败，请稍后重试';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       setState(() => hint = gallerySaveErrorMessage(error));
+    } finally {
+      if (identical(_saveScope, scope)) _saveScope = null;
+      scope.cancel();
     }
   }
 
@@ -341,31 +509,52 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            LayoutBuilder(builder: (context, constraints) {
-              final size = constraints.biggest;
-              if (_viewportSize != size) {
-                _viewportSize = size;
-                _transform.value = Matrix4.identity();
-              }
-              return GestureDetector(
-                onTap: () => Navigator.pop(context),
-                onDoubleTapDown: (details) =>
-                    _doubleTapPosition = details.localPosition,
-                onDoubleTap: _toggleZoom,
-                child: InteractiveViewer(
-                  transformationController: _transform,
-                  maxScale: 4,
-                  child: Image(
-                    width: size.width,
-                    height: size.height,
-                    image: boundedChatImageProvider(displayBytes,
-                        maxEdge: isGifBytes(displayBytes) ? 720 : 2048),
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.biggest;
+                if (_viewportSize != size) {
+                  _viewportSize = size;
+                  // Transformation listeners rebuild both viewer and gallery.
+                  // Never notify them while LayoutBuilder is building.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _viewportSize == size) {
+                      _transform.value = Matrix4.identity();
+                    }
+                  });
+                }
+                return MediaVisibility(
+                  onChanged: _visibilityChanged,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    onDoubleTapDown: (details) =>
+                        _doubleTapPosition = details.localPosition,
+                    onDoubleTap: _toggleZoom,
+                    child: InteractiveViewer(
+                      transformationController: _transform,
+                      onInteractionStart: widget.onInteractionStart,
+                      onInteractionUpdate: widget.onInteractionUpdate,
+                      onInteractionEnd: widget.onInteractionEnd,
+                      panEnabled: _zoomed,
+                      maxScale: 4,
+                      child: BudgetedMediaImage(
+                        key: ValueKey(_sourceToken(widget)),
+                        width: size.width,
+                        height: size.height,
+                        provider: boundedChatImageProvider(
+                          displayBytes,
+                          maxEdge: isGifBytes(displayBytes) ? 720 : 2048,
+                        ),
+                        isAnimated: isGifBytes(displayBytes),
+                        visible: _eligible,
+                        priority: 100,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
             if (loadingOriginal)
               const Center(child: CupertinoActivityIndicator()),
             if (widget.loadOriginal != null)
@@ -390,6 +579,13 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
               bottom: 24,
               child: Column(
                 children: [
+                  ViewerRoundAction(
+                    key: const Key('viewer-edit'),
+                    icon: CupertinoIcons.pencil,
+                    label: '编辑',
+                    onPressed: loadingOriginal || _editing ? null : _edit,
+                  ),
+                  const SizedBox(height: 14),
                   ViewerRoundAction(
                     key: const Key('viewer-download'),
                     icon: CupertinoIcons.cloud_download,
@@ -451,9 +647,10 @@ final class ViewerRoundAction extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 12, color: CupertinoColors.white)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: CupertinoColors.white),
+          ),
         ],
       );
 }
@@ -464,14 +661,18 @@ final class ViewerStatusHint extends StatelessWidget {
   final String message;
   @override
   Widget build(BuildContext context) => Center(
-          child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
             color: CupertinoColors.systemGrey6.withValues(alpha: .3),
-            borderRadius: BorderRadius.circular(18)),
-        child: Text(message,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Text(
+            message,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, color: CupertinoColors.white)),
-      ));
+            style: const TextStyle(fontSize: 13, color: CupertinoColors.white),
+          ),
+        ),
+      );
 }

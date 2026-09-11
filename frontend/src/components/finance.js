@@ -1,4 +1,4 @@
-import { StrictElement, element } from "./base.js";
+import { StrictElement, button, element } from "./base.js";
 import { icon } from "../icons/icons.js";
 
 const packetLabels = {
@@ -12,17 +12,47 @@ const packetLabels = {
 export class AppRedPacketCard extends StrictElement {
   render() {
     const state = this.attr("state", "available");
-    const root = element("article", "c-red-packet");
+    const action = this.attr("action");
+    const statusLabel = this.attr("status-label", packetLabels[state] ?? packetLabels.available);
+    const root = action ? button("c-red-packet", this.attr("greeting", "恭喜发财，大吉大利"), action) : element("article", "c-red-packet");
+    if (action) root.type = "button";
     root.dataset.state = state;
+    root.dataset.viewerClaim = String(this.boolAttr("viewer-claim"));
     const body = element("div", "c-red-packet__body");
     body.append(icon("gift", "c-red-packet__icon"));
     const content = element("div", "c-red-packet__content");
     content.append(
       element("p", "c-red-packet__greeting", this.attr("greeting", "恭喜发财，大吉大利")),
-      element("p", "c-red-packet__status", packetLabels[state] ?? packetLabels.available)
+      element("p", "c-red-packet__status", statusLabel)
     );
     body.append(content);
     root.append(body, element("footer", "c-red-packet__footer", "畅聊点钻红包"));
+    return root;
+  }
+}
+
+const transferLabels = {
+  pending: { sender: "等待收款", receiver: "点击收款" },
+  accepted: { sender: "对方已收款", receiver: "转账已收款" },
+  returned: { sender: "已退回", receiver: "已退回" }
+};
+
+export class AppTransferCard extends StrictElement {
+  render() {
+    const state = this.attr("state", "pending");
+    const role = this.attr("viewer-role", "sender");
+    const action = this.attr("action");
+    const label = transferLabels[state]?.[role] ?? transferLabels.pending.sender;
+    const root = action ? button("c-transfer-card", label, action) : element("article", "c-transfer-card");
+    if (action) root.type = "button";
+    root.dataset.state = state;
+    root.dataset.viewerRole = role;
+    const body = element("div", "c-transfer-card__body");
+    body.append(
+      element("p", "c-transfer-card__amount", `${this.attr("amount", "0.00")} 点钻`),
+      element("p", "c-transfer-card__status", label)
+    );
+    root.append(body, element("footer", "c-transfer-card__footer", "畅聊点钻转账"));
     return root;
   }
 }

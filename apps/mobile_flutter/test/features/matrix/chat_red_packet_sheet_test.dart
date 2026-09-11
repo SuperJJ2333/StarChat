@@ -114,6 +114,46 @@ void main() {
     expect(sharesField.keyboardType, TextInputType.number);
   });
 
+  testWidgets('group page shows its independent joined-member count hint',
+      (tester) async {
+    final controller = ChatRedPacketController(
+      business: FakeRedPacketBusiness(),
+      references: FakeRedPacketReference(),
+      roomId: '!room:test',
+      joinedMemberCount: 3,
+    );
+    await _pump(
+      tester,
+      controller: controller,
+      isGroup: true,
+      members: const [ChatRoomMember('user-alice', '爱丽丝')],
+    );
+
+    expect(find.text('群成员共 3 人，最多可发 3 个红包'), findsOneWidget);
+  });
+
+  testWidgets('group share count above its current member hint shows error',
+      (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+      business: business,
+      references: FakeRedPacketReference(),
+      roomId: '!room:test',
+      joinedMemberCount: 2,
+    );
+    await _pump(tester, controller: controller, isGroup: true);
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '3.00');
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-shares')), '3');
+
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('红包个数不能超过群成员人数'), findsOneWidget);
+    expect(business.creates, 0);
+  });
+
   testWidgets(
       'amount above the fetched limit is rejected with a popup before charging',
       (tester) async {

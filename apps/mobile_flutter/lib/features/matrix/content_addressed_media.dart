@@ -6,6 +6,16 @@ import 'package:matrix/matrix.dart';
 import 'package:flutter/foundation.dart' show compute;
 import '../../core/app_config.dart';
 
+/// Verify disk content without allocating an entire video as one byte array.
+Future<void> verifyMediaContentStream(
+    Stream<List<int>> chunks, String hash) async {
+  validateContentSha256(hash);
+  final digest = await crypto.sha256.bind(chunks).first;
+  if (digest.toString() != hash) {
+    throw const FormatException('Media content hash mismatch');
+  }
+}
+
 /// Cold loader only: a declared content hash cannot opt out of attachment E2EE.
 /// Hash-authoritative cache hits bypass this loader entirely.
 Future<Uint8List> downloadMediaContent(Event event,

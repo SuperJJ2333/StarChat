@@ -137,7 +137,9 @@ class PaymentPinService:
         # giving omitted/null/default and monetary strings a stable meaning.
         from app.api.transfer import CreateChatTransferRequest
         from app.api.redpacket import CreateRedPacketRequest
-        model = {'chat_transfer.create': CreateChatTransferRequest, 'red_packet.create': CreateRedPacketRequest}.get(action)
+        from app.api.manual_wallet import PayoutPaymentIntent
+        model = {'chat_transfer.create': CreateChatTransferRequest, 'red_packet.create': CreateRedPacketRequest,
+            'wallet.payout.create': PayoutPaymentIntent}.get(action)
         if model is None:
             _fail('PAYMENT_INTENT_INVALID', '支付用途无效', 422)
         try:
@@ -189,11 +191,11 @@ class PaymentPinService:
         if credential or self.require_all:
             _fail('PAYMENT_PIN_REQUIRED' if credential else 'PAYMENT_PIN_SETUP_REQUIRED', '请更新客户端并通过聊天转账验证支付密码', 403)
 
-    def consume(self, session, *, user_id, claims, action, payload, idempotency_key, authorization, existing=False):
+    def consume(self, session, *, user_id, claims, action, payload, idempotency_key, authorization, existing=False, required=False):
         self.lock_account(session, user_id)
         credential = self._credential(session, user_id)
         if credential is None:
-            if self.require_all or authorization is not None:
+            if required or self.require_all or authorization is not None:
                 _fail('PAYMENT_PIN_SETUP_REQUIRED', '请先设置支付密码', 409)
             return
         now = self._identity(session, claims)

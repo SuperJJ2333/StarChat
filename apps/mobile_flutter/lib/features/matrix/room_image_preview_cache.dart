@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 import 'dart:convert';
-import 'dart:async';
 import 'emoji_preview_cache.dart';
 import 'media_cache.dart';
+import 'media_memory_budget.dart';
 
 /// Account-scoped chat previews. The existing authenticated encrypted store
 /// owns persistent bytes and its disk quota; GIF originals are never flattened.
@@ -11,13 +11,18 @@ final class RoomImagePreviewCache {
   RoomImagePreviewCache(
       {required String accountId,
       required String roomId,
+      String? memoryNamespace,
       int maxEntries = 256,
       int maxBytes = 64 * 1024 * 1024,
       Future<Uint8List?> Function(String)? read,
       Future<void> Function(String, Uint8List)? write})
       : _accountId = accountId,
         _roomId = roomId,
-        _memory = MediaMemoryCache(maxEntries: maxEntries, maxBytes: maxBytes) {
+        _memory = MediaMemoryCache(
+            maxEntries: maxEntries,
+            maxBytes: maxBytes,
+            budget: sharedMediaMemoryBudget,
+            accountNamespace: memoryNamespace ?? accountId) {
     // A separate secure-storage namespace avoids sharing preview keys with
     // emoji media. No Matrix keys, plaintext files or network URLs are stored.
     final store = EncryptedEmojiPreviewStore('room-image-v1:$accountId');
@@ -35,13 +40,15 @@ final class RoomImagePreviewCache {
   // and source requests remain independent; only durable writes are serialized.
   static Future<void> _writes = Future<void>.value();
 
-  Future<void> _persist(String key, Uint8List bytes) {
+  Future<void> _persist(String key, Uint8List bytes, int generation) {
     // The shared encrypted store retains its newest file during eviction.
     // Include the AES-GCM nonce/tag overhead so one legacy original cannot
     // exceed the entire quota by itself.
     if (bytes.length > 64 * 1024 * 1024 - 28) return Future<void>.value();
     final work = _writes.then((_) async {
-      if (!_disposed) await _write(key, bytes);
+      if (!_disposed && _memory?.generation == generation) {
+        await _write(key, bytes);
+      }
     });
     _writes = work.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return work;
@@ -56,17 +63,19 @@ final class RoomImagePreviewCache {
   Future<Uint8List?> readCached(String eventId) {
     if (_disposed) return Future<Uint8List?>.value();
     final key = _key(eventId);
-    final memory = _memory!.get(key);
+    final cache = _memory!;
+    final generation = cache.generation;
+    final readKey = '$generation:$key';
+    final memory = cache.get(key);
     if (memory != null) return Future<Uint8List?>.value(memory);
-    return _cachedReads[key] ??= () async {
+    return _cachedReads[readKey] ??= () async {
       try {
         final bytes = await _read(key);
-        if (_disposed) return null;
+        if (_disposed || cache.generation != generation) return null;
         final seeded = _memory!.get(key);
         if (seeded != null) return seeded;
         if (bytes != null && bytes.isNotEmpty) {
-          _memory!.put(key, bytes);
-          return bytes;
+          return _memory!.put(key, bytes);
         }
         return null;
       } catch (_) {
@@ -74,40 +83,49 @@ final class RoomImagePreviewCache {
       }
     }()
         .whenComplete(() {
-      _cachedReads.remove(key);
+      _cachedReads.remove(readKey);
     });
   }
 
-  /// Paint outgoing local bytes in the same frame as the local message. Disk
-  /// work is deferred and best effort, while source flights remain intact.
+  /// Paint outgoing local bytes immediately, without per-message disk copies.
+  /// The encrypted send gateway persists the canonical content object before
+  /// upload. Transaction IDs are transient UI aliases, not durable content IDs;
+  /// authoritative received/legacy previews still use load() persistence.
   void seed(String eventId, Uint8List bytes) {
     if (_disposed) return;
     final key = _key(eventId);
     _memory!.put(key, bytes);
-    unawaited(_persist(key, bytes).catchError((Object _) {}));
   }
 
   Future<Uint8List> load(String eventId, Future<Uint8List> Function() source) {
     final memory = _memory;
     if (memory == null) return Future.error(StateError('Image cache disposed'));
     final key = _key(eventId);
+    final generation = memory.generation;
     return memory.putIfAbsent(key, () async {
       Uint8List? bytes = await readCached(eventId);
-      if (_disposed) throw StateError('Image cache disposed');
+      if (_disposed || memory.generation != generation) {
+        throw StateError('Image cache cleared');
+      }
       if (bytes == null || bytes.isEmpty) {
         bytes = await source();
-        if (_disposed) throw StateError('Image cache disposed');
+        if (_disposed || memory.generation != generation) {
+          throw StateError('Image cache cleared');
+        }
         try {
-          await _persist(key, bytes);
+          await _persist(key, bytes, generation);
         } catch (_) {/* retain memory hit */}
       }
-      if (_disposed) throw StateError('Image cache disposed');
+      if (_disposed || memory.generation != generation) {
+        throw StateError('Image cache cleared');
+      }
       return bytes;
     });
   }
 
   void dispose() {
     _disposed = true;
+    _memory?.dispose();
     _memory = null;
     _cachedReads.clear();
   }

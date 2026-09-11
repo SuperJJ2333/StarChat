@@ -1,3 +1,4 @@
+import '../contacts/contact_actions.dart';
 import 'package:flutter/cupertino.dart';
 import '../../core/business_api_client.dart';
 import '../matrix/profile_repository.dart';
@@ -13,10 +14,12 @@ class MomentProfilePreview extends StatefulWidget {
       {super.key,
       required this.api,
       this.identityCache,
-      required this.userId,
+    this.contactActions,
+    required this.userId,
       required this.displayName,
       this.refreshRevision = 0});
   final BusinessApiClient api;
+  final ContactActions? contactActions;
   final ProfileRepository? identityCache;
   final String userId, displayName;
   final int refreshRevision;
@@ -93,7 +96,8 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
                       context,
                       CupertinoPageRoute(
                           builder: (_) => PersonalMomentsPage(
-                              identityCache: widget.identityCache,
+                      contactActions: widget.contactActions,
+                      identityCache: widget.identityCache,
                               api: widget.api,
                               userId: widget.userId,
                               displayName: widget.displayName,

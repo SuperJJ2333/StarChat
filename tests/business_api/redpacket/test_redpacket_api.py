@@ -82,6 +82,9 @@ async def test_red_packet_create_claim_and_cancel_permissions(context):
         after = await client.get(f"/api/v1/red-packets/{packet_id}", headers=bearer(settings, "alice"))
         assert after.json()["claimed_count"] == 1
         assert after.json()["claims"][0]["user_id"] == "alice"
+        assert after.json()["viewer_claim"]["user_id"] == "alice"
+        assert after.json()["room_id"] == "!room:test"
+        assert datetime.fromisoformat(after.json()["server_time"])
         forbidden = await client.post(f"/api/v1/red-packets/{packet_id}/cancel", headers={**bearer(settings, "alice"), "Idempotency-Key": "cancel-forbidden"}, json={"reason_code": "ABNORMAL_RED_PACKET"})
         assert forbidden.status_code == 403
         cancelled = await client.post(f"/api/v1/red-packets/{packet_id}/cancel", headers={**bearer(settings, "support"), "Idempotency-Key": "cancel-api"}, json={"reason_code": "ABNORMAL_RED_PACKET"})
@@ -107,6 +110,16 @@ async def test_red_packet_detail_includes_claimer_public_profiles(context):
         assert "avatar_url" in claim
         assert payload["sender_nickname"] == "发送者甲"
         assert payload["sender_username"] == "sender01"
+
+
+@pytest.mark.asyncio
+async def test_group_create_rejects_count_over_authoritative_members_before_debit(context):
+    app, factory, settings, _gateway = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        rejected = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "too-many"}, json={"mode": "RANDOM", "total": "3.00", "share_count": 3, "room_id": "!room:test"})
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "RED_PACKET_SHARE_COUNT_EXCEEDS_MEMBERS"
+    assert LedgerService(factory).balance("sender") == Decimal("10.00")
 
 
 @pytest.mark.asyncio

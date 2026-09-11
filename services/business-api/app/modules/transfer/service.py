@@ -3,7 +3,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.orm import aliased
 
+from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 from app.modules.ledger.service import CENT, LedgerService, money
 from app.modules.transfer.models import ChatTransfer
 from app.modules.identity.payment_pin import PaymentPinService
@@ -64,7 +66,7 @@ class ChatTransferService:
                 raise ValueError("transfer not found")
             if user_id not in (transfer.sender_id, transfer.receiver_id):
                 raise ValueError("transfer is not visible to this user")
-            return self.snapshot(transfer)
+            return self.snapshot(transfer, user_id=user_id, session=session)
 
     def accept(self, transfer_id: str, *, user_id: str, idempotency_key: str) -> ChatTransfer:
         with self.session_factory.begin() as session:
@@ -134,7 +136,15 @@ class ChatTransferService:
             session=session,
         )
 
-    def snapshot(self, transfer: ChatTransfer) -> dict:
+    def snapshot(self, transfer: ChatTransfer, *, user_id: str | None = None, session=None) -> dict:
+        owns_session = session is None
+        if owns_session:
+            session = self.session_factory()
+        try:
+            bill_id = self._bill_id(session, transfer, user_id) if user_id else None
+        finally:
+            if owns_session:
+                session.close()
         return {
             "id": transfer.id,
             "sender_id": transfer.sender_id,
@@ -147,7 +157,21 @@ class ChatTransferService:
             "status": transfer.status,
             "expires_at": transfer.expires_at,
             "created_at": transfer.created_at,
+            "accepted_at": transfer.updated_at if transfer.status == "ACCEPTED" else None,
+            "bill_id": bill_id,
         }
+
+    @staticmethod
+    def _bill_id(session, transfer: ChatTransfer, user_id: str) -> str | None:
+        own = aliased(LedgerEntry)
+        escrow = aliased(LedgerEntry)
+        return session.scalar(select(LedgerTransaction.id).join(own, own.transaction_id == LedgerTransaction.id).join(
+            escrow, escrow.transaction_id == LedgerTransaction.id).where(
+            own.account_id == user_id, own.asset == "CAIBI",
+            escrow.account_id == f"PLATFORM_TRANSFER_ESCROW:{transfer.id}", escrow.asset == "CAIBI",
+            LedgerTransaction.asset == "CAIBI",
+            LedgerTransaction.scope == ("chat_transfer.create" if user_id == transfer.sender_id else "chat_transfer.accept"),
+        ).order_by(LedgerTransaction.created_at.desc(), LedgerTransaction.id.desc()).limit(1))
 
     @staticmethod
     def _aware(value: datetime) -> datetime:

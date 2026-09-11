@@ -55,11 +55,11 @@ void main() {
     );
   });
 
-  test('recall accepts 1:59 and sends exactly one Matrix redaction', () async {
+  test('recall accepts 3:00 and sends exactly one Matrix redaction', () async {
     final event = MessageInteractionEvent(
       id: r'$mine',
       senderId: '@alice:example.test',
-      originServerTs: now.subtract(const Duration(minutes: 1, seconds: 59)),
+      originServerTs: now.subtract(const Duration(minutes: 3)),
     );
 
     await service.recall(event, serverNow: now);
@@ -68,11 +68,11 @@ void main() {
     expect(backend.redactions.single.eventId, r'$mine');
   });
 
-  test('recall rejects 2:01 and another sender', () async {
+  test('recall rejects 3:01 and another sender', () async {
     final tooOld = MessageInteractionEvent(
       id: r'$old',
       senderId: '@alice:example.test',
-      originServerTs: now.subtract(const Duration(minutes: 2, seconds: 1)),
+      originServerTs: now.subtract(const Duration(minutes: 3, seconds: 1)),
     );
     final other = MessageInteractionEvent(
       id: r'$other',

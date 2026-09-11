@@ -4,12 +4,14 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
 
 import '../foundation/wechat_tokens.dart';
+import 'video_playback_lease_coordinator.dart';
+import 'video_playback_arbiter.dart';
+import 'shared_video_playback.dart';
 
 /// 视频消息媒体卡（微信式，无气泡）：封面海报帧 + 播放按钮 + 时长角标。
 /// 海报帧来自发送端附带的加密缩略图（[posterLoader]，≤480px 小图），
@@ -159,66 +161,224 @@ final class VideoViewerPage extends StatefulWidget {
   final Future<void> Function()? onForward;
   final VideoPlayerController Function(File file)? controllerFactory;
 
+  @visibleForTesting
+  static Future<void> debugWakelockSettled() =>
+      SharedVideoPlayback.wakelockCoordinator.settled;
+  @visibleForTesting
+  static ({bool current, bool pending, bool retry}) get debugArbiterState => (
+        current: SharedVideoPlayback.arbiter.debugHasCurrent,
+        pending: SharedVideoPlayback.arbiter.debugHasPendingBarrier,
+        retry: SharedVideoPlayback.arbiter.debugHasRetryPause
+      );
+
   @override
   State<VideoViewerPage> createState() => _VideoViewerPageState();
 }
 
-final class _VideoViewerPageState extends State<VideoViewerPage> {
+final class _VideoViewerPageState extends State<VideoViewerPage>
+    with WidgetsBindingObserver {
   VideoPlayerController? _controller;
+  VideoPlayerController? _pendingController;
   Future<bool>? _initFuture;
   Timer? _uiTicker;
   File? _videoFile;
   bool _saving = false;
   bool _forwarding = false;
   String? _hint;
+  var _generation = 0;
+  var _activationRevision = 0;
+  var _manualPaused = false;
+  var _resumeInFlight = false;
+  var _resumeRequest = 0;
+  var _appActive = true;
+  var _routeCurrent = true;
+  int? _lease;
+  VideoPlaybackReservation? _activationReservation;
+  Future<void>? _pauseInFlight;
+  late final Future<void> Function() _ownerPause = _pauseForLifecycle;
+  var _controllerDisposeConfirmed = false;
+
+  VideoPlaybackLeaseCoordinator get _leaseCoordinator =>
+      SharedVideoPlayback.wakelockCoordinator;
 
   /// 加载/初始化失败后可重试（弱网大文件场景）。
   bool loadFailed = false;
 
   Future<bool> _initialize() async {
+    final generation = ++_generation;
     loadFailed = false;
     VideoPlayerController? pendingController;
     try {
       final videoFile =
           await widget.loadFile().timeout(const Duration(seconds: 30));
-      if (!mounted) return false;
+      if (!mounted || generation != _generation) return false;
       final controller = widget.controllerFactory?.call(videoFile) ??
           VideoPlayerController.file(videoFile);
       pendingController = controller;
+      _pendingController = controller;
       await controller.initialize().timeout(const Duration(seconds: 30));
-      if (!mounted) {
+      if (!mounted || generation != _generation) {
         await controller.dispose();
         return false;
       }
-      await controller.play();
-      if (!mounted) {
+      await _activate(controller, generation);
+      if (!mounted || generation != _generation) {
         await controller.dispose();
         return false;
       }
-      unawaited(WakelockPlus.enable().catchError((Object _) {}));
       if (mounted) {
         setState(() {
           _controller = controller;
+          if (identical(_pendingController, controller)) {
+            _pendingController = null;
+          }
           _videoFile = videoFile;
           loadFailed = false;
         });
       }
-      _uiTicker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-        if (mounted) setState(() {});
-      });
       return true;
     } catch (_) {
+      if (identical(_pendingController, pendingController)) {
+        _pendingController = null;
+      }
       await pendingController?.dispose();
-      if (mounted) {
+      if (mounted && generation == _generation) {
         setState(() => loadFailed = true);
       }
       return false;
     }
   }
 
+  Future<void> _activate(
+      VideoPlayerController controller, int generation) async {
+    final pendingPause = _pauseInFlight;
+    if (pendingPause != null) await pendingPause;
+    if (!mounted ||
+        generation != _generation ||
+        !_appActive ||
+        !_routeCurrent ||
+        _manualPaused) {
+      return;
+    }
+    final localIntent = ++_activationRevision;
+    final reservation = SharedVideoPlayback.arbiter.reserve(this, _ownerPause);
+    _activationReservation = reservation;
+    try {
+      await reservation.waitUntilReady();
+    } catch (_) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      rethrow;
+    }
+    if (!mounted ||
+        generation != _generation ||
+        localIntent != _activationRevision ||
+        !_appActive ||
+        !_routeCurrent ||
+        _manualPaused ||
+        !reservation.isCurrent) {
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      return;
+    }
+    final lease = _leaseCoordinator.acquire();
+    _lease = lease;
+    try {
+      await controller.play();
+    } catch (_) {
+      _leaseCoordinator.revoke(lease);
+      if (_lease == lease) _lease = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      _uiTicker?.cancel();
+      rethrow;
+    }
+    if (!mounted ||
+        generation != _generation ||
+        localIntent != _activationRevision ||
+        !_appActive ||
+        !_routeCurrent ||
+        _manualPaused ||
+        !reservation.isCurrent ||
+        _leaseCoordinator.current != lease) {
+      await controller.pause();
+      _leaseCoordinator.revoke(lease);
+      if (_lease == lease) _lease = null;
+      reservation.release();
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      return;
+    }
+    _startTicker();
+  }
+
+  void _startTicker() {
+    _uiTicker?.cancel();
+    _uiTicker = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      if (_controller?.value.isPlaying == true) {
+        setState(() {});
+      } else {
+        _uiTicker?.cancel();
+        _pauseForLifecycleSafely();
+      }
+    });
+  }
+
+  Future<void> _pauseForLifecycle() {
+    final existing = _pauseInFlight;
+    if (existing != null) return existing;
+    final pause = _pauseForLifecycleImpl();
+    _pauseInFlight = pause;
+    return pause.whenComplete(() {
+      if (identical(_pauseInFlight, pause)) _pauseInFlight = null;
+    });
+  }
+
+  void _pauseForLifecycleSafely() {
+    unawaited(_pauseForLifecycle().catchError((_) {}));
+  }
+
+  Future<void> _pauseForLifecycleImpl() async {
+    // Invalidate this page's activation without cancelling a newer page.
+    _activationRevision++;
+    _uiTicker?.cancel();
+    final lease = _lease;
+    _lease = null;
+    if (lease != null) {
+      _leaseCoordinator.revoke(lease);
+    }
+    final reservation = _activationReservation;
+    final retryPause = _ownerPause;
+    final controller = _controller ?? _pendingController;
+    try {
+      await controller?.pause();
+      SharedVideoPlayback.arbiter.clearFailedPause(retryPause);
+    } catch (_) {
+      if (_controllerDisposeConfirmed) return;
+      if (!_controllerDisposeConfirmed) {
+        SharedVideoPlayback.arbiter.recordFailedPause(retryPause);
+      }
+      rethrow;
+    } finally {
+      if (identical(_activationReservation, reservation)) {
+        _activationReservation = null;
+      }
+      reservation?.release();
+    }
+  }
+
   /// 「重试」：重新下载解密并初始化播放器。
   void _retry() {
-    _uiTicker?.cancel();
+    _generation++;
+    _pauseForLifecycleSafely();
     _controller?.dispose();
     _controller = null;
     setState(() {
@@ -229,6 +389,9 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
   @override
   void initState() {
     super.initState();
+    _appActive =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
     _initFuture = _initialize();
   }
 
@@ -236,11 +399,60 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
     final controller = _controller;
     if (controller == null) return;
     if (controller.value.isPlaying) {
-      await controller.pause();
+      _manualPaused = true;
+      await _pauseForLifecycle();
     } else {
-      await controller.play();
+      _manualPaused = false;
+      await _resume(controller);
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _resume(VideoPlayerController controller) async {
+    _resumeRequest++;
+    if (_resumeInFlight) return;
+    _resumeInFlight = true;
+    try {
+      while (true) {
+        final request = _resumeRequest;
+        try {
+          await _activate(controller, _generation);
+        } catch (_) {
+          if (mounted) setState(() => _hint = '视频播放失败，请重试');
+          return;
+        }
+        if (request == _resumeRequest ||
+            !mounted ||
+            !_appActive ||
+            !_routeCurrent ||
+            _manualPaused ||
+            controller.value.isPlaying) {
+          return;
+        }
+      }
+    } finally {
+      _resumeInFlight = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appActive = state == AppLifecycleState.resumed;
+    if (!_appActive) _pauseForLifecycleSafely();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    if (_routeCurrent == current) return;
+    _routeCurrent = current;
+    if (!current) {
+      _pauseForLifecycleSafely();
+    } else if (!_manualPaused) {
+      final controller = _controller;
+      if (controller != null) unawaited(_resume(controller));
+    }
   }
 
   Future<void> _download() async {
@@ -266,7 +478,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
     if (_forwarding) return;
     setState(() => _forwarding = true);
     try {
-      await _controller?.pause();
+      await _pauseForLifecycle();
       await widget.onForward?.call();
     } catch (_) {
       if (mounted) setState(() => _hint = '转发失败，请重试');
@@ -306,9 +518,19 @@ final class _VideoViewerPageState extends State<VideoViewerPage> {
 
   @override
   void dispose() {
-    _uiTicker?.cancel();
-    unawaited(WakelockPlus.disable().catchError((Object _) {}));
-    _controller?.dispose();
+    _generation++;
+    WidgetsBinding.instance.removeObserver(this);
+    _pauseForLifecycleSafely();
+    final controller = _controller;
+    if (controller != null) {
+      unawaited(controller.dispose().then((_) {
+        _controllerDisposeConfirmed = true;
+        SharedVideoPlayback.arbiter.clearFailedPause(_ownerPause);
+      }, onError: (Object error, StackTrace stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+            exception: error, stack: stackTrace, library: 'video_playback'));
+      }));
+    }
     super.dispose();
   }
 

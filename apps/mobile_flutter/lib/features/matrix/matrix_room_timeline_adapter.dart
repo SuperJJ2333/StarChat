@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'room_timeline_controller.dart';
+import 'room_timeline_viewport.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
 
@@ -70,13 +71,109 @@ final class MatrixRoomTimelineAdapter
     implements
         RoomTimelineAdapter,
         RoomOptimisticTextAdapter,
-        RoomHistoryStatus {
+        RoomHistoryStatus,
+        RoomWindowedTimelineSource {
   MatrixRoomTimelineAdapter(this._capability);
 
   final RoomTimelineCapability _capability;
 
   @override
-  List<RoomMessageViewModel> snapshot() => _capability.snapshot();
+  List<RoomMessageViewModel> snapshot() {
+    final fallback = _fallbackWindow;
+    if (fallback != null) {
+      final all = _capability.snapshot();
+      fallback.update(_hiddenFilter == null
+          ? all
+          : all.where((m) => !_hiddenFilter!(m.id, m.timestamp)).toList());
+      return fallback.snapshot();
+    }
+    return _capability.snapshot();
+  }
+
+  bool Function(String, DateTime?)? _hiddenFilter;
+  @override
+  void setHiddenFilter(bool Function(String, DateTime?)? hidden) {
+    _hiddenFilter = hidden;
+    _window?.setHiddenFilter(hidden);
+  }
+
+  RoomTimelineViewport<RoomMessageViewModel>? _fallbackWindow;
+  RoomWindowedTimelineSource? get _window =>
+      _capability is RoomWindowedTimelineSource
+          ? _capability as RoomWindowedTimelineSource
+          : null;
+  @override
+  void enableWindow() {
+    if (_window != null) {
+      _window!.enableWindow();
+    } else {
+      _fallbackWindow =
+          RoomTimelineViewport(idOf: (m) => m.id, project: (m) => m);
+      _fallbackWindow!.update(_capability.snapshot());
+    }
+  }
+
+  @override
+  bool get hasEarlierWindow =>
+      _window?.hasEarlierWindow ?? _fallbackWindow?.hasEarlier ?? false;
+  @override
+  bool get hasLaterWindow =>
+      _window?.hasLaterWindow ?? _fallbackWindow?.hasLater ?? false;
+  @override
+  int get totalMessages =>
+      _window?.totalMessages ??
+      _fallbackWindow?.total ??
+      _capability.snapshot().length;
+  @override
+  Iterable<RoomMessageViewModel> get allMessages =>
+      _window?.allMessages ?? _fallbackWindow?.all ?? _capability.snapshot();
+  @override
+  RoomMessageViewModel? findMessage(String id) =>
+      _window?.findMessage(id) ?? _fallbackWindow?.find(id);
+  @override
+  RoomMessageViewModel? get newestMessage =>
+      _window?.newestMessage ?? _fallbackWindow?.newest;
+  @override
+  DateTime? previousTimestamp(String id) =>
+      _window?.previousTimestamp(id) ?? _fallbackWindow?.previousTimestamp(id);
+  @override
+  bool selectAnchor(String id) =>
+      _window?.selectAnchor(id) ?? _fallbackWindow?.anchor(id) ?? false;
+  @override
+  void selectEarlier() {
+    if (_window != null) {
+      _window!.selectEarlier();
+    } else {
+      _fallbackWindow?.earlier();
+    }
+  }
+
+  @override
+  void selectLater() {
+    if (_window != null) {
+      _window!.selectLater();
+    } else {
+      _fallbackWindow?.later();
+    }
+  }
+
+  @override
+  void selectLatest() {
+    if (_window != null) {
+      _window!.selectLatest();
+    } else {
+      _fallbackWindow?.latest();
+    }
+  }
+
+  @override
+  void pinWindow() {
+    if (_window != null) {
+      _window!.pinWindow();
+    } else {
+      _fallbackWindow?.pin();
+    }
+  }
 
   @override
   Future<String> sendText(String text) async => _capability.sendText(text);

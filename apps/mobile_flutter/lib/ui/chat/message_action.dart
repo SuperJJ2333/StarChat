@@ -42,7 +42,7 @@ final class MessageCapabilities {
   bool get canRecall {
     if (!isOwn) return false;
     final age = serverNow.difference(sentAt);
-    return !age.isNegative && age <= const Duration(minutes: 2);
+    return !age.isNegative && age <= const Duration(minutes: 3);
   }
 }
 

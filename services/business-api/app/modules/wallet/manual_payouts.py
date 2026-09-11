@@ -16,6 +16,7 @@ from app.integrations.tron.finality import NETWORK, POLICY, SOURCE_ID, Transacti
 from app.integrations.tron.reader import USDT_CONTRACT
 from app.integrations.tron.message_signature import canonical_address
 from app.modules.identity.wallet_access import require_wallet_actor
+from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.reserve import lock_budget
 from app.modules.ledger.manual_payout_reserve import (
     require_manual_payout_coverage, mark_manual_payout_pending, finish_manual_payout_pending,
@@ -76,6 +77,7 @@ class ManualPayoutPolicy:
 class ManualPayoutService:
     user_mfa_required = True
     reserve_policy = 'full_backing'
+    conversions_enabled = False
     def __init__(self, session_factory, *, official_config, policy, owner_admin_id, mfa_verifier, finality, clock):
         if not isinstance(policy, ManualPayoutPolicy) or not official_config.version:
             raise ValueError('explicit server policy required')
@@ -88,6 +90,7 @@ class ManualPayoutService:
         self.owner_admin_id = owner_admin_id
         self.mfa_verifier, self.finality, self.clock = mfa_verifier, finality, clock
         self.wallet_ledger = WalletLedger(session_factory)
+        self.payment_pin = PaymentPinService(session_factory, clock=clock)
 
     def _now(self):
         now = self.clock()
@@ -147,8 +150,9 @@ class ManualPayoutService:
 
     def recover(self, *, user_id, operation, idempotency_key, payload):
         """Existing quote/request response only; never authorize payment or take a hold."""
-        allowed = {'QUOTE': {'amount', 'binding_version'}, 'REQUEST': {'quote_id'}}
-        if operation not in allowed or not isinstance(payload, dict) or set(payload) != allowed[operation]:
+        allowed = {'QUOTE': ({'amount', 'binding_version'}, {'amount', 'binding_version', 'funding_asset'}),
+            'REQUEST': ({'quote_id'},)}
+        if operation not in allowed or not isinstance(payload, dict) or set(payload) not in allowed[operation]:
             _fail('WALLET_RECOVERY_OPERATION_INVALID', 400)
         with self.factory.begin() as session:
             self._lock(session, user_id)
@@ -164,28 +168,49 @@ class ManualPayoutService:
 
     @staticmethod
     def _result(row):
+        quote = object_session(row).get(ManualPayoutQuote, row.quote_id)
+        terms = quote.snapshot
+        asset = terms.get('funding_asset', 'USDT')
         settlement_txid = None
         if row.status == 'SETTLED':
             settlement_txid = object_session(row).scalar(select(ManualPayoutEvent.txid).where(ManualPayoutEvent.order_id == row.id))
         return dict(id=row.id, user_id=row.user_id, quote_id=row.quote_id, amount=format(row.amount, '.6f'),
             status=row.status, digest=row.digest, candidate_txid=row.candidate_txid, review_reason=row.review_reason,
-            settlement_txid=settlement_txid)
+            settlement_txid=settlement_txid, funding_asset=asset,
+            funding_amount=terms.get('funding_amount', format(row.amount, '.6f')),
+            cancellation_asset=asset)
+
+    def quote_status(self, *, user_id, quote_id):
+        with self.factory.begin() as session:
+            require_wallet_actor(session, user_id=user_id, clock=self.clock)
+            quote = session.get(ManualPayoutQuote, quote_id)
+            if quote is None or quote.user_id != user_id:
+                _fail('WALLET_PAYOUT_QUOTE_NOT_FOUND', 404)
+            return dict(quote.snapshot, id=quote.id, digest=quote.digest)
 
     @_precise
-    def quote(self, *, user_id, amount, expected_binding_version, idempotency_key):
+    def quote(self, *, user_id, amount, expected_binding_version, idempotency_key, funding_asset='USDT'):
         if (not isinstance(amount, str) or re.fullmatch(r'(0|[1-9][0-9]{0,23})\.[0-9]{6}', amount) is None
                 or not Decimal('10') <= Decimal(amount) <= self.policy.max_per):
+            _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
+        if funding_asset not in {'USDT', 'CAIBI'}:
+            _fail('WALLET_PAYOUT_FUNDING_ASSET_INVALID', 400)
+        if funding_asset == 'CAIBI' and Decimal(amount) != Decimal(amount).quantize(Decimal('0.01')):
             _fail('WALLET_PAYOUT_AMOUNT_INVALID', 400)
         if type(expected_binding_version) is not int:
             _fail('WALLET_BINDING_VERSION_CONFLICT')
         now = self._now()
         payload = dict(amount=amount, binding_version=expected_binding_version)
+        if funding_asset != 'USDT':
+            payload['funding_asset'] = funding_asset
         with self.factory.begin() as session:
             locked = self._lock(session, user_id)
             require_wallet_actor(session, user_id=user_id, clock=self.clock)
             replay = self._replay(session, user_id, 'QUOTE', idempotency_key, payload)
             if replay:
                 return replay
+            if funding_asset == 'CAIBI' and not self.conversions_enabled:
+                _fail('WALLET_CONVERSION_DISABLED', 503)
             binding, epoch = self._gate(session, user_id, now, locked)
             now = self._now()
             if binding.version != expected_binding_version:
@@ -200,6 +225,9 @@ class ManualPayoutService:
                 minimum='10.000000', max_per=format(self.policy.max_per, '.6f'), user_24h=format(self.policy.user_24h, '.6f'),
                 global_24h=format(self.policy.global_24h, '.6f'), safety_epoch=epoch, created_at=now.isoformat(),
                 expires_at=(now+self.policy.quote_ttl).isoformat())
+            snapshot.update(funding_asset=funding_asset,
+                funding_amount=format(Decimal(amount), '.2f' if funding_asset == 'CAIBI' else '.6f'),
+                conversion_rate='1', conversion_fee='0.000000', cancellation_asset=funding_asset)
             row = ManualPayoutQuote(id=str(uuid4()), user_id=user_id, amount=Decimal(amount), snapshot=snapshot,
                 digest=_digest(snapshot), created_at=now, expires_at=now+self.policy.quote_ttl)
             session.add(row)
@@ -222,7 +250,18 @@ class ManualPayoutService:
             _fail('WALLET_PAYOUT_LIMIT_EXCEEDED')
 
     @_precise
-    def request(self, *, user_id, session_id, mfa_proof, quote_id, idempotency_key):
+    def request(self, *, user_id, session_id, mfa_proof, quote_id, idempotency_key,
+                claims=None, payment_authorization=None):
+        payload = dict(quote_id=quote_id)
+        # Recovery must work with an expired quote/PIN/TOTP after acceptance.
+        recovered = self.recover(user_id=user_id, operation='REQUEST',
+            idempotency_key=idempotency_key, payload=payload)
+        if recovered is not None:
+            return recovered
+        # A recovery probe must neither ask for nor burn one-time TOTP. Only a
+        # genuinely authorized new attempt proceeds to the existing MFA check.
+        if payment_authorization is None:
+            _fail('PAYMENT_PIN_REQUIRED', 403)
         now = self._now()
         verified_at = now
         if self.user_mfa_required:
@@ -230,7 +269,6 @@ class ManualPayoutService:
         elif not user_id or not session_id:
             _fail('AUTH_REQUIRED', 401)
         now = self._now()
-        payload = dict(quote_id=quote_id)
         with self.factory.begin() as session:
             locked = self._lock(session, user_id)
             require_wallet_actor(session, user_id=user_id, clock=self.clock)
@@ -256,9 +294,26 @@ class ManualPayoutService:
             if session.scalar(select(ManualPayoutOrder.id).where(ManualPayoutOrder.quote_id == quote_id)):
                 _fail('WALLET_PAYOUT_QUOTE_USED')
             self._limits(session, quote, now)
+            funding_asset = terms.get('funding_asset', 'USDT')
+            if funding_asset == 'CAIBI' and not self.conversions_enabled:
+                _fail('WALLET_CONVERSION_DISABLED', 503)
+            if funding_asset not in {'CAIBI', 'USDT'}:
+                _fail('WALLET_PAYOUT_QUOTE_CHANGED')
+            # Mandatory for all new withdrawals, independent of require_all.
+            # The caller's transaction also owns all conversion/hold writes.
+            self.payment_pin.consume(session, user_id=user_id, claims=claims,
+                action='wallet.payout.create', payload=payload, idempotency_key=idempotency_key,
+                authorization=payment_authorization, required=True)
+            if claims['family_id'] != session_id:
+                _fail('PAYMENT_AUTHORIZATION_INVALID', 403)
             row = ManualPayoutOrder(id=str(uuid4()), quote_id=quote_id, user_id=user_id, amount=quote.amount,
                 digest=quote.digest, status='REQUESTED', created_at=now, updated_at=now)
             session.add(row)
+            if funding_asset == 'CAIBI':
+                from app.modules.wallet.conversions import convert_in_session
+                convert_in_session(session, self.factory, user_id=user_id, direction='CAIBI_TO_USDT',
+                    amount=quote.amount, requested_amount=quote.amount, idempotency_key='payout:'+row.id,
+                    reserve_policy=self.reserve_policy, now=now)
             self.wallet_ledger.post(entries={user_id: -row.amount, 'HOLD:'+user_id: row.amount}, actor_id=user_id,
                 reason_code='MANUAL_PAYOUT_HOLD', idempotency_key=row.id, scope='wallet.manual_hold', session=session)
             return self._record(session, user_id, 'REQUEST', idempotency_key, payload, self._result(row), now)
@@ -287,6 +342,10 @@ class ManualPayoutService:
                 _fail('WALLET_PAYOUT_CANNOT_CANCEL')
             self.wallet_ledger.post(entries={'HOLD:'+user_id: -row.amount, user_id: row.amount}, actor_id=user_id,
                 reason_code='MANUAL_PAYOUT_CANCELLED', idempotency_key=row.id, scope='wallet.manual_release', session=session)
+            quote = session.get(ManualPayoutQuote, row.quote_id)
+            if quote.snapshot.get('funding_asset', 'USDT') == 'CAIBI':
+                from app.modules.wallet.conversions import reverse_payout_conversion
+                reverse_payout_conversion(session, self.factory, user_id=user_id, order_id=row.id, amount=row.amount)
             row.status, row.updated_at = 'CANCELLED', now
             return self._record(session, user_id, 'CANCEL', idempotency_key, payload, self._result(row), now)
 

@@ -7,6 +7,123 @@ import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
+  test('independent publications cannot persist older snapshot last', () async {
+    final store = DelayedWriteProfileStore();
+    final contacts = Completer<List<ContactSummary>>();
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'ordered',
+        store: store,
+        loadProfile: () async => profile('Owner'),
+        loadContacts: () => contacts.future);
+    final request = cache.preload();
+    await store.entered.future;
+    contacts.complete([contact(remark: 'Newest')]);
+    await Future<void>.delayed(Duration.zero);
+    store.release.complete();
+    await request;
+    expect(store.saved?.contacts.single.remark, 'Newest');
+    cache.dispose();
+  });
+
+  test('disposed repository ignores late remote publications', () async {
+    final owner = Completer<ProfileData>();
+    final friends = Completer<List<ContactSummary>>();
+    final store = MemoryProfileStore();
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'disposed',
+        store: store,
+        loadProfile: () => owner.future,
+        loadContacts: () => friends.future);
+    final request = cache.preload();
+    await Future<void>.delayed(Duration.zero);
+    cache.dispose();
+    owner.complete(profile('Late'));
+    friends.complete([contact(remark: 'Late')]);
+    await request;
+    expect(cache.profile, isNull);
+    expect(cache.contacts, isEmpty);
+    expect(store.values, isEmpty);
+  });
+
+  test('quiet contacts refresh cannot cancel pending owner publication',
+      () async {
+    final store = MemoryProfileStore();
+    await store.write('owner',
+        ProfileSnapshot(profile: profile('Cached'), contacts: const []));
+    final pending = Completer<ProfileData>();
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'owner',
+        store: store,
+        loadProfile: () => pending.future,
+        loadContacts: () async => [contact(remark: 'New')]);
+    final request = cache.refresh();
+    await Future<void>.delayed(Duration.zero);
+    await cache.refreshContactsQuietly(minInterval: Duration.zero);
+    pending.complete(profile('Updated owner'));
+    await request;
+    expect(cache.profile?.nickname, 'Updated owner');
+    cache.dispose();
+  });
+
+  test('publishes own profile while contacts are blocked and then fail',
+      () async {
+    final pending = Completer<List<ContactSummary>>();
+    final published = Completer<void>();
+    final store = MemoryProfileStore();
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'independent',
+      store: store,
+      loadProfile: () async => profile('Fresh owner'),
+      loadContacts: () => pending.future,
+    );
+    cache.addListener(() {
+      if (cache.profile != null && !published.isCompleted) published.complete();
+    });
+    final request = expectLater(cache.preload(), throwsStateError);
+    await Future<void>.delayed(Duration.zero);
+    final observedName = cache.profile?.nickname;
+    pending.completeError(StateError('contacts offline'));
+    await request;
+    expect(observedName, 'Fresh owner');
+    expect(published.isCompleted, isTrue);
+    expect((await store.read('independent'))?.profile.nickname, 'Fresh owner');
+    expect(cache.profile?.nickname, 'Fresh owner');
+    cache.dispose();
+  });
+
+  test('contacts publish while owner refresh is blocked', () async {
+    final store = MemoryProfileStore();
+    await store.write('independent',
+        ProfileSnapshot(profile: profile('Cached'), contacts: const []));
+    final pending = Completer<ProfileData>();
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'independent',
+        store: store,
+        loadProfile: () => pending.future,
+        loadContacts: () async => [contact(remark: 'Fresh')]);
+    final request = cache.refresh();
+    await Future<void>.delayed(Duration.zero);
+    final observedContacts = cache.contacts;
+    pending.complete(profile('Fresh owner'));
+    await request;
+    expect(observedContacts.single.remark, 'Fresh');
+    cache.dispose();
+  });
+
+  test('disposed repository ignores late hydration and remote results',
+      () async {
+    final store = DelayedReadProfileStore();
+    final cache =
+        ProfileRepository.forTesting(accountKey: 'disposed', store: store);
+    final request = cache.hydrate();
+    cache.dispose();
+    store.pending.complete(
+        ProfileSnapshot(profile: profile('Late'), contacts: const []));
+    await request;
+    expect(cache.profile, isNull);
+    expect(store.saved, isNull);
+  });
+
   test('preload retries after a transient failure', () async {
     var attempts = 0;
     final cache = ProfileRepository.forTesting(
@@ -372,6 +489,22 @@ final class DelayedReadProfileStore implements ProfileStore {
   Future<ProfileSnapshot?> read(String accountKey) => pending.future;
   @override
   Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
+    saved = snapshot;
+  }
+}
+
+final class DelayedWriteProfileStore implements ProfileStore {
+  final entered = Completer<void>();
+  final release = Completer<void>();
+  ProfileSnapshot? saved;
+  @override
+  Future<ProfileSnapshot?> read(String accountKey) async => null;
+  @override
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
+    if (!entered.isCompleted) {
+      entered.complete();
+      await release.future;
+    }
     saved = snapshot;
   }
 }

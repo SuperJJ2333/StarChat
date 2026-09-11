@@ -1,5 +1,11 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:liuhetong_mobile/core/cache/cache_repository.dart';
+import 'package:liuhetong_mobile/core/cache/moments_page_store.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,6 +15,88 @@ import 'package:liuhetong_mobile/ui/moments/moment_image_provider.dart';
 import 'moments_flow_test.dart' as fixtures;
 
 void main() {
+  testWidgets('standalone detail deletion persists older-page tombstone',
+      (tester) async {
+    sqfliteFfiInit();
+    SharedPreferences.setMockInitialValues({});
+    final path =
+        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-11/performance/detail-delete-${DateTime.now().microsecondsSinceEpoch}.db';
+    final store = MomentsPageStore(
+        databasePath: path, factory: databaseFactoryFfiNoIsolate);
+    addTearDown(() async {
+      await store.close();
+      await databaseFactoryFfi.deleteDatabase(path);
+    });
+    final json = fixtures.momentJson(liked: false, likeCount: 0);
+    json['comments'] = [
+      {'id': 'mine', 'text': 'my comment', 'author': json['author']}
+    ];
+    await tester.runAsync(() async {
+      await CacheRepository.resetForTest(pageStore: store);
+      final cache =
+          (await CacheRepository.instance()).momentsFor('detail-account');
+      await cache.savePage(
+          'older',
+          {
+            'items': [json]
+          },
+          ticket: cache.currentRevision,
+          expectedGeneration: 0);
+    });
+    final api = await fixtures.momentsApi((request) async =>
+        request.method == 'DELETE'
+            ? http.Response('', 204)
+            : http.Response(jsonEncode(json), 200,
+                headers: {'content-type': 'application/json; charset=utf-8'}));
+    final identity = ProfileRepository.forTesting(
+        accountKey: 'detail-account', store: fixtures.MomentsIdentityStore());
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentDetailPage(
+            api: api,
+            identityCache: identity,
+            initialItem: MomentItem.fromJson(json),
+            currentUsername: 'alice_id')));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      final comment = find.byKey(const ValueKey('moment-comment-mine'));
+      // Invoke the production gesture callback in the real async zone so the
+      // SQLite transaction can finish independently of the widget fake clock.
+      tester.widget<GestureDetector>(comment).onLongPressStart!(
+          LongPressStartDetails(globalPosition: tester.getCenter(comment)));
+    });
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('删除'));
+    });
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      // Drain real-zone route completion and HTTP continuations before joining
+      // the cache writer; pumpAndSettle only drains the widget clock.
+      await Future<void>.delayed(Duration.zero);
+      final cache =
+          (await CacheRepository.instance()).momentsFor('detail-account');
+      await cache
+          .restoreInvalidations(); // Join pending serialized persistence.
+      final tombstones = await store
+          .readTombstones(CacheRepository.momentsFeedKeyFor('detail-account'));
+      expect(tombstones.map((row) => row['comment_id']), contains('mine'));
+      await store.close();
+      await CacheRepository.resetForTest(pageStore: store);
+      final reopened =
+          (await CacheRepository.instance()).momentsFor('detail-account');
+      await reopened.savePage(
+          'older',
+          {
+            'items': [json]
+          },
+          ticket: reopened.currentRevision,
+          expectedGeneration: 0);
+      expect(
+          (await reopened.loadPage('older'))!['items'][0]['comments'], isEmpty);
+    });
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    identity.dispose();
+  });
   testWidgets('pending detail like is never emitted as confirmed persistence',
       (tester) async {
     final json = fixtures.momentJson(liked: false, likeCount: 0);
@@ -166,7 +254,7 @@ void main() {
               confirmed = item;
             })));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('moment-comment-mine')));
+    await tester.longPress(find.byKey(const ValueKey('moment-comment-mine')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
@@ -198,7 +286,7 @@ void main() {
             initialItem: MomentItem.fromJson(json),
             currentUsername: 'alice_id')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('moment-comment-mine')));
+    await tester.longPress(find.byKey(const ValueKey('moment-comment-mine')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('moment-comment-input')), findsNothing);
     await tester.tap(find.text('删除'));

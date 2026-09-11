@@ -99,6 +99,28 @@
         if (!packet?.textContent.includes("畅聊点钻红包")) {
           throw new Error("red packet card lacks the approved brand footer");
         }
+        const viewerClaim = root.querySelector('[data-screen-id="redpacket-detail-viewer-claimed"] .c-red-packet');
+        if (viewerClaim?.dataset.viewerClaim !== "true" || viewerClaim.dataset.action !== "open:redpacket-detail-history") {
+          throw new Error("viewer-claimed red packet must use the muted viewer state and open claim detail");
+        }
+        const randomComplete = root.querySelector('[data-screen-id="redpacket-detail-group-random-completed"]');
+        const randomPending = root.querySelector('[data-screen-id="redpacket-detail-available"]');
+        if (!randomComplete?.textContent.includes("手气最佳") || randomPending?.textContent.includes("手气最佳")) {
+          throw new Error("best luck appears only for completed group random red packets");
+        }
+        const receiverTransfer = root.querySelector('[data-screen-id="caibi-transfer-receiver-accepted"]');
+        if (!receiverTransfer?.textContent.includes("转账已收款") || !receiverTransfer.textContent.includes("收款时间") || !receiverTransfer.querySelector('[data-action="open:caibi-transaction-detail"]')) {
+          throw new Error("receiver accepted transfer lacks its authoritative detail route");
+        }
+        const ledgerFilter = root.querySelector('[data-screen-id="caibi-ledger-filtered"]');
+        if (!ledgerFilter?.querySelector('select[aria-label="流水类型"]') || ledgerFilter.querySelectorAll('input').length < 3 || !ledgerFilter.querySelector('[data-action="open:caibi-ledger-paged"]')) {
+          throw new Error("ledger demo lacks combined type/date/search filters and pagination action");
+        }
+        const ledgerDetail = root.querySelector('[data-screen-id="caibi-transaction-detail"]');
+        const ledgerId = "3c40c1aa-836b-4dae-8c49-cd73c2ebbc10";
+        if (!ledgerDetail?.textContent.includes(ledgerId) || !ledgerDetail.querySelector(`[data-action="ledger:copy-single"]`)) {
+          throw new Error("ledger detail lacks a copyable example transaction id");
+        }
         const darkWallet = root.querySelector('[data-screen-id="wallet-home-default-dark"]');
         if (darkWallet?.dataset.theme !== "dark") {
           throw new Error("dark key screen does not use the dark theme contract");

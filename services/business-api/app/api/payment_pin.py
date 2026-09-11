@@ -18,7 +18,7 @@ class SetupPaymentPinRequest(BaseModel):
 class AuthorizePaymentPinRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     pin: SecretStr = Field(min_length=6, max_length=6, repr=False)
-    action: Literal['chat_transfer.create', 'red_packet.create']
+    action: Literal['chat_transfer.create', 'red_packet.create', 'wallet.payout.create']
     payload: dict
     idempotency_key: str = Field(min_length=1, max_length=128)
 

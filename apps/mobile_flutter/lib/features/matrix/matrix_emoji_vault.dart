@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'emoji_vault.dart';
 import 'emoji_preview_cache.dart';
+import 'content_addressed_media.dart';
 
 const emojiVaultAccountDataType = 'com.changliao.emoji.vault';
 
@@ -54,6 +55,10 @@ abstract interface class MatrixEmojiVaultCacheIdentity {
   String get cacheIdentity;
 }
 
+abstract interface class MatrixEmojiVaultContentLoader {
+  Future<Uint8List> loadContent(String roomId, EmojiVaultItem item);
+}
+
 final class MatrixEmojiVault {
   MatrixEmojiVault._({
     required this.roomId,
@@ -96,8 +101,15 @@ final class MatrixEmojiVault {
   Future<void> refresh() async =>
       vault.apply(await _backend.loadEvents(roomId));
 
-  Future<Uint8List> loadBytes(EmojiVaultItem item) =>
-      _backend.downloadAndDecrypt(roomId, item.encryptedFile);
+  Future<Uint8List> loadBytes(EmojiVaultItem item) async {
+    final backend = _backend;
+    if (backend is MatrixEmojiVaultContentLoader) {
+      return (backend as MatrixEmojiVaultContentLoader).loadContent(roomId, item);
+    }
+    final bytes = await backend.downloadAndDecrypt(roomId, item.encryptedFile);
+    verifyMediaContent(bytes, item.sha256);
+    return bytes;
+  }
 
   static Future<MatrixEmojiVault> open(
     MatrixEmojiVaultBackend backend,

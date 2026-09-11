@@ -49,7 +49,7 @@ def create_transfer_router(settings: Settings, session_factory) -> APIRouter:
             if str(error) == "insufficient balance":
                 raise AppError(code="CHAT_TRANSFER_BALANCE_INSUFFICIENT", message="转账失败，账户余额不足", status_code=422) from error
             raise
-        return service.snapshot(transfer)
+        return service.snapshot(transfer, user_id=user_id)
 
     @router.post("/{transfer_id}/accept")
     def accept(transfer_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
@@ -57,7 +57,7 @@ def create_transfer_router(settings: Settings, session_factory) -> APIRouter:
             transfer = service.accept(transfer_id, user_id=user_id, idempotency_key=idempotency_key)
         except ValueError as error:
             raise _translate(error) from error
-        return service.snapshot(transfer)
+        return service.snapshot(transfer, user_id=user_id)
 
     @router.post("/{transfer_id}/decline")
     def decline(transfer_id: str, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user_id: str = Depends(actor)):
@@ -65,7 +65,7 @@ def create_transfer_router(settings: Settings, session_factory) -> APIRouter:
             transfer = service.decline(transfer_id, user_id=user_id, reason_code="CHAT_TRANSFER_DECLINED", idempotency_key=idempotency_key)
         except ValueError as error:
             raise _translate(error) from error
-        return service.snapshot(transfer)
+        return service.snapshot(transfer, user_id=user_id)
 
     @router.get("/{transfer_id}")
     def detail(transfer_id: str, user_id: str = Depends(actor)):
