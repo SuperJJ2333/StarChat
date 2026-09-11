@@ -1,6 +1,10 @@
 import '../../features/matrix/media_thumbnail.dart';
 import '../../features/matrix/gif_image_policy.dart';
+import '../../features/matrix/media_consumer_scope.dart';
+import '../../features/matrix/media_load_scheduler.dart';
 import 'contain_image_bubble.dart';
+import 'budgeted_media_image.dart';
+import 'media_visibility.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -160,6 +164,8 @@ final class ImageViewerPage extends StatefulWidget {
     this.onForwardEdited,
     this.onFavorite,
     this.onZoomChanged,
+    this.sourceIdentity,
+    this.active = true,
   });
 
   /// 占位缩略图/预览字节：点击“查看原图”前仅展示它。
@@ -180,6 +186,8 @@ final class ImageViewerPage extends StatefulWidget {
   final Future<bool> Function(Uint8List)? onForwardEdited;
   final Future<void> Function(Uint8List)? onFavorite;
   final ValueChanged<bool>? onZoomChanged;
+  final Object? sourceIdentity;
+  final bool active;
 
   @override
   State<ImageViewerPage> createState() => _ImageViewerPageState();
@@ -191,6 +199,13 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   Size? _viewportSize;
   bool _zoomed = false;
   bool _editing = false;
+  int _editGeneration = 0;
+  bool _visible = false;
+  int _sourceGeneration = 0;
+  int _requestGeneration = 0;
+  MediaConsumerScope? _originalScope;
+  MediaConsumerScope? _saveScope;
+  bool get _eligible => widget.active && _visible;
 
   void _zoomChanged() {
     final zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
@@ -208,21 +223,31 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   Future<void> _edit() async {
     if (loadingOriginal || _editing) return;
     setState(() => _editing = true);
+    final edit = ++_editGeneration;
     try {
-      if (originalBytes == null && widget.loadOriginal != null)
-        await _loadOriginal();
-      if (!mounted || originalFailed) return;
+      if (originalBytes == null && widget.loadOriginal != null) {
+        if (!await _loadOriginal()) return;
+      }
+      if (!mounted ||
+          edit != _editGeneration ||
+          originalFailed ||
+          originalBytes == null && widget.loadOriginal != null) {
+        return;
+      }
+      final editBytes = originalBytes ?? widget.previewBytes;
+      final editForward = widget.onForwardEdited;
+      final editFavorite = widget.onFavorite;
       await Navigator.of(context, rootNavigator: true).push(
         CupertinoPageRoute(
           builder: (_) => WeChatImageEditorPage(
-            bytes: originalBytes ?? widget.previewBytes,
-            onForward: widget.onForwardEdited,
-            onFavorite: widget.onFavorite,
+            bytes: editBytes,
+            onForward: editForward,
+            onFavorite: editFavorite,
           ),
         ),
       );
     } finally {
-      if (mounted) setState(() => _editing = false);
+      if (mounted && edit == _editGeneration) setState(() => _editing = false);
     }
   }
 
@@ -247,6 +272,8 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
 
   @override
   void dispose() {
+    _originalScope?.cancel();
+    _saveScope?.cancel();
     _transform.dispose();
     super.dispose();
   }
@@ -258,6 +285,54 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
   bool forwarding = false;
   String? hint;
 
+  Object _sourceToken(ImageViewerPage page) =>
+      page.sourceIdentity ?? page.previewBytes;
+
+  @override
+  void didUpdateWidget(covariant ImageViewerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_sourceToken(oldWidget) != _sourceToken(widget)) {
+      _sourceGeneration++;
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      _saveScope?.cancel();
+      _saveScope = null;
+      originalBytes = null;
+      dimensions = null;
+      hint = null;
+      originalFailed = false;
+      loadingOriginal = false;
+      _transform.removeListener(_zoomChanged);
+      _transform.value = Matrix4.identity();
+      _transform.addListener(_zoomChanged);
+      _zoomed = false;
+      _editGeneration++;
+      _editing = false;
+    }
+    if (!_eligible) {
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      loadingOriginal = false;
+      _editGeneration++;
+      _editing = false;
+    }
+  }
+
+  void _visibilityChanged(bool visible) {
+    if (_visible == visible) return;
+    setState(() => _visible = visible);
+    if (!_eligible) {
+      _requestGeneration++;
+      _originalScope?.cancel();
+      _originalScope = null;
+      loadingOriginal = false;
+      _editGeneration++;
+      _editing = false;
+    }
+  }
+
   /// 原图大小按本次实际字节动态计算；未加载时以提示值/预览字节兜底。
   int get originalSizeBytes {
     final loaded = originalBytes;
@@ -267,15 +342,31 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
     return widget.previewBytes.lengthInBytes;
   }
 
-  Future<void> _loadOriginal() async {
+  Future<bool> _loadOriginal() async {
     final loader = widget.loadOriginal;
-    if (loader == null || loadingOriginal || originalBytes != null) return;
+    if (!_eligible ||
+        loader == null ||
+        loadingOriginal ||
+        originalBytes != null) {
+      return false;
+    }
     setState(() {
       loadingOriginal = true;
       originalFailed = false;
     });
+    final source = _sourceGeneration;
+    final request = ++_requestGeneration;
+    final scope = _originalScope =
+        MediaConsumerScope(priority: MediaLoadPriority.interactive);
     try {
-      final bytes = await loader();
+      final bytes = await scope.run(loader);
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !scope.isActive ||
+          !_eligible) {
+        return false;
+      }
       ({int width, int height})? decoded;
       try {
         final size = await decodeImageDimensions(bytes);
@@ -283,39 +374,67 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       } catch (_) {
         // 尺寸解码失败不影响原图展示。
       }
-      if (!mounted) return;
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !_eligible) {
+        return false;
+      }
       setState(() {
         originalBytes = bytes;
         dimensions = decoded;
         loadingOriginal = false;
       });
+      return true;
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted ||
+          source != _sourceGeneration ||
+          request != _requestGeneration ||
+          !scope.isActive) {
+        return false;
+      }
       setState(() {
         loadingOriginal = false;
         originalFailed = true;
         hint = '原图加载失败，点击「查看原图」重试';
       });
+      return false;
+    } finally {
+      if (identical(_originalScope, scope)) {
+        _originalScope = null;
+      }
+      scope.cancel();
     }
   }
 
   Future<void> _download() async {
+    if (_saveScope != null) return;
+    final source = _sourceGeneration;
+    final loader = widget.loadOriginal;
+    final preview = widget.previewBytes;
+    final loadedOriginal = originalBytes;
+    final scope = _saveScope =
+        MediaConsumerScope(priority: MediaLoadPriority.interactive);
     try {
       await ensureGallerySaveAccess();
-      final bytes = originalBytes ??
-          await (widget.loadOriginal?.call() ??
-              Future<Uint8List>.value(widget.previewBytes));
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
+      final bytes = loadedOriginal ??
+          await scope.run(loader ?? () => Future<Uint8List>.value(preview));
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       final result = await PhotoManager.editor.saveImage(
-        bytes,
+        bytes!,
         filename: 'changliao-${DateTime.now().millisecondsSinceEpoch}.jpg',
       );
-      if (!mounted) return;
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       setState(() {
         hint = result.id.isNotEmpty ? '已保存到相册' : '保存失败，请稍后重试';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || source != _sourceGeneration || !scope.isActive) return;
       setState(() => hint = gallerySaveErrorMessage(error));
+    } finally {
+      if (identical(_saveScope, scope)) _saveScope = null;
+      scope.cancel();
     }
   }
 
@@ -397,24 +516,31 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
                     }
                   });
                 }
-                return GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  onDoubleTapDown: (details) =>
-                      _doubleTapPosition = details.localPosition,
-                  onDoubleTap: _toggleZoom,
-                  child: InteractiveViewer(
-                    transformationController: _transform,
-                    panEnabled: _zoomed,
-                    maxScale: 4,
-                    child: Image(
-                      width: size.width,
-                      height: size.height,
-                      image: boundedChatImageProvider(
-                        displayBytes,
-                        maxEdge: isGifBytes(displayBytes) ? 720 : 2048,
+                return MediaVisibility(
+                  onChanged: _visibilityChanged,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    onDoubleTapDown: (details) =>
+                        _doubleTapPosition = details.localPosition,
+                    onDoubleTap: _toggleZoom,
+                    child: InteractiveViewer(
+                      transformationController: _transform,
+                      panEnabled: _zoomed,
+                      maxScale: 4,
+                      child: BudgetedMediaImage(
+                        key: ValueKey(_sourceToken(widget)),
+                        width: size.width,
+                        height: size.height,
+                        provider: boundedChatImageProvider(
+                          displayBytes,
+                          maxEdge: isGifBytes(displayBytes) ? 720 : 2048,
+                        ),
+                        isAnimated: isGifBytes(displayBytes),
+                        visible: _eligible,
+                        priority: 100,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
                       ),
-                      fit: BoxFit.contain,
-                      gaplessPlayback: true,
                     ),
                   ),
                 );
