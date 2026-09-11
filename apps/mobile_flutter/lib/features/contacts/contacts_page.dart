@@ -201,12 +201,12 @@ final class _ContactsPageState extends State<ContactsPage> {
                     context,
                     CupertinoPageRoute(
                       builder: (_) => GlobalSearchPage(
-                          contactActions: ContactActions(
-                            onMessage: widget.onMessage,
-                            onVoice: widget.onVoice,
-                            onVideo: widget.onVideo,
-                          ),
-                          identityCache: widget.identityCache,
+                        contactActions: ContactActions(
+                          onMessage: widget.onMessage,
+                          onVoice: widget.onVoice,
+                          onVideo: widget.onVideo,
+                        ),
+                        identityCache: widget.identityCache,
                         api: businessApi,
                         matrix: widget.matrix,
                       ),
@@ -225,12 +225,12 @@ final class _ContactsPageState extends State<ContactsPage> {
                           context,
                           CupertinoPageRoute(
                               builder: (_) => AddFriendPage(
-                              contactActions: ContactActions(
-                                onMessage: widget.onMessage,
-                                onVoice: widget.onVoice,
-                                onVideo: widget.onVideo,
-                              ),
-                              api: businessApi,
+                                  contactActions: ContactActions(
+                                    onMessage: widget.onMessage,
+                                    onVoice: widget.onVoice,
+                                    onVideo: widget.onVideo,
+                                  ),
+                                  api: businessApi,
                                   identityCache: widget.identityCache)));
                     },
                     onScan: widget.onScan ??
@@ -456,17 +456,24 @@ final class ContactProfilePage extends StatefulWidget {
 
 final class _ContactProfilePageState extends State<ContactProfilePage> {
   late ContactDetails contact = widget.initialContact;
+  ContactSelection? _contactSelection;
+
   @override
   void initState() {
     super.initState();
-    widget.identityCache?.addListener(_identityChanged);
+    _bindIdentity();
     _readIdentity();
   }
 
+  void _bindIdentity() {
+    _contactSelection?.removeListener(_identityChanged);
+    _contactSelection?.dispose();
+    _contactSelection = widget.identityCache?.selectContact(contact.userId);
+    _contactSelection?.addListener(_identityChanged);
+  }
+
   void _readIdentity() {
-    final updated = widget.identityCache?.contacts
-        .where((c) => c.userId == contact.userId)
-        .firstOrNull;
+    final updated = _contactSelection?.value;
     if (updated != null) contact = updated.toDetails();
   }
 
@@ -477,16 +484,20 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   @override
   void didUpdateWidget(covariant ContactProfilePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.identityCache != widget.identityCache) {
-      oldWidget.identityCache?.removeListener(_identityChanged);
-      widget.identityCache?.addListener(_identityChanged);
+    final contactChanged =
+        oldWidget.initialContact.userId != widget.initialContact.userId;
+    final repositoryChanged = oldWidget.identityCache != widget.identityCache;
+    if (contactChanged || repositoryChanged) contact = widget.initialContact;
+    if (repositoryChanged || contactChanged) {
+      _bindIdentity();
       _readIdentity();
     }
   }
 
   @override
   void dispose() {
-    widget.identityCache?.removeListener(_identityChanged);
+    _contactSelection?.removeListener(_identityChanged);
+    _contactSelection?.dispose();
     super.dispose();
   }
 
@@ -540,12 +551,12 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
                   contact: contact, identityCache: widget.identityCache),
               if (widget.api is BusinessApiClient)
                 MomentProfilePreview(
-                  contactActions: ContactActions(
-                    onMessage: widget.onMessage,
-                    onVoice: widget.onVoice,
-                    onVideo: widget.onVideo,
-                  ),
-                  identityCache: widget.identityCache,
+                    contactActions: ContactActions(
+                      onMessage: widget.onMessage,
+                      onVoice: widget.onVoice,
+                      onVideo: widget.onVideo,
+                    ),
+                    identityCache: widget.identityCache,
                     api: widget.api as BusinessApiClient,
                     userId: contact.userId,
                     displayName: contact.primaryDisplayName,

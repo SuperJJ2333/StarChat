@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -299,6 +300,65 @@ final class ProfileRepositoryError {
 
 typedef ProfileErrorReporter = void Function(ProfileRepositoryError error);
 
+/// A disposable view of one contact. Repositories retain it only while its
+/// consumer owns it, so opening many different profiles does not leave a
+/// permanent notifier behind for each user.
+final class ContactSelection implements ValueListenable<ContactSummary?> {
+  ContactSelection._(this._value, this._onDispose);
+
+  ContactSummary? _value;
+  VoidCallback? _onDispose;
+  final Set<VoidCallback> _listeners = {};
+  bool _isDisposed = false;
+
+  bool get isDisposed => _isDisposed;
+
+  @override
+  ContactSummary? get value => _value;
+
+  @override
+  void addListener(VoidCallback listener) {
+    if (!_isDisposed) _listeners.add(listener);
+  }
+
+  @override
+  void removeListener(VoidCallback listener) => _listeners.remove(listener);
+
+  void _setOnDispose(VoidCallback onDispose) => _onDispose = onDispose;
+
+  void _replace(ContactSummary? next) {
+    if (_sameContact(_value, next)) return;
+    _value = next;
+    for (final listener in List<VoidCallback>.of(_listeners)) {
+      if (_isDisposed) return;
+      if (!_listeners.contains(listener)) continue;
+      try {
+        listener();
+      } catch (error, stackTrace) {
+        FlutterError.reportError(FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'ProfileRepository',
+          context: ErrorDescription('while notifying a selected contact'),
+        ));
+      }
+    }
+  }
+
+  void _disposeFromRepository() {
+    _onDispose = null;
+  }
+
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    final onDispose = _onDispose;
+    _onDispose = null;
+    onDispose?.call();
+    _listeners.clear();
+  }
+}
+
 final class ProfileRepository extends ChangeNotifier {
   ProfileRepository(BusinessApiClient api,
       {String? accountKey, ProfileStore? store})
@@ -366,8 +426,27 @@ final class ProfileRepository extends ChangeNotifier {
   List<ContactSummary> contacts = const [];
   Map<String, ContactDetails> contactsByMatrixId = const {};
   Map<String, ContactSummary> contactsByUserId = const {};
+  final Map<String, Set<ContactSelection>> _contactSelections = {};
   bool wasHydratedFromDisk = false;
   int contactsRevision = 0;
+
+  /// Select one contact through the existing O(1) user-ID projection. The
+  /// caller owns the returned selection and must dispose it with its widget.
+  ContactSelection selectContact(String userId) {
+    if (_disposed) {
+      throw StateError('ProfileRepository has been disposed');
+    }
+    final selection = ContactSelection._(contactsByUserId[userId], null);
+    selection._setOnDispose(() {
+      final selections = _contactSelections[userId];
+      selections?.remove(selection);
+      if (selections != null && selections.isEmpty) {
+        _contactSelections.remove(userId);
+      }
+    });
+    (_contactSelections[userId] ??= {}).add(selection);
+    return selection;
+  }
 
   /// Resolve at paint time and subscribe to this repository for later changes.
   /// Incoming public names are fallbacks, never a replacement for a local remark.
@@ -537,6 +616,11 @@ final class ProfileRepository extends ChangeNotifier {
     _disposed = true;
     _remoteReadGeneration++;
     _profileReadGeneration++;
+    for (final selection
+        in _contactSelections.values.expand((items) => items)) {
+      selection._disposeFromRepository();
+    }
+    _contactSelections.clear();
     super.dispose();
   }
 
@@ -564,6 +648,7 @@ final class ProfileRepository extends ChangeNotifier {
       };
       _invalidateChangedContactAvatars(previous, contacts);
       contactsRevision += 1;
+      _notifyContactSelections();
       notifyListeners();
       return;
     }
@@ -604,6 +689,7 @@ final class ProfileRepository extends ChangeNotifier {
           contact.matrixUserId: contact.toDetails(),
       };
       contactsRevision += 1;
+      _notifyContactSelections();
       notifyListeners();
       return;
     }
@@ -695,7 +781,19 @@ final class ProfileRepository extends ChangeNotifier {
       _invalidateChangedContactAvatars(previous, contacts);
     }
     if (!_contactsEqual(previous, contacts)) contactsRevision = revision;
+    _notifyContactSelections();
     notifyListeners();
+  }
+
+  void _notifyContactSelections() {
+    for (final entry in List<MapEntry<String, Set<ContactSelection>>>.of(
+        _contactSelections.entries)) {
+      final next = contactsByUserId[entry.key];
+      for (final selection in List<ContactSelection>.of(entry.value)) {
+        if (selection.isDisposed) continue;
+        selection._replace(next);
+      }
+    }
   }
 
   void _invalidateChangedContactAvatars(
@@ -772,6 +870,7 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
         a[i].remark != b[i].remark ||
         a[i].avatarUrl != b[i].avatarUrl ||
         a[i].avatarIsKnown != b[i].avatarIsKnown ||
+        a[i].nudgeSuffix != b[i].nudgeSuffix ||
         a[i].momentsPermission != b[i].momentsPermission ||
         a[i].starred != b[i].starred) {
       return false;
@@ -782,4 +881,10 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
     }
   }
   return true;
+}
+
+bool _sameContact(ContactSummary? a, ContactSummary? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return false;
+  return _contactsEqual([a], [b]);
 }
