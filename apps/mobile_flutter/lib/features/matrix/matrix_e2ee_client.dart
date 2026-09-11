@@ -49,6 +49,7 @@ import 'matrix_call_adapter.dart' hide changliaoCallMessageType;
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
+import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
@@ -435,19 +436,46 @@ final class MatrixEventSnapshot {
 @immutable
 final class MatrixConversationRoomSnapshot {
   MatrixConversationRoomSnapshot({
+    required String id,
+    required String displayName,
+    required Uri? avatar,
+    required bool isDirect,
+    required String? directPeerId,
+    required List<MatrixMemberSnapshot> members,
+    required MatrixEventSnapshot? lastEvent,
+    required ConversationPreference preference,
+    required int notificationCount,
+    required bool notificationsEnabled,
+    String name = '',
+    bool isJoined = true,
+  }) : this._trusted(
+            id: id,
+            displayName: displayName,
+            avatar: avatar,
+            isDirect: isDirect,
+            directPeerId: directPeerId,
+            members: List.unmodifiable(members),
+            lastEvent: lastEvent,
+            preference: preference,
+            notificationCount: notificationCount,
+            notificationsEnabled: notificationsEnabled,
+            name: name,
+            isJoined: isJoined);
+
+  const MatrixConversationRoomSnapshot._trusted({
     required this.id,
     required this.displayName,
     required this.avatar,
     required this.isDirect,
     required this.directPeerId,
-    required List<MatrixMemberSnapshot> members,
+    required this.members,
     required this.lastEvent,
     required this.preference,
     required this.notificationCount,
     required this.notificationsEnabled,
-    this.name = '',
-    this.isJoined = true,
-  }) : members = List.unmodifiable(members);
+    required this.name,
+    required this.isJoined,
+  });
   final String id;
   final String displayName;
   final Uri? avatar;
@@ -575,6 +603,10 @@ final class MatrixConversationCapability {
         final localHistory = client.userID == null
             ? null
             : await _owner._loadLocalHistory(client);
+        _owner._memberProjectionCache.prune({
+          for (final room in client.rooms)
+            if (room.membership == Membership.join) room.id,
+        });
         return MatrixConversationSnapshot(
           vaultRoomId: client
               .accountData[emojiVaultAccountDataType]?.content['room_id']
@@ -592,14 +624,37 @@ final class MatrixConversationCapability {
 
   Future<void> refreshMembers() =>
       _owner._memberRefresh ??= _owner._withClient((client) async {
+        _owner._memberRefreshPolicy.bindAccount(client.userID);
+        final joinedGroupIds = <String>{};
+        final rooms = <Room>[];
+        for (final room in client.rooms) {
+          if (room.membership != Membership.join || room.isDirectChat) {
+            continue;
+          }
+          joinedGroupIds.add(room.id);
+          if (_owner._memberRefreshPolicy.shouldRefresh(room.id)) {
+            rooms.add(room);
+          }
+        }
+        _owner._memberRefreshPolicy.prune(joinedGroupIds);
+        var nextRoom = 0;
+        Future<void> refreshNext() async {
+          while (nextRoom < rooms.length) {
+            final room = rooms[nextRoom++];
+            final revision = _owner._memberRefreshPolicy.beginRefresh(room.id);
+            try {
+              await room.requestParticipants([Membership.join]);
+              _owner._memberRefreshPolicy.markFresh(room.id, revision);
+            } catch (_) {
+              // Keep cached members offline and retry after a bounded delay.
+              _owner._memberRefreshPolicy.markFailed(room.id, revision);
+            }
+          }
+        }
+
         await Future.wait([
-          for (final room in client.rooms)
-            if (room.membership == Membership.join && !room.isDirectChat)
-              () async {
-                try {
-                  await room.requestParticipants([Membership.join]);
-                } catch (_) {/* Keep cached members offline. */}
-              }()
+          for (var worker = 0; worker < 3 && worker < rooms.length; worker++)
+            refreshNext(),
         ]);
       }).whenComplete(() => _owner._memberRefresh = null);
   Future<List<MatrixGroupInviteSnapshot>> pendingGroupInvites() =>
@@ -754,6 +809,7 @@ final class MatrixConversationCapability {
 
   MatrixConversationRoomSnapshot _snapshotRoom(
       Room room, SharedPreferencesLocalHiddenEvents? localHistory) {
+    final preference = preferenceForRoom(room);
     final originalEvent = room.lastEvent;
     final cutoff = localHistory?.clearedThrough(room.id);
     final locallyDeleted = cutoff != null &&
@@ -774,28 +830,20 @@ final class MatrixConversationCapability {
                 false)
         ? null
         : candidate;
-    final joined = room.getParticipants([Membership.join]);
-    final membersById = {for (final user in joined) user.id: user};
-    final memberOrder = reconcileMemberOrder(
-      preferenceForRoom(room).memberOrderIds,
-      joined.map((user) => user.id),
-    );
+    final members = _owner._memberProjectionCache.membersFor(room, preference);
     MatrixMemberSnapshot member(User user) => MatrixMemberSnapshot(
           id: user.id,
           displayName: user.calcDisplayname(),
           avatar: user.avatarUrl,
         );
-    return MatrixConversationRoomSnapshot(
+    return MatrixConversationRoomSnapshot._trusted(
       id: room.id,
       displayName: room_names.roomDisplayName(room),
       name: room.name,
       avatar: room.avatar,
       isDirect: room.isDirectChat,
       directPeerId: room.directChatMatrixID,
-      members: [
-        for (final id in memberOrder)
-          if (membersById[id] != null) member(membersById[id]!),
-      ],
+      members: members,
       lastEvent: event == null
           ? null
           : MatrixEventSnapshot(
@@ -818,10 +866,11 @@ final class MatrixConversationCapability {
                       : MessageDecryptionState.decrypted,
             ),
       preference: locallyDeleted
-          ? preferenceForRoom(room).copyWith(hidden: true, manualUnread: false)
-          : preferenceForRoom(room),
+          ? preference.copyWith(hidden: true, manualUnread: false)
+          : preference,
       notificationCount: locallyDeleted ? 0 : room.notificationCount,
       notificationsEnabled: room.pushRuleState == PushRuleState.notify,
+      isJoined: room.membership == Membership.join,
     );
   }
 }
@@ -1488,7 +1537,10 @@ final class _LeaseAnnouncementService implements GroupAnnouncementService {
 }
 
 final class _SdkRoomTimelineCapability
-    implements RoomTimelineCapability, RoomHistoryStatus {
+    implements
+        RoomTimelineCapability,
+        RoomHistoryStatus,
+        RoomWindowedTimelineSource {
   _SdkRoomTimelineCapability(this._lease, this._timeline);
 
   final MatrixRoomLease _lease;
@@ -1523,6 +1575,130 @@ final class _SdkRoomTimelineCapability
     return message;
   }
 
+  bool Function(String, DateTime?)? _windowHiddenFilter;
+  @override
+  void setHiddenFilter(bool Function(String, DateTime?)? hidden) {
+    _windowHiddenFilter = hidden;
+  }
+
+  RoomTimelineViewport<Object>? _viewport;
+  @override
+  void enableWindow() {
+    _ensureActive();
+    _messageCache.clear();
+    _serverMessages = _projectedMessages =
+        _pendingMessages = _withNotices = _visibleMessages = const [];
+    _viewport = RoomTimelineViewport<Object>(
+        idOf: (entry) =>
+            entry is Event ? entry.eventId : (entry as GroupJoinNotice).eventId,
+        project: (entry) => entry is Event
+            ? _message(entry)
+            : RoomMessageViewModel(
+                id: (entry as GroupJoinNotice).eventId,
+                senderId: '',
+                text: entry.text,
+                isOwn: false,
+                deliveryState: RoomDeliveryState.sent,
+                timestamp: entry.timestamp,
+                kind: RoomMessageKind.system));
+    _refreshWindowSource();
+  }
+
+  void _refreshWindowSource() {
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    final entries = <Object>[];
+    final pending = <Event>[];
+    for (final event in _timeline.events.reversed) {
+      if (!(event.type == EventTypes.Message ||
+              (event.type == EventTypes.Encrypted && event.redacted) ||
+              event.type == changliaoNudgeEventType ||
+              event.type == changliaoFriendAcceptedEventType) ||
+          event.messageType == groupAnnouncementMessageType ||
+          (hidden?.call(event.eventId, event.originServerTs) ?? false) ||
+          (_windowHiddenFilter?.call(event.eventId, event.originServerTs) ??
+              false)) {
+        continue;
+      }
+      if (event.status.isSending || event.status.isError) {
+        pending.add(event);
+      } else {
+        entries.add(event);
+      }
+    }
+    for (final event in pending) {
+      final at = entries.indexWhere((other) =>
+          (other as Event).originServerTs.isAfter(event.originServerTs));
+      entries.insert(at < 0 ? entries.length : at, event);
+    }
+    if (!_lease._activeRoom.isDirectChat) {
+      final notices = deriveGroupJoinNotices([
+        for (final event in _timeline.events)
+          if (event.type == EventTypes.RoomMember) projectMemberEvent(event)
+      ],
+          resolveName: (id) => _lease._activeRoom
+              .unsafeGetUserFromMemoryOrFallback(id)
+              .calcDisplayname());
+      // Group using the existing policy, then merge without reordering SDK
+      // messages. Notices precede messages at equal timestamps, as in the
+      // non-windowed timeline. A single cursor avoids rescanning/shifting the
+      // entire history for every membership notice.
+      final grouped = <GroupJoinNotice>[
+        for (final notice in mergeNoticesIntoTimeline(const [], notices))
+          if (!(hidden?.call(notice.id, notice.timestamp) ?? false) &&
+              !(_windowHiddenFilter?.call(notice.id, notice.timestamp) ??
+                  false))
+            GroupJoinNotice(
+                eventId: notice.id,
+                timestamp: notice.timestamp,
+                text: notice.text),
+      ];
+      if (grouped.isNotEmpty) {
+        final merged = <Object>[];
+        var noticeIndex = 0;
+        for (final entry in entries) {
+          final timestamp = (entry as Event).originServerTs;
+          while (noticeIndex < grouped.length &&
+              !grouped[noticeIndex].timestamp.isAfter(timestamp)) {
+            merged.add(grouped[noticeIndex++]);
+          }
+          merged.add(entry);
+        }
+        while (noticeIndex < grouped.length) {
+          merged.add(grouped[noticeIndex++]);
+        }
+        _viewport!.update(merged);
+        return;
+      }
+    }
+    _viewport!.update(entries);
+  }
+
+  @override
+  bool get hasEarlierWindow => _viewport?.hasEarlier ?? false;
+  @override
+  bool get hasLaterWindow => _viewport?.hasLater ?? false;
+  @override
+  int get totalMessages => _viewport?.total ?? snapshot().length;
+  @override
+  Iterable<RoomMessageViewModel> get allMessages =>
+      _viewport?.all ?? snapshot();
+  @override
+  RoomMessageViewModel? findMessage(String id) => _viewport?.find(id);
+  @override
+  RoomMessageViewModel? get newestMessage => _viewport?.newest;
+  @override
+  DateTime? previousTimestamp(String id) => _viewport?.previousTimestamp(id);
+  @override
+  bool selectAnchor(String id) => _viewport?.anchor(id) ?? false;
+  @override
+  void selectEarlier() => _viewport?.earlier();
+  @override
+  void selectLater() => _viewport?.later();
+  @override
+  void selectLatest() => _viewport?.latest();
+  @override
+  void pinWindow() => _viewport?.pin();
+
   void _ensureActive() {
     if (_disposed) throw StateError('Matrix timeline capability is disposed');
     _lease._activeRoom;
@@ -1545,6 +1721,10 @@ final class _SdkRoomTimelineCapability
   @override
   List<RoomMessageViewModel> snapshot() {
     _ensureActive();
+    if (_viewport != null) {
+      _refreshWindowSource();
+      return _viewport!.snapshot();
+    }
     List<RoomMessageViewModel>? changed;
     var index = 0;
     final pending = <RoomMessageViewModel>[];
@@ -2532,6 +2712,146 @@ final class _ManagedClientStream<T> implements _ManagedClientStreamBase {
   Future<void> cancel() => owner._cancelManagedSubscription(this);
 }
 
+final class _MemberRefreshPolicy {
+  _MemberRefreshPolicy({
+    required this.now,
+    required this.freshness,
+    required this.retryDelay,
+  });
+
+  final DateTime Function() now;
+  final Duration freshness;
+  final Duration retryDelay;
+  final Map<String, _MemberRefreshState> _rooms = {};
+
+  bool shouldRefresh(String roomId) {
+    final state = _rooms[roomId];
+    if (state == null) return true;
+    final current = now();
+    final retryAt = state.retryAt;
+    if (retryAt != null) return !current.isBefore(retryAt);
+    if (state.dirty) return true;
+    final refreshedAt = state.refreshedAt;
+    return refreshedAt == null || current.difference(refreshedAt) >= freshness;
+  }
+
+  void markDirty(String roomId) {
+    final state = _rooms[roomId] ??= _MemberRefreshState();
+    state
+      ..dirty = true
+      ..revision = state.revision + 1;
+  }
+
+  String? _accountId;
+  void bindAccount(String? accountId) {
+    if (_accountId == accountId) return;
+    reset();
+    _accountId = accountId;
+  }
+
+  int beginRefresh(String roomId) =>
+      (_rooms[roomId] ??= _MemberRefreshState()).revision;
+
+  void markFresh(String roomId, int revision) {
+    final state = _rooms[roomId] ??= _MemberRefreshState();
+    if (state.revision != revision) return;
+    state
+      ..dirty = false
+      ..refreshedAt = now()
+      ..retryAt = null;
+  }
+
+  void markFailed(String roomId, int revision) {
+    final state = _rooms[roomId] ??= _MemberRefreshState();
+    state.retryAt = now().add(retryDelay);
+    if (state.revision == revision) state.dirty = false;
+  }
+
+  void prune(Set<String> joinedGroupIds) =>
+      _rooms.removeWhere((roomId, _) => !joinedGroupIds.contains(roomId));
+
+  void reset() {
+    _rooms.clear();
+    _accountId = null;
+  }
+}
+
+final class _MemberRefreshState {
+  bool dirty = true;
+  int revision = 0;
+  DateTime? refreshedAt;
+  DateTime? retryAt;
+}
+
+final class _ConversationMemberProjectionCache {
+  final Map<String, _ConversationMemberProjection> _entries = {};
+  StreamSubscription<({String roomId, StrippedStateEvent state})>? _changes;
+  String? _accountId;
+
+  void attach(Client client) {
+    _changes?.cancel();
+    _entries.clear();
+    _accountId = client.userID;
+    _changes = client.onRoomState.stream.listen((update) {
+      if (update.state.type == EventTypes.RoomMember) {
+        _entries[update.roomId]?.dirty = true;
+      }
+    });
+  }
+
+  Future<void> detach() async {
+    await _changes?.cancel();
+    _changes = null;
+    _entries.clear();
+    _accountId = null;
+  }
+
+  List<MatrixMemberSnapshot> membersFor(
+      Room room, ConversationPreference preference) {
+    if (_accountId != room.client.userID) {
+      _entries.clear();
+      _accountId = room.client.userID;
+    }
+    final existing = _entries[room.id];
+    if (existing != null &&
+        identical(existing.room, room) &&
+        !existing.dirty &&
+        listEquals(existing.memberOrderIds, preference.memberOrderIds)) {
+      return existing.members;
+    }
+    final joined = room.getParticipants([Membership.join]);
+    final byId = {for (final user in joined) user.id: user};
+    final order = reconcileMemberOrder(preference.memberOrderIds, byId.keys);
+    final members = List<MatrixMemberSnapshot>.unmodifiable([
+      for (final id in order)
+        if (byId[id] case final user?)
+          MatrixMemberSnapshot(
+              id: user.id,
+              displayName: user.calcDisplayname(),
+              avatar: user.avatarUrl),
+    ]);
+    _entries[room.id] = _ConversationMemberProjection(
+        room: room,
+        memberOrderIds: List<String>.unmodifiable(preference.memberOrderIds),
+        members: members);
+    return members;
+  }
+
+  void prune(Set<String> joinedRoomIds) =>
+      _entries.removeWhere((roomId, _) => !joinedRoomIds.contains(roomId));
+}
+
+final class _ConversationMemberProjection {
+  _ConversationMemberProjection(
+      {required this.room,
+      required this.memberOrderIds,
+      required this.members});
+  final Room room;
+  final List<String> memberOrderIds;
+  final List<MatrixMemberSnapshot> members;
+  bool dirty = false;
+}
+
 final class MatrixSdkE2eeClient
     implements
         MatrixE2eeClient,
@@ -2541,6 +2861,9 @@ final class MatrixSdkE2eeClient
         MatrixAccountSelectionGateway,
         AvatarMediaCapability {
   Future<void>? _memberRefresh;
+  late final _MemberRefreshPolicy _memberRefreshPolicy;
+  late final _ConversationMemberProjectionCache _memberProjectionCache;
+  StreamSubscription<EventUpdate>? _memberRefreshListener;
   SharedPreferencesLocalHiddenEvents? _localHistoryStore;
 
   Future<SharedPreferencesLocalHiddenEvents> _loadLocalHistory(
@@ -2566,6 +2889,9 @@ final class MatrixSdkE2eeClient
         readContinuityMetadata,
     MatrixSecurityLogger? securityLogger,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
+    DateTime Function()? memberRefreshNow,
+    Duration memberRefreshTtl = const Duration(minutes: 10),
+    Duration memberRefreshRetryDelay = const Duration(seconds: 15),
   })  : _client = client,
         _suspendClient = suspendClient ?? _defaultSuspend,
         _resumeClient = resumeClient,
@@ -2573,9 +2899,16 @@ final class MatrixSdkE2eeClient
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
+        _memberRefreshPolicy = _MemberRefreshPolicy(
+          now: memberRefreshNow ?? DateTime.now,
+          freshness: memberRefreshTtl,
+          retryDelay: memberRefreshRetryDelay,
+        ),
+        _memberProjectionCache = _ConversationMemberProjectionCache(),
         securityLogger = securityLogger ??
             MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
     _attachDecryptionListener(client);
+    _attachMemberRefreshListener(client);
   }
   Client? _client;
   Client? _pendingCloseClient;
@@ -2760,6 +3093,30 @@ final class MatrixSdkE2eeClient
     });
   }
 
+  void _attachMemberRefreshListener(Client client) {
+    _memberRefreshListener?.cancel();
+    _memberRefreshPolicy.reset();
+    _memberProjectionCache.attach(client);
+    // onEvent excludes local participant-cache hydration; TTL reconciliation
+    // covers member state changes that do not arrive through an SDK sync event.
+    _memberRefreshListener = client.onEvent.stream.listen((update) {
+      if (identical(client, _client) &&
+          (update.type == EventUpdateType.state ||
+              update.type == EventUpdateType.timeline) &&
+          update.content['type'] == EventTypes.RoomMember) {
+        _memberRefreshPolicy.bindAccount(client.userID);
+        _memberRefreshPolicy.markDirty(update.roomID);
+      }
+    });
+  }
+
+  Future<void> _detachMemberRefreshListener() async {
+    await _memberRefreshListener?.cancel();
+    _memberRefreshListener = null;
+    _memberRefreshPolicy.reset();
+    await _memberProjectionCache.detach();
+  }
+
   @override
   Future<void> sync() => _withClient(_syncActiveClient, authorizeAccess: true);
 
@@ -2848,10 +3205,12 @@ final class MatrixSdkE2eeClient
       _lastRecoveryKey = null;
       final metadata = await _readContinuityMetadata(active);
       try {
+        await _detachMemberRefreshListener();
         await _detachManagedSubscriptions();
         await _detachManagedResources();
         await _suspendClient(active);
       } catch (error, stackTrace) {
+        _attachMemberRefreshListener(active);
         await _attachManagedResources(active);
         await _attachManagedSubscriptions(active);
         Error.throwWithStackTrace(error, stackTrace);
@@ -2908,6 +3267,7 @@ final class MatrixSdkE2eeClient
         _lastRecoveryKey = null;
         _bindDecryptionCache(metadata);
         _attachDecryptionListener(next);
+        _attachMemberRefreshListener(next);
       } catch (_) {
         await _suspendClient(next);
         rethrow;
@@ -2944,10 +3304,12 @@ final class MatrixSdkE2eeClient
       _decryptedTimelineEvents.clear();
       _lastRecoveryKey = null;
       try {
+        await _detachMemberRefreshListener();
         await _detachManagedSubscriptions();
         await _detachManagedResources();
       } catch (error, stackTrace) {
         if (target != null) {
+          _attachMemberRefreshListener(target);
           await _attachManagedResources(target);
           await _attachManagedSubscriptions(target);
         }
@@ -3291,6 +3653,7 @@ final class MatrixSdkE2eeClient
     }
     _bindDecryptionCache(resumedMetadata);
     _attachDecryptionListener(resumed);
+    _attachMemberRefreshListener(resumed);
     _client = resumed;
     _freshLoginAfterClear = false;
     _activeContinuityValidated = true;

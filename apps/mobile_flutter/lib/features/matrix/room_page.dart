@@ -1,3 +1,4 @@
+import 'timeline_scroll_anchor.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
 import 'dart:async';
@@ -52,6 +53,7 @@ import '../../ui/chat/wechat_call_bubble.dart';
 import '../../ui/chat/wechat_video_message.dart';
 import '../../ui/chat/chat_tools.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/finance/wechat_red_packet_card.dart';
 import '../../ui/finance/wechat_transfer_card.dart';
@@ -367,8 +369,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final _mentionVisibleSince = <String, DateTime>{};
   final _timelineViewportKey = GlobalKey();
 
+  final _mentionRevision = ValueNotifier<int>(0);
   void _mentionStateChanged() {
-    if (mounted) setState(() {});
+    if (mounted) _mentionRevision.value++;
   }
 
   void _observeVisibleMentions() {
@@ -407,14 +410,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     if (changed) {
       unawaited(widget.roomLease.saveMentions());
-      setState(() {});
+      _mentionRevision.value++;
     }
   }
 
   Future<void> _ingestMentions() async {
     if (!isGroup || widget.roomLease.canceled) return;
     await widget.roomLease.ingestMentions();
-    if (mounted) setState(() {});
   }
 
   late final VoiceTranscriber voiceTranscriber =
@@ -673,13 +675,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           // （Room.defaultHistoryCount，处于 30~50 规范区间），
           // 由上滑接近顶部时按页追加（见 _onMessageScroll）。
           await widget.roomLease.openRoomTimeline(
-        onUpdate: () => controller?.refresh(),
+        onUpdate: () {
+          _scheduleRoomMetadataRefresh();
+          controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+          controller?.scheduleRefresh();
+        },
       );
       if (!mounted) {
         timeline.dispose();
         return;
       }
       controller = RoomTimelineController(
+        windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
         // 发送必失败，消息进入本地 failed 状态）。
         canSendNow: () => InteractionPermission.resolve(
@@ -688,6 +695,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ).canSendMessage(),
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
+      controller!.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+      await controller!.refresh();
       await _ingestMentions();
       if (!mounted) return;
       _mentionVisibilityTimer = Timer.periodic(
@@ -966,15 +975,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
+  bool _metadataRefreshScheduled = false;
+  void _scheduleRoomMetadataRefresh() {
+    if (_metadataRefreshScheduled || _disposing) return;
+    _metadataRefreshScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _metadataRefreshScheduled = false;
+      if (!mounted || _disposing || widget.roomLease.canceled) return;
+      final next = widget.roomLease.roomInfo;
+      var changed = next.name != roomInfo.name ||
+          next.canMentionAll != roomInfo.canMentionAll ||
+          next.members.length != roomInfo.members.length;
+      if (!changed) {
+        for (var i = 0; i < next.members.length; i++) {
+          final a = next.members[i];
+          final b = roomInfo.members[i];
+          if (a.id != b.id ||
+              a.displayName != b.displayName ||
+              a.avatarUri != b.avatarUri ||
+              a.isJoined != b.isJoined ||
+              a.powerLevel != b.powerLevel) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      roomInfo = next;
+      if (changed) setState(() => joinedMemberCount = _joinedMembers.length);
+    });
+  }
+
   void _changed() {
     if (_disposing || !mounted) return;
-    if (!widget.roomLease.canceled) {
-      roomInfo = widget.roomLease.roomInfo;
-      joinedMemberCount = _joinedMembers.length;
-    }
     unawaited(_ingestMentions());
-    final messages = controller?.messages;
-    final latest = messages == null || messages.isEmpty ? null : messages.last;
+    final timeline = controller;
+    // Sending switches to the latest window and publishes a local bubble before
+    // SDK acknowledgment. Scroll to that bubble even while transport is pending.
+    // Read receipts below continue to use the authoritative SDK newest message.
+    final latest = timeline != null &&
+            !timeline.hasLaterWindow &&
+            timeline.messages.isNotEmpty
+        ? timeline.messages.last
+        : timeline?.newestMessage;
     latestMessageAnchor.update(latest?.stableId,
         outgoing: latest?.isOwn ?? false);
     for (final message in controller?.messages ?? <RoomMessageViewModel>[]) {
@@ -983,7 +1025,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         if (key != null) unawaited(videoPosterCache.evict(key));
       }
     }
-    if (mounted) setState(() {});
+    _timelineRevision.value++;
     _syncReadReceiptWhileViewing();
   }
 
@@ -2030,7 +2072,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final messagesById = <String, RoomMessageViewModel>{};
     List<ChatSearchMessage> currentSearchMessages() {
       final allMessages =
-          controller?.messages ?? const <RoomMessageViewModel>[];
+          controller?.allMessages ?? const <RoomMessageViewModel>[];
       final messages = (hiddenEvents?.visibleItems(
                 roomInfo.id,
                 allMessages,
@@ -2273,13 +2315,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (store is LocalClearedHistory) {
       var cutoff = DateTime.now();
       for (final message
-          in controller?.messages ?? const <RoomMessageViewModel>[]) {
+          in controller?.allMessages ?? const <RoomMessageViewModel>[]) {
         if (message.timestamp.isAfter(cutoff)) cutoff = message.timestamp;
       }
       await (store as LocalClearedHistory).clearThrough(roomInfo.id, cutoff);
     }
     for (final message
-        in controller?.messages ?? const <RoomMessageViewModel>[]) {
+        in controller?.allMessages ?? const <RoomMessageViewModel>[]) {
       await store.hide(roomInfo.id, message.id);
     }
     for (final id
@@ -2287,6 +2329,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       unreadMentions?.onRedacted(id);
     }
     await widget.roomLease.saveMentions();
+    controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+    await controller?.refresh();
     if (mounted) setState(() {});
   }
 
@@ -2296,8 +2340,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     var found = false;
     try {
       while (mounted) {
-        if (controller?.messages.any((message) => message.id == eventId) ??
-            false) {
+        if (await controller?.openAnchor(eventId) ?? false) {
           break;
         }
         final oldest = widget.roomLease.oldestTimelineEventId;
@@ -2399,7 +2442,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _openImageViewerWithForward(message);
 
   List<RoomGalleryImage> _galleryImages() {
-    final all = controller?.messages ?? const <RoomMessageViewModel>[];
+    final all = controller?.allMessages ?? const <RoomMessageViewModel>[];
     final visible = hiddenEvents?.visibleItems(
           roomInfo.id,
           all,
@@ -2708,9 +2751,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
       );
     }
-    final candidates = (controller?.messages ?? const <RoomMessageViewModel>[])
-        .where((item) => item.id == message.replyToEventId);
-    final replied = candidates.isEmpty ? null : candidates.first;
+    final replied = message.replyToEventId == null
+        ? null
+        : controller?.findMessage(message.replyToEventId!);
     // 纯动效表情消息：按微信习惯去气泡，放大渲染动画表情。
     final animatedEmojis = message.kind == RoomMessageKind.text
         ? fluentEmojisInMessage(message.text)
@@ -3077,6 +3120,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         await hiddenEvents!.hide(roomInfo.id, message.id);
         unreadMentions?.onRedacted(message.id);
         await widget.roomLease.saveMentions();
+        controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+        await controller?.refresh();
         if (mounted) setState(() {});
       case MessageAction.multiSelect:
         setState(() => selection.startWith(message.id));
@@ -3125,8 +3170,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   bool _isForwardable(String eventId, List<RoomMessageViewModel> messages) {
-    final message = messages.firstWhere((item) => item.id == eventId);
-    return MessageActionPolicy.isForwardable(_contentKind(message));
+    final message = controller?.findMessage(eventId);
+    return message != null &&
+        !message.isRecalled &&
+        MessageActionPolicy.isForwardable(_contentKind(message));
   }
 
   Future<void> _deleteSelection() async {
@@ -3138,7 +3185,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     await widget.roomLease.saveMentions();
     if (!mounted) return;
-    setState(selection.exit);
+    controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+    await controller?.refresh();
+    if (mounted) setState(selection.exit);
   }
 
   /// 转发：独立“选择聊天”页选择接收对象，再确认发送。
@@ -3270,6 +3319,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           playback.stopAll().whenComplete(playback.dispose)));
     }
     unawaited(_trackMatrixOperation(_onVoiceCancel(VoiceArmedTarget.cancel)));
+    _timelineRevision.dispose();
+    _mentionRevision.dispose();
     controller?.removeListener(_changed);
     controller?.dispose();
     mediaMessageTimer?.cancel();
@@ -3308,12 +3359,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// Local viewing state is independent of the SDK's server acknowledgement.
   void _syncReadReceiptWhileViewing({bool immediate = false}) {
     if (!_canSyncReadReceipt) return;
-    final messages = controller?.messages;
-    if (messages == null || messages.isEmpty) return;
-    ConversationReadState.shared()
-        .markCleared(roomInfo.id, eventId: messages.last.id);
-    if (_readReceiptTargetId == messages.last.id) return;
-    _readReceiptTargetId = messages.last.id;
+    final newest = controller?.newestMessage;
+    if (newest == null) return;
+    ConversationReadState.shared().markCleared(roomInfo.id, eventId: newest.id);
+    if (_readReceiptTargetId == newest.id) return;
+    _readReceiptTargetId = newest.id;
     _readReceiptDirty = true;
     if (immediate) {
       unawaited(_trackMatrixOperation(_sendReadReceipt()));
@@ -3358,8 +3408,51 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 上滑接近顶部（reverse 列表像素增大方向）→ 自动加载更早历史。
   /// 加载中的幂等/耗尽判定由 [RoomTimelineController.loadHistory] 负责。
   void _onMessageScroll() {
+    if (_shiftingWindow || _locatingMessage) return;
+    if (messageScrollController.hasClients &&
+        messageScrollController.offset > 80) {
+      controller?.pinWindow();
+    }
     _observeVisibleMentions();
+    if (messageScrollController.hasClients &&
+        messageScrollController.position.extentBefore < 120 &&
+        (controller?.hasLaterWindow ?? false)) {
+      unawaited(_shiftWindow(() => controller!.showLaterWindow()));
+      return;
+    }
     _prefetchHistory();
+  }
+
+  bool _shiftingWindow = false;
+  Future<void> _shiftWindow(Future<void> Function() shift) async {
+    if (_shiftingWindow || !mounted) return;
+    _shiftingWindow = true;
+    final anchor =
+        TimelineScrollAnchor.capture(messageKeys, _timelineViewportKey);
+    try {
+      await shift();
+      if (!mounted) return;
+      _timelineRevision.value++;
+      if (anchor != null) {
+        await anchor.restore(
+            controller: messageScrollController,
+            keys: messageKeys,
+            eventIds: _visibleMessages().reversed.map((m) => m.id).toList(),
+            isMounted: () => mounted && !_disposing);
+      }
+    } finally {
+      _shiftingWindow = false;
+    }
+  }
+
+  Future<void> _showLatestWindow() async {
+    await controller?.showLatest();
+    if (!mounted) return;
+    _timelineRevision.value++;
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted && messageScrollController.hasClients) {
+      messageScrollController.jumpTo(0);
+    }
   }
 
   Future<void>? _historyRequest;
@@ -3374,6 +3467,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _prefetchHistory() async {
     if (!mounted ||
         _locatingMessage ||
+        _shiftingWindow ||
         !messageScrollController.hasClients ||
         ModalRoute.of(context)?.isCurrent != true) {
       return;
@@ -3384,7 +3478,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       return;
     }
     try {
-      await _loadEarlier();
+      await _shiftWindow(() async {
+        if (!(controller?.hasEarlierWindow ?? false)) await _loadEarlier();
+        if (controller?.hasEarlierWindow ?? false) {
+          await controller?.showEarlierWindow();
+        }
+      });
     } catch (_) {
       return;
     }
@@ -3412,8 +3511,120 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return false;
   }
 
+  final _timelineRevision = ValueNotifier<int>(0);
+  final _visibleIndex = <String, int>{};
+  final _rowCache = <String,
+      (RoomMessageViewModel, DateTime?, RoomMessageViewModel?, Widget)>{};
+
+  List<RoomMessageViewModel> _visibleMessages() {
+    final all = controller?.messages ?? const <RoomMessageViewModel>[];
+    final messages = hiddenEvents?.visibleItems(roomInfo.id, all,
+            eventId: (m) => m.id, eventTimestamp: (m) => m.timestamp) ??
+        all;
+    _visibleIndex.clear();
+    for (var i = 0; i < messages.length; i++) {
+      _visibleIndex[messages[i].stableId] = i;
+    }
+    final ids = {for (final m in messages) m.id};
+    _rowCache.removeWhere((id, _) => !_visibleIndex.containsKey(id));
+    _stableMessageKeys.removeWhere((id, _) => !_visibleIndex.containsKey(id));
+    messageKeys.removeWhere((id, _) => !ids.contains(id));
+    return messages;
+  }
+
+  Widget _cachedMessageRow(RoomMessageViewModel message, DateTime? previous) {
+    final reply = message.replyToEventId == null
+        ? null
+        : controller?.findMessage(message.replyToEventId!);
+    final cached = _rowCache[message.stableId];
+    final sameReply = cached?.$3 == null
+        ? reply == null
+        : reply != null && cached!.$3!.samePresentation(reply);
+    if (cached != null &&
+        identical(cached.$1, message) &&
+        cached.$2 == previous &&
+        sameReply) {
+      return cached.$4;
+    }
+    final row = Padding(
+        key: ValueKey(message.stableId),
+        padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
+        child: KeyedSubtree(
+            key: messageKeys[message.id] =
+                _stableMessageKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                color: highlightedMessageId == message.id
+                    ? WeChatColors.resolve(context, WeChatColors.divider)
+                    : const Color(0x00000000),
+                child: _messageRow(message, previous))));
+    _rowCache[message.stableId] = (message, previous, reply, row);
+    return row;
+  }
+
+  Widget _buildTimeline() {
+    final messages = _visibleMessages();
+    final list = GestureDetector(
+      key: _timelineViewportKey,
+      behavior: HitTestBehavior.translucent,
+      onTap: _dismissComposerExtensions,
+      child: loading
+          ? const Center(child: CupertinoActivityIndicator())
+          : errorMessage != null
+              ? Center(child: Text(errorMessage!))
+              : messages.isEmpty
+                  ? const SizedBox.expand()
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: _onTimelineScrollNotification,
+                      child: ListView.builder(
+                        controller: messageScrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: WeChatSpacing.md,
+                          vertical: WeChatSpacing.sm,
+                        ),
+                        // 顶部状态行（视觉上的最上方）：加载历史中
+                        // 显示 loading，历史取尽显示"没有更多了"。
+                        itemCount: messages.length,
+                        findChildIndexCallback: (key) {
+                          if (key is! ValueKey<String>) {
+                            return null;
+                          }
+                          final index = _visibleIndex[key.value];
+                          return index == null
+                              ? null
+                              : messages.length - index - 1;
+                        },
+                        itemBuilder: (_, reverseIndex) {
+                          final index = messages.length - reverseIndex - 1;
+                          final message = messages[index];
+                          final previous = index == 0
+                              ? controller?.previousTimestamp(message.id)
+                              : messages[index - 1].timestamp;
+                          return _cachedMessageRow(message, previous);
+                        },
+                      ),
+                    ),
+    );
+    return Stack(children: [
+      Positioned.fill(child: list),
+      if (controller?.hasLaterWindow ?? false)
+        Positioned(
+            right: 12,
+            bottom: 12,
+            child: ModernActionButton(
+                key: const Key('timeline-return-latest'),
+                onPressed: _showLatestWindow,
+                icon: CupertinoIcons.arrow_down_to_line,
+                label: '回到最新消息')),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Non-timeline state (identity, selection, theme, highlighting) refreshes
+    // row presentation. SDK updates rebuild only the local timeline subtree.
+    _rowCache.clear();
     final allMessages = controller?.messages ?? const <RoomMessageViewModel>[];
     final messages = hiddenEvents?.visibleItems(
           roomInfo.id,
@@ -3453,77 +3664,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 if (isGroup)
                   GroupAnnouncementBanner(service: announcementService),
                 Expanded(
-                  child: GestureDetector(
-                    key: _timelineViewportKey,
-                    behavior: HitTestBehavior.translucent,
-                    onTap: _dismissComposerExtensions,
-                    child: loading
-                        ? const Center(child: CupertinoActivityIndicator())
-                        : errorMessage != null
-                            ? Center(child: Text(errorMessage!))
-                            : messages.isEmpty
-                                ? const SizedBox.expand()
-                                : NotificationListener<ScrollNotification>(
-                                    onNotification:
-                                        _onTimelineScrollNotification,
-                                    child: ListView.builder(
-                                      controller: messageScrollController,
-                                      reverse: true,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: WeChatSpacing.md,
-                                        vertical: WeChatSpacing.sm,
-                                      ),
-                                      // 顶部状态行（视觉上的最上方）：加载历史中
-                                      // 显示 loading，历史取尽显示"没有更多了"。
-                                      itemCount: messages.length,
-                                      findChildIndexCallback: (key) {
-                                        if (key is! ValueKey<String>) {
-                                          return null;
-                                        }
-                                        final index = messages.indexWhere(
-                                          (m) => m.stableId == key.value,
-                                        );
-                                        return index < 0
-                                            ? null
-                                            : messages.length - index - 1;
-                                      },
-                                      itemBuilder: (_, reverseIndex) {
-                                        final index =
-                                            messages.length - reverseIndex - 1;
-                                        final message = messages[index];
-                                        final previous = index == 0
-                                            ? null
-                                            : messages[index - 1].timestamp;
-                                        return Padding(
-                                          key: ValueKey(message.stableId),
-                                          padding: const EdgeInsets.only(
-                                            bottom: WeChatSpacing.sm,
-                                          ),
-                                          child: KeyedSubtree(
-                                            key: messageKeys[message.id] =
-                                                _stableMessageKeys.putIfAbsent(
-                                              message.stableId,
-                                              GlobalKey.new,
-                                            ),
-                                            child: AnimatedContainer(
-                                              duration: const Duration(
-                                                milliseconds: 180,
-                                              ),
-                                              color: highlightedMessageId ==
-                                                      message.id
-                                                  ? WeChatColors.resolve(
-                                                      context,
-                                                      WeChatColors.divider,
-                                                    )
-                                                  : const Color(0x00000000),
-                                              child: _messageRow(
-                                                  message, previous),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _timelineRevision,
+                    builder: (_, __, ___) => _buildTimeline(),
                   ),
                 ),
                 if (mediaMessage != null)
@@ -3580,8 +3723,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                       (eventId) => _isForwardable(eventId, messages),
                     ),
                     onForward: () => _forwardMessages([
-                      for (final message in messages)
-                        if (selection.selectedIds.contains(message.id)) message,
+                      for (final id in selection.selectedIds)
+                        if (controller?.findMessage(id)
+                            case final RoomMessageViewModel message)
+                          message,
                     ]),
                     onDelete: _deleteSelection,
                     onCancel: () => setState(selection.exit),
@@ -3707,16 +3852,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 },
               ),
             ),
-            if (isGroup && (unreadMentions?.hasPending ?? false))
+            if (isGroup)
               Positioned(
                   top: 4,
                   right: 8,
-                  child: MentionBannerButton(
-                    onTap: () {
-                      final target = unreadMentions?.nextJumpTarget;
-                      if (target != null) unawaited(_scrollToMessage(target));
-                    },
-                  )),
+                  child: ValueListenableBuilder<int>(
+                      valueListenable: _mentionRevision,
+                      builder: (_, __, ___) =>
+                          unreadMentions?.hasPending ?? false
+                              ? MentionBannerButton(onTap: () {
+                                  final target = unreadMentions?.nextJumpTarget;
+                                  if (target != null) {
+                                    unawaited(_scrollToMessage(target));
+                                  }
+                                })
+                              : const SizedBox.shrink())),
           ],
         ),
       ),

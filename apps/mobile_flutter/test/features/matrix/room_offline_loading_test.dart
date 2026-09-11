@@ -12,6 +12,8 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
 
 class _OfflineClient extends Client {
@@ -81,8 +83,8 @@ class _OfflineRoom extends Room {
   }
 }
 
-Future<MatrixRoomLease> _mount(
-    WidgetTester tester, _OfflineClient client) async {
+Future<MatrixRoomLease> _mount(WidgetTester tester, _OfflineClient client,
+    {bool friend = false}) async {
   tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
   SharedPreferences.setMockInitialValues({});
   final matrix = MatrixSdkE2eeClient(client,
@@ -98,7 +100,15 @@ Future<MatrixRoomLease> _mount(
           roomLease: lease,
           roomName: 'Offline fixture',
           initialIdentityCache: ProfileRepository.forTesting(
-              accountKey: 'offline-fixture', store: MemoryProfileStore()),
+              accountKey: 'offline-fixture', store: MemoryProfileStore())
+            ..contacts = [
+              if (friend)
+                const ContactSummary(
+                    userId: 'peer',
+                    username: 'peer',
+                    matrixUserId: '@peer:offline.test',
+                    nickname: 'Peer')
+            ],
           onCreateGroup: () {})));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 100));
@@ -119,6 +129,108 @@ void _newEvent(_OfflineRoom room) {
 }
 
 void main() {
+  testWidgets(
+      'own local send from older window scrolls before transport completes',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    room.localTimeline.events
+      ..clear()
+      ..addAll(List.generate(
+          500,
+          (i) => Event(
+                  room: room,
+                  eventId: 'event-${499 - i}',
+                  senderId: '@peer:offline.test',
+                  type: EventTypes.Message,
+                  originServerTs:
+                      DateTime.utc(2026).add(Duration(seconds: 499 - i)),
+                  content: {
+                    'msgtype': 'm.text',
+                    'body': 'history row ${499 - i}'
+                  })));
+    await _mount(tester, client, friend: true);
+    final list = tester.widget<ListView>(find.byType(ListView).first);
+    list.controller!.jumpTo(list.controller!.position.maxScrollExtent - 50);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final state = tester.state(find.byType(RoomPage)) as dynamic;
+    final timeline = state.controller as RoomTimelineController;
+    await timeline.showEarlierWindow();
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    list.controller!.jumpTo(list.controller!.position.maxScrollExtent / 2);
+    await tester.pump();
+    expect(list.controller!.offset, greaterThan(500));
+    expect(timeline.hasLaterWindow, isTrue);
+    final transport = Completer<String>();
+    final sending =
+        timeline.sendText('own pending bubble', send: (_) => transport.future);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(transport.isCompleted, isFalse);
+    expect(find.text('own pending bubble').hitTestable(), findsOneWidget);
+    transport.completeError(const SocketException('fixture offline send'));
+    await sending;
+    await tester.pump();
+    expect(find.text('own pending bubble').hitTestable(), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('append reuses unchanged visible rows without rebuilding page',
+      (tester) async {
+    final client = _OfflineClient();
+    await _mount(tester, client);
+    final prior = tester.widget(find.text('cached offline message'));
+    _newEvent(client.localRoom);
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget(find.text('cached offline message')), same(prior));
+    expect(find.text('new message'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('room mounts bounded projection and moves to older local history',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    room.localTimeline.events.clear();
+    room.localTimeline.events.addAll(List.generate(
+        1000,
+        (i) =>
+            Event(
+                room: room,
+                eventId: 'event-${999 - i}',
+                senderId: '@peer:offline.test',
+                type: EventTypes.Message,
+                originServerTs:
+                    DateTime.utc(2026).add(Duration(seconds: 999 - i)),
+                content: {
+                  'msgtype': 'm.text',
+                  'body': 'synthetic row ${999 - i}'
+                })));
+    await _mount(tester, client);
+    final list = tester.widget<ListView>(find.byType(ListView).first);
+    final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
+    expect(delegate.childCount, 40);
+    list.controller!.jumpTo(list.controller!.position.maxScrollExtent - 50);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final updated = tester.widget<ListView>(find.byType(ListView).first);
+    expect((updated.childrenDelegate as SliverChildBuilderDelegate).childCount,
+        200);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
   testWidgets('ordinary typing leaves existing message widgets unchanged',
       (tester) async {
     await _mount(tester, _OfflineClient());

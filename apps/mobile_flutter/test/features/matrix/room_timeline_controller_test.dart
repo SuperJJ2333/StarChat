@@ -80,6 +80,34 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
 }
 
 void main() {
+  testWidgets('SDK burst publishes once per frame and local echo is immediate',
+      (tester) async {
+    final adapter = FakeTimelineAdapter();
+    final controller = RoomTimelineController(adapter);
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    for (var i = 0; i < 100; i++) {
+      adapter.items.add(RoomMessageViewModel(
+          id: '$i',
+          senderId: 'peer',
+          text: 'fixture',
+          isOwn: false,
+          deliveryState: RoomDeliveryState.sent,
+          timestamp: DateTime.utc(2026)));
+      controller.scheduleRefresh();
+    }
+    expect(notifications, 0);
+    await tester.pump();
+    expect(notifications, 1);
+    final send = controller.sendText('local fixture');
+    expect(controller.messages.last.text, 'local fixture');
+    expect(notifications, 2);
+    await send;
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(controller.messages.length, 101);
+    controller.dispose();
+  });
+
   test(
       'acknowledged server ID retains transaction index without stale local retry',
       () async {
