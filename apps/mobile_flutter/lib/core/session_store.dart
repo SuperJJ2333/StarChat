@@ -95,6 +95,27 @@ final class SecureSessionStore {
   static const _matrixClearTombstoneKey = 'liuhetong.matrix_clear_tombstone.v1';
   static const _matrixClearTombstoneValue = '{"version":1,"pending":true}';
 
+  /// 按槽隔离的键名。清空一次安装时要连同它们的全部槽后缀一起删除。
+  static const _scopedKeyNames = <String>[
+    _matrixDatabaseKey,
+    _matrixBindingKey,
+    _recoveryKey,
+    _diagnosticSaltKey,
+    _matrixClearTombstoneKey,
+  ];
+
+  /// 独立于槽的固定键。ADR-0063 之前的单账号遗留键用空后缀覆盖。
+  static const _slotIndependentKeys = <String>[
+    _AccountScopedSecureStore.activeKey,
+    _AccountScopedSecureStore.registryKey,
+    _sessionKey,
+    _registrationDeviceKey,
+    _legacyAccessKey,
+    _legacyRefreshKey,
+  ];
+
+  static final _hashToken = RegExp(r'[a-f0-9]{64}');
+
   Future<String> matrixStorageScope() =>
       _runMatrixIdentityOperation(_storage.scope);
 
@@ -351,6 +372,63 @@ final class SecureSessionStore {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
+  }
+
+  /// 全新安装时清除上一安装遗留的全部钥匙串状态。
+  ///
+  /// 这里必须作用于 `raw`：要删除的正是作用域指针与注册表本身，不能先经过
+  /// 作用域间接层。加密库文件已随沙盒消失，因此删除全部槽不会丢失可读数据。
+  Future<void> clearInstallation() =>
+      _runMatrixIdentityOperation(_clearInstallationUnlocked);
+
+  Future<void> _clearInstallationUnlocked() async {
+    Object? firstError;
+    StackTrace? firstStackTrace;
+
+    Future<void> attemptDelete(String key) async {
+      try {
+        await _storage.raw.delete(key);
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
+      }
+    }
+
+    for (final suffix in await _installationSlotSuffixes()) {
+      for (final name in _scopedKeyNames) {
+        await attemptDelete(suffix.isEmpty ? name : '$name.$suffix');
+      }
+    }
+    // A failed scoped deletion must leave the registry and active-scope
+    // pointer intact. They are the only durable enumeration path for every
+    // account suffix; deleting them after a partial failure would make the
+    // next startup unable to retry the failed scoped key.
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
+    for (final key in _slotIndependentKeys) {
+      await attemptDelete(key);
+    }
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
+  }
+
+  /// 候选槽后缀：空后缀（ADR-0063 之前的单账号遗留）加上注册表中出现的槽。
+  /// 注册表损坏不得阻断清除——此时"全新安装"这个判断已经成立，损坏只影响
+  /// 枚举方式，退化为从原始值中提取全部 64 位十六进制串。
+  Future<Set<String>> _installationSlotSuffixes() async {
+    final suffixes = <String>{''};
+    final encoded =
+        await _storage.raw.read(_AccountScopedSecureStore.registryKey);
+    if (encoded == null) return suffixes;
+    try {
+      suffixes.addAll((await _storage.slots()).values);
+    } catch (_) {
+      suffixes.addAll(
+          _hashToken.allMatches(encoded).map((match) => match.group(0)!));
+    }
+    return suffixes;
   }
 
   Future<void> clear() async {

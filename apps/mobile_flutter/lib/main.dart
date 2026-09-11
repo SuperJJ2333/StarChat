@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,6 +11,10 @@ import 'core/business_api_client.dart';
 import 'core/performance_metrics.dart';
 import 'core/media_resource_policy.dart';
 import 'features/matrix/media_cache.dart';
+import 'core/installation_container_probe.dart';
+import 'core/installation_marker.dart';
+import 'core/installation_reconciler.dart';
+import 'core/installation_startup_gate.dart';
 import 'core/session_bootstrap_controller.dart';
 import 'core/session_store.dart';
 import 'features/auth/login_controller.dart';
@@ -36,99 +41,124 @@ Future<void> main() async {
   );
   await themeController.load();
   final store = SecureSessionStore();
-  final api = BusinessApiClient(
-    baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
-    sessionStore: store,
+  final installationReconciler = InstallationReconciler(
+    marker: SharedPreferencesInstallationMarker(
+      await SharedPreferences.getInstance(),
+    ),
+    probe: FileSystemInstallationContainerProbe(),
+    store: store,
   );
-  final matrixFactory = MatrixClientFactory(
-    sessionStore: store,
-    homeserver: Uri.parse(AppConfig.matrixHomeserver),
-  );
-  final sdkClient = await matrixFactory.create();
-  final matrix = MatrixSdkE2eeClient(
-    sdkClient,
-    homeserver: Uri.parse(AppConfig.matrixHomeserver),
-    suspendClient: matrixFactory.suspend,
-    resumeClient: matrixFactory.create,
-    selectClientAccount: matrixFactory.selectAccount,
-    clearClientData: matrixFactory.clearLocalChatData,
-    readContinuityMetadata: matrixFactory.continuityMetadata,
-  );
-  final session = SessionBootstrapController(
-    business: api,
-    matrix: matrix,
-    securityLogger: matrix.securityLogger,
-  );
-  final recovery = MatrixRecoveryService(matrix);
-  final installationDeviceKey = await store.registrationDeviceKey();
-  final login = DualDomainLoginService(
-    business: api,
-    matrix: matrix,
-    deviceKey: () => installationDeviceKey,
-    retainedHomeserver: Uri.parse(AppConfig.matrixHomeserver),
-    completeMatrixSession: () async {
-      final credentials = await matrix.currentSessionCredentials();
-      await api.completeMatrixSession(
-          matrixAccessToken: credentials.token,
-          matrixDeviceId: credentials.deviceId);
-    },
-  );
-  final gate = SessionGate(
-    controller: session,
-    cachedMessagesBuilder: (_) => CupertinoTabScaffold(
-      tabBar: CupertinoTabBar(
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.messagesFilled),
-            label: '消息',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.contacts),
-            label: '通讯录',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(ChangliaoIcons.discover),
-            label: '发现',
-          ),
-          BottomNavigationBarItem(icon: Icon(ChangliaoIcons.me), label: '我'),
-        ],
+
+  Future<Widget> startApplication() async {
+    final api = BusinessApiClient(
+      baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
+      sessionStore: store,
+    );
+    final matrixFactory = MatrixClientFactory(
+      sessionStore: store,
+      homeserver: Uri.parse(AppConfig.matrixHomeserver),
+    );
+    final sdkClient = await matrixFactory.create();
+    final matrix = MatrixSdkE2eeClient(
+      sdkClient,
+      homeserver: Uri.parse(AppConfig.matrixHomeserver),
+      suspendClient: matrixFactory.suspend,
+      resumeClient: matrixFactory.create,
+      selectClientAccount: matrixFactory.selectAccount,
+      clearClientData: matrixFactory.clearLocalChatData,
+      readContinuityMetadata: matrixFactory.continuityMetadata,
+    );
+    final session = SessionBootstrapController(
+      business: api,
+      matrix: matrix,
+      securityLogger: matrix.securityLogger,
+    );
+    final recovery = MatrixRecoveryService(matrix);
+    final installationDeviceKey = await store.registrationDeviceKey();
+    final login = DualDomainLoginService(
+      business: api,
+      matrix: matrix,
+      deviceKey: () => installationDeviceKey,
+      retainedHomeserver: Uri.parse(AppConfig.matrixHomeserver),
+      completeMatrixSession: () async {
+        final credentials = await matrix.currentSessionCredentials();
+        await api.completeMatrixSession(
+            matrixAccessToken: credentials.token,
+            matrixDeviceId: credentials.deviceId);
+      },
+    );
+    final gate = SessionGate(
+      controller: session,
+      cachedMessagesBuilder: (_) => CupertinoTabScaffold(
+        tabBar: CupertinoTabBar(
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(ChangliaoIcons.messagesFilled),
+              label: '消息',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(ChangliaoIcons.contacts),
+              label: '通讯录',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(ChangliaoIcons.discover),
+              label: '发现',
+            ),
+            BottomNavigationBarItem(
+                icon: Icon(ChangliaoIcons.me), label: '我'),
+          ],
+        ),
+        tabBuilder: (_, index) => MatrixHomePage(
+          api: api,
+          matrix: matrix,
+          themeController: themeController,
+          onCreateGroup: () {},
+          previewOnly: true,
+        ),
       ),
-      tabBuilder: (_, index) => MatrixHomePage(
+      unauthenticatedBuilder: (_) => AuthenticationFlow(
+        api: api,
+        onLogin: login.login,
+        onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
+        onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
+        onAuthenticated: session.bootstrap,
+      ),
+      authenticatedBuilder: (_) => AppHome(
         api: api,
         matrix: matrix,
+        onLogout: session.logout,
         themeController: themeController,
-        onCreateGroup: () {},
-        previewOnly: true,
       ),
+    );
+    final bootstrap = session.bootstrap();
+    unawaited(() async {
+      try {
+        await bootstrap;
+        await session.runAuthenticatedBackground(
+          prepare: () => recovery.restoreFromLocalSecureStorage(store),
+          complete: matrix.syncIfActive,
+        );
+      } catch (_) {
+        // The encrypted database and secure-store records remain intact. The
+        // recovery UI can present a retry/import flow without exposing secrets.
+      }
+    }());
+    return gate;
+  }
+
+  runApp(LiuhetongApp(
+    home: InstallationStartupGate(
+      reconcile: () async {
+        final outcome = await installationReconciler.reconcile();
+        if (outcome == InstallationResetOutcome.failed && kDebugMode) {
+          debugPrint('[installation] generation reset did not settle');
+        }
+        return outcome;
+      },
+      start: startApplication,
     ),
-    unauthenticatedBuilder: (_) => AuthenticationFlow(
-      api: api,
-      onLogin: login.login,
-      onConfirmMatrixAccountSwitch: login.confirmAccountSwitchAndLogin,
-      onCancelMatrixAccountSwitch: login.cancelAccountSwitch,
-      onAuthenticated: session.bootstrap,
-    ),
-    authenticatedBuilder: (_) => AppHome(
-      api: api,
-      matrix: matrix,
-      onLogout: session.logout,
-      themeController: themeController,
-    ),
-  );
-  runApp(LiuhetongApp(home: gate, themeController: themeController));
-  final bootstrap = session.bootstrap();
-  unawaited(() async {
-    try {
-      await bootstrap;
-      await session.runAuthenticatedBackground(
-        prepare: () => recovery.restoreFromLocalSecureStorage(store),
-        complete: matrix.syncIfActive,
-      );
-    } catch (_) {
-      // The encrypted database and secure-store records remain intact. The
-      // recovery UI can present a retry/import flow without exposing secrets.
-    }
-  }());
+    themeController: themeController,
+  ));
 }
 
 final class LiuhetongApp extends StatefulWidget {
