@@ -55,40 +55,56 @@ void main() {
       (tester) async {
     var listens = 0;
     var cancels = 0;
-    final incoming = StreamController<MatrixSasRequestHandle>.broadcast(
-      onListen: () => listens++,
-      onCancel: () => cancels++,
-    );
-    final suspendStarted = Completer<void>();
-    final allowSuspend = Completer<void>();
-    final matrix = MatrixSdkE2eeClient(
-      Client('verification-page'),
-      homeserver: Uri.parse('https://matrix.test'),
-      suspendClient: (_) async {
-        suspendStarted.complete();
-        await allowSuspend.future;
-      },
-      resumeClient: () async => Client('verification-resumed'),
-    );
-    final suspension = matrix.suspend();
-    await suspendStarted.future;
-    final service = MatrixVerificationService(
-      matrix,
-      incomingRequests: () => incoming.stream,
-    );
+    late StreamController<MatrixSasRequestHandle> incoming;
+    late Completer<void> suspendStarted;
+    late Completer<void> allowSuspend;
+    late MatrixSdkE2eeClient matrix;
+    late Future<void> suspension;
+    late MatrixVerificationService service;
+    await tester.runAsync(() async {
+      incoming = StreamController<MatrixSasRequestHandle>.broadcast(
+        onListen: () => listens++,
+        onCancel: () => cancels++,
+      );
+      suspendStarted = Completer<void>();
+      allowSuspend = Completer<void>();
+      matrix = MatrixSdkE2eeClient(
+        Client('verification-page'),
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {
+          suspendStarted.complete();
+          await allowSuspend.future;
+        },
+        resumeClient: () async => Client('verification-resumed'),
+      );
+      suspension = matrix.suspend();
+      await suspendStarted.future;
+      service = MatrixVerificationService(
+        matrix,
+        incomingRequests: () => incoming.stream,
+      );
+    });
+    var serviceFactoryCalls = 0;
     await tester.pumpWidget(CupertinoApp(
       home: MatrixVerificationPage(
         matrix: matrix,
-        serviceFactory: (_) => service,
+        serviceFactory: (_) {
+          serviceFactoryCalls++;
+          return service;
+        },
       ),
     ));
+    await tester.pump();
+    expect(serviceFactoryCalls, 1);
+    expect(listens, 0);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
 
     allowSuspend.complete();
-    await suspension;
+    await tester.runAsync(() => suspension);
     await tester.pumpAndSettle();
 
     expect(listens, cancels);
+    expect(tester.takeException(), isNull);
     await incoming.close();
-  });
+  }, timeout: const Timeout(Duration(seconds: 30)));
 }

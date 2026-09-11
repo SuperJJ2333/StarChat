@@ -362,10 +362,11 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                 : '已保存到相册');
       }
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = action == 'save'
             ? gallerySaveErrorMessage(error)
             : '操作失败，请重试，编辑内容已保留');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
