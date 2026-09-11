@@ -13,13 +13,17 @@
 
 ## 分工/顺序
 
-- [ ] E1 Terra emoji：仅emoji_text_controller.dart、wechat_composer.dart/chat_composer_bar.dart、必要新emoji编辑装饰文件、相应专属tests。不得修改room_page.dart/message_text_selection.dart/emoji_text.dart。先红后绿；保持文本原值、IME composing、光标、撤销、发送接口；多emoji开头+中文/英文/删除/中间插入/选区替换/换行/ZWJ实测自动化。提出更好方案先报Astra。
-- [ ] S1-S3 Terra selection：仅message_text_selection.dart、room_page.dart、必要专属offsetmap/helper、专属selection tests。不得修改emoji controller/composer。完整原菜单与4项局部菜单共用MessageBubbleMenu；全选恢复且不创建第二session；pointer up/cancel立即去镜片；大触区/小视觉；滚动/空白/发送/切换取消；文字范围映射与引用/转发实际调用链。
-- [ ] U1 两批源代码完成后Astra审查，再由Terra串行更新HTML demo/registry/token及运行契约；不能两个代理改同文件。图形style采用已有token，Figma退役。
-- [ ] V1 聚焦tests、analyze、最终Flutter全量；预检verify.ps1后按影响复用未变金融/服务端门禁，公开29既有钱包失败。所有新相关失败必须修复。
-- [ ] D1 核对Mi6实际包/签名/版本，选新build；最终源码normalpub+ARM64Debug+Apktool2.12.1+zipalign+固定签名+语义验证，显式--android-project-arg=chatflowParallelDebug=false；install-r不清数据不降级。用户手工验收，记录包SHA及实际installed身份。
+- [x] E1 Terra emoji：仅emoji_text_controller.dart、wechat_composer.dart/chat_composer_bar.dart、必要新emoji编辑装饰文件、相应专属tests。不得修改room_page.dart/message_text_selection.dart/emoji_text.dart。先红后绿；保持文本原值、IME composing、光标、撤销、发送接口；多emoji开头+中文/英文/删除/中间插入/选区替换/换行/ZWJ实测自动化。提出更好方案先报Astra。
+- [x] S1-S3 Terra selection：仅message_text_selection.dart、room_page.dart、必要专属offsetmap/helper、专属selection tests。不得修改emoji controller/composer。完整原菜单与4项局部菜单共用MessageBubbleMenu；全选恢复且不创建第二session；pointer up/cancel立即去镜片；大触区/小视觉；滚动/空白/发送/切换取消；文字范围映射与引用/转发实际调用链。
+- [x] U1 两批源代码完成后Astra审查，再由Terra串行更新HTML demo/registry/token及运行契约；不能两个代理改同文件。图形style采用已有token，Figma退役。
+- [x] V1 聚焦tests、analyze、最终Flutter全量；预检verify.ps1后按影响复用未变金融/服务端门禁，公开29既有钱包失败。所有新相关失败必须修复。
+- [x] D1 核对Mi6实际包/签名/版本，选新build；最终源码normalpub+ARM64Debug+Apktool2.12.1+zipalign+固定签名+语义验证，显式--android-project-arg=chatflowParallelDebug=false；install-r不清数据不降级。用户手工验收，记录包SHA及实际installed身份。
 
 Flutter工具单槽：先E1运行，S可写tests但执行需交接。根审查同时推进打包预检和文档，不运行冲突工具。
 ## 审查追加的S3实施边界
 现存视图替换未接通真实发送，新增任务S3b：由Terra selection独占必要Matrix interaction/lease/timeline viewmodel与专属tests，局部转发显式发送选中文字到目标加密房间；局部引用将片段保存在加密事件的项目命名空间字段并保留原event anchor，客户端解析/本地echo/接收/重进后优先显示片段。不修改E2EE算法、鉴权、业务金融接口。验证实际payload、full路径不变、selected quote解析/模型复制/更新以及UI显示，不接受仅预览测试。
 U1改由Terra emoji独占frontend/registry，S专注上述链路；两个执行者不得编辑相同文件。
+
+
+## 交付收尾（02:43+08）
+0.3.85-debug/2089覆盖安装Mi6成功，安装包拉回哈希一致、原firstInstallTime保留。定向门禁通过；全量既有失败与缺少.env的限制详见交付报告。用户真机功能验收待进行。

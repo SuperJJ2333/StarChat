@@ -38,3 +38,14 @@ scripts/verify.ps1已读；隔离工作树无.env，完整脚本中的配置渲�
 ## 基线更新与原有失败证据
 工作中main前进至1da11922：只含Android环境仓库顺序及两份审计记录。root审查diff后本地ff当前任务branch，保留全部进行中修复，未pull/push或改变root脏文件。最终构建基线为1da11922。
 已读既有完整Flutter原始日志docs/verification/artifacts/2026-09-11/integrate-deploy-mi6/flutter-full-0.3.84-2088-final.log（2344pass/29fail、exit1），提取29失败身份至本任务baseline-wallet-failures.txt供最终比较；不能把历史数目当本次执行结果。main新core-feature-test报告F1断网同步问题属于另任务，当前不修改同步调度；双方多端真机与网络恢复效果仍需用户实际确认。
+
+## 实现冻结与自动化验收（02:35+08）
+- Root亲审源代码、Matrix发送/引用/缓存投影链与实际测试日志；源码commit48fe74750ae0272d4659253e12425140f6a565cc，本地branch codex/chat-selection-20260912；版本0.3.85+2089，pubspec.lock未更改。
+- 定向61 Flutter测试通过；完整Flutter2374通过/29失败、exit1，已用失败身份集合与Sep11原始日志比较，新增/消失均0（flutter-failure-comparison.json）。当前测试与钱包源码未改。
+- 完整分析首轮3条新单行if格式提示，Terra仅补3组花括号与旧注释，Root复查等价；再次完整分析exit0。完整功能测试复用（未再发生行为变更）。
+- 版本契约pytest2通过；HTML selection12测试通过、UI契约28组件356屏通过。Root浏览器实际验证full6菜单、两手柄位置、跨行拖到首行得到“明天上午九点见”、partial4菜单、引用精确片段、全选恢复full。镜片真实触感/动画逐帧由真机验收；本地浏览器仅作参考demo。
+- 全前端166测试155通过/11失败，Terra正在补既有失败身份对比，未宣称全量通过。完整verify.ps1仍受.env阻断。
+- D1已开始：使用原样验证脚本进行ARM64Debug源构建→重建→签名→语义比对，输出delivery/debug-2089；尚未安装设备。
+
+## 最终交付（02:43+08）
+源码构建117秒，重建/固定签名/语义/独立对齐验证完成；外层打包退出码未捕获，不虚报。Root亲读产物证据后02:41:57 install-r Mi6成功，02:42拉回包哈希4cdcfdf5…5f9634与候选完全一致。version0.3.85-debug/2089，firstInstallTime保留。前端11失败与实际main基线完全一致；本次无新增全量失败。下一步由用户测试设备手感、动态emoji输入和双方选区引用/转发。未push、部署或清数据。

@@ -1,6 +1,6 @@
 # 2026-09-12 消息选区与动态 emoji 输入修复
 
-状态：实施与验证中，尚未交付新版 APK。
+状态：本地修复与代码审查完成；0.3.85-debug/2089 已覆盖安装 Mi 6，用户功能验收待进行。
 
 ## 范围与复现
 - Mi 6 已装 0.3.84-debug/2088：长按含多行文字/emoji 的消息，拖动手柄并松手；检查镜片残留、局部四项菜单、触摸区域及操作内容。
@@ -16,12 +16,24 @@
 ## 安全与兼容审查
 Astra 读取 Matrix SDK 加密实现：m.relates_to 会被移出密文并附在事件 envelope。因此禁止将片段放入 relation；io.changliao.selected_quote 必须与 body 并列进入密文。业务 API、推送、账本及密钥管理均不接触新增文本。旧客户端不识别新字段时仍保留标准引用关系，可能显示整条原引用，这是跨版本已知差异。
 
-## 待填最终证据
-- 定向测试、全量 Flutter、分析、HTML 契约及行为测试：待冻结后补入实际结果。
-- scripts/verify.ps1：配置渲染阶段缺少隔离工作树 .env，exit1；未复制生产秘密。通过的前置 policy/template gate不能替代后续门禁。
-- APK source→Apktool2.12.1→zipalign36→既有固定签名→清单/DEX/资产语义验证：待执行。
-- Mi6 install-r、实际包版本/证书/哈希/firstInstallTime：待执行。
-- 微信级真实拖动手感、多端双方显示以及设备输入法效果：由用户真机验收，不以 widget 测试代替。
+## 实际验证与交付
+- 源码：本地分支 codex/chat-selection-20260912，commit 48fe74750ae0272d4659253e12425140f6a565cc，基线 main@1da11922；未推送 Git 或部署生产。
+- 定向 Flutter 61/61 通过；完整 Flutter 2374 通过、29 失败，失败身份集合与既有 2088 原始日志完全相同，无新增失败。最终完整 flutter analyze exit0；版本契约 pytest 2/2 通过。
+- HTML selection 12/12 通过，UI 契约 28 组件/356 屏通过。完整前端 155通过/11失败；从 main@1da11922 导出真实源码运行基线143通过/11失败，失败身份完全相同。比较记录见 artifacts/2026-09-12/selection/frontend-full-suite-baseline-comparison.md。
+- scripts/verify.ps1：前置 policy/template gate通过，配置渲染缺少隔离工作树 .env，exit1；未复制生产秘密，不能声称全仓门禁通过。
+- ARM64 Debug 源构建117秒；Apktool2.12.1重建、zipalign36独立复验exit0、固定v2/v3签名通过。27242类语义一致，339 native/assets内容未变，Manifest语义一致。外层打包命令退出码未被执行者保存；记录阶段产物及root独立复核，不虚报外层exit0。
+- 最终包：com.liuhetong.mobile，0.3.85-debug/2089，143790379 bytes。SHA256：4cdcfdf524e501e5f73d190b88fd55cad67c29a29b9a1569835f88bdfb5f9634。
+- 证书SHA256：75b31c66476cd8e2c9319551b49405a1de1e5c23e9a0dbdcc9eb76b52ba61fff，与安装前实机包一致。
+- 02:41:57+08 Mi6 cbd0156b 执行 adb install -r，Success/exit0。firstInstallTime仍为2026-09-11 00:42:05；未卸载或清数据。02:42拉回实际安装base.apk，与候选SHA256完全一致；见 mi6-delivery-verification.json、mi6-install-2089.log。
+
+## 关键文件与验收边界
+- emoji_text_controller.dart、wechat_emoji_input_decoration.dart、wechat_composer.dart：原生文本坐标与动画覆盖层、滚动及生命周期。
+- message_text_selection.dart、message_selection_offset_mapper.dart、room_page.dart：同会话菜单、44px热区/12px视觉手柄、镜片与选区映射、取消路径。
+- message_interaction_service.dart、matrix_e2ee_client.dart、room_timeline_controller.dart：选区转发与加密引用片段传输/恢复。
+- frontend/src/components/selection.js 与对应注册、样式、12项测试：可操作HTML参考演示；root验证初始6项菜单、跨行部分选择、4项菜单、精确引用和全选恢复。
+- 自动用例覆盖实际EmojiText布局、手柄up/cancel、选区映射、发送片段、引用解析/本地回显及输入法坐标、真实输入框滚动和卸载。没有进行用户账号真机功能操作。
+- 微信级拖动手感、放大镜逐帧视觉、设备输入法、多端双方显示与弱网效果由用户真机验收；不可用widget测试代替。旧版本客户端可能仍展示整条引用；浏览器demo不是Flutter像素一致性证明。
+- HTML仅本地演示，Figma已退役；不发布正式Android/iOS更新。
 
 ## 相关记录
 - [实施计划](../superpowers/plans/2026-09-12-selection-emoji-repair.md)
