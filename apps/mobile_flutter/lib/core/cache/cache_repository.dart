@@ -126,6 +126,8 @@ final class MomentsCache {
   Map<String, dynamic>? _snapshot;
   Map<String, dynamic>? _preferencesSnapshot;
   bool _loaded = false;
+  bool _invalidationsLoaded = false;
+  final _pendingFieldWrites = <(String, String), int>{};
   bool _preferencesLoaded = false;
   int _feedRevision = 0;
   int _preferencesRevision = 0;
@@ -140,7 +142,10 @@ final class MomentsCache {
 
   Map<String, dynamic>? get snapshot {
     if (!_loaded) {
-      _snapshot = _decode(_storageKey);
+      // An interrupted privacy mutation may leave the old head on disk.
+      _snapshot = _preferences.getBool(_invalidKey) == true
+          ? null
+          : _decode(_storageKey);
       _loaded = true;
     }
     return _copy(_snapshot);
@@ -195,6 +200,9 @@ final class MomentsCache {
           (_removedComments[id] ??= {}).add(comment);
         }
       }
+      _invalidationsLoaded = true;
+      if (_snapshot != null) _snapshot = project(_snapshot!);
+      _pages.updateAll((_, value) => project(value));
     } catch (error) {
       persistenceError = error;
     }
@@ -275,6 +283,8 @@ final class MomentsCache {
           expectedGeneration: expectedGeneration, invalidateOlder: false);
 
   Future<void> _repairInvalidPages() async {
+    // Removing the marker must not make an untrusted legacy head readable again.
+    if (snapshot == null) await _preferences.remove(_storageKey);
     await _pageStore.invalidatePages(_storageKey);
     for (final id in _removedPosts) {
       await _pageStore.mutate(_storageKey, id, deleted: true);
@@ -291,43 +301,69 @@ final class MomentsCache {
       {Map<String, dynamic>? fields,
       bool deleted = false,
       String? deletedComment}) async {
-    ++_feedRevision;
-    if (deleted) _removedPosts.add(id);
-    if (deletedComment != null) {
-      (_removedComments[id] ??= {}).add(deletedComment);
-    }
-    Map<String, dynamic> update(Map<String, dynamic> source) => project({
-          ...source,
-          'items': [
-            for (final raw in source['items'] as List? ?? const [])
-              if (raw is Map && raw['id']?.toString() == id)
-                {...raw, ...?fields}
-              else
-                raw
-          ]
-        });
-    final head = snapshot;
-    if (head != null) _snapshot = update(head);
-    _pages.updateAll((_, page) => update(page));
     final generation = CacheRepository._momentsGenerations[_storageKey] ?? 0;
-    await _persist(() async {
-      if (!_generationIsCurrent(generation)) return;
-      // A crash/storage failure after a privacy mutation must fail closed on restart.
-      final repair = _preferences.getBool(_invalidKey) == true;
-      await _preferences.setBool(_invalidKey, true);
-      if (_snapshot != null) {
-        await _preferences.setString(_storageKey, jsonEncode(_snapshot));
+    final revision = ++_feedRevision;
+    final inputFields = _copy(fields);
+    for (final field in inputFields?.keys ?? const <String>[]) {
+      _pendingFieldWrites[(id, field)] = revision;
+    }
+    try {
+      // A detail/quick comment can arrive before feed initialization has loaded
+      // durable deletions. Never publish its stale comment array before that read.
+      if (fields?.containsKey('comments') == true && !_invalidationsLoaded) {
+        await restoreInvalidations();
+        if (!_generationIsCurrent(generation) || !_invalidationsLoaded) return;
       }
-      try {
-        if (repair) await _repairInvalidPages();
-        await _pageStore.mutate(_storageKey, id,
-            fields: fields, deleted: deleted, deletedComment: deletedComment);
-        await _preferences.remove(_invalidKey);
-        persistenceError = null;
-      } catch (error) {
-        persistenceError = error;
+      fields = inputFields == null
+          ? null
+          : {
+              for (final field in inputFields.entries)
+                if (_pendingFieldWrites[(id, field.key)] == revision)
+                  field.key: field.value
+            };
+      if (fields?.isEmpty == true && !deleted && deletedComment == null) return;
+      if (deleted) _removedPosts.add(id);
+      if (deletedComment != null) {
+        (_removedComments[id] ??= {}).add(deletedComment);
       }
-    });
+      Map<String, dynamic> update(Map<String, dynamic> source) => project({
+            ...source,
+            'items': [
+              for (final raw in source['items'] as List? ?? const [])
+                if (raw is Map && raw['id']?.toString() == id)
+                  {...raw, ...?fields}
+                else
+                  raw
+            ]
+          });
+      final head = snapshot;
+      if (head != null) _snapshot = update(head);
+      _pages.updateAll((_, page) => update(page));
+      await _persist(() async {
+        if (!_generationIsCurrent(generation)) return;
+        // A crash/storage failure after a privacy mutation must fail closed on restart.
+        final repair = _preferences.getBool(_invalidKey) == true;
+        await _preferences.setBool(_invalidKey, true);
+        if (_snapshot != null) {
+          await _preferences.setString(_storageKey, jsonEncode(_snapshot));
+        }
+        try {
+          if (repair) await _repairInvalidPages();
+          await _pageStore.mutate(_storageKey, id,
+              fields: fields, deleted: deleted, deletedComment: deletedComment);
+          await _preferences.remove(_invalidKey);
+          persistenceError = null;
+        } catch (error) {
+          persistenceError = error;
+        }
+      });
+    } finally {
+      for (final field in inputFields?.keys ?? const <String>[]) {
+        if (_pendingFieldWrites[(id, field)] == revision) {
+          _pendingFieldWrites.remove((id, field));
+        }
+      }
+    }
   }
 
   Future<void> _persist(Future<void> Function() write) {
@@ -358,8 +394,12 @@ final class MomentsCache {
   Future<void> _saveFeed(Map<String, dynamic> feed,
       {int? expectedGeneration, required bool invalidateOlder}) async {
     if (!_generationIsCurrent(expectedGeneration)) return;
-    ++_feedRevision;
+    final revision = ++_feedRevision;
     final generation = CacheRepository._momentsGenerations[_storageKey] ?? 0;
+    if (!_invalidationsLoaded) {
+      await restoreInvalidations();
+      if (!_generationIsCurrent(generation) || !isCurrent(revision)) return;
+    }
     final deletedPosts = <String>[];
     final deletedComments = <(String, String)>[];
     if (invalidateOlder) {
@@ -399,7 +439,7 @@ final class MomentsCache {
     await _persist(() async {
       if (!_generationIsCurrent(generation)) return;
       final repair = _preferences.getBool(_invalidKey) == true;
-      if (invalidateOlder) await _preferences.setBool(_invalidKey, true);
+      await _preferences.setBool(_invalidKey, true);
       await _preferences.setString(_storageKey, encoded);
       try {
         if (repair) await _repairInvalidPages();
@@ -410,9 +450,14 @@ final class MomentsCache {
           await _pageStore.mutate(_storageKey, deletion.$1,
               deletedComment: deletion.$2);
         }
-        await _pageStore.writePage(_storageKey, null, value,
-            invalidateOlder:
-                invalidateOlder || _preferences.getBool(_invalidKey) == true);
+        final persisted = await _pageStore.writePage(_storageKey, null, value,
+            invalidateOlder: invalidateOlder || repair);
+        // SQLite also filters durable tombstones when their initial read failed.
+        // Publish that same safe projection before removing the crash marker.
+        await _preferences.setString(_storageKey, jsonEncode(persisted));
+        if (_generationIsCurrent(generation) && isCurrent(revision)) {
+          _snapshot = project(persisted);
+        }
         await _preferences.remove(_invalidKey);
         persistenceError = null;
       } catch (error) {
@@ -456,6 +501,8 @@ final class MomentsCache {
     _pages.clear();
     _removedPosts.clear();
     _removedComments.clear();
+    _invalidationsLoaded = false;
+    _pendingFieldWrites.clear();
     _preferencesSnapshot = null;
     _loaded = _preferencesLoaded = true;
     await _persist(() async {

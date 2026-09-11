@@ -114,6 +114,178 @@ void main() {
     expect(await a.loadPage('cursor'), isNull);
   });
 
+  test('later entity mutation cannot revive a deleted comment on reopen',
+      () async {
+    final a = repository.momentsFor('a');
+    await a.savePage('cursor', page(['older']),
+        ticket: a.currentRevision, expectedGeneration: 0);
+    await a.mutateItem('older', deletedComment: 'comment');
+    await a.mutateItem('older', fields: {
+      'comments': [
+        {'id': 'comment', 'text': 'stale'},
+        {'id': 'retained', 'text': 'valid'}
+      ]
+    });
+    await store.close();
+    store = MomentsPageStore(databasePath: path);
+    await CacheRepository.resetForTest(pageStore: store);
+    final reopened = (await CacheRepository.instance()).momentsFor('a');
+    final disk = await reopened.loadPage('cursor');
+    expect((disk!['items'][0]['comments'] as List).map((c) => c['id']),
+        ['retained']);
+  });
+
+  test('restart suppresses stale head after interrupted privacy mutation',
+      () async {
+    final a = repository.momentsFor('a');
+    await a.saveHead(page(['head']));
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(
+        '${CacheRepository.momentsFeedKeyFor('a')}.pages-invalid', true);
+    await CacheRepository.resetForTest(pageStore: store);
+    final reopened = (await CacheRepository.instance()).momentsFor('a');
+    expect(reopened.snapshot, isNull);
+    await reopened.mutateItem('another', fields: {'like_count': 2});
+    await CacheRepository.resetForTest(pageStore: store);
+    expect((await CacheRepository.instance()).momentsFor('a').snapshot, isNull);
+  });
+
+  test('mutation after restart hydrates tombstones before updating head',
+      () async {
+    final a = repository.momentsFor('a');
+    await a.saveHead(page(['head']));
+    await a.mutateItem('head', deletedComment: 'comment');
+    await CacheRepository.resetForTest(pageStore: store);
+    final reopened = (await CacheRepository.instance()).momentsFor('a');
+    await reopened.mutateItem('head', fields: {
+      'comments': [
+        {'id': 'comment', 'text': 'stale'},
+        {'id': 'retained', 'text': 'valid'}
+      ]
+    });
+    expect(
+        (reopened.snapshot!['items'][0]['comments'] as List)
+            .map((c) => c['id']),
+        ['retained']);
+    await CacheRepository.resetForTest(pageStore: store);
+    final head = (await CacheRepository.instance()).momentsFor('a').snapshot!;
+    expect((head['items'][0]['comments'] as List).map((c) => c['id']),
+        ['retained']);
+    final disk =
+        await store.readPage(CacheRepository.momentsFeedKeyFor('a'), null);
+    expect((disk!['items'][0]['comments'] as List).map((c) => c['id']),
+        ['retained']);
+  });
+
+  test('head refresh after restart cannot restore durable deleted comments',
+      () async {
+    final a = repository.momentsFor('a');
+    await a.saveHead(page(['head']));
+    await a.mutateItem('head', deletedComment: 'comment');
+    await CacheRepository.resetForTest(pageStore: store);
+    final reopened = (await CacheRepository.instance()).momentsFor('a');
+    await reopened.saveHead(page(['head']));
+    expect(reopened.snapshot!['items'][0]['comments'], isEmpty);
+    await CacheRepository.resetForTest(pageStore: store);
+    expect(
+        (await CacheRepository.instance()).momentsFor('a').snapshot!['items'][0]
+            ['comments'],
+        isEmpty);
+  });
+
+  test('head hydration cannot overwrite a newer confirmed mutation', () async {
+    final a = repository.momentsFor('a');
+    await a.saveHead(page(['head']));
+    await store.close();
+    final opened = Completer<void>();
+    final resume = Completer<Database>();
+    final factory = _DelayedFactory(() {
+      opened.complete();
+      return resume.future;
+    });
+    store = MomentsPageStore(databasePath: path, factory: factory);
+    await CacheRepository.resetForTest(pageStore: store);
+    final cache = (await CacheRepository.instance()).momentsFor('a');
+    final refresh = cache.saveHead(page(['head']));
+    await opened.future;
+    final mutation = cache.mutateItem('head', fields: {'like_count': 7});
+    resume.complete(await databaseFactoryFfi.openDatabase(path));
+    await Future.wait([refresh, mutation]);
+    expect(cache.snapshot!['items'][0]['like_count'], 7);
+    await CacheRepository.resetForTest(pageStore: store);
+    expect(
+        (await CacheRepository.instance()).momentsFor('a').snapshot!['items'][0]
+            ['like_count'],
+        7);
+  });
+
+  test('transient invalidation read failure cannot persist an unfiltered head',
+      () async {
+    final a = repository.momentsFor('a');
+    await a.saveHead(page(['head']));
+    await a.mutateItem('head', deletedComment: 'comment');
+    await store.close();
+    final db = _ReadFailDatabase(await databaseFactoryFfi.openDatabase(path));
+    store = MomentsPageStore(
+        databasePath: path, factory: _DelayedFactory(() async => db));
+    await CacheRepository.resetForTest(pageStore: store);
+    final reopened = (await CacheRepository.instance()).momentsFor('a');
+    await reopened.saveHead(page(['head']));
+    expect(db.failedReads, 1);
+    expect(reopened.snapshot!['items'][0]['comments'], isEmpty);
+    await CacheRepository.resetForTest(pageStore: store);
+    expect(
+        (await CacheRepository.instance()).momentsFor('a').snapshot!['items'][0]
+            ['comments'],
+        isEmpty);
+  });
+
+  for (final scenario in ['other post', 'other field', 'same field']) {
+    test('pending comment hydration preserves $scenario mutation ordering',
+        () async {
+      final a = repository.momentsFor('a');
+      await a.saveHead(page(['first', 'second']));
+      await store.close();
+      final started = Completer<void>();
+      final resume = Completer<Database>();
+      store = MomentsPageStore(
+          databasePath: path,
+          factory: _DelayedFactory(() {
+            if (!started.isCompleted) started.complete();
+            return resume.future;
+          }));
+      await CacheRepository.resetForTest(pageStore: store);
+      final cache = (await CacheRepository.instance()).momentsFor('a');
+      final first = cache.mutateItem('first', fields: {
+        'comments': [
+          {'id': 'new-comment'}
+        ]
+      });
+      await started.future;
+      final second =
+          cache.mutateItem(scenario == 'other post' ? 'second' : 'first',
+              fields: scenario == 'same field'
+                  ? {
+                      'comments': [
+                        {'id': 'latest-comment'}
+                      ]
+                    }
+                  : {'like_count': 7});
+      resume.complete(await databaseFactoryFfi.openDatabase(path));
+      await Future.wait([first, second]);
+      final items = cache.snapshot!['items'] as List;
+      expect(items[0]['comments'][0]['id'],
+          scenario == 'same field' ? 'latest-comment' : 'new-comment');
+      if (scenario != 'same field') {
+        expect(items[scenario == 'other post' ? 1 : 0]['like_count'], 7);
+      }
+      await CacheRepository.resetForTest(pageStore: store);
+      expect(
+          (await CacheRepository.instance()).momentsFor('a').snapshot!['items'],
+          items);
+    });
+  }
+
   test('page writes preserve existing head and repeated cursor cannot loop',
       () async {
     final a = repository.momentsFor('a');
@@ -238,4 +410,54 @@ void main() {
         CacheRepository.inject(prefs, pageStore: store).momentsFor('a');
     expect(await reopened.loadPage('cursor'), isNull);
   });
+}
+
+final class _DelayedFactory implements DatabaseFactory {
+  _DelayedFactory(this.open);
+  final Future<Database> Function() open;
+  @override
+  Future<Database> openDatabase(String path, {OpenDatabaseOptions? options}) =>
+      open();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _ReadFailDatabase implements Database {
+  _ReadFailDatabase(this.inner);
+  final Database inner;
+  int failedReads = 0;
+  @override
+  Future<List<Map<String, Object?>>> query(String table,
+      {bool? distinct,
+      List<String>? columns,
+      String? where,
+      List<Object?>? whereArgs,
+      String? groupBy,
+      String? having,
+      String? orderBy,
+      int? limit,
+      int? offset}) async {
+    if (table == 'tombstones' && failedReads++ == 0) {
+      throw StateError('fixture transient read failure');
+    }
+    return inner.query(table,
+        distinct: distinct,
+        columns: columns,
+        where: where,
+        whereArgs: whereArgs,
+        groupBy: groupBy,
+        having: having,
+        orderBy: orderBy,
+        limit: limit,
+        offset: offset);
+  }
+
+  @override
+  Future<T> transaction<T>(Future<T> Function(Transaction) action,
+          {bool? exclusive}) =>
+      inner.transaction(action, exclusive: exclusive);
+  @override
+  Future<void> close() => inner.close();
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

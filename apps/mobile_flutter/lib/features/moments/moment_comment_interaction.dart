@@ -64,15 +64,14 @@ Future<void> interactWithMomentComment(
     _commentMenus[navigator] = true;
     String? selected;
     try {
-      selected = await showAnchoredActionMenu<String>(context,
-          anchor: anchor,
-          items: [
-            const AnchoredMenuItem(
-                value: 'copy', icon: CupertinoIcons.doc_on_doc, label: '复制'),
-            if (canDelete)
-              const AnchoredMenuItem(
-                  value: 'delete', icon: CupertinoIcons.trash, label: '删除'),
-          ]);
+      selected =
+          await showAnchoredActionMenu<String>(context, anchor: anchor, items: [
+        const AnchoredMenuItem(
+            value: 'copy', icon: CupertinoIcons.doc_on_doc, label: '复制'),
+        if (canDelete)
+          const AnchoredMenuItem(
+              value: 'delete', icon: CupertinoIcons.trash, label: '删除'),
+      ]);
     } finally {
       _commentMenus[navigator] = false;
     }
@@ -110,26 +109,8 @@ Future<void> interactWithMomentComment(
           final repository = await CacheRepository.instance();
           if (!audienceCurrent()) return;
           final cache = repository.momentsFor(accountKey);
-          final snapshot = cache.snapshot;
-          if (snapshot != null) {
-            cache.beginRefresh();
-            await cache.save({
-              ...snapshot,
-              'items': [
-                for (final raw in snapshot['items'] as List? ?? [])
-                  if (raw is Map && raw['id'] == momentId)
-                    {
-                      ...raw,
-                      'comments': [
-                        for (final c in raw['comments'] as List? ?? [])
-                          if (c is! Map || c['id'] != comment.id) c
-                      ]
-                    }
-                  else
-                    raw
-              ]
-            });
-          }
+          await cache.mutateItem(momentId, deletedComment: comment.id);
+          persistenceFailed |= cache.persistenceError != null;
         }
         if (persistenceFailed && active()) {
           onError('评论已删除，请刷新页面');

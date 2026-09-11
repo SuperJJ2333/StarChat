@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:liuhetong_mobile/core/cache/moments_page_store.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'dart:convert';
 
@@ -114,24 +118,37 @@ Future<Widget> _page((BusinessApiClient, ProfileRepository) client) async =>
         home: await MomentsPage.prepare(
             api: client.$1, identityCache: client.$2));
 
+Future<void> _settleDatabase(WidgetTester tester) async {
+  // Native database events need real event-loop turns between widget pumps.
+  for (var turn = 0; turn < 30; turn++) {
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1)));
+    await tester.pump(const Duration(milliseconds: 20));
+  }
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  late MomentsPageStore pageStore;
   testWidgets('local pagination does not wait for pending head refresh',
       (tester) async {
-    final cache =
-        (await CacheRepository.instance()).momentsFor('matrix:@me:test');
-    await cache.saveHead({..._feed(), 'next_cursor': 'older'});
-    await cache.savePage(
-        'older',
-        {
-          'items': [
-            {
-              ...(_feed(text: 'local older')['items'] as List).single as Map,
-              'id': 'post-2'
-            }
-          ]
-        },
-        ticket: cache.currentRevision,
-        expectedGeneration: 0);
+    await tester.runAsync(() async {
+      final cache =
+          (await CacheRepository.instance()).momentsFor('matrix:@me:test');
+      await cache.saveHead({..._feed(), 'next_cursor': 'older'});
+      await cache.savePage(
+          'older',
+          {
+            'items': [
+              {
+                ...(_feed(text: 'local older')['items'] as List).single as Map,
+                'id': 'post-2'
+              }
+            ]
+          },
+          ticket: cache.currentRevision,
+          expectedGeneration: 0);
+    });
     final pending = Completer<http.Response>();
     final client = await _client((request) async {
       if (request.url.path.endsWith('/feed')) {
@@ -143,12 +160,12 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moments-load-more')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('local older'), findsOneWidget);
     pending.complete(_json({}, 503));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('local older'), findsOneWidget);
   });
 
@@ -174,22 +191,35 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moments-load-more')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('persisted older post'), findsOneWidget);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     offline = true;
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moments-load-more')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('persisted older post'), findsOneWidget);
   });
 
+  tearDown(() async => pageStore.close());
   setUp(() async {
+    final mediaDirectory = Directory(
+        '${Directory.current.path}/../../docs/verification/artifacts/2026-09-11/performance/reentry-media');
+    await mediaDirectory.create(recursive: true);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (call) async => mediaDirectory.path);
+    sqfliteFfiInit();
+    pageStore = MomentsPageStore(
+        databasePath: inMemoryDatabasePath,
+        factory: databaseFactoryFfiNoIsolate);
+    await pageStore.readTombstones('fixture-open');
     SharedPreferences.setMockInitialValues({});
-    await CacheRepository.resetForTest();
+    await CacheRepository.resetForTest(pageStore: pageStore);
   });
 
   for (final initiallyLiked in [false, true]) {
@@ -211,11 +241,11 @@ void main() {
         return _json({});
       });
       await tester.pumpWidget(await _page(client));
-      await tester.pumpAndSettle();
+      await _settleDatabase(tester);
       await tester.tap(find.text('cached post'));
-      await tester.pumpAndSettle();
+      await _settleDatabase(tester);
       await tester.tap(find.byKey(const Key('moment-like-button')));
-      await tester.pumpAndSettle();
+      await _settleDatabase(tester);
       final expected = ['other', if (!initiallyLiked) 'me'];
       expect(
           tester
@@ -225,7 +255,7 @@ void main() {
               .map((u) => u.userId),
           expected);
       Navigator.of(tester.element(find.byType(WeChatMomentTile))).pop();
-      await tester.pumpAndSettle();
+      await _settleDatabase(tester);
       expect(
           tester
               .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
@@ -234,7 +264,7 @@ void main() {
               .map((u) => u.userId),
           expected);
       await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
-      await CacheRepository.resetForTest();
+      await CacheRepository.resetForTest(pageStore: pageStore);
       final disk = (await (await CacheRepository.instance())
           .momentsFor('matrix:@me:test')
           .load())!;
@@ -257,11 +287,11 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('moment-comment-button')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.enterText(
         find.byKey(const Key('moment-comment-input')), 'confirmed comment');
     await tester.pump();
@@ -271,7 +301,7 @@ void main() {
       'text': 'confirmed comment',
       'author': _author('me', 'My name')
     }, 201));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(
         tester
             .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
@@ -287,7 +317,7 @@ void main() {
     like.complete(_json({
       'error': {'code': 'FAIL', 'message': 'Try again'}
     }, 503));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final item =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(item.comments.map((value) => value.text), ['confirmed comment']);
@@ -296,7 +326,7 @@ void main() {
     expect(item.likeUsers.map((author) => author.userId), ['other']);
     expect(pendingCacheItem['viewer_has_liked'], isFalse,
         reason: 'Comment acknowledgement cannot persist an unconfirmed like');
-    await CacheRepository.resetForTest();
+    await CacheRepository.resetForTest(pageStore: pageStore);
     final disk = (await (await CacheRepository.instance())
         .momentsFor('matrix:@me:test')
         .load())!;
@@ -320,11 +350,11 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('moment-comment-button')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.enterText(
         find.byKey(const Key('moment-comment-input')), 'confirmed comment');
     await tester.pump();
@@ -337,7 +367,7 @@ void main() {
       'image_urls': ['https://example.com/image-comment'],
       'image_cache_keys': ['a' * 64]
     }, 201));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(
         tester
             .widget<WeChatMomentTile>(find.byType(WeChatMomentTile))
@@ -353,7 +383,7 @@ void main() {
     like.complete(_json({
       'error': {'code': 'FAIL', 'message': 'Try again'}
     }, 503));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final item =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(item.comments.map((value) => value.text), ['confirmed comment']);
@@ -362,7 +392,7 @@ void main() {
     expect(item.likeUsers.map((author) => author.userId), ['other']);
     expect(pendingCacheItem['viewer_has_liked'], isFalse,
         reason: 'Comment acknowledgement cannot persist an unconfirmed like');
-    await CacheRepository.resetForTest();
+    await CacheRepository.resetForTest(pageStore: pageStore);
     final disk = (await (await CacheRepository.instance())
         .momentsFor('matrix:@me:test')
         .load())!;
@@ -376,15 +406,18 @@ void main() {
     expect(reply['image_urls'], ['https://example.com/image-comment']);
     expect(reply['image_cache_keys'], ['a' * 64]);
     expect((reply['parent_author'] as Map)['user_id'], 'other');
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+    await tester.pump(const Duration(seconds: 11));
+    await _settleDatabase(tester);
   });
 
   for (final actual in ['@b:test', null]) {
     testWidgets(
         'unprepared page never paints stale A cache when API account is $actual',
         (tester) async {
-      await (await CacheRepository.instance())
+      await tester.runAsync(() async => (await CacheRepository.instance())
           .momentsFor('matrix:@me:test')
-          .save(_feed(text: 'private account A'));
+          .save(_feed(text: 'private account A')));
       final pending = Completer<http.Response>();
       final client = await _client(
           (request) async =>
@@ -394,7 +427,7 @@ void main() {
       await tester.pumpWidget(_defaultPage(client));
       expect(find.text('private account A'), findsNothing);
       pending.complete(_json(_feed(text: 'authorized result')));
-      await tester.pumpAndSettle();
+      await _settleDatabase(tester);
       expect(find.text('private account A'), findsNothing);
       if (actual == '@b:test') {
         expect(find.text('账号已切换，请重新进入朋友圈'), findsOneWidget);
@@ -407,7 +440,7 @@ void main() {
             matrixId: actual,
             account: 'matrix:$actual');
         await tester.pumpWidget(_defaultPage(corrected));
-        await tester.pumpAndSettle();
+        await _settleDatabase(tester);
         expect(find.text('账号已切换，请重新进入朋友圈'), findsNothing);
         expect(find.byKey(const Key('moments-initial-retry')), findsOneWidget);
       }
@@ -430,7 +463,7 @@ void main() {
           : _json({'cover_url': cover, 'cover_cache_key': coverKey});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     reentered = true;
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     await tester.pumpWidget(await _page(client));
@@ -451,7 +484,7 @@ void main() {
                 trustedOrigin: 'https://business.example')
             .cacheKey);
     pending.complete(_json({'cover_url': cover, 'cover_cache_key': coverKey}));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
   });
 
   testWidgets('settings never echoes response-only cover cache identity',
@@ -470,9 +503,9 @@ void main() {
     });
     await tester
         .pumpWidget(CupertinoApp(home: MomentsSettingsPage(api: client.$1)));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.text('最近一个月'));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(written, {
       'history_range': 'ONE_MONTH',
       'personalized_recommendations': true,
@@ -485,7 +518,8 @@ void main() {
       'older page request finishing last cannot overwrite newer cached feed',
       (tester) async {
     final repository = await CacheRepository.instance();
-    await repository.momentsFor('matrix:@me:test').save(_feed());
+    await tester
+        .runAsync(() => repository.momentsFor('matrix:@me:test').save(_feed()));
     final old = Completer<http.Response>();
     var requests = 0;
     final client = await _client((request) async {
@@ -495,13 +529,13 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('newest post'), findsOneWidget);
     old.complete(_json(_feed(text: 'stale post')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('newest post'), findsOneWidget);
     expect(
         (repository.momentsFor('matrix:@me:test').snapshot!['items'] as List)
@@ -522,7 +556,7 @@ void main() {
       return _json({});
     }, hasBusinessIdentity: false);
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
     final pendingItem =
@@ -533,7 +567,7 @@ void main() {
             'Privacy projection counts only known visible identities until acknowledgment');
     expect(pendingItem.likeUsers.map((user) => user.userId), ['other']);
     pending.complete(_json({}));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.byKey(const ValueKey('moment-liker-other')), findsOneWidget);
     expect(find.byKey(const ValueKey('moment-liker-me')), findsOneWidget);
   });
@@ -557,15 +591,15 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moments-load-more')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final older = find.byWidgetPredicate(
         (w) => w is WeChatMomentTile && w.item.id == 'post-2');
     await tester.ensureVisible(older);
     await tester.tap(find.descendant(
         of: older, matching: find.byKey(const Key('moment-like-button'))));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('older post'), findsOneWidget);
     expect(tester.widget<WeChatMomentTile>(older).item.liked, isTrue);
     expect(find.byType(WeChatMomentTile), findsNWidgets(2));
@@ -574,23 +608,25 @@ void main() {
   testWidgets(
       'late background refresh cannot undo a confirmed like in UI or disk',
       (tester) async {
-    final cache =
-        (await CacheRepository.instance()).momentsFor('matrix:@me:test');
-    await cache.save(_feed());
+    await tester.runAsync(() async {
+      final value =
+          (await CacheRepository.instance()).momentsFor('matrix:@me:test');
+      await value.save(_feed());
+    });
     final pending = Completer<http.Response>();
     final client = await _client((request) async =>
         request.url.path.endsWith('/feed') ? pending.future : _json({}));
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     pending.complete(_json(_feed()));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final liked =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(liked.liked, isTrue);
     expect(liked.likeUsers.map((author) => author.userId), ['other', 'me']);
-    await CacheRepository.resetForTest();
+    await CacheRepository.resetForTest(pageStore: pageStore);
     final disk = await (await CacheRepository.instance())
         .momentsFor('matrix:@me:test')
         .load();
@@ -609,14 +645,14 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
     expect(find.byKey(const ValueKey('moment-liker-other')), findsOneWidget);
     pending.complete(_json({
       'error': {'code': 'FAIL', 'message': 'Try again'}
     }, 503));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final restored =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(restored.liked, isTrue);
@@ -627,12 +663,11 @@ void main() {
   testWidgets('replacing the page account never retains the previous feed',
       (tester) async {
     final repository = await CacheRepository.instance();
-    await repository
+    await tester.runAsync(() => repository
         .momentsFor('matrix:@me:test')
-        .save(_feed(text: 'account A'));
-    await repository
-        .momentsFor('matrix:@b:test')
-        .save(_feed(text: 'account B'));
+        .save(_feed(text: 'account A')));
+    await tester.runAsync(() =>
+        repository.momentsFor('matrix:@b:test').save(_feed(text: 'account B')));
     final pendingA = Completer<http.Response>();
     final pendingB = Completer<http.Response>();
     final a = await _client((r) async =>
@@ -642,14 +677,14 @@ void main() {
         matrixId: '@b:test',
         account: 'matrix:@b:test');
     await tester.pumpWidget(await _page(a));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('account A'), findsOneWidget);
     await tester.pumpWidget(await _page(b));
     expect(find.text('account A'), findsNothing);
     expect(find.text('account B'), findsOneWidget);
     pendingA.complete(_json(_feed(text: 'late account A')));
     pendingB.complete(_json(_feed(text: 'fresh account B')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('fresh account B'), findsOneWidget);
     expect(find.text('late account A'), findsNothing);
   });
@@ -657,9 +692,9 @@ void main() {
   testWidgets(
       'account cached feed is present on first frame while network waits',
       (tester) async {
-    await (await CacheRepository.instance())
+    await tester.runAsync(() async => (await CacheRepository.instance())
         .momentsFor('matrix:@me:test')
-        .save(_feed());
+        .save(_feed()));
     final pending = Completer<http.Response>();
     final client = await _client((request) async =>
         request.url.path.endsWith('/feed')
@@ -668,7 +703,7 @@ void main() {
     await tester.pumpWidget(await _page(client));
     expect(find.text('cached post'), findsOneWidget);
     pending.complete(_json(_feed(text: 'fresh post')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('fresh post'), findsOneWidget);
   });
 
@@ -681,7 +716,7 @@ void main() {
       return _json({'cover_url': null});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
     await tester.pump();
     final optimistic =
@@ -693,7 +728,7 @@ void main() {
     pending.complete(_json({
       'error': {'code': 'FAIL', 'message': 'Try again'}
     }, 503));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final reverted =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(reverted.liked, isFalse);
@@ -712,9 +747,9 @@ void main() {
       return _json({});
     });
     await tester.pumpWidget(await _page(client));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     await tester.tap(find.byKey(const Key('moment-like-button')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     final unliked =
         tester.widget<WeChatMomentTile>(find.byType(WeChatMomentTile)).item;
     expect(unliked.likeUsers.map((author) => author.userId), ['other']);
@@ -727,15 +762,15 @@ void main() {
     expect(reopened.likeCount, 1);
     expect(reopened.likeUsers.map((author) => author.userId), ['other']);
     pending.complete(_json(_feed()));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
   });
 
   testWidgets(
       'unknown authenticated identity never paints shared anonymous feed',
       (tester) async {
-    await (await CacheRepository.instance())
+    await tester.runAsync(() async => (await CacheRepository.instance())
         .momentsFor('anonymous')
-        .save(_feed(text: 'private other account'));
+        .save(_feed(text: 'private other account')));
     final pending = Completer<http.Response>();
     final client = await _client(
         (request) async =>
@@ -747,7 +782,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('private other account'), findsNothing);
     pending.complete(_json(_feed(text: 'authorized result')));
-    await tester.pumpAndSettle();
+    await _settleDatabase(tester);
     expect(find.text('authorized result'), findsOneWidget);
   });
 }

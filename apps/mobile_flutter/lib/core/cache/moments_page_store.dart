@@ -177,10 +177,16 @@ final class MomentsPageStore {
         ...jsonDecode(rows.single['payload'] as String) as Map<String, dynamic>,
         ...?fields
       };
-      if (deletedComment != null) {
+      final tombstones = await tx.query('tombstones',
+          where: 'account=? AND id=?', whereArgs: [account, id]);
+      final removedComments =
+          tombstones.map((row) => row['comment_id'].toString()).toSet();
+      if (removedComments.isNotEmpty) {
         item['comments'] = [
           for (final comment in item['comments'] as List? ?? const [])
-            if (comment is! Map || comment['id'] != deletedComment) comment
+            if (comment is! Map ||
+                !removedComments.contains(comment['id'].toString()))
+              comment
         ];
       }
       await tx.update('items', {'payload': jsonEncode(item)},
