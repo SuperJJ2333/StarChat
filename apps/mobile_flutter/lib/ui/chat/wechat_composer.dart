@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/scheduler.dart';
 
+import '../../core/performance_metrics.dart';
 import '../foundation/changliao_icons.dart';
 import '../foundation/wechat_tokens.dart';
 import 'chat_composer_state.dart';
@@ -48,6 +50,8 @@ final class _WeChatComposerState extends State<WeChatComposer> {
   late final FocusNode _ownedFocusNode;
   FocusNode get _focusNode => widget.focusNode ?? _ownedFocusNode;
   (bool, bool)? _renderedChromeState;
+  var _controllerGeneration = 0;
+  int? _pendingComposerSampleGeneration;
 
   @override
   void initState() {
@@ -61,6 +65,7 @@ final class _WeChatComposerState extends State<WeChatComposer> {
   void didUpdateWidget(WeChatComposer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
+      _controllerGeneration++;
       oldWidget.controller.removeListener(_refresh);
       widget.controller.addListener(_refresh);
     }
@@ -78,8 +83,34 @@ final class _WeChatComposerState extends State<WeChatComposer> {
     if (mounted && next != _renderedChromeState) setState(() {});
   }
 
+  void _onChanged(String _) {
+    final metrics = PerformanceMetrics.instance;
+    final generation = _controllerGeneration;
+    if (!metrics.enabled || _pendingComposerSampleGeneration == generation) {
+      return;
+    }
+    _pendingComposerSampleGeneration = generation;
+    final controller = widget.controller;
+    final stopwatch = Stopwatch()..start();
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (_pendingComposerSampleGeneration == generation) {
+        _pendingComposerSampleGeneration = null;
+      }
+      if (!mounted ||
+          generation != _controllerGeneration ||
+          !identical(controller, widget.controller)) {
+        return;
+      }
+      metrics.record(
+          PerformanceOperation.composerToFrame, stopwatch.elapsedMicroseconds);
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
   @override
   void dispose() {
+    _controllerGeneration++;
+    _pendingComposerSampleGeneration = null;
     widget.controller.removeListener(_refresh);
     _focusNode.removeListener(_refresh);
     _ownedFocusNode.dispose();
@@ -131,6 +162,7 @@ final class _WeChatComposerState extends State<WeChatComposer> {
               minLines: 1,
               maxLines: 4,
               onTap: widget.onInputTap,
+              onChanged: _onChanged,
               onSubmitted: widget.onSubmitted,
               padding: const EdgeInsets.symmetric(
                   horizontal: WeChatSpacing.md, vertical: 10),

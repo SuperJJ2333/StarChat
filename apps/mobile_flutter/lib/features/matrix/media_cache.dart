@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../core/performance_metrics.dart';
+
 /// Device-only content objects. References and object identities never leave
 /// this device. Each account has a separate namespace, including memory.
 final class MediaCache {
@@ -108,6 +110,8 @@ final class MediaCache {
         final file = File('${root.path}/objects/$contentSha256$suffix');
         if (await _valid(file)) {
           await file.setLastModified(DateTime.now());
+          PerformanceMetrics.instance
+              .increment(PerformanceCounter.mediaDiskHit);
           return file;
         }
       }
@@ -122,6 +126,7 @@ final class MediaCache {
       final file = File('${root.path}/objects/$name');
       if (!await _valid(file)) return null;
       await file.setLastModified(DateTime.now());
+      PerformanceMetrics.instance.increment(PerformanceCounter.mediaDiskHit);
       return file;
     } on FileSystemException {
       return null;
@@ -468,6 +473,7 @@ final class MediaMemoryCache {
     if (bytes == null) return null;
     _entries[eventId] = bytes;
     budget?.touch(_budgetOwner, eventId);
+    PerformanceMetrics.instance.increment(PerformanceCounter.mediaMemoryHit);
     return bytes;
   }
 
@@ -483,7 +489,10 @@ final class MediaMemoryCache {
       return Future.error(MediaLoadCanceled());
     }
     final existing = _inFlight[eventId];
-    if (existing != null) return existing.join(scope);
+    if (existing != null) {
+      PerformanceMetrics.instance.increment(PerformanceCounter.mediaFlightJoin);
+      return existing.join(scope);
+    }
     final generation = _generation;
     late final OwnedMediaFlight<Uint8List> flight;
     flight = OwnedMediaFlight<Uint8List>(() async {
@@ -560,6 +569,9 @@ Future<Uint8List> loadMediaWithCache(
     return warm;
   }
   final existing = _mediaLoads[identity];
+  if (existing != null) {
+    PerformanceMetrics.instance.increment(PerformanceCounter.mediaFlightJoin);
+  }
   var demand = priority ?? currentMediaLoadPriority;
   if (scope != null && scope.priority.index < demand.index) {
     demand = scope.priority;
@@ -581,7 +593,11 @@ Future<Uint8List> loadMediaWithCache(
         if (!child.isActive) throw MediaLoadCanceled();
         Uint8List? bytes;
         if (disk == null) {
-          final lease = mediaLoadScheduler.request(taskKey, decrypt,
+          final lease = mediaLoadScheduler.request(taskKey, () async {
+            PerformanceMetrics.instance
+                .increment(PerformanceCounter.mediaDownload);
+            return decrypt();
+          },
               priority: child.priority,
               isVideo: isVideo ?? currentMediaLoadIsVideo);
           void promote(MediaLoadPriority priority) =>
