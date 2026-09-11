@@ -34,6 +34,29 @@ final class EmojiEditingController extends TextEditingController {
       }
       return TextSpan(style: effectiveStyle, children: spans);
     }
+    // 字素边界对齐：composing 区间按完整字素外扩，绝不把 emoji/
+    // 代理对切成两半（否则会出现乱码）。
+    final boundaries = <int>[0];
+    for (final grapheme in text.characters) {
+      boundaries.add(boundaries.last + grapheme.length);
+    }
+    int floorBoundary(int value) {
+      for (var i = boundaries.length - 1; i >= 0; i--) {
+        if (boundaries[i] <= value) return boundaries[i];
+      }
+      return 0;
+    }
+
+    int ceilBoundary(int value) {
+      for (final bound in boundaries) {
+        if (bound >= value) return bound;
+      }
+      return value;
+    }
+
+    final composingStart = floorBoundary(composing.start);
+    final composingEnd =
+        ceilBoundary(composing.end).clamp(composingStart, text.length);
     final children = <InlineSpan>[];
     void addSegment(int start, int end, {required bool isComposing}) {
       if (end <= start) return;
@@ -54,9 +77,9 @@ final class EmojiEditingController extends TextEditingController {
       }
     }
 
-    addSegment(0, composing.start, isComposing: false);
-    addSegment(composing.start, composing.end, isComposing: true);
-    addSegment(composing.end, text.length, isComposing: false);
+    addSegment(0, composingStart, isComposing: false);
+    addSegment(composingStart, composingEnd, isComposing: true);
+    addSegment(composingEnd, text.length, isComposing: false);
     return TextSpan(style: effectiveStyle, children: children);
   }
 }

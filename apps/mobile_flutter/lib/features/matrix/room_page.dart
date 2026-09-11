@@ -3143,27 +3143,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ancestor: overlayBox,
     );
     final anchorRect = position & messageBox.size;
-    // 规格 #5：文本消息长按 = 复制选框 + 菜单同时出现。选择会话内部
-    // 负责菜单显隐（拖动时淡出/放大镜）、局部选择的菜单切换与取消，
-    // 动作最终回到 _handleMessageAction 并携带选中的文字。
-    if (message.kind == RoomMessageKind.text &&
-        message.deliveryState == RoomDeliveryState.sent) {
-      MessageTextSelectionSession.show(
-        roomContext: context,
-        text: message.text,
-        textKey: _messageTextKeys.putIfAbsent(
-            message.stableId, GlobalKey.new),
-        messageRect: anchorRect,
-        fullActions: actions,
-        isOwn: isOwn,
-        onAction: (action, selectedText) {
-          unawaited(_handleMessageAction(message, action,
-              overrideText: selectedText));
-        },
-        onDismissed: () {},
-      );
-      return;
-    }
     actionMenuEntry = OverlayEntry(
       builder: (overlayContext) {
         final media = MediaQuery.of(overlayContext);
@@ -3220,6 +3199,30 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       },
     );
     overlay.insert(actionMenuEntry!);
+    // 规格 #5：文本消息长按 = 原功能菜单（撤回/删除等，气泡锚定）与
+    // 复制选框同时出现。选框会话只负责手柄/放大镜与局部选择的紧凑
+    // 菜单；拖动手柄时隐藏功能菜单，松手回到整条选择时恢复功能菜单。
+    if (message.kind == RoomMessageKind.text &&
+        message.deliveryState == RoomDeliveryState.sent) {
+      MessageTextSelectionSession.show(
+        roomContext: context,
+        text: message.text,
+        textKey:
+            _messageTextKeys.putIfAbsent(message.stableId, GlobalKey.new),
+        messageRect: anchorRect,
+        isOwn: isOwn,
+        onDragStart: dismissActionMenu,
+        onFullSelectionRestored: () {
+          if (mounted) unawaited(_showMessageActions(message, anchor));
+        },
+        onAction: (action, selectedText) {
+          unawaited(_handleMessageAction(message, action,
+              overrideText: selectedText));
+        },
+        // 空白点击/滚动取消选框时，功能菜单一并关闭。
+        onDismissed: dismissActionMenu,
+      );
+    }
   }
 
   void dismissActionMenu() {

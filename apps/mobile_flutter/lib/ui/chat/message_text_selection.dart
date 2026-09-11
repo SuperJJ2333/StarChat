@@ -3,36 +3,42 @@ import 'package:flutter/rendering.dart';
 
 import 'message_action.dart';
 import 'message_bubble_menu.dart';
+import 'message_menu_placement.dart';
 
-/// 长按文本消息的复制选框会话（规格 #5）：
-/// 菜单与复制选框同时出现；选框左右各一个可拖动手柄，拖动时菜单淡出、
-/// 显示放大镜，松开后菜单恢复并按选框位置自适应；选择范围不等于整条
-/// 文字时菜单切换为“复制/全选/引用/转发”，操作只作用于选中的文字；
-/// 点击空白、滚动消息列表、切换会话、发送消息均取消选择并关闭弹层。
-///
-/// 选区绘制与手柄定位基于消息文本的 [RenderParagraph]
-/// （`getBoxesForSelection` / `getPositionForOffset`），emoji 内联字形
-/// （WidgetSpan）按占位盒参与定位，跨行、emoji、表情代码均支持。
+/// 长按文本消息的复制选框（规格 #5）：
+/// - 长按时**原长按功能菜单**仍由 RoomPage 原路径完整渲染（撤回/删除等
+///   全部动作、锚定气泡上方），本组件与其同时出现；
+/// - 本组件负责：选区背景、左右拖动手柄、拖动时的放大镜，以及
+///   “局部选择”（范围 ≠ 整条文字）时的紧凑菜单（复制/全选/引用/转发，
+///   锚定选区、避免遮挡选中内容）；
+/// - 拖动手柄时回调 [onDragStart]（宿主隐藏原功能菜单），松手后若仍为
+///   整条选择则回调 [onFullSelectionRestored]（宿主恢复原功能菜单）；
+/// - 选区边界按字素（grapheme）对齐：emoji 中间穿插文字也不会被拆成
+///   半个字符（避免复制/引用乱码）；
+/// - 空白点击与列表滚动由遮罩取消；切换会话/发送消息由宿主调用
+///   [dismissActive] 取消。
 final class MessageTextSelectionSession {
   MessageTextSelectionSession._({
     required this.overlay,
     required this.text,
     required this.textKey,
     required this.messageRect,
-    required this.fullActions,
+    required this.isOwn,
     required this.onAction,
     required this.onDismissed,
-    required this.isOwn,
+    required this.onDragStart,
+    required this.onFullSelectionRestored,
   });
 
   final OverlayState overlay;
   final String text;
   final GlobalKey textKey;
   final Rect messageRect;
-  final Set<MessageAction> fullActions;
+  final bool isOwn;
   final void Function(MessageAction action, String? selectedText) onAction;
   final VoidCallback onDismissed;
-  final bool isOwn;
+  final VoidCallback onDragStart;
+  final VoidCallback onFullSelectionRestored;
 
   OverlayEntry? _entry;
   final GlobalKey<_SelectionOverlayBodyState> _bodyKey =
@@ -41,7 +47,7 @@ final class MessageTextSelectionSession {
 
   static MessageTextSelectionSession? _active;
 
-  /// 当前活跃会话（发送/切换会话时由宿主调用 [dismissActive] 取消）。
+  /// 当前活跃会话（发送消息 / 切换会话时由宿主调用 [dismissActive]）。
   static MessageTextSelectionSession? get active => _active;
 
   static void show({
@@ -49,11 +55,12 @@ final class MessageTextSelectionSession {
     required String text,
     required GlobalKey textKey,
     required Rect messageRect,
-    required Set<MessageAction> fullActions,
+    required bool isOwn,
     required void Function(MessageAction action, String? selectedText)
         onAction,
     required VoidCallback onDismissed,
-    required bool isOwn,
+    required VoidCallback onDragStart,
+    required VoidCallback onFullSelectionRestored,
   }) {
     dismissActive();
     final session = MessageTextSelectionSession._(
@@ -61,10 +68,11 @@ final class MessageTextSelectionSession {
       text: text,
       textKey: textKey,
       messageRect: messageRect,
-      fullActions: fullActions,
+      isOwn: isOwn,
       onAction: onAction,
       onDismissed: onDismissed,
-      isOwn: isOwn,
+      onDragStart: onDragStart,
+      onFullSelectionRestored: onFullSelectionRestored,
     );
     _active = session;
     session._entry = OverlayEntry(builder: (_) => session._buildOverlay());
@@ -82,9 +90,6 @@ final class MessageTextSelectionSession {
     if (identical(_active, this)) _active = null;
     onDismissed();
   }
-
-  /// “全选”：恢复选中整条文字，菜单恢复为完整长按菜单。
-  void resetToFullSelection() => _bodyKey.currentState?.resetToFull();
 
   Widget _buildOverlay() => _SelectionOverlayBody(
         key: _bodyKey,
@@ -107,6 +112,31 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
   bool _fullSelection = true;
   _Handle _dragging = _Handle.none;
   Offset? _magnifierAnchor;
+  Rect _compactMenuRect = Rect.zero;
+
+  late final List<int> _boundaries = _graphemeBoundaries(widget.session.text);
+
+  static List<int> _graphemeBoundaries(String text) {
+    final bounds = <int>[0];
+    for (final grapheme in text.characters) {
+      bounds.add(bounds.last + grapheme.length);
+    }
+    return bounds;
+  }
+
+  int _floorBoundary(int value) {
+    for (var i = _boundaries.length - 1; i >= 0; i--) {
+      if (_boundaries[i] <= value) return _boundaries[i];
+    }
+    return 0;
+  }
+
+  int _ceilBoundary(int value) {
+    for (final bound in _boundaries) {
+      if (bound >= value) return bound;
+    }
+    return value;
+  }
 
   RenderParagraph? get _paragraph {
     final context = widget.session.textKey.currentContext;
@@ -116,10 +146,26 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
 
   OverlayState get _overlay => widget.session.overlay;
 
+  /// 选区行矩形（overlay 坐标）。emoji 的 WidgetSpan 占位盒同样参与，
+  /// 跨行/emoji/表情代码均正确。
+  List<Rect> _selectionRects() {
+    final paragraph = _paragraph;
+    final length = widget.session.text.length;
+    final (start, end) = _normalized;
+    if (paragraph == null || end <= start) return const [];
+    final overlayRender = _overlay.context.findRenderObject();
+    return paragraph
+        .getBoxesForSelection(TextSelection(
+            baseOffset: start.clamp(0, length),
+            extentOffset: end.clamp(0, length)))
+        .map((box) => MatrixUtils.transformRect(
+            paragraph.getTransformTo(overlayRender), box.toRect()))
+        .toList();
+  }
+
   Rect get _textBox {
     final paragraph = _paragraph;
-    final overlayBox =
-        _overlay.context.findRenderObject() as RenderBox?;
+    final overlayBox = _overlay.context.findRenderObject() as RenderBox?;
     if (paragraph == null || !paragraph.attached || overlayBox == null) {
       return widget.session.messageRect;
     }
@@ -127,25 +173,26 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
         paragraph.getTransformTo(overlayBox), paragraph.paintBounds);
   }
 
-  Rect _menuRect = Rect.zero;
-  Size get _menuSize => Size(272, _actions.length > 4 ? 128 : 72);
-  Set<MessageAction> get _actions => _fullSelection
-      ? widget.session.fullActions
-      : const {
-          MessageAction.copy,
-          MessageAction.selectAll,
-          MessageAction.reply,
-          MessageAction.forward,
-        };
+  /// 字素边界对齐后的归一化选区：保证 substring 不会截断字素。
+  (int, int) get _normalized {
+    final length = widget.session.text.length;
+    final rawStart = _anchorStart.clamp(0, length);
+    final rawEnd = _anchorEnd.clamp(0, length);
+    final (lo, hi) =
+        rawStart <= rawEnd ? (rawStart, rawEnd) : (rawEnd, rawStart);
+    return (_floorBoundary(lo), _ceilBoundary(hi));
+  }
+
+  bool get _isFull {
+    final (start, end) = _normalized;
+    return start == 0 && end >= widget.session.text.length;
+  }
 
   @override
   void initState() {
     super.initState();
     _anchorEnd = widget.session.text.length;
     _fullSelection = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _menuRect = _computeMenuRect());
-    });
   }
 
   void resetToFull() {
@@ -153,300 +200,242 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
       _anchorStart = 0;
       _anchorEnd = widget.session.text.length;
       _fullSelection = true;
-      _menuRect = _computeMenuRect();
+      _compactMenuRect = Rect.zero;
     });
-  }
-
-  (int, int) get _normalized {
-    final start = _anchorStart.clamp(0, widget.session.text.length);
-    final end = _anchorEnd.clamp(0, widget.session.text.length);
-    return start <= end ? (start, end) : (end, start);
-  }
-
-  Rect _computeMenuRect() {
-    final media = MediaQuery.of(context);
-    final textBox = _textBox;
-    final menuHeight = _menuSize.height + 14;
-    final above = textBox.top - menuHeight >= media.padding.top + 8;
-    final top = above
-        ? textBox.top - menuHeight
-        : (textBox.bottom + 8).clamp(
-            media.padding.top, media.size.height - menuHeight - 8);
-    final centerX = _selectionBounds().center.dx;
-    final left = (centerX - _menuSize.width / 2)
-        .clamp(8.0, media.size.width - _menuSize.width - 8);
-    return Rect.fromLTWH(left, top, _menuSize.width, _menuSize.height);
-  }
-
-  Rect _selectionBounds() {
-    final paragraph = _paragraph;
-    final textBox = _textBox;
-    final (start, end) = _normalized;
-    if (paragraph == null || end <= start) return textBox;
-    final boxes = paragraph.getBoxesForSelection(TextSelection(
-        baseOffset: start, extentOffset: end, affinity: TextAffinity.downstream));
-    if (boxes.isEmpty) return textBox;
-    var rect = MatrixUtils.transformRect(
-        paragraph.getTransformTo(_overlay.context.findRenderObject()),
-        boxes.first.toRect());
-    for (final box in boxes.skip(1)) {
-      rect = rect.expandToInclude(MatrixUtils.transformRect(
-          paragraph.getTransformTo(_overlay.context.findRenderObject()),
-          box.toRect()));
-    }
-    return rect;
-  }
-
-  List<Rect> _selectionRects() {
-    final paragraph = _paragraph;
-    final (start, end) = _normalized;
-    if (paragraph == null || end <= start) return const [];
-    final overlayRender = _overlay.context.findRenderObject();
-    return paragraph
-        .getBoxesForSelection(TextSelection(
-            baseOffset: start, extentOffset: end))
-        .map((box) => MatrixUtils.transformRect(
-            paragraph.getTransformTo(overlayRender), box.toRect()))
-        .toList();
-  }
-
-  Rect? _caretRect(int offset, {required bool preferRightEdge}) {
-    final paragraph = _paragraph;
-    final length = widget.session.text.length;
-    if (paragraph == null) return null;
-    final overlayRender = _overlay.context.findRenderObject();
-    Rect transformRect(Rect local) => MatrixUtils.transformRect(
-        paragraph.getTransformTo(overlayRender), local);
-    var boxes = paragraph.getBoxesForSelection(TextSelection(
-        baseOffset: offset.clamp(0, length),
-        extentOffset: offset.clamp(0, length)));
-    if (boxes.isEmpty && offset > 0) {
-      boxes = paragraph.getBoxesForSelection(TextSelection(
-          baseOffset: offset - 1, extentOffset: offset));
-      if (boxes.isNotEmpty) {
-        final rect = transformRect(boxes.last.toRect());
-        return preferRightEdge
-            ? Rect.fromLTWH(rect.right, rect.top, 0, rect.height)
-            : rect;
-      }
-    }
-    if (boxes.isEmpty) return null;
-    final rect = transformRect(boxes.last.toRect());
-    return preferRightEdge
-        ? Rect.fromLTWH(rect.right, rect.top, 0, rect.height)
-        : Rect.fromLTWH(rect.left, rect.top, 0, rect.height);
+    widget.session.onFullSelectionRestored();
   }
 
   void _setAnchor(_Handle handle, Offset global) {
     final paragraph = _paragraph;
     if (paragraph == null) return;
+    final length = widget.session.text.length;
     final local = paragraph.globalToLocal(global);
-    final position =
-        paragraph.getPositionForOffset(local).offset.clamp(0, widget.session.text.length);
+    var position =
+        paragraph.getPositionForOffset(local).offset.clamp(0, length);
+    // 字素对齐：手柄落点吸附到字素边界，避免选中半个 emoji/字符。
+    position = handle == _Handle.start
+        ? _floorBoundary(position)
+        : _ceilBoundary(position);
     setState(() {
       if (handle == _Handle.start) {
         _anchorStart = position;
       } else {
         _anchorEnd = position;
       }
-      final (start, end) = _normalized;
-      _fullSelection = start == 0 && end == widget.session.text.length;
-      _menuRect = _computeMenuRect();
+      final full = _isFull;
+      if (full != _fullSelection) {
+        _fullSelection = full;
+        _compactMenuRect = Rect.zero;
+      }
     });
   }
 
   void _cancel() => widget.session.dismiss();
 
+  Rect _compactMenuPlacement(Rect selectionBounds) {
+    final media = MediaQuery.of(context);
+    final overlayBox = _overlay.context.findRenderObject() as RenderBox?;
+    if (overlayBox == null) return Rect.zero;
+    final placement = MessageMenuPlacement.calculate(
+      anchor: selectionBounds,
+      viewport: Rect.fromLTRB(
+          8,
+          media.padding.top + 8,
+          overlayBox.size.width - 8,
+          overlayBox.size.height -
+              media.viewInsets.bottom -
+              media.padding.bottom -
+              8),
+      menuSize: const Size(272, 72),
+      outgoing: widget.session.isOwn,
+    );
+    return placement.rect;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    final (start, end) = _normalized;
     final rects = _selectionRects();
-    final caretStart =
-        _caretRect(start, preferRightEdge: false) ?? Rect.zero;
-    final caretEnd = _caretRect(end, preferRightEdge: true) ?? Rect.zero;
+    final bounds = rects.isEmpty ? _textBox : _mergeRects(rects);
+    final startAnchor = rects.isEmpty
+        ? (dx: bounds.left, dy: bounds.top, height: bounds.height)
+        : (
+            dx: rects.first.left,
+            dy: rects.first.top,
+            height: rects.first.height
+          );
+    final endAnchor = rects.isEmpty
+        ? (dx: bounds.right, dy: bounds.bottom, height: bounds.height)
+        : (
+            dx: rects.last.right,
+            dy: rects.last.bottom,
+            height: rects.last.height
+          );
     final dragging = _dragging != _Handle.none;
-    final menuHidden = dragging || (_dragging != _Handle.none);
-    return Stack(
-      children: [
-        // 半透明遮罩：点击空白取消；拖动/滚动穿透并触发取消（translucent）。
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: _cancel,
-            onVerticalDragStart: (_) => _cancel(),
-            child: const SizedBox.expand(),
+    final showCompactMenu = !_fullSelection && !dragging;
+    if (showCompactMenu && _compactMenuRect == Rect.zero) {
+      _compactMenuRect = _compactMenuPlacement(bounds);
+    }
+    return Stack(children: [
+      // 半透明遮罩：点击空白取消；纵向滚动穿透并触发取消。
+      Positioned.fill(
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: _cancel,
+          onVerticalDragStart: (_) => _cancel(),
+          child: const SizedBox.expand(),
+        ),
+      ),
+      // 选区背景（微信绿色浅透明）。
+      for (final rect in rects)
+        Positioned.fromRect(
+          rect: rect,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(color: Color(0x331AAD19)),
           ),
         ),
-        // 选区背景。
-        for (final rect in rects)
-          Positioned.fromRect(
-            rect: rect,
-            child: const DecoratedBox(
-              decoration: BoxDecoration(color: Color(0x401AAD19)),
-            ),
-          ),
-        // 起止手柄（左柄圆点在下、右柄圆点在上，微信样式）。
-        _handle(
-          caret: caretStart,
-          preferRightEdge: false,
-          handle: _Handle.start,
-          dotAtBottom: true,
-        ),
-        _handle(
-          caret: caretEnd,
-          preferRightEdge: true,
-          handle: _Handle.end,
-          dotAtBottom: false,
-        ),
-        // 放大镜：拖动手柄时跟随手指所在文字位置，上移避让手指。
-        if (dragging && _magnifierAnchor != null)
-          Positioned(
-            left: _magnifierAnchor!.dx - 60,
-            top: _magnifierAnchor!.dy - 118,
-            child: const CupertinoMagnifier(),
-          ),
-        // 长按菜单：拖动时淡出，松开恢复并按选框位置自适应。
-        AnimatedOpacity(
-          duration: const Duration(milliseconds: 120),
-          opacity: menuHidden ? 0 : 1,
-          child: Positioned.fromRect(
-            rect: Rect.fromLTWH(
-              _menuRect.left.clamp(8.0, media.size.width - 8 - _menuSize.width),
-              _menuRect.top,
-              _menuSize.width,
-              _menuSize.height,
-            ),
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: MessageBubbleMenu(
-                  orderOverride: const [
-                    MessageAction.copy,
-                    MessageAction.selectAll,
-                    MessageAction.reply,
-                    MessageAction.forward,
-                  ],
-                  arrowAtTop: _menuRect.top < widget.session.messageRect.top,
-                  arrowX: widget.session.messageRect.center.dx - _menuRect.left,
-                  actions: _actions,
-                  onSelected: (action) {
-                    // “全选”恢复整条选择并保持菜单/选框打开。
-                    if (action == MessageAction.selectAll) {
-                      resetToFull();
-                      return;
-                    }
-                    final (start, end) = _normalized;
-                    final selected =
-                        widget.session.text.substring(start, end);
-                    widget.session.dismiss();
-                    widget.session.onAction(
-                      action,
-                      _fullSelection ? null : selected,
-                    );
-                  },
-                ),
+      // 左右手柄：分别锚定选区首行左缘、末行右缘（微信样式：
+      // 左柄圆点在下、右柄圆点在上）。
+      _handle(
+        key: const Key('selection-handle-start'),
+        anchor: startAnchor,
+        handle: _Handle.start,
+        dotAtBottom: true,
+      ),
+      _handle(
+        key: const Key('selection-handle-end'),
+        anchor: endAnchor,
+        handle: _Handle.end,
+        dotAtBottom: false,
+      ),
+      // 局部选择菜单：复制/全选/引用/转发，锚定选区。
+      if (showCompactMenu && _compactMenuRect != Rect.zero)
+        Positioned.fromRect(
+          rect: _compactMenuRect,
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: MessageBubbleMenu(
+                orderOverride: const [
+                  MessageAction.copy,
+                  MessageAction.selectAll,
+                  MessageAction.reply,
+                  MessageAction.forward,
+                ],
+                arrowAtTop: _compactMenuRect.bottom < bounds.top,
+                arrowX: bounds.center.dx - _compactMenuRect.left,
+                actions: const {
+                  MessageAction.copy,
+                  MessageAction.selectAll,
+                  MessageAction.reply,
+                  MessageAction.forward,
+                },
+                onSelected: (action) {
+                  if (action == MessageAction.selectAll) {
+                    resetToFull();
+                    return;
+                  }
+                  final (start, end) = _normalized;
+                  final selected = widget.session.text.substring(start, end);
+                  widget.session.dismiss();
+                  widget.session.onAction(action, selected);
+                },
               ),
             ),
           ),
         ),
-      ],
-    );
+      // 放大镜：拖动手柄时跟随手柄所在选区边缘，上移避让手指。
+      if (dragging && _magnifierAnchor != null)
+        Positioned(
+          left: (_magnifierAnchor!.dx - 60)
+              .clamp(4.0, MediaQuery.of(context).size.width - 124),
+          top: _magnifierAnchor!.dy - 118,
+          child: const CupertinoMagnifier(),
+        ),
+    ]);
+  }
+
+  Rect _mergeRects(List<Rect> rects) {
+    var merged = rects.first;
+    for (final rect in rects.skip(1)) {
+      merged = merged.expandToInclude(rect);
+    }
+    return merged;
   }
 
   Widget _handle({
-    required Rect caret,
-    required bool preferRightEdge,
+    required Key key,
+    required ({double dx, double dy, double height}) anchor,
     required _Handle handle,
     required bool dotAtBottom,
   }) {
-    final x = preferRightEdge ? caret.right : caret.left;
     final active = _dragging == handle;
     return Positioned(
-      left: x - 14,
-      top: dotAtBottom ? caret.top - 4 : caret.top - caret.height - 14,
+      left: anchor.dx - 14,
+      top: dotAtBottom ? anchor.dy - 4 : anchor.dy - anchor.height - 14,
       width: 28,
-      height: caret.height + 18,
+      height: anchor.height + 18,
       child: GestureDetector(
-        key: Key('selection-handle-${handle.name}'),
+        key: key,
         behavior: HitTestBehavior.opaque,
         onPanStart: (details) {
+          widget.session.onDragStart();
           setState(() => _dragging = handle);
         },
         onPanUpdate: (details) {
           if (_dragging != handle) return;
-          final global = details.globalPosition;
-          _setAnchor(handle, global);
-          final current = _normalized;
-          final anchor = handle == _Handle.start ? current.$1 : current.$2;
-          final caretNow =
-              _caretRect(anchor, preferRightEdge: handle == _Handle.end);
+          _setAnchor(handle, details.globalPosition);
           setState(() {
-            _magnifierAnchor = caretNow == null
-                ? null
-                : Offset(
-                    handle == _Handle.start ? caretNow.left : caretNow.right,
-                    caretNow.top + caretNow.height / 2);
+            final rects = _selectionRects();
+            if (rects.isEmpty) {
+              _magnifierAnchor = null;
+            } else {
+              final rect = handle == _Handle.start ? rects.first : rects.last;
+              _magnifierAnchor = Offset(
+                  handle == _Handle.start ? rect.left : rect.right,
+                  rect.top + rect.height / 2);
+            }
           });
         },
         onPanEnd: (_) => setState(() {
           _dragging = _Handle.none;
           _magnifierAnchor = null;
-          _menuRect = _computeMenuRect();
+          _compactMenuRect = Rect.zero;
         }),
-        child: Center(
-          child: SizedBox(
-            width: 22,
-            height: caret.height + 14,
-            child: Column(
-              children: [
-                if (!dotAtBottom)
-                  _handleDot(active: active, preferRightEdge: preferRightEdge),
-                Expanded(
-                  child: Align(
-                    alignment: preferRightEdge
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      width: 2.5,
-                      color: WeChatSelectionColor.resolve(context),
-                    ),
-                  ),
+        onPanCancel: () => setState(() {
+          _dragging = _Handle.none;
+          _magnifierAnchor = null;
+        }),
+        child: SizedBox(
+          width: 28,
+          height: anchor.height + 18,
+          child: Column(children: [
+            if (!dotAtBottom) _handleDot(active: active),
+            Expanded(
+              child: Center(
+                child: Container(
+                  width: 2.5,
+                  color: const Color(0xFF1AAD19),
                 ),
-                if (dotAtBottom)
-                  _handleDot(active: active, preferRightEdge: preferRightEdge),
-              ],
+              ),
             ),
-          ),
+            if (dotAtBottom) _handleDot(active: active),
+          ]),
         ),
       ),
     );
   }
 
-  Widget _handleDot({required bool active, required bool preferRightEdge}) =>
-      Container(
+  Widget _handleDot({required bool active}) => Container(
         width: 12,
         height: 12,
         decoration: BoxDecoration(
-          color: WeChatSelectionColor.resolve(context),
+          color: const Color(0xFF1AAD19),
           shape: BoxShape.circle,
           boxShadow: active
-              ? const [
-                  BoxShadow(color: Color(0x33000000), blurRadius: 4),
-                ]
+              ? const [BoxShadow(color: Color(0x33000000), blurRadius: 4)]
               : null,
         ),
       );
 }
 
 enum _Handle { none, start, end }
-
-/// 微信选区/手柄颜色：亮色 #1AAD19 的浅色选区、暗色提高透明度。
-final class WeChatSelectionColor {
-  const WeChatSelectionColor._();
-
-  static Color resolve(BuildContext context) =>
-      CupertinoTheme.brightnessOf(context) == Brightness.dark
-          ? const Color(0x661AAD19)
-          : const Color(0x331AAD19);
-}

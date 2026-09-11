@@ -28,19 +28,23 @@ final class QuoteReturnBannerButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: WeChatColors.brandPrimary.withValues(alpha: .12),
+          // 不透明底色（用户指定）：微信绿实底 + 白色图标/文字。
+          color: WeChatColors.brandPrimary,
           borderRadius: BorderRadius.circular(12),
+          boxShadow: const [
+            BoxShadow(color: Color(0x22000000), blurRadius: 6),
+          ],
         ),
-        child: Row(
+        child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(CupertinoIcons.arrow_down,
-                size: 12, color: WeChatColors.brandPrimary),
-            const SizedBox(width: 3),
-            const Text('回到引用位置',
+            Icon(CupertinoIcons.arrow_down,
+                size: 12, color: CupertinoColors.white),
+            SizedBox(width: 3),
+            Text('回到引用位置',
                 style: TextStyle(
                     fontSize: 12,
-                    color: WeChatColors.brandPrimary,
+                    color: CupertinoColors.white,
                     fontWeight: FontWeight.w600)),
           ],
         ),
