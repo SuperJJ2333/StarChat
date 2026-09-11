@@ -6,8 +6,8 @@
 - 计划：../../superpowers/plans/2026-09-11-integrate-deploy-mi6.md。
 - 角色：Astra主审；既有显式gpt-5.6-terra执行者profile分支审计、viewer设备/签名预检。文件所有权先只读，后逐批声明。
 - 开始：2026-09-11约22:05+08:00，精确首工具时间未另记录。
-- 状态：集成候选已纳入全部本地分支，2202c9f5；正在完成版本 2088 与集成验证。main 本地改动已记录31项哈希，尚未切换。
-- 下一步：固定版本、验证并保护 main 本地改动后快进/push；生产备份隔离恢复通过后切换；最终 Debug 重建签名并安装 Mi 6。
+- 状态：已完成全部本地分支合并与 main 推送、跳板生产部署、Mi 6 Debug2088保留数据安装；用户真机功能验收待进行。
+- 下一步：用户打开 Mi 6 上的畅聊测试；有反馈时沿本记录定位，不自动重建或再次部署。
 - 证据：主工作区 docs/verification/artifacts/2026-09-11/integrate-deploy-mi6/；finance原证据保留在performance工作树。
 
 ## 生产初读
@@ -34,3 +34,23 @@
 - 版本 0.3.84+2088；Debug 构建名称覆盖 0.3.84-debug。候选 pytest 版本契约2通过；全量 Flutter analyze 通过。最初直接执行 pytest 文件没有运行用例，已标为无效初次证据，以上为真正 pytest 结果。
 - Flutter 最终2344通过/29既有钱包失败，失败集合与 finance 基线一致。首次多出的 SQLite14 为 Windows 长路径夹具问题；仅缩短测试证据目录，单项及全量复测通过，未改产品数据库逻辑。
 - 全仓无关失败仍未解决，不宣称全仓绿；依据工作流复用此前金融/契约/安全门禁，生产候选 Linux/PG44通过。
+
+
+## Git 与生产已完成（22:48 +08）
+
+- main 已快进并正常推送，远端核对 6be555723acc1cac0d790372e8f45fef1c0c0f36；全部其他本地分支均为祖先。没有 force push、删除分支或合并未提交后台改动。
+- main 原有30路径逐字节恢复（含原混合换行），pubspec.lock 原有编辑与 stash 差异逐项一致，同时保留集成依赖新增。保留安全 stash，未提交任何用户既有改动。
+- 22:45通过跳板仅重建 business-api；最终实际镜像 sha256:a397ecd9a887d0c1119e06b9264ebeddfebd491a38d061fb52ba1dcb56c3817b。13静态文件更新并校验；design-demo 是 frontend 的既有链接，清单中26路径对应13实体，没有额外文件变更。
+- 服务器与工作站TLS验收：健康JSON200且ok/database ready，账单未登录401，公网tokens.css SHA匹配。8 API运行文件与13静态源文件逐字节匹配，其他容器ID保持，schema仍0064_admin_deposit_repairs。发布后344行日志中ERROR/CRITICAL/Traceback计数0（观察窗口有限）。
+- 工作站使用独立127.0.0.1:18947跳板SOCKS，验证后已终止，端口无监听。未变更系统代理。
+- Android 首次包被门禁拒绝：继承 parallelDebug=true，生成 com.liuhetong.mobile.debug。未安装此包；仅交付脚本显式 false 重建正确包名，产品源代码未变。
+
+
+## Android 包名环境根因（22:57 +08）
+
+环境变量 false 被用户级 Gradle 的 chatflowParallelDebug=true 覆盖，第二次候选在源码 aapt 预检即被拒绝，没有重建/安装。读取 Flutter 工具源码确认 android-project-arg 转成 Gradle -P；以 -PchatflowParallelDebug=false 实际预检成功（1分51秒）。交付脚本改用显式 --android-project-arg=chatflowParallelDebug=false，未修改用户全局配置或产品源码，正在最终构建。原始失败证据保留，第三次候选路径 android-delivery-final。
+
+
+## 完成交付（23:01 +08）
+
+最终包 bd7c1e97d2753fe41186145a340a74e4ef3d7890c41f71e0a8a7c7c70de0aebb，com.liuhetong.mobile / 0.3.84-debug /2088，固定75b31签名。源码103.5秒，重建语义校验通过，23:00:48 install-r成功。设备首次安装时间保持00:42:05，回读实际APK字节哈希一致。未真机功能测试。完整记录：[交付报告](../../verification/2026-09-11-integrate-deploy-mi6.md)。所有R1–R6交付步骤完成；既有测试失败与用户验收缺口按报告保留。
