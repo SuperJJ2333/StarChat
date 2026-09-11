@@ -2425,6 +2425,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           builder: (_) => RoomImageGalleryPage(
             images: images,
             initialId: message.id,
+            sourceScope: (
+              roomInfo.homeserver,
+              roomInfo.currentUserId,
+              roomInfo.id,
+            ),
             loadEarlier: _earlierGalleryImages,
             onForwardEdited: _forwardEditedImage,
             onFavorite: _favoriteEditedImage,
@@ -2457,6 +2462,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             message.deliveryState == RoomDeliveryState.sent)
           RoomGalleryImage(
             id: message.id,
+            sourceIdentity: _previewKey(message).identity,
             loadPreview: () => _loadImagePreview(message),
             loadOriginal: () => withMediaLoadPriority(
                 MediaLoadPriority.interactive,
