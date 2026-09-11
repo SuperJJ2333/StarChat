@@ -1,3 +1,11 @@
+// Gradle 仅在 404（该仓库没有此构件）时才会尝试下一个仓库；镜像返回 5xx
+// （阿里云偶发 502）会直接判定依赖解析失败，不发生依序回落——2026-09-04
+// Actions 首跑 502 失败的真正根因。因此仓库顺序必须在构建开始前按环境
+// 选定：GitHub Actions 跑在海外，官方源优先且不依赖阿里云；国内本地构建
+// 保持镜像优先，官方源供 404 回落。
+val officialRepositoriesFirst =
+    providers.environmentVariable("GITHUB_ACTIONS").isPresent
+
 allprojects {
     configurations.configureEach {
         // Pin integration_test's dynamic selectors to the resolved test stack.
@@ -10,22 +18,30 @@ allprojects {
     }
     buildscript {
         repositories {
-            // 阿里云镜像优先（国内构建环境），官方源回退（海外 CI：
-            // 镜像偶发 502 时 gradle 依序回落，2026-09-04 Actions 首跑教训）。
-            maven { url = uri("https://maven.aliyun.com/repository/google") }
-            google()
-            mavenCentral()
-            gradlePluginPortal()
+            if (officialRepositoriesFirst) {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            } else {
+                maven { url = uri("https://maven.aliyun.com/repository/google") }
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
         }
         configurations.configureEach {
             resolutionStrategy.force("com.android.tools.build:gradle:8.5.1")
         }
     }
     repositories {
-        // 阿里云镜像优先（国内），google()/mavenCentral() 回退（海外 CI）。
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        google()
-        mavenCentral()
+        if (officialRepositoriesFirst) {
+            google()
+            mavenCentral()
+        } else {
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            google()
+            mavenCentral()
+        }
         // 个推推送 SDK（固定版本；仅 Android 客户端离线唤醒通道）。
         maven { url = uri("https://mvn.getui.com/nexus/content/repositories/releases/") }
     }
