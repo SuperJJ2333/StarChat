@@ -445,6 +445,28 @@ void main() {
         FriendProfile.fromContact(withoutVersion, DateTime(2026, 9, 3));
     expect(bare.avatarVersion, 'none');
   });
+
+  // 在线状态字段（last_seen_at）必须参与判等：否则静默刷新拉到了新值
+  // 也被判为“未变化”，缓存与 UI 永远停留在旧数据（暂无在线记录）。
+  test('quiet refresh applies a changed last_seen_at', () async {
+    final store = MemoryProfileStore();
+    await store.write(
+        'seen',
+        ProfileSnapshot(
+            profile: profile('Cached'), contacts: [contact(remark: 'Same')]));
+    final cache = ProfileRepository.forTesting(
+        accountKey: 'seen',
+        store: store,
+        loadProfile: () async => profile('Cached'),
+        loadContacts: () async => [
+              contact(remark: 'Same', lastSeenAt: DateTime.utc(2026, 9, 12, 1)),
+            ]);
+    await cache.hydrate();
+    expect(cache.contacts.single.lastSeenAt, isNull);
+    await cache.refreshContactsQuietly(minInterval: Duration.zero);
+    expect(cache.contacts.single.lastSeenAt, DateTime.utc(2026, 9, 12, 1));
+    cache.dispose();
+  });
 }
 
 ProfileData profile(String nickname) => ProfileData(
@@ -454,7 +476,8 @@ ProfileData profile(String nickname) => ProfileData(
       fallbackSeed: 'alice-seed',
     );
 
-ContactSummary contact({required String remark, String? avatarUrl}) =>
+ContactSummary contact(
+        {required String remark, String? avatarUrl, DateTime? lastSeenAt}) =>
     ContactSummary(
       userId: 'bob-id',
       username: 'bob',
@@ -462,7 +485,9 @@ ContactSummary contact({required String remark, String? avatarUrl}) =>
       nickname: 'Bob',
       remark: remark,
       avatarUrl: avatarUrl,
+      lastSeenAt: lastSeenAt,
     );
+
 
 final class MemoryProfileStore implements ProfileStore {
   final values = <String, ProfileSnapshot>{};

@@ -897,7 +897,10 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
         a[i].avatarIsKnown != b[i].avatarIsKnown ||
         a[i].nudgeSuffix != b[i].nudgeSuffix ||
         a[i].momentsPermission != b[i].momentsPermission ||
-        a[i].starred != b[i].starred) {
+        a[i].starred != b[i].starred ||
+        // 在线状态变化必须视为差异：否则静默刷新永远不落地，
+        // 好友资料页停留在“暂无在线记录”。
+        a[i].lastSeenAt != b[i].lastSeenAt) {
       return false;
     }
     if (a[i].tags.length != b[i].tags.length) return false;
