@@ -7,6 +7,8 @@ final class FakeMessageInteractionBackend implements MessageInteractionBackend {
   final redactions = <({String roomId, String eventId, String reason})>[];
   final forwards =
       <({String sourceRoomId, String targetRoomId, String eventId})>[];
+  final forwardedTexts =
+      <({String sourceRoomId, String targetRoomId, String text})>[];
 
   @override
   Future<void> send(String roomId, Map<String, Object?> content) async {
@@ -28,6 +30,19 @@ final class FakeMessageInteractionBackend implements MessageInteractionBackend {
       sourceRoomId: sourceRoomId,
       targetRoomId: targetRoomId,
       eventId: eventId,
+    ));
+  }
+
+  @override
+  Future<void> forwardEncryptedText(
+    String sourceRoomId,
+    String targetRoomId,
+    String text,
+  ) async {
+    forwardedTexts.add((
+      sourceRoomId: sourceRoomId,
+      targetRoomId: targetRoomId,
+      text: text,
     ));
   }
 }
@@ -109,6 +124,15 @@ void main() {
     });
   });
 
+  test('partial reply keeps the standard anchor and encrypted excerpt field',
+      () async {
+    await service.reply(r'$original', '收到', selectedQuote: '🥲中文');
+    final relates = backend.sent.single.content['m.relates_to'] as Map;
+    expect(relates['m.in_reply_to'], {'event_id': r'$original'});
+    expect(relates.containsKey('io.changliao.selected_quote'), isFalse);
+    expect(backend.sent.single.content['io.changliao.selected_quote'], '🥲中文');
+  });
+
   test('mentions use m.mentions user_ids without changing visible text',
       () async {
     await service.sendMention('你好 @小明', const ['@ming:example.test']);
@@ -128,6 +152,18 @@ void main() {
       targetRoomId: '!target:example.test',
       eventId: r'$event',
     ));
+  });
+
+  test('selected-text forward sends the selected body without an event id',
+      () async {
+    await service.forwardText('🥲中文', '!target:example.test');
+
+    expect(backend.forwardedTexts.single, (
+      sourceRoomId: '!source:example.test',
+      targetRoomId: '!target:example.test',
+      text: '🥲中文',
+    ));
+    expect(backend.forwards, isEmpty);
   });
 
   test('mention draft drops an id after its visible marker is edited away', () {

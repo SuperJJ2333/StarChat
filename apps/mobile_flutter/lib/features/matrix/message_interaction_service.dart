@@ -10,6 +10,8 @@ abstract interface class MessageInteractionBackend {
     String targetRoomId,
     String eventId,
   );
+  Future<void> forwardEncryptedText(
+      String sourceRoomId, String targetRoomId, String text);
 }
 
 final class MessageInteractionEvent {
@@ -54,6 +56,7 @@ final class MessageInteractionService {
   Future<void> reply(
     String eventId,
     String text, {
+    String? selectedQuote,
     List<String> mentionedUserIds = const [],
   }) =>
       backend.send(roomId, {
@@ -62,6 +65,7 @@ final class MessageInteractionService {
         'm.relates_to': {
           'm.in_reply_to': {'event_id': eventId},
         },
+        if (selectedQuote != null) 'io.changliao.selected_quote': selectedQuote,
         if (mentionedUserIds.isNotEmpty)
           'm.mentions': {
             'user_ids': List<String>.unmodifiable(mentionedUserIds),
@@ -77,6 +81,15 @@ final class MessageInteractionService {
 
   Future<void> forward(String eventId, String targetRoomId) =>
       backend.forwardEncryptedCopy(roomId, targetRoomId, eventId);
+
+  /// Sends selected plaintext as a new encrypted Matrix text event in the
+  /// chosen encrypted destination. It deliberately has no source event ID.
+  Future<void> forwardText(String text, String targetRoomId) {
+    if (text.isEmpty) {
+      throw ArgumentError.value(text, 'text', 'must not be empty');
+    }
+    return backend.forwardEncryptedText(roomId, targetRoomId, text);
+  }
 }
 
 final class MentionDraft {

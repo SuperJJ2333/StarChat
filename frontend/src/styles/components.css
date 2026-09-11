@@ -954,6 +954,27 @@
 .c-anchored-menu[data-layout="top-more"] .c-anchored-menu__item { position: relative; flex-direction: row; justify-content: center; min-height: var(--top-more-row-height); padding: 12px var(--top-more-padding-inline); gap: var(--top-more-icon-gap); }
 .c-anchored-menu[data-layout="top-more"] .c-anchored-menu__item + .c-anchored-menu__item::before { content: ""; position: absolute; top: 0; left: var(--top-more-padding-inline); right: var(--top-more-padding-inline); height: .5px; background: var(--anchored-menu-divider); }
 .c-anchored-menu[data-layout="top-more"] .c-anchored-menu__label { font-size: var(--top-more-font); text-align: center; white-space: nowrap; overflow-wrap: normal; }
+
+app-message-selection-session { display: block; width: 100%; }
+.c-selection-demo { position: relative; min-height: 238px; padding: 116px var(--space-md) var(--space-md); color: var(--color-text-primary); touch-action: pan-y; }
+.c-selection-demo__text { position: relative; max-width: 290px; margin: 0; padding: var(--space-md); border-radius: var(--radius-card); background: var(--color-surface-elevated); font-size: var(--type-body-size); font-weight: var(--type-body-weight); line-height: var(--type-body-line); white-space: pre-wrap; user-select: none; }
+.c-selection-demo__segment, .c-selection-demo__range { color: inherit; font: inherit; white-space: inherit; }
+.c-selection-demo__range { background: color-mix(in srgb, var(--color-brand-primary) 28%, transparent); }
+.c-selection-demo__hit { position: absolute; z-index: 2; width: var(--anchored-menu-hit); height: var(--anchored-menu-hit); margin: 0; padding: 0; border: 0; background: transparent; cursor: grab; touch-action: none; }
+.c-selection-demo__hit[data-edge="start"] { left: calc(var(--space-md) - var(--anchored-menu-hit) / 2); top: 135px; }
+.c-selection-demo__hit[data-edge="end"] { left: min(278px, calc(100% - var(--anchored-menu-hit) - var(--space-md))); top: 159px; }
+.c-selection-demo__handle-line { position: absolute; left: 21px; top: 10px; width: 2px; height: var(--type-body-line); background: var(--color-brand-primary); }
+.c-selection-demo__handle { position: absolute; left: 16px; width: 12px; height: 12px; border: 2px solid var(--color-surface-elevated); border-radius: var(--radius-pill); background: var(--color-brand-primary); box-shadow: 0 1px 3px color-mix(in srgb, var(--color-text-primary) 28%, transparent); }
+.c-selection-demo__hit[data-edge="start"] .c-selection-demo__handle { top: 28px; }
+.c-selection-demo__hit[data-edge="end"] .c-selection-demo__handle { top: 4px; }
+.c-selection-demo__lens { position: absolute; z-index: 4; width: 116px; height: 72px; overflow: hidden; border: 2px solid var(--color-surface-elevated); border-radius: var(--radius-pill); background: var(--color-surface-elevated); box-shadow: 0 4px 14px color-mix(in srgb, var(--color-text-primary) 24%, transparent); pointer-events: none; }
+.c-selection-demo__lens-clip { width: 100%; height: 100%; overflow: hidden; }
+.c-selection-demo__lens-text { display: block; width: max-content; padding: 20px; color: var(--color-text-primary); font-size: var(--type-body-size); line-height: var(--type-body-line); white-space: pre; transform-origin: 0 0; }
+.c-selection-demo__menu { position: absolute; z-index: 3; top: 10px; left: var(--space-md); transform-origin: bottom left; }
+.c-selection-demo__menu .c-anchored-menu { width: min(var(--anchored-menu-width), calc(100vw - 48px)); }
+.c-selection-demo__result { display: block; min-height: 24px; margin-top: var(--space-md); color: var(--color-text-secondary); font-size: var(--type-subhead-size); line-height: var(--type-subhead-line); overflow-wrap: anywhere; }
+.c-selection-demo[data-state="dismissed"] .c-selection-demo__text { opacity: .72; }
+@media (prefers-reduced-motion: reduce) { .c-selection-demo__lens, .c-selection-demo__menu { animation: none; } }
 .c-dialog__button--destructive { color: var(--local-history-delete-text); font-weight: 700; }
 .c-dialog__button--default { font-weight: 700; }
 .c-tab-bar__item[data-feedback="clear-unread"] .c-tab-bar__icon { animation: messages-clear var(--messages-clear-motion) ease-out; }

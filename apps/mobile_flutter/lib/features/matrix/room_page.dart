@@ -465,6 +465,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final menuAnchorKeys = <String, GlobalKey>{};
   OverlayEntry? actionMenuEntry;
   RoomMessageViewModel? replyingTo;
+  String? _selectedReplyExcerpt;
   MatrixEmojiVault? emojiVault;
   List<CustomEmojiItem> customEmojiItems = const [];
   MessageReminderService? reminderService;
@@ -504,6 +505,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    MessageTextSelectionSession.dismissActive();
     callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     roomInfo = widget.roomLease.roomInfo;
@@ -1091,6 +1093,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // （input.clear() 同步触发监听器→applyEdit 移除全部 token→
     // recipientUserIds 已空——旧顺序丢失 m.mentions。）
     final reply = replyingTo;
+    final replyExcerpt = replyingTo == null ? null : _selectedReplyExcerpt;
     final mentions = mentionComposer.recipientUserIds();
     // 规格取消场景：发送消息即取消文本选区与菜单（若处于选择模式）。
     MessageTextSelectionSession.dismissActive();
@@ -1104,13 +1107,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     } finally {
       _programmaticComposerEdit = false;
     }
-    if (mounted) setState(() => replyingTo = null);
+    if (mounted) {
+      setState(() {
+        replyingTo = null;
+        _selectedReplyExcerpt = null;
+      });
+    }
     _saveDraft();
     unawaited(RoomDraftStore.shared.flush(_draftKey));
     mentionDraft.clear();
     await controller!.sendText(
       text,
       replyToEventId: reply?.id,
+      replyExcerpt: replyExcerpt,
       send: reply == null && mentions.isEmpty
           ? null
           : (transactionId) async => await widget.roomLease.sendMessageContent({
@@ -1120,6 +1129,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   'm.relates_to': {
                     'm.in_reply_to': {'event_id': reply.id},
                   },
+                if (replyExcerpt != null)
+                  'io.changliao.selected_quote': replyExcerpt,
                 if (mentions.isNotEmpty) 'm.mentions': {'user_ids': mentions},
               }, txid: transactionId),
     );
@@ -2743,8 +2754,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             duration: message.callDuration,
           ),
         RoomMessageKind.text => KeyedSubtree(
-            key: _messageTextKeys.putIfAbsent(
-                message.stableId, GlobalKey.new),
+            key: _messageTextKeys.putIfAbsent(message.stableId, GlobalKey.new),
             child: EmojiText(message.text)),
       };
 
@@ -3046,6 +3056,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ),
               child: _QuotePreview(
                 message: replied,
+                excerpt: message.replyExcerpt,
                 targetEventId: message.replyToEventId!,
                 displayName: replied == null
                     ? '引用消息'
@@ -3104,6 +3115,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     RoomMessageViewModel message,
     LayerLink anchor,
   ) async {
+    MessageTextSelectionSession.dismissActive();
     unawaited(HapticFeedback.mediumImpact());
     // Opening a local menu must not wait for network time. Recall is checked
     // again against server time by _handleMessageAction before submission.
@@ -3143,6 +3155,23 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ancestor: overlayBox,
     );
     final anchorRect = position & messageBox.size;
+    if (message.kind == RoomMessageKind.text &&
+        message.deliveryState == RoomDeliveryState.sent) {
+      MessageTextSelectionSession.show(
+        roomContext: context,
+        text: message.text,
+        textKey: _messageTextKeys.putIfAbsent(message.stableId, GlobalKey.new),
+        messageRect: anchorRect,
+        isOwn: isOwn,
+        fullActions: actions,
+        onAction: (action, selectedText) => unawaited(_trackAction(
+          () =>
+              _handleMessageAction(message, action, overrideText: selectedText),
+        )),
+        onDismissed: dismissActionMenu,
+      );
+      return;
+    }
     actionMenuEntry = OverlayEntry(
       builder: (overlayContext) {
         final media = MediaQuery.of(overlayContext);
@@ -3187,6 +3216,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     actions: actions,
                     onSelected: (action) {
                       dismissActionMenu();
+                      MessageTextSelectionSession.dismissActive();
                       unawaited(_trackAction(
                           () => _handleMessageAction(message, action)));
                     },
@@ -3199,30 +3229,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       },
     );
     overlay.insert(actionMenuEntry!);
-    // 规格 #5：文本消息长按 = 原功能菜单（撤回/删除等，气泡锚定）与
-    // 复制选框同时出现。选框会话只负责手柄/放大镜与局部选择的紧凑
-    // 菜单；拖动手柄时隐藏功能菜单，松手回到整条选择时恢复功能菜单。
-    if (message.kind == RoomMessageKind.text &&
-        message.deliveryState == RoomDeliveryState.sent) {
-      MessageTextSelectionSession.show(
-        roomContext: context,
-        text: message.text,
-        textKey:
-            _messageTextKeys.putIfAbsent(message.stableId, GlobalKey.new),
-        messageRect: anchorRect,
-        isOwn: isOwn,
-        onDragStart: dismissActionMenu,
-        onFullSelectionRestored: () {
-          if (mounted) unawaited(_showMessageActions(message, anchor));
-        },
-        onAction: (action, selectedText) {
-          unawaited(_handleMessageAction(message, action,
-              overrideText: selectedText));
-        },
-        // 空白点击/滚动取消选框时，功能菜单一并关闭。
-        onDismissed: dismissActionMenu,
-      );
-    }
   }
 
   void dismissActionMenu() {
@@ -3291,18 +3297,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       case MessageAction.multiSelect:
         setState(() => selection.startWith(message.id));
       case MessageAction.forward:
-        // 局部选择：转发内容为选中文字（按表情映射转换为纯文本）。
+        // 局部选择：转发内容保持精确的选中文字；仅复制才转短代码。
         await _forwardMessages([
-          if (overrideText != null)
-            _withSelectedText(message, emojiToShortcodes(overrideText))
-          else
-            message,
-        ]);
+          message,
+        ], selectedTextOverride: overrideText);
       case MessageAction.reply:
         // 局部选择：引用以选中文字为引用片段（事件 ID 保持关联原消息）。
-        setState(() => replyingTo = overrideText != null
-            ? _withSelectedText(message, overrideText)
-            : message);
+        setState(() {
+          replyingTo = overrideText != null
+              ? _withSelectedText(message, overrideText)
+              : message;
+          _selectedReplyExcerpt = overrideText;
+        });
       case MessageAction.recall:
         final interaction = _interaction;
         final serverNow = await _serverNow();
@@ -3384,7 +3390,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (mounted) _showMediaMessage('已复制 ${copied.length} 条文字');
   }
 
-  Future<void> _forwardMessages(List<RoomMessageViewModel> messages) async {
+  Future<void> _forwardMessages(
+    List<RoomMessageViewModel> messages, {
+    String? selectedTextOverride,
+  }) async {
     final interaction = _interaction;
     if (interaction == null) {
       if (mounted) setState(() => mediaMessage = '转发服务尚未就绪，请稍后重试');
@@ -3420,17 +3429,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             identityChanges: _identityCache,
             resolveCandidates: candidates,
             candidates: candidates(),
-            contentPreview: messages
-                .map(
-                  (message) => switch (message.kind) {
-                    RoomMessageKind.image => '[图片]',
-                    RoomMessageKind.video => '[视频]',
-                    RoomMessageKind.voice => '[语音]',
-                    RoomMessageKind.file => '[文件] ${message.text}',
-                    _ => message.text,
-                  },
-                )
-                .join('\n'),
+            contentPreview: selectedTextOverride ??
+                messages
+                    .map(
+                      (message) => switch (message.kind) {
+                        RoomMessageKind.image => '[图片]',
+                        RoomMessageKind.video => '[视频]',
+                        RoomMessageKind.voice => '[语音]',
+                        RoomMessageKind.file => '[文件] ${message.text}',
+                        _ => message.text,
+                      },
+                    )
+                    .join('\n'),
             recentRoomIds: [
               for (final id in recentIds)
                 if (destinations.any((room) => room.id == id)) id,
@@ -3439,7 +3449,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               for (final roomId in roomIds) {
                 for (final message in messages) {
                   if (completed.contains((message.id, roomId))) continue;
-                  await interaction.forward(message.id, roomId);
+                  if (selectedTextOverride != null) {
+                    await interaction.forwardText(selectedTextOverride, roomId);
+                  } else {
+                    await interaction.forward(message.id, roomId);
+                  }
                   completed.add((message.id, roomId));
                 }
               }
@@ -3699,6 +3713,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   bool _onTimelineScrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification) {
+      MessageTextSelectionSession.dismissActive();
       messageListScrolling.value = true;
     }
     if (notification is ScrollEndNotification) {
@@ -3934,7 +3949,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                         CupertinoButton(
                           padding: EdgeInsets.zero,
                           minimumSize: const Size.square(36),
-                          onPressed: () => setState(() => replyingTo = null),
+                          onPressed: () => setState(() {
+                            replyingTo = null;
+                            _selectedReplyExcerpt = null;
+                          }),
                           child: const Icon(CupertinoIcons.xmark, size: 18),
                         ),
                       ],
@@ -4127,12 +4145,14 @@ final class _RoleBadge extends StatelessWidget {
 final class _QuotePreview extends StatelessWidget {
   const _QuotePreview({
     required this.message,
+    this.excerpt,
     required this.targetEventId,
     required this.displayName,
     required this.onTap,
   });
 
   final RoomMessageViewModel? message;
+  final String? excerpt;
   final String targetEventId;
   final String displayName;
   final VoidCallback onTap;
@@ -4140,12 +4160,14 @@ final class _QuotePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final message = this.message;
-    final summary = switch (message?.kind) {
-      RoomMessageKind.image => '图片',
-      RoomMessageKind.voice => '语音 ${message!.voiceDuration.inSeconds}″',
-      RoomMessageKind.file => '文件：${message!.text}',
-      _ => _truncateQuoteText(message?.text ?? '原消息加载中'),
-    };
+    final summary = excerpt?.isNotEmpty == true
+        ? _truncateQuoteText(excerpt!)
+        : switch (message?.kind) {
+            RoomMessageKind.image => '图片',
+            RoomMessageKind.voice => '语音 ${message!.voiceDuration.inSeconds}″',
+            RoomMessageKind.file => '文件：${message!.text}',
+            _ => _truncateQuoteText(message?.text ?? '原消息加载中'),
+          };
     return CupertinoButton(
       key: Key('reply-preview-$targetEventId'),
       padding: const EdgeInsets.only(top: 4),

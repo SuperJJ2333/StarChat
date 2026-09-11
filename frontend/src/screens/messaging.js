@@ -51,6 +51,9 @@ function conversationVariant(definition) {
 
 function chatContent(definition) {
   const content = element("div", "p-chat-room__messages");
+  if (definition.page === "selection") {
+    content.append(component("app-message-selection-session", { state: definition.state }));
+  } else
   if (definition.page === "voice") {
     content.append(component("app-voice-bubble", { duration: definition.state === "limit" ? "60" : "8", playback: definition.state === "preview" ? "playing" : "idle" }));
     if (definition.state === "preview") {

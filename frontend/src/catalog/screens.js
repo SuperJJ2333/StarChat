@@ -96,6 +96,7 @@ register("chat", "room", [
   ["empty", "聊天 / 空会话"], ["history-loading", "聊天 / 历史加载"], ["history-failed", "聊天 / 历史加载失败"]
 ]);
 register("chat", "composer", [["text", "输入区 / 文本"], ["attachment", "输入区 / 附件"], ["voice", "输入区 / 语音"], ["keyboard", "输入区 / 键盘"]]);
+register("chat", "selection", [["active", "聊天 / 文字选择与菜单"]]);
 register("chat", "voice", [
   ["recording", "语音 / 录制"], ["slide-cancel", "语音 / 上滑取消"], ["cancel-zone", "语音 / 取消区"],
   ["too-short", "语音 / 不足 1 秒"], ["limit", "语音 / 60 秒上限"], ["preview", "语音 / 本地试听"],

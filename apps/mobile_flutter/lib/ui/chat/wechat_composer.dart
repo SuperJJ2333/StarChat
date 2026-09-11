@@ -5,6 +5,7 @@ import '../../core/performance_metrics.dart';
 import '../foundation/changliao_icons.dart';
 import '../foundation/wechat_tokens.dart';
 import 'chat_composer_state.dart';
+import 'wechat_emoji_input_decoration.dart';
 
 /// 聊天输入面板的 TapRegion 组：页面内面板与「表情/更多」切换按钮
 /// 共用同一组；组外按下才会触发“收起面板”，组内按钮点击仍走自身
@@ -154,21 +155,24 @@ final class _WeChatComposerState extends State<WeChatComposer> {
           Expanded(
               child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 40),
-            child: CupertinoTextField(
-              key: const Key('composer-input'),
+            child: WeChatEmojiInputDecoration(
               controller: widget.controller,
-              focusNode: _focusNode,
-              placeholder: '输入加密消息',
-              minLines: 1,
-              maxLines: 4,
-              onTap: widget.onInputTap,
-              onChanged: _onChanged,
-              onSubmitted: widget.onSubmitted,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: WeChatSpacing.md, vertical: 10),
-              decoration: BoxDecoration(
-                  color: CupertinoTheme.of(context).scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(WeChatRadius.control)),
+              child: CupertinoTextField(
+                key: const Key('composer-input'),
+                controller: widget.controller,
+                focusNode: _focusNode,
+                placeholder: '输入加密消息',
+                minLines: 1,
+                maxLines: 4,
+                onTap: widget.onInputTap,
+                onChanged: _onChanged,
+                onSubmitted: widget.onSubmitted,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: WeChatSpacing.md, vertical: 10),
+                decoration: BoxDecoration(
+                    color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(WeChatRadius.control)),
+              ),
             ),
           )),
         TapRegion(
