@@ -55,6 +55,7 @@ final class RoomMessageViewModel {
     this.voiceDuration = const Duration(seconds: 1),
     this.isRecalled = false,
     this.replyToEventId,
+    this.replyExcerpt,
     this.nudge,
     this.callVideo = false,
     this.callConnected = false,
@@ -83,6 +84,7 @@ final class RoomMessageViewModel {
   final Duration voiceDuration;
   final bool isRecalled;
   final String? replyToEventId;
+  final String? replyExcerpt;
   final NudgeInfo? nudge;
 
   /// 通话摘要消息（RoomMessageKind.call）：类型/是否接通/时长。
@@ -123,6 +125,7 @@ final class RoomMessageViewModel {
           voiceDuration == other.voiceDuration &&
           isRecalled == other.isRecalled &&
           replyToEventId == other.replyToEventId &&
+          replyExcerpt == other.replyExcerpt &&
           callVideo == other.callVideo &&
           callConnected == other.callConnected &&
           callDuration == other.callDuration &&
@@ -144,6 +147,7 @@ final class RoomMessageViewModel {
     NudgeInfo? nudge,
     DateTime? timestamp,
     String? transactionId,
+    String? replyExcerpt,
   }) =>
       RoomMessageViewModel(
         id: id ?? this.id,
@@ -162,6 +166,7 @@ final class RoomMessageViewModel {
         voiceDuration: voiceDuration,
         isRecalled: isRecalled,
         replyToEventId: replyToEventId,
+        replyExcerpt: replyExcerpt ?? this.replyExcerpt,
         nudge: nudge ?? this.nudge,
         attachmentSize: attachmentSize,
         transactionId: transactionId ?? this.transactionId,
@@ -597,6 +602,7 @@ final class RoomTimelineController extends ChangeNotifier {
     String text, {
     Future<String> Function(String transactionId)? send,
     String? replyToEventId,
+    String? replyExcerpt,
     RoomMessageKind kind = RoomMessageKind.text,
     String? mimeType,
     Duration voiceDuration = const Duration(seconds: 1),
@@ -620,6 +626,7 @@ final class RoomTimelineController extends ChangeNotifier {
         deliveryState:
             permitted ? RoomDeliveryState.sending : RoomDeliveryState.failed,
         replyToEventId: replyToEventId,
+        replyExcerpt: replyExcerpt,
         kind: kind,
         mimeType: mimeType,
         voiceDuration: voiceDuration);

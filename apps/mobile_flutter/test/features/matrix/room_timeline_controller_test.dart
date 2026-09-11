@@ -281,6 +281,28 @@ void main() {
     expect(sent.mimeType, 'image/gif');
   });
 
+  test('message copy retains selected reply excerpt through acknowledgement',
+      () {
+    final localEcho = RoomMessageViewModel(
+      id: 'local-quote',
+      senderId: 'me',
+      text: '回复正文',
+      isOwn: true,
+      deliveryState: RoomDeliveryState.sending,
+      timestamp: DateTime.utc(2026, 9, 12),
+      replyToEventId: r'$source',
+      replyExcerpt: '🥲中文[微笑]',
+    );
+
+    final acknowledged = localEcho.copyWith(
+      id: r'$server',
+      deliveryState: RoomDeliveryState.sent,
+    );
+
+    expect(acknowledged.replyToEventId, r'$source');
+    expect(acknowledged.replyExcerpt, '🥲中文[微笑]');
+  });
+
   test('failed send retries in place without duplicating the message',
       () async {
     final adapter = FakeTimelineAdapter();

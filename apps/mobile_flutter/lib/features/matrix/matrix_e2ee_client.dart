@@ -1407,6 +1407,28 @@ final class MatrixRoomLease
         });
       });
 
+  @override
+  Future<void> forwardEncryptedText(
+    String sourceRoomId,
+    String targetRoomId,
+    String text,
+  ) =>
+      _withLeaseOperation((source) async {
+        _requireRoomId(sourceRoomId);
+        if (text.isEmpty) {
+          throw ArgumentError.value(text, 'text', 'must not be empty');
+        }
+        final target = source.client.getRoomById(targetRoomId);
+        if (target == null || !target.encrypted) {
+          throw StateError('只能转发到端到端加密会话');
+        }
+        final eventId =
+            await target.sendEvent({'msgtype': 'm.text', 'body': text});
+        if (eventId == null) {
+          throw StateError('Matrix room event was not accepted');
+        }
+      });
+
   void _requireRoomId(String requestedRoomId) {
     if (requestedRoomId != roomId) {
       throw StateError('Matrix room lease identity mismatch');
@@ -1907,6 +1929,10 @@ final class _SdkRoomTimelineCapability
       replyToEventId: ((event.content['m.relates_to'] as Map?)?['m.in_reply_to']
               as Map?)?['event_id']
           ?.toString(),
+      replyExcerpt: switch (event.content['io.changliao.selected_quote']) {
+        final String value => value,
+        _ => null,
+      },
       nudge: nudgeInfo,
     );
   }

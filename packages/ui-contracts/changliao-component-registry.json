@@ -317,6 +317,30 @@
       ]
     },
     {
+      "id": "emoji-input-decoration",
+      "flutter": {
+        "name": "WeChatEmojiInputDecoration",
+        "file": "apps/mobile_flutter/lib/ui/chat/wechat_emoji_input_decoration.dart",
+        "props": ["controller", "child", "fontSize"],
+        "variants": {},
+        "states": ["default", "animated", "scroll-clipped"]
+      },
+      "html": {"tag": "app-emoji-input-decoration"},
+      "tokens": ["control", "callout"]
+    },
+    {
+      "id": "message-selection-session",
+      "flutter": {
+        "name": "MessageTextSelectionSession",
+        "file": "apps/mobile_flutter/lib/ui/chat/message_text_selection.dart",
+        "props": ["text", "textKey", "onAction", "onDismissed"],
+        "variants": {"selection": ["partial", "all"]},
+        "states": ["active", "dragging", "settled", "dismissed"]
+      },
+      "html": {"tag": "app-message-selection-session"},
+      "tokens": ["control", "sm", "md", "callout"]
+    },
+    {
       "id": "contact-tile",
       "flutter": {
         "name": "WeChatContactTile",
@@ -1269,7 +1293,7 @@
     }
   },
   "screens": {
-    "expectedCount": 355
+    "expectedCount": 356
   },
   "adminCompletion20260910": {
     "html": [

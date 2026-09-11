@@ -8,6 +8,7 @@ import { AppActionSheet, AppDialog, AppEmptyState, AppNetworkCapsule, AppNudgeNo
 import { AppAmountSummary, AppRedPacketCard, AppTransactionRow, AppTransferCard } from "./finance.js";
 import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagManagement, AppContactTagMembers, AppIdentityHeader, AppListTile } from "./identity.js";
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
+import { AppEmojiInputDecoration, AppMessageSelectionSession } from "./selection.js";
 
 const implementations = new Map([
   ["app-image-editor", AppImageEditor],
@@ -18,6 +19,8 @@ const implementations = new Map([
   ["app-tab-bar", AppTabBar],
   ["app-action-button", AppActionButton],
   ["app-composer", AppComposer],
+  ["app-emoji-input-decoration", AppEmojiInputDecoration],
+  ["app-message-selection-session", AppMessageSelectionSession],
   ["app-list-tile", AppListTile],
   ["app-avatar", AppAvatar],
   ["app-identity-header", AppIdentityHeader],

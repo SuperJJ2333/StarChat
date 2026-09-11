@@ -114,6 +114,75 @@ class RetryEvent extends Event {
 
 void main() {
   test(
+      'timeline projects selected quote only from a string root encrypted payload',
+      () async {
+    final room = RetryRoom();
+    final timeline = RetryTimeline()
+      ..events.addAll([
+        Event(
+          room: room,
+          eventId: 'partial',
+          senderId: '@peer:test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 12),
+          content: {
+            'msgtype': 'm.text',
+            'body': '回复正文',
+            'm.relates_to': {
+              'm.in_reply_to': {'event_id': r'$source'},
+            },
+            'io.changliao.selected_quote': '🥲乙[微笑]',
+          },
+        ),
+        Event(
+          room: room,
+          eventId: 'full',
+          senderId: '@peer:test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 12, 0, 1),
+          content: {
+            'msgtype': 'm.text',
+            'body': '完整引用',
+            'm.relates_to': {
+              'm.in_reply_to': {'event_id': r'$source'},
+            },
+          },
+        ),
+        Event(
+          room: room,
+          eventId: 'malformed',
+          senderId: '@peer:test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 12, 0, 2),
+          content: {
+            'msgtype': 'm.text',
+            'body': '不崩溃',
+            'io.changliao.selected_quote': 9,
+          },
+        ),
+      ]);
+
+    final firstEntry = await openAdapter(room, timeline);
+    final first = firstEntry.snapshot();
+    final byId = {for (final message in first) message.id: message};
+    expect(byId['partial']!.replyToEventId, r'$source');
+    expect(byId['partial']!.replyExcerpt, '🥲乙[微笑]');
+    expect(byId['full']!.replyExcerpt, isNull,
+        reason: 'full reply does not serialize a selected quote field');
+    expect(byId['malformed']!.replyExcerpt, isNull,
+        reason: 'non-string custom fields are ignored without a parser error');
+
+    final reentered = await openAdapter(room, timeline);
+    expect(
+      reentered
+          .snapshot()
+          .singleWhere((message) => message.id == 'partial')
+          .replyExcerpt,
+      '🥲乙[微笑]',
+    );
+  });
+
+  test(
       'local send from old window immediately follows latest and keeps acknowledged key',
       () async {
     final room = RetryRoom();
