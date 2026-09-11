@@ -6,9 +6,12 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 
 import '../../features/matrix/image_contain_layout.dart';
 import '../../features/matrix/media_cache.dart';
+import '../../features/matrix/media_consumer_scope.dart';
 
 import '../../features/matrix/gif_image_policy.dart';
 import '../foundation/wechat_tokens.dart';
+import 'budgeted_media_image.dart';
+import 'media_visibility.dart';
 import 'wechat_message_bubble.dart';
 
 /// Bound both decoded axes without changing aspect ratio or animated frames.
@@ -55,6 +58,7 @@ final class ContainImageBubble extends StatefulWidget {
     this.availableHeight = 800,
     this.onTap,
     this.bubbleKey,
+    this.sourceIdentity,
   });
 
   final Future<Uint8List> Function() load;
@@ -77,6 +81,7 @@ final class ContainImageBubble extends StatefulWidget {
   /// 点击回调（进入大图查看器由调用方组装）。
   final VoidCallback? onTap;
   final Key? bubbleKey;
+  final Object? sourceIdentity;
 
   @override
   State<ContainImageBubble> createState() => _ContainImageBubbleState();
@@ -86,23 +91,46 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
   Uint8List? _bytes;
   ImageProvider? _provider;
   bool _started = false;
+  bool _sourceLoaded = false;
   bool _failed = false;
   bool _checkingCache = false;
+  bool _visible = false;
   int _generation = 0;
-  late final Size? _sourceSize = widget.sourceSize;
+  Size? _sourceSize;
+  MediaConsumerScope? _scope;
 
   @override
   void initState() {
     super.initState();
+    _sourceSize = widget.sourceSize;
     _accept(widget.initialBytes);
     widget.isScrolling?.addListener(_startWhenIdle);
+  }
+
+  MediaConsumerScope _scopeForWork() => _scope ??= MediaConsumerScope();
+
+  void _cancelWork() {
+    _generation++;
+    _scope?.cancel();
+    _scope = null;
+    _started = false;
+    _checkingCache = false;
+  }
+
+  void _setVisible(bool visible) {
+    if (_visible == visible) return;
+    setState(() => _visible = visible);
+    if (!visible) {
+      _cancelWork();
+      return;
+    }
     _probeLocalCache();
     _startWhenIdle();
   }
 
   void _probeLocalCache() {
     final read = widget.loadCached;
-    if (_bytes != null || read == null) return;
+    if (!_visible || _bytes != null || read == null) return;
     _checkingCache = true;
     final generation = _generation;
     void complete(Uint8List? bytes) {
@@ -114,7 +142,8 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
       _startWhenIdle();
     }
 
-    Future<Uint8List?>.sync(read)
+    _scopeForWork()
+        .run(read)
         .then(complete, onError: (Object _) => complete(null));
   }
 
@@ -130,6 +159,20 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
       oldWidget.isScrolling?.removeListener(_startWhenIdle);
       widget.isScrolling?.addListener(_startWhenIdle);
     }
+    if (oldWidget.sourceIdentity != widget.sourceIdentity) {
+      _cancelWork();
+      _sourceSize = widget.sourceSize;
+      _bytes = null;
+      _provider = null;
+      _failed = false;
+      _sourceLoaded = false;
+      _accept(widget.initialBytes);
+      if (_visible) {
+        _probeLocalCache();
+        _startWhenIdle();
+      }
+      return;
+    }
     if (widget.initialBytes != null &&
         !identical(oldWidget.initialBytes, widget.initialBytes)) {
       _accept(widget.initialBytes);
@@ -138,9 +181,11 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
   }
 
   void _startWhenIdle() {
-    if (_started ||
+    if (!_visible ||
+        _started ||
         _checkingCache ||
         _failed ||
+        _sourceLoaded ||
         widget.deferLoading ||
         widget.isScrolling?.value == true ||
         (_bytes != null && !widget.refreshFromSource)) {
@@ -148,9 +193,12 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
     }
     _started = true;
     final generation = ++_generation;
-    Future<Uint8List>.sync(widget.load).then((bytes) {
+    _scopeForWork().run(widget.load).then((bytes) {
       if (!mounted || generation != _generation) return;
-      setState(() => _accept(bytes));
+      setState(() {
+        _sourceLoaded = true;
+        _accept(bytes);
+      });
     }, onError: (Object _) {
       if (!mounted || generation != _generation) return;
       setState(() => _failed = true);
@@ -159,7 +207,7 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
 
   @override
   void dispose() {
-    _generation++;
+    _cancelWork();
     widget.isScrolling?.removeListener(_startWhenIdle);
     super.dispose();
   }
@@ -186,47 +234,53 @@ final class _ContainImageBubbleState extends State<ContainImageBubble> {
             maxHeight: constraints.maxHeight)
         : ImageContainLayout(
             width: constraints.maxWidth, height: constraints.maxHeight * .5);
-    return SizedBox(
-      key: widget.bubbleKey,
-      width: layout.width,
-      height: layout.height,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(WeChatRadius.bubble),
-        child: _provider != null
-            ? GestureDetector(
-                onTap: widget.onTap,
-                child: Image(
-                  image: _provider!,
-                  fit: BoxFit.contain,
-                  // Stable metadata/placeholder frames can be wider than the
-                  // painted image. Keep that spare space away from the avatar.
-                  alignment: context
-                              .findAncestorWidgetOfExactType<
-                                  WeChatMessageBubble>()
-                              ?.direction ==
-                          MessageDirection.outgoing
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) =>
-                      const Center(child: Icon(CupertinoIcons.photo)),
-                ))
-            : _failed
-                ? CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () {
-                      setState(() {
-                        _failed = false;
-                        _started = false;
-                      });
-                      _startWhenIdle();
-                    },
-                    child: const Text('图片加载失败，点击重试',
-                        style: TextStyle(
-                            fontSize: 13, color: WeChatColors.brandPrimary)))
-                : const Center(
-                    child: Icon(CupertinoIcons.photo,
-                        color: WeChatColors.textTertiary)),
+    return MediaVisibility(
+      onChanged: _setVisible,
+      child: SizedBox(
+        key: widget.bubbleKey,
+        width: layout.width,
+        height: layout.height,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(WeChatRadius.bubble),
+          child: _provider != null
+              ? GestureDetector(
+                  onTap: widget.onTap,
+                  child: BudgetedMediaImage(
+                    provider: _provider!,
+                    isAnimated: isGifBytes(_bytes!),
+                    visible: _visible,
+                    priority: 0,
+                    fit: BoxFit.contain,
+                    // Stable metadata/placeholder frames can be wider than the
+                    // painted image. Keep that spare space away from the avatar.
+                    alignment: context
+                                .findAncestorWidgetOfExactType<
+                                    WeChatMessageBubble>()
+                                ?.direction ==
+                            MessageDirection.outgoing
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, __, ___) =>
+                        const Center(child: Icon(CupertinoIcons.photo)),
+                  ))
+              : _failed
+                  ? CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        setState(() {
+                          _failed = false;
+                          _started = false;
+                        });
+                        _startWhenIdle();
+                      },
+                      child: const Text('图片加载失败，点击重试',
+                          style: TextStyle(
+                              fontSize: 13, color: WeChatColors.brandPrimary)))
+                  : const Center(
+                      child: Icon(CupertinoIcons.photo,
+                          color: WeChatColors.textTertiary)),
+        ),
       ),
     );
   }

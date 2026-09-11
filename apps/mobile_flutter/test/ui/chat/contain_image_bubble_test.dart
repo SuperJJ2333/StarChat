@@ -108,7 +108,7 @@ void main() {
     scrolling.dispose();
   });
 
-  testWidgets('memory hit renders on first frame while scrolling',
+  testWidgets('memory hit renders after the visibility layout while scrolling',
       (tester) async {
     final scrolling = ValueNotifier(true);
     var loads = 0;
@@ -123,6 +123,7 @@ void main() {
       },
     ))));
     expect(loads, 0);
+    await tester.pump();
     expect(find.byType(Image), findsOneWidget);
     expect(find.byType(CupertinoActivityIndicator), findsNothing);
     await tester.pumpWidget(const SizedBox());
