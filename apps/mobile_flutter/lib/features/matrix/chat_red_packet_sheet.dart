@@ -4,6 +4,7 @@ import '../../core/amount_rules.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../../ui/components/user_avatar.dart';
 import 'chat_red_packet_controller.dart';
 
 abstract interface class ChatRedPacketSupport {
@@ -35,9 +36,10 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
 }
 
 final class ChatRoomMember {
-  const ChatRoomMember(this.id, this.name);
+  const ChatRoomMember(this.id, this.name, {this.avatarUrl});
   final String id;
   final String name;
+  final String? avatarUrl;
 }
 
 String redPacketTypeLabel(String mode) => switch (mode) {
@@ -217,12 +219,14 @@ final class _State extends State<ChatRedPacketSheet> {
       await _alert('群成员尚未加载，请稍后再试');
       return;
     }
+    // 专属红包接收人选择：与「转账」的好友选择页同一套 UI
+    //（UserAvatar 自定义头像 + 缓存机制 + 勾选态），从房间成员映射。
     final selected = await showCupertinoModalPopup<ChatRoomMember>(
       context: context,
       builder: (sheetContext) => CupertinoPopupSurface(
         child: SafeArea(
           child: SizedBox(
-            height: 360,
+            height: 400,
             child: Column(
               children: [
                 const Padding(
@@ -243,24 +247,17 @@ final class _State extends State<ChatRedPacketSheet> {
                         onPressed: () => Navigator.pop(sheetContext, member),
                         child: Row(
                           children: [
-                            Container(
-                              width: 32,
-                              height: 32,
-                              alignment: Alignment.center,
-                              decoration: const BoxDecoration(
-                                color: WeChatColors.avatarFallbackBlue,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                member.name.isEmpty
-                                    ? '?'
-                                    : member.name.characters.first,
-                                style: const TextStyle(fontSize: 14),
-                              ),
+                            UserAvatar(
+                              nickname: member.name,
+                              fallbackSeed: member.id,
+                              avatarUrl: member.avatarUrl,
+                              size: 36,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                                 child: Text(member.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 16))),
                             if (recipientId == member.id)
                               const Icon(CupertinoIcons.check_mark,

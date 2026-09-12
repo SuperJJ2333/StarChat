@@ -18443,6 +18443,77 @@
         ]
       }
     },
+    "/api/v1/moments/{moment_id}/visibility":
+      patch:
+        description: "作者本人单条修改朋友圈可见范围（谁可以看）。复用发布时的受众解析与校验；仅更新可见性五字段。"
+        operationId: update_moment_visibility_api_v1_moments__moment_id__visibility_patch
+        parameters:
+          - in: path
+            name: moment_id
+            required: true
+            schema:
+              type: string
+        requestBody:
+          required: true
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - visibility
+                properties:
+                  visibility:
+                    type: string
+                    enum:
+                      - PUBLIC
+                      - FRIENDS
+                      - INCLUDE
+                      - EXCLUDE
+                      - SELF
+                  include_user_ids:
+                    type: array
+                    items:
+                      type: string
+                  exclude_user_ids:
+                    type: array
+                    maxItems: 30
+                    items:
+                      type: string
+                  include_tag_ids:
+                    type: array
+                    maxItems: 30
+                    items:
+                      type: string
+                  exclude_tag_ids:
+                    type: array
+                    maxItems: 30
+                    items:
+                      type: string
+        responses:
+          "200":
+            description: Successful Response
+            content:
+              application/json:
+                schema:
+                  additionalProperties: true
+                  type: object
+          "401":
+            description: Application error
+            content:
+              application/json:
+                schema:
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+          "422":
+            description: Validation error
+            content:
+              application/json:
+                schema:
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+        security:
+          - bearerAuth: []
+        tags:
+          - moments
     "/api/v1/moments/preferences": {
       "get": {
         "operationId": "preferences_api_v1_moments_preferences_get",

@@ -185,6 +185,39 @@ class MomentsService:
                 raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
             return self.dto(session, moment, actor)
 
+    def update_visibility(self, actor, moment_id, data):
+        """作者本人单条修改可见范围（谁可以看）。复用 create 的受众
+        解析与校验；仅更新可见性五字段，不动正文/图片/状态。"""
+        with self.factory.begin() as session:
+            moment = session.get(Moment, moment_id)
+            if not moment or moment.deleted_at:
+                raise AppError(code="MOMENT_NOT_FOUND", message="动态不存在", status_code=404)
+            if moment.author_id != actor:
+                raise AppError(code="MOMENT_VISIBILITY_FORBIDDEN", message="无权修改该动态", status_code=403)
+            visibility = data.get("visibility")
+            if visibility not in ("PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"):
+                raise AppError(code="VALIDATION_ERROR", message="可见范围不合法", status_code=422)
+            include_user_ids = list(data.get("include_user_ids") or [])
+            exclude_user_ids = list(data.get("exclude_user_ids") or [])
+            include_tag_ids = list(data.get("include_tag_ids") or [])
+            exclude_tag_ids = list(data.get("exclude_tag_ids") or [])
+            # 与 create 一致的受众约束：名单仅限好友，数量上限 30。
+            friends = set(self._friend_ids(session, actor))
+            for uid in include_user_ids + exclude_user_ids:
+                if uid not in friends:
+                    raise AppError(code="MOMENT_AUDIENCE_INVALID", message="名单中存在非好友", status_code=422)
+            for group, cap in ((include_user_ids, 30), (exclude_user_ids, 30), (include_tag_ids, 30), (exclude_tag_ids, 30)):
+                if len(group) > cap:
+                    raise AppError(code="MOMENT_AUDIENCE_INVALID", message="名单超出上限", status_code=422)
+            moment.visibility = visibility
+            moment.include_user_ids = include_user_ids
+            moment.exclude_user_ids = exclude_user_ids
+            moment.include_tag_ids = include_tag_ids
+            moment.exclude_tag_ids = exclude_tag_ids
+            self._audit(session, actor, moment_id, "moment.visibility.updated", "MOMENT_VISIBILITY_UPDATE", f"visibility:{visibility}")
+            session.flush()
+            return self.dto(session, moment, actor)
+
     def delete(self, actor, moment_id, key):
         with self.factory.begin() as session:
             moment = session.get(Moment, moment_id)

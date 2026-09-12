@@ -1876,6 +1876,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     displayName: participant.displayName,
                   )
                   .displayName,
+              avatarUrl: _identityCache.resolveIdentity(
+                matrixUserId: participant.id,
+                displayName: participant.displayName,
+              ).avatarUrl,
             ),
         ];
     final payment = await _preparePayment();

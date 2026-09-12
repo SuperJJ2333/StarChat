@@ -1325,6 +1325,13 @@ final class BusinessApiClient
       );
   Future<Map<String, dynamic>> personalMoments(String userId) =>
       getJson('/moments/users/$userId');
+  /// 单条修改朋友圈可见范围（作者本人）。
+  Future<Map<String, dynamic>> updateMomentVisibility(
+      String momentId, Map<String, dynamic> selection) => patchJson(
+      '/moments/${Uri.encodeComponent(momentId)}/visibility',
+      selection,
+      idempotencyKey: newIdempotencyKey());
+
   Future<Map<String, dynamic>> momentProfilePreview(String userId) =>
       getJson('/moments/users/${Uri.encodeComponent(userId)}/preview');
   Future<Map<String, dynamic>> momentNotifications() =>

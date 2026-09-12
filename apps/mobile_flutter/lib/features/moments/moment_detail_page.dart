@@ -1,4 +1,6 @@
 import '../contacts/contact_actions.dart';
+import 'moment_visibility_page.dart';
+import '../../ui/foundation/wechat_tokens.dart';
 import 'moments_privacy_changes.dart';
 import 'moment_reactions.dart';
 import 'moment_person_navigation.dart';
@@ -245,9 +247,73 @@ class _MomentDetailState extends State<MomentDetailPage> {
     }
   }
 
+  /// 作者本人：单条修改可见范围（谁可以看），样式与发布页一致。
+  Future<void> _editVisibility() async {
+    final current = item.visibilitySelection;
+    if (current == null || widget.viewerUserId != item.author.userId) return;
+    final selection = await Navigator.push<MomentVisibilitySelection>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => MomentVisibilityPage(
+          api: widget.api,
+          initialSelection: current,
+        ),
+      ),
+    );
+    if (selection == null || !mounted) return;
+    try {
+      final updated = await widget.api.updateMomentVisibility(
+        item.id,
+        {
+          'visibility': selection.visibility,
+          'include_user_ids':
+              selection.visibility == 'INCLUDE' ? selection.userIds.toList() : const [],
+          'exclude_user_ids':
+              selection.visibility == 'EXCLUDE' ? selection.userIds.toList() : const [],
+          'include_tag_ids':
+              selection.visibility == 'INCLUDE' ? selection.tagIds.toList() : const [],
+          'exclude_tag_ids':
+              selection.visibility == 'EXCLUDE' ? selection.tagIds.toList() : const [],
+        },
+      );
+      if (!mounted) return;
+      setState(() => item = MomentItem.fromJson(updated));
+      widget.onChanged?.call(item);
+    } catch (_) {
+      if (mounted) {
+        showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('可见范围修改失败'),
+            content: const Text('请检查网络后重试'),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => WeChatPageScaffold.navigation(
-        navigationBar: const CupertinoNavigationBar(middle: Text('详情')),
+        navigationBar: CupertinoNavigationBar(
+          middle: const Text('详情'),
+          trailing: item.visibilitySelection != null &&
+                  widget.viewerUserId == item.author.userId
+              ? CupertinoButton(
+                  key: const Key('moment-detail-more'),
+                  padding: EdgeInsets.zero,
+                  onPressed: _editVisibility,
+                  child: Icon(CupertinoIcons.ellipsis,
+                      size: 20,
+                      color: WeChatColors.resolveTextPrimary(context)),
+                )
+              : null,
+        ),
         child: SafeArea(
           child: ListView(
             children: [
