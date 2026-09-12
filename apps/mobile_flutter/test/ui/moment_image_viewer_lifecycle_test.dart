@@ -16,6 +16,7 @@ List<String> _urls(String suffix) => List.generate(
 Widget _page({
   required List<String> urls,
   String account = 'matrix:alice',
+  String origin = _origin,
   int initialIndex = 0,
   List<String?> imageCacheKeys = _keys,
 }) =>
@@ -26,7 +27,7 @@ Widget _page({
         imageCacheKeys: imageCacheKeys,
         initialIndex: initialIndex,
         mediaAccountKey: account,
-        mediaOrigin: _origin,
+        mediaOrigin: origin,
       ),
     );
 

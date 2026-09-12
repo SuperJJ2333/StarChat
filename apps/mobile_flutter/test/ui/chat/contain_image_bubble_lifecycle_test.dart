@@ -6,6 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/features/matrix/media_consumer_scope.dart';
+import 'package:liuhetong_mobile/features/matrix/room_image_preview_cache.dart';
 import 'package:liuhetong_mobile/ui/chat/contain_image_bubble.dart';
 
 void main() {
@@ -229,6 +230,32 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
       await tester.pump();
+    }
+  });
+
+  testWidgets('reentered room preview paints its retained first frame',
+      (tester) async {
+    final first = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    first.seed('image', _png());
+    final retained = first.get('image')!;
+    first.dispose();
+    final reopened = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    try {
+      await tester.pumpWidget(CupertinoApp(
+          home: Center(
+              child: ContainImageBubble(
+                  initialBytes: reopened.get('image'),
+                  load: () async => throw StateError('must not reload'),
+                  sourceSize: const Size(20, 20)))));
+      await tester.pump();
+      expect(find.byType(Image), findsOneWidget);
+      expect(_renderedBytes(tester), same(retained));
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      reopened.dispose();
+      RoomImagePreviewCache.clearSessionMemory();
     }
   });
 }

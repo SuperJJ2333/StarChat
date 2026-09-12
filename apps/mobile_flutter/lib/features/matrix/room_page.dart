@@ -349,11 +349,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final _stableMessageKeys = <String, GlobalKey>{};
   // 文本消息渲染对象的 key：长按选择（规格 #5）用它定位选区/手柄。
   final _messageTextKeys = <String, GlobalKey>{};
-  late final roomImagePreviewCache = RoomImagePreviewCache(
-    accountId: '${roomInfo.homeserver}|${roomInfo.currentUserId}',
-    memoryNamespace: roomInfo.currentUserId ?? '',
-    roomId: roomInfo.id,
-  );
+  late final roomImagePreviewCache = RoomImagePreviewCache.forRoomSession(
+      accountId: '${roomInfo.homeserver}|${roomInfo.currentUserId}',
+      memoryNamespace: roomInfo.currentUserId ?? '',
+      roomId: roomInfo.id);
   bool _locatingMessage = false;
   VoicePlaybackController? _voicePlayback;
   VoicePlaybackController get voicePlayback =>

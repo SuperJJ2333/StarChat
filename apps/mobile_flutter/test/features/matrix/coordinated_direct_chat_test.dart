@@ -28,12 +28,14 @@ class Store implements DirectRoomIntentStore {
 // Models the server's atomic pair decision; backend contention is tested
 // separately against real database transactions, not inferred from this fake.
 class Directory implements DirectRoomCoordinator {
+  var canonicalCalls = 0;
   String? owner;
   String? canonical;
   bool failLookup = false;
   bool failPublish = false;
   @override
   Future<String?> canonicalRoomId(String peer) async {
+    canonicalCalls++;
     if (failLookup) throw StateError('directory unavailable');
     return canonical;
   }
@@ -152,6 +154,45 @@ void main() {
         throwsStateError);
     expect(creates, 0);
     expect(directory.owner, isNull);
+  });
+
+  test('safe local snapshot opens without canonical coordination', () async {
+    final directory = Directory();
+    final gateway = CoordinatedDirectChatGateway(
+      coordinator: directory,
+      intents: Store('a'),
+      businessUserIdOf: (_) => 'peer',
+      createOnce: (_) async => throw StateError('must not create'),
+      findExisting: (_) async => throw StateError('must not recover'),
+      findCached: (_) async => room('!cached:test', '@b:test'),
+      openExisting: (_, __) async => throw StateError('must not repair'),
+    );
+    expect((await gateway.openOrCreateDirectChat('@b:test')).roomId,
+        '!cached:test');
+    expect(directory.canonicalCalls, 0);
+  });
+
+  test('an inconclusive local snapshot retains the canonical failure path',
+      () async {
+    final directory = Directory()..failLookup = true;
+    var creates = 0;
+    final gateway = CoordinatedDirectChatGateway(
+      coordinator: directory,
+      intents: Store('a'),
+      businessUserIdOf: (_) => 'peer',
+      createOnce: (_) async {
+        creates++;
+        return room('!unexpected:test', '@b:test');
+      },
+      findExisting: (_) async => null,
+      findCached: (_) async => null,
+      openExisting: (_, __) async => throw StateError('must not open'),
+    );
+
+    await expectLater(
+        gateway.openOrCreateDirectChat('@b:test'), throwsStateError);
+    expect(directory.canonicalCalls, 1);
+    expect(creates, 0, reason: 'a cache miss/error is not authority to create');
   });
 
   test('unknown create outcome remains reserved on restart; no second create',

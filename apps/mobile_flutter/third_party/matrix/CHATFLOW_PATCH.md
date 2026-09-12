@@ -53,3 +53,27 @@ exercises independent HKDF vectors, standard SDK decryption, actual
 `Room.sendFileEvent` ciphertext uploads, retry identity, media metadata,
 preprocessing order, decrypted-event authority and validated content caches.
 This patch does not change Megolm rotation, room encryption or avatar uploads.
+
+2026-09-12 sync-loop ownership recovery:
+
+- `lib/src/client.dart` assigns each SDK sync loop a monotonically increasing
+  generation. `abortSync()` invalidates the active generation before its
+  asynchronous cleanup. Generation checks run before retry/filter/request
+  work, after transaction processing, and before error side effects. A late
+  request from an older generation cannot clear a replacement `_currentSync`,
+  start another background loop, issue a stale retry request, publish any
+  status, or process a stale unknown-token logout. `processing` is reported
+  only after a non-null response owned by the current loop. This changes
+  sync-loop bookkeeping only; Matrix E2EE, key
+  handling, room-event processing, and transport payloads are unchanged.
+- Application regression `test/features/matrix/matrix_sync_recovery_sdk_test.dart`
+  uses a real vendored `Client` with held fake HTTP `/sync` futures. It covers
+  late success and unknown-token error replies after `abortSync()` and a
+  replacement request while background sync is enabled, a late reply after
+  disposal, and an aborted loop held behind the shared retry delay.
+- Chronology: the generation guard existed before this regression was added.
+  The test was therefore written after the initial implementation. Its RED
+  evidence was reconstructed by temporarily restoring only this vendor sync
+  hunk, running the held-response test, and restoring the hunk before GREEN.
+  Raw commands, output, and actual exit codes are in
+  `docs/verification/artifacts/2026-09-12/offline-recovery/`.

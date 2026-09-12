@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_media_cache.dart';
 import 'package:liuhetong_mobile/ui/moments/moment_image_viewer_page.dart';
 import 'package:liuhetong_mobile/ui/moments/wechat_moment_image_grid.dart';
@@ -20,6 +23,8 @@ class _Paths extends PathProviderPlatform {
   Future<String> getTemporaryPath() async => path;
   @override
   Future<String> getApplicationSupportPath() async => path;
+  @override
+  Future<String> getApplicationDocumentsPath() async => path;
 }
 
 void main() {
@@ -128,6 +133,324 @@ void main() {
     }, _RealHttp());
   });
 
+  test('rotating Moments media capabilities use the account-scoped cache key',
+      () {
+    const origin = 'https://media.example.test';
+    const key =
+        'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
+    final first = MomentMediaCache.imageProvider(
+        '$origin/api/v1/moments/media/content/signed-A?expires_in=300',
+        cacheKey: key,
+        accountKey: 'matrix:alice',
+        trustedOrigin: origin);
+    final refreshed = MomentMediaCache.imageProvider(
+        '$origin/api/v1/moments/media/content/signed-B?expires_in=604800',
+        cacheKey: key,
+        accountKey: 'matrix:alice',
+        trustedOrigin: origin);
+
+    expect(first, refreshed);
+    expect(first.cacheKey, startsWith('moments-origin-account-v1:'));
+    expect(
+        MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/signed-A',
+            cacheKey: key,
+            accountKey: 'matrix:bob',
+            trustedOrigin: origin),
+        isNot(first));
+    expect(
+        MomentMediaCache.imageProvider(
+                '$origin/api/v1/moments/media/uploads/signed-A',
+                cacheKey: key,
+                accountKey: 'matrix:alice',
+                trustedOrigin: origin)
+            .cacheKey,
+        startsWith('moments-url-account-v1:'));
+  });
+
+  test('authorized Moments download aliases an existing chat content object',
+      () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        request.response.headers.contentType = ContentType('image', 'png');
+        request.response.add(png);
+        await request.response.close();
+      });
+      const account = '@alice:example.test';
+      const bobAccount = '@bob:example.test';
+      try {
+        final origin = 'http://127.0.0.1:${server.port}';
+        const pageAccount = 'matrix:@alice:example.test';
+        const bobPageAccount = 'matrix:@bob:example.test';
+        const reference =
+            'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
+        final chat =
+            await MediaCache.store('chat', 'event', png, accountId: account);
+        final first = MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/signed-A',
+            cacheKey: reference,
+            accountKey: pageAccount,
+            trustedOrigin: origin);
+        await imageReady(first.resolve(ImageConfiguration.empty));
+        expect(requests, 1);
+        final moments = await MediaCache.cached('moments', first.cacheKey!,
+            accountId: account);
+        expect(moments, isNotNull);
+        expect(moments!.path, chat.path);
+        final objects = await chat.parent
+            .list()
+            .where((entry) => entry is File && !entry.path.endsWith('.len'))
+            .toList();
+        expect(objects, hasLength(1));
+
+        final bob = MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/signed-A',
+            cacheKey: reference,
+            accountKey: bobPageAccount,
+            trustedOrigin: origin);
+        await imageReady(bob.resolve(ImageConfiguration.empty));
+        final bobMoments = await MediaCache.cached('moments', bob.cacheKey!,
+            accountId: bobAccount);
+        expect(bobMoments, isNotNull);
+        expect(bobMoments!.path, isNot(moments.path));
+        expect(requests, 2);
+
+        await first.evict();
+        await server.close(force: true);
+        final rotated = MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/signed-B',
+            cacheKey: reference,
+            accountKey: pageAccount,
+            trustedOrigin: origin);
+        await imageReady(rotated.resolve(ImageConfiguration.empty));
+        expect(requests, 2);
+        await MediaCache.clearAccount(account);
+        expect(
+            await MediaCache.cached('moments', first.cacheKey!,
+                accountId: account),
+            isNull);
+        expect(
+            await MediaCache.cached('moments', bob.cacheKey!,
+                accountId: bobAccount),
+            isNotNull);
+      } finally {
+        await MediaCache.clearAccount(account);
+        await MediaCache.clearAccount(bobAccount);
+        await server.close(force: true);
+      }
+    }, _RealHttp());
+  });
+
+  test('offline pre-upgrade Moments cache migrates after aliasing is enabled',
+      () async {
+    const pageAccount = 'matrix:@legacy:example.test';
+    const account = '@legacy:example.test';
+    const reference =
+        'fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe';
+    final provider = MomentMediaCache.imageProvider(
+        'http://127.0.0.1:1/api/v1/moments/media/content/legacy',
+        cacheKey: reference,
+        accountKey: pageAccount,
+        trustedOrigin: 'http://127.0.0.1:1');
+    try {
+      final baselineKey = _baselineMomentsUrlKey(pageAccount, provider.url);
+      await MomentMediaCache.manager
+          .putFile(provider.url, png, key: baselineKey, fileExtension: 'png');
+      await imageReady(provider.resolve(ImageConfiguration.empty));
+      expect(
+          await MediaCache.cached('moments', provider.cacheKey!,
+              accountId: account),
+          isNotNull);
+      expect(
+          await MomentMediaCache.manager.getFileFromCache(baselineKey), isNull);
+    } finally {
+      await MediaCache.clearAccount(account);
+    }
+  });
+
+  test('a clear tombstone discards evicted legacy media and fetches online',
+      () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        request.response.headers.contentType = ContentType('image', 'png');
+        request.response.add(png);
+        await request.response.close();
+      });
+      const pageAccount = 'matrix:@refresh:example.test';
+      const account = '@refresh:example.test';
+      const firstReference =
+          'cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd';
+      try {
+        final origin = 'http://127.0.0.1:${server.port}';
+        final first = MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/legacy',
+            cacheKey: firstReference,
+            accountKey: pageAccount,
+            trustedOrigin: origin);
+        final baselineKey = _baselineMomentsUrlKey(pageAccount, first.url);
+        await MomentMediaCache.manager
+            .putFile(first.url, png, key: baselineKey, fileExtension: 'png');
+        for (var index = 0;
+            index <= MomentMediaCache.maximumDiskEntries;
+            index++) {
+          final key = index.toRadixString(16).padLeft(64, '0');
+          MomentMediaCache.imageProvider(
+              '$origin/api/v1/moments/media/content/$index',
+              cacheKey: key,
+              accountKey: pageAccount,
+              trustedOrigin: origin);
+        }
+        await MediaCache.clearAccount(account);
+        final fresh = MomentMediaCache.imageProvider(first.url,
+            cacheKey: firstReference,
+            accountKey: pageAccount,
+            trustedOrigin: origin);
+        await imageReady(fresh.resolve(ImageConfiguration.empty));
+        expect(requests, 1);
+        expect(
+            await MediaCache.cached('moments', fresh.cacheKey!,
+                accountId: account),
+            isNotNull);
+        expect(await MomentMediaCache.manager.getFileFromCache(baselineKey),
+            isNull);
+      } finally {
+        await MediaCache.clearAccount(account);
+        await server.close(force: true);
+      }
+    }, _RealHttp());
+  });
+
+  test('a clear tombstone rejects an evicted pre-upgrade Moments cache',
+      () async {
+    const pageAccount = 'matrix:@revoked:example.test';
+    const account = '@revoked:example.test';
+    const firstReference =
+        'abababababababababababababababababababababababababababababababab';
+    const origin = 'http://127.0.0.1:1';
+    final first = MomentMediaCache.imageProvider(
+        '$origin/api/v1/moments/media/content/legacy',
+        cacheKey: firstReference,
+        accountKey: pageAccount,
+        trustedOrigin: origin);
+    try {
+      final baselineKey = _baselineMomentsUrlKey(pageAccount, first.url);
+      await MomentMediaCache.manager
+          .putFile(first.url, png, key: baselineKey, fileExtension: 'png');
+      for (var index = 0;
+          index <= MomentMediaCache.maximumDiskEntries;
+          index++) {
+        final key = index.toRadixString(16).padLeft(64, '0');
+        MomentMediaCache.imageProvider(
+            '$origin/api/v1/moments/media/content/$index',
+            cacheKey: key,
+            accountKey: pageAccount,
+            trustedOrigin: origin);
+      }
+      await MediaCache.clearAccount(account);
+      final fresh = MomentMediaCache.imageProvider(first.url,
+          cacheKey: firstReference,
+          accountKey: pageAccount,
+          trustedOrigin: origin);
+      await expectLater(imageReady(fresh.resolve(ImageConfiguration.empty)),
+          throwsA(anything));
+      expect(
+          await MediaCache.cached('moments', fresh.cacheKey!,
+              accountId: account),
+          isNull);
+    } finally {
+      await MediaCache.clearAccount(account);
+    }
+  });
+
+  test('trusted avatar content remains on the normal cache-manager path',
+      () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        request.response.headers.contentType = ContentType('image', 'png');
+        request.response.add(png);
+        await request.response.close();
+      });
+      try {
+        final origin = 'http://127.0.0.1:${server.port}';
+        final provider = MomentMediaCache.imageProvider(
+            '$origin/api/v1/profile/avatar/content/avatar',
+            cacheKey:
+                'edededededededededededededededededededededededededededededededed',
+            accountKey: 'matrix:@avatar:example.test',
+            trustedOrigin: origin);
+        await imageReady(provider.resolve(ImageConfiguration.empty));
+        expect(requests, 1);
+      } finally {
+        await server.close(force: true);
+      }
+    }, _RealHttp());
+  });
+
+  test('clearing an account revokes a held Moments download before it stores',
+      () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final requested = Completer<void>();
+      final release = Completer<void>();
+      var requests = 0;
+      server.listen((request) async {
+        requests++;
+        if (!requested.isCompleted) requested.complete();
+        await release.future;
+        request.response.headers.contentType = ContentType('image', 'png');
+        request.response.add(png);
+        await request.response.close();
+      });
+      const pageAccount = 'matrix:@held:example.test';
+      const account = '@held:example.test';
+      const reference =
+          'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      try {
+        final provider = MomentMediaCache.imageProvider(
+            'http://127.0.0.1:${server.port}/api/v1/moments/media/content/held',
+            cacheKey: reference,
+            accountKey: pageAccount,
+            trustedOrigin: 'http://127.0.0.1:${server.port}');
+        final pending = MomentMediaCache.manager
+            .getFileStream(provider.url, key: provider.cacheKey)
+            .where((response) => response is FileInfo)
+            .cast<FileInfo>()
+            .first;
+        await requested.future;
+        await MediaCache.clearAccount(account);
+        release.complete();
+        await expectLater(pending, throwsStateError);
+        expect(
+            await MediaCache.cached('moments', provider.cacheKey!,
+                accountId: account),
+            isNull);
+        final fresh = MomentMediaCache.imageProvider(provider.url,
+            cacheKey: reference,
+            accountKey: pageAccount,
+            trustedOrigin: 'http://127.0.0.1:${server.port}');
+        await imageReady(fresh.resolve(ImageConfiguration.empty));
+        expect(requests, 2);
+        expect(
+            await MediaCache.cached('moments', fresh.cacheKey!,
+                accountId: account),
+            isNotNull);
+      } finally {
+        if (!release.isCompleted) release.complete();
+        await MediaCache.clearAccount(account);
+        await server.close(force: true);
+      }
+    }, _RealHttp());
+  });
+
   testWidgets(
       'account switch resets image state while signed rotation retains it',
       (tester) async {
@@ -199,3 +522,9 @@ Future<void> imageReady(ImageStream stream) async {
   await completer.future;
   stream.removeListener(listener);
 }
+
+String _baselineMomentsUrlKey(String accountKey, String url) =>
+    'moments-url-account-v1:${sha256.convert(utf8.encode(jsonEncode([
+          accountKey,
+          url
+        ])))}';

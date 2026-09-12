@@ -3969,6 +3969,11 @@ final class MatrixSdkE2eeClient
   Future<DirectChatRoom?> findExistingDirectChat(String peer) => _withClient(
       (client) => MatrixDirectChatBackend(client).findJoinedDirectRoom(peer));
 
+  /// Local-only recovery lookup. A miss is intentionally inconclusive.
+  Future<DirectChatRoom?> findCachedDirectChat(String peer) =>
+      _withClient((client) =>
+          MatrixDirectChatBackend(client).findCachedJoinedDirectRoom(peer));
+
   /// The caller owns one durable creation grant. Never repair an uncertain
   /// existing room or retry a Matrix create inside this operation.
   Future<DirectChatRoom> createDirectChatOnce(String peer) =>

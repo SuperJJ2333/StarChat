@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>Offline recovery interactions</title>
+  </head>
+  <body data-test-result="pending">
+    <iframe id="profile" src="/?screen=profile-home-no-cache-offline&amp;capture=1"></iframe>
+    <iframe id="moments" src="/?screen=moments-timeline-explicit-retry&amp;capture=1"></iframe>
+    <script type="module">
+      async function waitForReady(frame) {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const child = frame.contentDocument;
+          if (child?.body?.dataset.appReady === "true") return child;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error(`${frame.id} did not render`);
+      }
+
+      function assertConnecting(document, label) {
+        const capsule = document.querySelector("app-network-capsule");
+        if (capsule?.getAttribute("state") !== "reconnecting") {
+          throw new Error(`${label} capsule state did not change`);
+        }
+        if (capsule?.querySelector("button")?.disabled !== true) {
+          throw new Error(`${label} retry button is still enabled`);
+        }
+        if (capsule?.textContent.includes("正在连接…") !== true) {
+          throw new Error(`${label} capsule did not rerender`);
+        }
+      }
+
+      try {
+        const profile = await waitForReady(document.querySelector("#profile"));
+        profile.querySelector('[data-action="profile:retry"]')?.click();
+        assertConnecting(profile, "profile");
+
+        const moments = await waitForReady(document.querySelector("#moments"));
+        moments.querySelector('.u-offline-retry-dialog [data-action="dialog-confirm"]')?.click();
+        assertConnecting(moments, "moments");
+        if (moments.querySelector(".u-offline-retry-dialog")) {
+          throw new Error("moment retry dialog remained open");
+        }
+
+        document.body.dataset.testResult = "passed";
+      } catch (error) {
+        document.body.dataset.testResult = "failed";
+        document.body.dataset.testMessage = error.message;
+      }
+    </script>
+  </body>
+</html>

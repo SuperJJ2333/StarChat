@@ -507,14 +507,28 @@ final class ProfileRepository extends ChangeNotifier {
     final key = _accountKey;
     if (store == null || key == null) return;
     final mutation = _contactsMutation;
+    final profileGeneration = _profileReadGeneration;
     final snapshot = await store.read(key);
     if (_disposed || snapshot == null) return;
-    _apply(_preserveContactMutations(snapshot, mutation),
-        invalidateChangedAvatars: false);
+    final hydrated = _preserveContactMutations(snapshot, mutation);
+    // An editor save can win while disk hydration is pending. Keep that newer
+    // owner profile, but still recover the cached contacts from the same local
+    // snapshot (unless a contact mutation also won the race).
+    final merged = profileGeneration == _profileReadGeneration
+        ? hydrated
+        : ProfileSnapshot(
+            profile: profile ?? hydrated.profile,
+            contacts: hydrated.contacts,
+            contactsRevision: hydrated.contactsRevision,
+          );
+    _apply(merged, invalidateChangedAvatars: false);
     if (mutation != _contactsMutation) {
       await _persist(operation: 'profile.persist');
     }
     wasHydratedFromDisk = true;
+    if (profileGeneration != _profileReadGeneration) {
+      await _persist(operation: 'profile.persist');
+    }
   }
 
   Future<void> preload() => _preload ??= _load(operation: 'preload')
@@ -524,6 +538,19 @@ final class ProfileRepository extends ChangeNotifier {
       });
 
   Future<void> refresh() => _load(operation: 'refresh');
+
+  /// Publishes a successful owner-profile mutation from the profile editor.
+  /// Contacts and their revision remain intact, while reads started before the
+  /// edit lose ownership of the profile projection.
+  Future<void> applyUpdatedProfile(ProfileData updated) async {
+    if (_disposed) return;
+    _profileReadGeneration++;
+    await _applyAndPersist(ProfileSnapshot(
+      profile: updated,
+      contacts: contacts,
+      contactsRevision: contactsRevision,
+    ));
+  }
 
   /// 静默好友刷新：回前台/申请轮询周期触发。有变化才落库+失效+notify；
   /// 失败静默（弱网不打扰），带最小间隔节流。
@@ -839,7 +866,9 @@ final class ProfileRepository extends ChangeNotifier {
       int maxImages = 9,
       Future<void> Function(String key, String url)? prefetch,
       bool Function()? shouldContinue}) async {
-    if (_disposed || !context.mounted || maxImages <= 0 ||
+    if (_disposed ||
+        !context.mounted ||
+        maxImages <= 0 ||
         shouldContinue?.call() == false) {
       return;
     }
@@ -849,6 +878,7 @@ final class ProfileRepository extends ChangeNotifier {
       if (url == null || images.length >= maxImages || !seen.add(key)) return;
       images.add((key, url));
     }
+
     if (profile?.avatarUrl case final url?) {
       add(resolveIdentity(username: profile!.username).cacheKey, url);
     }
@@ -856,7 +886,8 @@ final class ProfileRepository extends ChangeNotifier {
       if (_disposed || !context.mounted || images.length >= maxImages) break;
       final contact = contactsByMatrixId[matrixUserId];
       if (contact != null) {
-        add(resolveIdentity(userId: contact.userId).cacheKey, contact.avatarUrl);
+        add(resolveIdentity(userId: contact.userId).cacheKey,
+            contact.avatarUrl);
       }
     }
     for (final image in images) {

@@ -28,15 +28,37 @@ function timeline(definition) {
   const root = pageRoot(definition);
   root.append(navigation("畅聊朋友圈", { leading: "返回", action: "发布" }));
   const content = element("div", "p-moments-timeline__content");
+  const offline = ["cached-offline", "no-cache-offline", "explicit-retry"].includes(definition.state);
+  if (offline) content.append(component("app-network-capsule", { state: "offline" }));
   if (definition.state === "empty") content.append(component("app-empty-state", { title: "还没有朋友圈内容", message: "好友发布的内容会出现在这里" }));
+  else if (definition.state === "no-cache-offline") {
+    content.append(component("app-empty-state", {
+      title: "本机没有已保存的朋友圈内容",
+      message: "联网后将自动加载最新动态"
+    }));
+    content.append(component("app-action-button", { icon: "retry", label: "刷新朋友圈", action: "moments:refresh" }));
+  }
   else if (definition.state.includes("failed")) content.append(component("app-empty-state", { kind: "network", title: "加载失败", message: definition.title, action: "重试" }));
   else {
     const cover = element("section", "c-moments-cover");
     cover.append(element("div", "c-moments-cover__art", "畅聊朋友圈"), component("app-avatar", { name: fixtures.currentUser.name, size: "detail" }), element("h2", "c-moments-cover__name", fixtures.currentUser.name));
     content.append(cover, momentCard(definition, 3), momentCard({ ...definition, state: "published" }, 1));
     if (definition.state === "loading") content.append(component("app-status-chip", { status: "processing", label: "正在刷新朋友圈" }));
+    if (definition.state === "cached-offline") content.append(element("p", "c-system-message", "已显示本机保存的朋友圈内容"));
+    if (definition.state === "explicit-retry") content.append(component("app-action-button", { icon: "retry", label: "刷新朋友圈", action: "moments:refresh" }));
   }
   root.append(content);
+  if (definition.state === "explicit-retry") {
+    const retryDialog = element("div", "u-offline-retry-dialog");
+    retryDialog.append(component("app-dialog", {
+      kind: "error",
+      title: "操作未完成",
+      message: "网络不可用，请检查网络后重试",
+      cancel: "取消",
+      confirm: "重试"
+    }));
+    root.append(retryDialog);
+  }
   return root;
 }
 

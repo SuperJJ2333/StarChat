@@ -85,7 +85,7 @@ register("messages", "conversation", [
   ["direct", "会话单元 / 单聊"], ["group", "会话单元 / 群聊"], ["support", "会话单元 / 官方客服"],
   ["muted", "会话单元 / 静音"], ["pinned", "会话单元 / 置顶"], ["unread-one", "会话单元 / 未读 1"], ["unread-max", "会话单元 / 未读 99+"]
 ]);
-register("messages", "network", [["offline", "网络胶囊 / 离线"], ["reconnecting", "网络胶囊 / 重连"], ["restored", "网络胶囊 / 已恢复"]]);
+register("messages", "network", [["offline", "网络胶囊 / 离线"], ["reconnecting", "网络胶囊 / 重连"], ["connecting", "网络胶囊 / 连接中"], ["service-unavailable", "网络胶囊 / 服务不可用"], ["restored", "网络胶囊 / 已恢复"]]);
 register("messages", "new", [["conversation-sheet", "消息 / 新建会话面板"]]);
 
 register("chat", "room", [
@@ -142,7 +142,7 @@ register("friend", "delete", [["confirm", "好友更多 / 删除确认"], ["succ
 
 register("discovery", "home", [["default", "发现 / 默认"], ["moments-new", "发现 / 朋友圈有新内容"], ["recommended", "发现 / 推荐入口"], ["loading", "发现 / 加载"], ["error-network", "发现 / 网络异常"]]);
 
-register("moments", "timeline", [["default", "朋友圈 / 时间线"], ["loading", "朋友圈 / 加载"], ["empty", "朋友圈 / 空"], ["refresh-failed", "朋友圈 / 刷新失败"], ["pagination-failed", "朋友圈 / 分页失败"]], { height: 1280 });
+register("moments", "timeline", [["default", "朋友圈 / 时间线"], ["loading", "朋友圈 / 加载"], ["empty", "朋友圈 / 空"], ["refresh-failed", "朋友圈 / 刷新失败"], ["pagination-failed", "朋友圈 / 分页失败"], ["cached-offline", "朋友圈 / 离线保留已缓存内容"], ["no-cache-offline", "朋友圈 / 离线无缓存"], ["explicit-retry", "朋友圈 / 手动刷新重试"]], { height: 1280 });
 register("moments", "media", [["text", "朋友圈动态 / 纯文字"], ["single", "朋友圈动态 / 单图"], ["two", "朋友圈动态 / 双图"], ["four", "朋友圈动态 / 四图"], ["nine", "朋友圈动态 / 九图"]], { height: 980 });
 register("moments", "actions", [["menu", "朋友圈 / 操作菜单"], ["liked", "朋友圈 / 已点赞"], ["comment", "朋友圈 / 评论输入"]]);
 register("moments", "visibility", [["public", "朋友圈 / 公开"], ["friends", "朋友圈 / 好友"], ["partial", "朋友圈 / 部分可见"], ["excluded", "朋友圈 / 不给谁看"], ["private", "朋友圈 / 仅自己"]]);
@@ -156,7 +156,7 @@ register("moments", "notifications", [["default", "朋友圈互动通知 / 列�
 register("moments", "settings", [["default", "朋友圈设置 / 默认"], ["strangers", "朋友圈设置 / 陌生人查看"], ["range", "朋友圈设置 / 时间范围"], ["exclude", "朋友圈设置 / 不让他看"], ["block", "朋友圈设置 / 屏蔽他的朋友圈"], ["personalization", "朋友圈设置 / 个性化推荐"]]);
 register("moments", "settings", [["range-sheet", "朋友圈设置 / 时间范围面板"]]);
 
-register("profile", "home", [["default", "我 / 默认"]]);
+register("profile", "home", [["default", "我 / 默认"], ["cached-offline", "我 / 离线保留本机资料"], ["no-cache-offline", "我 / 离线无本机资料"]]);
 register("profile", "details", [["default", "个人资料 / 默认"], ["edit", "个人资料 / 编辑"]]);
 register("profile", "avatar", [["picker", "头像 / 相册选择"], ["permission-denied", "头像 / 权限拒绝"], ["crop", "头像 / 裁剪"], ["preview", "头像 / 预览"], ["uploading", "头像 / 上传中"], ["upload-failed", "头像 / 上传失败"], ["restore-confirm", "头像 / 恢复默认确认"], ["fallback", "头像 / 加载失败回退"]]);
 register("profile", "settings", [["default", "设置 / 默认"], ["privacy", "设置 / 账号与隐私"], ["logout-confirm", "设置 / 退出确认"], ["logout-loading", "设置 / 退出中"], ["logout-failed", "设置 / 退出失败"]]);

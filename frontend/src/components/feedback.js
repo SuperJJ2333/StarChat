@@ -128,9 +128,16 @@ export class AppEmptyState extends StrictElement {
 export class AppNetworkCapsule extends StrictElement {
   render() {
     const state = this.attr("state", "offline");
-    const labels = { offline: "网络已断开，点击重试", reconnecting: "正在重新连接", restored: "网络已恢复" };
+    if (state === "restored") return document.createDocumentFragment();
+    const labels = {
+      offline: "网络不可用，联网后自动重试",
+      reconnecting: "正在连接…",
+      connecting: "正在连接…",
+      "service-unavailable": "服务暂时不可用"
+    };
     const root = button("c-network-capsule", labels[state] ?? labels.offline, "retry-network");
     root.dataset.state = state;
+    root.disabled = this.boolAttr("disabled") || state === "reconnecting" || state === "connecting";
     root.append(icon("network", "c-network-capsule__icon"), element("span", "c-network-capsule__label", this.attr("label", labels[state] ?? labels.offline)));
     return root;
   }

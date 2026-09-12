@@ -6,11 +6,26 @@ function profileHome(definition) {
   const root = pageRoot(definition);
   root.append(navigation("我"));
   const content = element("div", "p-profile-home__content");
-  content.append(component("app-identity-header", {
-    name: fixtures.currentUser.name,
-    username: fixtures.currentUser.username,
-    signature: fixtures.currentUser.signature
-  }));
+  if (["cached-offline", "no-cache-offline"].includes(definition.state)) {
+    content.append(component("app-network-capsule", { state: "offline" }));
+  }
+  if (definition.state === "no-cache-offline") {
+    content.append(component("app-empty-state", {
+      title: "本机没有已保存的资料",
+      message: "联网后将更新你的资料"
+    }));
+    content.append(component("app-action-button", {
+      icon: "retry",
+      label: "重试资料",
+      action: "profile:retry"
+    }));
+  } else {
+    content.append(component("app-identity-header", {
+      name: fixtures.currentUser.name,
+      username: fixtures.currentUser.username,
+      signature: fixtures.currentUser.signature
+    }));
+  }
   for (const [title, leading, action] of [
     ["朋友圈", "camera", "open:moments-timeline-default"],
     ["点钻", "gift", "open:caibi-home-default"],

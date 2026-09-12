@@ -681,6 +681,11 @@
   box-shadow: var(--shadow-overlay);
 }
 
+.c-network-capsule:disabled {
+  cursor: default;
+  opacity: var(--opacity-disabled);
+}
+
 .c-red-packet {
   width: var(--size-red-packet-width);
   height: var(--size-red-packet-height);

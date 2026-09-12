@@ -85,57 +85,76 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
           enableBackgroundFilterBlur: false,
           middle: const WeChatNavTitle('我')),
       child: SafeArea(
-        child: profile == null
-            ? Center(
-                child: state.status == ProfileStatus.failed
-                    ? ModernActionButton(
-                        icon: ChangliaoIcons.retry,
-                        label: '重试',
-                        onPressed: widget.controller.load,
-                      )
-                    : const CupertinoActivityIndicator(),
+        child: ListView(
+          key: const Key('profile-home-list'),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          children: [
+            if (profile == null)
+              _ProfileIdentityPlaceholder(
+                failed: state.status == ProfileStatus.failed,
+                onRetry: widget.controller.load,
               )
-            : ListView(
-                key: const Key('profile-home-list'),
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                children: [
-                  _IdentityCard(
-                    profile: profile,
-                    onTap: _openDetails,
-                    onQrCode: widget.onQrCode,
-                  ),
-                  const SizedBox(height: 12),
-                  _ProfileMenuTile(
-                    key: const Key('profile-details-entry'),
-                    icon: CupertinoIcons.person_crop_circle,
-                    label: '个人信息',
-                    onTap: _openDetails,
-                  ),
-                  _ProfileMenuTile(
-                    icon: CupertinoIcons.photo_on_rectangle,
-                    label: '朋友圈',
-                    onTap: widget.onMoments,
-                  ),
-                  _ProfileMenuTile(
-                    icon: CupertinoIcons.money_dollar_circle,
-                    label: '点钻',
-                    onTap: widget.onCaibi,
-                  ),
-                  _ProfileMenuTile(
-                    icon: ChangliaoIcons.wallet,
-                    label: '钱包',
-                    onTap: widget.onWallet,
-                  ),
-                  _ProfileMenuTile(
-                    icon: ChangliaoIcons.settings,
-                    label: '设置',
-                    onTap: widget.onSettings,
-                  ),
-                ],
+            else ...[
+              _IdentityCard(
+                profile: profile,
+                onTap: _openDetails,
+                onQrCode: widget.onQrCode,
               ),
+            ],
+            const SizedBox(height: 12),
+            _ProfileMenuTile(
+              key: const Key('profile-details-entry'),
+              icon: CupertinoIcons.person_crop_circle,
+              label: '个人信息',
+              onTap: profile == null ? null : _openDetails,
+            ),
+            _ProfileMenuTile(
+              icon: CupertinoIcons.photo_on_rectangle,
+              label: '朋友圈',
+              onTap: widget.onMoments,
+            ),
+            _ProfileMenuTile(
+              icon: CupertinoIcons.money_dollar_circle,
+              label: '点钻',
+              onTap: widget.onCaibi,
+            ),
+            _ProfileMenuTile(
+              icon: ChangliaoIcons.wallet,
+              label: '钱包',
+              onTap: widget.onWallet,
+            ),
+            _ProfileMenuTile(
+              icon: ChangliaoIcons.settings,
+              label: '设置',
+              onTap: widget.onSettings,
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+final class _ProfileIdentityPlaceholder extends StatelessWidget {
+  const _ProfileIdentityPlaceholder(
+      {required this.failed, required this.onRetry});
+
+  final bool failed;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 126,
+        alignment: Alignment.center,
+        color: WeChatColors.pageBackground(context),
+        child: failed
+            ? ModernActionButton(
+                icon: ChangliaoIcons.retry,
+                label: '重试资料',
+                onPressed: onRetry,
+              )
+            : const CupertinoActivityIndicator(),
+      );
 }
 
 final class _IdentityCard extends StatelessWidget {
@@ -254,7 +273,7 @@ final class _ProfileMenuTile extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -620,8 +639,7 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
                       onPressed: widget.controller.load,
                       child: const Text('邀请码加载失败，点击重试',
                           style: TextStyle(
-                              fontSize: 14,
-                              color: WeChatColors.textSecondary)),
+                              fontSize: 14, color: WeChatColors.textSecondary)),
                     ),
                   ),
                 ),
@@ -644,8 +662,8 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
             key: const Key('profile-invite-code-full-value'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: 15, letterSpacing: 1.5, color: foreground),
+            style:
+                TextStyle(fontSize: 15, letterSpacing: 1.5, color: foreground),
           ),
         ),
         _divider(),
