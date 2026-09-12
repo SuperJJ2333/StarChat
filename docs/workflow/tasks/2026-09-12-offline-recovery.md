@@ -4,8 +4,8 @@
 授权：修复用户报告F1/M2/M3及离线好友资料、朋友圈、聊天媒体、我页和提示；延续Debug Mi6自测交付，不push/部署生产、不改WiFi或读取账号秘密。
 计划：[实施计划](../../superpowers/plans/2026-09-12-offline-recovery.md)。原审计：[核心报告](../../verification/2026-09-12-core-feature-test.md)。
 实际设备：cbd0156b online MI6，com.liuhetong.mobile version0.3.85-debug/2091，firstInstallTime2026-09-11 00:42:05，lastUpdate2026-09-12 04:10:59。2088测试报告仅作为历史复现证据。
-当前：定位。Root已确认ProfileTabPage直接gateway api不读identityCache.profile；CoordinatedDirectChatGateway在findExisting前强制canonical网络查询。两名Terra并行只读sync与media根因，未改源码。
-下一步：接收根因与测试方案，按文件所有权实施F1与C1，O1/O2依赖共享文件释放后串行。
+当前：修复、root审查和当前环境验证已完成；最终0.3.86-debug/2093已安装Mi6，安装包拉回完整SHA匹配。根因、失败基线及执行过程如下。
+下一步：用户按验证报告的6组真机用例自测，反馈版本2093与复现步骤；无需重复构建未改变的输入。
 
 ## 根因确认（10:54+08，代码证据）
 - F1：app_home通知bootstrapper ready后才start watchdog；watchdog hard tick对abortSync使用unawaited，立即重启；SDK abort要等_currentTransaction然后清_currentSync。SDK自身存在3s错误重试，不能将“抛错不重试”作为根因结论。需脱离通知门控装配、真实序列化abort/restart，并接网络切换与resume候选触发。
@@ -48,3 +48,6 @@ Root已安全合并主线 `1d1db6aa` / `662c7152` 到本任务，合并提交为
 
 ## 安装前并行漂移拦截 2026-09-12T12:16:40.0049362+08:00
 2092候选重建成功exit0，SHA0aedb3788140632e66ba548ce780043dfde63a5d42a39113a63e1af7eb53f9f8；manifest语义/27250类/339native+asset内容均一致，原签名匹配。但最后device读取发现已由其他工作更新为0.3.85-debug/2092（lastUpdate10:58:30），main也从1fd0354c前进到1d1db6aa，包含662c7152好友在线自取与安卓/iOS复制下载链接。未安装旧候选、未覆盖新功能。root亲读12文件diff，merge本地main为f5caf48f（profile_page自动合并），根工作区未改。执行者升2093并回归合并影响，随后重跑最终门禁、重建新候选。原device2092 APK已拉回验证固定证书相同。
+
+## 最终交付 2026-09-12T12:30:04.5482518+08:00
+源01d6df58（保留最新main1d1db6aa），0.3.86-debug/2093，Mi6 install-r Success/exit0。最终包SHA a4473e3965ec68f3aba499adadc4bc27c6b167053dab2b227ae27e2d92261b56，与拉回已安装base.apk全量一致，原签名一致、首次安装时间不变。源码/重建语义门禁通过。最终全Flutter2453通过/29既有失败、定向74通过、分析无问题；HTML159通过/11既有失败、契约28/363及真实DOM通过。保留verify缺.env、mobile3既有失败及真机性能/iOS/多端未验证边界。计划可执行批次完成；用户功能自测待反馈。没有生产操作，根目录原有改动保留。
