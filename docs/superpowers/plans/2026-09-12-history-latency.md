@@ -25,4 +25,10 @@ context必须独立保留连续性与双向token：向旧页走prevBatch，向�
 
 ### H3 可证实范围
 不修改E2EE/device keys流程来掩盖接收延迟。先使用真实SDK数据库和50个合成sender事件量化批处理的消息ID列表写放大，重开数据库验证事件集合与顺序；记录固定历史规模、主机模式和阶段耗时，不当作Mi6/生产压测。若优化事务内同key中间写，必须保持put/delete/clear顺序、同事务读可见性、失败回滚、事务外写与账号隔离，且不动账本schema或密码/密钥。另需有受控sync处理与清理阶段的数值测量，实际50秒事件无对应日志则保留未验证。
-
+### H1分批文件所有权与关键回归
+H1a先实现公开可选日期/双向历史capability及SDK适配，不改RoomPage/UI：matrix_e2ee_client、matrix_room_timeline_adapter、room_timeline_controller（可抽独立模块）、必要SDK timeline小修及focused fixture；H1b再串行接Calendar/RoomPage和真实入口测试。保持原接口兼容，legacy fake不用被迫实现新能力。活动历史context与live timeline分离，保留唯一账号/lease所有者；取消/异常前旧可见timeline不变，dispose两者订阅，回最新/发送恢复live。媒体event查找覆盖两者但不合并不连续消息序列。新日期期间旧加载完成只能更新旧对象；UI状态不得被它切回。
+日期首显仅raw event timestamp/id/type+本地隐藏过滤，不为所有消息构建全文/成员/媒体模型。已缓存日期离线仍可查，未知过去日期可以显式查询而非禁用。日期选择用本地时区日界对应epoch毫秒，timestamp_to_event direction=f；context调用SDK getTimeline(eventContextId)保留设备解密；状态事件/撤回/隐藏不能被当作气泡目标，只有确认已越过日界/历史穷尽才显示无记录。对持续状态事件等场景有界取页并显式提示范围未完成，不能无限回扫。独立generation/lease/取消回调隔离迟到请求。
+SDK fragment检查：canRequestHistory必须读fragment prevBatch而非room全局prev_batch；forward失败必须恢复isRequestingFuture；prev/next耗尽不能从空token重新从头；limited live sync不应清空尚未接上实时流的历史fragment。不修改算法、密钥存储/传输或绕开SDK解密。向新页加载也须保持H2活动手势不变更可见窗口的约束；先有界取页再重新检查方向/活动状态/代次后换窗。controller从context回latest需重置historyExhausted并支持live新事件/发送/读标记，不得把context末条当全房间最新。
+H1a验收：真实SDK transport fixture断言一次timestamp定位+有界context、无自动/messages月扫；旧上下token各自传递、forward失败重试、limited sync隔离、重复事件去重/顺序、回latest仍收到新事件、取消/lease撤销晚到不采用、隐藏/撤回/状态事件/空日/本地时区边界及缓存命中无网络。H1b验收：真实RoomPage搜索日期首显在held网络下可操作；未知过去日期可选、未来不可选；日期关闭/改选/会话离开不应用旧请求；双向滚动继续H2原24项，媒体/发送/已读回归。
+H1额外SDK fragment风险：现有_handleEventUpdate在!allowNewEvent时直接return，已载历史气泡的撤回/内容更新也被忽略；引入日期fragment时必须保留针对已载ID的权威更新/撤回，同时不追加跨缺口live事件。测试应证明切历史期间原气泡可撤回、迟到旧历史不能复活撤回内容。API/SDK原设备解密调用保持，使用fake Encryption仅验证调用边界并标注非真实密码学测试。
+H3测量后暂不引入通用Box事务重写。增加独立、账号生命周期内的同步阶段数值观测可用于下一次现场定位：waitingForResponse→processing为长轮询等待，processing首次→cleaningUp为SDK处理，cleaningUp→finished为清理；重复processing进度不能重置计时，error/取消/销毁清除未完成样本。仅本机闭合枚举指标，容量沿PerformanceMetrics，不存消息/账号/房间/URL/密钥，不上传。诊断Debug显式开关开启，release默认关闭，不能将long-poll等待当接收延迟。允许新matrix_sync_phase_metrics、core/performance_metrics枚举、matrix_sync_watchdog装配与测试。此为诊断能力，不宣称实际50秒已修复。

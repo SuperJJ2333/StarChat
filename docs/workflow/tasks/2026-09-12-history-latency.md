@@ -57,3 +57,8 @@ I0合并提交9e87c8a0；旧terra_history_dates因执行预算耗尽不能继续
 ## H2局部验收 23:21+08（分钟精度）
 Astra亲读最终三个产品文件diff、真实RoomPage测试、frame间取消fixture与日志。规格符合性：活动手势/惯性不被jumpTo抢占，边缘延后换窗，反向操作撤销旧pending，locator可取消且200模型不扩容；质量检查：listener生命周期、迟到generation、无新业务/API/财务/E2EE边界变更。h2-room-anchor-locator-final-terra-v2.log 24通过exit0；h2-room-anchor-locator-analyze-terra.log 无问题exit0。clamped和跨帧取消是新增GREEN覆盖，原始产品RED仍为h2-reverse-anchor-drag-red、h2-room-page-drag-red-v3及超高行定位RED。首个日志创建命令参数错误发生在Flutter启动前，不算执行失败测试。
 H2可独立提交；H1整合后还需跨模块回归及最终候选全量门禁，Mi6手势用户自测。Terra现仅拥有新sdk_receive_burst_benchmark_test与receive-burst证据，H3先测不改产品；Astra维护记录和H1架构。
+
+## H3存储测量完成 / H1a开始 23:27+08（分钟精度）
+Astra亲审sdk_receive_burst_benchmark_test实际FFI代理、SDK storeEventUpdate/transaction调用、有效seed时间顺序、实际SQL写入计数、replay与close/reopen断言。最终v3两项通过，analyze-v2无问题exit0；首次ID fixture字符串误写重复导致失败，不算产品RED。1500历史+50sender：50次全索引写，934395字节对最终18981字节；instrumented action/commit/total=24756/9539/34295µs。10000历史：50次，6459395对129481字节；64545/24477/89022µs。计时含计数器utf8开销，只是桌面FFI SQLite存储阶段；无真实加密/SQLCipher/Mi6/生产50人并发结论。确认写放大但未证明50秒来源，因此不按猜测重写Box事务或密钥队列。
+H1a已交现有显式Terra实现公开可选日期/context能力和对应SDK fragment正确性，暂不改RoomPage/calendar UI。Root批准计划追加分批约束及loaded-fragment撤回边界；后续再H1b串行UI接入。尝试新建显式Terra同步阶段诊断代理仍被thread limit拒绝，未创建；H3阶段计时能力排在单执行者后续，不声称已有第二执行代理。
+构建脚本已从前次固定签名流水线复制到当前任务artifact，RepoRoot默认修正offline12；尚未构建/安装，没有新版本声明。
