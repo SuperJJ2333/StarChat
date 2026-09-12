@@ -318,19 +318,18 @@ void main() {
     await tester.ensureVisible(find.text('静音').first);
     await tester.pumpAndSettle();
     // PRD §44：三态切换为"静音"后展开静音专属设置。
-    await tester.tap(find.text('静音').first);
+    await tester.ensureVisible(find.byKey(const Key('notification-mode-muted')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('notification-mode-muted')));
     await tester.pumpAndSettle();
     expect(gateway.snapshot.muted, isTrue);
     expect(find.text('折叠该聊天'), findsOneWidget);
     expect(find.text('以下消息仍通知'), findsOneWidget);
 
-    // 切回"默认"收回静音专属设置；"特别关注"互斥静音（PRD §44）。
-    await tester.ensureVisible(find.text('消息通知'));
-    await tester.tap(find.text('消息通知'));
+    // 新行为：静音后保持展开，直接切"特别关注"（互斥静音，收起子项）。
+    await tester.ensureVisible(find.byKey(const Key('notification-mode-attention')));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('特别关注').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('特别关注').first);
+    await tester.tap(find.byKey(const Key('notification-mode-attention')));
     await tester.pumpAndSettle();
     expect(gateway.snapshot.attention, isTrue);
     expect(gateway.snapshot.muted, isFalse);

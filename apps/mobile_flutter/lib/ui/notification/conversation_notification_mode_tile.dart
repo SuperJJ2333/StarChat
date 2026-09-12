@@ -12,10 +12,14 @@ final class ConversationNotificationSection extends StatefulWidget {
       {super.key,
       required this.muted,
       required this.attention,
-      required this.onChanged});
+      required this.onChanged,
+      this.mutedChildren = const <Widget>[]});
   final bool muted;
   final bool attention;
   final ValueChanged<ConversationNotificationMode> onChanged;
+
+  /// 静音时嵌套展示的子选项（由宿主提供，保持控制器写入串行）。
+  final List<Widget> mutedChildren;
   @override
   State<ConversationNotificationSection> createState() =>
       _NotificationSectionState();
@@ -48,8 +52,12 @@ final class _NotificationSectionState
               ? ConversationNotificationModeTile(
                   muted: widget.muted,
                   attention: widget.attention,
+                  mutedChildren: widget.mutedChildren,
                   onChanged: (mode) {
-                    setState(() => expanded = false);
+                    // 切到静音时保持展开，让用户直接看到嵌套的
+                    // 折叠/仍通知子选项；切走时收起。
+                    setState(() =>
+                        expanded = mode == ConversationNotificationMode.muted);
                     widget.onChanged(mode);
                   })
               : const SizedBox(width: double.infinity),
@@ -65,11 +73,16 @@ final class ConversationNotificationModeTile extends StatelessWidget {
     required this.muted,
     required this.attention,
     required this.onChanged,
+    this.mutedChildren = const <Widget>[],
   });
 
   final bool muted;
   final bool attention;
   final ValueChanged<ConversationNotificationMode> onChanged;
+
+  /// 静音选中时展示的子选项（折叠该聊天 / 以下消息仍通知），
+  /// 缩进渲染在「静音」与「特别关注」之间——微信层级。
+  final List<Widget> mutedChildren;
 
   ConversationNotificationMode get _mode {
     if (muted) return ConversationNotificationMode.muted;
@@ -79,25 +92,12 @@ final class ConversationNotificationModeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return Container(
       color: WeChatColors.elevatedSurface(context),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 2),
-            child: Text(
-              '消息通知',
-              style: TextStyle(
-                fontSize: 13,
-                color: dark
-                    ? CupertinoColors.systemGrey5
-                    : CupertinoColors.systemGrey,
-              ),
-            ),
-          ),
           _row(
             context,
             mode: ConversationNotificationMode.normal,
@@ -110,6 +110,8 @@ final class ConversationNotificationModeTile extends StatelessWidget {
             title: '静音',
             subtitle: '不响铃不震动，未读仍计数',
           ),
+          // 静音子选项（折叠/仍通知）——微信层级：嵌在静音与特别关注之间。
+          if (muted && mutedChildren.isNotEmpty) ...mutedChildren,
           _row(
             context,
             mode: ConversationNotificationMode.attention,
@@ -134,6 +136,7 @@ final class ConversationNotificationModeTile extends StatelessWidget {
     return Column(
       children: [
         WeChatListTile(
+          key: Key('notification-mode-${mode.name}'),
           title: Text(title),
           subtitle: Text(subtitle),
           trailing: selected

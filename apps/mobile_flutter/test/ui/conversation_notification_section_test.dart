@@ -20,6 +20,11 @@ void main() {
     await tester.tap(find.text('静音'));
     await tester.pumpAndSettle();
     expect(selected, ConversationNotificationMode.muted);
-    expect(find.text('特别关注'), findsNothing);
+    // 新行为：切到静音保持展开（展示嵌套子选项），切走才收起。
+    expect(find.text('特别关注'), findsOneWidget);
+    await tester.tap(find.text('特别关注'));
+    await tester.pumpAndSettle();
+    expect(selected, ConversationNotificationMode.attention);
+    expect(find.text('静音'), findsNothing);
   });
 }

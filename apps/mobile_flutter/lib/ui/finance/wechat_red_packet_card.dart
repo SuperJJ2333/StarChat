@@ -29,7 +29,8 @@ final class WeChatRedPacketCard extends StatelessWidget {
       onPressed: onTap,
       child: Container(
           key: const Key('wechat-red-packet-card'),
-          width: 236,
+          // 与转账卡片同宽（demo 定稿统一 220）。
+          width: 220,
           height: 96,
           decoration: BoxDecoration(
               color: state == RedPacketVisualState.claimed

@@ -345,32 +345,38 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                         );
                       });
                     },
+                    // 微信层级：折叠/仍通知嵌套在「静音」之下（缩进子行）。
+                    mutedChildren: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: Column(children: [
+                          _switchTile(
+                            '折叠该聊天',
+                            snapshot.folded,
+                            (value) => widget.controller.setPreference(
+                              GroupChatPreference.folded,
+                              value,
+                            ),
+                          ),
+                          WeChatListTile(
+                            title: const Text('以下消息仍通知'),
+                            subtitle: const Text('@我、@所有人和群公告'),
+                            trailing: const CupertinoListTileChevron(),
+                            onTap: () => Navigator.push(
+                              context,
+                              CupertinoPageRoute(
+                                builder: (_) => MuteExceptionSettingsPage(
+                                  controller: widget.controller,
+                                  identityCache: widget.identityCache,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
-                  if (snapshot.muted) ...[
-                    _switchTile(
-                      '折叠该聊天',
-                      snapshot.folded,
-                      (value) => widget.controller.setPreference(
-                        GroupChatPreference.folded,
-                        value,
-                      ),
-                    ),
-                    WeChatListTile(
-                      title: const Text('以下消息仍通知'),
-                      subtitle: const Text('@我、@所有人和群公告'),
-                      trailing: const CupertinoListTileChevron(),
-                      onTap: () => Navigator.push(
-                        context,
-                        CupertinoPageRoute(
-                          builder: (_) => MuteExceptionSettingsPage(
-                            controller: widget.controller,
-                            identityCache: widget.identityCache,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                   _switchTile(
                     '置顶聊天',
                     snapshot.pinned,

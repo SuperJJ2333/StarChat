@@ -941,6 +941,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
+  /// 拍一拍限流（规格）：当前用户在本房间 60 秒内最多触发 3 次；
+  /// 超过后对本房间任何用户均不可再拍，直到最早一次滑出 60 秒窗口。
+  static const _nudgeWindow = Duration(seconds: 60);
+  static const _nudgeMaxPerWindow = 3;
+  final List<DateTime> _nudgeTimestamps = <DateTime>[];
+
+  bool get _nudgeRateLimited {
+    final now = DateTime.now();
+    _nudgeTimestamps.removeWhere(
+        (at) => now.difference(at) >= _nudgeWindow);
+    return _nudgeTimestamps.length >= _nudgeMaxPerWindow;
+  }
+
   Future<void> _sendNudge(
     RoomMessageViewModel message,
     String targetDisplayName,
@@ -948,7 +961,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final sender = ownProfile;
     final senderId = roomInfo.currentUserId;
     if (sender == null || senderId == null) return;
+    if (_nudgeRateLimited) {
+      if (mounted) {
+        setState(() => mediaMessage = '拍一拍太频繁，请稍后再试');
+      }
+      return;
+    }
     try {
+      _nudgeTimestamps.add(DateTime.now());
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
       // already-open conversations as well.
@@ -972,6 +992,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
+      // 发送失败不计入限流窗口（退回本次时间戳）。
+      if (_nudgeTimestamps.isNotEmpty) {
+        _nudgeTimestamps.removeLast();
+      }
       if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
     }
   }
