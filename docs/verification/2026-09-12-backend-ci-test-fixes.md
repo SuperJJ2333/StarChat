@@ -48,3 +48,13 @@ run #79（8f58cc23）失败定位（经服务器出口 API）：Business API & W
 3. `apps/mobile_flutter/test/core/session_capsule_recovery_test.dart`：删除接口已淘汰的死方法 `logout()`（接口现为 `logoutBusiness()`，测试内无调用）与未使用的 `package:matrix/matrix.dart` import——这两个 warning 使 CI `flutter analyze` 非零退出。
 
 验证：`flutter analyze` 0 issues；`flutter test test/core/session_capsule_recovery_test.dart` 2 passed；`pytest tests/mobile -q` 69 passed + 1 项本地并发行列竞态（`docs/verification/artifacts` 为 git 排除目录，并行代理增删导致的 TOCTOU，CI 提交态无并发写入者、用户所贴失败列表亦无此项）。Flutter job 的 "Test (full suite)" 存在既有的 29 项钱包基线失败（见 workflow/current-state 2026-09-11 记录），属钱包重构任务范围，本轮未动。
+
+## CI 最终确认（run #80 @ bc2203e5）
+
+推送（工作站 TLS 链路退化，按 runbook 经跳板 SOCKS 隧道完成，隧道已关闭）触发 android-ci #80：
+
+- **Backend & infra gates：SUCCESS**（13 步全绿：Infra / Getui / Business API & Worker / Flutter boundary tests / UI contract drift / OpenAPI drift check / Alembic / Docker Compose）
+- **Android debug build：SUCCESS**
+- **Flutter analyze & test**：Analyze **SUCCESS**（本轮 analyzer 修复生效）；"Test (full suite)" FAILURE 为钱包重构任务的 29 项既有基线失败，不在本轮范围。
+
+至此本任务承诺的全部 CI 修复项（Gradle 仓库顺序、后端 14 项测试、OpenAPI 契约、tests/mobile 3 项、flutter analyze）均已验证通过。
