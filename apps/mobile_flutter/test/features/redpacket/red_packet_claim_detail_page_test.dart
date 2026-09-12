@@ -275,7 +275,11 @@ void main() {
       (tester) async {
     await _pumpPage(tester, FakeGateway(detail: _detail, contacts: _contacts));
 
-    expect(find.text('共 88.00 点钻，已领取 3/3 个'), findsOneWidget);
+    // Hero：总额大字 + 状态行；列表头：N人已领 / 共 已领/总额。
+    expect(find.text('88.00 点钻'), findsOneWidget);
+    expect(find.textContaining('已领取 3/3 个'), findsOneWidget);
+    expect(find.text('3人已领'), findsOneWidget);
+    expect(find.textContaining('共 88.00/88.00 点钻'), findsOneWidget);
     // Sender resolved with remark priority from the viewer's contact book.
     expect(find.text('艾米的红包'), findsOneWidget);
     expect(find.byKey(const Key('red-packet-claim-records')), findsOneWidget);
@@ -352,7 +356,7 @@ void main() {
           'status': 'EXPIRED',
         }, contacts: _contacts));
 
-    expect(find.text('已过期，未领取金额将退回'), findsOneWidget);
+    expect(find.textContaining('已过期，未领取金额将退回'), findsOneWidget);
   });
 
   testWidgets('detail error retry reloads and renders open records',
@@ -367,7 +371,7 @@ void main() {
     await tester.tap(find.byKey(const Key('red-packet-claim-detail-retry')));
     await tester.pumpAndSettle();
     expect(gateway.calls, 2);
-    expect(find.text('领取中'), findsOneWidget);
+    expect(find.textContaining('已领取 2/3 个'), findsOneWidget);
     expect(find.byKey(const Key('red-packet-claim-records')), findsOneWidget);
   });
 

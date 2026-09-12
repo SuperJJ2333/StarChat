@@ -224,19 +224,42 @@ final class _RedPacketClaimDetailPageState
                   ]),
                 )
               : SafeArea(
+                  top: false,
                   child: ListView(
                     key: const Key('red-packet-claim-detail-page'),
-                    padding: const EdgeInsets.all(12),
+                    padding: EdgeInsets.zero,
                     children: [
                       _headerCard(detail, senderName, senderAvatarUrl, status),
-                      const SizedBox(height: 12),
-                      _recordsCard(records, bestIndex),
+                      Padding(
+                        // 白色列表压在 hero 底弧上（demo：-18px 圆角衔接）。
+                        padding:
+                            const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                        child: Transform.translate(
+                          offset: const Offset(0, -18),
+                          child: _recordsCard(records, bestIndex),
+                        ),
+                      ),
+                      if (detail != null) ...[
+                        const SizedBox(height: 16),
+                        Center(
+                          child: Text(
+                            '发出时间 ${_formatIssueTime(detail)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: WeChatColors.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
                     ],
                   ),
                 ),
     );
   }
 
+  /// 微信式橙色 hero（demo 一比一）：渐变底 + 底部 28px 圆角；
+  /// 白色列表以 -18px 负边距压在 hero 圆弧上（见 build 的 Stack）。
   Widget _headerCard(
     Map<String, dynamic>? detail,
     String senderName,
@@ -244,58 +267,109 @@ final class _RedPacketClaimDetailPageState
     String? status,
   ) =>
       Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        decoration: BoxDecoration(
-          color: WeChatColors.elevatedSurface(context),
-          borderRadius: BorderRadius.circular(8),
+        key: const Key('red-packet-claim-detail-hero'),
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(24, 40, 24, 42),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment(-0.4, -1),
+            end: Alignment(0.4, 1),
+            colors: [
+              Color(0xFFFA9D3B),
+              Color(0xFFFA5151),
+              Color(0xFFE8413F),
+            ],
+            stops: [-0.1, 0.55, 1],
+          ),
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(28),
+            bottomRight: Radius.circular(28),
+          ),
         ),
         child: Column(children: [
-          UserAvatar(
-            nickname: senderName,
-            fallbackSeed: detail?['sender_id']?.toString() ?? widget.packetId,
-            avatarUrl: senderAvatarUrl,
-            diagnosticSource: 'red-packet-claim-detail-sender',
-            size: 48,
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDD89F),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(CupertinoIcons.gift_fill,
+                color: Color(0xFFD2691E), size: 34),
           ),
           const SizedBox(height: 10),
           Text(
             '$senderName的红包',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: WeChatColors.resolveTextPrimary(context),
+            style: const TextStyle(
+              fontSize: 15,
+              color: Color(0xFFFFE7C2),
             ),
           ),
           const SizedBox(height: 6),
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                text: detail == null ? '' : '${detail['total']}',
+                style: const TextStyle(
+                  fontSize: 44,
+                  fontWeight: FontWeight.w700,
+                  color: CupertinoColors.white,
+                  height: 1.1,
+                ),
+              ),
+              const TextSpan(
+                text: ' 点钻',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: CupertinoColors.white,
+                ),
+              ),
+            ]),
+            key: const Key('red-packet-claim-detail-total'),
+          ),
+          const SizedBox(height: 8),
           Text(
             detail == null
                 ? ''
-                : '共 ${detail['total']} 点钻，'
-                    '已领取 ${detail['claimed_count']}/${detail['share_count']} 个',
-            key: const Key('red-packet-claim-detail-total'),
+                : status == 'OPEN'
+                    ? '已领取 ${detail['claimed_count']}/${detail['share_count']} 个'
+                    : '${redPacketStatusText(status)} ·'
+                        ' 已领取 ${detail['claimed_count']}/${detail['share_count']} 个',
             style: const TextStyle(
-              fontSize: 13,
-              color: WeChatColors.textSecondary,
+              fontSize: 12,
+              color: Color(0xFFFFE7C2),
             ),
           ),
-          if (detail != null && status != null && status != 'OPEN') ...[
-            const SizedBox(height: 4),
-            Text(
-              redPacketStatusText(status),
-              style: const TextStyle(
-                fontSize: 13,
-                color: WeChatColors.textSecondary,
-              ),
-            ),
-          ],
-          if (detail != null && status == 'OPEN') ...[
-            const SizedBox(height: 4),
-            const Text('领取中',
-                style:
-                    TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
-          ],
         ]),
       );
+
+  /// 列表头：N人已领 · 共 已领/总额（demo 一比一）。
+  Widget _recordsHeader() {
+    final detail = controller.detail;
+    if (detail == null) return const SizedBox.shrink();
+    final total = detail['total']?.toString() ?? '0';
+    final claimedCount = detail['claimed_count']?.toString() ?? '0';
+    var claimedTotal = 0.0;
+    for (final record in parseRedPacketClaims(detail)) {
+      claimedTotal += double.tryParse(record.amount) ?? 0;
+    }
+    final claimedText = claimedTotal.toStringAsFixed(2);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('$claimedCount人已领',
+              style: const TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
+          Text('共 $claimedText/$total 点钻',
+              style: const TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
+        ],
+      ),
+    );
+  }
 
   Widget _recordsCard(List<RedPacketClaimRecord> records, int? bestIndex) {
     if (contactsLoaded && records.isEmpty) {
@@ -316,12 +390,23 @@ final class _RedPacketClaimDetailPageState
     return Container(
       decoration: BoxDecoration(
         color: WeChatColors.elevatedSurface(context),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(12),
+          bottom: Radius.circular(8),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x0F000000),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         key: const Key('red-packet-claim-records'),
         children: [
+          _recordsHeader(),
           for (var i = 0; i < records.length; i++) ...[
             if (i > 0)
               Container(
@@ -334,6 +419,24 @@ final class _RedPacketClaimDetailPageState
         ],
       ),
     );
+  }
+
+  String _formatIssueTime(Map<String, dynamic> detail) {
+    final expiresOrCreated = detail['expires_at']?.toString();
+    final parsed = expiresOrCreated == null
+        ? null
+        : DateTime.tryParse(expiresOrCreated)?.add(const Duration(hours: 24));
+    final time = parsed ?? DateTime.now();
+    final local = time.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+
+  String _formatClaimTime(DateTime time) {
+    final local = time.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
   }
 
   Widget _recordRow(RedPacketClaimRecord record, {required bool isBest}) {
@@ -355,14 +458,29 @@ final class _RedPacketClaimDetailPageState
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 15,
-              color: WeChatColors.resolveTextPrimary(context),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: WeChatColors.resolveTextPrimary(context),
+                ),
+              ),
+              if (record.claimedAt != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _formatClaimTime(record.claimedAt!),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: WeChatColors.textTertiary,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         Column(
