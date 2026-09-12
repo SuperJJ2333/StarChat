@@ -40,6 +40,8 @@ import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/moments/moment_preview_cache.dart';
+import 'features/ledger/ledger_pages.dart';
+import 'features/ledger/ledger_business_gateway.dart';
 import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
@@ -2048,6 +2050,13 @@ final class ProfileTabPage extends StatefulWidget {
   State<ProfileTabPage> createState() => _ProfileTabPageState();
 }
 
+/// 点钻页右上角/查看全部 → 全部账单页（复用既有账单列表）。
+void _openLedgerAllBills(BuildContext context, BusinessApiClient? api) {
+  if (api == null) return;
+  Navigator.of(context).push(CupertinoPageRoute<void>(
+      builder: (_) => LedgerListPage(gateway: BusinessLedgerGateway(api))));
+}
+
 final class _ProfileTabPageState extends State<ProfileTabPage> {
   late ProfileController controller;
   late BusinessApiClient _controllerApi;
@@ -2134,12 +2143,9 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
       onCaibi: () => Navigator.push(
           context,
           CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(
-                  navigationBar: CupertinoNavigationBar(
-                      automaticBackgroundVisibility: false,
-                      enableBackgroundFilterBlur: false,
-                      middle: Text('点钻')),
-                  child: CaibiPage(api: widget.api)))),
+              builder: (_) => CaibiPage(
+                  api: widget.api,
+                  onOpenAllBills: () => _openLedgerAllBills(context, widget.api)))),
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
@@ -2196,12 +2202,9 @@ final class ProfilePage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => CupertinoPageScaffold(
-                      navigationBar: CupertinoNavigationBar(
-                          automaticBackgroundVisibility: false,
-                          enableBackgroundFilterBlur: false,
-                          middle: Text('点钻')),
-                      child: CaibiPage(api: api),
+                    builder: (_) => CaibiPage(
+                      api: api,
+                      onOpenAllBills: () => _openLedgerAllBills(context, api),
                     ),
                   ),
                 ),
