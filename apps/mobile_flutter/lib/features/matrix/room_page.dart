@@ -354,6 +354,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       memoryNamespace: roomInfo.currentUserId ?? '',
       roomId: roomInfo.id);
   bool _locatingMessage = false;
+  bool _userTimelineDragActive = false;
+  bool? _pendingEarlierWindow;
+  double? _lastTimelineScrollOffset;
+  int _timelineScrollGeneration = 0;
+  ScrollPosition? _observedTimelineScrollPosition;
   VoicePlaybackController? _voicePlayback;
   VoicePlaybackController get voicePlayback =>
       _voicePlayback ??= VoicePlaybackController(
@@ -2214,6 +2219,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _openHistorySearch() {
+    _cancelPendingTimelineWindowShift();
     final roomRoute = ModalRoute.of(context);
     final navigator = Navigator.of(context);
     void returnToRoom() {
@@ -2492,6 +2498,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<bool> _scrollToMessage(String eventId) async {
     if (_locatingMessage) return false;
+    _cancelPendingTimelineWindowShift();
+    final generation = _timelineScrollGeneration;
     _locatingMessage = true;
     var found = false;
     try {
@@ -2502,7 +2510,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final oldest = widget.roomLease.oldestTimelineEventId;
         final token = widget.roomLease.historyToken;
         await _loadEarlier();
-        if (!mounted || (controller?.historyExhausted ?? true)) break;
+        if (!mounted ||
+            generation != _timelineScrollGeneration ||
+            (controller?.historyExhausted ?? true)) {
+          break;
+        }
         if (oldest == widget.roomLease.oldestTimelineEventId &&
             token == widget.roomLease.historyToken) {
           break;
@@ -2524,11 +2536,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         messageKeys: messageKeys,
         eventId: eventId,
         isMounted: () => mounted,
+        canContinue: () =>
+            mounted &&
+            generation == _timelineScrollGeneration &&
+            !_scrollInteractionActive(),
       );
     } finally {
       _locatingMessage = false;
     }
     if (!found) {
+      // A new drag, route transition or another locator invalidates this
+      // request. It is cancellation, not a user-visible "not found" result.
+      if (!mounted ||
+          generation != _timelineScrollGeneration ||
+          _scrollInteractionActive()) {
+        return false;
+      }
       if (mounted) _showMediaMessage('未找到该消息，请稍后重试');
       return false;
     }
@@ -3638,6 +3661,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     unawaited(_trackMatrixOperation(_onVoiceCancel(VoiceArmedTarget.cancel)));
     _timelineRevision.dispose();
     _mentionRevision.dispose();
+    _observedTimelineScrollPosition?.isScrollingNotifier
+        .removeListener(_onTimelineScrollActivityChanged);
     controller?.removeListener(_changed);
     controller?.dispose();
     mediaMessageTimer?.cancel();
@@ -3726,24 +3751,94 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 加载中的幂等/耗尽判定由 [RoomTimelineController.loadHistory] 负责。
   void _onMessageScroll() {
     if (_shiftingWindow || _locatingMessage) return;
-    if (messageScrollController.hasClients &&
-        messageScrollController.offset > 80) {
+    if (!messageScrollController.hasClients) return;
+    final position = messageScrollController.position;
+    _observeTimelineScrollActivity(position);
+    final previousOffset = _lastTimelineScrollOffset ?? 0;
+    final offset = position.pixels;
+    _lastTimelineScrollOffset = offset;
+    final towardEarlier = offset > previousOffset + .5;
+    final towardLater = offset < previousOffset - .5;
+    if (offset > 80) {
       controller?.pinWindow();
     }
     _observeVisibleMentions();
-    if (messageScrollController.hasClients &&
-        messageScrollController.position.extentBefore < 120 &&
+    if (towardLater &&
+        position.extentBefore < 120 &&
         (controller?.hasLaterWindow ?? false)) {
-      unawaited(_shiftWindow(() => controller!.showLaterWindow()));
+      _queueWindowShift(earlier: false);
+      unawaited(_applyPendingWindowShift());
       return;
     }
-    _prefetchHistory();
+    if (towardEarlier) unawaited(_prefetchHistory());
+  }
+
+  void _observeMessageScrollActivityIfAttached() {
+    if (messageScrollController.hasClients) {
+      _observeTimelineScrollActivity(messageScrollController.position);
+    }
   }
 
   bool _shiftingWindow = false;
+  bool _scrollInteractionActive() =>
+      _userTimelineDragActive ||
+      (messageScrollController.hasClients &&
+          messageScrollController.position.isScrollingNotifier.value);
+
+  void _observeTimelineScrollActivity(ScrollPosition position) {
+    if (identical(_observedTimelineScrollPosition, position)) return;
+    _observedTimelineScrollPosition?.isScrollingNotifier
+        .removeListener(_onTimelineScrollActivityChanged);
+    _observedTimelineScrollPosition = position;
+    position.isScrollingNotifier.addListener(_onTimelineScrollActivityChanged);
+  }
+
+  void _onTimelineScrollActivityChanged() {
+    if (!_scrollInteractionActive()) {
+      unawaited(_applyPendingWindowShift());
+    }
+  }
+
+  void _queueWindowShift({required bool earlier}) {
+    _pendingEarlierWindow = earlier;
+  }
+
+  void _cancelPendingTimelineWindowShift() {
+    _pendingEarlierWindow = null;
+    _timelineScrollGeneration++;
+  }
+
+  Future<void> _applyPendingWindowShift() async {
+    if (_shiftingWindow ||
+        _scrollInteractionActive() ||
+        !mounted ||
+        !messageScrollController.hasClients ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final earlier = _pendingEarlierWindow;
+    if (earlier == null) return;
+    final position = messageScrollController.position;
+    final atRequestedEdge = earlier
+        ? position.extentAfter <= position.viewportDimension * 2
+        : position.extentBefore < 120;
+    final hasWindow = earlier
+        ? controller?.hasEarlierWindow ?? false
+        : controller?.hasLaterWindow ?? false;
+    if (!atRequestedEdge || !hasWindow) {
+      _pendingEarlierWindow = null;
+      return;
+    }
+    _pendingEarlierWindow = null;
+    await _shiftWindow(earlier
+        ? () => controller!.showEarlierWindow()
+        : () => controller!.showLaterWindow());
+  }
+
   Future<void> _shiftWindow(Future<void> Function() shift) async {
     if (_shiftingWindow || !mounted) return;
     _shiftingWindow = true;
+    final generation = _timelineScrollGeneration;
     final anchor =
         TimelineScrollAnchor.capture(messageKeys, _timelineViewportKey);
     try {
@@ -3755,14 +3850,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             controller: messageScrollController,
             keys: messageKeys,
             eventIds: _visibleMessages().reversed.map((m) => m.id).toList(),
-            isMounted: () => mounted && !_disposing);
+            isMounted: () => mounted && !_disposing,
+            canRestore: () =>
+                generation == _timelineScrollGeneration &&
+                !_scrollInteractionActive());
       }
     } finally {
       _shiftingWindow = false;
+      _lastTimelineScrollOffset = messageScrollController.hasClients
+          ? messageScrollController.offset
+          : null;
     }
   }
 
   Future<void> _showLatestWindow() async {
+    _cancelPendingTimelineWindowShift();
     await controller?.showLatest();
     if (!mounted) return;
     _timelineRevision.value++;
@@ -3781,7 +3883,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         }
       }();
 
-  Future<void> _prefetchHistory() async {
+  Future<void>? _prefetchRequest;
+  Future<void> _prefetchHistory() =>
+      _prefetchRequest ??= _prefetchHistoryOnce().whenComplete(
+        () => _prefetchRequest = null,
+      );
+
+  Future<void> _prefetchHistoryOnce() async {
     if (!mounted ||
         _locatingMessage ||
         _shiftingWindow ||
@@ -3794,18 +3902,47 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         metrics.extentAfter > metrics.viewportDimension * 2) {
       return;
     }
-    try {
-      await _shiftWindow(() async {
-        if (!(controller?.hasEarlierWindow ?? false)) await _loadEarlier();
-        if (controller?.hasEarlierWindow ?? false) {
-          await controller?.showEarlierWindow();
-        }
-      });
-    } catch (_) {
+    if (!(controller?.hasEarlierWindow ?? false)) {
+      final generation = _timelineScrollGeneration;
+      final currentController = controller;
+      final oldest = widget.roomLease.oldestTimelineEventId;
+      final token = widget.roomLease.historyToken;
+      try {
+        await _loadEarlier();
+      } catch (_) {
+        return;
+      }
+      if (!mounted ||
+          generation != _timelineScrollGeneration ||
+          !identical(currentController, controller) ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          (oldest == widget.roomLease.oldestTimelineEventId &&
+              token == widget.roomLease.historyToken)) {
+        return;
+      }
+    }
+    if (controller?.hasEarlierWindow ?? false) {
+      _queueWindowShift(earlier: true);
+      await _applyPendingWindowShift();
+    }
+  }
+
+  void _requestWindowForUserScrollDelta(double delta) {
+    if (!messageScrollController.hasClients || delta == 0) return;
+    final position = messageScrollController.position;
+    if (delta < 0) {
+      // Any deliberate move back toward newer history supersedes an older
+      // prefetch, even when this update is not yet at the newer edge.
+      _cancelPendingTimelineWindowShift();
+      if (position.extentBefore < 120 &&
+          (controller?.hasLaterWindow ?? false)) {
+        _queueWindowShift(earlier: false);
+        unawaited(_applyPendingWindowShift());
+      }
       return;
     }
-    if (mounted && messageListScrolling.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
+    if (delta > 0 && position.extentAfter <= position.viewportDimension * 2) {
+      unawaited(_prefetchHistory());
     }
   }
 
@@ -3822,9 +3959,36 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (notification is ScrollStartNotification) {
       MessageTextSelectionSession.dismissActive();
       messageListScrolling.value = true;
+      if (notification.dragDetails != null) {
+        _observeMessageScrollActivityIfAttached();
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _observeMessageScrollActivityIfAttached();
+      if (!_userTimelineDragActive) {
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+      _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
+    }
+    if (notification is OverscrollNotification &&
+        notification.dragDetails != null) {
+      _observeMessageScrollActivityIfAttached();
+      if (!_userTimelineDragActive) {
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+      _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
     }
     if (notification is ScrollEndNotification) {
       messageListScrolling.value = false;
+      if (_userTimelineDragActive) {
+        _userTimelineDragActive = false;
+        unawaited(_applyPendingWindowShift());
+      }
     }
     return false;
   }

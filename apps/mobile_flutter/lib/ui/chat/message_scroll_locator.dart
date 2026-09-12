@@ -9,11 +9,14 @@ Future<bool> revealLazyMessage({
   required Map<String, GlobalKey> messageKeys,
   required String eventId,
   required bool Function() isMounted,
+  bool Function()? canContinue,
 }) async {
+  bool active() => isMounted() && (canContinue?.call() ?? true);
   final targetIndex = eventIds.indexOf(eventId);
   if (targetIndex < 0) return false;
-  for (var attempt = 0; attempt < 256; attempt++) {
-    if (!isMounted() ||
+  final maximumAttempts = eventIds.length + 32;
+  for (var attempt = 0; attempt < maximumAttempts; attempt++) {
+    if (!active() ||
         !controller.hasClients ||
         controller.positions.length != 1) {
       return false;
@@ -27,7 +30,7 @@ Future<bool> revealLazyMessage({
     if (target is RenderBox && target.attached && target.hasSize) {
       await position.ensureVisible(target, alignment: .5);
       await WidgetsBinding.instance.endOfFrame;
-      if (!isMounted() || !target.attached) return false;
+      if (!active() || !target.attached) return false;
       final viewport = RenderAbstractViewport.maybeOf(target);
       if (viewport == null) return false;
       final rect = MatrixUtils.transformRect(
@@ -55,13 +58,17 @@ Future<bool> revealLazyMessage({
     if (nearestIndex < 0 || mountedCount == 0) return false;
     final averageHeight = totalHeight / mountedCount;
     final direction = targetIndex > nearestIndex ? 1.0 : -1.0;
-    // Small bounded seeks keep virtualization intact and avoid assuming that
-    // maxScrollExtent or a global average describes variable-height messages.
+    // Keep normal rows on the established three-viewport bound. A measured
+    // row taller than that bound gets a multi-row seek so it does not consume
+    // one viewport-sized frame at a time.
+    final maximumDistance = averageHeight > position.viewportDimension * 3
+        ? averageHeight * 4
+        : position.viewportDimension * 3;
     final distance = (nearestDistance * averageHeight)
-        .clamp(position.viewportDimension / 2, position.viewportDimension * 3);
+        .clamp(position.viewportDimension / 2, maximumDistance);
     final next = (position.pixels + direction * distance)
         .clamp(position.minScrollExtent, position.maxScrollExtent);
-    if ((next - position.pixels).abs() < .5) return false;
+    if (!active() || (next - position.pixels).abs() < .5) return false;
     controller.jumpTo(next);
     await WidgetsBinding.instance.endOfFrame;
   }

@@ -5,7 +5,7 @@
 计划：[实施计划](../../superpowers/plans/2026-09-12-history-latency.md)。证据目录docs/verification/artifacts/2026-09-12/history-latency/。
 
 ## 当前状态
-I0基线合并中。ADB确认Mi6 cbd0156b实际2096，lastUpdateTime2026-09-12 19:43:17。原本worktree401b3938/2094，根main已f6405c04但d145合并父6db66f0c+aac3d806，不含401；2096重建脚本指向根工作区。新分支codex/history-latency-20260912从401 merge main，唯一冲突contacts_page.dart。
+I0已完成并提交9e87c8a09578dbc55745ce0546fd6e29854b7102（父401b3938与f6405c04）。以下保留初始核对经过：ADB确认Mi6 cbd0156b实际2096，lastUpdateTime2026-09-12 19:43:17。原本worktree401b3938/2094，根main已f6405c04但d145合并父6db66f0c+aac3d806，不含401；2096重建脚本指向根工作区。新分支codex/history-latency-20260912从401 merge main，唯一冲突contacts_page.dart。
 实际创建terra_history_dates显式gpt-5.6-terra并完成H1只读，第二新代理与旧代理唤起均因agent thread limit拒绝；目前只用这一已确认Terra串行执行，root独立审查H2/H3。没有静默模型替换。
 Terra独占contacts_page.dart冲突与Flutter runner；root负责计划/证据、H2/H3只读。接着root审查合并后再H1或H2小批。真机功能由用户测，本轮只有ADB只读版本检查。
 
@@ -17,9 +17,9 @@ Terra独占contacts_page.dart冲突与Flutter runner；root负责计划/证据�
 ## 验收台账
 | ID | 要求 | 状态/证据 | 下一步 |
 | --- | --- | --- | --- |
-| I0 | 保留2094/2096两边改动并对齐基线 | 冲突处理中 | Terra定向回归，Astra审查 |
+| I0 | 保留2094/2096两边改动并对齐基线 | 已提交9e87c8a0，局部审查通过 | 最终整合门禁 |
 | H1 | 日期首显不整月串行扫描，旧日期仍可检索 | 代码根因已确认 | 有界本地索引/扩展设计与RED |
-| H2 | 定位历史后上下反复滑动正常 | 调查 | 真实列表复现 |
+| H2 | 定位历史后上下反复滑动正常 | 已有真实RoomPage RED/GREEN，候选待收尾 | clamped边界与真实取消回归 |
 | H3 | 分解群聊接收延迟并修复证实的阻塞 | 调查 | 跳板只读汇总与SDK链路 |
 | V/D | 完整验证与必要新Debug安装 | 未开始 | 待实现冻结 |
 
@@ -49,3 +49,11 @@ H3增加server-key-request-summary.json：最近3h keys/query149次P95 21ms、se
 
 ## I0审查通过 2026-09-12T23:05:50.904964+08:00
 Astra实际审查API/epoch缓存、冷入口、隐私/revision迟到隔离、403撤权、预取终止与两个独立预览的通知路径。额外跨组件RED精确复现build期间setState；最终使用同步失效+按scheduler阶段延迟/合并通知与监听快照。i0-focused-green-final-v4.log 13通过exit0，i0-targeted-analyze-final-v4.log无问题exit0；contacts/profile合并此前50通过。I0局部规格及质量/隐私审查通过，可作为整合基线提交；全量门禁仍待最终候选。H2三个审查收尾由Terra继续，未宣称H1/H3完成。
+
+## 23:17+08 H2收尾与执行环境（分钟精度）
+I0合并提交9e87c8a0；旧terra_history_dates因执行预算耗尽不能继续，已实际创建新的terra_history_navigation，明确model=gpt-5.6-terra、fork=none接手。再次创建独立H3代理失败agent thread limit，并未创建；目前仅一个执行Terra串行，Astra做独立diff/调用链审查。held-history真实RoomPage回归已补：旧请求挂起时同手势向新方向反拖100px、仍在旧边缘阈值内，迟到完成不再切回旧窗口，模型≤200。该测试第一次失败是fixture未到旧边缘，并不是新的产品RED；原产品RED证据沿用既有真实拖动失败。继续补纯Clamping边界与真正跨帧取消，替换依赖回调调用次数的locator测试。
+下一步：H2审查提交 → H3真实SDK数据库合成50 sender量化 → H1日期有界定位实施，保持共享文件串行。H3实际50秒延迟仍无事故时刻关联，不宣称已修好。
+
+## H2局部验收 23:21+08（分钟精度）
+Astra亲读最终三个产品文件diff、真实RoomPage测试、frame间取消fixture与日志。规格符合性：活动手势/惯性不被jumpTo抢占，边缘延后换窗，反向操作撤销旧pending，locator可取消且200模型不扩容；质量检查：listener生命周期、迟到generation、无新业务/API/财务/E2EE边界变更。h2-room-anchor-locator-final-terra-v2.log 24通过exit0；h2-room-anchor-locator-analyze-terra.log 无问题exit0。clamped和跨帧取消是新增GREEN覆盖，原始产品RED仍为h2-reverse-anchor-drag-red、h2-room-page-drag-red-v3及超高行定位RED。首个日志创建命令参数错误发生在Flutter启动前，不算执行失败测试。
+H2可独立提交；H1整合后还需跨模块回归及最终候选全量门禁，Mi6手势用户自测。Terra现仅拥有新sdk_receive_burst_benchmark_test与receive-burst证据，H3先测不改产品；Astra维护记录和H1架构。

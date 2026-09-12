@@ -12,24 +12,30 @@ final class TimelineScrollAnchor {
     final viewport = viewportKey.currentContext?.findRenderObject();
     if (viewport is! RenderBox || !viewport.hasSize) return null;
     final bounds = viewport.localToGlobal(Offset.zero) & viewport.size;
+    TimelineScrollAnchor? intersecting;
     for (final entry in keys.entries) {
       final box = entry.value.currentContext?.findRenderObject();
       if (box is! RenderBox || !box.attached || !box.hasSize) continue;
       final rect = box.localToGlobal(Offset.zero) & box.size;
+      if (rect.overlaps(bounds)) {
+        intersecting ??= TimelineScrollAnchor(entry.key, rect.top);
+      }
       if (rect.top >= bounds.top && rect.top < bounds.bottom) {
         return TimelineScrollAnchor(entry.key, rect.top);
       }
     }
-    return null;
+    return intersecting;
   }
 
   Future<void> restore(
       {required ScrollController controller,
       required Map<String, GlobalKey> keys,
       required List<String> eventIds,
-      required bool Function() isMounted}) async {
+      required bool Function() isMounted,
+      bool Function()? canRestore}) async {
+    bool active() => isMounted() && (canRestore?.call() ?? true);
     await WidgetsBinding.instance.endOfFrame;
-    if (!isMounted() || !controller.hasClients) return;
+    if (!active() || !controller.hasClients) return;
     var box = keys[eventId]?.currentContext?.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) {
       await revealLazyMessage(
@@ -37,10 +43,11 @@ final class TimelineScrollAnchor {
           eventIds: eventIds,
           messageKeys: keys,
           eventId: eventId,
-          isMounted: isMounted);
+          isMounted: isMounted,
+          canContinue: canRestore);
     }
     for (var attempt = 0; attempt < 3; attempt++) {
-      if (!isMounted() || !controller.hasClients) return;
+      if (!active() || !controller.hasClients) return;
       box = keys[eventId]?.currentContext?.findRenderObject();
       if (box is! RenderBox || !box.attached || !box.hasSize) return;
       final delta = globalY - box.localToGlobal(Offset.zero).dy;

@@ -8,7 +8,7 @@
 
 - [x] I0 对齐实际2096基线：设备已确认0.3.87-debug/2096，root main=f6405c04，其merge d145父6db66f0c+aac3d806未包含401b3938。当前新分支codex/history-latency-20260912从401建立，merge main；唯一冲突contacts_page.dart由Terra逐块合并，保留双方presence三态/并发保护、离线开会话、请求节流和朋友圈预览。Astra审查stage1/2/3与最终调用链；contacts/profile定向回归。不得整文件ours/theirs，不自动push。
 - [ ] H1 日期：已证实ChatSearchPage打开立即loadCalendarMonth→loadThrough(月初)→串行60条SDK本地/网络历史；全量allMessages转搜索模型并重新汇总日期。先写实际入口held-history失败测试，已知日期不等待网络，禁止一打开日历就整月回溯。具体索引/旧日期扩展方案在读SDK公开存储能力后细化；不以永久禁用未知日期或隐藏历史伪修复。允许room_page日历区、chat_search_page日历区、独立日期摘要组件、必要公开capability及测试；与H2共享room_page修改必须串行。
-- [ ] H2 历史滚动：沿room_page _onMessageScroll/_prefetchHistory/_shiftWindow→TimelineScrollAnchor→RoomTimelineViewport/Controller，复现五天前定位、上滑再反向下滑。重点验证自动/程序滚动误触发双向换窗、无进展重复prefetch、锚点校正取消拖动及异步旧请求。先真实Flutter可滚动多高度历史回归，检查多次双向滑动、两端边界、迟到加载/新消息、定位取消；保持200可见模型上限/稳定消息key/本地数据。
+- [x] H2 历史滚动（局部24项及analyze通过，最终H1整合回归待V/D）：沿room_page _onMessageScroll/_prefetchHistory/_shiftWindow→TimelineScrollAnchor→RoomTimelineViewport/Controller，复现五天前定位、上滑再反向下滑。重点验证自动/程序滚动误触发双向换窗、无进展重复prefetch、锚点校正取消拖动及异步旧请求。先真实Flutter可滚动多高度历史回归，检查多次双向滑动、两端边界、迟到加载/新消息、定位取消；保持200可见模型上限/稳定消息key/本地数据。
 - [ ] H3 接收延迟：用户确认“别人已发出很久才收到”，尚无准确时间/群名。Astra只读跳板检查当前健康、资源、限流配置及脱敏汇总耗时，不造生产用户/消息、不读正文/密钥、不部署重启。核对SDK sync/历史/解密/数据库与通知监听串行阻塞；用50+不同sender事件的本地受控测试分开传输/处理/展示，指标不含消息正文。只有有证据的缺陷交Terra改；没有历史遥测的50秒精确归因列待验证，不猜设备或服务器。
 - [ ] V/D：Astra先规格再质量/安全审查；相关RED/GREEN、全量Flutter/analyze/mobile/UI契约与基线失败身份比较；verify环境预检/证据复用。需要新包时核对版本高于设备2096，固定APK重建/签名/哈希/保留数据安装Mi6，用户真机自测。禁止生产发布、push、数据库迁移、手机断网/清数据测试。
 
@@ -25,3 +25,4 @@ context必须独立保留连续性与双向token：向旧页走prevBatch，向�
 
 ### H3 可证实范围
 不修改E2EE/device keys流程来掩盖接收延迟。先使用真实SDK数据库和50个合成sender事件量化批处理的消息ID列表写放大，重开数据库验证事件集合与顺序；记录固定历史规模、主机模式和阶段耗时，不当作Mi6/生产压测。若优化事务内同key中间写，必须保持put/delete/clear顺序、同事务读可见性、失败回滚、事务外写与账号隔离，且不动账本schema或密码/密钥。另需有受控sync处理与清理阶段的数值测量，实际50秒事件无对应日志则保留未验证。
+
