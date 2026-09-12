@@ -35,12 +35,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
 .rp.opened .txt{color:var(--text-2)}
 /* 领取详情页 */
 .rp-detail{background:#F7F7F7;padding:0 0 16px}
-.rp-hero{background:linear-gradient(165deg,#FA9D3B -10%,#FA5151 55%,#E8413F 100%);padding:44px 24px 20px;text-align:center;color:#FFE7C2;position:relative;overflow:hidden}
+.rp-hero{background:linear-gradient(165deg,#FA9D3B -10%,#FA5151 55%,#E8413F 100%);padding:44px 24px 34px;text-align:center;color:#FFE7C2;position:relative;border-radius:0 0 28px 28px}
 .rp-hero .icon{width:64px;height:64px;margin:0 auto 8px;background:#FDD89F;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:36px}
 .rp-hero .amount{font-size:44px;font-weight:700;color:#FFF;margin-top:4px}
 .rp-hero .amount .unit{font-size:16px;font-weight:400}
 .rp-hero .status{font-size:13px;color:#FFE7C2;margin-top:6px}
-.rp-list{margin:-14px 12px 0;background:#FFF;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.rp-list{margin:-18px 12px 0;background:#FFF;border-radius:12px 12px 8px 8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);position:relative;z-index:1}
 .rp-list .head{padding:14px 16px 6px;font-size:13px;color:var(--text-2);display:flex;justify-content:space-between}
 .rp-list .row{display:flex;align-items:center;padding:12px 16px;gap:10px}
 .rp-list .row + .row{border-top:.5px solid var(--line)}
@@ -166,10 +166,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
       <div class="icon">🧧</div>
       <div style="font-size:15px">小彭 的红包</div>
       <div class="amount">8.88 <span class="unit">点钻</span></div>
-      <div class="status">已领取 2/3 个 · 2026-09-12 20:30</div>
+      <div class="status">已领取 3/3 个 · 2026-09-12 20:30</div>
     </div>
     <div class="rp-list">
-      <div class="head"><span>2人已领</span><span>共 12.88/20.00 点钻</span></div>
+      <div class="head"><span>3人已领</span><span>共 20.00/20.00 点钻</span></div>
       <div class="row">
         <div class="ava">彭</div>
         <div class="info"><div class="name">小彭</div><div class="time">20:30:01</div></div>
@@ -179,6 +179,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
         <div class="ava">鸿</div>
         <div class="info"><div class="name">这个小鸿</div><div class="time">20:30:02</div></div>
         <div class="amt">8.88</div>
+      </div>
+      <div class="row">
+        <div class="ava">雨</div>
+        <div class="info"><div class="name">一蓑烟雨</div><div class="time">20:30:05</div></div>
+        <div class="amt">7.12</div>
       </div>
     </div>
     <div class="rp-foot">发出时间 2026-09-12 20:30</div>

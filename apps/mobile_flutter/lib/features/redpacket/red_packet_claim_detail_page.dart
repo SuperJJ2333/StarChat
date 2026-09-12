@@ -85,10 +85,16 @@ int? bestLuckRecordIndex(List<RedPacketClaimRecord> records,
     final expired = serverTime != null &&
         expiresAt != null &&
         !expiresAt.isAfter(serverTime);
+    // 手气最佳展示门槛（与微信一致）：
+    // 1. 群聊 + 拼手气（RANDOM）+ 服务端 best_luck_eligible；
+    // 2. 已领取完毕（COMPLETED）或已过期——进行中一律不展示；
+    // 3. 份数 ≥ 2：单份红包即使领完也没有“手气”可比。
+    final shares = int.tryParse('${detail['share_count']}') ?? 0;
     if (!(detail['room_id'] != null &&
         detail['mode'] == 'RANDOM' &&
         detail['best_luck_eligible'] == true &&
         status != 'CANCELLED' &&
+        shares >= 2 &&
         (terminal || expired))) {
       return null;
     }

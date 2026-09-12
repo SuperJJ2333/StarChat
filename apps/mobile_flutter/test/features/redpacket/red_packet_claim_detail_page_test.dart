@@ -128,6 +128,43 @@ Future<void> _pumpPage(WidgetTester tester, FakeGateway gateway) async {
 }
 
 void main() {
+  test('单份红包即使领完也不显示手气最佳（微信对齐）', () {
+    final records = parseRedPacketClaims({
+      'claims': [
+        {'user_id': 'u1', 'amount': '1.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
+      ]
+    });
+    final detail = {
+      'room_id': '!room:t',
+      'mode': 'RANDOM',
+      'status': 'COMPLETED',
+      'share_count': 1,
+      'best_luck_eligible': true,
+      'server_time': '2026-01-01T00:00:02+00:00',
+      'expires_at': '2099-01-01T00:00:00+00:00',
+    };
+    expect(bestLuckRecordIndex(records, detail: detail), isNull);
+  });
+
+  test('两份群红包领完显示手气最佳', () {
+    final records = parseRedPacketClaims({
+      'claims': [
+        {'user_id': 'u1', 'amount': '5.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
+        {'user_id': 'u2', 'amount': '6.00', 'claimed_at': '2026-01-01T00:00:02+00:00'},
+      ]
+    });
+    final detail = {
+      'room_id': '!room:t',
+      'mode': 'RANDOM',
+      'status': 'COMPLETED',
+      'share_count': 2,
+      'best_luck_eligible': true,
+      'server_time': '2026-01-01T00:00:03+00:00',
+      'expires_at': '2099-01-01T00:00:00+00:00',
+    };
+    expect(bestLuckRecordIndex(records, detail: detail), 1);
+  });
+
   test('claims parse in ascending claim-time order', () {
     final records = parseRedPacketClaims(_detail);
     expect(records.map((record) => record.userId).toList(),
@@ -184,7 +221,8 @@ void main() {
     final base = {
       'room_id': '!r',
       'mode': 'RANDOM',
-      'best_luck_eligible': true
+      'best_luck_eligible': true,
+      'share_count': 2,
     };
     expect(
         bestLuckRecordIndex(huge, detail: {...base, 'status': 'COMPLETED'}), 1);
