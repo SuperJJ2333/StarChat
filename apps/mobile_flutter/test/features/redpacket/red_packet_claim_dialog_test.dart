@@ -91,8 +91,20 @@ final class _SessionGateway
 const _openDetail = {
   'id': 'packet-1',
   'sender_id': 'u-bob',
+  'room_id': '!group:test',
   'total': '88.00',
   'share_count': 10,
+  'claimed_count': 0,
+  'status': 'OPEN',
+  'claims': <Map<String, dynamic>>[],
+};
+
+const _privateOpenDetail = {
+  'id': 'packet-2',
+  'sender_id': 'u-bob',
+  'room_id': null,
+  'total': '88.00',
+  'share_count': 1,
   'claimed_count': 0,
   'status': 'OPEN',
   'claims': <Map<String, dynamic>>[],
@@ -138,6 +150,13 @@ void main() {
     expect(center.dx, closeTo(appSize.width / 2, 1));
     expect(center.dy, lessThan(appSize.height / 2));
     expect(center.dy, greaterThan(appSize.height / 4));
+  });
+
+  testWidgets('私聊红包不显示看看大家的手气入口', (tester) async {
+    await _openDialog(tester,
+        gateway: FakeRedPacketViewGateway(detail: _privateOpenDetail));
+    expect(find.byKey(const Key('red-packet-claim-dialog')), findsOneWidget);
+    expect(find.text('看看大家的手气 >'), findsNothing);
   });
 
   testWidgets('tapping 開 claims and shows the credited amount', (tester) async {

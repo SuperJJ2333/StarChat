@@ -55,6 +55,10 @@ final class _GroupTimeline extends Fake implements Timeline {
   @override
   bool get canRequestHistory => false;
   @override
+  bool get isFragmentedTimeline => false;
+  @override
+  bool get canRequestFuture => false;
+  @override
   Future<void> setReadMarker({String? eventId, bool? public}) async {}
   @override
   void cancelSubscriptions() {}

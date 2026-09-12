@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'room_timeline_controller.dart';
+import 'room_history_date_capability.dart';
 import 'room_timeline_viewport.dart';
 
 const changliaoRedPacketMessageType = 'com.changliao.red_packet';
@@ -72,6 +73,8 @@ final class MatrixRoomTimelineAdapter
         RoomTimelineAdapter,
         RoomOptimisticTextAdapter,
         RoomHistoryStatus,
+        RoomFutureHistoryStatus,
+        RoomHistoryDateCapability,
         RoomWindowedTimelineSource {
   MatrixRoomTimelineAdapter(this._capability);
 
@@ -159,7 +162,10 @@ final class MatrixRoomTimelineAdapter
 
   @override
   void selectLatest() {
-    if (_window != null) {
+    final date = _dateCapability;
+    if (date != null) {
+      date.selectLatest();
+    } else if (_window != null) {
       _window!.selectLatest();
     } else {
       _fallbackWindow?.latest();
@@ -217,7 +223,33 @@ final class MatrixRoomTimelineAdapter
       : true;
 
   @override
+  bool get hasFutureHistory =>
+      _capability is RoomFutureHistoryStatus &&
+      (_capability as RoomFutureHistoryStatus).hasFutureHistory;
+  @override
+  Future<void> loadFutureHistory() => _capability is RoomFutureHistoryStatus
+      ? (_capability as RoomFutureHistoryStatus).loadFutureHistory()
+      : Future.value();
+
+  @override
   Future<void> markRead() => _capability.markRead();
+
+  RoomHistoryDateCapability? get _dateCapability =>
+      _capability is RoomHistoryDateCapability
+          ? _capability as RoomHistoryDateCapability
+          : null;
+  @override
+  Iterable<RoomHistoryDayMetadata> get loadedDayMetadata =>
+      _dateCapability?.loadedDayMetadata ?? const [];
+  @override
+  bool get isViewingHistoryContext =>
+      _dateCapability?.isViewingHistoryContext ?? false;
+  @override
+  Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) =>
+      _dateCapability?.locateDay(localDay) ?? Future.value(null);
+
+  @override
+  void cancelPendingDateLookup() => _dateCapability?.cancelPendingDateLookup();
 
   @override
   void dispose() => _capability.dispose();

@@ -92,3 +92,26 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
 - This small prerequisite does not implement calendar timestamp lookup or
   forward context navigation. Those application changes remain pending in
   `docs/superpowers/plans/2026-09-12-history-latency.md`.
+
+2026-09-13 fragmented history lifecycle:
+
+- `Timeline.requestFuture` always clears its in-flight flag, including after a
+  transport failure, so a context fragment can retry its forward page.
+  Limited live sync updates no longer clear a fragmented context timeline.
+- While a fragment blocks unrelated live appends, authoritative updates and
+  redactions for events it already contains still apply. Existing Matrix
+  request/decryption and key-management paths are unchanged.
+- Regression: `test/features/matrix/sdk_history_fragment_test.dart` uses the
+  real Timeline with a mocked Matrix transport plus real client event/sync
+  streams for retry, limited-sync, update, redaction, and live-append bounds.
+
+2026-09-13 fragmented history request ownership:
+
+- Backward and forward page requests are mutually exclusive per Timeline.
+  They share the chunk and `_collectHistoryUpdates` collector, so a caller
+  arriving while either direction is in flight returns without transport and
+  may retry after the owner completes. This does not alter Matrix request
+  payloads, encryption, or token handling.
+- Regression: `test/features/matrix/sdk_history_fragment_test.dart` holds a
+  real backward HTTP request, confirms a concurrent forward call emits no
+  second request, then confirms the explicit retry succeeds after release.

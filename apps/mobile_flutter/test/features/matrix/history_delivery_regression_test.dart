@@ -18,7 +18,12 @@ void main() {
     expect(source, contains('RoomHistoryStatus'));
     final room = File('lib/features/matrix/room_page.dart').readAsStringSync();
     expect(room, isNot(contains("Key('chat-history-loading')")));
-    expect(room, contains('loadCalendarMonth:'));
+    expect(room, contains('controller?.loadedDayMetadata'),
+        reason: 'calendar markers use raw loaded timeline metadata');
+    expect(room, isNot(contains('loadCalendarMonth:')),
+        reason: 'opening or changing a month must not scan history');
+    expect(room, contains('final token = widget.roomLease.historyToken;'),
+        reason: 'the independent text-search pagination contract remains');
   });
   test('redaction then duplicate sync never resurrects an unread mention', () {
     final tracker = UnreadMentionTracker(accountId: 'me', roomId: 'room');

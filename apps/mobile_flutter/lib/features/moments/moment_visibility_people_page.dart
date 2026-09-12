@@ -4,6 +4,7 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contact_tag_models.dart';
@@ -175,6 +176,14 @@ final class _MomentVisibilityPeoplePageState
             contact.displayName.toLowerCase().contains(query) ||
             contact.nickname?.toLowerCase().contains(query) == true)
           WeChatListTile(
+            key: Key('visibility-friend-${contact.userId}'),
+            // 自定义头像：与全 App 一致的 UserAvatar 渲染与缓存机制。
+            leading: UserAvatar(
+              nickname: contact.displayName,
+              fallbackSeed: contact.userId,
+              avatarUrl: contact.avatarUrl,
+              size: 36,
+            ),
             title: Text(contact.displayName),
             subtitle: contact.remark?.trim().isNotEmpty == true &&
                     contact.nickname?.trim().isNotEmpty == true

@@ -27,7 +27,9 @@ def test_all_three_tab_search_entries_push_the_same_global_search_page():
     ]
     for relative in sources:
         source = _read(relative)
-        matches = re.findall(r"GlobalSearchPage\((.*?)\)", source, re.S)
+        # 截到语句结尾而不是第一个右括号：实参里的 ContactActions( ... )
+        # 是嵌套括号，非贪婪到 `)` 会把 api:/matrix: 截在参数列表之外。
+        matches = re.findall(r"GlobalSearchPage\((.*?);", source, re.S)
         assert matches, f"{relative} must open GlobalSearchPage"
         for call in matches:
             assert "api:" in call, f"{relative} GlobalSearchPage needs api:"

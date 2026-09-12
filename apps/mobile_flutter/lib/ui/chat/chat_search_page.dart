@@ -9,6 +9,10 @@ import '../../features/matrix/chat_search_query_controller.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../components/user_avatar.dart';
 
+/// The result of an explicit date query. An incomplete bounded scan must not
+/// be presented as a confirmed empty day.
+enum CalendarDateLookupResult { located, confirmedEmpty, incomplete }
+
 /// 规格 #4：聊天记录搜索页——默认空态（仅搜索框+五个筛选入口+提示，
 /// 不显示任何消息行）；组合筛选（AND）+ 可移除标签；结果列表（#5）。
 final class ChatSearchPage extends StatefulWidget {
@@ -29,7 +33,10 @@ final class ChatSearchPage extends StatefulWidget {
     this.earliestMonth,
     this.latestMonth,
     this.onJumpToDate,
+    this.onDateLookup,
+    this.onCancelDateLookup,
     this.loadCalendarMonth,
+    this.allowUnknownPastDates = false,
     this.onCalendarClosed,
     this.onSearchInvalidated,
   });
@@ -68,7 +75,13 @@ final class ChatSearchPage extends StatefulWidget {
 
   /// 日期定位回调（选中日期后直接定位，不再只弹说明——R6 修复）。
   final void Function(DateTime date)? onJumpToDate;
+  final Future<CalendarDateLookupResult> Function(DateTime date)? onDateLookup;
+  final VoidCallback? onCancelDateLookup;
   final Future<Set<DateTime>> Function(DateTime month)? loadCalendarMonth;
+
+  /// Date metadata may be incomplete. When enabled, local past/today dates
+  /// remain selectable without scanning a month; future dates remain disabled.
+  final bool allowUnknownPastDates;
   final VoidCallback? onCalendarClosed;
   final VoidCallback? onSearchInvalidated;
 
@@ -289,10 +302,13 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
           datesWithMessages: widget.datesWithMessages,
           scanningDates: widget.scanningDates,
           loadMonth: widget.loadCalendarMonth,
+          allowUnknownPastDates: widget.allowUnknownPastDates,
+          onDateLookup: widget.onDateLookup,
+          onCancelDateLookup: widget.onCancelDateLookup,
         ),
       ),
     );
-    widget.onCalendarClosed?.call();
+    if (picked == null) widget.onCalendarClosed?.call();
     if (picked != null && mounted) {
       // R6 修复：日期选择后**直接调用定位回调**（不再只弹说明框）。
       if (widget.onJumpToDate != null) {
@@ -703,7 +719,10 @@ final class CalendarPickerPage extends StatefulWidget {
     this.datesWithMessages = const {},
     this.scanningDates = const {},
     this.onDateTap,
+    this.onDateLookup,
+    this.onCancelDateLookup,
     this.loadMonth,
+    this.allowUnknownPastDates = false,
   });
 
   final logic.CalendarMonth earliest;
@@ -711,7 +730,10 @@ final class CalendarPickerPage extends StatefulWidget {
   final Set<DateTime> datesWithMessages;
   final Set<DateTime> scanningDates;
   final void Function(DateTime date)? onDateTap;
+  final Future<CalendarDateLookupResult> Function(DateTime date)? onDateLookup;
+  final VoidCallback? onCancelDateLookup;
   final Future<Set<DateTime>> Function(DateTime month)? loadMonth;
+  final bool allowUnknownPastDates;
 
   @override
   State<CalendarPickerPage> createState() => _CalendarPickerPageState();
@@ -724,6 +746,62 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   bool _loading = false;
   bool _failed = false;
   bool _picked = false;
+  DateTime? _lookupDate;
+  DateTime? _retryDate;
+  CalendarDateLookupResult? _lookupResult;
+  bool _lookupFailed = false;
+  int _lookupGeneration = 0;
+
+  void _discardDateLookup() {
+    if (_lookupDate == null) return;
+    _lookupGeneration++;
+    _lookupDate = null;
+    widget.onCancelDateLookup?.call();
+  }
+
+  void _cancelDateLookup() {
+    _discardDateLookup();
+    setState(() {
+      _lookupResult = null;
+      _lookupFailed = false;
+    });
+  }
+
+  Future<void> _lookupDateAndPick(DateTime date) async {
+    final lookup = widget.onDateLookup;
+    if (lookup == null) return _pickLegacy(date);
+    final generation = ++_lookupGeneration;
+    setState(() {
+      _lookupDate = date;
+      _retryDate = date;
+      _lookupResult = null;
+      _lookupFailed = false;
+    });
+    try {
+      final result = await lookup(date);
+      if (!mounted || generation != _lookupGeneration) return;
+      if (result == CalendarDateLookupResult.located) {
+        _picked = true;
+        Navigator.of(context).pop(date);
+        return;
+      }
+      setState(() {
+        _lookupDate = null;
+        _lookupResult = result;
+      });
+    } catch (_) {
+      if (!mounted || generation != _lookupGeneration) return;
+      setState(() {
+        _lookupDate = null;
+        _lookupFailed = true;
+      });
+    }
+  }
+
+  Future<void> _retryDateLookup() async {
+    final date = _retryDate;
+    if (date != null) await _lookupDateAndPick(date);
+  }
 
   Future<void> _loadMonth() async {
     final loader = widget.loadMonth;
@@ -751,8 +829,20 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   }
 
   void _navigate(logic.CalendarMonth month) {
-    setState(() => _current = month);
-    unawaited(_loadMonth());
+    _discardDateLookup();
+    setState(() {
+      _current = month;
+      _retryDate = null;
+      _lookupResult = null;
+      _lookupFailed = false;
+    });
+    if (!widget.allowUnknownPastDates) unawaited(_loadMonth());
+  }
+
+  @override
+  void dispose() {
+    if (!_picked) _discardDateLookup();
+    super.dispose();
   }
 
   @override
@@ -760,7 +850,7 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
     super.initState();
     _current = widget.latest;
     _dates = widget.datesWithMessages;
-    unawaited(_loadMonth());
+    if (!widget.allowUnknownPastDates) unawaited(_loadMonth());
   }
 
   @override
@@ -770,126 +860,185 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
         earliest: widget.earliest, latest: widget.latest);
     final canNext = widget.latest.canNavigateTo(_current.next,
         earliest: widget.earliest, latest: widget.latest);
-    return CupertinoPageScaffold(
-      key: const Key('calendar-picker-page'),
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('选择日期'),
-        transitionBetweenRoutes: false,
-      ),
-      backgroundColor: dark
-          ? WeChatColors.darkPageBackground
-          : WeChatColors.lightPageBackground,
-      child: SafeArea(
-        child: Column(children: [
-          // 月份标题 + 上/下月导航。
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                CupertinoButton(
-                  key: const Key('calendar-prev-month'),
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.all(8),
-                  onPressed:
-                      canPrev ? () => _navigate(_current.previous) : null,
-                  child: const Icon(CupertinoIcons.chevron_left, size: 20),
-                ),
-                Text(_current.title,
-                    style: const TextStyle(
-                        fontSize: 17, fontWeight: FontWeight.w600)),
-                CupertinoButton(
-                  key: const Key('calendar-next-month'),
-                  minimumSize: Size.zero,
-                  padding: const EdgeInsets.all(8),
-                  onPressed: canNext ? () => _navigate(_current.next) : null,
-                  child: const Icon(CupertinoIcons.chevron_right, size: 20),
-                ),
-              ],
-            ),
-          ),
-          // 周一至周日表头。
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                for (final day in ['一', '二', '三', '四', '五', '六', '日'])
-                  Expanded(
-                    child: Center(
-                      child: Text(day,
-                          style: const TextStyle(
-                              fontSize: 12, color: WeChatColors.textTertiary)),
-                    ),
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop && !_picked) _discardDateLookup();
+      },
+      child: CupertinoPageScaffold(
+        key: const Key('calendar-picker-page'),
+        navigationBar: const CupertinoNavigationBar(
+          middle: Text('选择日期'),
+          transitionBetweenRoutes: false,
+        ),
+        backgroundColor: dark
+            ? WeChatColors.darkPageBackground
+            : WeChatColors.lightPageBackground,
+        child: SafeArea(
+          child: Column(children: [
+            // 月份标题 + 上/下月导航。
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CupertinoButton(
+                    key: const Key('calendar-prev-month'),
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.all(8),
+                    onPressed:
+                        canPrev ? () => _navigate(_current.previous) : null,
+                    child: const Icon(CupertinoIcons.chevron_left, size: 20),
                   ),
-              ],
+                  Text(_current.title,
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w600)),
+                  CupertinoButton(
+                    key: const Key('calendar-next-month'),
+                    minimumSize: Size.zero,
+                    padding: const EdgeInsets.all(8),
+                    onPressed: canNext ? () => _navigate(_current.next) : null,
+                    child: const Icon(CupertinoIcons.chevron_right, size: 20),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          if (_loading)
-            const Padding(padding: EdgeInsets.all(8), child: Text('正在查找历史日期…')),
-          if (_failed)
-            CupertinoButton(
-                onPressed: _loadMonth, child: const Text('历史加载失败，点击重试')),
-          if (!_loading &&
-              !_failed &&
-              !_dates.any(
-                  (d) => d.year == _current.year && d.month == _current.month))
-            const Padding(padding: EdgeInsets.all(8), child: Text('本月暂无聊天记录')),
-          // 日期网格。
-          Expanded(
-            child: GridView.builder(
-              key: const Key('calendar-grid'),
+            // 周一至周日表头。
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7, childAspectRatio: 1),
-              itemCount: _leadingBlanks() + _current.daysInMonth,
-              itemBuilder: (context, index) {
-                final blank = index < _leadingBlanks();
-                if (blank) return const SizedBox.shrink();
-                final day = index - _leadingBlanks() + 1;
-                final date = DateTime(_current.year, _current.month, day);
-                final status = logic.dayStatus(date,
-                    datesWithMessages: _dates,
-                    scanningDates: widget.scanningDates);
-                final enabled = status == logic.CalendarDayStatus.hasMessages;
-                return GestureDetector(
-                  key: Key('calendar-day-$day'),
-                  onTap: enabled ? () => _pick(date) : null,
-                  child: Container(
-                    margin: const EdgeInsets.all(2),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: status == logic.CalendarDayStatus.hasMessages
-                          ? WeChatColors.brandPrimary.withValues(alpha: .12)
-                          : null,
-                    ),
-                    child: Text(
-                      '$day',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: switch (status) {
-                          logic.CalendarDayStatus.hasMessages =>
-                            WeChatColors.resolveTextPrimary(context),
-                          logic.CalendarDayStatus.scanning =>
-                            WeChatColors.textTertiary,
-                          _ => const Color(0xFFCCCCCC),
-                        },
+              child: Row(
+                children: [
+                  for (final day in ['一', '二', '三', '四', '五', '六', '日'])
+                    Expanded(
+                      child: Center(
+                        child: Text(day,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: WeChatColors.textTertiary)),
                       ),
                     ),
-                  ),
-                );
-              },
+                ],
+              ),
             ),
-          ),
-        ]),
+            const SizedBox(height: 4),
+            if (_loading)
+              const Padding(
+                  padding: EdgeInsets.all(8), child: Text('正在查找历史日期…')),
+            if (_failed)
+              CupertinoButton(
+                  onPressed: _loadMonth, child: const Text('历史加载失败，点击重试')),
+            if (_lookupDate != null)
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const CupertinoActivityIndicator(
+                    key: Key('calendar-date-lookup-loading')),
+                const SizedBox(width: 8),
+                const Text('正在定位日期…'),
+                CupertinoButton(
+                  key: const Key('calendar-date-lookup-cancel'),
+                  onPressed: _cancelDateLookup,
+                  child: const Text('取消'),
+                ),
+              ]),
+            if (_lookupFailed)
+              CupertinoButton(
+                key: const Key('calendar-date-lookup-retry'),
+                onPressed: _retryDateLookup,
+                child: const Text('日期定位失败，点击重试'),
+              ),
+            if (_lookupResult == CalendarDateLookupResult.confirmedEmpty)
+              CupertinoButton(
+                key: const Key('calendar-date-lookup-retry'),
+                onPressed: _retryDateLookup,
+                child: const Text('本日暂无聊天记录'),
+              ),
+            if (_lookupResult == CalendarDateLookupResult.incomplete)
+              CupertinoButton(
+                key: const Key('calendar-date-lookup-retry'),
+                onPressed: _retryDateLookup,
+                child: const Text('历史范围尚未加载完成，请重试该日期'),
+              ),
+            if (widget.allowUnknownPastDates &&
+                !_dates.any((d) =>
+                    d.year == _current.year && d.month == _current.month))
+              const Padding(
+                  padding: EdgeInsets.all(8), child: Text('尚未加载聊天记录，可选择日期查询')),
+            if (!widget.allowUnknownPastDates &&
+                !_loading &&
+                !_failed &&
+                !_dates.any((d) =>
+                    d.year == _current.year && d.month == _current.month))
+              const Padding(
+                  padding: EdgeInsets.all(8), child: Text('本月暂无聊天记录')),
+            // 日期网格。
+            Expanded(
+              child: GridView.builder(
+                key: const Key('calendar-grid'),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 7, childAspectRatio: 1),
+                itemCount: _leadingBlanks() + _current.daysInMonth,
+                itemBuilder: (context, index) {
+                  final blank = index < _leadingBlanks();
+                  if (blank) return const SizedBox.shrink();
+                  final day = index - _leadingBlanks() + 1;
+                  final date = DateTime(_current.year, _current.month, day);
+                  final status = logic.dayStatus(date,
+                      datesWithMessages: _dates,
+                      scanningDates: widget.scanningDates);
+                  final today = DateTime.now();
+                  final future = date
+                      .isAfter(DateTime(today.year, today.month, today.day));
+                  final known = status == logic.CalendarDayStatus.hasMessages;
+                  final unknownPastOrToday = widget.allowUnknownPastDates &&
+                      status == logic.CalendarDayStatus.noMessages &&
+                      !future;
+                  final knownForDisplay =
+                      known && (!widget.allowUnknownPastDates || !future);
+                  final enabled = widget.allowUnknownPastDates
+                      ? (known || unknownPastOrToday) && !future
+                      : known;
+                  return GestureDetector(
+                    key: Key('calendar-day-$day'),
+                    onTap: enabled && _lookupDate == null
+                        ? () => _lookupDateAndPick(date)
+                        : null,
+                    child: Container(
+                      margin: const EdgeInsets.all(2),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: knownForDisplay
+                            ? WeChatColors.brandPrimary.withValues(alpha: .12)
+                            : null,
+                      ),
+                      child: Text(
+                        '$day',
+                        style: TextStyle(
+                          fontSize: 15,
+                          color: switch (status) {
+                            _ when knownForDisplay =>
+                              WeChatColors.resolveTextPrimary(context),
+                            logic.CalendarDayStatus.scanning =>
+                              WeChatColors.textTertiary,
+                            _ when unknownPastOrToday =>
+                              WeChatColors.resolveTextPrimary(context),
+                            _ => const Color(0xFFCCCCCC),
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }
 
   int _leadingBlanks() => _current.firstWeekdayMondayBased - 1;
 
-  void _pick(DateTime date) {
+  void _pickLegacy(DateTime date) {
     if (_picked) return;
     _picked = true;
     if (widget.onDateTap != null) {

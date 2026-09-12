@@ -24,6 +24,14 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class UpdateVisibility(Strict):
+    visibility: Literal["PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"]
+    include_user_ids: list[str] = Field(default_factory=list)
+    exclude_user_ids: list[str] = Field(default_factory=list, max_length=30)
+    include_tag_ids: list[str] = Field(default_factory=list, max_length=30)
+    exclude_tag_ids: list[str] = Field(default_factory=list, max_length=30)
+
+
 class CreateMoment(Strict):
     text: str = Field(default="", max_length=5000)
     visibility: Literal["PUBLIC", "FRIENDS", "INCLUDE", "EXCLUDE", "SELF"]
@@ -87,6 +95,10 @@ def create_moments_router(settings: Settings, factory, *, avatar_storage=None):
         if not authorization or not authorization.startswith("Bearer "):
             raise AppError(code="AUTH_REQUIRED", message="需要登录", status_code=401)
         return str(tokens.decode_access_token(authorization[7:])["sub"])
+
+    @router.patch("/{moment_id}/visibility")
+    def update_visibility(moment_id: str, body: UpdateVisibility, user=Depends(actor)):
+        return service.update_visibility(user, moment_id, body.model_dump())
 
     @router.post("", status_code=201)
     def create(body: CreateMoment, idempotency_key: Annotated[str, Header(alias="Idempotency-Key")], user=Depends(actor)):

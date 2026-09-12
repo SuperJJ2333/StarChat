@@ -18,6 +18,9 @@ enum PerformanceOperation {
   localFeedLoad,
   conversationProjection,
   composerToFrame,
+  syncResponseWait,
+  syncProcessing,
+  syncCleanup,
 }
 
 enum PerformanceCounter {

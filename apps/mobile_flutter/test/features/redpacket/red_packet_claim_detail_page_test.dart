@@ -128,6 +128,43 @@ Future<void> _pumpPage(WidgetTester tester, FakeGateway gateway) async {
 }
 
 void main() {
+  test('单份红包即使领完也不显示手气最佳（微信对齐）', () {
+    final records = parseRedPacketClaims({
+      'claims': [
+        {'user_id': 'u1', 'amount': '1.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
+      ]
+    });
+    final detail = {
+      'room_id': '!room:t',
+      'mode': 'RANDOM',
+      'status': 'COMPLETED',
+      'share_count': 1,
+      'best_luck_eligible': true,
+      'server_time': '2026-01-01T00:00:02+00:00',
+      'expires_at': '2099-01-01T00:00:00+00:00',
+    };
+    expect(bestLuckRecordIndex(records, detail: detail), isNull);
+  });
+
+  test('两份群红包领完显示手气最佳', () {
+    final records = parseRedPacketClaims({
+      'claims': [
+        {'user_id': 'u1', 'amount': '5.00', 'claimed_at': '2026-01-01T00:00:01+00:00'},
+        {'user_id': 'u2', 'amount': '6.00', 'claimed_at': '2026-01-01T00:00:02+00:00'},
+      ]
+    });
+    final detail = {
+      'room_id': '!room:t',
+      'mode': 'RANDOM',
+      'status': 'COMPLETED',
+      'share_count': 2,
+      'best_luck_eligible': true,
+      'server_time': '2026-01-01T00:00:03+00:00',
+      'expires_at': '2099-01-01T00:00:00+00:00',
+    };
+    expect(bestLuckRecordIndex(records, detail: detail), 1);
+  });
+
   test('claims parse in ascending claim-time order', () {
     final records = parseRedPacketClaims(_detail);
     expect(records.map((record) => record.userId).toList(),
@@ -184,7 +221,8 @@ void main() {
     final base = {
       'room_id': '!r',
       'mode': 'RANDOM',
-      'best_luck_eligible': true
+      'best_luck_eligible': true,
+      'share_count': 2,
     };
     expect(
         bestLuckRecordIndex(huge, detail: {...base, 'status': 'COMPLETED'}), 1);
@@ -237,7 +275,11 @@ void main() {
       (tester) async {
     await _pumpPage(tester, FakeGateway(detail: _detail, contacts: _contacts));
 
-    expect(find.text('共 88.00 点钻，已领取 3/3 个'), findsOneWidget);
+    // Hero：总额大字 + 状态行；列表头：N人已领 / 共 已领/总额。
+    expect(find.text('88.00 点钻'), findsOneWidget);
+    expect(find.textContaining('已领取 3/3 个'), findsOneWidget);
+    expect(find.text('3人已领'), findsOneWidget);
+    expect(find.textContaining('共 88.00/88.00 点钻'), findsOneWidget);
     // Sender resolved with remark priority from the viewer's contact book.
     expect(find.text('艾米的红包'), findsOneWidget);
     expect(find.byKey(const Key('red-packet-claim-records')), findsOneWidget);
@@ -314,7 +356,7 @@ void main() {
           'status': 'EXPIRED',
         }, contacts: _contacts));
 
-    expect(find.text('已过期，未领取金额将退回'), findsOneWidget);
+    expect(find.textContaining('已过期，未领取金额将退回'), findsOneWidget);
   });
 
   testWidgets('detail error retry reloads and renders open records',
@@ -329,7 +371,7 @@ void main() {
     await tester.tap(find.byKey(const Key('red-packet-claim-detail-retry')));
     await tester.pumpAndSettle();
     expect(gateway.calls, 2);
-    expect(find.text('领取中'), findsOneWidget);
+    expect(find.textContaining('已领取 2/3 个'), findsOneWidget);
     expect(find.byKey(const Key('red-packet-claim-records')), findsOneWidget);
   });
 

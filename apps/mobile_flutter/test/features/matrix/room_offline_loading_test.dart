@@ -21,8 +21,13 @@ class _OfflineClient extends Client {
   @override
   String? get userID => '@self:offline.test';
   late final _OfflineRoom localRoom = _OfflineRoom(client: this);
+  GetEventByTimestampResponse? timestampResult;
   @override
   Room? getRoomById(String roomId) => roomId == localRoom.id ? localRoom : null;
+  @override
+  Future<GetEventByTimestampResponse> getEventByTimestamp(
+          String roomId, int timestamp, Direction direction) async =>
+      timestampResult!;
 }
 
 class _OfflineTimeline extends Fake implements Timeline {
@@ -39,6 +44,23 @@ class _OfflineTimeline extends Fake implements Timeline {
         ];
   @override
   final List<Event> events;
+  @override
+  bool get isFragmentedTimeline => false;
+  bool futureAvailable = false;
+  Completer<void>? pendingFuture;
+  int futureRequests = 0;
+  Future<void> Function()? onFuture;
+  @override
+  bool get canRequestFuture => futureAvailable;
+  @override
+  Future<void> requestFuture(
+      {int historyCount = Room.defaultHistoryCount}) async {
+    futureRequests++;
+    final pending = pendingFuture;
+    if (pending != null) await pending.future;
+    await onFuture?.call();
+  }
+
   int readAttempts = 0;
   bool offline = true;
   Future<void> Function()? historyLoader;
@@ -69,6 +91,7 @@ class _OfflineTimeline extends Fake implements Timeline {
 class _OfflineRoom extends Room {
   _OfflineRoom({required super.client}) : super(id: '!cached:offline.test');
   late final _OfflineTimeline localTimeline = _OfflineTimeline(this);
+  _OfflineTimeline? contextTimeline;
   void Function()? update;
   bool failTimeline = false;
   @override
@@ -88,6 +111,7 @@ class _OfflineRoom extends Room {
     if (failTimeline) {
       throw const SocketException('synthetic local open failure');
     }
+    if (eventContextId != null) return contextTimeline!;
     return localTimeline;
   }
 }
@@ -198,6 +222,78 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'held forward fragment page shifts only after the newer-edge drag ends',
+      (tester) async {
+    final client = _OfflineClient();
+    final room = client.localRoom;
+    final day = DateTime(2026, 9, 5);
+    final context = _OfflineTimeline(room)
+      ..events.clear()
+      ..events.addAll(List.generate(
+          240,
+          (index) => Event(
+              room: room,
+              eventId: 'context-$index',
+              senderId: '@peer:offline.test',
+              type: EventTypes.Message,
+              originServerTs: day.add(Duration(minutes: index)),
+              content: {'msgtype': 'm.text', 'body': 'context $index'})))
+      ..futureAvailable = true
+      ..pendingFuture = Completer<void>();
+    room.contextTimeline = context;
+    client.timestampResult = GetEventByTimestampResponse(
+      eventId: r'$context-anchor',
+      originServerTs: day.millisecondsSinceEpoch,
+    );
+    await _mount(tester, client);
+    final state = tester.state(find.byType(RoomPage)) as dynamic;
+    final timeline = state.controller as RoomTimelineController;
+    expect((await timeline.locateDay(day))?.eventId, 'context-0');
+    while (timeline.hasLaterWindow) {
+      await timeline.showLaterWindow();
+    }
+    await tester.pump();
+    expect(timeline.hasLaterWindow, isFalse);
+    final listFinder = find.byType(ListView).first;
+    final scroll = tester.widget<ListView>(listFinder).controller!;
+    final oldFirst = timeline.messages.first.id;
+    expect(timeline.hasFutureHistory, isTrue);
+    expect(scroll.position.extentBefore, lessThan(120));
+
+    final gesture = await tester.startGesture(tester.getCenter(listFinder));
+    await gesture.moveBy(const Offset(0, -500));
+    await gesture.moveBy(const Offset(0, -500));
+    await tester.pump();
+    expect(context.futureRequests, 1);
+    expect(scroll.position.isScrollingNotifier.value, isTrue);
+    context.events.insertAll(
+        0,
+        List.generate(
+            200,
+            (index) => Event(
+                room: room,
+                eventId: 'future-$index',
+                senderId: '@peer:offline.test',
+                type: EventTypes.Message,
+                originServerTs: day.add(Duration(days: 1, minutes: index)),
+                content: {'msgtype': 'm.text', 'body': 'future $index'})));
+    context.futureAvailable = false;
+    context.pendingFuture!.complete();
+    room.update!();
+    await tester.pump();
+    expect(timeline.hasLaterWindow, isTrue);
+    expect(timeline.messages.first.id, oldFirst,
+        reason: 'a held drag must not shift its window');
+    await gesture.up();
+    for (var i = 0; i < 300 && scroll.position.isScrollingNotifier.value; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 32));
+    expect(timeline.messages.first.id, isNot(oldFirst));
+    await tester.pumpWidget(const SizedBox());
   });
   testWidgets('append reuses unchanged visible rows without rebuilding page',
       (tester) async {

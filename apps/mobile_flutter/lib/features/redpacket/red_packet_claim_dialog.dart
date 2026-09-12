@@ -276,7 +276,8 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
                 fontSize: 13,
               ),
             )
-          else
+          else if (detail != null && detail['room_id'] != null)
+            // 私聊红包（room_id 为 null）不显示“看看大家的手气”入口。
             CupertinoButton(
               key: const Key('red-packet-claim-luck-entry'),
               padding: EdgeInsets.zero,

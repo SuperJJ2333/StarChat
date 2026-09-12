@@ -1,3 +1,5 @@
+import 'moment_visibility_selection.dart';
+
 final class MomentAuthor {
   const MomentAuthor({
     required this.userId,
@@ -97,7 +99,19 @@ final class MomentItem {
     this.comments = const [],
     this.kind = 'MOMENT',
     this.adLink,
+    this.visibility,
+    this.includeUserIds = const [],
+    this.excludeUserIds = const [],
+    this.includeTagIds = const [],
+    this.excludeTagIds = const [],
   });
+  /// 可见范围（作者本人视角由服务端返回；他人视角为 null/空）。
+  final String? visibility;
+  final List<String> includeUserIds;
+  final List<String> excludeUserIds;
+  final List<String> includeTagIds;
+  final List<String> excludeTagIds;
+
   factory MomentItem.fromJson(Map<String, dynamic> json) {
     if (json['kind'] == 'AD') {
       final ad = Map<String, dynamic>.from(json['ad'] as Map);
@@ -142,10 +156,58 @@ final class MomentItem {
                 MomentCommentView.fromJson(Map<String, dynamic>.from(v as Map)),
           )
           .toList(),
+      visibility: json['visibility']?.toString(),
+      includeUserIds: (json['include_user_ids'] as List? ?? const [])
+          .map((v) => v.toString())
+          .toList(growable: false),
+      excludeUserIds: (json['exclude_user_ids'] as List? ?? const [])
+          .map((v) => v.toString())
+          .toList(growable: false),
+      includeTagIds: (json['include_tag_ids'] as List? ?? const [])
+          .map((v) => v.toString())
+          .toList(growable: false),
+      excludeTagIds: (json['exclude_tag_ids'] as List? ?? const [])
+          .map((v) => v.toString())
+          .toList(growable: false),
     );
   }
   final String id, text, kind;
   final MomentAuthor author;
+  MomentVisibilitySelection? get visibilitySelection {
+    final value = visibility;
+    if (value == null) return null;
+    return MomentVisibilitySelection(
+      visibility: value,
+      userIds: switch (value) {
+        'INCLUDE' => Set.unmodifiable(includeUserIds),
+        'EXCLUDE' => Set.unmodifiable(excludeUserIds),
+        _ => const {},
+      },
+      tagIds: switch (value) {
+        'INCLUDE' => Set.unmodifiable(includeTagIds),
+        'EXCLUDE' => Set.unmodifiable(excludeTagIds),
+        _ => const {},
+      },
+    );
+  }
+
+  MomentItem withVisibilitySelection(MomentVisibilitySelection selection) =>
+      copyWith(
+        visibility: selection.visibility,
+        includeUserIds: selection.visibility == 'INCLUDE'
+            ? selection.userIds.toList(growable: false)
+            : const [],
+        excludeUserIds: selection.visibility == 'EXCLUDE'
+            ? selection.userIds.toList(growable: false)
+            : const [],
+        includeTagIds: selection.visibility == 'INCLUDE'
+            ? selection.tagIds.toList(growable: false)
+            : const [],
+        excludeTagIds: selection.visibility == 'EXCLUDE'
+            ? selection.tagIds.toList(growable: false)
+            : const [],
+      );
+
   static List<String?> _imageCacheKeys(Map<String, dynamic> json) {
     final keys = json['image_cache_keys'];
     final images = json['image_urls'];
@@ -168,6 +230,11 @@ final class MomentItem {
     int? likeCount,
     List<MomentAuthor>? likeUsers,
     List<MomentCommentView>? comments,
+    String? visibility,
+    List<String>? includeUserIds,
+    List<String>? excludeUserIds,
+    List<String>? includeTagIds,
+    List<String>? excludeTagIds,
   }) => MomentItem(
     id: id,
     author: author,
@@ -181,6 +248,11 @@ final class MomentItem {
     comments: comments ?? this.comments,
     kind: kind,
     adLink: adLink,
+    visibility: visibility ?? this.visibility,
+    includeUserIds: includeUserIds ?? this.includeUserIds,
+    excludeUserIds: excludeUserIds ?? this.excludeUserIds,
+    includeTagIds: includeTagIds ?? this.includeTagIds,
+    excludeTagIds: excludeTagIds ?? this.excludeTagIds,
   );
 }
 

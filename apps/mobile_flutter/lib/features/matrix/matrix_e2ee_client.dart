@@ -53,6 +53,7 @@ import 'matrix_call_adapter.dart' hide changliaoCallMessageType;
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
+import 'room_history_date_capability.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
 import 'matrix_security_logger.dart';
@@ -1057,12 +1058,13 @@ final class MatrixRoomLease
         for (final timeline in _timelines.toList()) {
           if (!timeline._disposed) {
             await RoomMentionStore.shared.ingest(
-                room, timeline._timeline.events,
+                room, timeline._liveTimeline.events,
                 shouldContinue: () => _mentionsActive);
           }
         }
       });
-  String? get historyToken => _activeRoom.prev_batch;
+  String? get historyToken =>
+      _timelines.lastOrNull?.historyToken ?? _activeRoom.prev_batch;
   String? get oldestTimelineEventId =>
       _timelines.lastOrNull?._timeline.events.lastOrNull?.eventId;
   DateTime? get oldestTimelineEventDate =>
@@ -1680,8 +1682,11 @@ final class _SdkRoomTimelineCapability
     implements
         RoomTimelineCapability,
         RoomHistoryStatus,
+        RoomFutureHistoryStatus,
+        RoomHistoryDateCapability,
         RoomWindowedTimelineSource {
-  _SdkRoomTimelineCapability(this._lease, this._timeline, this._onUpdate) {
+  _SdkRoomTimelineCapability(this._lease, Timeline timeline, this._onUpdate)
+      : _liveTimeline = timeline {
     _outgoingListener = () {
       if (!_disposed) _onUpdate();
     };
@@ -1690,7 +1695,10 @@ final class _SdkRoomTimelineCapability
   }
 
   final MatrixRoomLease _lease;
-  final Timeline _timeline;
+  final Timeline _liveTimeline;
+  Timeline? _contextTimeline;
+  int _contextGeneration = 0;
+  Timeline get _timeline => _contextTimeline ?? _liveTimeline;
   final void Function() _onUpdate;
   late final VoidCallback _outgoingListener;
   late final MatrixOutgoingWorkCoordinator _outgoingWork;
@@ -1836,7 +1844,17 @@ final class _SdkRoomTimelineCapability
   @override
   RoomMessageViewModel? findMessage(String id) => _viewport?.find(id);
   @override
-  RoomMessageViewModel? get newestMessage => _viewport?.newest;
+  RoomMessageViewModel? get newestMessage {
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    // SDK timelines keep the newest event at the head. Context paging must not
+    // make a controller refresh scan the complete live history just to retain
+    // this one tail projection.
+    for (final event in _liveTimeline.events) {
+      if (_visibleDateEvent(event, hidden)) return _cachedMessage(event);
+    }
+    return null;
+  }
+
   @override
   DateTime? previousTimestamp(String id) => _viewport?.previousTimestamp(id);
   @override
@@ -1846,7 +1864,15 @@ final class _SdkRoomTimelineCapability
   @override
   void selectLater() => _viewport?.later();
   @override
-  void selectLatest() => _viewport?.latest();
+  void selectLatest() {
+    _contextGeneration++;
+    _contextTimeline?.cancelSubscriptions();
+    _contextTimeline = null;
+    _messageCache.clear();
+    _viewport?.latest();
+    if (!_disposed) _onUpdate();
+  }
+
   @override
   void pinWindow() => _viewport?.pin();
 
@@ -1866,6 +1892,13 @@ final class _SdkRoomTimelineCapability
     for (final event in _timeline.events) {
       if (event.eventId == eventId) return event;
     }
+    final other =
+        identical(_timeline, _liveTimeline) ? _contextTimeline : _liveTimeline;
+    if (other != null) {
+      for (final event in other.events) {
+        if (event.eventId == eventId) return event;
+      }
+    }
     return null;
   }
 
@@ -1877,7 +1910,7 @@ final class _SdkRoomTimelineCapability
       // A background item belongs to the newest conversation state. It must
       // not appear in the middle of an anchored older history window.
       return _mergeAccountOutgoingWork(_viewport!.snapshot(),
-          includePending: !_viewport!.hasLater);
+          includePending: !_viewport!.hasLater && !isViewingHistoryContext);
     }
     List<RoomMessageViewModel>? changed;
     var index = 0;
@@ -2302,21 +2335,225 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<void> loadHistory() =>
-      _withOperation(() => _timeline.requestHistory(historyCount: 60));
+  Future<void> loadHistory() {
+    final timeline = _timeline;
+    return _withOperation(() => timeline.requestHistory(historyCount: 60));
+  }
 
   @override
   bool get canLoadHistory => !_disposed && _timeline.canRequestHistory;
 
   @override
-  Future<void> markRead() => _withOperation(_timeline.setReadMarker);
+  bool get hasFutureHistory => !_disposed && _timeline.canRequestFuture;
+
+  @override
+  Future<void> loadFutureHistory() {
+    final timeline = _timeline;
+    return _withOperation(() => timeline.requestFuture(historyCount: 60));
+  }
+
+  String? get historyToken {
+    final timeline = _timeline;
+    if (!timeline.isFragmentedTimeline) return _lease._activeRoom.prev_batch;
+    final token = timeline.chunk.prevBatch;
+    return token.isEmpty ? null : token;
+  }
+
+  @override
+  bool get isViewingHistoryContext => _contextTimeline != null;
+
+  @override
+  void cancelPendingDateLookup() {
+    // Do not tear down the currently visible context. Only a future adopted
+    // context may be cancelled; an SDK network future can still finish late.
+    _contextGeneration++;
+  }
+
+  @override
+  Future<void> markRead() => _withOperation(_liveTimeline.setReadMarker);
+
+  DateTime _localDay(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    return DateTime(local.year, local.month, local.day);
+  }
+
+  bool _visibleDateEvent(
+      Event event, bool Function(String, DateTime?)? hidden) {
+    if (event.type != EventTypes.Message ||
+        event.redacted ||
+        event.messageType == groupAnnouncementMessageType) {
+      return false;
+    }
+    return !(hidden?.call(event.eventId, event.originServerTs) ?? false) &&
+        !(_windowHiddenFilter?.call(event.eventId, event.originServerTs) ??
+            false);
+  }
+
+  Iterable<Event> get _loadedEvents sync* {
+    yield* _liveTimeline.events;
+    final context = _contextTimeline;
+    if (context != null) yield* context.events;
+  }
+
+  @override
+  Iterable<RoomHistoryDayMetadata> get loadedDayMetadata {
+    _ensureActive();
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    final seen = <DateTime>{};
+    for (final event in _loadedEvents) {
+      if (_visibleDateEvent(event, hidden)) {
+        seen.add(_localDay(event.originServerTs));
+      }
+    }
+    return [for (final day in seen) RoomHistoryDayMetadata(day)];
+  }
+
+  Event? _eventForDay(Iterable<Event> events, DateTime day,
+      bool Function(String, DateTime?)? hidden) {
+    Event? earliest;
+    for (final event in events) {
+      if (_visibleDateEvent(event, hidden) &&
+          _localDay(event.originServerTs) == day &&
+          (earliest == null ||
+              event.originServerTs.isBefore(earliest.originServerTs))) {
+        earliest = event;
+      }
+    }
+    return earliest;
+  }
+
+  @override
+  Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) async {
+    final day = DateTime(localDay.year, localDay.month, localDay.day);
+    _ensureActive();
+    final generation = ++_contextGeneration;
+    final lookupClock = Stopwatch()..start();
+    Duration remainingBudget(Duration cap) {
+      final remaining = const Duration(seconds: 13) - lookupClock.elapsed;
+      if (remaining <= Duration.zero) return Duration.zero;
+      return remaining < cap ? remaining : cap;
+    }
+
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    final live = _eventForDay(_liveTimeline.events, day, hidden);
+    if (live != null) {
+      _contextTimeline?.cancelSubscriptions();
+      _contextTimeline = null;
+      _messageCache.clear();
+      _onUpdate();
+      return RoomHistoryDayLocation(eventId: live.eventId, day: day);
+    }
+    final local =
+        _eventForDay(_contextTimeline?.events ?? const [], day, hidden);
+    if (local != null) {
+      return RoomHistoryDayLocation(eventId: local.eventId, day: day);
+    }
+    return _withOperation(() async {
+      final room = _lease._activeRoom;
+      final timestampBudget = remainingBudget(const Duration(seconds: 5));
+      if (timestampBudget == Duration.zero) {
+        throw const RoomHistoryLookupIncomplete();
+      }
+      final located = await room.client
+          .getEventByTimestamp(room.id, day.millisecondsSinceEpoch, Direction.f)
+          .timeout(timestampBudget);
+      if (_disposed || generation != _contextGeneration) return null;
+      final locatedDay = _localDay(
+          DateTime.fromMillisecondsSinceEpoch(located.originServerTs));
+      if (locatedDay.isAfter(day)) {
+        return null;
+      }
+      if (locatedDay.isBefore(day)) {
+        throw const RoomHistoryLookupIncomplete();
+      }
+      var abandoned = false;
+      var adopted = false;
+      Timeline? context;
+      final contextFuture = room.getTimeline(
+          eventContextId: located.eventId,
+          onUpdate: () {
+            if (adopted && !_disposed && identical(_contextTimeline, context)) {
+              _onUpdate();
+            }
+          });
+      // A timeout cannot cancel an SDK future. Dispose a late context before it
+      // can retain subscriptions or publish into a newer context generation.
+      unawaited(contextFuture.then((late) {
+        if (abandoned) late.cancelSubscriptions();
+      }).catchError((_) {}));
+      final contextBudget = remainingBudget(const Duration(seconds: 5));
+      if (contextBudget == Duration.zero) {
+        abandoned = true;
+        throw const RoomHistoryLookupIncomplete();
+      }
+      final resolvedContext =
+          await contextFuture.timeout(contextBudget, onTimeout: () {
+        abandoned = true;
+        throw TimeoutException('Matrix event context lookup timed out');
+      });
+      context = resolvedContext;
+      try {
+        if (_disposed || generation != _contextGeneration) {
+          return null;
+        }
+        var currentHidden =
+            _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+        var event = _eventForDay(resolvedContext.events, day, currentHidden);
+        var forwardPages = 0;
+        while (event == null) {
+          final hasUndecrypted = resolvedContext.events.any(
+              (item) => item.type == EventTypes.Encrypted && !item.redacted);
+          final crossedDay = resolvedContext.events.any((item) =>
+              _visibleDateEvent(item, currentHidden) &&
+              _localDay(item.originServerTs).isAfter(day));
+          // The first visible later day proves that another forward page cannot
+          // contain a displayable event on [day]. An encrypted event on the
+          // selected day wins over that boundary: it is not evidence of an empty
+          // day until decryption has completed.
+          if (crossedDay ||
+              !resolvedContext.canRequestFuture ||
+              forwardPages >= 3) {
+            if (hasUndecrypted ||
+                (!crossedDay && resolvedContext.canRequestFuture)) {
+              throw const RoomHistoryLookupIncomplete();
+            }
+            return null;
+          }
+          final forwardBudget = remainingBudget(const Duration(seconds: 13));
+          if (forwardBudget == Duration.zero) {
+            throw const RoomHistoryLookupIncomplete();
+          }
+          await resolvedContext
+              .requestFuture(historyCount: 60)
+              .timeout(forwardBudget);
+          if (_disposed || generation != _contextGeneration) {
+            resolvedContext.cancelSubscriptions();
+            return null;
+          }
+          forwardPages++;
+          currentHidden =
+              _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+          event = _eventForDay(resolvedContext.events, day, currentHidden);
+        }
+        _contextTimeline?.cancelSubscriptions();
+        _contextTimeline = resolvedContext;
+        adopted = true;
+        _messageCache.clear();
+        _onUpdate();
+        return RoomHistoryDayLocation(eventId: event.eventId, day: day);
+      } finally {
+        if (!adopted) resolvedContext.cancelSubscriptions();
+      }
+    });
+  }
 
   @override
   void dispose() {
     if (_disposed) return;
     _disposed = true;
     _outgoingWork.removeListener(_outgoingListener);
-    _timeline.cancelSubscriptions();
+    _liveTimeline.cancelSubscriptions();
+    _contextTimeline?.cancelSubscriptions();
     _lease._timelines.remove(this);
   }
 }

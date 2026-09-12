@@ -90,27 +90,36 @@ class Timeline {
 
   Future<void> requestHistory(
       {int historyCount = Room.defaultHistoryCount}) async {
-    if (isRequestingHistory) {
+    // Both directions mutate the same chunk and share _collectHistoryUpdates.
+    // A second direction must retry after this owner has drained its update
+    // batch; otherwise either finally block can publish an incomplete view.
+    if (isRequestingHistory || isRequestingFuture) {
       return;
     }
 
     isRequestingHistory = true;
-    await _requestEvents(direction: Direction.b, historyCount: historyCount);
-    isRequestingHistory = false;
+    try {
+      await _requestEvents(direction: Direction.b, historyCount: historyCount);
+    } finally {
+      isRequestingHistory = false;
+    }
   }
 
-  bool get canRequestFuture => !allowNewEvent;
+  bool get canRequestFuture => !allowNewEvent && chunk.nextBatch.isNotEmpty;
 
   Future<void> requestFuture(
       {int historyCount = Room.defaultHistoryCount}) async {
-    if (allowNewEvent) {
+    if (!canRequestFuture) {
       return; // we shouldn't force to add new events if they will autatically be added
     }
 
-    if (isRequestingFuture) return;
+    if (isRequestingFuture || isRequestingHistory) return;
     isRequestingFuture = true;
-    await _requestEvents(direction: Direction.f, historyCount: historyCount);
-    isRequestingFuture = false;
+    try {
+      await _requestEvents(direction: Direction.f, historyCount: historyCount);
+    } finally {
+      isRequestingFuture = false;
+    }
   }
 
   Future<void> _requestEvents(
@@ -179,7 +188,6 @@ class Timeline {
       }
     } finally {
       _collectHistoryUpdates = false;
-      isRequestingHistory = false;
       onUpdate?.call();
     }
   }
@@ -226,7 +234,7 @@ class Timeline {
     final newEvents =
         resp.chunk.map((e) => Event.fromMatrixEvent(e, room)).toList();
 
-    if (!allowNewEvent) {
+    if (!allowNewEvent && !isFragmentedTimeline) {
       if (resp.start == resp.end ||
           (resp.end == null && direction == Direction.f)) allowNewEvent = true;
 
@@ -249,6 +257,30 @@ class Timeline {
         }
       }
     }
+
+    // Context pages can overlap. Preserve the already loaded Event instance so
+    // a late original cannot duplicate or undo a locally observed redaction.
+    final loadedById = {for (final event in events) event.eventId: event};
+    newEvents.removeWhere((event) {
+      final loaded = loadedById[event.eventId];
+      if (loaded == null) {
+        loadedById[event.eventId] = event;
+        return false;
+      }
+      // A paging response may be the first authoritative redaction seen for
+      // an already decrypted event. Merge only that state; replacing the
+      // complete Event would discard the decrypted payload.
+      if (event.redacted && !loaded.redacted) {
+        final redaction = event.redactedBecause;
+        if (redaction != null) {
+          removeAggregatedEvent(loaded);
+          loaded.setRedactionEvent(redaction);
+          final index = events.indexOf(loaded);
+          if (index >= 0) onChange?.call(index);
+        }
+      }
+      return true;
+    });
 
     // update chunk anchors
     if (type == EventUpdateType.history) {
@@ -288,7 +320,9 @@ class Timeline {
 
     // If the timeline is limited we want to clear our events cache
     roomSub = room.client.onSync.stream
-        .where((sync) => sync.rooms?.join?[room.id]?.timeline?.limited == true)
+        .where((sync) =>
+            !isFragmentedTimeline &&
+            sync.rooms?.join?[room.id]?.timeline?.limited == true)
         .listen(_removeEventsNotInThisSync);
 
     sessionIdReceivedSub =
@@ -302,7 +336,7 @@ class Timeline {
     }
 
     // we are using a fragmented timeline
-    if (chunk.nextBatch != '') {
+    if (chunk.isFragment || chunk.nextBatch != '') {
       allowNewEvent = false;
       isFragmentedTimeline = true;
       // fragmented timelines never read from the database.
@@ -485,19 +519,29 @@ class Timeline {
         onNewEvent?.call();
       }
 
-      if (!allowNewEvent) return;
+      final i = _findEvent(
+          event_id: eventUpdate.content['event_id'],
+          unsigned_txid: eventUpdate.content['unsigned'] is Map
+              ? eventUpdate.content['unsigned']['transaction_id']
+              : null);
+      final isRedaction = eventUpdate.content['type'] == EventTypes.Redaction;
+      final redactionContent = eventUpdate.content['content'];
+      final redactionTarget = isRedaction
+          ? eventUpdate.content['redacts'] as String? ??
+              (redactionContent is Map
+                  ? redactionContent['redacts'] as String?
+                  : null)
+          : null;
+      final updatesLoadedEvent = i < events.length ||
+          redactionTarget != null &&
+              _findEvent(event_id: redactionTarget) < events.length;
+      if (!allowNewEvent && !updatesLoadedEvent) return;
 
       final status = eventStatusFromInt(eventUpdate.content['status'] ??
           (eventUpdate.content['unsigned'] is Map<String, dynamic>
               ? eventUpdate.content['unsigned'][messageSendingStatusKey]
               : null) ??
           EventStatus.synced.intValue);
-
-      final i = _findEvent(
-          event_id: eventUpdate.content['event_id'],
-          unsigned_txid: eventUpdate.content['unsigned'] is Map
-              ? eventUpdate.content['unsigned']['transaction_id']
-              : null);
 
       if (i < events.length) {
         // /sync can beat the HTTP send response. A late local ACK/error still
@@ -522,7 +566,7 @@ class Timeline {
         }
         addAggregatedEvent(events[i]);
         onChange?.call(i);
-      } else {
+      } else if (allowNewEvent || !isRedaction) {
         final newEvent = Event.fromJson(
           eventUpdate.content,
           room,
@@ -549,7 +593,8 @@ class Timeline {
         final redaction = Event.fromJson(eventUpdate.content, room);
         final target = eventUpdate.content.tryGet<String>('redacts') ??
             redaction.content.tryGet<String>('redacts');
-        final index = target == null ? events.length : _findEvent(event_id: target);
+        final index =
+            target == null ? events.length : _findEvent(event_id: target);
         if (index < events.length) {
           removeAggregatedEvent(events[index]);
 

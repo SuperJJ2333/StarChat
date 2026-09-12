@@ -44,15 +44,15 @@ class LedgerService:
         from app.modules.ledger.restrictions import release_manual
         return release_manual(session, actor_id=actor_id, reason_code=reason_code, expected_epoch=expected_epoch)
 
-    def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None, session=None) -> LedgerTransaction:
+    def post(self, *, entries: dict[str, Decimal], actor_id: str, reason_code: str, idempotency_key: str, scope: str = "ledger.post", reversal_of_id: str | None = None, session=None, skip_coverage: bool = False) -> LedgerTransaction:
         return self._post(entries=entries, actor_id=actor_id, reason_code=reason_code,
-            idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=session)
+            idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=session, skip_coverage=skip_coverage)
 
     def _post(self, *, entries, actor_id, reason_code, idempotency_key, scope,
-              reversal_of_id=None, session=None, conversion_release_id=None):
+              reversal_of_id=None, session=None, conversion_release_id=None, skip_coverage=False):
         if session is None:
             with self.session_factory.begin() as owned_session:
-                return self._post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=owned_session, conversion_release_id=conversion_release_id)
+                return self._post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope=scope, reversal_of_id=reversal_of_id, session=owned_session, conversion_release_id=conversion_release_id, skip_coverage=skip_coverage)
         if not idempotency_key or not reason_code or not actor_id:
             raise ValueError("idempotency key, actor and reason code are required")
         normalized = {account: money(amount) for account, amount in entries.items() if money(amount) != 0}
@@ -69,7 +69,10 @@ class LedgerService:
         if reserve is not None and reserve.outgoing_restricted and any(delta < 0 and account not in {'PLATFORM_CLEARING', 'PLATFORM_FEE'} for account, delta in normalized.items()):
             raise ValueError('redeemable outgoing globally restricted')
         liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CLEARING', 'PLATFORM_FEE'}), Decimal('0'))
-        if liability_delta > 0:
+        if liability_delta > 0 and not skip_coverage:
+            # 托管退回（红包/转账 escrow → 用户）不是新发行：资金在托管
+            # 建立时已计入负债与储备覆盖，退回只是把负债从托管账户搬回
+            # 用户账户，不应再次要求储备覆盖（否则储备吃紧时退款必败）。
             if conversion_release_id is None:
                 require_coverage(session, reserve, caibi_delta=liability_delta, policy=self.reserve_policy)
             else:

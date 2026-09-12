@@ -209,7 +209,7 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('ledger-row-long-0')), findsOneWidget);
-    expect(find.byKey(const Key('ledger-month-2026-09')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-12')), findsOneWidget);
     expect(find.byKey(const Key('ledger-row-long-179')), findsNothing);
     expect(
         find
@@ -225,27 +225,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('groups DateTime records in the same local month shown by time',
+  testWidgets('groups DateTime records by their local day shown by time',
       (tester) async {
     final gateway = _Gateway();
     final instant = DateTime.utc(2026, 9, 30, 23, 30, 45);
     final local = instant.toLocal();
     String two(int value) => value.toString().padLeft(2, '0');
-    final month = '${local.year}-${two(local.month)}';
-    final time = '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+    final day = '${local.year}-${two(local.month)}-${two(local.day)}';
     await tester.pumpWidget(_app(gateway));
     gateway.completeList(items: [
       {..._row('local-time'), 'created_at': instant},
     ]);
     await tester.pump();
 
-    expect(find.byKey(Key('ledger-month-$month')), findsOneWidget);
-    expect(find.text(time), findsOneWidget);
+    expect(find.byKey(Key('ledger-day-$day')), findsOneWidget);
+    expect(find.text('${two(local.hour)}:${two(local.minute)} · local-time'),
+        findsOneWidget);
   });
 
   testWidgets(
-      'groups continuous ledger rows by month with type icons and exact amounts',
+      'groups continuous ledger rows by day with circular type icons, Chinese transfer status and exact amounts',
       (tester) async {
     final gateway = _Gateway();
     await tester.binding.setSurfaceSize(const Size(390, 800));
@@ -262,6 +261,7 @@ void main() {
         ..._row('september-transfer'),
         'kind': 'transfer',
         'amount': '-12.30',
+        'status': 'PENDING',
         'note': '午饭分摊',
         'created_at': '2026-09-12T01:02:03Z',
       },
@@ -280,17 +280,23 @@ void main() {
     await tester.pump();
 
     expect(find.byKey(const Key('ledger-filter-bar')), findsOneWidget);
-    expect(find.byKey(const Key('ledger-month-2026-09')), findsOneWidget);
-    expect(find.byKey(const Key('ledger-month-2026-08')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-12')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-01')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-08-31')), findsOneWidget);
     expect(
         find.byKey(const Key('ledger-row-september-transfer')), findsOneWidget);
     expect(find.byKey(const Key('ledger-row-icon-september-transfer')),
         findsOneWidget);
     expect(find.byKey(const Key('ledger-amount-september-transfer')),
         findsOneWidget);
-    expect(find.text('-12.30 点钻'), findsOneWidget);
-    expect(find.text('8.00 点钻'), findsOneWidget);
-    expect(find.text('-100.00 点钻'), findsOneWidget);
+    expect(find.text('-12.30'), findsOneWidget);
+    expect(find.text('+8.00'), findsOneWidget);
+    expect(find.text('-100.00'), findsOneWidget);
+    expect(find.text('待收款'), findsOneWidget);
+    expect(find.text('PENDING'), findsNothing);
+    final icon = tester.widget<Container>(
+        find.byKey(const Key('ledger-row-icon-september-transfer')));
+    expect((icon.decoration! as BoxDecoration).shape, BoxShape.circle);
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.byKey(const Key('ledger-row-september-transfer')));

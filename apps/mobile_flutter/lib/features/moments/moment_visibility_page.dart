@@ -68,7 +68,7 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
                   onChanged: (next) => _selectPrimary(next),
                   child: Column(
                     children: [
-                      _primaryRow('公开', 'PUBLIC'),
+                      _primaryRow('公开', 'PUBLIC', '所有朋友可看'),
                       Padding(
                         padding: EdgeInsets.only(left: 16),
                         child: SizedBox(
@@ -78,7 +78,7 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
                                   context, WeChatColors.divider)),
                         ),
                       ),
-                      _primaryRow('私密', 'SELF'),
+                      _primaryRow('私密', 'SELF', '所有朋友不可看'),
                     ],
                   ),
                 ),
@@ -107,8 +107,10 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
         ),
       );
 
-  Widget _primaryRow(String label, String value) => WeChatListTile(
+  Widget _primaryRow(String label, String value, String hint) =>
+      WeChatListTile(
         title: Text(label),
+        subtitle: Text(hint, key: Key('visibility-hint-${value.toLowerCase()}')),
         trailing: CupertinoRadio<String>(
           value: value,
           activeColor: WeChatColors.brandPrimary,

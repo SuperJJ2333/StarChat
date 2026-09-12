@@ -114,6 +114,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'room_history_date_capability.dart';
 import '../../ui/chat/room_image_gallery.dart';
 import '../contacts/contact_actions.dart';
 import '../finance/finance_card_store.dart';
@@ -1960,6 +1961,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     displayName: participant.displayName,
                   )
                   .displayName,
+              avatarUrl: _identityCache
+                  .resolveIdentity(
+                    matrixUserId: participant.id,
+                    displayName: participant.displayName,
+                  )
+                  .avatarUrl,
             ),
         ];
     final payment = await _preparePayment();
@@ -2230,7 +2237,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
     var searchGeneration = 0;
-    var calendarGeneration = 0;
+    var dateLookupGeneration = 0;
+    RoomHistoryDayLocation? resolvedDateLocation;
     final messagesById = <String, RoomMessageViewModel>{};
     List<ChatSearchMessage> currentSearchMessages() {
       final allMessages =
@@ -2300,25 +2308,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ]..sort((a, b) => b.timelineOrder.compareTo(a.timelineOrder));
     }
 
-    Future<void> loadThrough(DateTime boundary, int generation) async {
-      while (mounted &&
-          searchOpen &&
-          generation == calendarGeneration &&
-          !(controller?.historyExhausted ?? true)) {
-        final oldestDate = widget.roomLease.oldestTimelineEventDate;
-        if (oldestDate != null && oldestDate.toLocal().isBefore(boundary)) {
-          break;
-        }
-        final last = widget.roomLease.oldestTimelineEventId;
-        final token = widget.roomLease.historyToken;
-        await _loadEarlier();
-        if (last == widget.roomLease.oldestTimelineEventId &&
-            token == widget.roomLease.historyToken) {
-          break;
-        }
-      }
-    }
-
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
     List<MemberDirectoryEntry> memberEntries() => <MemberDirectoryEntry>[
           for (final member in _joinedMembers)
@@ -2331,10 +2320,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   localPart(member.id),
             ),
         ];
-    final searchMessages = currentSearchMessages();
+    final dayMetadata =
+        controller?.loadedDayMetadata ?? const <RoomHistoryDayMetadata>[];
     final datesWithMessages = {
-      for (final m in searchMessages)
-        DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day),
+      // Calendar markers are raw timeline metadata. Do not build the full
+      // text/member/media search projection merely to open a calendar.
+      for (final metadata in dayMetadata)
+        DateTime(metadata.day.year, metadata.day.month, metadata.day.day),
     };
     final earliestMonth = widget.roomLease.creationDate ?? DateTime(1970);
     final latestMonth = DateTime.now();
@@ -2377,15 +2369,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
             return const <ChatSearchMessage>[];
           },
-          loadCalendarMonth: (month) async {
-            await loadThrough(
-                DateTime(month.year, month.month), ++calendarGeneration);
-            return {
-              for (final m in currentSearchMessages())
-                DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day)
-            };
-          },
-          onCalendarClosed: () => calendarGeneration++,
+          // Unknown past dates remain selectable. A month change must not
+          // trigger a network/history scan; explicit selection owns lookup.
+          allowUnknownPastDates: true,
+          onCalendarClosed: () => controller?.cancelPendingDateLookup(),
           onSearchInvalidated: () => searchGeneration++,
           memberEntries: memberEntries(),
           liveMemberEntries: memberEntries,
@@ -2442,22 +2429,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             returnToRoom();
             unawaited(_scrollToMessage(eventId));
           },
-          // R6：日期定位回调——定位当日最早一条消息。
           onJumpToDate: (date) {
-            // 找到当日时间线中最早一条可展示消息。
-            final dayMessages = currentSearchMessages()
-                .where((m) =>
-                    m.timestamp.year == date.year &&
-                    m.timestamp.month == date.month &&
-                    m.timestamp.day == date.day)
-                .toList();
-            if (dayMessages.isNotEmpty) {
-              // timelineOrder 升序 = 旧→新；最早 = order 最小。
-              dayMessages
-                  .sort((a, b) => a.timelineOrder.compareTo(b.timelineOrder));
-              returnToRoom();
-              unawaited(_scrollToMessage(dayMessages.first.eventId));
+            final location = resolvedDateLocation;
+            if (location == null || location.day != date) return;
+            returnToRoom();
+            unawaited(_scrollToMessage(location.eventId));
+          },
+          onDateLookup: (date) async {
+            final lookup = controller;
+            final generation = ++dateLookupGeneration;
+            if (lookup == null || !searchOpen) {
+              return CalendarDateLookupResult.incomplete;
             }
+            try {
+              final location = await lookup.locateDay(date);
+              if (!mounted ||
+                  !searchOpen ||
+                  generation != dateLookupGeneration ||
+                  !identical(lookup, controller)) {
+                throw const RoomHistoryLookupCancelled();
+              }
+              if (location == null) {
+                return CalendarDateLookupResult.confirmedEmpty;
+              }
+              resolvedDateLocation = location;
+              return CalendarDateLookupResult.located;
+            } on RoomHistoryLookupIncomplete {
+              if (mounted && searchOpen && generation == dateLookupGeneration) {
+                return CalendarDateLookupResult.incomplete;
+              }
+              throw const RoomHistoryLookupCancelled();
+            } on RoomHistoryLookupCancelled {
+              // A newer day, calendar close, lease change, or dispose won.
+              // The controller has already discarded its partial context.
+              rethrow;
+            }
+          },
+          onCancelDateLookup: () {
+            dateLookupGeneration++;
+            controller?.cancelPendingDateLookup();
           },
           datesWithMessages: datesWithMessages,
           earliestMonth: earliestMonth,
@@ -2466,7 +2476,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ),
     ).whenComplete(() {
       searchOpen = false;
-      calendarGeneration++;
+      dateLookupGeneration++;
+      controller?.cancelPendingDateLookup();
       searchGeneration++;
     });
   }
@@ -3763,11 +3774,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       controller?.pinWindow();
     }
     _observeVisibleMentions();
-    if (towardLater &&
-        position.extentBefore < 120 &&
-        (controller?.hasLaterWindow ?? false)) {
-      _queueWindowShift(earlier: false);
-      unawaited(_applyPendingWindowShift());
+    if (towardLater && position.extentBefore < 120) {
+      // This listener precedes ScrollNotification for a user drag. Record
+      // the direction before starting the request, otherwise that matching
+      // notification would invalidate the request's own generation.
+      _setTimelineScrollDirection(earlier: false);
+      if (controller?.hasLaterWindow ?? false) {
+        _queueWindowShift(earlier: false);
+        unawaited(_applyPendingWindowShift());
+      } else {
+        unawaited(_prefetchFutureHistory());
+      }
       return;
     }
     if (towardEarlier) unawaited(_prefetchHistory());
@@ -3780,6 +3797,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   bool _shiftingWindow = false;
+  bool? _timelineScrollTowardEarlier;
   bool _scrollInteractionActive() =>
       _userTimelineDragActive ||
       (messageScrollController.hasClients &&
@@ -3803,9 +3821,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _pendingEarlierWindow = earlier;
   }
 
-  void _cancelPendingTimelineWindowShift() {
+  void _cancelPendingTimelineWindowShift({bool clearDirection = true}) {
     _pendingEarlierWindow = null;
+    if (clearDirection) _timelineScrollTowardEarlier = null;
     _timelineScrollGeneration++;
+  }
+
+  void _setTimelineScrollDirection({required bool earlier}) {
+    if (_timelineScrollTowardEarlier == earlier) return;
+    _timelineScrollTowardEarlier = earlier;
+    _cancelPendingTimelineWindowShift(clearDirection: false);
   }
 
   Future<void> _applyPendingWindowShift() async {
@@ -3889,6 +3914,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         () => _prefetchRequest = null,
       );
 
+  Future<void>? _futureHistoryRequest;
+  Future<void> _prefetchFutureHistory() =>
+      _futureHistoryRequest ??= _prefetchFutureHistoryOnce().whenComplete(
+        () => _futureHistoryRequest = null,
+      );
+
+  Future<void> _prefetchFutureHistoryOnce() async {
+    final currentController = controller;
+    if (!mounted ||
+        _locatingMessage ||
+        _shiftingWindow ||
+        currentController == null ||
+        !messageScrollController.hasClients ||
+        !currentController.hasFutureHistory ||
+        messageScrollController.position.extentBefore >= 120 ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final generation = _timelineScrollGeneration;
+    try {
+      // A forward page can append newer rows before this user gesture ends.
+      // Pin first so refresh preserves the visible window until the guarded
+      // deferred shift runs after drag/ballistic motion has settled.
+      currentController.pinWindow();
+      await currentController.loadFutureHistory();
+    } catch (_) {
+      return;
+    }
+    if (!mounted ||
+        generation != _timelineScrollGeneration ||
+        !identical(currentController, controller) ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !(currentController.hasLaterWindow)) {
+      return;
+    }
+    _queueWindowShift(earlier: false);
+    await _applyPendingWindowShift();
+  }
+
   Future<void> _prefetchHistoryOnce() async {
     if (!mounted ||
         _locatingMessage ||
@@ -3933,15 +3997,19 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (delta < 0) {
       // Any deliberate move back toward newer history supersedes an older
       // prefetch, even when this update is not yet at the newer edge.
-      _cancelPendingTimelineWindowShift();
-      if (position.extentBefore < 120 &&
-          (controller?.hasLaterWindow ?? false)) {
-        _queueWindowShift(earlier: false);
-        unawaited(_applyPendingWindowShift());
+      _setTimelineScrollDirection(earlier: false);
+      if (position.extentBefore < 120) {
+        if (controller?.hasLaterWindow ?? false) {
+          _queueWindowShift(earlier: false);
+          unawaited(_applyPendingWindowShift());
+        } else {
+          unawaited(_prefetchFutureHistory());
+        }
       }
       return;
     }
     if (delta > 0 && position.extentAfter <= position.viewportDimension * 2) {
+      _setTimelineScrollDirection(earlier: true);
       unawaited(_prefetchHistory());
     }
   }
@@ -4118,7 +4186,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             onTap: () => unawaited(_returnToQuoteOrigin()),
           ),
         ),
-      if (controller?.hasLaterWindow ?? false)
+      if ((controller?.hasLaterWindow ?? false) ||
+          (controller?.isViewingHistoryContext ?? false))
         Positioned(
             right: 12,
             bottom: 12,

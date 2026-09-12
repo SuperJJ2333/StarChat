@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -35,15 +36,58 @@ void main() {
     expect(find.byType(WeChatPageScaffold), findsOneWidget);
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('转账已收款'), findsOneWidget);
-    expect(find.text('200.00 点钻'), findsOneWidget);
+    expect(find.textContaining('200.00'), findsOneWidget);
     expect(find.text('转账时间'), findsOneWidget);
     expect(find.text('收款时间'), findsOneWidget);
+    expect(find.text('转账状态'), findsOneWidget);
+    expect(
+        find.byKey(const Key('chat-transfer-receipt-status')), findsOneWidget);
+    expect(find.text('账单ID'), findsOneWidget);
+    final icon = tester
+        .widget<Container>(find.byKey(const Key('chat-transfer-receipt-icon')));
+    expect((icon.decoration! as BoxDecoration).color, const Color(0xFF07C160));
+    final amount = tester
+        .widget<Text>(find.byKey(const Key('chat-transfer-receipt-amount')));
+    expect(amount.textSpan!.toPlainText(), '200.00 点钻');
     expect(find.text(_localTime('2026-09-11T10:20:00Z')), findsOneWidget);
     expect(find.text(_localTime('2026-09-11T10:21:00Z')), findsOneWidget);
     expect(find.text('账单详情'), findsOneWidget);
     expect(find.text('全部账单'), findsOneWidget);
     expect(find.byKey(const Key('chat-transfer-detail-accept')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('receipt copies its authoritative bill id from the detail row',
+      (tester) async {
+    final copied = <String>[];
+    Future<void> clipboardHandler(MethodCall call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+    }
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, clipboardHandler);
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+    final gateway = _DetailGateway()
+      ..details.add(_detail('ACCEPTED', billId: 'ledger-copy-1'));
+    await tester.pumpWidget(CupertinoApp(
+      home: ChatTransferDetailSheet(
+        gateway: gateway,
+        ledgerGateway: _LedgerGateway(),
+        transferId: 'transfer-1',
+        viewerId: 'receiver-1',
+      ),
+    ));
+    addTearDown(gateway.dispose);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('chat-transfer-detail-copy-bill')));
+    await tester.pump();
+    expect(copied, ['ledger-copy-1']);
+    expect(find.text('账单ID已复制'), findsOneWidget);
   });
 
   testWidgets(

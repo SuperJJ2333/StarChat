@@ -65,7 +65,10 @@ class RedPacketService:
             )
             payload = {
                 "id": packet.id, "sender_id": packet.sender_id, "mode": packet.mode,
-                "asset": "CAIBI", "total": str(packet.total), "share_count": packet.share_count,
+                "asset": "CAIBI",
+                # 红包总额仅发起方可见（非发起方为 null，前端隐藏）。
+                "total": str(packet.total) if packet.sender_id == user_id else None,
+                "share_count": packet.share_count,
                 "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
                 "room_id": packet.room_id, "server_time": server_time.isoformat(),
                 "viewer_claim": viewer_claim, "best_luck_eligible": best_luck_eligible,
@@ -206,7 +209,7 @@ class RedPacketService:
                 escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
                 # F01：退款分录与终态变更同一事务（session 注入，不再
                 # 各自独立提交）。
-                self.ledger.post(entries={escrow: -refund, packet.sender_id: refund}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session)
+                self.ledger.post(entries={escrow: -refund, packet.sender_id: refund}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session, skip_coverage=True)
             packet.status = final_status
             session.flush()
             return packet

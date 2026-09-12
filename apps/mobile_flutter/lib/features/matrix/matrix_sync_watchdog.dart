@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart' show Client, SyncStatus, SyncStatusUpdate;
 
 import 'matrix_sync_recovery_controller.dart';
+import 'matrix_sync_phase_metrics.dart';
 
 /// 同步循环看门狗目标抽象（可注入测试）。
 abstract interface class SyncWatchdogTarget {
@@ -60,8 +61,10 @@ final class MatrixSyncWatchdog {
     this.softStallThreshold = const Duration(minutes: 2, seconds: 30),
     this.hardStallThreshold = const Duration(minutes: 5),
     MatrixTransportMonitor? transport,
+    MatrixSyncPhaseMetrics? syncPhaseMetrics,
   })  : _clock = clock ?? DateTime.now,
-        _transport = transport;
+        _transport = transport,
+        _syncPhaseMetrics = syncPhaseMetrics ?? MatrixSyncPhaseMetrics();
 
   final SyncWatchdogTarget target;
   final Duration interval;
@@ -76,6 +79,7 @@ final class MatrixSyncWatchdog {
 
   final DateTime Function() _clock;
   final MatrixTransportMonitor? _transport;
+  final MatrixSyncPhaseMetrics _syncPhaseMetrics;
   final ValueNotifier<MatrixConnectionStatus> connectionStatus =
       ValueNotifier(MatrixConnectionStatus.unknown);
 
@@ -102,6 +106,7 @@ final class MatrixSyncWatchdog {
     _lastProgress = _clock();
     _subscription = target.syncStatus.listen((update) {
       if (_disposed) return;
+      _syncPhaseMetrics.record(update.status);
       // waitingForResponse 每轮长轮询必发，是最可靠的心跳；
       // finished/processing 视为额外进展。error 不算心跳——持续报错
       // 的循环同样需要被强制重建。
@@ -243,6 +248,7 @@ final class MatrixSyncWatchdog {
     _abortDiagnosticTimer?.cancel();
     _abortDiagnosticTimer = null;
     _recoveryController?.dispose();
+    _syncPhaseMetrics.dispose();
     connectionStatus.dispose();
     unawaited(_subscription?.cancel());
     _subscription = null;
