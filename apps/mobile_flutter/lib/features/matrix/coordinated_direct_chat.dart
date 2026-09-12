@@ -61,7 +61,20 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     }
     // Only an authoritative absence permits claiming. Network/validation
     // failures propagate; none of them is evidence that another room is needed.
-    final canonical = await coordinator.canonicalRoomId(peer);
+    String? canonical;
+    try {
+      canonical = await coordinator.canonicalRoomId(peer);
+    } catch (error) {
+      // 断网降级：规范登记不可达时回退本地（意图存储的房间 + 本地
+      // Matrix 库的既有私聊）。已存在的会话离线也能打开；本地完全
+      // 没有房间时才把原始网络错误抛给调用方（弹“网络异常”）。
+      final localRoomId =
+          (await intents.loadOrCreate(peer)).roomId ?? (await findExisting(matrixUserId))?.roomId;
+      if (localRoomId != null && localRoomId.isNotEmpty) {
+        return _safe(await openExisting(localRoomId, matrixUserId), matrixUserId);
+      }
+      rethrow;
+    }
     if (canonical != null && canonical.isNotEmpty) {
       return _safe(await openExisting(canonical, matrixUserId), matrixUserId);
     }

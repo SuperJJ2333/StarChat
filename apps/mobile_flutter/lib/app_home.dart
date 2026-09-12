@@ -1845,7 +1845,11 @@ Future<void> _refreshMissingFriendIdentity(
   if (cache.contactsByMatrixId.containsKey(matrixUserId)) return;
   if (cache.profile == null) await cache.preload();
   if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
-    await cache.refreshContactsQuietly(minInterval: Duration.zero);
+    try {
+      await cache.refreshContactsQuietly(minInterval: Duration.zero);
+    } catch (_) {
+      // 断网时静默：本地已有该好友映射即可继续打开会话。
+    }
   }
   if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
     throw StateError('The contact is no longer a current friend');
