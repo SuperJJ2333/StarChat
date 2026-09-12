@@ -39,6 +39,7 @@ import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/coordinated_direct_chat.dart';
+import 'features/moments/moment_preview_cache.dart';
 import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
@@ -169,6 +170,21 @@ final class AppHome extends StatefulWidget {
 }
 
 final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
+  void _warmMomentPreviewCache() {
+    final cache = _chatIdentityCache;
+    if (cache == null) return;
+    MomentPreviewCache.instance.fetcher ??= (userId) async {
+      try {
+        return await widget.api.momentProfilePreview(userId);
+      } on Exception {
+        return null; // 后台预取失败静默：下次进页再试。
+      }
+    };
+    // 冷启动后台预取好友预览（并发 3，TTL 内不重复请求）。
+    unawaited(MomentPreviewCache.instance
+        .prefetch(cache.contacts.map((contact) => contact.userId)));
+  }
+
   late final DirectChatController directChats = DirectChatController(
     CoordinatedDirectChatGateway(
       coordinator: ApiDirectRoomCoordinator(widget.api),
@@ -778,6 +794,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       //（BUG 1：好友头像/昵称变化无需重启即可见）。
       unawaited(_notificationCoordinator?.refreshLauncherBadge());
       unawaited(_chatIdentityCache?.refreshContactsQuietly());
+      _warmMomentPreviewCache();
       // BUG 2：前台服务可能被系统配额（Android 14+ dataSync 每日上限）
       // 或厂商 ROM 停止；回前台时幂等补启。
       unawaited(syncKeepAlive.ensureStarted());

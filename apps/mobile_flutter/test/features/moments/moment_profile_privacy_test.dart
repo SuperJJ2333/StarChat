@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/moments/moment_profile_preview.dart';
+import 'package:liuhetong_mobile/features/moments/moment_preview_cache.dart';
 import 'package:liuhetong_mobile/features/moments/moments_page.dart';
 import 'package:liuhetong_mobile/features/moments/moment_detail_page.dart';
 import 'package:liuhetong_mobile/features/moments/moment_models.dart';
@@ -32,10 +33,18 @@ Future<BusinessApiClient> apiFor(
   final store = SecureSessionStore(_Store());
   await store.saveSession(
       accessToken: 'e30.eyJzdWIiOiJ1MSJ9.test', refreshToken: 'synthetic');
-  return BusinessApiClient(
+  final api = BusinessApiClient(
       baseUri: Uri.parse('https://example.test'),
       sessionStore: store,
       client: MockClient(handler));
+  MomentPreviewCache.instance.fetcher ??= (userId) async {
+    try {
+      return await api.momentProfilePreview(userId);
+    } on Exception {
+      return null;
+    }
+  };
+  return api;
 }
 
 http.Response response(Object value, [int code = 200]) =>
@@ -43,6 +52,12 @@ http.Response response(Object value, [int code = 200]) =>
         headers: {'content-type': 'application/json; charset=utf-8'});
 
 void main() {
+  setUp(() {
+    // 每个用例重置共享预览缓存并指向该用例的 API。
+    MomentPreviewCache.instance.resetForTest();
+  });
+  tearDown(() => MomentPreviewCache.instance.resetForTest());
+
   testWidgets('detail discards cached content after permission revocation',
       (tester) async {
     final api =

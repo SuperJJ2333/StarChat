@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/services.dart';
@@ -588,9 +590,13 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     widget.controller.addListener(_changed);
   }
 
+  Timer? _toastTimer;
+  String? _toast;
+
   @override
   void dispose() {
     widget.controller.removeListener(_changed);
+    _toastTimer?.cancel();
     super.dispose();
   }
 
@@ -649,12 +655,21 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     await _copyLink(url);
   }
 
+  void _showToast(String message) {
+    if (!mounted) return;
+    setState(() => _toast = message);
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _toast = null);
+    });
+  }
+
   Future<void> _copyLink(String url) async {
     try {
       await Clipboard.setData(ClipboardData(text: url));
-      widget.controller.showMessage('复制成功');
+      _showToast('复制成功');
     } catch (_) {
-      widget.controller.showMessage('复制失败，请重试');
+      _showToast('复制失败，请重试');
     }
   }
 
@@ -663,10 +678,40 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final state = widget.controller.state;
     final invite = state.invite;
-    final background =
-        dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
     final foreground =
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _sectionBody(context, state, invite, foreground, dark),
+        if (_toast != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: -46,
+            child: Center(
+              child: Container(
+                key: const Key('invite-copy-toast'),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xCC000000),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(_toast!,
+                    style: const TextStyle(
+                        fontSize: 13, color: CupertinoColors.white)),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _sectionBody(BuildContext context, InviteCodeState state,
+      PersonalInvitation? invite, Color foreground, bool dark) {
+    final background =
+        dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
     return Container(
       decoration: BoxDecoration(
         color: background,

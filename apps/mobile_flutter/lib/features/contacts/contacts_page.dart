@@ -469,11 +469,32 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   /// 任意入口（会话/朋友圈/搜索/通讯录）打开资料页即向服务端自取
   /// 该好友最新详情：在线状态与备注不依赖入口数据新鲜度；非好友
   /// （404）保持隐藏状态行；失败静默保留现有内容。
-  Future<void> _refreshPresence() async {
+  /// 在线状态后台刷新节流：同一好友 60 秒内重复进页不再发请求，
+  /// 已有数据且无变化时不重建 UI（无感加载）。
+  static final Map<String, DateTime> _presenceFetchedAt = <String, DateTime>{};
+  static const _presenceTtl = Duration(minutes: 1);
+
+  Future<void> _refreshPresence({bool force = false}) async {
     final userId = contact.userId;
+    if (!force) {
+      final last = _presenceFetchedAt[userId];
+      if (last != null &&
+          DateTime.now().difference(last) < _presenceTtl &&
+          contact.lastSeenKnown) {
+        return; // 数据新鲜：进页直接用现有值，不刷新。
+      }
+    }
     try {
       final fresh = await widget.api.fetchFriendDetail(userId);
+      _presenceFetchedAt[userId] = DateTime.now();
       if (!mounted || fresh == null || userId != contact.userId) return;
+      // 有更新才 setState：last_seen 或备注等字段无变化时保持现状。
+      final unchanged = contact.username == fresh.username &&
+          contact.remark == fresh.remark &&
+          contact.nickname == fresh.nickname &&
+          contact.lastSeenAt == fresh.lastSeenAt &&
+          contact.momentsPermission == fresh.momentsPermission;
+      if (unchanged) return;
       setState(() => contact = ContactDetails(
             userId: fresh.userId,
             username: fresh.username,

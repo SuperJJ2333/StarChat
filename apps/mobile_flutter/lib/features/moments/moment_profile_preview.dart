@@ -5,6 +5,7 @@ import '../matrix/profile_repository.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/moments/moment_image_provider.dart';
 import 'moment_models.dart';
+import 'moment_preview_cache.dart';
 import 'personal_moments_page.dart';
 import 'moments_privacy_changes.dart';
 
@@ -28,26 +29,42 @@ class MomentProfilePreview extends StatefulWidget {
 }
 
 class _MomentProfilePreviewState extends State<MomentProfilePreview> {
-  late Future<Map<String, dynamic>> _preview =
-      widget.api.momentProfilePreview(widget.userId);
+  Map<String, dynamic>? _cached;
+
+  static MomentPreviewCache get _cache => MomentPreviewCache.instance;
+
   @override
   void initState() {
     super.initState();
     momentsPrivacyChanges.addListener(_refresh);
+    _cache.addListener(widget.userId, _onCacheChanged);
+    // 无感加载：先渲染缓存（若有）；TTL 过期才后台刷新，
+    // 有更新才回调重建 —— 进页不再强制刷新。
+    _cached = _cache.peek(widget.userId);
+    _cache.ensureFresh(widget.userId);
   }
 
   @override
   void dispose() {
     momentsPrivacyChanges.removeListener(_refresh);
+    _cache.removeListener(widget.userId, _onCacheChanged);
     super.dispose();
   }
 
-  void _refresh() {
-    if (mounted) {
-      setState(() {
-        _preview = widget.api.momentProfilePreview(widget.userId);
-      });
+  void _onCacheChanged() {
+    if (!mounted) return;
+    final latest = _cache.peek(widget.userId);
+    // 仅内容变化才 setState（时间戳续期不触发）。
+    if (latest != null && latest != _cached) {
+      setState(() => _cached = latest);
     }
+  }
+
+  void _refresh() {
+    _cache.invalidate(widget.userId);
+    _cached = null;
+    _cache.ensureFresh(widget.userId);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -56,23 +73,24 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
     if (oldWidget.userId != widget.userId ||
         oldWidget.api != widget.api ||
         oldWidget.refreshRevision != widget.refreshRevision) {
-      _preview = widget.api.momentProfilePreview(widget.userId);
+      _cache.removeListener(oldWidget.userId, _onCacheChanged);
+      _cached = _cache.peek(widget.userId);
+      _cache.addListener(widget.userId, _onCacheChanged);
+      _cache.ensureFresh(widget.userId);
     }
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>>(
-        future: _preview,
-        builder: (context, snapshot) {
-          // No persisted permission grants: errors, missing flags and denied users hide it.
-          if (snapshot.connectionState != ConnectionState.done ||
-              snapshot.data?['entry_visible'] != true ||
-              snapshot.hasError) {
-            return const SizedBox.shrink();
-          }
-          final items = (snapshot.data?['items'] as List? ?? [])
-              .map((e) => MomentItem.fromJson(Map<String, dynamic>.from(e)))
-              .toList();
+  Widget build(BuildContext context) {
+    // No persisted permission grants: errors, missing flags and denied users hide it.
+    if (_cached == null || _cached!['entry_visible'] != true) {
+      return const SizedBox.shrink();
+    }
+    final snapshotData = _cached!;
+    {
+      final items = (snapshotData['items'] as List? ?? [])
+          .map((e) => MomentItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
           final pictures = <({String url, String? key})>[
             for (final item in items)
               for (var i = 0; i < item.images.length; i++)
@@ -103,9 +121,9 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
                               displayName: widget.displayName,
                               initialItems: items)));
                   if (mounted) {
-                    setState(() {
-                      _preview = widget.api.momentProfilePreview(widget.userId);
-                    });
+                    // 返回后后台刷新一次（发布/删除会让缓存失效）。
+                    _cached = _cache.peek(widget.userId);
+                    _cache.ensureFresh(widget.userId);
                   }
                 },
                 child: Container(
@@ -150,6 +168,6 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
                   ]),
                 ),
               ));
-        },
-      );
+    }
+  }
 }

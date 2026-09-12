@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=375">
+<title>微信风格 UI Demo — 红包 / 转账 / 点钻流水</title>
+<style>
+:root{
+  --brand:#07C160; --brand-dark:#06AD56; --bg:#EDEDED; --card:#FFFFFF;
+  --text:#191919; --text-2:#888888; --text-3:#B2B2B2; --line:#E5E5E5;
+  --red:#FA5151; --red-deep:#DF3F3F; --orange:#FA9D3B; --yellow:#FFC300;
+  --mask:rgba(0,0,0,.5);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',sans-serif;background:#F2F2F2;display:flex;gap:32px;padding:24px;flex-wrap:wrap;justify-content:center}
+.phone{width:375px;background:var(--bg);border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18);position:relative}
+.phone .navbar{height:44px;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--text);border-bottom:.5px solid var(--line);position:relative}
+.phone .navbar .back{position:absolute;left:12px;font-size:14px;color:var(--text)}
+.screen{min-height:640px;padding-bottom:24px}
+
+/* ============ 红包气泡（聊天内） ============ */
+.chat{padding:12px}
+.time{ text-align:center;color:var(--text-3);font-size:12px;margin:8px 0}
+.msg{display:flex;margin:10px 4px;gap:8px}
+.msg .avatar{width:40px;height:40px;border-radius:5px;background:#C4C4C4;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+.msg .body{max-width:240px}
+.rp{width:220px;height:76px;background:linear-gradient(150deg,#F69B6D 0%, #FA5151 90%);border-radius:8px;display:flex;align-items:center;padding:0 12px;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,.08);cursor:pointer;transition:transform .12s}
+.rp:active{transform:scale(.97)}
+.rp .envelope{width:38px;height:38px;background:#FDD89F;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.rp .txt{color:#fff;flex:1;min-width:0}
+.rp .txt .title{font-size:15px;font-weight:500}
+.rp .txt .sub{font-size:11px;opacity:.85;margin-top:2px}
+.rp.opened{background:linear-gradient(150deg,#F7F7F7, #EDEDED)}
+.rp.opened .envelope{background:#DDDDDD}
+.rp.opened .txt{color:var(--text-2)}
+/* 领取详情页 */
+.rp-detail{background:#F7F7F7;padding:0 0 16px}
+.rp-hero{background:linear-gradient(165deg,#FA9D3B -10%,#FA5151 55%,#E8413F 100%);padding:44px 24px 20px;text-align:center;color:#FFE7C2;position:relative;overflow:hidden}
+.rp-hero .icon{width:64px;height:64px;margin:0 auto 8px;background:#FDD89F;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:36px}
+.rp-hero .amount{font-size:44px;font-weight:700;color:#FFF;margin-top:4px}
+.rp-hero .amount .unit{font-size:16px;font-weight:400}
+.rp-hero .status{font-size:13px;color:#FFE7C2;margin-top:6px}
+.rp-list{margin:-14px 12px 0;background:#FFF;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.rp-list .head{padding:14px 16px 6px;font-size:13px;color:var(--text-2);display:flex;justify-content:space-between}
+.rp-list .row{display:flex;align-items:center;padding:12px 16px;gap:10px}
+.rp-list .row + .row{border-top:.5px solid var(--line)}
+.rp-list .ava{width:36px;height:36px;border-radius:4px;background:#C4C4C4;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px}
+.rp-list .info{flex:1;text-align:left}
+.rp-list .name{font-size:15px;color:var(--text)}
+.rp-list .time{font-size:11px;color:var(--text-3);margin-top:2px}
+.rp-list .amt{font-size:16px;color:var(--text);font-weight:500}
+.rp-list .best{display:inline-block;font-size:10px;color:#FFC300;border:.5px solid #FFC300;border-radius:3px;padding:0 3px;margin-left:6px}
+.rp-foot{text-align:center;color:var(--text-3);font-size:12px;padding:16px 0 4px}
+
+/* ============ 转账 ============ */
+.tf-hero{background:var(--card);padding:36px 24px 24px;text-align:center}
+.tf-hero .icon{width:52px;height:52px;margin:0 auto 10px;background:var(--brand);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px}
+.tf-hero .amount{font-size:44px;font-weight:700;color:var(--text)}
+.tf-hero .amount .unit{font-size:16px;font-weight:400;color:var(--text)}
+.tf-hero .status{display:inline-block;margin-top:10px;font-size:12px;color:#999;background:#F5F5F5;border-radius:4px;padding:2px 8px}
+.tf-hero .status.ok{color:var(--brand);background:rgba(7,193,96,.08)}
+.tf-rows{margin-top:10px;background:var(--card);border-radius:8px;margin-left:12px;margin-right:12px;overflow:hidden}
+.tf-rows .cell{display:flex;justify-content:space-between;padding:13px 16px;font-size:15px}
+.tf-rows .cell + .cell{border-top:.5px solid var(--line)}
+.tf-rows .cell .k{color:var(--text-2)}
+.tf-rows .cell .v{color:var(--text)}
+.tf-rows .cell .v.copyable{display:flex;align-items:center;gap:6px}
+.tf-rows .cell .v .copy{width:16px;height:16px;border-radius:3px;border:1px solid var(--text-3);color:var(--text-2);font-size:9px;display:inline-flex;align-items:center;justify-content:center}
+.tf-actions{padding:24px 24px 0;display:flex;gap:12px}
+.btn{flex:1;height:46px;border-radius:6px;font-size:16px;display:flex;align-items:center;justify-content:center;border:1px solid transparent;cursor:pointer;transition:opacity .12s}
+.btn:active{opacity:.75}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.plain{border-color:var(--text-3);color:var(--text-2);background:transparent}
+/* 转账气泡 */
+.tf{width:220px;background:var(--card);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer;transition:transform .12s}
+.tf:active{transform:scale(.97)}
+.tf .top{display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.tf .top .ic{width:34px;height:34px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
+.tf .top .meta{flex:1;min-width:0}
+.tf .top .meta .t1{font-size:15px;color:var(--text)}
+.tf .top .meta .t2{font-size:12px;color:var(--text-2);margin-top:1px}
+.tf .bar{height:2px;background:var(--brand);width:100%;transform-origin:left}
+.tf .bottom{padding:8px 14px;font-size:12px;color:var(--text-2);display:flex;justify-content:space-between}
+.tf.recv .top .ic,.tf.recv .bar{background:var(--orange)}
+.tf.done .bar{background:var(--text-3)}
+
+/* ============ 点钻流水（全部账单） ============ */
+.ledger .search{margin:8px 12px;background:var(--card);border-radius:8px;display:flex;align-items:center;padding:8px 12px;gap:8px;color:var(--text-3);font-size:14px}
+.ledger .filter{display:flex;gap:8px;margin:4px 12px 8px;flex-wrap:wrap}
+.ledger .chip{font-size:12px;color:var(--text-2);background:var(--card);border-radius:14px;padding:5px 13px;cursor:pointer}
+.ledger .chip.on{color:#fff;background:var(--brand)}
+.ledger .datebar{display:flex;justify-content:space-between;padding:2px 16px 8px;font-size:13px;color:var(--text-2)}
+.ledger .datebar span{cursor:pointer}
+.ledger .group{background:var(--card);border-radius:8px;margin:0 12px 12px;overflow:hidden}
+.ledger .group .day{padding:12px 16px 4px;font-size:13px;color:var(--text-2)}
+.ledger .item{display:flex;align-items:center;padding:12px 16px;gap:12px}
+.ledger .item + .item{border-top:.5px solid var(--line)}
+.ledger .item .ic{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff;flex:none}
+.ledger .item .ic.rp{background:linear-gradient(150deg,#F69B6D,#FA5151)}
+.ledger .item .ic.tf{background:var(--brand)}
+.ledger .item .ic.wd{background:#5F7BF7}
+.ledger .item .ic.dp{background:var(--orange)}
+.ledger .item .mid{flex:1;min-width:0}
+.ledger .item .mid .t{font-size:16px;color:var(--text)}
+.ledger .item .mid .s{font-size:12px;color:var(--text-3);margin-top:2px}
+.ledger .item .right{text-align:right}
+.ledger .item .right .amt{font-size:17px;color:var(--text);font-weight:600}
+.ledger .item .right .amt.plus{color:var(--brand)}
+.ledger .item .right .st{font-size:11px;color:var(--text-3);margin-top:2px}
+.ledger .more{text-align:center;color:var(--text-2);font-size:13px;padding:10px;cursor:pointer}
+.empty{text-align:center;color:var(--text-3);font-size:14px;padding:60px 0}
+
+/* 动效 */
+@keyframes pulse{0%{opacity:0}30%{opacity:.45}60%{opacity:.9}100%{opacity:.45}}
+.flash{animation:pulse 1.6s ease-out 1}
+.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:13px;padding:9px 18px;border-radius:8px;z-index:99;animation:fadeIn .18s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.sheet{position:fixed;left:0;right:0;bottom:0;background:#F7F7F7;border-radius:12px 12px 0 0;z-index:98;animation:slideUp .22s}
+.sheet .ttl{text-align:center;color:var(--text-2);font-size:13px;padding:14px 0 6px}
+.sheet .opt{background:#fff;margin:8px 12px;border-radius:8px;display:flex;align-items:center;justify-content:center;gap:8px;height:54px;font-size:17px;cursor:pointer}
+.sheet .cancel{background:#fff;margin:8px 12px 14px;border-radius:8px;height:54px;display:flex;align-items:center;justify-content:center;color:var(--text-2);font-size:17px;cursor:pointer}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<!-- ================= 1. 聊天内红包/转账气泡 ================= -->
+<div class="phone">
+  <div class="navbar">畅聊测试群</div>
+  <div class="screen chat">
+    <div class="time">昨天 20:30</div>
+    <div class="msg"><div class="avatar"> 彭</div><div class="body">
+      <div class="rp" onclick="toast('打开红包')">
+        <div class="envelope">🧧</div>
+        <div class="txt"><div class="title">恭喜发财，大吉大利</div><div class="sub">领取红包</div></div>
+      </div>
+    </div></div>
+    <div class="msg"><div class="avatar"> 彭</div><div class="body">
+      <div class="rp opened" onclick="toast('领取详情')">
+        <div class="envelope">🧧</div>
+        <div class="txt"><div class="title">恭喜发财，大吉大利</div><div class="sub">已被领完</div></div>
+      </div>
+    </div></div>
+    <div class="msg"><div class="avatar"> 彭</div><div class="body">
+      <div class="tf" onclick="toast('收款页面')">
+        <div class="top"><div class="ic">⇄</div><div class="meta"><div class="t1">转账</div><div class="t2">88.88</div></div></div>
+        <div class="bar"></div>
+        <div class="bottom"><span>转账给小鸿</span><span>待收款</span></div>
+      </div>
+    </div></div>
+    <div class="msg"><div class="avatar"> 彭</div><div class="body">
+      <div class="tf done" onclick="toast('收款页面')">
+        <div class="top"><div class="ic">⇄</div><div class="meta"><div class="t1">转账</div><div class="t2">66.00</div></div></div>
+        <div class="bar"></div>
+        <div class="bottom"><span>转账给小鸿</span><span>已收款</span></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ================= 2. 红包领取详情（微信 1:1） ================= -->
+<div class="phone">
+  <div class="navbar"><span class="back">‹ 微信</span>红包详情</div>
+  <div class="screen rp-detail">
+    <div class="rp-hero flash">
+      <div class="icon">🧧</div>
+      <div style="font-size:15px">小彭 的红包</div>
+      <div class="amount">8.88 <span class="unit">点钻</span></div>
+      <div class="status">已领取 2/3 个 · 2026-09-12 20:30</div>
+    </div>
+    <div class="rp-list">
+      <div class="head"><span>2人已领</span><span>共 12.88/20.00 点钻</span></div>
+      <div class="row">
+        <div class="ava">彭</div>
+        <div class="info"><div class="name">小彭</div><div class="time">20:30:01</div></div>
+        <div class="amt">4.00<span class="best">手气最佳</span></div>
+      </div>
+      <div class="row">
+        <div class="ava">鸿</div>
+        <div class="info"><div class="name">这个小鸿</div><div class="time">20:30:02</div></div>
+        <div class="amt">8.88</div>
+      </div>
+    </div>
+    <div class="rp-foot">发出时间 2026-09-12 20:30</div>
+  </div>
+</div>
+
+<!-- ================= 3. 转账收款页（微信 1:1） ================= -->
+<div class="phone">
+  <div class="navbar"><span class="back">‹ 微信</span>转账</div>
+  <div class="screen">
+    <div class="tf-hero flash">
+      <div class="icon">⇄</div>
+      <div style="font-size:14px;color:var(--text-2)">小鸿 已收款</div>
+      <div class="amount">88.88 <span class="unit">点钻</span></div>
+      <div class="status ok">转账已收款</div>
+    </div>
+    <div class="tf-rows">
+      <div class="cell"><span class="k">转账状态</span><span class="v">已收款</span></div>
+      <div class="cell"><span class="k">说明</span><span class="v">请你喝奶茶</span></div>
+      <div class="cell"><span class="k">转账时间</span><span class="v">2026-09-12 20:28</span></div>
+      <div class="cell"><span class="k">收款时间</span><span class="v">2026-09-12 20:31</span></div>
+      <div class="cell"><span class="k">账单ID</span><span class="v copyable" onclick="toast('账单ID已复制')">LT202609122031001<span class="copy">复制</span></span></div>
+    </div>
+    <div class="tf-actions">
+      <div class="btn plain" onclick="toast('全部账单')">全部账单</div>
+      <div class="btn plain" onclick="toast('账单详情')">账单详情</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 4. 点钻流水（微信账单 1:1） ================= -->
+<div class="phone">
+  <div class="navbar">账单</div>
+  <div class="screen ledger">
+    <div class="search">🔍 搜索账单</div>
+    <div class="filter">
+      <div class="chip on">全部</div><div class="chip">红包</div><div class="chip">转账</div>
+      <div class="chip">提现</div><div class="chip">充值</div>
+    </div>
+    <div class="datebar"><span>2026-09-01 ↕</span><span>2026-09-12 ↕</span></div>
+    <div class="group">
+      <div class="day">今天</div>
+      <div class="item" onclick="toast('账单详情')">
+        <div class="ic tf">⇄</div>
+        <div class="mid"><div class="t">转账</div><div class="s">20:31 · 请你喝奶茶</div></div>
+        <div class="right"><div class="amt plus">+88.88</div><div class="st">已收款</div></div>
+      </div>
+      <div class="item" onclick="toast('账单详情')">
+        <div class="ic rp">🧧</div>
+        <div class="mid"><div class="t">红包</div><div class="s">20:30 · 小彭 的红包</div></div>
+        <div class="right"><div class="amt">8.88</div><div class="st">已领取</div></div>
+      </div>
+    </div>
+    <div class="group">
+      <div class="day">昨天</div>
+      <div class="item"><div class="ic dp">↑</div>
+        <div class="mid"><div class="t">充值</div><div class="s">14:20 · 官方充值</div></div>
+        <div class="right"><div class="amt plus">+200.00</div><div class="st">成功</div></div>
+      </div>
+      <div class="item"><div class="ic wd">↓</div>
+        <div class="mid"><div class="t">提现</div><div class="s">10:05 · 提现至钱包</div></div>
+        <div class="right"><div class="amt">-100.00</div><div class="st">处理中</div></div>
+      </div>
+    </div>
+    <div class="more" onclick="toast('加载更多…')">加载更多</div>
+  </div>
+</div>
+
+<script>
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const el=document.createElement('div');
+  el.className='toast';el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1600);
+}
+</script>
+</body>
+</html>
