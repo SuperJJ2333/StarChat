@@ -187,7 +187,41 @@ final class _LedgerListPageState extends State<LedgerListPage> {
         });
   }
 
-  Widget _row(Map<String, dynamic> row) => CupertinoButton(
+  Widget _row(Map<String, dynamic> row) {
+    final kind = '${row['kind'] ?? ''}';
+    final amount =
+        double.tryParse('${row['amount'] ?? ''}') ?? 0.0;
+    final (icon, iconBg, title) = switch (kind) {
+      'redpacket' => (
+          CupertinoIcons.gift_fill,
+          const Color(0xFFFA5151),
+          '红包'
+        ),
+      'transfer' => (
+          CupertinoIcons.arrow_left_right,
+          WeChatColors.brandPrimary,
+          '转账'
+        ),
+      'deposit' => (
+          CupertinoIcons.arrow_up,
+          const Color(0xFFFA9D3B),
+          '充值'
+        ),
+      'withdrawal' => (
+          CupertinoIcons.arrow_down,
+          const Color(0xFF5F7BF7),
+          '提现'
+        ),
+      _ => (
+          CupertinoIcons.circle,
+          WeChatColors.textTertiary,
+          '其他'
+        ),
+    };
+    final description = ledgerDisplayDescription(row);
+    final status = '${row['status'] ?? ''}';
+    return CupertinoButton(
+        key: Key('ledger-row-${row['id']}'),
         padding: const EdgeInsets.symmetric(
             horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
         onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
@@ -196,23 +230,65 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                 transactionId: row['id'] as String,
                 fromList: true))),
         child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+            child:
+                Icon(icon, color: CupertinoColors.white, size: 16),
+          ),
+          const SizedBox(width: WeChatSpacing.md),
           Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                Text(title, style: const TextStyle(fontSize: 16)),
+                const SizedBox(height: 2),
                 Text(
-                    '${_kinds[row['kind']] ?? '其他'}  ${ledgerDisplayDescription(row)}'),
-                const SizedBox(height: WeChatSpacing.xs),
-                Text(_time(row['created_at']),
-                    style: const TextStyle(color: WeChatColors.textSecondary)),
+                  '${_shortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, color: WeChatColors.textTertiary),
+                ),
               ])),
           Flexible(
-              child: Text(formatLedgerAmount(row['amount']),
-                  maxLines: 1, overflow: TextOverflow.ellipsis)),
-          const SizedBox(width: WeChatSpacing.sm),
-          const Icon(CupertinoIcons.chevron_forward, size: 16),
+            child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                amount >= 0
+                    ? '+${amount.toStringAsFixed(2)}'
+                    : amount.toStringAsFixed(2),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: amount >= 0
+                      ? WeChatColors.brandPrimary
+                      : WeChatColors.resolveTextPrimary(context),
+                ),
+              ),
+              if (status.isNotEmpty)
+                Text(status,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: WeChatColors.textTertiary)),
+            ],
+          ),
+          ),
         ]),
       );
+  }
+
+  String _shortTime(dynamic value) {
+    final parsed = DateTime.tryParse('$value');
+    if (parsed == null) return '';
+    final local = parsed.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
   Widget _tail() {
     if (_controller.loadingMore) {
       return const Padding(

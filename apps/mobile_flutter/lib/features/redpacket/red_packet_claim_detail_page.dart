@@ -363,9 +363,10 @@ final class _RedPacketClaimDetailPageState
           Text('$claimedCount人已领',
               style: const TextStyle(
                   fontSize: 13, color: WeChatColors.textSecondary)),
-          Text('共 $claimedText/$total 点钻',
-              style: const TextStyle(
-                  fontSize: 13, color: WeChatColors.textSecondary)),
+          if (controller.detail?['total'] != null)
+            Text('共 $claimedText/$total 点钻',
+                style: const TextStyle(
+                    fontSize: 13, color: WeChatColors.textSecondary)),
         ],
       ),
     );

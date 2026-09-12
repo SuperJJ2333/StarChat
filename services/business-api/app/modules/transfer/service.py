@@ -134,6 +134,7 @@ class ChatTransferService:
             idempotency_key=idempotency_key,
             scope="chat_transfer.refund",
             session=session,
+            skip_coverage=True,
         )
 
     def snapshot(self, transfer: ChatTransfer, *, user_id: str | None = None, session=None) -> dict:

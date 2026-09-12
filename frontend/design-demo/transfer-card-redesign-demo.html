@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=375">
+<title>转账封面三态重设计 — 微信 1:1</title>
+<style>
+:root{
+  --brand:#07C160; --bg:#EDEDED; --card:#FFF; --text:#191919;
+  --text-2:#888; --text-3:#B2B2B2; --line:#E5E5E5;
+  --orange:#FA9D3B; --grey:#CCCCCC;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;background:#F2F2F2;display:flex;gap:32px;padding:24px;flex-wrap:wrap;justify-content:center}
+.phone{width:375px;background:var(--bg);border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.navbar{height:44px;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;border-bottom:.5px solid var(--line)}
+.screen{min-height:500px;padding:12px}
+.chat{display:flex;gap:8px;margin:10px 4px}
+.chat .avatar{width:40px;height:40px;border-radius:5px;background:#C4C4C4;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff}
+.note{max-width:375px;padding:16px;background:#FFFBE6;border-radius:8px;font-size:13px;color:#8C6D1F;line-height:1.8;align-self:flex-start}
+
+/* ============ 转账卡片三态（微信 1:1） ============ */
+.tf{width:220px;background:var(--card);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);cursor:pointer;transition:transform .12s}
+.tf:active{transform:scale(.97)}
+.tf .top{display:flex;align-items:center;gap:10px;padding:13px 14px 9px}
+.tf .top .ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;flex:none;position:relative}
+.tf .top .ic::after{content:'';position:absolute;right:-2px;bottom:-2px;width:14px;height:14px;border-radius:50%;border:2px solid var(--card);font-size:9px;display:flex;align-items:center;justify-content:center}
+.tf .top .meta{flex:1;min-width:0}
+.tf .top .meta .t1{font-size:16px;font-weight:600;color:var(--text)}
+.tf .top .meta .t2{font-size:12px;color:var(--text-2);margin-top:1px}
+.tf .bar{height:2.5px;width:100%}
+.tf .bottom{padding:7px 14px;font-size:11px;color:var(--text-2);display:flex;justify-content:space-between}
+/* 待收款（绿）：微信转账默认态 — 品牌绿图标+状态角标 */
+.tf.pending .top .ic{background:var(--brand)}
+.tf.pending .top .ic::after{background:var(--brand);content:'⏱'}
+.tf.pending .bar{background:var(--brand)}
+/* 已收款（橙）：收款完成态 */
+.tf.accepted .top .ic{background:var(--orange)}
+.tf.accepted .top .ic::after{background:var(--orange);content:'✓'}
+.tf.accepted .bar{background:var(--orange)}
+/* 已过期/已退回（灰） */
+.tf.expired .top .ic{background:var(--grey)}
+.tf.expired .top .ic::after{background:var(--grey);content:'↺'}
+.tf.expired .bar{background:var(--grey)}
+.tf.expired .top .meta .t1,.tf.expired .bottom{color:var(--text-2)}
+
+/* ============ 收款页（demo 定稿微调） ============ */
+.tf-hero{background:var(--card);padding:36px 24px 20px;text-align:center;border-radius:0 0 0 0}
+.tf-hero .icon{width:52px;height:52px;margin:0 auto 10px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px}
+.tf-hero .icon.pending{background:var(--brand)}
+.tf-hero .icon.accepted{background:var(--orange)}
+.tf-hero .icon.expired{background:var(--grey)}
+.tf-hero .amount{font-size:44px;font-weight:700;color:var(--text)}
+.tf-hero .amount .unit{font-size:16px;font-weight:400;color:var(--text-2)}
+.tf-hero .status{display:inline-block;margin-top:10px;font-size:12px;border-radius:4px;padding:2px 10px}
+.tf-hero .status.pending{color:var(--brand);background:rgba(7,193,96,.08)}
+.tf-hero .status.accepted{color:var(--orange);background:rgba(250,157,59,.10)}
+.tf-hero .status.expired{color:var(--text-2);background:#F5F5F5}
+.tf-rows{margin:10px 12px;background:var(--card);border-radius:8px;overflow:hidden}
+.tf-rows .cell{display:flex;justify-content:space-between;padding:13px 16px;font-size:15px}
+.tf-rows .cell+.cell{border-top:.5px solid var(--line)}
+.tf-rows .cell .k{color:var(--text-2)}
+.tf-rows .cell .v{color:var(--text)}
+.tf-rows .cell .v .copy{display:inline-flex;width:16px;height:16px;border-radius:3px;border:1px solid var(--text-3);color:var(--text-2);font-size:9px;align-items:center;justify-content:center;margin-left:6px;vertical-align:middle}
+.tf-actions{padding:20px 24px 0;display:flex;gap:12px}
+.btn{flex:1;height:46px;border-radius:6px;font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.plain{border:1px solid var(--text-3);color:var(--text-2)}
+</style>
+</head>
+<body>
+
+<!-- ================= 1. 聊天内转账卡片三态 ================= -->
+<div class="phone">
+  <div class="navbar">畅聊测试群</div>
+  <div class="screen">
+    <div style="text-align:center;color:var(--text-3);font-size:12px;margin:8px 0">今天 20:28</div>
+    <div class="chat"><div class="avatar"> 彭</div><div>
+      <div class="tf pending" onclick="toast('收款页面')">
+        <div class="top"><div class="ic">⇄</div><div class="meta"><div class="t1">88.88 点钻</div><div class="t2">等待对方收款</div></div></div>
+        <div class="bar"></div>
+        <div class="bottom"><span>转账给这个小鸿</span><span>待收款</span></div>
+      </div>
+    </div></div>
+    <div class="chat"><div class="avatar"> 彭</div><div>
+      <div class="tf accepted" onclick="toast('收款页面')">
+        <div class="top"><div class="ic">⇄</div><div class="meta"><div class="t1">66.00 点钻</div><div class="t2">对方已收款</div></div></div>
+        <div class="bar"></div>
+        <div class="bottom"><span>转账给这个小鸿</span><span>已收款</span></div>
+      </div>
+    </div></div>
+    <div class="chat"><div class="avatar"> 彭</div><div>
+      <div class="tf expired" onclick="toast('收款页面')">
+        <div class="top"><div class="ic">⇄</div><div class="meta"><div class="t1">99.99 点钻</div><div class="t2">已退回</div></div></div>
+        <div class="bar"></div>
+        <div class="bottom"><span>转账给这个小鸿</span><span>已过期退回</span></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ================= 2. 收款页三态 ================= -->
+<div class="phone">
+  <div class="navbar"><span style="position:absolute;left:12px;font-size:14px">‹</span>转账</div>
+  <div class="screen" style="padding:0">
+    <div class="tf-hero">
+      <div class="icon accepted">⇄</div>
+      <div style="font-size:14px;color:var(--text-2)">小鸿 已收款</div>
+      <div class="amount">88.88 <span class="unit">点钻</span></div>
+      <div class="status accepted">转账已收款</div>
+    </div>
+    <div class="tf-rows">
+      <div class="cell"><span class="k">转账状态</span><span class="v">已收款</span></div>
+      <div class="cell"><span class="k">说明</span><span class="v">请你喝奶茶</span></div>
+      <div class="cell"><span class="k">转账时间</span><span class="v">2026-09-13 20:28</span></div>
+      <div class="cell"><span class="k">收款时间</span><span class="v">2026-09-13 20:31</span></div>
+      <div class="cell"><span class="k">账单ID</span><span class="v" onclick="toast('账单ID已复制')">LT20913<span class="copy">复制</span></span></div>
+    </div>
+    <div class="tf-actions">
+      <div class="btn plain" onclick="toast('全部账单')">全部账单</div>
+      <div class="btn plain" onclick="toast('账单详情')">账单详情</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 3. 待收款页（收款方视角） ================= -->
+<div class="phone">
+  <div class="navbar"><span style="position:absolute;left:12px;font-size:14px">‹</span>转账</div>
+  <div class="screen" style="padding:0">
+    <div class="tf-hero">
+      <div class="icon pending">⇄</div>
+      <div style="font-size:14px;color:var(--text-2)">小彭 向你转账</div>
+      <div class="amount">88.88 <span class="unit">点钻</span></div>
+      <div class="status pending">待收款</div>
+    </div>
+    <div class="tf-rows">
+      <div class="cell"><span class="k">转账状态</span><span class="v">待收款</span></div>
+      <div class="cell"><span class="k">说明</span><span class="v">请你喝奶茶</span></div>
+      <div class="cell"><span class="k">转账时间</span><span class="v">2026-09-13 20:28</span></div>
+      <div class="cell"><span class="k">收款时间</span><span class="v">尚未收款</span></div>
+    </div>
+    <div class="tf-actions">
+      <div class="btn plain" onclick="toast('退还')">退还</div>
+      <div class="btn primary" onclick="toast('收款')">收款</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 说明 ================= -->
+<div class="note">
+  <b>转账封面三态（微信 1:1）：</b><br>
+  1. <b>待收款（绿）</b>：品牌绿圆形图标 + 右下角小闹钟角标（24h 时限提示）+ 绿色状态条 + “等待对方收款 / 待收款”；<br>
+  2. <b>已收款（橙）</b>：橙色图标 + 右下角 ✓ 角标 + 橙色状态条 + “对方已收款 / 已收款”；<br>
+  3. <b>已过期退回（灰）</b>：灰色图标 + 右下角 ↺ 角标 + 灰色状态条 + 标题降灰 + “已退回 / 已过期退回”；<br>
+  4. 卡片白底 220px 宽、点击缩放反馈；金额大字 16px 加粗；底部说明行左右两端对齐。<br><br>
+  确认后按此实装 Flutter。
+</div>
+
+<script>
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const el=document.createElement('div');
+  el.style.cssText='position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:13px;padding:9px 18px;border-radius:8px;z-index:99';
+  el.textContent=msg;document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1500);
+}
+</script>
+</body>
+</html>
