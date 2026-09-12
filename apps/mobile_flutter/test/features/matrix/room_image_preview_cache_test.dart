@@ -174,6 +174,71 @@ void main() {
     other.dispose();
   });
 
+  test('session preview pool keeps encoded bytes for a same-account reentry',
+      () {
+    addTearDown(RoomImagePreviewCache.clearSessionMemory);
+    final first = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    final bytes = Uint8List.fromList([1, 2, 3]);
+    first.seed('image', bytes);
+    first.dispose();
+
+    final reopened = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    expect(reopened.get('image'), bytes);
+    RoomImagePreviewCache.clearSessionMemory();
+    expect(reopened.get('image'), isNull);
+    reopened.dispose();
+  });
+
+  test('session preview pool is account scoped and clearable', () {
+    addTearDown(RoomImagePreviewCache.clearSessionMemory);
+    final alice = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    alice.seed('image', Uint8List.fromList([1, 2, 3]));
+    final bob =
+        RoomImagePreviewCache.forRoomSession(accountId: 'bob', roomId: 'room');
+    expect(bob.get('image'), isNull);
+    RoomImagePreviewCache.clearSessionMemory();
+    alice.dispose();
+    final aliceReentry = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room');
+    expect(aliceReentry.get('image'), isNull);
+    aliceReentry.dispose();
+    bob.dispose();
+  });
+
+  test('session preview pool includes room in its bounded key', () {
+    addTearDown(RoomImagePreviewCache.clearSessionMemory);
+    final roomA = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room-a');
+    roomA.seed('image', Uint8List.fromList([1, 2, 3]));
+    final roomB = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room-b');
+    expect(roomB.get('image'), isNull);
+    roomA.dispose();
+    roomB.dispose();
+  });
+
+  test('disposed reentry never joins an earlier page pending load', () async {
+    addTearDown(RoomImagePreviewCache.clearSessionMemory);
+    final heldRead = Completer<Uint8List?>();
+    final first = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice', roomId: 'room', read: (_) => heldRead.future);
+    final pending = first.load('image', () async => Uint8List.fromList([1]));
+    first.dispose();
+    final reopened = RoomImagePreviewCache.forRoomSession(
+        accountId: 'alice',
+        roomId: 'room',
+        read: (_) async => Uint8List.fromList([2, 3]));
+    expect(await reopened.load('image', () async => throw StateError('source')),
+        [2, 3]);
+    heldRead.complete(Uint8List.fromList([9]));
+    await expectLater(pending, throwsStateError);
+    expect(reopened.get('image'), [2, 3]);
+    reopened.dispose();
+  });
+
   test(
       'persistent writes serialize across room instances for secure key initialization',
       () async {

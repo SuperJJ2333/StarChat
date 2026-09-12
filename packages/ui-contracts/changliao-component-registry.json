@@ -482,12 +482,25 @@
         "file": "apps/mobile_flutter/lib/ui/components/network_status_capsule.dart",
         "props": [
           "onRetry",
-          "reconnecting"
+          "reconnecting",
+          "label",
+          "disabled"
         ],
-        "variants": {},
+        "variants": {
+          "label": [
+            "default",
+            "custom"
+          ],
+          "disabled": [
+            "enabled",
+            "disabled"
+          ]
+        },
         "states": [
           "offline",
-          "reconnecting"
+          "reconnecting",
+          "connecting",
+          "serviceUnavailable"
         ]
       },
       "html": {
@@ -1293,7 +1306,7 @@
     }
   },
   "screens": {
-    "expectedCount": 356
+    "expectedCount": 363
   },
   "adminCompletion20260910": {
     "html": [

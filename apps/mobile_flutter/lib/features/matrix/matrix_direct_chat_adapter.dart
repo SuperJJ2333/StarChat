@@ -131,6 +131,76 @@ final class MatrixDirectChatBackend implements DirectChatBackend {
     return null;
   }
 
+  /// Reads only already-synced local state. This deliberately never calls
+  /// requestParticipants, join, repair, or any Matrix endpoint.
+  Future<DirectChatRoom?> findCachedJoinedDirectRoom(
+      String matrixUserId) async {
+    final roomId = client.getDirectChatFromUserId(matrixUserId);
+    final room = roomId == null ? null : client.getRoomById(roomId);
+    final me = client.userID;
+    if (room == null ||
+        me == null ||
+        room.membership != Membership.join ||
+        !room.encrypted ||
+        !room.isDirectChat ||
+        room.directChatMatrixID != matrixUserId) {
+      return null;
+    }
+    // Lazy room state may omit a member that is already persisted locally.
+    // Hydrate only from the SDK database; unlike requestParticipants this can
+    // never issue /members or change membership.
+    if (!room.participantListComplete) {
+      final List<User> storedMembers;
+      try {
+        storedMembers = await client.database?.getUsers(room) ?? const [];
+      } catch (_) {
+        // A local cache failure is inconclusive. Let the existing canonical
+        // coordinator decide when an authoritative service path is available.
+        return null;
+      }
+      for (final member in storedMembers) {
+        // A sync event may have reached memory while the database read was
+        // pending. Never replace that newer state with an older persisted
+        // member record.
+        if (room.getState(EventTypes.RoomMember, member.id) == null) {
+          room.setState(member);
+        }
+      }
+    }
+    // The database read is asynchronous. Recheck every trust boundary after
+    // it completes so a concurrent leave, encryption removal, or m.direct
+    // update cannot turn an old snapshot into a local recovery result.
+    if (room.membership != Membership.join ||
+        !room.encrypted ||
+        !room.isDirectChat ||
+        room.directChatMatrixID != matrixUserId ||
+        room.partial ||
+        !room.participantListComplete) {
+      return null;
+    }
+    // Include every locally-known active membership here. A pending knock is
+    // still an additional participant and must make local recovery defer.
+    final members = room.getParticipants();
+    final byId = {for (final member in members) member.id: member};
+    final self = byId[me];
+    final peer = byId[matrixUserId];
+    // A joined self and a joined-or-invited peer are a safe existing direct
+    // room. The invitation can be accepted later without discarding already
+    // cached history. Any other active participant remains inconclusive.
+    if (byId.length != 2 ||
+        self?.membership != Membership.join ||
+        (peer?.membership != Membership.join &&
+            peer?.membership != Membership.invite)) {
+      return null;
+    }
+    return DirectChatRoom(
+      roomId: room.id,
+      encrypted: true,
+      joinedMemberCount: 2,
+      participantIds: byId.keys.toSet(),
+    );
+  }
+
   @override
   Future<String> createEncryptedDirectRoom(
     String matrixUserId, {

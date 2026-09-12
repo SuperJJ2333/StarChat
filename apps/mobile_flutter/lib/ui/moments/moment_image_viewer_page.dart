@@ -3,6 +3,8 @@ import 'package:flutter/cupertino.dart';
 import 'moment_media_cache.dart';
 import 'moment_image_prefetcher.dart';
 import 'moment_viewer_source.dart';
+import '../components/network_status_capsule.dart';
+import '../components/operation_failure_dialog.dart';
 
 /// 朋友圈图片全屏查看页：网络大图 + 双指缩放 + 左右切换 + 点击关闭。
 final class MomentImageViewerPage extends StatefulWidget {
@@ -28,6 +30,7 @@ final class MomentImageViewerPage extends StatefulWidget {
 
 final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
   final _retries = <int, int>{};
+  final _retrying = <Object>{};
   late int index = _clamp(widget.initialIndex, widget.imageUrls.length);
   late PageController controller = PageController(initialPage: index);
   late final MomentImagePrefetcher _prefetcher =
@@ -45,6 +48,49 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
           cacheKey: itemIndex < widget.imageCacheKeys.length
               ? widget.imageCacheKeys[itemIndex]
               : null);
+
+  Future<void> _retryFromImageError(int itemIndex, Object error) async {
+    if (itemIndex >= widget.imageUrls.length) return;
+    final url = widget.imageUrls[itemIndex];
+    final accountKey = _accountKey;
+    final origin = widget.mediaOrigin;
+    final cacheKey = itemIndex < widget.imageCacheKeys.length
+        ? widget.imageCacheKeys[itemIndex]
+        : null;
+    final identity = (url, accountKey, origin, cacheKey);
+    if (!_retrying.add(identity)) return;
+    try {
+      // A signed-url expiry and an image decode error retain the original
+      // one-tap reload behavior. Transport and 5xx failures first give the
+      // user a cancellable choice, based on the actual image load error.
+      if (classifyOperationFailure(error) != OperationFailureKind.other) {
+        final confirmed = await showRetryableOperationFailure(context, error);
+        if (!confirmed) return;
+      }
+      // The page may have been rebuilt for another account, image order, or
+      // source while the dialog was visible. Never evict/reload that new item.
+      final currentCacheKey = itemIndex < widget.imageCacheKeys.length
+          ? widget.imageCacheKeys[itemIndex]
+          : null;
+      if (!mounted ||
+          _accountKey != accountKey ||
+          widget.mediaOrigin != origin ||
+          itemIndex >= widget.imageUrls.length ||
+          widget.imageUrls[itemIndex] != url ||
+          currentCacheKey != cacheKey) {
+        return;
+      }
+      await MomentMediaCache.retry(MomentMediaCache.imageProvider(url,
+          accountKey: accountKey, trustedOrigin: origin, cacheKey: cacheKey));
+      if (mounted) {
+        setState(() => _retries[itemIndex] = (_retries[itemIndex] ?? 0) + 1);
+      }
+    } catch (_) {
+      // The image's error builder remains the visible recovery surface.
+    } finally {
+      _retrying.remove(identity);
+    }
+  }
 
   @override
   void didUpdateWidget(covariant MomentImageViewerPage oldWidget) {
@@ -167,23 +213,9 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                                 ? widget.imageCacheKeys[i]
                                 : null),
                         fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => Center(
+                        errorBuilder: (_, error, ___) => Center(
                           child: CupertinoButton(
-                            onPressed: () async {
-                              await MomentMediaCache.retry(
-                                  MomentMediaCache.imageProvider(
-                                      widget.imageUrls[i],
-                                      accountKey: widget.mediaAccountKey ??
-                                          widget.cacheNamespace,
-                                      trustedOrigin: widget.mediaOrigin,
-                                      cacheKey: i < widget.imageCacheKeys.length
-                                          ? widget.imageCacheKeys[i]
-                                          : null));
-                              if (mounted) {
-                                setState(
-                                    () => _retries[i] = (_retries[i] ?? 0) + 1);
-                              }
-                            },
+                            onPressed: () => _retryFromImageError(i, error),
                             child: const Icon(CupertinoIcons.arrow_clockwise,
                                 color: CupertinoColors.systemGrey,
                                 semanticLabel: '重新加载图片'),
@@ -199,6 +231,12 @@ final class _MomentImageViewerPageState extends State<MomentImageViewerPage> {
                   ),
                 ),
               ),
+            Positioned(
+              top: 48,
+              left: 16,
+              right: 16,
+              child: Center(child: WeChatNetworkStatusCapsule()),
+            ),
             Positioned(
               top: 12,
               right: 16,

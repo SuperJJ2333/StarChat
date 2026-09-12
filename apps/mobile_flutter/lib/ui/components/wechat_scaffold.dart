@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../foundation/wechat_tokens.dart';
+import 'network_status_capsule.dart';
 
 final class WeChatPageScaffold extends StatelessWidget {
   const WeChatPageScaffold({
@@ -55,6 +56,10 @@ final class WeChatPageScaffold extends StatelessWidget {
                     middle: Text(title!),
                     trailing: trailing,
                   )),
-        child: SafeArea(child: child),
+        child: SafeArea(
+            child: Column(children: [
+          WeChatNetworkStatusCapsule(),
+          Expanded(child: child),
+        ])),
       );
 }

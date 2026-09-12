@@ -39,3 +39,7 @@
 ## 2026-09-12 消息选区与动态emoji Debug2089
 
 Astra审查、显式gpt-5.6-terra实施；本地分支codex/chat-selection-20260912源码48fe7475。0.3.85-debug/2089已覆盖安装Mi6，固定签名与拉回APK哈希核对通过。定向Flutter61/61、分析、HTML12/12通过；全量仍有29 Flutter与11前端既有失败，verify缺.env。未push或部署生产；功能手感待用户验收。[任务](tasks/2026-09-12-selection-emoji-repair.md) · [交付与限制](../verification/2026-09-12-selection-emoji-repair.md)。
+
+## 2026-09-12 断网恢复、离线缓存与页面提示 Debug2093
+
+Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recovery-20260912`源码`01d6df58`整合main`1d1db6aa`，保留已安装2092的好友在线状态/平台下载链接；0.3.86-debug/2093已在Mi6保留数据安装，原签名与拉回APK完整SHA一致。最终Flutter2453通过/29既有钱包失败，分析通过；HTML/边界已有失败与verify缺.env如实记录。真实断网恢复≤5秒、iOS、多端及性能由用户继续验收；未push/部署/迁移。[任务记录](tasks/2026-09-12-offline-recovery.md) · [根因、验证、安装与用户用例](../verification/2026-09-12-offline-recovery.md)。

@@ -1,6 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
+import 'package:http/http.dart' as http;
+import 'package:liuhetong_mobile/core/business_api_error.dart';
+import 'package:matrix/matrix.dart';
 
 import 'coordinated_direct_chat.dart';
 
@@ -9,32 +13,61 @@ import 'coordinated_direct_chat.dart';
 /// 本文件给出失败分类（不含任何敏感信息：房间号/Matrix ID/网络细节
 /// 仍只进 developer.log 结构化诊断）与对应文案、重试策略。
 enum DirectChatFailureKind {
-  /// 同步尚未完成（规范房间/成员/加密状态还在路上）——稍后重试可恢复。
+  /// 已知规范房间还在同步——稍后重试可恢复。
   syncPending,
+
+  /// A request elapsed without proving whether the room is still syncing.
+  requestTimedOut,
 
   /// 好友映射缺失（已不是当前好友）——重试无意义。
   contactUnavailable,
+
+  /// The device cannot reach the transport. HTTP authorization and Matrix
+  /// protocol errors deliberately do not enter this bucket.
+  offline,
+
+  /// Business or Matrix credentials have expired. Retrying the same action
+  /// cannot renew them.
+  authenticationRequired,
+
+  /// The current account is not allowed to open the selected room.
+  permissionDenied,
 
   /// 网络或其它可恢复失败。
   networkOrOther,
 }
 
 DirectChatFailureKind classifyDirectChatFailure(Object? error) {
-  if (error is TimeoutException || error is DirectRoomPendingException) {
+  if (error is DirectRoomPendingException) {
     return DirectChatFailureKind.syncPending;
   }
+  if (error is TimeoutException) return DirectChatFailureKind.requestTimedOut;
   if (error is StateError &&
       error.message == 'The contact is no longer a current friend') {
     return DirectChatFailureKind.contactUnavailable;
   }
+  if (error is SocketException || error is http.ClientException) {
+    return DirectChatFailureKind.offline;
+  }
+  final statusCode = switch (error) {
+    BusinessApiException error => error.statusCode,
+    MatrixException error => error.response?.statusCode,
+    _ => null,
+  };
+  if (statusCode == 401) return DirectChatFailureKind.authenticationRequired;
+  if (statusCode == 403) return DirectChatFailureKind.permissionDenied;
   return DirectChatFailureKind.networkOrOther;
 }
 
 String describeDirectChatFailure(Object? error) =>
     switch (classifyDirectChatFailure(error)) {
       DirectChatFailureKind.syncPending => '对方会话还在同步中，请稍后重试。',
+      DirectChatFailureKind.requestTimedOut => '打开会话超时，请检查网络后重试。',
       DirectChatFailureKind.contactUnavailable => '该好友已不在你的好友列表。',
-      DirectChatFailureKind.networkOrOther => '网络异常，请稍后重试。',
+      DirectChatFailureKind.offline => '当前处于离线状态，请恢复网络后重试。',
+      DirectChatFailureKind.authenticationRequired => '登录状态已失效，请重新登录。',
+      DirectChatFailureKind.permissionDenied => '你没有权限打开此会话。',
+      DirectChatFailureKind.networkOrOther => '无法打开会话，请稍后重试。',
     };
 
 /// 统一的私聊打开失败弹窗：保留原错误标题（用户/客服对齐口径），
@@ -46,8 +79,11 @@ Future<void> showDirectChatFailureDialog(
   Future<void> Function()? onRetry,
 }) {
   final retryable = onRetry != null &&
-      classifyDirectChatFailure(error) !=
-          DirectChatFailureKind.contactUnavailable;
+      !{
+        DirectChatFailureKind.contactUnavailable,
+        DirectChatFailureKind.authenticationRequired,
+        DirectChatFailureKind.permissionDenied,
+      }.contains(classifyDirectChatFailure(error));
   return showCupertinoDialog<void>(
     context: context,
     builder: (dialogContext) => CupertinoAlertDialog(

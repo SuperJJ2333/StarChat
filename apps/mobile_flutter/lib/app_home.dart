@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
+import 'core/app_connection_status.dart';
 import 'core/app_config.dart';
 import 'core/local_notification_scheduler.dart';
 import 'core/notification/app_state_manager.dart';
@@ -40,6 +41,7 @@ import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/matrix/direct_room_coordination_storage.dart';
 import 'features/matrix/matrix_sync_watchdog.dart';
+import 'features/matrix/matrix_sync_recovery_controller.dart';
 import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
 import 'features/matrix/room_page.dart';
 import 'features/matrix/profile_repository.dart';
@@ -147,16 +149,20 @@ final class AppHome extends StatefulWidget {
     required this.onLogout,
     required this.themeController,
     this.profileRepositoryFactory,
+    this.syncWatchdogFactory,
   });
 
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final Future<void> Function() onLogout;
   final ThemeController themeController;
+
   /// Test seam for the account-scoped repository; AppHome retains hydration,
   /// preload, ownership checks and disposal of the returned repository.
   final Future<ProfileRepository> Function(
       BusinessApiClient api, String? accountKey)? profileRepositoryFactory;
+  final MatrixSyncWatchdog Function(SyncWatchdogTarget target)?
+      syncWatchdogFactory;
 
   @override
   State<AppHome> createState() => _AppHomeState();
@@ -169,6 +175,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       intents: PreferencesDirectRoomIntentStore(widget.matrix.userId ?? ''),
       createOnce: widget.matrix.createDirectChatOnce,
       findExisting: widget.matrix.findExistingDirectChat,
+      findCached: widget.matrix.findCachedDirectChat,
       businessUserIdOf: (matrixUserId) =>
           _chatIdentityCache?.contactsByMatrixId[matrixUserId]?.userId,
       openExisting: _openCanonicalDirectRoom,
@@ -273,6 +280,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// BUG（后台通知第四次修复）：SDK 同步循环后台悬挂无自愈——看门狗
   /// 以循环心跳为准，停跳先踢 oneShotSync，仍停跳强制重建循环。
   late MatrixSyncWatchdog syncWatchdog;
+  bool _syncWatchdogStarted = false;
+  Object? _connectionStatusOwner;
   ManagedMatrixNotificationEventSource? _notificationEventSource;
 
   /// 通知系统唯一启动器：登录会话内只装配一个 eventSource + coordinator。
@@ -448,7 +457,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     // 前台服务保活必须在通知系统就绪后启动（权限/渠道先行）。
     await syncKeepAlive.ensureStarted();
     if (!_currentStartup(generation)) return;
-    syncWatchdog.start();
     unawaited(() async {
       await _primeBatteryOptimization();
       if (!_currentStartup(generation)) return;
@@ -753,6 +761,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
     );
     if (appResumed) {
+      syncWatchdog.onAppResumed();
       // 通知系统启动失败的重试（此前 catch 注释承诺了重试但不存在）。
       if (_notificationBootstrapper?.needsRetry ?? false) {
         unawaited(_startNotificationSystem());
@@ -819,6 +828,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _startFriendRequestWatchFor(int generation) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!_currentStartup(generation)) return;
       final notifier = FriendRequestNotifier();
       _friendRequestWatch = FriendRequestWatch(widget.api, prefs,
           notifier: notifier,
@@ -829,6 +839,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               pendingFriendRequests.value = count;
             }
           });
+      _friendRequestPollTimer?.cancel();
       _friendRequestPollTimer = Timer.periodic(
         const Duration(seconds: 5),
         (_) => unawaited(_pollFriendRequests()),
@@ -1000,6 +1011,36 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     await _refreshUnreadCount();
   }
 
+  void _bindConnectionStatus() {
+    final owner = Object();
+    _connectionStatusOwner = owner;
+    AppConnectionStatusHub.shared.bind<MatrixConnectionStatus>(
+      owner,
+      syncWatchdog.connectionStatus,
+      (status) => switch (status) {
+        MatrixConnectionStatus.unknown => AppConnectionStatus.unknown,
+        MatrixConnectionStatus.connecting => AppConnectionStatus.connecting,
+        MatrixConnectionStatus.offline => AppConnectionStatus.offline,
+        MatrixConnectionStatus.connected => AppConnectionStatus.connected,
+        MatrixConnectionStatus.serviceUnavailable =>
+          AppConnectionStatus.serviceUnavailable,
+      },
+      onRetry: syncWatchdog.retry,
+    );
+  }
+
+  void _disposeSyncWatchdog() {
+    if (!_syncWatchdogStarted) return;
+    // The hub listener must be removed while the notifier is still valid.
+    // Its owner check also prevents an old AppHome close from clearing a new
+    // session that has already bound its own watchdog.
+    final owner = _connectionStatusOwner;
+    if (owner != null) AppConnectionStatusHub.shared.unbind(owner);
+    _connectionStatusOwner = null;
+    syncWatchdog.dispose();
+    _syncWatchdogStarted = false;
+  }
+
   Future<void> _refreshUnreadCount() async {
     final unread = await widget.matrix.conversations.totalUnreadCount();
     if (mounted && unread != _totalUnreadCount) {
@@ -1017,8 +1058,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         callBackend = capability.createCallBackend(
             diagnostics: callDiagnostics, wakeup: callWakeup);
         calls = _createCallController();
-        syncWatchdog =
-            MatrixSyncWatchdog(target: capability.createSyncWatchdogTarget());
+        final watchdogTarget = capability.createSyncWatchdogTarget();
+        syncWatchdog = widget.syncWatchdogFactory?.call(watchdogTarget) ??
+            MatrixSyncWatchdog(
+              target: watchdogTarget,
+              transport: ConnectivityPlusTransportMonitor(),
+            );
+        syncWatchdog.start();
+        _syncWatchdogStarted = true;
+        _bindConnectionStatus();
         _startup.open();
         _matrixReady = true;
         _startHomeResources();
@@ -1065,11 +1113,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       cache = factory != null
           ? await factory(widget.api, accountKey)
           : accountKey == null
-          ? ProfileRepository(widget.api)
-          : await ProfileRepository.create(
-              api: widget.api,
-              accountKey: 'matrix:$accountKey',
-            );
+              ? ProfileRepository(widget.api)
+              : await ProfileRepository.create(
+                  api: widget.api,
+                  accountKey: 'matrix:$accountKey',
+                );
       await cache.hydrate();
     } catch (_) {
       // 最终兜底：无持久化的内存仓库——页面必须能渲染，
@@ -1429,14 +1477,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   void _addFriendFromTab() {
     Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
-      builder: (_) =>
-          AddFriendPage(api: widget.api, identityCache: _chatIdentityCache,
-          contactActions: ContactActions(
-            onMessage: _openMessage,
-            onVoice: (contact) => _openCall(contact, CallMediaType.audio),
-            onVideo: (contact) => _openCall(contact, CallMediaType.video),
-          ),
+      builder: (_) => AddFriendPage(
+        api: widget.api,
+        identityCache: _chatIdentityCache,
+        contactActions: ContactActions(
+          onMessage: _openMessage,
+          onVoice: (contact) => _openCall(contact, CallMediaType.audio),
+          onVideo: (contact) => _openCall(contact, CallMediaType.video),
         ),
+      ),
     ));
   }
 
@@ -1458,8 +1507,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (!mounted) return;
     final controller = GroupChatController(
       contacts: widget.api,
-      groups:
-          ServerAutoJoinGroupGateway(api: widget.api, matrix: matrix),
+      groups: ServerAutoJoinGroupGateway(api: widget.api, matrix: matrix),
       currentUserDisplayName: currentUserDisplayName,
     );
     final roomId = await Navigator.push<String>(
@@ -1485,10 +1533,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     unawaited(() async {
       try {
         await identityCache.preload();
-        if (mounted && identical(matrix, widget.matrix) &&
+        if (mounted &&
+            identical(matrix, widget.matrix) &&
             identical(identityCache, _chatIdentityCache)) {
           await identityCache.precacheAvatarImages(context,
-              shouldContinue: () => mounted && identical(matrix, widget.matrix) &&
+              shouldContinue: () =>
+                  mounted &&
+                  identical(matrix, widget.matrix) &&
                   identical(identityCache, _chatIdentityCache));
         }
       } catch (_) {}
@@ -1527,6 +1578,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     _disposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _unreadSubscription?.cancel();
+    _friendRequestPollTimer?.cancel();
+    _friendRequestPollTimer = null;
+    _backgroundCallPermissionTimer?.cancel();
+    _backgroundCallPermissionTimer = null;
+    _disposeSyncWatchdog();
     directChats.dispose();
     pendingFriendRequests.dispose();
     unawaited(_disposeMatrixResources());
@@ -1585,7 +1641,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     await stop(() async {
       await syncKeepAlive.stop();
     });
-    syncWatchdog.dispose();
+    _disposeSyncWatchdog();
     await stop(() async {
       await reminderBootstrap?.dispose();
     });
@@ -1976,13 +2032,60 @@ final class ProfileTabPage extends StatefulWidget {
 }
 
 final class _ProfileTabPageState extends State<ProfileTabPage> {
-  late final ProfileController controller = ProfileController(
-    gateway: widget.api,
-    avatarSource: GalleryAvatarSource(
-      brightnessProvider: () => CupertinoTheme.brightnessOf(context),
-    ),
-    onAvatarUpdated: _refreshAvatarDisplays,
-  );
+  late ProfileController controller;
+  late BusinessApiClient _controllerApi;
+  late int _controllerSessionEpoch;
+  String? _controllerAccountKey;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = _createController();
+  }
+
+  ProfileController _createController() {
+    final api = widget.api;
+    final sessionEpoch = api.sessionEpoch;
+    final cache = widget.identityCache;
+    _controllerApi = api;
+    _controllerSessionEpoch = sessionEpoch;
+    _controllerAccountKey = cache?.accountKey;
+    bool ownsCurrentSession() =>
+        mounted &&
+        identical(widget.api, api) &&
+        api.sessionEpoch == sessionEpoch &&
+        identical(widget.identityCache, cache) &&
+        cache?.accountKey == _controllerAccountKey;
+    return ProfileController(
+      gateway: api,
+      avatarSource: GalleryAvatarSource(
+        brightnessProvider: () => CupertinoTheme.brightnessOf(context),
+      ),
+      readCachedProfile: () async {
+        if (!ownsCurrentSession() || cache == null) return null;
+        await cache.hydrate();
+        return ownsCurrentSession() ? cache.profile : null;
+      },
+      persistProfile: (profile) async {
+        if (!ownsCurrentSession() || cache == null) return;
+        await cache.applyUpdatedProfile(profile);
+      },
+      onAvatarUpdated: _refreshAvatarDisplays,
+      initialProfile: cache?.profile,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileTabPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(_controllerApi, widget.api) ||
+        _controllerSessionEpoch != widget.api.sessionEpoch ||
+        !identical(oldWidget.identityCache, widget.identityCache) ||
+        _controllerAccountKey != widget.identityCache?.accountKey) {
+      controller.dispose();
+      controller = _createController();
+    }
+  }
 
   void _refreshAvatarDisplays() {
     unawaited(widget.identityCache?.refresh());
@@ -1997,14 +2100,16 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
 
   @override
   Widget build(BuildContext context) => ProfileExperiencePage(
+      key: ObjectKey(controller),
       controller: controller,
       onMoments: () async {
         final cache = widget.identityCache;
         if (cache == null) return;
-        final page =
-            await MomentsPage.prepare(api: widget.api, identityCache: cache,
-            contactActions: widget.contactActions,
-          );
+        final page = await MomentsPage.prepare(
+          api: widget.api,
+          identityCache: cache,
+          contactActions: widget.contactActions,
+        );
         if (!context.mounted) return;
         Navigator.of(context, rootNavigator: true).push(
             CupertinoPageRoute(fullscreenDialog: true, builder: (_) => page));

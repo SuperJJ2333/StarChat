@@ -95,6 +95,34 @@ void main() {
         await MediaCache.cached('room', 'two', accountId: 'account-a'), isNull);
     expect(await b.readAsBytes(), bytes);
   });
+  test('a failing account clearer cannot skip core account deletion', () async {
+    final file = await MediaCache.store(
+        'room', 'event', Uint8List.fromList([1]),
+        accountId: 'account-a');
+    final unregister = registerAccountMediaCacheClearer((accountId) async {
+      if (accountId == 'account-a') throw StateError('clearer failed');
+    });
+    try {
+      await expectLater(MediaCache.clearAccount('account-a'), throwsStateError);
+      expect(await file.exists(), isFalse);
+      expect(await MediaCache.cached('room', 'event', accountId: 'account-a'),
+          isNull);
+    } finally {
+      unregister();
+    }
+  });
+  test('a failed durable clear epoch still deletes the account and propagates',
+      () async {
+    final file = await MediaCache.store(
+        'room', 'event', Uint8List.fromList([1]),
+        accountId: 'account-a');
+    await File('${root.path}/media-clear-epochs').writeAsString('blocker');
+    await expectLater(MediaCache.clearAccount('account-a'),
+        throwsA(isA<FileSystemException>()));
+    expect(await file.exists(), isFalse);
+    expect(await MediaCache.cached('room', 'event', accountId: 'account-a'),
+        isNull);
+  });
   test('pending decrypt cannot recreate deleted account cache', () async {
     final started = Completer<void>();
     final pending = Completer<Uint8List>();

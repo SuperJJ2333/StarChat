@@ -2141,6 +2141,7 @@ class Client extends MatrixApi {
 
   bool _backgroundSync = true;
   Future<void>? _currentSync;
+  int _syncGeneration = 0;
   Future<void> _retryDelay = Future.value();
 
   bool get syncPending => _currentSync != null;
@@ -2166,14 +2167,18 @@ class Client extends MatrixApi {
   /// Pass a timeout to set how long the server waits before sending an empty response.
   /// (Corresponds to the timeout param on the /sync request.)
   Future<void> _sync({Duration? timeout}) {
-    final currentSync =
-        _currentSync ??= _innerSync(timeout: timeout).whenComplete(() {
+    final existing = _currentSync;
+    if (existing != null) return existing;
+    final generation = ++_syncGeneration;
+    late final Future<void> currentSync;
+    currentSync =
+        _innerSync(timeout: timeout, generation: generation).whenComplete(() {
+      if (!identical(_currentSync, currentSync) ||
+          generation != _syncGeneration) return;
       _currentSync = null;
-      if (_backgroundSync && isLogged() && !_disposed) {
-        _sync();
-      }
+      if (_backgroundSync && isLogged() && !_disposed) _sync();
     });
-    return currentSync;
+    return _currentSync = currentSync;
   }
 
   /// Presence that is set on sync.
@@ -2228,8 +2233,17 @@ class Client extends MatrixApi {
 
   /// Pass a timeout to set how long the server waits before sending an empty response.
   /// (Corresponds to the timeout param on the /sync request.)
-  Future<void> _innerSync({Duration? timeout}) async {
+  Future<void> _innerSync({Duration? timeout, required int generation}) async {
+    bool ownsLoop() => generation == _syncGeneration;
+    void report(SyncStatus status, {SdkError? error, double? progress}) {
+      if (ownsLoop()) {
+        onSyncStatus
+            .add(SyncStatusUpdate(status, error: error, progress: progress));
+      }
+    }
+
     await _retryDelay;
+    if (!ownsLoop()) return;
     _retryDelay = Future.delayed(Duration(seconds: syncErrorTimeoutSec));
     if (!isLogged() || _disposed || _aborted) return;
     try {
@@ -2246,7 +2260,11 @@ class Client extends MatrixApi {
 
       await ensureNotSoftLoggedOut(timeout * 2);
 
+      if (!ownsLoop() || _disposed || _aborted) return;
+
       await _checkSyncFilter();
+
+      if (!ownsLoop() || _disposed || _aborted) return;
 
       final syncRequest = sync(
         filter: syncFilterId,
@@ -2262,7 +2280,7 @@ class Client extends MatrixApi {
         return null;
       });
       _currentSyncId = syncRequest.hashCode;
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.waitingForResponse));
+      report(SyncStatus.waitingForResponse);
 
       // The timeout for the response from the server. If we do not set a sync
       // timeout (for initial sync) we give the server a longer time to
@@ -2272,8 +2290,9 @@ class Client extends MatrixApi {
           : timeout + const Duration(seconds: 10);
 
       final syncResp = await syncRequest.timeout(responseTimeout);
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.processing));
       if (syncResp == null) throw syncError ?? 'Unknown sync error';
+      if (!ownsLoop()) return;
+      report(SyncStatus.processing);
       if (_currentSyncId != syncRequest.hashCode) {
         Logs()
             .w('Current sync request ID has changed. Dropping this sync loop!');
@@ -2285,7 +2304,12 @@ class Client extends MatrixApi {
         await userDeviceKeysLoading;
         await roomsLoading;
         await _accountDataLoading;
+        if (!ownsLoop() || _disposed || _aborted) return;
         _currentTransaction = database.transaction(() async {
+          // An abort before this queued transaction starts must leave the
+          // replacement loop's cache untouched. Once _handleSync has begun,
+          // abortSync awaits this transaction and lets it finish normally.
+          if (!ownsLoop() || _disposed || _aborted) return;
           await _handleSync(syncResp, direction: Direction.f);
           if (prevBatch != syncResp.nextBatch) {
             await database.storePrevBatch(syncResp.nextBatch);
@@ -2297,15 +2321,20 @@ class Client extends MatrixApi {
           syncResp.itemCount,
         );
       } else {
+        if (!ownsLoop() || _disposed || _aborted) return;
         await _handleSync(syncResp, direction: Direction.f);
       }
-      if (_disposed || _aborted) return;
+      // An abort deliberately lets in-flight transaction processing finish,
+      // but a stale loop must not update the replacement loop's cursor or
+      // retry state after that processing settles.
+      if (!ownsLoop() || _disposed || _aborted) return;
       _prevBatch = syncResp.nextBatch;
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.cleaningUp));
+      report(SyncStatus.cleaningUp);
       // ignore: unawaited_futures
       database?.deleteOldFiles(
           DateTime.now().subtract(Duration(days: 30)).millisecondsSinceEpoch);
       await updateUserDeviceKeys();
+      if (!ownsLoop() || _disposed || _aborted) return;
       if (encryptionEnabled) {
         encryption?.onSync();
       }
@@ -2315,11 +2344,12 @@ class Client extends MatrixApi {
         await processToDeviceQueue();
       } catch (_) {} // we want to dispose any errors this throws
 
+      if (!ownsLoop() || _disposed || _aborted) return;
       _retryDelay = Future.value();
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.finished));
+      report(SyncStatus.finished);
     } on MatrixException catch (e, s) {
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.error,
-          error: SdkError(exception: e, stackTrace: s)));
+      if (!ownsLoop() || _disposed || _aborted) return;
+      report(SyncStatus.error, error: SdkError(exception: e, stackTrace: s));
       if (e.error == MatrixError.M_UNKNOWN_TOKEN) {
         if (preserveStoreOnInvalidToken) {
           // A revoked device must stop using its credentials immediately, but
@@ -2341,15 +2371,15 @@ class Client extends MatrixApi {
         }
       }
     } on SyncConnectionException catch (e, s) {
+      if (!ownsLoop() || _disposed || _aborted) return;
       Logs().w('Syncloop failed: Client has not connection to the server');
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.error,
-          error: SdkError(exception: e, stackTrace: s)));
+      report(SyncStatus.error, error: SdkError(exception: e, stackTrace: s));
     } catch (e, s) {
-      if (!isLogged() || _disposed || _aborted) return;
+      if (!ownsLoop() || !isLogged() || _disposed || _aborted) return;
       Logs().e('Error during processing events', e, s);
-      onSyncStatus.add(SyncStatusUpdate(SyncStatus.error,
+      report(SyncStatus.error,
           error: SdkError(
-              exception: e is Exception ? e : Exception(e), stackTrace: s)));
+              exception: e is Exception ? e : Exception(e), stackTrace: s));
     }
   }
 
@@ -3559,6 +3589,7 @@ class Client extends MatrixApi {
   /// Blackholes any ongoing sync call. Currently ongoing sync *processing* is
   /// still going to be finished, new data is ignored.
   Future<void> abortSync() async {
+    _syncGeneration++;
     _aborted = true;
     backgroundSync = false;
     _currentSyncId = -1;

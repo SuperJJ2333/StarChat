@@ -25,6 +25,37 @@ final class MediaCache {
   static final _clearingRoots = <String>{};
   static final _storeAccounts = <String, String>{};
   static final _atomicWrites = <String, Future<void>>{};
+  static final _accountGenerations = <String, int>{};
+
+  static int accountGeneration(String accountId) =>
+      _accountGenerations[accountId] ?? 0;
+
+  static Future<File> _clearEpochFile(String accountId) async {
+    final docs = await getApplicationDocumentsDirectory();
+    return File(
+        '${docs.path}/media-clear-epochs/v1/${_digest(accountId)}.epoch');
+  }
+
+  static Future<void> _writeClearEpoch(String accountId) async {
+    final file = await _clearEpochFile(accountId);
+    await file.parent.create(recursive: true);
+    await _writeAtomicBytes(
+        file, utf8.encode(DateTime.now().millisecondsSinceEpoch.toString()));
+  }
+
+  /// Returns true only when a legacy CacheManager file predates this account's
+  /// durable clear boundary. Missing boundaries keep pre-upgrade offline files
+  /// eligible for one authorized local migration.
+  static Future<bool> legacyEntryPredatesAccountClear(
+      String accountId, DateTime modifiedAt) async {
+    final file = await _clearEpochFile(accountId);
+    if (!await file.exists()) return false;
+    final epoch = int.tryParse(await file.readAsString());
+    if (epoch == null) {
+      throw StateError('Media cache clear epoch is invalid');
+    }
+    return modifiedAt.millisecondsSinceEpoch <= epoch;
+  }
 
   /// Removes only this account's managed objects and references. Late network
   /// decrypts are fenced; local writes finish before their directory is removed.
@@ -32,9 +63,29 @@ final class MediaCache {
     if (!_clearingAccounts.add(accountId)) {
       throw StateError('Media cache clear already in progress');
     }
+    _accountGenerations[accountId] = accountGeneration(accountId) + 1;
     clearMediaMemoryCaches();
     String? rootPath;
+    Object? clearFailure;
+    StackTrace? clearStackTrace;
+    void recordFailure(Object error, StackTrace stackTrace) {
+      clearFailure ??= error;
+      clearStackTrace ??= stackTrace;
+    }
+
     try {
+      try {
+        await _writeClearEpoch(accountId);
+      } catch (error, stackTrace) {
+        recordFailure(error, stackTrace);
+      }
+      for (final clear in List.of(_accountMediaCacheClearers)) {
+        try {
+          await clear(accountId);
+        } catch (error, stackTrace) {
+          recordFailure(error, stackTrace);
+        }
+      }
       final docs = await getApplicationDocumentsDirectory();
       rootPath = '${docs.path}/chat-media/v2/${_digest(accountId)}';
       _clearingRoots.add(rootPath);
@@ -51,6 +102,9 @@ final class MediaCache {
     } finally {
       if (rootPath != null) _clearingRoots.remove(rootPath);
       _clearingAccounts.remove(accountId);
+    }
+    if (clearFailure != null) {
+      Error.throwWithStackTrace(clearFailure!, clearStackTrace!);
     }
   }
 
@@ -133,6 +187,14 @@ final class MediaCache {
     }
   }
 
+  /// Removes a logical reference without deleting its potentially shared
+  /// account-local content object.
+  static Future<void> removeReference(String roomId, String eventId,
+      {String accountId = ''}) async {
+    final ref = await _reference(accountId, roomId, eventId);
+    await _deleteQuietly(ref);
+  }
+
   static Future<bool> _valid(File file) async {
     try {
       if (!await file.exists()) return false;
@@ -203,7 +265,13 @@ final class MediaCache {
   }
 
   static Future<File> store(String roomId, String eventId, Uint8List bytes,
-      {String accountId = '', String? contentSha256}) async {
+      {String accountId = '',
+      String? contentSha256,
+      int? expectedAccountGeneration}) async {
+    if (expectedAccountGeneration != null &&
+        expectedAccountGeneration != accountGeneration(accountId)) {
+      throw StateError('Media cache account was cleared');
+    }
     final generation = _mediaGeneration;
     verifyMediaContent(bytes, contentSha256);
     final flightKey = '${_digest(jsonEncode([accountId, roomId, eventId]))}'
@@ -213,6 +281,10 @@ final class MediaCache {
     final flight = _root(accountId).then((root) {
       if (generation != _mediaGeneration) {
         throw StateError('Media cache session changed');
+      }
+      if (expectedAccountGeneration != null &&
+          expectedAccountGeneration != accountGeneration(accountId)) {
+        throw StateError('Media cache account was cleared');
       }
       return _store(root, accountId, roomId, eventId, bytes);
     });
@@ -525,11 +597,20 @@ final contentMediaMemoryCache = _sharedMediaBytes;
 final _mediaLoads = <String, OwnedMediaFlight<Uint8List>>{};
 int _mediaGeneration = 0;
 final _decodedMediaCacheClearers = <VoidCallback>{};
+final _accountMediaCacheClearers = <Future<void> Function(String)>{};
 
 /// A renderer registers lazily, after Flutter has created its painting binding.
 /// Pure storage users do not need to initialize the Flutter widget runtime.
 void registerDecodedMediaCacheClearer(VoidCallback clear) {
   _decodedMediaCacheClearers.add(clear);
+}
+
+/// Allows a local cache to join account deletion without creating a UI import
+/// from this storage layer. Each clearer is responsible for only its account.
+VoidCallback registerAccountMediaCacheClearer(
+    Future<void> Function(String) clear) {
+  _accountMediaCacheClearers.add(clear);
+  return () => _accountMediaCacheClearers.remove(clear);
 }
 
 /// Call when clearing cache or signing out. In-flight work cannot repopulate

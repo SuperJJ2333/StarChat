@@ -16,6 +16,31 @@ function setQuery(updates) {
   window.location.search = next.toString();
 }
 
+function setCapsuleConnecting(capsule) {
+  if (!capsule) return;
+  capsule.setAttribute("state", "reconnecting");
+  capsule.setAttribute("disabled", "true");
+  // StrictElement intentionally has no observedAttributes. Re-render this
+  // explicit interaction state rather than relying on attribute callbacks.
+  capsule.renderContract();
+}
+
+function showMomentRetryDialog(target) {
+  const viewport = target.closest(".ui-device__viewport");
+  if (!viewport || viewport.querySelector(".u-offline-retry-dialog")) return;
+  const wrapper = element("div", "u-offline-retry-dialog");
+  const dialog = document.createElement("app-dialog");
+  for (const [name, value] of Object.entries({
+    kind: "error",
+    title: "操作未完成",
+    message: "网络不可用，请检查网络后重试",
+    cancel: "取消",
+    confirm: "重试"
+  })) dialog.setAttribute(name, value);
+  wrapper.append(dialog);
+  viewport.append(wrapper);
+}
+
 function selectControl(label, name, values, selected) {
   const wrapper = element("label", "ui-gallery-filter");
   wrapper.append(element("span", "ui-gallery-filter__label", label));
@@ -151,6 +176,7 @@ document.addEventListener("click", async (event) => {
   const target = event.target.closest("[data-action]");
   if (!target) return;
   const action = target.dataset.action;
+  const offlineRetryDialog = target.closest(".u-offline-retry-dialog");
   if (action.startsWith("open:")) setQuery({ screen: action.slice(5), module: "", state: "", theme: "", q: "" });
   else if (action.startsWith("moment:profile:")) setQuery({ screen: "friend-profile-default", module: "", state: "", theme: "", q: "" });
   else if (action === "moment:reply" || action === "moment:comment-actions") {
@@ -182,6 +208,15 @@ document.addEventListener("click", async (event) => {
     editor.querySelector('textarea')?.focus();
   }
   else if (action.startsWith("copy:")) await navigator.clipboard?.writeText(action.slice(5));
+  else if (action === "retry-network") setCapsuleConnecting(target.closest("app-network-capsule"));
+  else if (action === "moments:refresh") showMomentRetryDialog(target);
+  else if (action === "profile:retry") setCapsuleConnecting(target.closest(".ui-device__viewport")?.querySelector("app-network-capsule"));
+  else if (action === "dialog-cancel" && offlineRetryDialog) offlineRetryDialog.remove();
+  else if (action === "dialog-confirm" && offlineRetryDialog) {
+    const viewport = target.closest(".ui-device__viewport");
+    offlineRetryDialog.remove();
+    setCapsuleConnecting(viewport?.querySelector("app-network-capsule"));
+  }
   else if (action === "gallery-back") window.location.search = "";
   else if (action === "gallery-theme") setQuery({ theme: params.get("theme") === "dark" ? "light" : "dark" });
   else if (routeMap[action]) setQuery({ screen: routeMap[action], module: "", state: "", theme: "", q: "" });

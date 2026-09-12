@@ -332,6 +332,53 @@ void main() {
     expect(errors.single.toDiagnosticString(), isNot(contains('unavailable')));
   });
 
+  test('late hydration keeps a saved profile and restores cached contacts',
+      () async {
+    final store = DelayedReadProfileStore();
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'matrix:@alice:example.test',
+      store: store,
+    );
+    final hydration = cache.hydrate();
+    await cache.applyUpdatedProfile(profile('Saved Alice'));
+    store.pending.complete(ProfileSnapshot(
+      profile: profile('Stale Alice'),
+      contacts: [contact(remark: 'cached remark')],
+      contactsRevision: 4,
+    ));
+    await hydration;
+
+    expect(cache.profile?.nickname, 'Saved Alice');
+    expect(cache.contacts.single.remark, 'cached remark');
+    expect(store.saved?.profile.nickname, 'Saved Alice');
+    expect(store.saved?.contacts.single.remark, 'cached remark');
+  });
+
+  test('updated profile persists without replacing contacts after recreation',
+      () async {
+    final store = MemoryProfileStore();
+    await store.write(
+      'matrix:@alice:example.test',
+      ProfileSnapshot(
+          profile: profile('Cached'), contacts: [contact(remark: 'keep')]),
+    );
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'matrix:@alice:example.test',
+      store: store,
+    );
+    await cache.hydrate();
+    await cache.applyUpdatedProfile(profile('Saved Alice'));
+    cache.dispose();
+
+    final recreated = ProfileRepository.forTesting(
+      accountKey: 'matrix:@alice:example.test',
+      store: store,
+    );
+    await recreated.hydrate();
+    expect(recreated.profile?.nickname, 'Saved Alice');
+    expect(recreated.contacts.single.remark, 'keep');
+  });
+
   test('BUG 1：SQLite 存储往返（含 contactsRevision）', () async {
     final store = SqliteProfileStore(
       databasePath: inMemoryDatabasePath,
@@ -487,7 +534,6 @@ ContactSummary contact(
       avatarUrl: avatarUrl,
       lastSeenAt: lastSeenAt,
     );
-
 
 final class MemoryProfileStore implements ProfileStore {
   final values = <String, ProfileSnapshot>{};

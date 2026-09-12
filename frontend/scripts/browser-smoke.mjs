@@ -87,6 +87,9 @@ try {
 
   const chain = await dump("/tests/admin-chain-browser.html");
   assert.match(chain, /data-result="PASS"/u);
+
+  const offlineRecovery = await dump("/tests/offline-recovery-browser.html");
+  assert.match(offlineRecovery, /data-test-result="passed"/u);
   process.stdout.write("Browser smoke: PASS\n");
 } finally {
   server.kill();

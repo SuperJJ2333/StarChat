@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/profile/invite_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_avatar_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
@@ -67,7 +70,159 @@ final class FakeAvatarSource implements AvatarSource {
   }
 }
 
+final class _HeldProfileGateway extends FakeProfileGateway {
+  final load = Completer<ProfileData>();
+  final loadStarted = Completer<void>();
+
+  @override
+  Future<ProfileData> loadProfile() {
+    if (!loadStarted.isCompleted) loadStarted.complete();
+    return load.future;
+  }
+}
+
+final class _FailingProfileGateway extends FakeProfileGateway {
+  @override
+  Future<ProfileData> loadProfile() async => throw StateError('offline');
+}
+
+final class _ProfileInvitationGateway implements PersonalInvitationGateway {
+  @override
+  Future<PersonalInvitation> fetchPersonalInvitation() async =>
+      const PersonalInvitation(
+        code: 'A1B2C3',
+        maxUses: 10,
+        useCount: 2,
+        shareUrl: 'https://invite.example.test/A1B2C3',
+      );
+}
+
+final class _HeldAvatarInvalidator {
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  Future<void> call(String _) async {
+    if (!started.isCompleted) started.complete();
+    await release.future;
+  }
+}
+
 void main() {
+  testWidgets(
+      'no cached profile keeps settings and moments available while loading',
+      (tester) async {
+    final gateway = _HeldProfileGateway();
+    var settingsOpened = false;
+    var momentsOpened = false;
+    final controller =
+        ProfileController(gateway: gateway, avatarSource: FakeAvatarSource());
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileExperiencePage(
+        controller: controller,
+        onInvite: () {},
+        onMoments: () => momentsOpened = true,
+        onCaibi: () {},
+        onWallet: () {},
+        onSettings: () => settingsOpened = true,
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.text('设置'), findsOneWidget);
+    expect(find.text('朋友圈'), findsOneWidget);
+    await tester.tap(find.text('设置'));
+    await tester.tap(find.text('朋友圈'));
+    expect(settingsOpened, isTrue);
+    expect(momentsOpened, isTrue);
+    gateway.load.complete(profile);
+  });
+
+  test('cached profile paints before a held gateway refresh completes',
+      () async {
+    final gateway = _HeldProfileGateway();
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+      readCachedProfile: () async => profile.copyWith(nickname: 'Cached Alice'),
+    );
+
+    final loading = controller.load();
+    await gateway.loadStarted.future;
+    expect(controller.state.profile?.nickname, 'Cached Alice');
+    expect(controller.state.status, ProfileStatus.ready);
+    gateway.load.complete(profile.copyWith(nickname: 'Fresh Alice'));
+    await loading;
+    expect(controller.state.profile?.nickname, 'Fresh Alice');
+  });
+
+  testWidgets('cached identity is visible on the profile page before refresh',
+      (tester) async {
+    final gateway = _HeldProfileGateway();
+    final controller = ProfileController(
+      gateway: gateway,
+      avatarSource: FakeAvatarSource(),
+      initialProfile: profile.copyWith(nickname: 'Cached Alice'),
+    );
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileExperiencePage(
+        controller: controller,
+        onInvite: () {},
+        onMoments: () {},
+        onCaibi: () {},
+        onWallet: () {},
+        onSettings: () {},
+      ),
+    ));
+
+    expect(find.text('Cached Alice'), findsWidgets);
+    gateway.load.complete(profile);
+  });
+
+  test('failed refresh retains cached profile', () async {
+    final controller = ProfileController(
+      gateway: _FailingProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+      readCachedProfile: () async => profile.copyWith(nickname: 'Cached Alice'),
+    );
+
+    await controller.load();
+
+    expect(controller.state.status, ProfileStatus.failed);
+    expect(controller.state.profile?.nickname, 'Cached Alice');
+  });
+
+  test('late profile load cannot overwrite a completed save', () async {
+    final gateway = _HeldProfileGateway();
+    final controller =
+        ProfileController(gateway: gateway, avatarSource: FakeAvatarSource());
+    final loading = controller.load();
+    await gateway.loadStarted.future;
+
+    await controller.save('Saved Alice', 'saved');
+    gateway.load.complete(profile.copyWith(nickname: 'Stale Alice'));
+    await loading;
+
+    expect(controller.state.profile?.nickname, 'Saved Alice');
+    expect(controller.state.profile?.signature, 'saved');
+  });
+
+  test('disposed controller ignores a pending profile load', () async {
+    final gateway = _HeldProfileGateway();
+    final controller =
+        ProfileController(gateway: gateway, avatarSource: FakeAvatarSource());
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    final loading = controller.load();
+    await gateway.loadStarted.future;
+    final beforeDispose = notifications;
+    controller.dispose();
+    gateway.load.complete(profile);
+    await loading;
+
+    expect(notifications, beforeDispose);
+  });
+
   test('loads caches and modifies authoritative profile', () async {
     final c = ProfileController(
         gateway: FakeProfileGateway(), avatarSource: FakeAvatarSource());
@@ -122,6 +277,26 @@ void main() {
     expect(invalidated, ['seed', 'seed']);
   });
 
+  test('late default-avatar invalidation cannot overwrite a newer save',
+      () async {
+    final invalidator = _HeldAvatarInvalidator();
+    final controller = ProfileController(
+      gateway: FakeProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+      invalidateAvatarCache: invalidator.call,
+    );
+    await controller.load();
+
+    final restoring = controller.restoreDefaultAvatar();
+    await invalidator.started.future;
+    await controller.save('Saved Alice', 'new signature');
+    invalidator.release.complete();
+    await restoring;
+
+    expect(controller.state.profile?.nickname, 'Saved Alice');
+    expect(controller.state.profile?.signature, 'new signature');
+  });
+
   test('cancelled preview never creates a remote upload', () async {
     final gateway = FakeProfileGateway();
     final c =
@@ -133,7 +308,8 @@ void main() {
     expect(gateway.puts, 0);
     expect(c.state.status, ProfileStatus.ready);
   });
-  testWidgets('me page exposes identity and five menu rows with personal information',
+  testWidgets(
+      'me page exposes identity and five menu rows with personal information',
       (tester) async {
     var momentsOpened = false;
     var caibiOpened = false;
@@ -215,6 +391,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.state.profile!.nickname, 'Alice Updated');
     expect(controller.state.profile!.signature, 'Updated signature');
+  });
+
+  testWidgets('profile invitation copies the exact platform download links',
+      (tester) async {
+    String? clipboard;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() =>
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    final controller = ProfileController(
+      gateway: FakeProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+    );
+    await controller.load();
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileDetailsPage(
+        controller: controller,
+        onInvite: () {},
+        inviteGateway: _ProfileInvitationGateway(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile-invite-copy-android-link')));
+    await tester.pump();
+    expect(clipboard, 'https://www.liuhetong888.com/download');
+
+    await tester.tap(find.byKey(const Key('profile-invite-copy-ios-link')));
+    await tester.pump();
+    expect(clipboard, 'https://www.liuhetong888.com/download?platform=ios');
   });
 
   testWidgets(

@@ -7,6 +7,7 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/network_status_capsule.dart';
 import '../../ui/chat/shared_video_playback.dart';
 import '../../ui/chat/video_playback_arbiter.dart';
 import '../../ui/chat/video_playback_lease_coordinator.dart';
@@ -545,6 +546,11 @@ final class _GalleryVideoPreviewPageState extends State<GalleryVideoPreviewPage>
                 ),
               ),
             ),
+          Positioned(
+              top: 12,
+              left: 0,
+              right: 0,
+              child: Center(child: WeChatNetworkStatusCapsule())),
           Positioned(
             top: 12,
             left: 12,

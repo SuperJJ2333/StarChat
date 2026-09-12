@@ -39,6 +39,7 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     required this.createOnce,
     required this.findExisting,
     required this.openExisting,
+    this.findCached,
     Future<void> Function(Duration)? wait,
     this.waitAttempts = 20,
   }) : wait = wait ?? Future<void>.delayed;
@@ -48,6 +49,10 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
   final String? Function(String) businessUserIdOf;
   final Future<DirectChatRoom> Function(String) createOnce;
   final Future<DirectChatRoom?> Function(String) findExisting;
+
+  /// Local-only, already-validated snapshot. It must never join, repair, or
+  /// fetch members; a miss proceeds to authoritative coordination.
+  final Future<DirectChatRoom?> Function(String)? findCached;
   final Future<DirectChatRoom> Function(String roomId, String matrixUserId)
       openExisting;
   final Future<void> Function(Duration) wait;
@@ -59,6 +64,8 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
     if (peer == null || peer.isEmpty) {
       throw StateError('好友身份尚未就绪，请重试');
     }
+    final cached = await findCached?.call(matrixUserId);
+    if (cached != null) return _safe(cached, matrixUserId);
     // Only an authoritative absence permits claiming. Network/validation
     // failures propagate; none of them is evidence that another room is needed.
     String? canonical;

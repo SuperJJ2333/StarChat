@@ -85,31 +85,88 @@ final class ProfileController extends ChangeNotifier {
     required this.gateway,
     required this.avatarSource,
     Future<void> Function(String userId)? invalidateAvatarCache,
+    this.readCachedProfile,
+    this.persistProfile,
     this.onAvatarUpdated,
-  }) : _invalidateAvatarCache =
-            invalidateAvatarCache ?? AvatarCache.invalidateUser;
+    ProfileData? initialProfile,
+  })  : _invalidateAvatarCache =
+            invalidateAvatarCache ?? AvatarCache.invalidateUser,
+        state = initialProfile == null
+            ? const ProfileState(ProfileStatus.idle)
+            : ProfileState(ProfileStatus.ready, profile: initialProfile);
   final ProfileGateway gateway;
   final AvatarSource avatarSource;
   final Future<void> Function(String userId) _invalidateAvatarCache;
+  final Future<ProfileData?> Function()? readCachedProfile;
+  final Future<void> Function(ProfileData profile)? persistProfile;
 
   /// 新头像上传成功（本地缓存已失效）后回调，用于立即刷新所有展示该
   /// 头像的界面（身份缓存重载 → 各页面重建 → 命中新的签名 URL）。
   final VoidCallback? onAvatarUpdated;
-  ProfileState state = const ProfileState(ProfileStatus.idle);
+  ProfileState state;
   AvatarCandidate? _retryCandidate;
-  Future<void> load() async {
-    _set(ProfileState(ProfileStatus.loading, profile: state.profile));
+  Future<void>? _loadFlight;
+  int _generation = 0;
+  bool _disposed = false;
+
+  Future<void> load() {
+    if (_disposed) return Future.value();
+    final existing = _loadFlight;
+    if (existing != null) return existing;
+    final future = _load();
+    _loadFlight = future;
+    future.whenComplete(() {
+      if (identical(_loadFlight, future)) _loadFlight = null;
+    });
+    return future;
+  }
+
+  /// Allows AppHome to provide its account repository after this tab was
+  /// constructed. It fills only an empty identity section and never replaces a
+  /// fresher gateway result or starts a second network request.
+  Future<void> hydrateCachedProfile() async {
+    if (_disposed || state.profile != null) return;
     try {
-      _set(ProfileState(ProfileStatus.ready,
-          profile: await gateway.loadProfile()));
+      final cached = await readCachedProfile?.call();
+      if (!_disposed && state.profile == null && cached != null) {
+        _set(ProfileState(ProfileStatus.ready, profile: cached));
+      }
     } catch (_) {
+      // The normal gateway load remains responsible for the empty-cache path.
+    }
+  }
+
+  Future<void> _load() async {
+    final generation = ++_generation;
+    if (state.profile == null) {
+      _set(const ProfileState(ProfileStatus.loading));
+    }
+    try {
+      final cached = await readCachedProfile?.call();
+      if (_isCurrent(generation) && cached != null) {
+        _set(ProfileState(ProfileStatus.ready, profile: cached));
+      }
+    } catch (_) {
+      // A cache miss/read failure is inconclusive; continue with the gateway.
+    }
+    if (!_isCurrent(generation)) return;
+    try {
+      final loaded = await gateway.loadProfile();
+      if (!_isCurrent(generation)) return;
+      _set(ProfileState(ProfileStatus.ready, profile: loaded));
+      await _persist(loaded, generation);
+    } catch (_) {
+      if (!_isCurrent(generation)) return;
+      final current = state.profile;
       _set(ProfileState(ProfileStatus.failed,
-          profile: state.profile, message: '资料加载失败，请重试'));
+          profile: current, message: '资料加载失败，请重试'));
     }
   }
 
   Future<void> save(String nickname, String? signature,
       {String? nudgeSuffix}) async {
+    if (_disposed) return;
+    final generation = ++_generation;
     _set(ProfileState(ProfileStatus.saving, profile: state.profile));
     try {
       final requestedNudgeSuffix = nudgeSuffix ?? state.profile?.nudgeSuffix;
@@ -118,22 +175,29 @@ final class ProfileController extends ChangeNotifier {
         signature: signature,
         nudgeSuffix: requestedNudgeSuffix,
       );
+      if (!_isCurrent(generation)) return;
+      final next = requestedNudgeSuffix != null && requestedNudgeSuffix.isEmpty
+          ? updated.copyWith(clearNudgeSuffix: true)
+          : updated;
       _set(ProfileState(
         ProfileStatus.ready,
-        profile: requestedNudgeSuffix != null && requestedNudgeSuffix.isEmpty
-            ? updated.copyWith(clearNudgeSuffix: true)
-            : updated,
+        profile: next,
       ));
+      await _persist(next, generation);
     } catch (_) {
+      if (!_isCurrent(generation)) return;
       _set(ProfileState(ProfileStatus.failed,
           profile: state.profile, message: '资料保存失败，请重试'));
     }
   }
 
   Future<void> chooseAvatar() async {
+    if (_disposed) return;
+    final generation = ++_generation;
     _set(ProfileState(ProfileStatus.selectingAvatar, profile: state.profile));
     try {
       final candidate = await avatarSource.selectCropAndCompress();
+      if (!_isCurrent(generation)) return;
       if (candidate == null) {
         _set(ProfileState(ProfileStatus.ready, profile: state.profile));
         return;
@@ -142,12 +206,15 @@ final class ProfileController extends ChangeNotifier {
       _set(ProfileState(ProfileStatus.previewing,
           profile: state.profile, candidate: candidate));
     } catch (_) {
+      if (!_isCurrent(generation)) return;
       _set(ProfileState(ProfileStatus.failed,
           profile: state.profile, message: '无法访问相册，请在系统设置中允许照片权限'));
     }
   }
 
   void cancelPreview() {
+    if (_disposed) return;
+    _generation++;
     _retryCandidate = null;
     _set(ProfileState(ProfileStatus.ready, profile: state.profile));
   }
@@ -155,24 +222,31 @@ final class ProfileController extends ChangeNotifier {
   Future<void> uploadAvatar() => _upload(_retryCandidate);
   Future<void> retryAvatar() => _upload(_retryCandidate);
   Future<void> _upload(AvatarCandidate? candidate) async {
-    if (candidate == null) return;
+    if (_disposed || candidate == null) return;
+    final generation = ++_generation;
     AvatarUploadSession? session;
     try {
       _set(ProfileState(ProfileStatus.uploading,
           profile: state.profile, candidate: candidate, progress: .2));
       session = await gateway.createAvatarUpload(
           mimeType: candidate.mimeType, byteSize: candidate.bytes.length);
+      if (!_isCurrent(generation)) return;
       _set(ProfileState(ProfileStatus.uploading,
           profile: state.profile, candidate: candidate, progress: .55));
       await gateway.putAvatar(session, candidate);
+      if (!_isCurrent(generation)) return;
       _set(ProfileState(ProfileStatus.uploading,
           profile: state.profile, candidate: candidate, progress: .85));
       final profile = await gateway.completeAvatar(session.uploadId);
+      if (!_isCurrent(generation)) return;
       await _invalidateAvatarCache(profile.fallbackSeed);
-      onAvatarUpdated?.call();
+      if (!_isCurrent(generation)) return;
       _retryCandidate = null;
       _set(ProfileState(ProfileStatus.ready, profile: profile, progress: 1));
+      await _persist(profile, generation);
+      if (_isCurrent(generation)) onAvatarUpdated?.call();
     } catch (_) {
+      if (!_isCurrent(generation)) return;
       _set(ProfileState(ProfileStatus.failed,
           profile: state.profile,
           candidate: candidate,
@@ -182,17 +256,44 @@ final class ProfileController extends ChangeNotifier {
   }
 
   Future<void> restoreDefaultAvatar() async {
+    if (_disposed) return;
+    final generation = ++_generation;
     await gateway.deleteAvatar();
+    if (!_isCurrent(generation)) return;
     final current = state.profile;
     if (current != null) await _invalidateAvatarCache(current.fallbackSeed);
+    if (!_isCurrent(generation)) return;
     if (current != null) {
       _set(ProfileState(ProfileStatus.ready,
           profile: current.copyWith(clearAvatar: true)));
+      await _persist(state.profile!, generation);
     }
   }
 
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  Future<void> _persist(ProfileData profile, int generation) async {
+    if (!_isCurrent(generation)) return;
+    try {
+      await persistProfile?.call(profile);
+    } catch (_) {
+      // The displayed successful mutation remains valid if the local cache
+      // temporarily cannot persist; a future gateway refresh can retry it.
+    }
+    if (!_isCurrent(generation)) return;
+  }
+
   void _set(ProfileState next) {
+    if (_disposed) return;
     state = next;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _generation++;
+    super.dispose();
   }
 }

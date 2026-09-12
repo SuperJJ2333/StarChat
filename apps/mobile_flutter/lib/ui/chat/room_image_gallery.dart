@@ -6,6 +6,7 @@ import '../../features/matrix/media_consumer_scope.dart';
 import '../../features/matrix/media_load_scheduler.dart';
 import 'encrypted_media_view.dart';
 import 'media_visibility.dart';
+import '../components/network_status_capsule.dart';
 
 class RoomGalleryImage {
   const RoomGalleryImage({
@@ -376,14 +377,22 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
                       child: const Text('关闭'),
                     ),
                   ),
-                  child: Center(
-                    child: _loading
-                        ? const CupertinoActivityIndicator()
-                        : CupertinoButton(
-                            onPressed: _error == null ? null : _earlier,
-                            child: Text(_error ?? '暂无可查看的图片'),
-                          ),
-                  ),
+                  child: Stack(children: [
+                    Center(
+                      child: _loading
+                          ? const CupertinoActivityIndicator()
+                          : CupertinoButton(
+                              onPressed: _error == null ? null : _earlier,
+                              child: Text(_error ?? '暂无可查看的图片'),
+                            ),
+                    ),
+                    Positioned(
+                      top: 12,
+                      left: 56,
+                      right: 56,
+                      child: Center(child: WeChatNetworkStatusCapsule()),
+                    ),
+                  ]),
                 )
               : Stack(
                   children: [
@@ -452,22 +461,32 @@ class _RoomImageGalleryPageState extends State<RoomImageGalleryPage> {
                                                 child: const Text('关闭'),
                                               ),
                                             ),
-                                            child: Center(
-                                              child: snapshot.hasError
-                                                  ? CupertinoButton(
-                                                      onPressed: () =>
-                                                          setState(() {
-                                                        _previews
-                                                            .remove(image.id)
-                                                            ?.scope
-                                                            .cancel();
-                                                        _warmPreviewWindow();
-                                                      }),
-                                                      child: const Text(
-                                                          '图片加载失败，点击重试'),
-                                                    )
-                                                  : const CupertinoActivityIndicator(),
-                                            ),
+                                            child: Stack(children: [
+                                              Center(
+                                                child: snapshot.hasError
+                                                    ? CupertinoButton(
+                                                        onPressed: () =>
+                                                            setState(() {
+                                                          _previews
+                                                              .remove(image.id)
+                                                              ?.scope
+                                                              .cancel();
+                                                          _warmPreviewWindow();
+                                                        }),
+                                                        child: const Text(
+                                                            '图片加载失败，点击重试'),
+                                                      )
+                                                    : const CupertinoActivityIndicator(),
+                                              ),
+                                              Positioned(
+                                                top: 12,
+                                                left: 56,
+                                                right: 56,
+                                                child: Center(
+                                                    child:
+                                                        WeChatNetworkStatusCapsule()),
+                                              ),
+                                            ]),
                                           );
                                         }
                                         final owner = _viewerOwner(image);

@@ -9,6 +9,7 @@ import 'encrypted_media_view.dart';
 import '../../core/gallery_save_access.dart';
 
 import '../foundation/wechat_tokens.dart';
+import '../components/network_status_capsule.dart';
 import 'video_playback_lease_coordinator.dart';
 import 'video_playback_arbiter.dart';
 import 'shared_video_playback.dart';
@@ -614,6 +615,12 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
               child: const Icon(CupertinoIcons.chevron_back,
                   size: 22, color: CupertinoColors.white),
             ),
+          ),
+          Positioned(
+            top: 48,
+            left: 16,
+            right: 16,
+            child: Center(child: WeChatNetworkStatusCapsule()),
           ),
           Positioned(
               right: 16,
