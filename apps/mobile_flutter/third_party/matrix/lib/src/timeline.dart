@@ -79,6 +79,10 @@ class Timeline {
   bool _fetchedAllDatabaseEvents = false;
 
   bool get canRequestHistory {
+    if (isFragmentedTimeline) {
+      return chunk.prevBatch.isNotEmpty &&
+          events.lastOrNull?.type != EventTypes.RoomCreate;
+    }
     if (events.isEmpty) return true;
     return !_fetchedAllDatabaseEvents ||
         (room.prev_batch != null && events.last.type != EventTypes.RoomCreate);

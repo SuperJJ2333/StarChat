@@ -77,3 +77,18 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
   hunk, running the held-response test, and restoring the hunk before GREEN.
   Raw commands, output, and actual exit codes are in
   `docs/verification/artifacts/2026-09-12/offline-recovery/`.
+
+2026-09-12 fragmented history availability:
+
+- `Timeline.canRequestHistory` now uses the fragmented timeline's own
+  `chunk.prevBatch`. An exhausted context does not inherit the live room's
+  unrelated backward token; a context with a token remains loadable even when
+  the live room has no backward token. The existing live-timeline branch is
+  unchanged. A room-create event remains a terminal boundary.
+- Regression: `test/features/matrix/sdk_history_fragment_test.dart` exercises
+  the real Timeline getter with exhausted and available context tokens.
+  Astra's focused SDK/adapter/RoomPage verification is recorded at
+  `docs/verification/artifacts/2026-09-12/history-latency/sdk-fragment-final-focused.log`.
+- This small prerequisite does not implement calendar timestamp lookup or
+  forward context navigation. Those application changes remain pending in
+  `docs/superpowers/plans/2026-09-12-history-latency.md`.
