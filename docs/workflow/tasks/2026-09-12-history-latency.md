@@ -62,3 +62,15 @@ H2可独立提交；H1整合后还需跨模块回归及最终候选全量门禁�
 Astra亲审sdk_receive_burst_benchmark_test实际FFI代理、SDK storeEventUpdate/transaction调用、有效seed时间顺序、实际SQL写入计数、replay与close/reopen断言。最终v3两项通过，analyze-v2无问题exit0；首次ID fixture字符串误写重复导致失败，不算产品RED。1500历史+50sender：50次全索引写，934395字节对最终18981字节；instrumented action/commit/total=24756/9539/34295µs。10000历史：50次，6459395对129481字节；64545/24477/89022µs。计时含计数器utf8开销，只是桌面FFI SQLite存储阶段；无真实加密/SQLCipher/Mi6/生产50人并发结论。确认写放大但未证明50秒来源，因此不按猜测重写Box事务或密钥队列。
 H1a已交现有显式Terra实现公开可选日期/context能力和对应SDK fragment正确性，暂不改RoomPage/calendar UI。Root批准计划追加分批约束及loaded-fragment撤回边界；后续再H1b串行UI接入。尝试新建显式Terra同步阶段诊断代理仍被thread limit拒绝，未创建；H3阶段计时能力排在单执行者后续，不声称已有第二执行代理。
 构建脚本已从前次固定签名流水线复制到当前任务artifact，RepoRoot默认修正offline12；尚未构建/安装，没有新版本声明。
+
+## 23:36+08 执行与交付阻塞、最终候选验证（分钟精度）
+显式Terra在H1a源码调查后再次报告当前执行预算耗尽；H1a/H1b没有新产品代码或测试。CLI -m gpt-5.6-terra只读探测也失败（HTTP401 invalid_api_key，exit1），没有执行任何任务、没有修改CLI认证/配置、没有声称CLI Terra可用。probe日志已清除错误响应中的masked key片段。新代理thread limit仍存在；未静默由Astra代写产品代码。
+只读ADB再核实：Mi6已被另一路于2026-09-12 23:17:37更新到0.3.87-debug/2099，root main已6eaf1eb7，新增红包/转账UI提交，另有未提交caibi/app_home修改。不覆盖2099；现有候选不宣称包含其新增内容。本任务未构建或安装新APK，已准备的脚本不等于交付。
+候选27883fa8全量：Flutter2555通过/29失败exit1，mobile67/3 exit1，frontend161/11 exit1；与前次2094失败身份比较新增0/消失0（failure-comparison.json）。UI契约28/364通过exit0；verify前3项policy/template通过，render-only因Missing .env阻断exit1。全量analyze发现来自2096合入fixture session_capsule_recovery_test的2条warning（未用matrix import、obsolete fake.logout @override）；已交Terra仅此小修，若预算仍不允许则诚实保留门禁失败。该处未影响H2定向24通过和定向analyze通过。
+H3最终v5为相同输入追加样本：1500历史total30698µs、10000历史79586µs；写入次数/字节完全相同，计时仍instrumented桌面非Mi6。后续无需重复等效测试。H3phase metrics只是计划，没有实现。
+下一步：恢复可实际执行的Terra任务额度，先H1a backend RED/小批实现→H1b真实入口→H3phase diagnostics；重新核对2099或更新版本实际源码并整合，避免覆盖另一路改动；最终再固定签名Debug安装用户自测。H2已提交bc7ca46a可复用，I0已9e87c8a0，H3测量27883fa8，不需从历史聊天重做。
+
+## 23:50+08 最终可执行批次完成（分钟精度）
+将任务缩小后，Terra完成65e94cda测试fixture两条warning清理（2测试及target analyze通过），以及af426a3b的Timeline.canRequestHistory自身fragment游标判断（4行，getter回归）。Astra亲审diff并补SDK/adapter/真实页面44通过，sdk-fragment-final-focused.log；全量analyze-final无问题exit0。Terra明确未保存该getter原始RED/GREEN日志，报告同命令RED expected false actual true/exit1、GREEN exit0；记录证据限制，不冒充原始保留日志。下一项forward retry仍因剩余执行预算不足而未写任何代码；更大日期能力/UI和H3phase metrics继续未实现。
+最终af426a3b全量Flutter2556/29 exit1（新增getter测试），失败身份对2094新增0/消失0；源文件/lock/commit/tree身份在source-final.json、最终比较flutter-failure-comparison-final.json。mobile/frontend输入未再变更，复用本轮相同失败名单结果；UI契约通过；verify仍缺.env。完整报告docs/verification/2026-09-12-history-latency.md。
+已向用户询问另一路是否仍在修改/打包2099后续内容；未收到答复前不覆盖Mi6。候选代码及记录已保留，未push/生产发布/构建新APK。接续需可执行的Terra额度和最新版本源码整合，不从头重做H2及I0。
