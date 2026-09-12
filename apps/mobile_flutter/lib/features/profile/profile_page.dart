@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/services.dart';
 
 import '../../ui/components/modern_action_button.dart';
@@ -587,9 +590,13 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     widget.controller.addListener(_changed);
   }
 
+  Timer? _toastTimer;
+  String? _toast;
+
   @override
   void dispose() {
     widget.controller.removeListener(_changed);
+    _toastTimer?.cancel();
     super.dispose();
   }
 
@@ -597,12 +604,72 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _copyLink(String label, String url) async {
+  /// 复制下载链接：先出二级选项（安卓/苹果），选中后复制对应
+  /// 平台链接并提示“复制成功”。
+  Future<void> _choosePlatformAndCopy() async {
+    final platform = await showCupertinoModalPopup<String>(
+      context: context,
+      semanticsDismissible: true,
+      builder: (sheetContext) => CupertinoActionSheet(
+        key: const Key('invite-download-platform-sheet'),
+        title: const Text('选择下载链接平台'),
+        actions: [
+          CupertinoActionSheetAction(
+            key: const Key('invite-download-android'),
+            onPressed: () => Navigator.pop(sheetContext, 'android'),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.android,
+                    size: 22, color: WeChatColors.brandPrimary),
+                SizedBox(width: 8),
+                Text('安卓'),
+              ],
+            ),
+          ),
+          CupertinoActionSheetAction(
+            key: const Key('invite-download-ios'),
+            onPressed: () => Navigator.pop(sheetContext, 'ios'),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.phone_iphone,
+                    size: 22, color: WeChatColors.brandPrimary),
+                SizedBox(width: 8),
+                Text('苹果'),
+              ],
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(sheetContext),
+          child: const Text('取消'),
+        ),
+      ),
+    );
+    if (platform == null) return;
+    final url = platform == 'android'
+        ? 'https://www.liuhetong888.com/download'
+        : 'https://www.liuhetong888.com/download?platform=ios';
+    await _copyLink(url);
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    setState(() => _toast = message);
+    _toastTimer?.cancel();
+    _toastTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _toast = null);
+    });
+  }
+
+  Future<void> _copyLink(String url) async {
     try {
       await Clipboard.setData(ClipboardData(text: url));
-      widget.controller.showMessage('$label下载链接已复制');
+      _showToast('复制成功');
     } catch (_) {
-      widget.controller.showMessage('复制失败，请重试');
+      _showToast('复制失败，请重试');
     }
   }
 
@@ -611,10 +678,40 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final state = widget.controller.state;
     final invite = state.invite;
-    final background =
-        dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
     final foreground =
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _sectionBody(context, state, invite, foreground, dark),
+        if (_toast != null)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: -46,
+            child: Center(
+              child: Container(
+                key: const Key('invite-copy-toast'),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xCC000000),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(_toast!,
+                    style: const TextStyle(
+                        fontSize: 13, color: CupertinoColors.white)),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _sectionBody(BuildContext context, InviteCodeState state,
+      PersonalInvitation? invite, Color foreground, bool dark) {
+    final background =
+        dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
     return Container(
       decoration: BoxDecoration(
         color: background,
@@ -652,49 +749,11 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
   }
 
   List<Widget> _rows(PersonalInvitation invite, Color foreground) => [
-        _summaryRow(
-          key: const Key('profile-invite-code-full'),
-          leading: const Icon(CupertinoIcons.ticket,
-              size: 21, color: WeChatColors.brandPrimary),
-          label: '邀请码全称',
-          trailing: Text(
-            invite.code,
-            key: const Key('profile-invite-code-full-value'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                TextStyle(fontSize: 15, letterSpacing: 1.5, color: foreground),
-          ),
-        ),
-        _divider(),
-        _summaryRow(
-          key: const Key('profile-invite-remaining'),
-          leading: const Icon(CupertinoIcons.person_2,
-              size: 21, color: WeChatColors.brandPrimary),
-          label: '剩余可用次数',
-          trailing: Text(
-            '${invite.remainingUses}',
-            key: const Key('profile-invite-remaining-count'),
-            style: TextStyle(fontSize: 15, color: foreground),
-          ),
-        ),
-        _divider(),
-        // 一键复制下载链接（安卓/iOS 区分）：方便用户把官方下载页
-        // 分享给好友；与邀请码入口同款行样式。
         _linkRow(
-          key: const Key('profile-invite-copy-android-link'),
-          icon: CupertinoIcons.phone,
-          label: '一键复制安卓下载链接',
-          onTap: () => _copyLink(
-              '安卓', 'https://www.liuhetong888.com/download'),
-        ),
-        _divider(),
-        _linkRow(
-          key: const Key('profile-invite-copy-ios-link'),
-          icon: CupertinoIcons.desktopcomputer,
-          label: '一键复制iOS下载链接',
-          onTap: () => _copyLink(
-              'iOS', 'https://www.liuhetong888.com/download?platform=ios'),
+          key: const Key('profile-invite-copy-download-link'),
+          icon: CupertinoIcons.share,
+          label: '复制下载链接',
+          onTap: _choosePlatformAndCopy,
         ),
       ];
 
@@ -726,37 +785,5 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
         ),
       );
 
-  Widget _summaryRow({
-    required Key key,
-    required Widget leading,
-    required String label,
-    required Widget trailing,
-  }) =>
-      Container(
-        key: key,
-        height: 57,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            SizedBox(width: 40, child: leading),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(label,
-                  style: DefaultTextStyle.of(context)
-                      .style
-                      .copyWith(fontSize: 16)),
-            ),
-            const SizedBox(width: 8),
-            trailing,
-          ],
-        ),
-      );
 
-  Widget _divider() => Container(
-        margin: const EdgeInsets.only(left: 68),
-        height: .5,
-        color: CupertinoTheme.of(context).brightness == Brightness.dark
-            ? WeChatColors.darkDivider
-            : WeChatColors.divider,
-      );
 }

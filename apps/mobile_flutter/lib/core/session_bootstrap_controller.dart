@@ -65,6 +65,14 @@ final class SessionBootstrapController extends ChangeNotifier {
     _sessionCheckInProgress = true;
     try {
       await (gateway as BusinessSessionMonitor).checkSessionValidity();
+      // 心跳成功即业务 API 可达且会话有效：离线认证态（顶部
+      // “正在重新连接”胶囊）应立即恢复为正常认证态，而不是等下次
+      // 冷启动。网络失败保持原状，见下方 catch。
+      if (state.status == SessionBootstrapStatus.offlineAuthenticated) {
+        _set(const SessionBootstrapState(
+          SessionBootstrapStatus.authenticated,
+        ));
+      }
     } catch (_) {
       // Network failure preserves the local session. Auth invalidation arrives
       // through the gateway's epoch-checked event, never through this catch.

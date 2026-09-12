@@ -32,10 +32,11 @@ Future<BusinessApiClient> apiFor(
   final store = SecureSessionStore(_Store());
   await store.saveSession(
       accessToken: 'e30.eyJzdWIiOiJ1MSJ9.test', refreshToken: 'synthetic');
-  return BusinessApiClient(
+  final api = BusinessApiClient(
       baseUri: Uri.parse('https://example.test'),
       sessionStore: store,
       client: MockClient(handler));
+  return api;
 }
 
 http.Response response(Object value, [int code = 200]) =>
@@ -62,11 +63,14 @@ void main() {
   });
   testWidgets('privacy invalidation hides old preview while checking new grant',
       (tester) async {
-    final pending = Completer<http.Response>();
+    final superseded = Completer<http.Response>();
+    final current = Completer<http.Response>();
     var reads = 0;
     final api = await apiFor((_) async => ++reads == 1
         ? response({'entry_visible': true, 'items': []})
-        : pending.future);
+        : reads == 2
+            ? superseded.future
+            : current.future);
     await tester.pumpWidget(CupertinoApp(
         home: MomentProfilePreview(api: api, userId: 'u2', displayName: '小明')));
     await tester.pumpAndSettle();
@@ -74,8 +78,109 @@ void main() {
     momentsPrivacyChanges.notifyListeners();
     await tester.pump();
     expect(find.byKey(const Key('friend-moments-section')), findsNothing);
-    pending.complete(response({'entry_visible': false, 'items': []}));
+    // A second privacy revision supersedes the first refresh. Its late grant
+    // must not republish an entry while the current authorization is unknown.
+    momentsPrivacyChanges.notifyListeners();
+    superseded.complete(response({'entry_visible': true, 'items': []}));
+    await tester.pump();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+    current.complete(response({'entry_visible': false, 'items': []}));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+  });
+  testWidgets('same friend never reuses another API scope preview',
+      (tester) async {
+    final apiA = await apiFor(
+        (_) async => response({'entry_visible': true, 'items': []}));
+    final apiB = await apiFor(
+        (_) async => response({'entry_visible': false, 'items': []}));
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: apiA, userId: 'u2', displayName: '小明')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsOneWidget);
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: apiB, userId: 'u2', displayName: '小明')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+  });
+  testWidgets('same API epoch replacement clears a retained profile state',
+      (tester) async {
+    var reads = 0;
+    final api = await apiFor((_) async => response(
+        {'entry_visible': ++reads == 1, 'items': []}));
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: api, userId: 'u2', displayName: '小明')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsOneWidget);
+
+    await api.clearLocalSession();
+    // The widget keeps its State object, so this proves scope identity rather
+    // than oldWidget.api.sessionEpoch detects the replacement.
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: api, userId: 'u2', displayName: '小明')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+    expect(reads, 2);
+  });
+  testWidgets('refresh revision revokes a fresh cached profile immediately',
+      (tester) async {
+    var reads = 0;
+    final api = await apiFor((_) async => response(
+        {'entry_visible': ++reads == 1, 'items': []}));
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: api,
+            userId: 'u2',
+            displayName: '小明',
+            refreshRevision: 0)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsOneWidget);
+
+    await tester.pumpWidget(CupertinoApp(
+        home: MomentProfilePreview(
+            api: api,
+            userId: 'u2',
+            displayName: '小明',
+            refreshRevision: 1)));
+    await tester.pump();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsNothing);
+    expect(reads, 2);
+  });
+  testWidgets('revision update defers another preview listener past this build',
+      (tester) async {
+    var reads = 0;
+    final api = await apiFor((_) async => response(
+        {'entry_visible': ++reads == 1, 'items': []}));
+    final revision = ValueNotifier(0);
+    addTearDown(revision.dispose);
+    await tester.pumpWidget(CupertinoApp(
+        home: SingleChildScrollView(child: Column(children: [
+      ValueListenableBuilder<int>(
+          valueListenable: revision,
+          builder: (_, value, __) => MomentProfilePreview(
+              api: api,
+              userId: 'u2',
+              displayName: '小明',
+              refreshRevision: value)),
+      MomentProfilePreview(api: api, userId: 'u2', displayName: '小明'),
+    ]))));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('friend-moments-section')), findsNWidgets(2));
+
+    revision.value = 1;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    // The initiating widget reads the cleared entry in this build. The other
+    // independent listener is updated in the scheduled post-frame callback.
+    expect(find.byKey(const Key('friend-moments-section')), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
     expect(find.byKey(const Key('friend-moments-section')), findsNothing);
   });
   testWidgets('forbidden profile does not render even a supplied preview',

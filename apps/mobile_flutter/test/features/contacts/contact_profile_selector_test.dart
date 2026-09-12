@@ -834,6 +834,44 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+      'presence throttle is reused only by the same API and repository context',
+      (tester) async {
+    final api = _FixedDetailsApi(_contact('alice', lastSeenKnown: true));
+    final first = _repository([_contact('alice', lastSeenKnown: true)]);
+    final second = _repository([_contact('alice', lastSeenKnown: true)]);
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    await first.preload();
+    await second.preload();
+
+    Future<void> open(ProfileRepository repository) async {
+      await tester.pumpWidget(CupertinoApp(
+        home: ContactProfilePage(
+          api: api,
+          identityCache: repository,
+          initialContact: repository.contacts.single.toDetails(),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    await open(first);
+    expect(api.requestedUserIds, ['alice']);
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    await open(first);
+    expect(api.requestedUserIds, ['alice'],
+        reason: 'a fresh same-context presence result is throttled');
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    await open(second);
+    expect(api.requestedUserIds, ['alice', 'alice'],
+        reason: 'a replacement repository must refresh its own account state');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('warmup selects at most nine explicit unique avatars from 50k',
       (tester) async {
     final contacts = List.generate(

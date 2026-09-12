@@ -421,12 +421,21 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('profile-invite-copy-android-link')));
-    await tester.pump();
+    // 单入口 + 二级平台选项：安卓复制 /download，苹果复制 ?platform=ios。
+    await tester.tap(
+        find.byKey(const Key('profile-invite-copy-download-link')));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const Key('invite-download-android')));
+    await tester.pumpAndSettle();
     expect(clipboard, 'https://www.liuhetong888.com/download');
+    expect(find.byKey(const Key('invite-copy-toast')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('profile-invite-copy-ios-link')));
-    await tester.pump();
+    await tester.tap(
+        find.byKey(const Key('profile-invite-copy-download-link')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('invite-download-ios')));
+    await tester.pumpAndSettle();
     expect(clipboard, 'https://www.liuhetong888.com/download?platform=ios');
   });
 
