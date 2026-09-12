@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=375">
+<title>微信风格 Demo — 点钻页改版</title>
+<style>
+:root{
+  --brand:#07C160; --bg:#EDEDED; --card:#FFFFFF;
+  --text:#191919; --text-2:#888888; --text-3:#B2B2B2; --line:#E5E5E5;
+  --orange:#FA9D3B; --yellow:#FFC300;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',sans-serif;background:#F2F2F2;display:flex;gap:32px;padding:24px;flex-wrap:wrap;justify-content:center}
+.phone{width:375px;background:var(--bg);border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.phone.dark{background:#111}
+.navbar{height:44px;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;position:relative;border-bottom:.5px solid var(--line)}
+.phone.dark .navbar{background:#1E1E1E;color:#D9D9D9;border-bottom-color:#2A2A2A}
+.navbar .back{position:absolute;left:12px;font-size:14px}
+.navbar .action{position:absolute;right:12px;font-size:14px;color:#576B95;font-weight:400}
+.screen{min-height:600px;padding:12px}
+
+/* ===== 点钻页（改版） ===== */
+.balance-hero{background:var(--card);border-radius:8px;padding:36px 16px 24px;text-align:center;margin-bottom:12px}
+.phone.dark .balance-hero{background:#1E1E1E}
+.balance-hero .label{font-size:13px;color:var(--text-2)}
+.balance-hero .amount{font-size:48px;font-weight:700;color:var(--text);margin-top:6px}
+.balance-hero .amount .unit{font-size:16px;font-weight:400;color:var(--text-2)}
+.phone.dark .balance-hero .amount{color:#D9D9D9}
+.balance-hero .sub{font-size:12px;color:var(--text-3);margin-top:6px}
+.hero-actions{display:flex;justify-content:center;gap:44px;margin-top:24px}
+.hero-actions .act{display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer}
+.hero-actions .act .ic{width:56px;height:56px;border-radius:50%;background:rgba(7,193,96,.09);display:flex;align-items:center;justify-content:center;font-size:26px}
+.hero-actions .act .t{font-size:13px;color:var(--text)}
+.phone.dark .hero-actions .act .t{color:#D9D9D9}
+/* 全部账单列表组 */
+.section{background:var(--card);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.phone.dark .section{background:#1E1E1E}
+.section .head{display:flex;justify-content:space-between;padding:13px 16px 4px;font-size:13px;color:var(--text-2)}
+.item{display:flex;align-items:center;padding:12px 16px;gap:12px;cursor:pointer}
+.item+.item{border-top:.5px solid var(--line)}
+.phone.dark .item+.item{border-top-color:#2A2A2A}
+.item .ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;flex:none}
+.item .ic.rp{background:linear-gradient(150deg,#F69B6D,#FA5151)}
+.item .ic.tf{background:#07C160}
+.item .ic.dp{background:#FA9D3B}
+.item .mid{flex:1;min-width:0}
+.item .mid .t{font-size:16px;color:var(--text)}
+.phone.dark .item .mid .t{color:#D9D9D9}
+.item .mid .s{font-size:12px;color:var(--text-3);margin-top:2px}
+.item .right{text-align:right}
+.item .right .amt{font-size:16px;color:var(--text);font-weight:600}
+.phone.dark .item .right .amt{color:#D9D9D9}
+.item .right .amt.plus{color:var(--brand)}
+.item .right .st{font-size:11px;color:var(--text-3);margin-top:2px}
+.more{text-align:center;color:var(--text-2);font-size:13px;padding:12px}
+.toast{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);background:rgba(0,0,0,.75);color:#fff;font-size:13px;padding:9px 18px;border-radius:8px}
+.empty{text-align:center;color:var(--text-3);font-size:14px;padding:48px 0}
+.note{max-width:375px;padding:16px;background:#FFFBE6;border-radius:8px;font-size:13px;color:#8C6D1F;line-height:1.7;align-self:flex-start}
+</style>
+</head>
+<body>
+
+<!-- ================= 改版点钻页 ================= -->
+<div class="phone">
+  <div class="navbar"><span class="back">‹</span>点钻<span class="action" onclick="toast('全部账单')">全部账单</span></div>
+  <div class="screen">
+    <div class="balance-hero">
+      <div class="label">点钻余额</div>
+      <div class="amount">1,288.88 <span class="unit">点钻</span></div>
+      <div class="sub">充值 · 红包 · 转账通用</div>
+      <div class="hero-actions">
+        <div class="act" onclick="toast('充值')"><div class="ic">💰</div><div class="t">充值</div></div>
+        <div class="act" onclick="toast('提现')"><div class="ic">🏧</div><div class="t">提现</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="head"><span>最近点钻流水</span><span>本月支出 96.00 · 收入 288.00</span></div>
+      <div class="item" onclick="toast('账单详情')">
+        <div class="ic tf">⇄</div>
+        <div class="mid"><div class="t">转账</div><div class="s">09-12 20:31 · 请你喝奶茶</div></div>
+        <div class="right"><div class="amt plus">+88.88</div><div class="st">已收款</div></div>
+      </div>
+      <div class="item">
+        <div class="ic rp">🧧</div>
+        <div class="mid"><div class="t">红包</div><div class="s">09-12 20:30 · 小彭 的红包</div></div>
+        <div class="right"><div class="amt">-8.88</div><div class="st">已领取</div></div>
+      </div>
+      <div class="item">
+        <div class="ic dp">↑</div>
+        <div class="mid"><div class="t">充值</div><div class="s">09-11 14:20 · 官方充值</div></div>
+        <div class="right"><div class="amt plus">+200.00</div><div class="st">成功</div></div>
+      </div>
+    </div>
+    <div class="more" onclick="toast('打开全部账单')">查看全部 ›</div>
+  </div>
+</div>
+
+<!-- ================= 暗黑模式 ================= -->
+<div class="phone dark">
+  <div class="navbar"><span class="back">‹</span>点钻<span class="action" style="color:#7CB87C">全部账单</span></div>
+  <div class="screen">
+    <div class="balance-hero">
+      <div class="label" style="color:#7F7F7F">点钻余额</div>
+      <div class="amount">1,288.88 <span class="unit" style="color:#7F7F7F">点钻</span></div>
+      <div class="sub" style="color:#5F5F5F">充值 · 红包 · 转账通用</div>
+      <div class="hero-actions">
+        <div class="act"><div class="ic" style="background:rgba(7,193,96,.16)">💰</div><div class="t">充值</div></div>
+        <div class="act"><div class="ic" style="background:rgba(7,193,96,.16)">🏧</div><div class="t">提现</div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="head" style="color:#7F7F7F"><span>最近点钻流水</span><span>本月支出 96.00</span></div>
+      <div class="item">
+        <div class="ic tf">⇄</div>
+        <div class="mid"><div class="t">转账</div><div class="s">09-12 20:31</div></div>
+        <div class="right"><div class="amt plus">+88.88</div><div class="st">已收款</div></div>
+      </div>
+      <div class="item">
+        <div class="ic rp">🧧</div>
+        <div class="mid"><div class="t">红包</div><div class="s">09-12 20:30</div></div>
+        <div class="right"><div class="amt">-8.88</div><div class="st">已领取</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 说明 ================= -->
+<div class="note">
+  <b>改版要点（微信「我-服务-钱包」版式）：</b><br>
+  1. <b>取消</b>收款用户 / 金额 / 转出 整个转账表单区；<br>
+  2. 余额 hero 居中大字 + 充值/提现 双圆钮（聊天内转账入口保留，红包发送入口保留）；<br>
+  3. 右上角<b>「全部账单」</b>入口 → 打开完整账单页（复用已上线的账单列表）；<br>
+  4. 余额下方嵌入<b>最近 3 条点钻流水</b>预览（点击进详情，底部“查看全部”进全部账单）；<br>
+  5. 暗黑模式同套令牌。确认后按此实装 Flutter。
+</div>
+
+<script>
+function toast(msg){
+  document.querySelectorAll('.toast').forEach(t=>t.remove());
+  const el=document.createElement('div');el.className='toast';el.textContent=msg;
+  document.body.appendChild(el);setTimeout(()=>el.remove(),1500);
+}
+</script>
+</body>
+</html>

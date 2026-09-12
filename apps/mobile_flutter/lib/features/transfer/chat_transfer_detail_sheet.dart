@@ -172,29 +172,73 @@ final class _ChatTransferDetailSheetState
     );
   }
 
-  Widget _receiptHeader(String amount, String label) => Container(
-        padding: const EdgeInsets.all(WeChatSpacing.lg),
-        decoration: BoxDecoration(
-          color: WeChatColors.warning,
-          borderRadius: BorderRadius.circular(12),
+  /// 收款页顶部（demo 一比一）：白底 hero + 品牌绿圆形图标 +
+  /// 大字金额 + 状态胶囊（已收款=绿底，其他=灰底）。
+  Widget _receiptHeader(String amount, String label) {
+    final accepted = label.contains('已收款');
+    return Container(
+      key: const Key('chat-transfer-receipt-hero'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+      decoration: BoxDecoration(
+        color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: const BoxDecoration(
+            color: WeChatColors.brandPrimary,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(CupertinoIcons.arrow_left_right,
+              color: CupertinoColors.white, size: 26),
         ),
-        child: Column(children: [
-          const Icon(ChangliaoIcons.transferFilled,
-              color: CupertinoColors.white, size: 30),
-          const SizedBox(height: WeChatSpacing.sm),
-          Text(amount,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: CupertinoColors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: WeChatSpacing.xs),
-          Text(label,
-              style:
-                  const TextStyle(color: CupertinoColors.white, fontSize: 14)),
-        ]),
-      );
+        const SizedBox(height: 10),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(
+              text: amount,
+              style: TextStyle(
+                color: WeChatColors.resolveTextPrimary(context),
+                fontSize: 44,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+              ),
+            ),
+            const TextSpan(
+              text: ' 点钻',
+              style: TextStyle(
+                  fontSize: 15, color: WeChatColors.textSecondary),
+            ),
+          ]),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: accepted
+                ? const Color(0x1407C160)
+                : const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            label,
+            key: const Key('chat-transfer-receipt-status'),
+            style: TextStyle(
+              fontSize: 12,
+              color: accepted
+                  ? WeChatColors.brandPrimary
+                  : WeChatColors.textSecondary,
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
 
   Widget _detailRows(Map<String, dynamic> detail, String status) {
     final rows = <(String, String)>[

@@ -50,11 +50,14 @@ void main() {
       ),
     ));
     expect(find.text('20.00 点钻'), findsOneWidget);
-    expect(find.text('畅聊点钻转账'), findsOneWidget);
+    // demo 版式：白底卡片 + 金额 + 状态 + 底部说明行。
     expect(find.text('等待收款'), findsOneWidget);
+    expect(find.text('转账给对方'), findsOneWidget);
+    expect(find.text('待收款'), findsOneWidget);
     final box =
         tester.widget<Container>(find.byKey(const Key('wechat-transfer-card')));
-    expect((box.decoration! as BoxDecoration).color, const Color(0xFFFA9D3B));
+    // 浅色模式白底（demo .tf 白卡），不再使用橙色气泡底。
+    expect((box.decoration! as BoxDecoration).color, WeChatColors.lightElevated);
   });
   testWidgets('transfer card labels follow role and settlement state',
       (tester) async {
@@ -73,7 +76,8 @@ void main() {
     await tester.pumpWidget(const CupertinoApp(
         home: WeChatTransferCard(
             amount: '6.60', state: TransferCardState.returned, isOwn: true)));
-    expect(find.text('已退回'), findsOneWidget);
+    // 标签与底部状态行均为“已退回”。
+    expect(find.text('已退回'), findsNWidgets(2));
   });
   testWidgets('message row exposes a 40px tappable avatar', (tester) async {
     var avatarTaps = 0;

@@ -35,7 +35,7 @@ void main() {
     expect(find.byType(WeChatPageScaffold), findsOneWidget);
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('转账已收款'), findsOneWidget);
-    expect(find.text('200.00 点钻'), findsOneWidget);
+    expect(find.textContaining('200.00'), findsOneWidget);
     expect(find.text('转账时间'), findsOneWidget);
     expect(find.text('收款时间'), findsOneWidget);
     expect(find.text(_localTime('2026-09-11T10:20:00Z')), findsOneWidget);
