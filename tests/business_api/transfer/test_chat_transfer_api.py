@@ -71,3 +71,49 @@ async def test_chat_transfer_only_recipient_can_accept(context):
         transfer_id = created.json()["id"]
         forbidden = await client.post(f"/api/v1/chat-transfers/{transfer_id}/accept", headers={**bearer(settings, "mallory"), "Idempotency-Key": "tr-api-bad"})
         assert forbidden.status_code in (403, 422)
+
+
+@pytest.mark.asyncio
+async def test_decline_refunds_principal_and_fee_in_full(context):
+    """退还时本金与手续费全额退回转出方（不变量钉死）。
+
+    分录：escrow -amount, PLATFORM_FEE -fee, sender +(amount+fee)。
+    平台手续费不因退还而留存。
+    """
+    app, factory, settings = context
+    from sqlalchemy import select, func
+    from app.modules.ledger.models import LedgerEntry
+
+    created = await AsyncClient(transport=ASGITransport(app=app), base_url="http://test")         if False else None
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        body = (await client.post(
+            "/api/v1/chat-transfers",
+            headers={**bearer(settings, "sender"), "Idempotency-Key": "tr-fee-1"},
+            json={"receiver_id": "receiver", "amount": "10.00"},
+        )).json()
+        assert body["fee"] == "0.05"
+        transfer_id = body["id"]
+
+        declined = await client.post(
+            f"/api/v1/chat-transfers/{transfer_id}/decline",
+            headers={**bearer(settings, "receiver"), "Idempotency-Key": "tr-fee-decline"},
+        )
+        assert declined.status_code == 200
+        assert declined.json()["status"] == "DECLINED"
+
+    with factory() as session:
+        escrow = f"PLATFORM_TRANSFER_ESCROW:{transfer_id}"
+        escrow_total = session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0))
+            .where(LedgerEntry.account_id == escrow))
+        fee_total = session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0))
+            .where(LedgerEntry.account_id == "PLATFORM_FEE", LedgerEntry.asset == "CAIBI"))
+        sender_total = session.scalar(
+            select(func.coalesce(func.sum(LedgerEntry.amount), 0))
+            .where(LedgerEntry.account_id == "sender", LedgerEntry.asset == "CAIBI"))
+        # 托管清零；平台手续费净变动不含该笔 0.05；转出方回到种子余额
+        # 300.00（10.05 扣 + 10.05 退，本金与手续费全额退回）。
+        assert escrow_total == 0
+        assert fee_total == 0
+        assert sender_total == Decimal('300.00')

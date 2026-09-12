@@ -40,6 +40,21 @@ final class WeChatTransferCard extends StatelessWidget {
       TransferCardState.accepted => const Color(0xFFFA9D3B),
       TransferCardState.returned => WeChatColors.textTertiary,
     };
+    // demo 定稿：图标右下角小角标——⏱ 待收 / ✓ 已收 / ↺ 退回。
+    final (badge, badgeColor) = switch (state) {
+      TransferCardState.pending => (
+          CupertinoIcons.clock_fill,
+          WeChatColors.brandPrimary
+        ),
+      TransferCardState.accepted => (
+          CupertinoIcons.check_mark_circled_solid,
+          const Color(0xFFFA9D3B)
+        ),
+      TransferCardState.returned => (
+          CupertinoIcons.arrow_uturn_left_circle_fill,
+          WeChatColors.textTertiary
+        ),
+    };
     return CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: onTap,
@@ -62,15 +77,41 @@ final class WeChatTransferCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 13, 14, 9),
             child: Row(children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: barColor,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(CupertinoIcons.arrow_left_right,
-                    color: CupertinoColors.white, size: 18),
+              // demo 定稿：状态圆 + 右下角 14px 状态角标（白描边）。
+              SizedBox(
+                width: 38,
+                height: 38,
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: barColor,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(CupertinoIcons.arrow_left_right,
+                        color: CupertinoColors.white, size: 18),
+                  ),
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: badgeColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: dark
+                                ? WeChatColors.darkElevated
+                                : WeChatColors.lightElevated,
+                            width: 1.5),
+                      ),
+                      child: Icon(badge,
+                          size: 10, color: CupertinoColors.white),
+                    ),
+                  ),
+                ]),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -80,7 +121,9 @@ final class WeChatTransferCard extends StatelessWidget {
                     Text(
                       '$amount 点钻',
                       style: TextStyle(
-                        color: foreground,
+                        color: state == TransferCardState.returned
+                            ? WeChatColors.textSecondary
+                            : foreground,
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                         height: 1.2,

@@ -175,7 +175,14 @@ final class _ChatTransferDetailSheetState
   /// 收款页顶部（demo 一比一）：白底 hero + 品牌绿圆形图标 +
   /// 大字金额 + 状态胶囊（已收款=绿底，其他=灰底）。
   Widget _receiptHeader(String amount, String label) {
+    // demo 三态：待收=品牌绿 / 已收款=橙 / 退回或过期=灰。
     final accepted = label.contains('已收款');
+    final pending = label.contains('待收') || label.contains('收款');
+    final iconColor = accepted
+        ? const Color(0xFFFA9D3B)
+        : pending
+            ? WeChatColors.brandPrimary
+            : WeChatColors.textTertiary;
     return Container(
       key: const Key('chat-transfer-receipt-hero'),
       width: double.infinity,
@@ -188,8 +195,8 @@ final class _ChatTransferDetailSheetState
         Container(
           width: 52,
           height: 52,
-          decoration: const BoxDecoration(
-            color: WeChatColors.brandPrimary,
+          decoration: BoxDecoration(
+            color: iconColor,
             shape: BoxShape.circle,
           ),
           child: const Icon(CupertinoIcons.arrow_left_right,
@@ -221,8 +228,10 @@ final class _ChatTransferDetailSheetState
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
             color: accepted
-                ? const Color(0x1407C160)
-                : const Color(0xFFF5F5F5),
+                ? const Color(0x1AFA9D3B)
+                : pending
+                    ? const Color(0x1407C160)
+                    : const Color(0xFFF5F5F5),
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
@@ -231,8 +240,10 @@ final class _ChatTransferDetailSheetState
             style: TextStyle(
               fontSize: 12,
               color: accepted
-                  ? WeChatColors.brandPrimary
-                  : WeChatColors.textSecondary,
+                  ? const Color(0xFFD97B0F)
+                  : pending
+                      ? WeChatColors.brandPrimary
+                      : WeChatColors.textSecondary,
             ),
           ),
         ),
