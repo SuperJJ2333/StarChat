@@ -7,6 +7,7 @@ import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'ledger_controller.dart';
+import '../matrix/profile_repository.dart';
 import 'ledger_gateway.dart';
 
 const _kinds = <String?, String>{
@@ -68,8 +69,11 @@ String _transferStatus(Object? value) => switch (value) {
     };
 
 final class LedgerListPage extends StatefulWidget {
-  const LedgerListPage({super.key, required this.gateway});
+  const LedgerListPage({super.key, required this.gateway, this.identityCache});
   final LedgerGateway gateway;
+
+  /// 账单名称后缀的对手方名（备注优先）查询源；缺省时不带后缀。
+  final ProfileRepository? identityCache;
   @override
   State<LedgerListPage> createState() => _LedgerListPageState();
 }
@@ -130,6 +134,7 @@ final class _LedgerListPageState extends State<LedgerListPage> {
           const SizedBox(height: WeChatSpacing.sm),
           Row(children: [
             Expanded(child: _dateButton(false)),
+            const SizedBox(width: WeChatSpacing.xs),
             Expanded(child: _dateButton(true)),
             CupertinoButton(
                 key: const Key('ledger-clear-date'),
@@ -157,16 +162,56 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                       .toList())),
         ]),
       );
+  /// demo 美化：白底圆角日期胶囊 + 日历 icon + 箭头，
+  /// 选择器复用 WeChatDatePicker（与「查找聊天记录」同款日历）。
   Widget _dateButton(bool isEnd) {
     final date = isEnd ? _controller.endAt : _controller.startAt;
     final shown = isEnd && date != null
         ? DateTime(date.year, date.month, date.day - 1)
         : date;
+    final active = date != null;
     return CupertinoButton(
         key: Key(isEnd ? 'ledger-end-date' : 'ledger-start-date'),
         padding: EdgeInsets.zero,
         onPressed: () => _chooseDate(isEnd),
-        child: Text(shown == null ? (isEnd ? '结束日期' : '开始日期') : _time(shown)));
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: WeChatColors.elevatedSurface(context),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active
+                  ? WeChatColors.brandPrimary.withValues(alpha: .4)
+                  : WeChatColors.resolve(context, WeChatColors.divider),
+              width: active ? 1.2 : .5,
+            ),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(CupertinoIcons.calendar,
+                size: 14,
+                color: active
+                    ? WeChatColors.brandPrimary
+                    : WeChatColors.textTertiary),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+              shown == null ? (isEnd ? '结束日期' : '开始日期') : _time(shown),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                color: active
+                    ? WeChatColors.resolveTextPrimary(context)
+                    : WeChatColors.textSecondary,
+              ),
+              ),
+            ),
+            const SizedBox(width: 3),
+            const Icon(CupertinoIcons.chevron_down,
+                size: 10, color: WeChatColors.textTertiary),
+          ]),
+        ));
   }
 
   Widget _body() {
@@ -219,7 +264,6 @@ final class _LedgerListPageState extends State<LedgerListPage> {
         ),
     };
     final description = ledgerDisplayDescription(row);
-    final status = '${row['status'] ?? ''}';
     return CupertinoButton(
         key: Key('ledger-row-${row['id']}'),
         padding: const EdgeInsets.symmetric(
@@ -242,7 +286,8 @@ final class _LedgerListPageState extends State<LedgerListPage> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(title, style: const TextStyle(fontSize: 16)),
+                Text(_billTitle(row, title),
+                    style: const TextStyle(fontSize: 16)),
                 const SizedBox(height: 2),
                 Text(
                   '${_shortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
@@ -270,16 +315,65 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                       : WeChatColors.resolveTextPrimary(context),
                 ),
               ),
-              if (status.isNotEmpty)
-                Text(status,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: WeChatColors.textTertiary)),
+              Text(_statusText(row),
+                  style: const TextStyle(
+                      fontSize: 11, color: WeChatColors.textTertiary)),
             ],
           ),
           ),
         ]),
       );
+  }
+
+  /// 账单名称后缀：对手方备注→昵称→畅聊号（identityCache 通讯录优先）。
+  String _billTitle(Map<String, dynamic> row, String kindTitle) {
+    final counterparty = '${row['counterparty_id'] ?? ''}';
+    final reason = '${row['reason_code'] ?? ''}';
+    String? peer;
+    if (counterparty.isNotEmpty) {
+      peer = widget.identityCache?.contactsByUserId[counterparty]?.displayName;
+    }
+    switch (reason) {
+      case 'RED_PACKET_CREATE':
+        if (row['packet_mode'] == 'EXCLUSIVE' && peer != null) {
+          return '红包-转给\$peer';
+        }
+        if (row['packet_room'] != null) return '红包-发出群红包';
+        if (peer != null) return '红包-转给\$peer';
+        return '红包-发出';
+      case 'RED_PACKET_CLAIM':
+        return peer != null ? '红包-领取\$peer的红包' : '领取红包';
+      case 'RED_PACKET_REFUND':
+      case 'RED_PACKET_EXPIRED':
+        return '红包-退回';
+      case 'CHAT_TRANSFER_DECLINED':
+        return peer != null ? '转账-已拒收' : '转账-已拒收';
+      case 'CHAT_TRANSFER_ACCEPTED':
+        return peer != null ? '转账-已收款' : '转账-已收款';
+    }
+    if (row['kind'] == 'transfer') {
+      return peer != null ? '转账-\$peer' : '转账';
+    }
+    return kindTitle;
+  }
+
+  /// 账单状态→展示文案（金额下方行）。
+  String _statusText(Map<String, dynamic> row) {
+    final status = '${row['status'] ?? ''}';
+    final reason = '${row['reason_code'] ?? ''}';
+    if (reason == 'RED_PACKET_CLAIM') return '领取红包';
+    if (reason == 'RED_PACKET_CREATE') return '发出红包';
+    if (reason == 'RED_PACKET_REFUND' || reason == 'RED_PACKET_EXPIRED') {
+      return '退回';
+    }
+    return switch (status) {
+      'ACCEPTED' => '已接受',
+      'DECLINED' => '已拒收',
+      'PENDING' => '待处理',
+      'COMPLETED' => '已完成',
+      'EXPIRED' => '已过期',
+      _ => status.isEmpty ? '已入账' : status,
+    };
   }
 
   String _shortTime(dynamic value) {

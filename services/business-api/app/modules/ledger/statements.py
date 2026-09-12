@@ -55,7 +55,7 @@ class StatementService:
             if marker:
                 query = query.where(or_(LedgerTransaction.created_at < marker[0], and_(LedgerTransaction.created_at == marker[0], LedgerTransaction.id < marker[1])))
             rows = session.execute(query.order_by(LedgerTransaction.created_at.desc(), LedgerTransaction.id.desc()).limit(limit + 1)).all()
-            items = self._project_rows(session, rows[:limit])
+            items = self._project_rows(session, rows[:limit], user_id=user_id)
         next_cursor = self._encode_cursor(rows[limit - 1][0]) if len(rows) > limit else None
         return {"items": items, "next_cursor": next_cursor}
 
@@ -65,14 +65,57 @@ class StatementService:
             row = session.execute(select(LedgerTransaction, amount).join(LedgerEntry).where(
                 LedgerTransaction.id == transaction_id, LedgerTransaction.asset == "CAIBI",
                 LedgerEntry.account_id == user_id, LedgerEntry.asset == "CAIBI").group_by(LedgerTransaction.id)).first()
-            return self._project_rows(session, [row])[0] if row else None
+            return self._project_rows(session, [row], user_id=user_id)[0] if row else None
 
-    def _project_rows(self, session, rows):
+    def _project_rows(self, session, rows, user_id=None):
         tx_ids = [transaction.id for transaction, _amount in rows]
         transfer_for_tx = TransferReadProjection.for_transactions(session, tx_ids)
-        return [self._project(transaction, amount, transfer_for_tx.get(transaction.id)) for transaction, amount in rows]
+        # 每笔交易的对手方账号 + 红包上下文（按 escrow 前缀连接）。
+        accounts_by_tx = {}
+        for tx_id, account in session.execute(
+                select(LedgerEntry.transaction_id, LedgerEntry.account_id).where(
+                    LedgerEntry.transaction_id.in_(tx_ids), LedgerEntry.asset == "CAIBI")):
+            accounts_by_tx.setdefault(tx_id, set()).add(account)
+        packet_ids = set()
+        for tx_id, accounts in accounts_by_tx.items():
+            for account in accounts:
+                if account.startswith("PLATFORM_REDPACKET_ESCROW:"):
+                    packet_ids.add(account[len("PLATFORM_REDPACKET_ESCROW:"):])
+        from app.modules.redpacket.models import RedPacket
+        packet_rows = {p.id: p for p in session.scalars(select(RedPacket).where(RedPacket.id.in_(packet_ids)))} if packet_ids else {}
+        counterparties = {}
+        packet_ctx = {}
+        for transaction, _amount in rows:
+            accounts = accounts_by_tx.get(transaction.id, set())
+            packet = None
+            for account in accounts:
+                if account.startswith("PLATFORM_REDPACKET_ESCROW:"):
+                    packet = packet_rows.get(account[len("PLATFORM_REDPACKET_ESCROW:"):])
+                    break
+            packet_ctx[transaction.id] = packet
+            other = [a for a in accounts if a != user_id and not a.startswith("PLATFORM_")]
+            if transfer_for_tx.get(transaction.id) is not None:
+                t = transfer_for_tx[transaction.id]
+                other = [t.receiver_id if t.sender_id == user_id else t.sender_id]
+            elif packet is not None:
+                # 红包：领取→发起方；发出→群红包无对手，专属→接收人。
+                if transaction.reason_code == "RED_PACKET_CLAIM":
+                    other = [packet.sender_id]
+                elif packet.recipient_id:
+                    other = [packet.recipient_id]
+                else:
+                    other = []
+            counterparties[transaction.id] = other[0] if other else None
+        result = []
+        for transaction, amount in rows:
+            result.append(self._project(transaction, amount,
+                transfer_for_tx.get(transaction.id),
+                counterparty=counterparties.get(transaction.id),
+                packet=packet_ctx.get(transaction.id)))
+        return result
 
-    def _project(self, transaction, amount, transfer):
+    def _project(self, transaction, amount, transfer, counterparty=None, packet=None):
+        # 账单名称后缀：交易对手（备注/昵称由客户端按通讯录优先渲染）。
         return {"id": transaction.id, "asset": "CAIBI", "amount": f"{money(Decimal(amount)):.2f}",
             "kind": self.kind_for(transaction), "reason_code": transaction.reason_code,
             "created_at": self._utc(transaction.created_at), "reversal_of_id": transaction.reversal_of_id,
@@ -81,7 +124,10 @@ class StatementService:
             "transfer_amount": f"{money(transfer.amount):.2f}" if transfer else None,
             "fee": f"{money(transfer.fee):.2f}" if transfer else None,
             "accepted_at": self._utc(transfer.updated_at) if transfer and transfer.status == "ACCEPTED" else None,
-            "transfer_created_at": self._utc(transfer.created_at) if transfer else None}
+            "transfer_created_at": self._utc(transfer.created_at) if transfer else None,
+            "counterparty_id": counterparty,
+            "packet_mode": packet.get("mode") if packet else None,
+            "packet_room": packet.get("room_id") if packet else None}
 
     @staticmethod
     def _kind_filter(query, kind):

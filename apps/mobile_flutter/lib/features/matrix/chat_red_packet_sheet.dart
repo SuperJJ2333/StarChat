@@ -36,10 +36,16 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
 }
 
 final class ChatRoomMember {
-  const ChatRoomMember(this.id, this.name, {this.avatarUrl});
+  const ChatRoomMember(this.id, this.name,
+      {this.avatarUrl, this.businessAvatarUrl});
   final String id;
   final String name;
+
+  /// Matrix 房间成员头像（mxc://，非好友时回退）。
   final String? avatarUrl;
+
+  /// 业务头像（好友资料，http(s)，走统一缓存）。
+  final String? businessAvatarUrl;
 }
 
 String redPacketTypeLabel(String mode) => switch (mode) {
@@ -68,7 +74,7 @@ final class ChatRedPacketSheet extends StatefulWidget {
 
 final class _State extends State<ChatRedPacketSheet> {
   final total = TextEditingController();
-  final shares = TextEditingController(text: '1');
+  final shares = TextEditingController(); // 规格要求：默认空，避免忘记设置
   final greeting = TextEditingController(text: '恭喜发财，大吉大利');
   String mode = 'RANDOM';
   String? recipientId;
@@ -124,7 +130,7 @@ final class _State extends State<ChatRedPacketSheet> {
       await _alert('单个红包金额不能超过 ${maxTotal.toStringAsFixed(2)} 点钻');
       return;
     }
-    var shareCount = 1;
+    var shareCount = 1; // 私聊固定 1 个；群聊取输入框（空=未设置）
     if (widget.isGroup && mode != 'EXCLUSIVE') {
       shareCount = int.tryParse(shares.text.trim()) ?? 0;
       if (shareCount < 1 || shareCount > 500) {
@@ -250,7 +256,10 @@ final class _State extends State<ChatRedPacketSheet> {
                             UserAvatar(
                               nickname: member.name,
                               fallbackSeed: member.id,
-                              avatarUrl: member.avatarUrl,
+                              avatarUrl: member.businessAvatarUrl ??
+                                  (member.avatarUrl?.startsWith('http') == true
+                                      ? member.avatarUrl
+                                      : null),
                               size: 36,
                             ),
                             const SizedBox(width: 12),

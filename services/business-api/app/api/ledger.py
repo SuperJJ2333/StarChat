@@ -49,6 +49,9 @@ class StatementItem(StrictModel):
     fee: str | None
     accepted_at: datetime | None
     transfer_created_at: datetime | None
+    counterparty_id: str | None = None
+    packet_mode: str | None = None
+    packet_room: str | None = None
 
 class StatementPage(StrictModel):
     items: list[StatementItem]

@@ -46,6 +46,7 @@ final class ChatTransferSheet extends StatefulWidget {
     this.peerAvatarUrl,
     this.balanceSource,
     this.contactsSource,
+    this.roomMembers = const [],
   });
   final ChatTransferController controller;
 
@@ -56,6 +57,10 @@ final class ChatTransferSheet extends StatefulWidget {
   final VoidCallback onSent;
   final ChatTransferBalanceSource? balanceSource;
   final ChatTransferContactsSource? contactsSource;
+
+  /// 群聊转账：可选的房间成员列表（非空时选择器只显示这些成员，
+  /// 不再拉取全部好友——修复群内出现非群聊用户）。
+  final List<ContactSummary> roomMembers;
   @override
   State<ChatTransferSheet> createState() => _State();
 }
@@ -185,6 +190,11 @@ final class _State extends State<ChatTransferSheet> {
       );
 
   Future<void> _pickRecipient() async {
+    // 群聊：只允许选择当前房间成员。
+    if (widget.roomMembers.isNotEmpty) {
+      await _pickFromList(widget.roomMembers);
+      return;
+    }
     var source = widget.contactsSource;
     if (source == null) {
       await _alert('通讯录暂不可用，无法选择收款用户');
@@ -201,8 +211,10 @@ final class _State extends State<ChatTransferSheet> {
         }
       }
     }
-    final list = contacts ?? const <ContactSummary>[];
-    if (!mounted) return;
+    await _pickFromList(contacts ?? const <ContactSummary>[]);
+  }
+
+  Future<void> _pickFromList(List<ContactSummary> list) async {
     if (list.isEmpty) {
       await _alert('暂无可转账的好友');
       return;
