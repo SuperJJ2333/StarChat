@@ -126,8 +126,8 @@ class StatementService:
             "accepted_at": self._utc(transfer.updated_at) if transfer and transfer.status == "ACCEPTED" else None,
             "transfer_created_at": self._utc(transfer.created_at) if transfer else None,
             "counterparty_id": counterparty,
-            "packet_mode": packet.get("mode") if packet else None,
-            "packet_room": packet.get("room_id") if packet else None}
+            "packet_mode": packet.mode if packet else None,
+            "packet_room": packet.room_id if packet else None}
 
     @staticmethod
     def _kind_filter(query, kind):
