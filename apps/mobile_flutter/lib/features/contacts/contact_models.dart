@@ -77,7 +77,10 @@ final class ContactSummary {
           {String? remark,
           String? nickname,
           String? avatarUrl,
-          bool? avatarIsKnown}) =>
+          bool? avatarIsKnown,
+          DateTime? lastSeenAt,
+          bool? lastSeenKnown,
+          bool clearLastSeen = false}) =>
       ContactSummary(
         userId: userId,
         username: username,
@@ -90,8 +93,8 @@ final class ContactSummary {
         momentsPermission: momentsPermission,
         tags: tags,
         starred: starred,
-        lastSeenAt: lastSeenAt,
-        lastSeenKnown: lastSeenKnown,
+        lastSeenAt: clearLastSeen ? lastSeenAt : lastSeenAt ?? this.lastSeenAt,
+        lastSeenKnown: lastSeenKnown ?? this.lastSeenKnown,
       );
 
   ContactDetails toDetails() => ContactDetails(
@@ -192,6 +195,8 @@ final class ContactDetails {
         momentsPermission: momentsPermission,
         tags: List.unmodifiable(tags),
         starred: starred,
+        lastSeenAt: lastSeenAt,
+        lastSeenKnown: lastSeenKnown,
       );
 
   ContactDetails copyWith({
@@ -199,6 +204,9 @@ final class ContactDetails {
     bool clearRemark = false,
     List<String>? tags,
     String? momentsPermission,
+    DateTime? lastSeenAt,
+    bool? lastSeenKnown,
+    bool clearLastSeen = false,
   }) =>
       ContactDetails(
         userId: userId,
@@ -212,6 +220,8 @@ final class ContactDetails {
         momentsPermission: momentsPermission ?? this.momentsPermission,
         tags: tags ?? this.tags,
         starred: starred,
+        lastSeenAt: clearLastSeen ? lastSeenAt : lastSeenAt ?? this.lastSeenAt,
+        lastSeenKnown: lastSeenKnown ?? this.lastSeenKnown,
       );
 }
 

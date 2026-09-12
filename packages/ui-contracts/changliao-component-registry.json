@@ -135,6 +135,18 @@
       "comments": "Author can delete friend comments on own moments; server authorization required.",
       "video": "Group original <=20971520 bytes; check before preparation; background hash/encryption and independent upload."
     },
+    "2026-09-12-forward-background-jobs": {
+      "flutter": "apps/mobile_flutter/lib/ui/chat/chat_forward_picker_page.dart; apps/mobile_flutter/lib/features/matrix/room_page.dart",
+      "html": "frontend/src/screens/messaging.js",
+      "components": [
+        "app-message-bubble",
+        "app-attachment-tile",
+        "app-composer"
+      ],
+      "interaction": "Visible gallery-video and recording message actions open the searchable chat picker. A final confirmation immediately dismisses both picker and confirmation, creates one stable local job per target, and shows the destination conversation's pending bubble. Completion becomes sent only after the timeline echo; a failed item retries only its own stable job while sent targets do not resend.",
+      "media": "Gallery video and recording share the same in-conversation pending presentation; no page-blocking preparation indicator is shown.",
+      "demo": "The HTML screen uses controlled local fixtures only and makes no production upload or send request."
+    },
     "2026-09-10-admin-readability": {
       "scope": "administration-only",
       "html": [
@@ -938,6 +950,7 @@
           "text",
           "crop",
           "mosaic",
+          "eraser",
           "undo",
           "redo",
           "complete-sheet",
@@ -949,10 +962,14 @@
       "html": {
         "tag": "app-image-editor"
       },
-      "tokens": [
-        "brandPrimary",
-        "textPrimary",
-        "textSecondary"
+        "tokens": [
+          "brandPrimary",
+          "textPrimary",
+          "textSecondary",
+          "controlHeight",
+          "display",
+          "sm",
+          "xl"
       ]
     },
     {
@@ -1306,7 +1323,7 @@
     }
   },
   "screens": {
-    "expectedCount": 363
+    "expectedCount": 364
   },
   "adminCompletion20260910": {
     "html": [
@@ -1346,7 +1363,7 @@
       "moments-detail-own-comment"
     ],
     "html": "frontend/src/components/image-editor.js",
-    "interaction": "五工具底部、撤销重做右上、完成右下；生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
+    "interaction": "六工具底部（画笔、表情、文字、裁剪、马赛克、橡皮擦）、撤销重做右上、完成右下；表情以居中 48px 网格展开并在选择后收起；橡皮擦只清除编辑覆盖层、显示裁剪后的原图。生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
     "tokens": "Reuse existing color, spacing, typography, radius and touch-size tokens; landscape canvas colors are fixture artwork, not UI tokens",
     "verification": "Source review only; user explicitly requested no self testing"
   },
@@ -1407,7 +1424,7 @@
     "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],
     "demo": ["redpacket-detail-viewer-claimed", "redpacket-detail-claiming", "redpacket-detail-unknown-result", "redpacket-detail-group-random-completed", "redpacket-detail-group-random-expired", "redpacket-create-group-random", "caibi-transfer-receiver-accepted", "caibi-ledger-all", "caibi-ledger-filtered", "caibi-ledger-loading", "caibi-ledger-empty", "caibi-ledger-error", "caibi-ledger-paged", "caibi-transaction-detail"],
     "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
-    "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
+    "ledger": "Fixture-only HTML interaction keeps server-side-filter-shaped type, date and keyword controls; independent search, compact filters, month dividers and typed continuous rows do not create a month aggregate. Amount strings and immutable example transaction IDs are never Number-coerced.",
     "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
   }
 }

@@ -33,10 +33,17 @@ export class AppImageEditor extends StrictElement {
     const canvas = element("canvas", "c-image-editor__canvas");
     canvas.width = source.width; canvas.height = source.height;
     canvas.setAttribute("aria-label", "图片编辑画布，拖动绘制或裁剪");
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(source, 0, 0);
-    const history = [ctx.getImageData(0, 0, canvas.width, canvas.height)];
-    let cursor = 0, tool = "brush", stroke = null, crop = null, busy = false;
+    // The source canvas is immutable. Marks live on a separate overlay so an
+    // eraser clears only edits and always reveals the correctly cropped source.
+    const overlay = element("canvas");
+    const sourceContext = source.getContext("2d");
+    const documentFor = () => ({ crop: { x: 0, y: 0, width: source.width, height: source.height }, marks: [] });
+    const cloneDocument = (document) => ({
+      crop: { ...document.crop },
+      marks: document.marks.map((mark) => ({ ...mark, points: mark.points.map((point) => ({ ...point })) }))
+    });
+    const history = [documentFor()];
+    let cursor = 0, tool = "brush", stroke = null, selection = null, busy = false;
     const header = element("header", "c-image-editor__header");
     const viewport = element("div", "c-image-editor__viewport");
     const footer = element("footer", "c-image-editor__footer");
@@ -46,11 +53,69 @@ export class AppImageEditor extends StrictElement {
     const color = element("input"); color.type = "color"; color.value = "#ffffff"; color.setAttribute("aria-label", "画笔与文字颜色");
     const width = element("input"); width.type = "range"; width.min = "2"; width.max = "32"; width.value = "8"; width.setAttribute("aria-label", "画笔粗细");
     const text = element("input", "c-image-editor__text"); text.placeholder = "输入文字，再点击图片放置"; text.setAttribute("aria-label", "图片文字"); text.hidden = true;
-    const emojis = element("select"); emojis.setAttribute("aria-label", "选择表情"); emojis.hidden = true;
-    for (const value of ["🙂", "❤️", "✨", "🌈", "🌻"]) { const option = element("option", "", value); emojis.append(option); }
+    let selectedEmoji = null;
+    const emojiPicker = element("div", "c-image-editor__emoji-picker");
+    emojiPicker.setAttribute("aria-label", "选择表情");
+    emojiPicker.setAttribute("data-testid", "image-editor-emoji-grid");
+    emojiPicker.hidden = true;
+    for (const value of ["😀", "😄", "😂", "🥹", "😍", "🥰", "😎", "😭", "😡", "🤔", "🤗", "😘", "🥳", "🤩", "👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "❤️", "💛", "💚", "💙", "🔥", "🎉", "🌹", "🐱", "🐶", "🌈", "☀️", "⭐", "🎂", "🎁"]) {
+      const item = control(`选择表情 ${value}`, () => { selectedEmoji = value; emojiPicker.hidden = true; status.textContent = "点击图片放置表情"; }, value);
+      item.classList.add("c-image-editor__emoji-cell");
+      item.setAttribute("data-testid", "image-editor-emoji-cell");
+      item.setAttribute("data-fixed-touch", "48");
+      emojiPicker.append(item);
+    }
+    const local = (point, crop) => ({ x: point.x - crop.x, y: point.y - crop.y });
+    const drawPath = (context, mark, crop) => {
+      const points = mark.points.map((point) => local(point, crop));
+      if (!points.length) return;
+      context.beginPath(); context.moveTo(points[0].x, points[0].y);
+      for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+      if (points.length === 1) context.lineTo(points[0].x + .01, points[0].y + .01);
+      context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = mark.width;
+      context.stroke();
+    };
+    const drawMosaic = (context, mark, crop) => {
+      const size = 28;
+      for (const point of mark.points) {
+        const x = Math.max(0, Math.min(source.width - 1, Math.floor(point.x / size) * size));
+        const y = Math.max(0, Math.min(source.height - 1, Math.floor(point.y / size) * size));
+        const data = sourceContext.getImageData(x, y, 1, 1).data;
+        context.fillStyle = `rgb(${data[0]} ${data[1]} ${data[2]})`;
+        context.fillRect(x - crop.x, y - crop.y, size, size);
+      }
+    };
+    const drawMark = (context, mark, crop) => {
+      if (mark.kind === "text" || mark.kind === "emoji") {
+        const point = local(mark.points[0], crop);
+        context.font = `${mark.kind === "emoji" ? 64 : 46}px sans-serif`;
+        context.fillStyle = mark.color; context.fillText(mark.value, point.x, point.y); return;
+      }
+      if (mark.kind === "mosaic") { drawMosaic(context, mark, crop); return; }
+      context.save();
+      context.globalCompositeOperation = mark.kind === "eraser" ? "destination-out" : "source-over";
+      context.strokeStyle = mark.color;
+      drawPath(context, mark, crop);
+      context.restore();
+    };
+    const redraw = (preview = null) => {
+      const document = history[cursor], crop = document.crop;
+      canvas.width = crop.width; canvas.height = crop.height;
+      overlay.width = crop.width; overlay.height = crop.height;
+      const context = canvas.getContext("2d"), overlayContext = overlay.getContext("2d");
+      context.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+      for (const mark of document.marks) drawMark(overlayContext, mark, crop);
+      if (preview && preview.kind !== "crop") drawMark(overlayContext, preview, crop);
+      context.drawImage(overlay, 0, 0);
+      if (preview?.kind === "crop") {
+        const start = local(preview.start, crop), end = local(preview.end, crop);
+        context.strokeStyle = color.value; context.lineWidth = 3;
+        context.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      }
+    };
     const refresh = () => { undo.disabled = busy || cursor === 0; redo.disabled = busy || cursor === history.length - 1; done.disabled = busy; };
-    const commit = () => { history.splice(cursor + 1); history.push(ctx.getImageData(0, 0, canvas.width, canvas.height)); cursor++; refresh(); };
-    const restore = () => { const data = history[cursor]; canvas.width = data.width; canvas.height = data.height; ctx.putImageData(data, 0, 0); refresh(); };
+    const commit = (next) => { history.splice(cursor + 1); history.push(cloneDocument(next)); cursor++; redraw(); refresh(); };
+    const restore = () => { redraw(); refresh(); };
     const cancel = control("取消", () => { cursor = 0; restore(); this.dispatchEvent(new CustomEvent("image-cancel", { bubbles: true })); status.textContent = "已取消编辑，原图保持不变"; }, "取消");
     const undo = control("撤销", () => { if (cursor > 0) { cursor--; restore(); } }, "↶");
     const redo = control("重做", () => { if (cursor < history.length - 1) { cursor++; restore(); } }, "↷");
@@ -80,46 +145,45 @@ export class AppImageEditor extends StrictElement {
       panel.append(control("取消", close, "取消")); root.append(panel);
     };
     const done = control("完成", sheet, "完成"); done.classList.add("c-image-editor__done");
-    const choices = [["brush", "画笔", icon("edit")], ["emoji", "表情", icon("emoji")], ["text", "文字", "T"], ["crop", "裁剪", "⌗"], ["mosaic", "马赛克", "▦"]];
+    const choices = [["brush", "画笔", icon("edit")], ["emoji", "表情", icon("emoji")], ["text", "文字", "T"], ["crop", "裁剪", "⌗"], ["mosaic", "马赛克", "▦"], ["eraser", "橡皮擦", icon("eraser")]];
     for (const [id, label, glyph] of choices) {
       const item = control(label, () => {
-        tool = id; text.hidden = id !== "text"; emojis.hidden = id !== "emoji";
+        tool = id; text.hidden = id !== "text"; emojiPicker.hidden = id !== "emoji";
         for (const node of tools.children) node.setAttribute("aria-pressed", String(node === item));
-        status.textContent = id === "crop" ? "拖动选择保留区域" : id === "emoji" || id === "text" ? "点击图片放置" : "在图片上拖动绘制";
+        status.textContent = id === "crop" ? "拖动选择保留区域" : id === "emoji" ? "选择表情后点击图片放置" : id === "text" ? "点击图片放置" : id === "eraser" ? "轻触或拖动擦除编辑痕迹" : "在图片上拖动绘制";
       }, glyph);
       item.setAttribute("aria-pressed", String(id === tool)); tools.append(item);
     }
-    const point = (event) => { const rect = canvas.getBoundingClientRect(); return { x: Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * canvas.width / rect.width)), y: Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * canvas.height / rect.height)) }; };
+    const point = (event) => { const rect = canvas.getBoundingClientRect(), crop = history[cursor].crop; return { x: crop.x + Math.max(0, Math.min(canvas.width, (event.clientX - rect.left) * canvas.width / rect.width)), y: crop.y + Math.max(0, Math.min(canvas.height, (event.clientY - rect.top) * canvas.height / rect.height)) }; };
     canvas.addEventListener("pointerdown", (event) => {
       if (busy || state === "loading" || state === "error") return;
-      canvas.setPointerCapture(event.pointerId); stroke = point(event);
-      if (tool === "crop") crop = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.setPointerCapture(event.pointerId); stroke = [point(event)];
+      if (tool === "crop") selection = { start: stroke[0], end: stroke[0] };
       if (tool === "text" || tool === "emoji") {
-        const value = tool === "emoji" ? emojis.value : text.value.trim();
-        if (!value) { status.textContent = "请先输入文字"; stroke = null; return; }
-        ctx.font = `${tool === "emoji" ? 64 : 46}px sans-serif`; ctx.fillStyle = color.value; ctx.fillText(value, stroke.x, stroke.y); commit(); stroke = null;
+        const value = tool === "emoji" ? selectedEmoji : text.value.trim();
+        if (!value) { status.textContent = tool === "emoji" ? "请先选择表情" : "请先输入文字"; stroke = null; return; }
+        commit({ ...history[cursor], marks: [...history[cursor].marks, { kind: tool, points: stroke, value, color: color.value, width: Number(width.value) }] }); stroke = null;
       }
     });
     canvas.addEventListener("pointermove", (event) => {
       if (!stroke) return; const next = point(event);
-      if (tool === "crop") { ctx.putImageData(crop, 0, 0); ctx.strokeStyle = color.value; ctx.lineWidth = 3; ctx.strokeRect(stroke.x, stroke.y, next.x - stroke.x, next.y - stroke.y); return; }
-      if (tool === "mosaic") {
-        const size = 28, x = Math.min(canvas.width - 1, Math.floor(next.x / size) * size), y = Math.min(canvas.height - 1, Math.floor(next.y / size) * size);
-        const data = ctx.getImageData(x, y, 1, 1).data; ctx.fillStyle = `rgb(${data[0]} ${data[1]} ${data[2]})`; ctx.fillRect(x, y, size, size);
-      } else { ctx.strokeStyle = color.value; ctx.lineWidth = Number(width.value); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(stroke.x, stroke.y); ctx.lineTo(next.x, next.y); ctx.stroke(); }
-      stroke = next;
+      if (tool === "crop") { selection.end = next; redraw({ kind: "crop", ...selection }); return; }
+      stroke.push(next); redraw({ kind: tool, points: stroke, color: color.value, width: Number(width.value) });
     });
     canvas.addEventListener("pointerup", (event) => {
       if (!stroke) return;
       if (tool === "crop") {
-        const end = point(event), x = Math.floor(Math.min(stroke.x, end.x)), y = Math.floor(Math.min(stroke.y, end.y));
-        const w = Math.floor(Math.abs(end.x - stroke.x)), h = Math.floor(Math.abs(end.y - stroke.y)); ctx.putImageData(crop, 0, 0);
-        if (w > 8 && h > 8) { const data = ctx.getImageData(x, y, w, h); canvas.width = w; canvas.height = h; ctx.putImageData(data, 0, 0); }
+        const end = point(event), x = Math.floor(Math.min(stroke[0].x, end.x)), y = Math.floor(Math.min(stroke[0].y, end.y));
+        const w = Math.floor(Math.abs(end.x - stroke[0].x)), h = Math.floor(Math.abs(end.y - stroke[0].y));
+        if (w > 8 && h > 8) commit({ ...history[cursor], crop: { x, y, width: w, height: h } }); else redraw();
+      } else {
+        const end = point(event); if (stroke.at(-1).x !== end.x || stroke.at(-1).y !== end.y) stroke.push(end);
+        commit({ ...history[cursor], marks: [...history[cursor].marks, { kind: tool, points: stroke, color: color.value, width: Number(width.value) }] });
       }
-      stroke = null; crop = null; commit();
+      stroke = null; selection = null;
     });
-    canvas.addEventListener("pointercancel", () => { stroke = null; crop = null; restore(); });
-    settings.append(color, width, text, emojis); footer.append(settings, tools, done); viewport.append(canvas); root.append(header, viewport, status, footer); refresh();
+    canvas.addEventListener("pointercancel", () => { stroke = null; selection = null; restore(); });
+    settings.append(color, width, text, emojiPicker); footer.append(settings, tools, done); viewport.append(canvas); root.append(header, viewport, status, footer); redraw(); refresh();
     if (state === "loading" || state === "error") { canvas.hidden = true; status.textContent = state === "loading" ? "正在打开图片…" : "图片打开失败，请返回重试"; done.disabled = true; }
     if (state === "complete-sheet") sheet();
     return root;

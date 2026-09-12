@@ -45,7 +45,6 @@ import '../../ui/chat/latest_message_anchor.dart';
 import 'room_image_preview_cache.dart';
 import 'group_announcement_page.dart';
 import 'video_send_stage.dart';
-import 'prepared_chat_video.dart';
 import 'video_transcode.dart';
 import '../../ui/chat/message_action_sheet.dart' show MessageSelectionBar;
 import '../../ui/chat/wechat_attachment_tile.dart';
@@ -67,6 +66,7 @@ import '../transfer/chat_transfer_adapters.dart';
 import '../transfer/chat_transfer_controller.dart';
 import '../transfer/chat_transfer_sheet.dart';
 import 'matrix_e2ee_client.dart';
+import 'matrix_outgoing_work_coordinator.dart';
 import 'image_picker_page.dart';
 import 'gallery_media_payload.dart';
 import 'voice_recording_controller.dart';
@@ -1148,11 +1148,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
+    final timeline = controller;
     final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final captured = await service.captureToFile();
-      final timeline = controller;
-      if (captured == null || timeline == null || !mounted) return;
+      if (captured == null ||
+          timeline == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       await timeline.sendText('[图片消息]',
           kind: RoomMessageKind.image,
           mimeType: 'image/jpeg',
@@ -1163,7 +1170,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 final thumbnail = await buildChatImageThumbnail(bytes);
                 return _cacheSentImage(
                     bytes,
-                    matrix.sendEncryptedMedia(roomInfo.id, bytes, 'image/jpeg',
+                    matrix.sendEncryptedMedia(targetRoomId, bytes, 'image/jpeg',
                         txid: txid,
                         thumbnailBytes: thumbnail?.bytes,
                         thumbnailWidth: thumbnail?.width,
@@ -1177,14 +1184,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMedia({required bool image}) async {
+    final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
     final factory = widget.mediaSenderFactory;
     if (factory != null) {
-      final sender = factory(widget.roomLease);
+      final sender = factory(matrix);
       try {
         if (image) {
-          await sender.sendImage(roomInfo.id);
+          await sender.sendImage(targetRoomId);
         } else {
-          await sender.sendFile(roomInfo.id);
+          await sender.sendFile(targetRoomId);
         }
       } finally {
         await sender.dispose();
@@ -1195,26 +1204,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await _pickAndSendImages();
       return;
     }
-    final service = MediaMessageService(widget.roomLease, isGroup: isGroup);
+    final timeline = controller;
+    if (timeline == null) return;
+    final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final file = await service.pickFileForSend();
-      final timeline = controller;
-      if (file == null || timeline == null || !mounted) return;
+      if (file == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       await service.validateSelectedFile(file);
       final mime =
           file.mimeType == null || file.mimeType == 'application/octet-stream'
               ? mimeFromFileName(file.name)
               : file.mimeType!;
+      if (mime.startsWith('video/')) {
+        await matrix.enqueueVideoFile(
+          jobId: 'file-video-${DateTime.now().microsecondsSinceEpoch}',
+          video: MatrixOutgoingVideoFile(
+            id: file.path,
+            source: File(file.path),
+            filename: file.name,
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+          ),
+          targetRoomIds: [targetRoomId],
+        );
+        await timeline.showLatest();
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('正在发送');
+        }
+        return;
+      }
       await timeline.sendText(
         file.name,
-        kind: mime.startsWith('video/')
-            ? RoomMessageKind.video
-            : mime.startsWith('image/')
-                ? RoomMessageKind.image
-                : RoomMessageKind.file,
+        kind: mime.startsWith('image/')
+            ? RoomMessageKind.image
+            : RoomMessageKind.file,
         mimeType: mime,
         send: (txid) => _enqueueMedia(
-          () => service.sendSelectedFile(roomInfo.id, file, txid: txid),
+          () => service.sendSelectedFile(targetRoomId, file, txid: txid),
         ),
       );
     } on GroupVideoTooLargeException catch (error) {
@@ -1404,20 +1435,44 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
   Future<void> _pickAndSendImages() async {
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
+    final timeline = controller;
     final result = await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         builder: (_) => ImagePickerPage(isGroup: isGroup),
       ),
     ) as ({List<GalleryPhoto> photos, bool original})?;
-    if (result == null || result.photos.isEmpty) return;
-    final timeline = controller;
-    if (timeline == null || !mounted) return;
+    if (result == null ||
+        result.photos.isEmpty ||
+        timeline == null ||
+        !mounted ||
+        _disposing ||
+        !identical(widget.roomLease, matrix)) {
+      return;
+    }
     setState(() {
       composerPanel = ComposerPanel.none;
       mediaMessage = null;
     });
     final sends = <Future<void>>[];
+    final galleryVideos = <MatrixOutgoingVideoFileRequest>[];
     for (final photo in result.photos) {
+      final videoSource = photo.localVideoFile;
+      if (photo.isVideo && videoSource != null) {
+        galleryVideos.add(MatrixOutgoingVideoFileRequest(
+          jobId:
+              'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}',
+          video: MatrixOutgoingVideoFile(
+            id: photo.id,
+            resolveSource: videoSource,
+            filename: 'video.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+          ),
+          targetRoomIds: [targetRoomId],
+        ));
+        continue;
+      }
       sends.add(
         timeline.sendText(
           photo.isVideo ? '[视频消息]' : '[图片消息]',
@@ -1495,7 +1550,38 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
       );
     }
-    await Future.wait(sends);
+    if (galleryVideos.isNotEmpty) {
+      try {
+        await matrix.enqueueVideoFiles(requests: galleryVideos);
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          await timeline.showLatest();
+          _showMediaMessage('正在发送');
+        }
+      } on MatrixOutgoingWorkCapacityException {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('当前视频任务较多，请稍后重新选择');
+        }
+      } on StateError {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      } on ArgumentError {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      } catch (_) {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      }
+    }
+    try {
+      await Future.wait(sends);
+    } catch (_) {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('部分媒体发送准备失败，请重试');
+      }
+    }
   }
 
   Future<String> _cacheSentImage(
@@ -1525,52 +1611,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return task;
   }
 
-  /// Camera completion immediately prepares a bounded payload, then enqueues
-  /// the encrypted send. Validation failures do not create a broken retry echo.
+  /// Camera completion admits the controlled capture before compression. The
+  /// account owner continues preparation after this page is left.
   Future<void> _startVideoCapture() async {
     if (_capturingVideo) return;
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
     final timeline = controller;
-    if (timeline == null) return;
     final service = MediaMessageService(matrix, isGroup: isGroup);
     setState(() => _capturingVideo = true);
     String? capturePath;
+    var admitted = false;
     try {
       capturePath = await service.captureVideoToFile();
-      if (capturePath == null || !mounted || _disposing) return;
+      if (capturePath == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       _dismissComposerExtensions();
-      setState(() {
-        videoSend = const VideoSendState(phase: VideoSendPhase.transcoding);
-      });
-      final prepared = await prepareCapturedChatVideo(File(capturePath),
-          onProgress: (value) {
-        if (mounted && !_disposing) {
-          setState(() => videoSend = VideoSendState(
-              phase: VideoSendPhase.transcoding, progress: value));
-        }
-      });
-      if (!mounted || _disposing) return;
-      final posterDimensions = prepared.poster == null
-          ? null
-          : await decodeImageDimensions(prepared.poster!);
-      if (!mounted || _disposing) return;
-      setState(() {
-        videoSend = const VideoSendState(phase: VideoSendPhase.sendingEvent);
-      });
-      await timeline.sendText('[视频消息]',
-          kind: RoomMessageKind.video,
-          mimeType: 'video/mp4',
-          send: (txid) => _enqueueMedia(() => matrix.sendEncryptedMedia(
-              roomInfo.id, prepared.bytes, 'video/mp4',
-              txid: txid,
-              extraContent: prepared.durationMs == null
-                  ? null
-                  : {
-                      'info': {'duration': prepared.durationMs}
-                    },
-              thumbnailBytes: prepared.poster,
-              thumbnailWidth: posterDimensions?.$1,
-              thumbnailHeight: posterDimensions?.$2)));
+      final capture = File(capturePath);
+      await matrix.enqueueVideoFile(
+        jobId: 'capture-video-${DateTime.now().microsecondsSinceEpoch}',
+        video: MatrixOutgoingVideoFile(
+          id: capturePath,
+          source: capture,
+          filename: capture.uri.pathSegments.last,
+          body: '[视频消息]',
+          deleteSourceWhenDone: true,
+        ),
+        targetRoomIds: [targetRoomId],
+      );
+      admitted = true;
+      // This is a sender-originated item, so return the current room from an
+      // anchored older window to latest where its account pending bubble lives.
+      await timeline?.showLatest();
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('正在发送');
+      }
     } on GroupVideoTooLargeException catch (error) {
       if (mounted && !_disposing) _showMediaMessage(error.toString());
     } on VideoCompressionException catch (error) {
@@ -1580,7 +1659,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     } finally {
       // Covers navigation away while the system camera is still returning.
       try {
-        if (capturePath != null) {
+        if (!admitted && capturePath != null) {
           final capture = File(capturePath);
           if (await capture.exists()) await capture.delete();
         }
@@ -2613,11 +2692,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<bool> _forwardEditedImage(Uint8List bytes) async {
-    final destinations = await widget.roomLease.forwardingDestinations();
+    final matrix = widget.roomLease;
+    final destinations = await matrix.forwardingDestinations();
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return false;
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return false;
+    }
     final recent = RecentForwardStore(prefs);
-    final completed = <String>{};
     final transaction = 'image-edit-${DateTime.now().microsecondsSinceEpoch}';
     return await Navigator.of(context, rootNavigator: true).push<bool>(
           CupertinoPageRoute(
@@ -2635,17 +2716,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ],
               recentRoomIds: recent.load(),
               onForward: (ids) async {
-                for (final id in ids) {
-                  if (completed.contains(id)) continue;
-                  await widget.roomLease.sendEditedImageTo(
-                    id,
-                    bytes,
-                    transactionId:
-                        '$transaction-${destinations.indexWhere((room) => room.id == id)}',
-                  );
-                  completed.add(id);
-                }
-                await recent.record(ids);
+                await matrix.enqueuePreparedMedia(
+                  jobId: transaction,
+                  media: MatrixOutgoingPreparedMedia(
+                    id: transaction,
+                    bytes: bytes,
+                    mimeType: 'image/png',
+                    filename: '编辑图片.png',
+                    body: '[编辑图片]',
+                  ),
+                  targetRoomIds: ids,
+                );
+                unawaited(recent.record(ids).catchError((Object _) {}));
               },
             ),
           ),
@@ -3393,17 +3475,44 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     List<RoomMessageViewModel> messages, {
     String? selectedTextOverride,
   }) async {
-    final interaction = _interaction;
-    if (interaction == null) {
-      if (mounted) setState(() => mediaMessage = '转发服务尚未就绪，请稍后重试');
+    if (messages.isEmpty) return;
+    final matrix = widget.roomLease;
+    if (_disposing) return;
+    late final List<MatrixOutgoingForwardMessage> frozen;
+    try {
+      frozen = <MatrixOutgoingForwardMessage>[
+        for (var index = 0; index < messages.length; index++)
+          matrix.snapshotForwardSource(
+            messages[index].id,
+            selectedPlainText: selectedTextOverride != null && index == 0
+                ? selectedTextOverride
+                : null,
+          ),
+      ];
+    } on StateError {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('该消息暂时无法转发，请稍后重试');
+      }
+      return;
+    } on ArgumentError {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('该消息暂时无法转发，请稍后重试');
+      }
       return;
     }
+    if (selectedTextOverride != null && messages.length != 1) {
+      throw ArgumentError('A selected range must belong to one message');
+    }
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return;
+    }
     final store = RecentForwardStore(prefs);
     final recentIds = store.load();
-    final destinations = await widget.roomLease.forwardingDestinations();
-    if (!mounted) return;
+    final destinations = await matrix.forwardingDestinations();
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return;
+    }
     List<ChatForwardCandidate> candidates() => <ChatForwardCandidate>[
           for (final room in destinations)
             ChatForwardCandidate(
@@ -3418,7 +3527,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (mounted) setState(() => mediaMessage = '没有可用的端到端加密会话');
       return;
     }
-    final completed = <(String, String)>{};
+    final batchId = 'forward-${DateTime.now().microsecondsSinceEpoch}';
     final forwarded =
         await Navigator.of(context, rootNavigator: true).push<bool>(
       CupertinoPageRoute<bool>(
@@ -3445,26 +3554,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 if (destinations.any((room) => room.id == id)) id,
             ],
             onForward: (roomIds) async {
-              for (final roomId in roomIds) {
-                for (final message in messages) {
-                  if (completed.contains((message.id, roomId))) continue;
-                  if (selectedTextOverride != null) {
-                    await interaction.forwardText(selectedTextOverride, roomId);
-                  } else {
-                    await interaction.forward(message.id, roomId);
-                  }
-                  completed.add((message.id, roomId));
-                }
-              }
-              await store.record(roomIds);
+              await matrix.enqueueForward(
+                batchId: batchId,
+                messages: frozen,
+                targetRoomIds: roomIds,
+              );
+              unawaited(store.record(roomIds).catchError((Object _) {}));
             },
           ),
         ),
       ),
     );
-    if (!mounted || forwarded != true) return;
+    if (!mounted ||
+        _disposing ||
+        !identical(widget.roomLease, matrix) ||
+        forwarded != true) {
+      return;
+    }
     setState(() {
-      mediaMessage = '已转发';
+      mediaMessage = '正在发送';
       selection.exit();
     });
   }

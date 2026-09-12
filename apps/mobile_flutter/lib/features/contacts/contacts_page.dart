@@ -457,6 +457,7 @@ final class ContactProfilePage extends StatefulWidget {
 final class _ContactProfilePageState extends State<ContactProfilePage> {
   late ContactDetails contact = widget.initialContact;
   ContactSelection? _contactSelection;
+  var _presenceRequestGeneration = 0;
 
   @override
   void initState() {
@@ -471,27 +472,96 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   /// （404）保持隐藏状态行；失败静默保留现有内容。
   Future<void> _refreshPresence() async {
     final userId = contact.userId;
+    final requestSnapshot = contact;
+    final api = widget.api;
+    final identityCache = widget.identityCache;
+    final generation = ++_presenceRequestGeneration;
     try {
-      final fresh = await widget.api.fetchFriendDetail(userId);
-      if (!mounted || fresh == null || userId != contact.userId) return;
-      setState(() => contact = ContactDetails(
-            userId: fresh.userId,
-            username: fresh.username,
-            matrixUserId: fresh.matrixUserId,
-            nickname: fresh.nickname ?? contact.nickname,
-            remark: fresh.remark ?? contact.remark,
-            avatarUrl: fresh.avatarUrl ?? contact.avatarUrl,
-            avatarIsKnown: fresh.avatarIsKnown,
-            nudgeSuffix: fresh.nudgeSuffix,
-            momentsPermission: fresh.momentsPermission,
-            tags: fresh.tags,
-            starred: fresh.starred,
-            lastSeenAt: fresh.lastSeenAt,
-            lastSeenKnown: fresh.lastSeenKnown,
-          ));
+      final fresh = await api.fetchFriendDetail(userId);
+      if (!_isCurrentPresenceRequest(generation, api, identityCache, userId)) {
+        return;
+      }
+      if (fresh == null) {
+        await identityCache?.applyContactPresence(
+          userId,
+          lastSeenKnown: false,
+          lastSeenAt: null,
+        );
+        if (!_isCurrentPresenceRequest(
+            generation, api, identityCache, userId)) {
+          return;
+        }
+        final latest = identityCache?.contactsByUserId[userId]?.toDetails();
+        setState(() => contact = latest ??
+            contact.copyWith(
+              lastSeenKnown: false,
+              clearLastSeen: true,
+            ));
+        return;
+      }
+      if (fresh.userId != userId) return;
+      final current =
+          identityCache?.contactsByUserId[userId]?.toDetails() ?? contact;
+      final merged = _mergeAuthorizedDetail(requestSnapshot, current, fresh);
+      await identityCache?.applyUpdatedContact(merged.toSummary());
+      if (!_isCurrentPresenceRequest(generation, api, identityCache, userId)) {
+        return;
+      }
+      final latest = identityCache?.contactsByUserId[userId]?.toDetails();
+      setState(() => contact = latest ?? merged);
     } catch (_) {
       // 网络失败：保留入口携带的数据（通讯录路径仍有缓存值）。
     }
+  }
+
+  bool _isCurrentPresenceRequest(
+    int generation,
+    ContactsGateway api,
+    ProfileRepository? identityCache,
+    String userId,
+  ) =>
+      mounted &&
+      generation == _presenceRequestGeneration &&
+      identical(api, widget.api) &&
+      identical(identityCache, widget.identityCache) &&
+      userId == contact.userId;
+
+  ContactDetails _mergeAuthorizedDetail(
+    ContactDetails snapshot,
+    ContactDetails current,
+    ContactSummary fresh,
+  ) {
+    bool tagsEqual(List<String> a, List<String> b) =>
+        a.length == b.length &&
+        a.indexed.every((entry) => entry.$2 == b[entry.$1]);
+    final avatarChanged = snapshot.avatarUrl != current.avatarUrl ||
+        snapshot.avatarIsKnown != current.avatarIsKnown;
+    final useFreshPresence = fresh.lastSeenKnown;
+    return ContactDetails(
+      userId: current.userId,
+      username: fresh.username,
+      matrixUserId: fresh.matrixUserId,
+      nickname: snapshot.nickname == current.nickname
+          ? fresh.nickname
+          : current.nickname,
+      remark: snapshot.remark == current.remark ? fresh.remark : current.remark,
+      avatarUrl: avatarChanged || !fresh.avatarIsKnown
+          ? current.avatarUrl
+          : fresh.avatarUrl,
+      avatarIsKnown:
+          avatarChanged || !fresh.avatarIsKnown ? current.avatarIsKnown : true,
+      nudgeSuffix: snapshot.nudgeSuffix == current.nudgeSuffix
+          ? fresh.nudgeSuffix
+          : current.nudgeSuffix,
+      momentsPermission: snapshot.momentsPermission == current.momentsPermission
+          ? fresh.momentsPermission
+          : current.momentsPermission,
+      tags: tagsEqual(snapshot.tags, current.tags) ? fresh.tags : current.tags,
+      starred:
+          snapshot.starred == current.starred ? fresh.starred : current.starred,
+      lastSeenAt: useFreshPresence ? fresh.lastSeenAt : current.lastSeenAt,
+      lastSeenKnown: useFreshPresence ? true : current.lastSeenKnown,
+    );
   }
 
   void _bindIdentity() {
@@ -516,16 +586,23 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     final contactChanged =
         oldWidget.initialContact.userId != widget.initialContact.userId;
     final repositoryChanged = oldWidget.identityCache != widget.identityCache;
+    final apiChanged = oldWidget.api != widget.api;
     if (contactChanged || repositoryChanged) contact = widget.initialContact;
+    if (repositoryChanged || contactChanged || apiChanged) {
+      _presenceRequestGeneration++;
+    }
     if (repositoryChanged || contactChanged) {
       _bindIdentity();
       _readIdentity();
-      if (contactChanged) unawaited(_refreshPresence());
+    }
+    if (repositoryChanged || contactChanged || apiChanged) {
+      unawaited(_refreshPresence());
     }
   }
 
   @override
   void dispose() {
+    _presenceRequestGeneration++;
     _contactSelection?.removeListener(_identityChanged);
     _contactSelection?.dispose();
     super.dispose();

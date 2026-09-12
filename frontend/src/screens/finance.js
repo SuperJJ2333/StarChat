@@ -87,6 +87,7 @@ function ledger(definition) {
   root.append(header);
   const content = element("div", "p-finance__content");
   const filters = element("form", "c-ledger-filter");
+  filters.dataset.testid = "ledger-filter-bar";
   const kind = element("select", "c-ledger-filter__control");
   kind.setAttribute("aria-label", "流水类型");
   for (const label of ["全部", "红包", "转账", "提现", "充值", "其他"]) {
@@ -95,14 +96,20 @@ function ledger(definition) {
     option.selected = definition.state === "filtered" && label === "转账";
     kind.append(option);
   }
+  kind.dataset.testid = "ledger-kind-all";
   const start = element("input", "c-ledger-filter__control");
   start.type = "date"; start.value = definition.state === "filtered" ? "2026-09-10" : ""; start.setAttribute("aria-label", "开始日期");
+  start.dataset.testid = "ledger-start-date";
   const end = element("input", "c-ledger-filter__control");
   end.type = "date"; end.value = definition.state === "filtered" ? "2026-09-12" : ""; end.setAttribute("aria-label", "结束日期（包含当天）");
-  const query = element("input", "c-ledger-filter__control");
+  end.dataset.testid = "ledger-end-date";
+  const query = element("input", "c-ledger-filter__control c-ledger-filter__search");
   query.type = "search"; query.value = definition.state === "filtered" || definition.state === "search" ? "周然" : ""; query.placeholder = "搜索说明或业务编号"; query.setAttribute("aria-label", "账单搜索");
+  query.placeholder = "搜索账单";
   const apply = ledgerButton("筛选", "ledger:apply");
-  filters.append(kind, start, end, query, apply);
+  const compact = element("div", "c-ledger-filter__compact");
+  compact.append(kind, start, end, apply);
+  filters.append(query, compact);
   content.append(filters);
   const results = element("section", "c-ledger-results");
   content.append(results);
@@ -133,10 +140,20 @@ function ledger(definition) {
       reset.addEventListener("click", () => { kind.value = "全部"; start.value = ""; end.value = ""; query.value = ""; page = 1; mode = "all"; render(); });
       results.append(component("app-empty-state", { title: "暂无点钻流水", message: "调整日期、类型或关键词后重试" }), reset); return;
     }
+    let month = null;
+    const icons = { 红包: "gift", 转账: "send", 提现: "upload", 充值: "download", 其他: "more" };
     for (const row of matched.slice(0, page * pageSize)) {
+      const rowMonth = row.subtitle.slice(0, 7);
+      if (rowMonth !== month) {
+        month = rowMonth;
+        const heading = element("h2", "c-ledger-month", `${month.replace("-", "年")}月`); heading.dataset.testid = `ledger-month-${month}`; results.append(heading);
+      }
       const item = button("c-ledger-row", `${row.title} ${row.amount}`, "ledger:detail");
       item.dataset.transactionId = row.id;
-      item.append(element("span", "c-ledger-row__title", row.title), element("span", "c-ledger-row__subtitle", row.subtitle), element("strong", "c-ledger-row__amount", row.amount));
+      item.dataset.testid = `ledger-row-${row.id}`;
+      const rowIcon = icon(icons[row.kind] ?? "more", "c-ledger-row__icon"); rowIcon.dataset.testid = `ledger-row-icon-${row.id}`;
+      const amount = element("strong", "c-ledger-row__amount", row.amount); amount.dataset.testid = `ledger-amount-${row.id}`;
+      item.append(rowIcon, element("span", "c-ledger-row__title", row.title), element("span", "c-ledger-row__subtitle", row.subtitle), amount);
       item.addEventListener("click", () => { selected = row; render(); });
       results.append(item);
     }

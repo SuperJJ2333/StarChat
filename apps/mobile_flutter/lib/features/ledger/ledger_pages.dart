@@ -18,6 +18,20 @@ const _kinds = <String?, String>{
   'other': '其他',
 };
 
+sealed class _LedgerListEntry {
+  const _LedgerListEntry();
+}
+
+final class _LedgerMonthEntry extends _LedgerListEntry {
+  const _LedgerMonthEntry(this.month);
+  final String month;
+}
+
+final class _LedgerRowEntry extends _LedgerListEntry {
+  const _LedgerRowEntry(this.row);
+  final Map<String, dynamic> row;
+}
+
 String formatLedgerAmount(Object? value) {
   if (value is! String || value.isEmpty) return '--';
   final match = RegExp(r'^([+-]?)(\d+)(?:\.(\d{1,2}))?$').firstMatch(value);
@@ -48,16 +62,18 @@ String ledgerDisplayDescription(Map<String, dynamic> data) {
 }
 
 String _time(Object? value) {
-  final date = switch (value) {
-    DateTime() => value,
-    String() => DateTime.tryParse(value)?.toLocal(),
-    _ => null,
-  };
+  final date = _localDate(value);
   if (date == null) return '--';
   String two(int part) => part.toString().padLeft(2, '0');
   return '${date.year}-${two(date.month)}-${two(date.day)} '
       '${two(date.hour)}:${two(date.minute)}:${two(date.second)}';
 }
+
+DateTime? _localDate(Object? value) => switch (value) {
+      DateTime() => value.toLocal(),
+      String() => DateTime.tryParse(value)?.toLocal(),
+      _ => null,
+    };
 
 String _transferStatus(Object? value) => switch (value) {
       'ACCEPTED' => '已收款',
@@ -120,43 +136,57 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                   Expanded(child: _body()),
                 ])),
       );
-  Widget _filters() => Padding(
-        padding: const EdgeInsets.all(WeChatSpacing.md),
-        child: Column(children: [
-          CupertinoSearchTextField(
-              controller: _search,
-              onChanged: _controller.search,
-              placeholder: '搜索账单'),
-          const SizedBox(height: WeChatSpacing.sm),
-          Row(children: [
-            Expanded(child: _dateButton(false)),
-            Expanded(child: _dateButton(true)),
-            CupertinoButton(
-                key: const Key('ledger-clear-date'),
-                padding: EdgeInsets.zero,
-                onPressed: () => _controller.setDateRange(null, null),
-                child: const Icon(CupertinoIcons.clear)),
-          ]),
-          SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                  children: _kinds.entries
-                      .map((entry) => Padding(
-                            padding:
-                                const EdgeInsets.only(right: WeChatSpacing.xs),
-                            child: CupertinoButton(
-                                key: Key('ledger-kind-${entry.value}'),
-                                color: _controller.kind == entry.key
-                                    ? WeChatColors.brandPrimary
-                                    : null,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10),
-                                onPressed: () => _controller.setKind(entry.key),
-                                child: Text(entry.value)),
-                          ))
-                      .toList())),
+  Widget _filters() {
+    final isDark = CupertinoTheme.of(context).brightness == Brightness.dark;
+    return Padding(
+      key: const Key('ledger-filter-bar'),
+      padding: const EdgeInsets.fromLTRB(WeChatSpacing.md, WeChatSpacing.sm,
+          WeChatSpacing.md, WeChatSpacing.sm),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        CupertinoSearchTextField(
+            controller: _search,
+            onChanged: _controller.search,
+            placeholder: '搜索账单'),
+        const SizedBox(height: WeChatSpacing.sm),
+        Row(children: [
+          Expanded(child: _dateButton(false)),
+          const SizedBox(width: WeChatSpacing.xs),
+          Expanded(child: _dateButton(true)),
+          CupertinoButton(
+              key: const Key('ledger-clear-date'),
+              padding: EdgeInsets.zero,
+              onPressed: () => _controller.setDateRange(null, null),
+              child: const Icon(CupertinoIcons.clear)),
         ]),
-      );
+        SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+                children: _kinds.entries
+                    .map((entry) => Padding(
+                          padding:
+                              const EdgeInsets.only(right: WeChatSpacing.xs),
+                          child: CupertinoButton(
+                              key: Key('ledger-kind-${entry.value}'),
+                              color: _controller.kind == entry.key
+                                  ? WeChatColors.brandPrimary
+                                  : isDark
+                                      ? WeChatColors.darkElevated
+                                      : WeChatColors.lightElevated,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              onPressed: () => _controller.setKind(entry.key),
+                              child: Text(entry.value,
+                                  style: TextStyle(
+                                      color: _controller.kind == entry.key
+                                          ? CupertinoColors.white
+                                          : WeChatColors.resolveTextPrimary(
+                                              context)))),
+                        ))
+                    .toList())),
+      ]),
+    );
+  }
+
   Widget _dateButton(bool isEnd) {
     final date = isEnd ? _controller.endAt : _controller.startAt;
     final shown = isEnd && date != null
@@ -178,41 +208,142 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       return const Center(child: Text('暂无点钻流水'));
     }
     final rows = _controller.items;
+    final entries = <_LedgerListEntry>[];
+    String? previousMonth;
+    for (final row in rows) {
+      final month = _monthKey(row['created_at']);
+      if (month != previousMonth) {
+        entries.add(_LedgerMonthEntry(month));
+        previousMonth = month;
+      }
+      entries.add(_LedgerRowEntry(row));
+    }
     return ListView.builder(
         controller: _scroll,
-        itemCount: rows.length + 1,
+        padding: const EdgeInsets.only(bottom: WeChatSpacing.lg),
+        itemCount: entries.length + 1,
         itemBuilder: (context, index) {
-          if (index == rows.length) return _tail();
-          return _row(rows[index]);
+          if (index == entries.length) return _tail();
+          return switch (entries[index]) {
+            _LedgerMonthEntry(:final month) => _monthDivider(month),
+            _LedgerRowEntry(:final row) => _row(row),
+          };
         });
   }
 
-  Widget _row(Map<String, dynamic> row) => CupertinoButton(
+  Widget _monthDivider(String month) => Container(
+        key: Key('ledger-month-$month'),
+        color: CupertinoTheme.of(context).brightness == Brightness.dark
+            ? WeChatColors.darkSurface
+            : WeChatColors.lightSurface,
+        padding: const EdgeInsets.fromLTRB(WeChatSpacing.lg, WeChatSpacing.md,
+            WeChatSpacing.lg, WeChatSpacing.xs),
+        child: Text(_monthLabel(month),
+            style: const TextStyle(
+                color: WeChatColors.textSecondary,
+                fontSize: WeChatTypography.caption,
+                fontWeight: FontWeight.w600)),
+      );
+
+  Widget _row(Map<String, dynamic> row) {
+    final id = row['id'] as String;
+    final brightness = CupertinoTheme.of(context).brightness;
+    return CupertinoButton(
+      key: Key('ledger-row-$id'),
+      padding: EdgeInsets.zero,
+      onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+          builder: (_) => LedgerDetailPage(
+              gateway: widget.gateway, transactionId: id, fromList: true))),
+      child: Container(
+        color: brightness == Brightness.dark
+            ? WeChatColors.darkElevated
+            : WeChatColors.lightElevated,
         padding: const EdgeInsets.symmetric(
             horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
-        onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
-            builder: (_) => LedgerDetailPage(
-                gateway: widget.gateway,
-                transactionId: row['id'] as String,
-                fromList: true))),
-        child: Row(children: [
+        foregroundDecoration: BoxDecoration(
+            border: Border(
+                bottom: BorderSide(
+                    color: brightness == Brightness.dark
+                        ? WeChatColors.darkDivider
+                        : WeChatColors.divider))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Container(
+            key: Key('ledger-row-icon-$id'),
+            width: WeChatDimensions.contactAvatar,
+            height: WeChatDimensions.contactAvatar,
+            decoration: BoxDecoration(
+              color: _kindColor(row['kind']),
+              borderRadius: BorderRadius.circular(WeChatRadius.redPacket),
+            ),
+            child: Icon(_kindIcon(row['kind']),
+                size: WeChatTypography.actionButtonIcon,
+                color: CupertinoColors.white),
+          ),
+          const SizedBox(width: WeChatSpacing.md),
           Expanded(
               child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(
-                    '${_kinds[row['kind']] ?? '其他'}  ${ledgerDisplayDescription(row)}'),
+                Text(ledgerDisplayDescription(row),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: WeChatColors.resolveTextPrimary(context),
+                        fontSize: WeChatTypography.body,
+                        fontWeight: FontWeight.w600)),
                 const SizedBox(height: WeChatSpacing.xs),
                 Text(_time(row['created_at']),
-                    style: const TextStyle(color: WeChatColors.textSecondary)),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: WeChatColors.textSecondary,
+                        fontSize: WeChatTypography.caption)),
               ])),
-          Flexible(
-              child: Text(formatLedgerAmount(row['amount']),
-                  maxLines: 1, overflow: TextOverflow.ellipsis)),
           const SizedBox(width: WeChatSpacing.sm),
-          const Icon(CupertinoIcons.chevron_forward, size: 16),
+          Flexible(
+              flex: 2,
+              child: Text(formatLedgerAmount(row['amount']),
+                  key: Key('ledger-amount-$id'),
+                  softWrap: true,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                      color: WeChatColors.resolveTextPrimary(context),
+                      fontSize: WeChatTypography.callout,
+                      fontWeight: FontWeight.w700))),
         ]),
-      );
+      ),
+    );
+  }
+
+  String _monthKey(Object? value) {
+    final date = _localDate(value);
+    if (date == null) return 'unknown';
+    String two(int part) => part.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}';
+  }
+
+  String _monthLabel(String month) {
+    if (month == 'unknown') return '日期未知';
+    final parts = month.split('-');
+    return '${parts[0]}年${int.parse(parts[1])}月';
+  }
+
+  IconData _kindIcon(Object? kind) => switch (kind) {
+        'redpacket' => CupertinoIcons.gift,
+        'transfer' => CupertinoIcons.arrow_down_right_arrow_up_left,
+        'withdrawal' => CupertinoIcons.arrow_up_right,
+        'deposit' => CupertinoIcons.arrow_down_left,
+        _ => CupertinoIcons.doc_text,
+      };
+
+  Color _kindColor(Object? kind) => switch (kind) {
+        'redpacket' => CupertinoColors.systemRed,
+        'transfer' => CupertinoColors.systemBlue,
+        'withdrawal' => CupertinoColors.systemOrange,
+        'deposit' => CupertinoColors.systemGreen,
+        _ => CupertinoColors.systemGrey,
+      };
   Widget _tail() {
     if (_controller.loadingMore) {
       return const Padding(

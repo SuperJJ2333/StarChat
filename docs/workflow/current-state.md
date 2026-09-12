@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-12 媒体交互、访问时间与加载检查（Debug2094已安装，待用户验收）
+
+工作树`.worktrees/offline12`分支`codex/media-interactions-20260912`基线aac3d806：最近访问缓存/刷新、图片编辑emoji与独立橡皮擦、视频/转发账号后台任务、现有点钻流水布局已由显式gpt-5.6-terra实施并经Astra亲审。2026-09-12 17:14:47+08，Mi6实际覆盖安装0.3.87-debug/2094，拉回SHA `3a15b4aa…a8bffaf`、固定证书与交付包匹配；用户功能与性能待验收。Flutter2535pass/29既有失败、mobile67pass/3既有失败、frontend161pass/11既有失败，analyze/UI契约通过；verify缺.env阻断。没有push/生产发布。进入[任务记录](tasks/2026-09-12-media-interactions.md)或[修复与交付报告](../verification/2026-09-12-media-interactions.md)继续，避免重做已完成批次。
+
 更新日期：2026-09-10（Asia/Hong_Kong）。这里只是最近证据索引；部署前必须重新读取生产，不能把此文件当实时状态。每个任务拥有独立记录，新增任务不要覆盖其他任务条目。
 
 | 事项 | 最近已确认状态 | 证据/下一步 |

@@ -1,4 +1,5 @@
 import 'matrix_room_display_name.dart' as room_names;
+import 'matrix_outgoing_work_coordinator.dart';
 import 'conversation_read_state.dart';
 export 'matrix_room_timeline_adapter.dart' show changliaoRedPacketMessageType;
 import 'call_diagnostics.dart';
@@ -12,6 +13,7 @@ import '../../core/notification/notification_coordinator.dart';
 import 'group_invitation_auto_join.dart';
 import 'direct_invitation_auto_join.dart';
 import 'dart:convert';
+import 'dart:io';
 import 'emoji_preview_cache.dart';
 import 'group_room_authority.dart';
 import 'group_announcement_service.dart';
@@ -24,6 +26,8 @@ import 'video_transcode.dart'
         validateGroupVideoSize,
         maxOriginalVideoBytes,
         GroupVideoTooLargeException;
+import 'prepared_chat_video.dart';
+import 'media_thumbnail.dart' show decodeImageDimensions;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:matrix/matrix.dart';
@@ -56,6 +60,11 @@ import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
+
+const _maxFileSendBytes = 100 * 1024 * 1024;
+const _maxOutgoingVideoPosterBytes = 512 * 1024;
+const _maxOutgoingVideoReservationBytes =
+    maxOriginalVideoBytes + _maxOutgoingVideoPosterBytes;
 
 /// Matrix is the encrypted communications domain. This interface never sends message plaintext or recovery keys to the business API.
 abstract interface class MatrixSessionGateway {
@@ -1101,7 +1110,7 @@ final class MatrixRoomLease
   }) =>
       _withLeaseOperation((room) async {
         final timeline = await room.getTimeline(onUpdate: onUpdate);
-        final capability = _SdkRoomTimelineCapability(this, timeline);
+        final capability = _SdkRoomTimelineCapability(this, timeline, onUpdate);
         _timelines.add(capability);
         return capability;
       });
@@ -1166,6 +1175,54 @@ final class MatrixRoomLease
               ),
         ];
       });
+
+  /// Captures this lease's active account before page-owned picker/camera work
+  /// returns. The owner later continues independently only after admission.
+  _OutgoingSession _outgoingSessionFor(Room room) {
+    if (canceled) throw StateError('Matrix room lease is not active');
+    final session = owner._captureOutgoingSession();
+    if (!identical(room.client, session.client)) {
+      throw StateError('Matrix room lease client mismatch');
+    }
+    return session;
+  }
+
+  Future<MatrixOutgoingWorkJob> enqueueVideoFile(
+          {required String jobId,
+          required MatrixOutgoingVideoFile video,
+          required List<String> targetRoomIds}) =>
+      owner._enqueueVideoFile(
+          jobId: jobId,
+          video: video,
+          targetRoomIds: targetRoomIds,
+          session: _outgoingSessionFor(_activeRoom));
+
+  /// Atomically accepts lightweight gallery-video handles for this lease. The
+  /// owner resolves and prepares each handle later under its bounded budget.
+  Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles(
+          {required List<MatrixOutgoingVideoFileRequest> requests}) =>
+      owner._enqueueVideoFiles(
+          requests: requests, session: _outgoingSessionFor(_activeRoom));
+
+  Future<MatrixOutgoingWorkJob> enqueuePreparedMedia(
+          {required String jobId,
+          required MatrixOutgoingPreparedMedia media,
+          required List<String> targetRoomIds}) =>
+      owner._enqueuePreparedMedia(
+          jobId: jobId,
+          media: media,
+          targetRoomIds: targetRoomIds,
+          session: _outgoingSessionFor(_activeRoom));
+
+  Future<List<MatrixOutgoingWorkJob>> enqueueForward(
+          {required String batchId,
+          required List<MatrixOutgoingForwardMessage> messages,
+          required List<String> targetRoomIds}) =>
+      owner._enqueueForward(
+          batchId: batchId,
+          messages: messages,
+          targetRoomIds: targetRoomIds,
+          session: _outgoingSessionFor(_activeRoom));
 
   GroupAnnouncementService openAnnouncementService() =>
       _LeaseAnnouncementService(this);
@@ -1443,6 +1500,67 @@ final class MatrixRoomLease
     throw StateError('Matrix timeline event is unavailable');
   }
 
+  /// Freezes a selected timeline message while the lease still owns the SDK
+  /// event. The returned source is route-independent and may only be admitted
+  /// through [enqueueForward] before this lease is released.
+  MatrixOutgoingForwardMessage snapshotForwardSource(
+    String eventId, {
+    String? selectedPlainText,
+  }) {
+    if (canceled) throw StateError('Matrix room lease is not active');
+    final event = _eventForInteraction(eventId);
+    if (event.roomId != null && event.roomId != roomId) {
+      throw StateError('消息不属于当前会话');
+    }
+    if (event.messageType == MessageTypes.Text) {
+      return MatrixOutgoingForwardText(
+        id: event.eventId,
+        body: selectedPlainText ?? event.body,
+        format: selectedPlainText == null
+            ? event.content['format']?.toString()
+            : null,
+        formattedBody: selectedPlainText == null
+            ? event.content['formatted_body']?.toString()
+            : null,
+      );
+    }
+    if (!{
+      MessageTypes.Image,
+      MessageTypes.File,
+      MessageTypes.Audio,
+      MessageTypes.Video,
+    }.contains(event.messageType)) {
+      throw StateError('该消息类型不能转发');
+    }
+    final info = event.content['info'] is Map
+        ? event.content['info'] as Map
+        : const <String, dynamic>{};
+    final mimeType = info['mimetype']?.toString() ??
+        switch (event.messageType) {
+          MessageTypes.Video => 'video/mp4',
+          MessageTypes.Audio => 'audio/mp4',
+          MessageTypes.Image => 'image/jpeg',
+          _ => 'application/octet-stream',
+        };
+    final hashes = TrustedMediaHashes.fromEvent(event);
+    return MatrixOutgoingForwardMedia._(
+      id: event.eventId,
+      sourceRoomId: roomId,
+      sourceEventId: event.eventId,
+      sourceAccountId: _activeRoom.client.userID ?? '',
+      sourceClient: _activeRoom.client,
+      body: event.body,
+      mimeType: mimeType,
+      filename: event.body,
+      content: event.content,
+      wasEncrypted: event.originalSource?.type == EventTypes.Encrypted,
+      senderId: event.senderId,
+      originServerTs: event.originServerTs,
+      contentSha256: hashes?.contentSha256,
+      thumbnailSha256: hashes?.thumbnailSha256,
+    );
+  }
+
   @override
   Future<void> attach(Client client) async {
     if (canceled) return;
@@ -1563,11 +1681,22 @@ final class _SdkRoomTimelineCapability
         RoomTimelineCapability,
         RoomHistoryStatus,
         RoomWindowedTimelineSource {
-  _SdkRoomTimelineCapability(this._lease, this._timeline);
+  _SdkRoomTimelineCapability(this._lease, this._timeline, this._onUpdate) {
+    _outgoingListener = () {
+      if (!_disposed) _onUpdate();
+    };
+    _outgoingWork = _lease.owner.outgoingWork;
+    _outgoingWork.addListener(_outgoingListener);
+  }
 
   final MatrixRoomLease _lease;
   final Timeline _timeline;
+  final void Function() _onUpdate;
+  late final VoidCallback _outgoingListener;
+  late final MatrixOutgoingWorkCoordinator _outgoingWork;
   final Set<String> _retrying = {};
+  final List<MatrixOutgoingWorkEcho> _pendingEchoAcknowledgements = [];
+  bool _echoAcknowledgementScheduled = false;
   bool _disposed = false;
   final _messageCache =
       <String, (Event, EventStatus, Object?, String?, RoomMessageViewModel)>{};
@@ -1745,7 +1874,10 @@ final class _SdkRoomTimelineCapability
     _ensureActive();
     if (_viewport != null) {
       _refreshWindowSource();
-      return _viewport!.snapshot();
+      // A background item belongs to the newest conversation state. It must
+      // not appear in the middle of an anchored older history window.
+      return _mergeAccountOutgoingWork(_viewport!.snapshot(),
+          includePending: !_viewport!.hasLater);
     }
     List<RoomMessageViewModel>? changed;
     var index = 0;
@@ -1825,14 +1957,15 @@ final class _SdkRoomTimelineCapability
           : List.unmodifiable(
               mergeNoticesIntoTimeline(_projectedMessages, notices));
     }
+    final projected = _mergeAccountOutgoingWork(_withNotices);
     final store = _lease.owner._localHistoryStore;
-    if (store == null) return _withNotices;
+    if (store == null) return projected;
     // Re-check visibility every time so locally deleted/cleared rows never
     // return from the projection cache. Allocate only when visible rows change.
     final hidden = store.readFilter(_lease.roomId);
     List<RoomMessageViewModel>? visible;
     var visibleIndex = 0;
-    for (final message in _withNotices) {
+    for (final message in projected) {
       if (hidden(message.id, message.timestamp)) continue;
       if (visible == null &&
           (visibleIndex >= _visibleMessages.length ||
@@ -1847,6 +1980,121 @@ final class _SdkRoomTimelineCapability
     }
     if (visible != null) _visibleMessages = List.unmodifiable(visible);
     return _visibleMessages;
+  }
+
+  List<RoomMessageViewModel> _mergeAccountOutgoingWork(
+      List<RoomMessageViewModel> timelineMessages,
+      {bool includePending = true}) {
+    final work = _outgoingWork;
+    final outgoing = work.itemsForRoom(_lease.roomId);
+    if (outgoing.isEmpty) return timelineMessages;
+    _deferMatchingOutgoingEchoAcknowledgements(outgoing);
+    if (!includePending) return timelineMessages;
+    final pending = <(MatrixOutgoingWorkItem, RoomMessageViewModel)>[
+      for (final item in outgoing)
+        (
+          item,
+          RoomMessageViewModel(
+            id: 'outgoing:${item.txid}',
+            transactionId: item.txid,
+            senderId: _lease._activeRoom.client.userID ?? '',
+            text: item.presentation.text,
+            isOwn: true,
+            deliveryState: item.state == MatrixOutgoingWorkState.failed
+                ? RoomDeliveryState.failed
+                : RoomDeliveryState.sending,
+            timestamp: item.presentation.createdAt,
+            kind: switch (item.presentation.kind) {
+              MatrixOutgoingPresentationKind.image => RoomMessageKind.image,
+              MatrixOutgoingPresentationKind.video => RoomMessageKind.video,
+              MatrixOutgoingPresentationKind.voice => RoomMessageKind.voice,
+              MatrixOutgoingPresentationKind.file => RoomMessageKind.file,
+              MatrixOutgoingPresentationKind.text => RoomMessageKind.text,
+            },
+            mimeType: item.presentation.mimeType,
+            voiceDuration:
+                item.presentation.voiceDuration ?? const Duration(seconds: 1),
+          ),
+        ),
+    ];
+    if (pending.isEmpty) return timelineMessages;
+    final existingIds = <String>{
+      for (final message in timelineMessages) message.id,
+    };
+    final existingTransactions = <String>{
+      for (final message in timelineMessages)
+        if (message.transactionId != null) message.transactionId!,
+    };
+    final additions = <RoomMessageViewModel>[];
+    for (final (item, message) in pending) {
+      if (existingTransactions.contains(message.transactionId) ||
+          existingIds.contains(message.id) ||
+          (item.eventId != null && existingIds.contains(item.eventId))) {
+        continue;
+      }
+      additions.add(message);
+    }
+    if (additions.isEmpty) return timelineMessages;
+    additions.sort((left, right) {
+      final time = left.timestamp.compareTo(right.timestamp);
+      return time != 0 ? time : left.id.compareTo(right.id);
+    });
+    final merged = <RoomMessageViewModel>[];
+    var additionIndex = 0;
+    for (final message in timelineMessages) {
+      while (additionIndex < additions.length &&
+          !additions[additionIndex].timestamp.isAfter(message.timestamp)) {
+        merged.add(additions[additionIndex++]);
+      }
+      merged.add(message);
+    }
+    merged.addAll(additions.skip(additionIndex));
+    return List.unmodifiable(merged);
+  }
+
+  /// A snapshot must have no coordinator side effects: a listener can ask for
+  /// another snapshot immediately. Restrict the history pass to identifiers
+  /// held by sent work, then acknowledge its matches after this stack unwinds.
+  void _deferMatchingOutgoingEchoAcknowledgements(
+      List<MatrixOutgoingWorkItem> outgoing) {
+    final eventIds = <String>{
+      for (final item in outgoing)
+        if (item.state == MatrixOutgoingWorkState.sent && item.eventId != null)
+          item.eventId!,
+    };
+    final transactionIds = <String>{
+      for (final item in outgoing)
+        if (item.state == MatrixOutgoingWorkState.sent) item.txid,
+    };
+    if (eventIds.isEmpty && transactionIds.isEmpty) return;
+
+    for (final event in _timeline.events) {
+      if (!event.status.isSynced) continue;
+      final transactionId = event.unsigned?['transaction_id'] as String?;
+      if (!eventIds.contains(event.eventId) &&
+          (transactionId == null || !transactionIds.contains(transactionId))) {
+        continue;
+      }
+      _pendingEchoAcknowledgements.add(MatrixOutgoingWorkEcho(
+        eventId: event.eventId,
+        transactionId: transactionId,
+      ));
+    }
+    if (_pendingEchoAcknowledgements.isEmpty || _echoAcknowledgementScheduled) {
+      return;
+    }
+    _echoAcknowledgementScheduled = true;
+    scheduleMicrotask(() {
+      _echoAcknowledgementScheduled = false;
+      if (_disposed) {
+        _pendingEchoAcknowledgements.clear();
+        return;
+      }
+      final acknowledgements =
+          List<MatrixOutgoingWorkEcho>.of(_pendingEchoAcknowledgements);
+      _pendingEchoAcknowledgements.clear();
+      _outgoingWork.acknowledgeEchoes(acknowledgements);
+    });
   }
 
   RoomMessageViewModel _message(Event event) {
@@ -2004,6 +2252,7 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<void> retry(String transactionId) => _withOperation(() async {
+        if (await _outgoingWork.retryTransaction(transactionId)) return;
         if (!_retrying.add(transactionId)) return;
         try {
           final matches = _timeline.events.where(
@@ -2066,6 +2315,7 @@ final class _SdkRoomTimelineCapability
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _outgoingWork.removeListener(_outgoingListener);
     _timeline.cancelSubscriptions();
     _lease._timelines.remove(this);
   }
@@ -2878,6 +3128,455 @@ final class _ConversationMemberProjection {
   bool dirty = false;
 }
 
+/// Frozen plaintext forwarding snapshot. The owner copies these scalar fields
+/// before admission so later selection or SDK Event map mutations cannot alter
+/// the queued payload.
+sealed class MatrixOutgoingForwardMessage {
+  const MatrixOutgoingForwardMessage();
+  String get id;
+}
+
+final class MatrixOutgoingForwardText extends MatrixOutgoingForwardMessage {
+  MatrixOutgoingForwardText({
+    required this.id,
+    required this.body,
+    this.format,
+    this.formattedBody,
+  });
+
+  @override
+  final String id;
+  final String body;
+  final String? format;
+  final String? formattedBody;
+}
+
+/// A frozen existing attachment. Its source event is reconstructed from these
+/// immutable facts after batch admission, so page/lease lifetime never owns a
+/// download, decrypt, upload, or retry.
+final class MatrixOutgoingForwardMedia extends MatrixOutgoingForwardMessage {
+  MatrixOutgoingForwardMedia._({
+    required this.id,
+    required this.sourceRoomId,
+    required this.sourceEventId,
+    required this.sourceAccountId,
+    required this.sourceClient,
+    required this.body,
+    required this.mimeType,
+    required this.filename,
+    required Map<String, dynamic> content,
+    required this.wasEncrypted,
+    required this.senderId,
+    required this.originServerTs,
+    this.contentSha256,
+    this.thumbnailSha256,
+  }) : _content = _freezeJsonMap(content);
+
+  @override
+  final String id;
+  final String sourceRoomId;
+  final String sourceEventId;
+  final String sourceAccountId;
+  final Client sourceClient;
+  final String body;
+  final String mimeType;
+  final String filename;
+  final bool wasEncrypted;
+  final String senderId;
+  final DateTime originServerTs;
+  final String? contentSha256;
+  final String? thumbnailSha256;
+  final Map<String, dynamic> _content;
+
+  Map<String, dynamic> content() => _mutableJsonMap(_content);
+  Map<String, dynamic> get extraContent => _content['info'] is Map
+      ? {'info': _mutableJson(_content['info'])}
+      : const {};
+
+  Map? get _info => _content['info'] is Map ? _content['info'] as Map : null;
+
+  int? get declaredContentBytes {
+    final value = _info?['size'];
+    if (value is! num || !value.isFinite || value < 0) return null;
+    return value.toInt();
+  }
+
+  bool get hasEncryptedThumbnail => _info?['thumbnail_file'] is Map;
+
+  Map? get _thumbnailInfo {
+    final value = _info?['thumbnail_info'];
+    return value is Map ? value : null;
+  }
+
+  int? get thumbnailWidth => _intValue(_thumbnailInfo?['w']);
+  int? get thumbnailHeight => _intValue(_thumbnailInfo?['h']);
+
+  Duration? get voiceDuration {
+    if (_content['msgtype'] != MessageTypes.Audio &&
+        !mimeType.startsWith('audio/')) {
+      return null;
+    }
+    final milliseconds = _intValue(_info?['duration']);
+    return milliseconds == null ? null : Duration(milliseconds: milliseconds);
+  }
+
+  int get downloadLimitBytes => declaredContentBytes ?? _maxFileSendBytes;
+  int get reservationBytes =>
+      downloadLimitBytes +
+      (thumbnailSha256 == null && !hasEncryptedThumbnail
+          ? 0
+          : _maxOutgoingVideoPosterBytes);
+  MatrixOutgoingPresentationKind get presentationKind =>
+      mimeType.startsWith('video/')
+          ? MatrixOutgoingPresentationKind.video
+          : mimeType.startsWith('image/')
+              ? MatrixOutgoingPresentationKind.image
+              : mimeType.startsWith('audio/') ||
+                      _content['msgtype'] == MessageTypes.Audio
+                  ? MatrixOutgoingPresentationKind.voice
+                  : MatrixOutgoingPresentationKind.file;
+}
+
+int? _intValue(Object? value) =>
+    value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+
+/// Prepared plaintext media handed to the account owner. It is copied at
+/// admission and then released with the shared source after terminal delivery.
+final class MatrixOutgoingPreparedMedia {
+  MatrixOutgoingPreparedMedia({
+    required this.id,
+    required List<int> bytes,
+    required this.mimeType,
+    required this.filename,
+    required this.body,
+    this.thumbnailBytes,
+    this.thumbnailWidth,
+    this.thumbnailHeight,
+    Map<String, dynamic> extraContent = const {},
+  })  : _bytes = Uint8List.fromList(bytes),
+        extraContent = _freezeJsonMap(extraContent);
+
+  final String id;
+  Uint8List? _bytes;
+  bool _admitted = false;
+  final String mimeType;
+  final String filename;
+  final String body;
+  final Uint8List? thumbnailBytes;
+  final int? thumbnailWidth;
+  final int? thumbnailHeight;
+  final Map<String, dynamic> extraContent;
+
+  int get retainedBytes =>
+      (_bytes?.length ?? 0) + (thumbnailBytes?.length ?? 0);
+
+  void _markAdmitted() {
+    if (_admitted || _bytes == null) {
+      throw StateError('Outgoing media was already admitted');
+    }
+    _admitted = true;
+  }
+
+  /// Transfers the frozen copy only after coordinator admission. A rejected
+  /// capacity check leaves this object intact for a caller retry.
+  Uint8List _takeBytes() {
+    if (!_admitted) throw StateError('Outgoing media was not admitted');
+    final result = _bytes;
+    if (result == null) throw StateError('Outgoing media was already admitted');
+    _bytes = null;
+    return result;
+  }
+
+  Future<void> _releaseAdmitted() async {
+    if (_admitted) _bytes = null;
+  }
+}
+
+/// One local-video job submitted by a page after it has captured its lease.
+final class MatrixOutgoingVideoFileRequest {
+  const MatrixOutgoingVideoFileRequest({
+    required this.jobId,
+    required this.video,
+    required this.targetRoomIds,
+  });
+
+  final String jobId;
+  final MatrixOutgoingVideoFile video;
+  final List<String> targetRoomIds;
+}
+
+/// Controlled local video input that becomes coordinator-owned only after
+/// admission. It deliberately contains no page, lease, or BuildContext.
+final class MatrixOutgoingVideoFile {
+  MatrixOutgoingVideoFile({
+    required this.id,
+    File? source,
+    Future<File?> Function()? resolveSource,
+    required this.filename,
+    required this.body,
+    required this.deleteSourceWhenDone,
+  })  : _source = source,
+        _resolveSource = resolveSource,
+        _prepareMedia = null,
+        _sourceCost = null,
+        assert(source != null || resolveSource != null);
+
+  @visibleForTesting
+  MatrixOutgoingVideoFile.forTesting({
+    required this.id,
+    required File source,
+    required this.filename,
+    required this.body,
+    required this.deleteSourceWhenDone,
+    required Future<MatrixOutgoingPreparedMedia> Function(File source)
+        prepareMedia,
+    Future<int> Function(File source)? sourceCost,
+  })  : _source = source,
+        _resolveSource = null,
+        _prepareMedia = prepareMedia,
+        _sourceCost = sourceCost;
+
+  final String id;
+  final File? _source;
+  final Future<File?> Function()? _resolveSource;
+  File? _resolvedSource;
+  final String filename;
+  final String body;
+  final bool deleteSourceWhenDone;
+  final Future<MatrixOutgoingPreparedMedia> Function(File source)?
+      _prepareMedia;
+  final Future<int> Function(File source)? _sourceCost;
+  bool _admitted = false;
+
+  void _markAdmitted() {
+    if (_admitted) throw StateError('Outgoing video was already admitted');
+    _admitted = true;
+  }
+
+  Future<int> sourceCost() {
+    final source = _source;
+    if (source == null) {
+      throw StateError('Outgoing video source is resolved after admission');
+    }
+    return _sourceCost?.call(source) ?? source.length();
+  }
+
+  Future<void> _waitForSourceMetadata() async {
+    // The test seam models a held picker-side metadata read. Production never
+    // derives admission capacity from the raw file length.
+    final source = _source;
+    if (source != null) await _sourceCost?.call(source);
+  }
+
+  Future<File> _sourceForPreparation() async {
+    final cached = _resolvedSource ?? _source;
+    final source = cached ?? await _resolveSource?.call();
+    if (source == null) {
+      throw StateError('Selected video is no longer available');
+    }
+    _resolvedSource ??= source;
+    if (await source.length() <= 0) {
+      throw ArgumentError.value(source, 'video.source', 'must be non-empty');
+    }
+    return source;
+  }
+
+  Future<MatrixOutgoingPreparedMedia> _prepare() async {
+    if (!_admitted) throw StateError('Outgoing video was not admitted');
+    final source = await _sourceForPreparation();
+    final testPreparation = _prepareMedia;
+    if (testPreparation != null) return testPreparation(source);
+    // Keep an app-owned capture through preparation failures so retry uses the
+    // same original. Terminal source release owns deletion instead.
+    final prepared =
+        await prepareLocalChatVideo(source, deleteSourceWhenDone: false);
+    final poster = prepared.poster?.lengthInBytes == null ||
+            prepared.poster!.lengthInBytes > _maxOutgoingVideoPosterBytes
+        ? null
+        : prepared.poster;
+    final dimensions =
+        poster == null ? null : await decodeImageDimensions(poster);
+    return MatrixOutgoingPreparedMedia(
+      id: id,
+      bytes: prepared.bytes,
+      mimeType: 'video/mp4',
+      filename: filename.endsWith('.mp4') ? filename : '$filename.mp4',
+      body: body,
+      thumbnailBytes: poster,
+      thumbnailWidth: dimensions?.$1,
+      thumbnailHeight: dimensions?.$2,
+      extraContent: prepared.durationMs == null
+          ? const {}
+          : {
+              'info': {'duration': prepared.durationMs}
+            },
+    );
+  }
+
+  Future<void> _release() async {
+    final source = _resolvedSource ?? _source;
+    if (source == null) return;
+    if (deleteSourceWhenDone && await source.exists()) {
+      await source.delete();
+    }
+  }
+}
+
+final class _OwnedOutgoingMediaSnapshot {
+  _OwnedOutgoingMediaSnapshot(MatrixOutgoingPreparedMedia input)
+      : _bytes = input._takeBytes(),
+        mimeType = input.mimeType,
+        filename = input.filename,
+        body = input.body,
+        thumbnailBytes = input.thumbnailBytes,
+        thumbnailWidth = input.thumbnailWidth,
+        thumbnailHeight = input.thumbnailHeight,
+        extraContent = input.extraContent;
+
+  Uint8List? _bytes;
+  final String mimeType;
+  final String filename;
+  final String body;
+  final Uint8List? thumbnailBytes;
+  final int? thumbnailWidth;
+  final int? thumbnailHeight;
+  final Map<String, dynamic> extraContent;
+
+  Uint8List bytes() => _bytes ?? (throw StateError('Outgoing media released'));
+  Future<void> release() async => _bytes = null;
+}
+
+final class _DeferredOutgoingMediaSnapshot {
+  _DeferredOutgoingMediaSnapshot(this._input);
+
+  final MatrixOutgoingPreparedMedia _input;
+  _OwnedOutgoingMediaSnapshot? _owned;
+
+  Future<void> prepare(MatrixOutgoingWorkAttempt attempt) async {
+    attempt.ensureActive();
+    _owned ??= _OwnedOutgoingMediaSnapshot(_input);
+    attempt.ensureActive();
+  }
+
+  Uint8List bytes() =>
+      _owned?.bytes() ?? (throw StateError('Outgoing media was not prepared'));
+  String get mimeType => _input.mimeType;
+  String get filename => _input.filename;
+  String get body => _input.body;
+  Map<String, dynamic> get extraContent => _input.extraContent;
+  Uint8List? get thumbnailBytes => _owned?.thumbnailBytes;
+  int? get thumbnailWidth => _owned?.thumbnailWidth;
+  int? get thumbnailHeight => _owned?.thumbnailHeight;
+
+  Future<void> release() async {
+    final owned = _owned;
+    if (owned != null) {
+      await owned.release();
+    } else {
+      await _input._releaseAdmitted();
+    }
+  }
+}
+
+/// Defers file compression until the account coordinator has admitted the
+/// source. A successful rendition is retained once for all target retries.
+final class _DeferredOutgoingVideoSnapshot {
+  _DeferredOutgoingVideoSnapshot(this._video);
+
+  final MatrixOutgoingVideoFile _video;
+  _OwnedOutgoingMediaSnapshot? _owned;
+
+  Future<void> prepare(MatrixOutgoingWorkAttempt attempt) async {
+    attempt.ensureActive();
+    if (_owned == null) {
+      final media = await _video._prepare();
+      attempt.ensureActive();
+      media._markAdmitted();
+      _owned = _OwnedOutgoingMediaSnapshot(media);
+    }
+    attempt.ensureActive();
+  }
+
+  Uint8List bytes() =>
+      _owned?.bytes() ?? (throw StateError('Outgoing video was not prepared'));
+  String get mimeType => _owned?.mimeType ?? 'video/mp4';
+  String get filename => _owned?.filename ?? _video.filename;
+  Map<String, dynamic> get extraContent => _owned?.extraContent ?? const {};
+  Uint8List? get thumbnailBytes => _owned?.thumbnailBytes;
+  int? get thumbnailWidth => _owned?.thumbnailWidth;
+  int? get thumbnailHeight => _owned?.thumbnailHeight;
+
+  Future<void> release() async {
+    await _owned?.release();
+    await _video._release();
+  }
+}
+
+final class _DeferredOutgoingForwardMediaSnapshot {
+  _DeferredOutgoingForwardMediaSnapshot(this.media);
+
+  final MatrixOutgoingForwardMedia media;
+  Uint8List? _bytes;
+  Uint8List? _thumbnail;
+
+  Uint8List bytes() =>
+      _bytes ?? (throw StateError('Forwarded media was not prepared'));
+  Uint8List? get thumbnail => _thumbnail;
+
+  Future<void> release() async {
+    _bytes = null;
+    _thumbnail = null;
+  }
+}
+
+Map<String, dynamic> _freezeJsonMap(Map<String, dynamic> source) =>
+    Map.unmodifiable({
+      for (final entry in source.entries) entry.key: _freezeJson(entry.value),
+    });
+
+Object? _freezeJson(Object? value) {
+  if (value == null || value is String || value is num || value is bool) {
+    return value;
+  }
+  if (value is Map) {
+    return Map.unmodifiable({
+      for (final entry in value.entries)
+        entry.key.toString(): _freezeJson(entry.value),
+    });
+  }
+  if (value is List) return List.unmodifiable(value.map(_freezeJson));
+  throw ArgumentError.value(value, 'extraContent', 'must contain JSON values');
+}
+
+Map<String, dynamic> _mutableJsonMap(Map<String, dynamic> source) => {
+      for (final entry in source.entries) entry.key: _mutableJson(entry.value),
+    };
+
+Object? _mutableJson(Object? value) {
+  if (value is Map) {
+    return {
+      for (final entry in value.entries)
+        entry.key.toString(): _mutableJson(entry.value),
+    };
+  }
+  if (value is List) return value.map(_mutableJson).toList();
+  return value;
+}
+
+final class _OutgoingSession {
+  const _OutgoingSession({
+    required this.client,
+    required this.accountId,
+    required this.deviceId,
+    required this.coordinator,
+  });
+
+  final Client client;
+  final String accountId;
+  final String? deviceId;
+  final MatrixOutgoingWorkCoordinator coordinator;
+}
+
 final class MatrixSdkE2eeClient
     implements
         MatrixE2eeClient,
@@ -2914,6 +3613,8 @@ final class MatrixSdkE2eeClient
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
     MatrixSecurityLogger? securityLogger,
+    MatrixOutgoingWorkCoordinator Function(String accountId)?
+        outgoingWorkFactory,
     this.lifecycleDrainTimeout = const Duration(seconds: 5),
     DateTime Function()? memberRefreshNow,
     Duration memberRefreshTtl = const Duration(minutes: 10),
@@ -2931,12 +3632,20 @@ final class MatrixSdkE2eeClient
           retryDelay: memberRefreshRetryDelay,
         ),
         _memberProjectionCache = _ConversationMemberProjectionCache(),
+        _outgoingWorkFactory = outgoingWorkFactory ??
+            ((accountId) =>
+                MatrixOutgoingWorkCoordinator(accountId: accountId)),
         securityLogger = securityLogger ??
             MatrixSecurityLogger.create(sink: (line) => debugPrint(line)) {
+    _outgoingWork = _newOutgoingWork(client.userID ?? '');
+    _attachOutgoingEchoListener(client);
     _attachDecryptionListener(client);
     _attachMemberRefreshListener(client);
   }
   Client? _client;
+  final MatrixOutgoingWorkCoordinator Function(String accountId)
+      _outgoingWorkFactory;
+  late MatrixOutgoingWorkCoordinator _outgoingWork;
   Client? _pendingCloseClient;
   final Future<void> Function(Client client) _suspendClient;
   final Future<Client> Function()? _resumeClient;
@@ -2965,6 +3674,7 @@ final class MatrixSdkE2eeClient
       _decryptedTimelineEvents = {};
   MatrixClientContinuityMetadata? _decryptionCacheContinuity;
   StreamSubscription<EventUpdate>? _decryptionSubscription;
+  StreamSubscription<EventUpdate>? _outgoingEchoSubscription;
   final List<_ManagedClientStreamBase> _managedSubscriptions = [];
   final List<_ManagedClientResourceBase> _managedResources = [];
   late final MatrixConversationCapability conversations =
@@ -2975,6 +3685,581 @@ final class MatrixSdkE2eeClient
   int get debugManagedResourceCount => _managedResources.length;
   @visibleForTesting
   bool get debugHasActiveClient => _client != null;
+
+  /// Account-owned in-process outgoing work. It is replaced whenever the
+  /// Matrix session identity changes and never belongs to a room lease.
+  MatrixOutgoingWorkCoordinator get outgoingWork => _outgoingWork;
+
+  /// Admits an immutable, multi-message text forwarding batch. The returned
+  /// jobs are local pending state only; this never waits for a Matrix request.
+  Future<List<MatrixOutgoingWorkJob>> enqueueForward({
+    required String batchId,
+    required List<MatrixOutgoingForwardMessage> messages,
+    required List<String> targetRoomIds,
+  }) =>
+      _enqueueForward(
+        batchId: batchId,
+        messages: messages,
+        targetRoomIds: targetRoomIds,
+        session: _captureOutgoingSession(),
+      );
+
+  Future<List<MatrixOutgoingWorkJob>> _enqueueForward({
+    required String batchId,
+    required List<MatrixOutgoingForwardMessage> messages,
+    required List<String> targetRoomIds,
+    required _OutgoingSession session,
+  }) async {
+    if (batchId.isEmpty || messages.isEmpty || targetRoomIds.isEmpty) {
+      throw ArgumentError('Forwarding requires a batch, messages, and targets');
+    }
+    final targets = List<String>.unmodifiable(targetRoomIds);
+    if (targets.any((target) => target.isEmpty) ||
+        targets.toSet().length != targets.length) {
+      throw ArgumentError('Forwarding targets must be non-empty and unique');
+    }
+    _ensureOutgoingSessionCurrent(session);
+    for (final targetRoomId in targets) {
+      final target = session.client.getRoomById(targetRoomId);
+      if (target == null || !target.encrypted) {
+        throw StateError('只能发送到端到端加密会话');
+      }
+      if (target.membership != Membership.join ||
+          !target.canSendDefaultMessages) {
+        throw StateError('当前会话不可发送消息');
+      }
+    }
+    final ids = <String>{};
+    final jobs = <MatrixOutgoingWorkJob>[];
+    for (var sourceIndex = 0; sourceIndex < messages.length; sourceIndex++) {
+      final message = messages[sourceIndex];
+      if (message.id.isEmpty || !ids.add(message.id)) {
+        throw ArgumentError(
+            'Forwarding message ids must be non-empty and unique');
+      }
+      if (message is MatrixOutgoingForwardMedia &&
+          (message.sourceAccountId != session.accountId ||
+              !identical(message.sourceClient, session.client))) {
+        throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+      }
+      if (message is MatrixOutgoingForwardMedia &&
+          message.downloadLimitBytes > _maxFileSendBytes) {
+        throw const MatrixOutgoingFileTooLargeException();
+      }
+      final createdAt = DateTime.now();
+      final text = message is MatrixOutgoingForwardText ? message : null;
+      final media = message is MatrixOutgoingForwardMedia ? message : null;
+      final body = switch (message) {
+        MatrixOutgoingForwardText(:final body) => body,
+        MatrixOutgoingForwardMedia(:final body) => body,
+      };
+      final content = text != null
+          ? Map<String, dynamic>.unmodifiable({
+              'msgtype': MessageTypes.Text,
+              'body': body,
+              if (text.format != null) 'format': text.format,
+              if (text.formattedBody != null)
+                'formatted_body': text.formattedBody,
+            })
+          : null;
+      final mediaSnapshot =
+          media == null ? null : _DeferredOutgoingForwardMediaSnapshot(media);
+      jobs.add(MatrixOutgoingWorkJob(
+        id: '$batchId-$sourceIndex',
+        createdAt: createdAt,
+        source: MatrixOutgoingWorkSource(
+          id: 'forward:$batchId:$sourceIndex',
+          retainedBytes: media?.reservationBytes ?? 0,
+          prepare: mediaSnapshot == null
+              ? null
+              : (attempt) => _prepareForwardMedia(
+                  session: session, snapshot: mediaSnapshot, attempt: attempt),
+          release: mediaSnapshot?.release,
+        ),
+        items: [
+          for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
+            MatrixOutgoingWorkItem(
+              id: '${message.id}:$targetIndex',
+              targetRoomId: targets[targetIndex],
+              txid: 'outgoing-$batchId-$sourceIndex-$targetIndex',
+              presentation: MatrixOutgoingWorkPresentation(
+                kind: media?.presentationKind ??
+                    MatrixOutgoingPresentationKind.text,
+                text: body,
+                mimeType: media?.mimeType,
+                filename: media?.filename,
+                voiceDuration: media?.voiceDuration,
+                createdAt: createdAt,
+              ),
+              send: (attempt) => mediaSnapshot == null
+                  ? _sendOutgoingText(
+                      session: session,
+                      targetRoomId: targets[targetIndex],
+                      content: content!,
+                      attempt: attempt,
+                    )
+                  : _sendOutgoingForwardMedia(
+                      session: session,
+                      targetRoomId: targets[targetIndex],
+                      snapshot: mediaSnapshot,
+                      attempt: attempt,
+                    ),
+            ),
+        ],
+      ));
+    }
+    _ensureOutgoingSessionCurrent(session);
+    return session.coordinator.enqueueBatch(jobs);
+  }
+
+  /// Admits one prepared camera/file media source for multiple targets. The
+  /// plaintext copy is owned by the account coordinator until terminal cleanup.
+  Future<MatrixOutgoingWorkJob> enqueuePreparedMedia({
+    required String jobId,
+    required MatrixOutgoingPreparedMedia media,
+    required List<String> targetRoomIds,
+  }) =>
+      _enqueuePreparedMedia(
+        jobId: jobId,
+        media: media,
+        targetRoomIds: targetRoomIds,
+        session: _captureOutgoingSession(),
+      );
+
+  Future<MatrixOutgoingWorkJob> _enqueuePreparedMedia({
+    required String jobId,
+    required MatrixOutgoingPreparedMedia media,
+    required List<String> targetRoomIds,
+    required _OutgoingSession session,
+  }) async {
+    if (jobId.isEmpty || media.id.isEmpty || targetRoomIds.isEmpty) {
+      throw ArgumentError('Media forwarding requires an id and targets');
+    }
+    final targets = List<String>.unmodifiable(targetRoomIds);
+    if (targets.any((target) => target.isEmpty) ||
+        targets.toSet().length != targets.length) {
+      throw ArgumentError(
+          'Media forwarding targets must be non-empty and unique');
+    }
+    final existing = session.coordinator.job(jobId);
+    if (existing != null) return existing;
+    final snapshot = _DeferredOutgoingMediaSnapshot(media);
+    final createdAt = DateTime.now();
+    final job = MatrixOutgoingWorkJob(
+      id: jobId,
+      createdAt: createdAt,
+      source: MatrixOutgoingWorkSource(
+        id: 'media:$jobId:${media.id}',
+        retainedBytes: media.retainedBytes,
+        prepare: snapshot.prepare,
+        release: snapshot.release,
+      ),
+      items: [
+        for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
+          MatrixOutgoingWorkItem(
+            id: '${media.id}:$targetIndex',
+            targetRoomId: targets[targetIndex],
+            txid: 'outgoing-$jobId-0-$targetIndex',
+            presentation: MatrixOutgoingWorkPresentation(
+              kind: media.mimeType.startsWith('video/')
+                  ? MatrixOutgoingPresentationKind.video
+                  : MatrixOutgoingPresentationKind.image,
+              text: media.body,
+              mimeType: media.mimeType,
+              filename: media.filename,
+              createdAt: createdAt,
+            ),
+            send: (attempt) => _sendOutgoingMedia(
+              session: session,
+              targetRoomId: targets[targetIndex],
+              snapshot: snapshot,
+              attempt: attempt,
+            ),
+          ),
+      ],
+    );
+    _ensureOutgoingSessionCurrent(session);
+    return session.coordinator.enqueue(job, onAccepted: media._markAdmitted);
+  }
+
+  /// Admits an uncompressed local video before compression begins. The account
+  /// owns the file lifecycle and uses the process-wide encoding queue only
+  /// when the coordinator reaches its bounded preparation slot.
+  Future<MatrixOutgoingWorkJob> enqueueVideoFile({
+    required String jobId,
+    required MatrixOutgoingVideoFile video,
+    required List<String> targetRoomIds,
+  }) =>
+      _enqueueVideoFile(
+        jobId: jobId,
+        video: video,
+        targetRoomIds: targetRoomIds,
+        session: _captureOutgoingSession(),
+      );
+
+  Future<List<MatrixOutgoingWorkJob>> enqueueVideoFiles({
+    required List<MatrixOutgoingVideoFileRequest> requests,
+  }) =>
+      _enqueueVideoFiles(
+        requests: requests,
+        session: _captureOutgoingSession(),
+      );
+
+  Future<MatrixOutgoingWorkJob> _enqueueVideoFile({
+    required String jobId,
+    required MatrixOutgoingVideoFile video,
+    required List<String> targetRoomIds,
+    required _OutgoingSession session,
+  }) async {
+    if (jobId.isEmpty || video.id.isEmpty || targetRoomIds.isEmpty) {
+      throw ArgumentError('Video forwarding requires an id and targets');
+    }
+    if (video._admitted) {
+      throw ArgumentError('Video forwarding source was already admitted');
+    }
+    final targets = _freezeVideoTargets(targetRoomIds);
+    final existing = session.coordinator.job(jobId);
+    if (existing != null) return existing;
+    await video._waitForSourceMetadata();
+    _ensureOutgoingSessionCurrent(session);
+    final job = _buildVideoJob(
+      jobId: jobId,
+      video: video,
+      targetRoomIds: targets,
+      session: session,
+    );
+    return session.coordinator.enqueue(job, onAccepted: video._markAdmitted);
+  }
+
+  /// Atomically accepts several deferred gallery handles. No media-library
+  /// callback is invoked here; each is resolved only when its owner job gains
+  /// a bounded preparation slot.
+  Future<List<MatrixOutgoingWorkJob>> _enqueueVideoFiles({
+    required List<MatrixOutgoingVideoFileRequest> requests,
+    required _OutgoingSession session,
+  }) async {
+    if (requests.isEmpty) return const [];
+    final ids = <String>{};
+    final videos = <MatrixOutgoingVideoFile>{};
+    final frozen = <MatrixOutgoingVideoFileRequest>[];
+    for (final request in requests) {
+      if (request.jobId.isEmpty ||
+          request.video.id.isEmpty ||
+          request.targetRoomIds.isEmpty ||
+          !ids.add(request.jobId) ||
+          !videos.add(request.video) ||
+          request.video._admitted ||
+          session.coordinator.job(request.jobId) != null) {
+        throw ArgumentError('Video forwarding requires new jobs and sources');
+      }
+      frozen.add(MatrixOutgoingVideoFileRequest(
+        jobId: request.jobId,
+        video: request.video,
+        targetRoomIds: _freezeVideoTargets(request.targetRoomIds),
+      ));
+    }
+    await Future.wait([
+      for (final request in frozen) request.video._waitForSourceMetadata(),
+    ]);
+    _ensureOutgoingSessionCurrent(session);
+    final jobs = [
+      for (final request in frozen)
+        _buildVideoJob(
+          jobId: request.jobId,
+          video: request.video,
+          targetRoomIds: request.targetRoomIds,
+          session: session,
+        ),
+    ];
+    return session.coordinator.enqueueBatch(jobs, onAccepted: () {
+      for (final request in frozen) {
+        request.video._markAdmitted();
+      }
+    });
+  }
+
+  List<String> _freezeVideoTargets(List<String> targetRoomIds) {
+    final targets = List<String>.unmodifiable(List<String>.from(targetRoomIds));
+    if (targets.any((target) => target.isEmpty) ||
+        targets.toSet().length != targets.length) {
+      throw ArgumentError(
+          'Video forwarding targets must be non-empty and unique');
+    }
+    return targets;
+  }
+
+  MatrixOutgoingWorkJob _buildVideoJob({
+    required String jobId,
+    required MatrixOutgoingVideoFile video,
+    required List<String> targetRoomIds,
+    required _OutgoingSession session,
+  }) {
+    final targets = _freezeVideoTargets(targetRoomIds);
+    final snapshot = _DeferredOutgoingVideoSnapshot(video);
+    final createdAt = DateTime.now();
+    return MatrixOutgoingWorkJob(
+      id: jobId,
+      createdAt: createdAt,
+      source: MatrixOutgoingWorkSource(
+        id: 'video:$jobId:${video.id}',
+        retainedBytes: 0,
+        preparationBytes: _maxOutgoingVideoReservationBytes,
+        prepare: snapshot.prepare,
+        release: snapshot.release,
+      ),
+      items: [
+        for (var targetIndex = 0; targetIndex < targets.length; targetIndex++)
+          MatrixOutgoingWorkItem(
+            id: '${video.id}:$targetIndex',
+            targetRoomId: targets[targetIndex],
+            txid: 'outgoing-$jobId-0-$targetIndex',
+            presentation: MatrixOutgoingWorkPresentation(
+              kind: MatrixOutgoingPresentationKind.video,
+              text: video.body,
+              mimeType: 'video/mp4',
+              filename: video.filename,
+              createdAt: createdAt,
+            ),
+            send: (attempt) => _sendOutgoingVideo(
+              session: session,
+              targetRoomId: targets[targetIndex],
+              snapshot: snapshot,
+              attempt: attempt,
+            ),
+          ),
+      ],
+    );
+  }
+
+  _OutgoingSession _captureOutgoingSession() {
+    final active = _client;
+    final accountId = active?.userID;
+    if (_accessRevoked ||
+        active == null ||
+        accountId == null ||
+        accountId.isEmpty ||
+        !_outgoingWork.isActive ||
+        _outgoingWork.accountId != accountId) {
+      throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+    }
+    return _OutgoingSession(
+      client: active,
+      accountId: accountId,
+      deviceId: active.deviceID,
+      coordinator: _outgoingWork,
+    );
+  }
+
+  void _ensureOutgoingSession(
+      _OutgoingSession session, MatrixOutgoingWorkAttempt attempt) {
+    attempt.ensureActive();
+    _ensureOutgoingSessionCurrent(session);
+  }
+
+  void _ensureOutgoingSessionCurrent(_OutgoingSession session) {
+    if (_accessRevoked ||
+        !identical(_client, session.client) ||
+        !identical(_outgoingWork, session.coordinator) ||
+        session.client.userID != session.accountId ||
+        session.client.deviceID != session.deviceId) {
+      throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+    }
+  }
+
+  Future<String> _sendOutgoingText({
+    required _OutgoingSession session,
+    required String targetRoomId,
+    required Map<String, dynamic> content,
+    required MatrixOutgoingWorkAttempt attempt,
+  }) =>
+      _withClient((active) async {
+        _ensureOutgoingSession(session, attempt);
+        if (!identical(active, session.client)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final target = active.getRoomById(targetRoomId);
+        if (target == null || !target.encrypted) {
+          throw StateError('只能发送到端到端加密会话');
+        }
+        if (target.membership != Membership.join ||
+            !target.canSendDefaultMessages) {
+          throw StateError('当前会话不可发送消息');
+        }
+        _ensureOutgoingSession(session, attempt);
+        final eventId = await target.sendEvent(
+          Map<String, dynamic>.from(content),
+          txid: attempt.txid,
+        );
+        _ensureOutgoingSession(session, attempt);
+        return eventId ??
+            (throw StateError('Matrix room event was not accepted'));
+      });
+
+  Future<String> _sendOutgoingMedia({
+    required _OutgoingSession session,
+    required String targetRoomId,
+    required _DeferredOutgoingMediaSnapshot snapshot,
+    required MatrixOutgoingWorkAttempt attempt,
+  }) =>
+      _withClient((active) async {
+        _ensureOutgoingSession(session, attempt);
+        if (!identical(active, session.client)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final target = active.getRoomById(targetRoomId);
+        if (target == null) throw StateError('Matrix room is not joined');
+        _ensureOutgoingSession(session, attempt);
+        final eventId = await _sendMedia(
+          target,
+          snapshot.bytes(),
+          snapshot.mimeType,
+          extraContent: _mutableJsonMap(snapshot.extraContent),
+          txid: attempt.txid,
+          filename: snapshot.filename,
+          thumbnailBytes: snapshot.thumbnailBytes,
+          thumbnailWidth: snapshot.thumbnailWidth,
+          thumbnailHeight: snapshot.thumbnailHeight,
+        );
+        _ensureOutgoingSession(session, attempt);
+        return eventId;
+      });
+
+  Future<String> _sendOutgoingVideo({
+    required _OutgoingSession session,
+    required String targetRoomId,
+    required _DeferredOutgoingVideoSnapshot snapshot,
+    required MatrixOutgoingWorkAttempt attempt,
+  }) =>
+      _withClient((active) async {
+        _ensureOutgoingSession(session, attempt);
+        if (!identical(active, session.client)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final target = active.getRoomById(targetRoomId);
+        if (target == null) throw StateError('Matrix room is not joined');
+        _ensureOutgoingSession(session, attempt);
+        final eventId = await _sendMedia(
+          target,
+          snapshot.bytes(),
+          snapshot.mimeType,
+          extraContent: _mutableJsonMap(snapshot.extraContent),
+          txid: attempt.txid,
+          filename: snapshot.filename,
+          thumbnailBytes: snapshot.thumbnailBytes,
+          thumbnailWidth: snapshot.thumbnailWidth,
+          thumbnailHeight: snapshot.thumbnailHeight,
+        );
+        _ensureOutgoingSession(session, attempt);
+        return eventId;
+      });
+
+  Future<void> _prepareForwardMedia({
+    required _OutgoingSession session,
+    required _DeferredOutgoingForwardMediaSnapshot snapshot,
+    required MatrixOutgoingWorkAttempt attempt,
+  }) async {
+    _ensureOutgoingSession(session, attempt);
+    final source = session.client.getRoomById(snapshot.media.sourceRoomId);
+    if (source == null ||
+        !source.encrypted ||
+        source.membership != Membership.join) {
+      throw StateError('Matrix source room is not joined');
+    }
+    final media = snapshot.media;
+    final original = media.wasEncrypted
+        ? MatrixEvent(
+            type: EventTypes.Encrypted,
+            content: const {},
+            senderId: media.senderId,
+            eventId: media.sourceEventId,
+            originServerTs: media.originServerTs,
+          )
+        : null;
+    final event = Event(
+      type: EventTypes.Message,
+      content: media.content(),
+      senderId: media.senderId,
+      room: source,
+      eventId: media.sourceEventId,
+      originServerTs: media.originServerTs,
+      originalSource: original,
+    );
+    final bytes = await loadMediaWithCache(
+      MediaCacheKey(
+        accountId: session.accountId,
+        roomId: media.sourceRoomId,
+        eventId: media.sourceEventId,
+        contentSha256: media.contentSha256,
+        sourceIdentity: matrixMediaSourceIdentity(event.content),
+      ),
+      () => downloadMediaContentBounded(
+        event,
+        maxDownloadBytes: media.downloadLimitBytes,
+      ),
+    );
+    if (bytes.length > snapshot.media.downloadLimitBytes) {
+      throw const MatrixOutgoingFileTooLargeException();
+    }
+    Uint8List? thumbnail;
+    if (media.thumbnailSha256 != null || event.isThumbnailEncrypted) {
+      try {
+        thumbnail = await loadMediaWithCache(
+          MediaCacheKey(
+            accountId: session.accountId,
+            roomId: media.sourceRoomId,
+            eventId: 'thumb:${media.sourceEventId}',
+            contentSha256: media.thumbnailSha256,
+            sourceIdentity:
+                matrixMediaSourceIdentity(event.content, thumbnail: true),
+          ),
+          () => downloadMediaContentBounded(
+            event,
+            thumbnail: true,
+            maxDownloadBytes: _maxOutgoingVideoPosterBytes,
+          ),
+        );
+        if (thumbnail.lengthInBytes > _maxOutgoingVideoPosterBytes) {
+          thumbnail = null;
+        }
+      } on MediaContentLimitException {
+        thumbnail = null;
+      }
+    }
+    _ensureOutgoingSession(session, attempt);
+    snapshot
+      .._bytes = bytes
+      .._thumbnail = thumbnail;
+  }
+
+  Future<String> _sendOutgoingForwardMedia({
+    required _OutgoingSession session,
+    required String targetRoomId,
+    required _DeferredOutgoingForwardMediaSnapshot snapshot,
+    required MatrixOutgoingWorkAttempt attempt,
+  }) =>
+      _withClient((active) async {
+        _ensureOutgoingSession(session, attempt);
+        if (!identical(active, session.client)) {
+          throw StateError('E2EE_LIFECYCLE_ACCESS_REVOKED');
+        }
+        final target = active.getRoomById(targetRoomId);
+        if (target == null) throw StateError('Matrix room is not joined');
+        final media = snapshot.media;
+        final eventId = await _sendMedia(
+          target,
+          snapshot.bytes(),
+          media.mimeType,
+          extraContent: _mutableJsonMap(media.extraContent),
+          txid: attempt.txid,
+          filename: media.filename,
+          thumbnailBytes: snapshot.thumbnail,
+          thumbnailWidth: media.thumbnailWidth,
+          thumbnailHeight: media.thumbnailHeight,
+        );
+        _ensureOutgoingSession(session, attempt);
+        return eventId;
+      });
+
   @visibleForTesting
   String? get debugActiveClientName => _client?.clientName;
   String? _lastRecoveryKey;
@@ -3081,6 +4366,7 @@ final class MatrixSdkE2eeClient
   Future<void> _persistLoggedInContinuity(Client active) async {
     _activeContinuityValidated = false;
     _bindDecryptionCache(await _readContinuityMetadata(active));
+    _ensureOutgoingWorkIdentity(active);
     _activeContinuityValidated = true;
   }
 
@@ -3116,6 +4402,83 @@ final class MatrixSdkE2eeClient
               : MessageDecryptionState.decrypting);
       _decryptionUpdates.add(MatrixDecryptionUpdate(eventId, state));
       _syncEvents.add(null);
+    });
+  }
+
+  void _attachOutgoingEchoListener(Client client) {
+    _outgoingEchoSubscription?.cancel();
+    final work = _outgoingWork;
+    final userId = client.userID;
+    final deviceId = client.deviceID;
+    _outgoingEchoSubscription = client.onEvent.stream.listen((update) {
+      if (_accessRevoked ||
+          !identical(client, _client) ||
+          !identical(work, _outgoingWork) ||
+          client.userID != userId ||
+          client.deviceID != deviceId) {
+        return;
+      }
+      if (!{
+        EventUpdateType.timeline,
+        EventUpdateType.history,
+        EventUpdateType.decryptedTimelineQueue,
+      }.contains(update.type)) {
+        return;
+      }
+      final content = update.content;
+      final type = content['type']?.toString();
+      final isDecryptedMessage = type == EventTypes.Message;
+      final isEncryptedTimeline = type == EventTypes.Encrypted &&
+          update.type != EventUpdateType.decryptedTimelineQueue;
+      // Encrypted rows may be the first stored representation of our event;
+      // their decrypted queue update arrives separately. Never inspect media
+      // or plaintext here: identifiers and sender are sufficient.
+      if ((!isDecryptedMessage && !isEncryptedTimeline) ||
+          content['sender']?.toString() != userId) {
+        return;
+      }
+      final unsigned = content['unsigned'];
+      final localStatus = content['status'] ??
+          (unsigned is Map ? unsigned[messageSendingStatusKey] : null);
+      // A local optimistic row has a negative sending/error status. Only a
+      // synced SDK fact (or a status-less server event) can settle work.
+      if (localStatus is num &&
+          localStatus.toInt() != EventStatus.synced.intValue) {
+        return;
+      }
+      final eventId = content['event_id']?.toString();
+      if (eventId == null || eventId.isEmpty || !eventId.startsWith(r'$')) {
+        return;
+      }
+      final transactionId =
+          unsigned is Map ? unsigned['transaction_id']?.toString() : null;
+      final pending = work.itemsForRoom(update.roomID);
+      if (pending.isEmpty) return;
+      final matches = pending.any((item) =>
+          item.txid == transactionId ||
+          item.eventId == eventId ||
+          (transactionId == null &&
+              item.state == MatrixOutgoingWorkState.sending));
+      if (!matches) return;
+      scheduleMicrotask(() {
+        // Give the timeline subscriber a turn first. The capture also makes a
+        // same-Client re-login unable to acknowledge the replacement owner.
+        if (_accessRevoked ||
+            !identical(client, _client) ||
+            !identical(work, _outgoingWork) ||
+            client.userID != userId ||
+            client.deviceID != deviceId ||
+            !work.isActive) {
+          return;
+        }
+        work.acknowledgeEchoes([
+          MatrixOutgoingWorkEcho(
+            roomId: update.roomID,
+            eventId: eventId,
+            transactionId: transactionId,
+          ),
+        ]);
+      });
     });
   }
 
@@ -3219,6 +4582,7 @@ final class MatrixSdkE2eeClient
   @override
   Future<void> suspend() {
     _accessRevoked = true;
+    _outgoingWork.revoke('Matrix session suspended');
     _revokeManagedResources();
     return _serializeLifecycle(() async {
       final active = _client;
@@ -3284,6 +4648,7 @@ final class MatrixSdkE2eeClient
         }
         final metadata = await _readContinuityMetadata(next);
         _client = next;
+        _replaceOutgoingWork(next);
         _suspendedMetadata = metadata;
         _activeContinuityValidated = true;
         _credentialsInvalid = next.isLogged();
@@ -3292,6 +4657,7 @@ final class MatrixSdkE2eeClient
         _decryptedTimelineEvents.clear();
         _lastRecoveryKey = null;
         _bindDecryptionCache(metadata);
+        _attachOutgoingEchoListener(next);
         _attachDecryptionListener(next);
         _attachMemberRefreshListener(next);
       } catch (_) {
@@ -3318,6 +4684,7 @@ final class MatrixSdkE2eeClient
   @override
   Future<void> clearLocalChatData() {
     _accessRevoked = true;
+    _outgoingWork.revoke('Matrix local data cleared');
     _decryptedTimelineEvents.clear();
     _decryptionCacheContinuity = null;
     _lastRecoveryKey = null;
@@ -3678,12 +5045,32 @@ final class MatrixSdkE2eeClient
       Error.throwWithStackTrace(error, stackTrace);
     }
     _bindDecryptionCache(resumedMetadata);
+    _client = resumed;
+    _ensureOutgoingWorkIdentity(resumed);
+    _attachOutgoingEchoListener(resumed);
     _attachDecryptionListener(resumed);
     _attachMemberRefreshListener(resumed);
-    _client = resumed;
     _freshLoginAfterClear = false;
     _activeContinuityValidated = true;
     return resumed;
+  }
+
+  void _replaceOutgoingWork(Client client) {
+    _outgoingWork.revoke('Matrix client identity replaced');
+    _outgoingWork.dispose();
+    _outgoingWork = _newOutgoingWork(client.userID ?? '');
+  }
+
+  MatrixOutgoingWorkCoordinator _newOutgoingWork(String accountId) =>
+      _outgoingWorkFactory(accountId);
+
+  void _ensureOutgoingWorkIdentity(Client client) {
+    final accountId = client.userID;
+    if (accountId == null || accountId.isEmpty) return;
+    if (!_outgoingWork.isActive || _outgoingWork.accountId != accountId) {
+      _replaceOutgoingWork(client);
+      _attachOutgoingEchoListener(client);
+    }
   }
 
   Future<void> _rejectResumeClient(Client resumed) async {

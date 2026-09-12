@@ -165,11 +165,12 @@ void main() {
     timeline.dispose();
   });
 
-  test('camera compression rejection also removes app-owned capture', () async {
+  test('camera compression rejection retains app-owned capture for retry',
+      () async {
     sizes = [maxOriginalVideoBytes + 1, maxOriginalVideoBytes + 1];
     await expectLater(prepareCapturedChatVideo(source),
         throwsA(isA<GroupVideoTooLargeException>()));
-    expect(await source.exists(), isFalse);
+    expect(await source.exists(), isTrue);
     for (final file in outputs) {
       expect(await file.exists(), isFalse);
     }
@@ -208,6 +209,20 @@ void main() {
     expect(compressedReads, 1);
     expect(result.mimeType, 'video/mp4');
     expect(result.fileName, 'video.mp4');
+  });
+
+  test('gallery video retains a lazy local source for owner-side preparation',
+      () async {
+    final photo = GalleryPhoto(
+      id: 'owner-side-video',
+      thumbnail: Uint8List(0),
+      isVideo: true,
+      compressedBytes: () async => Uint8List.fromList([1]),
+      originalBytes: () async => Uint8List.fromList([1]),
+      localVideoFile: () async => source,
+    );
+
+    expect(await photo.localVideoFile!(), same(source));
   });
 }
 

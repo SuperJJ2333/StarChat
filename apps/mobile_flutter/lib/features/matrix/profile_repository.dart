@@ -87,6 +87,8 @@ final class ProfileSnapshot {
               'moments_permission': contact.momentsPermission,
               'tags': contact.tags,
               'starred': contact.starred,
+              if (contact.lastSeenKnown)
+                'last_seen_at': contact.lastSeenAt?.toIso8601String(),
             },
         ],
         'contacts_revision': contactsRevision,
@@ -698,6 +700,24 @@ final class ProfileRepository extends ChangeNotifier {
     ));
   }
 
+  /// Updates only the friend-presence projection returned by the authorized
+  /// friend-detail endpoint. This never creates a contact from a detail read.
+  Future<void> applyContactPresence(
+    String userId, {
+    required bool lastSeenKnown,
+    required DateTime? lastSeenAt,
+  }) async {
+    final current = contactsByUserId[userId];
+    if (current == null) return;
+    final updated = current.copyWith(
+      lastSeenAt: lastSeenAt,
+      lastSeenKnown: lastSeenKnown,
+      clearLastSeen: true,
+    );
+    if (_sameContact(current, updated)) return;
+    await applyUpdatedContact(updated);
+  }
+
   Future<void> removeContact(String userId) async {
     _contactsMutation += 1;
     final currentProfile = profile;
@@ -931,7 +951,8 @@ bool _contactsEqual(List<ContactSummary> a, List<ContactSummary> b) {
         a[i].starred != b[i].starred ||
         // 在线状态变化必须视为差异：否则静默刷新永远不落地，
         // 好友资料页停留在“暂无在线记录”。
-        a[i].lastSeenAt != b[i].lastSeenAt) {
+        a[i].lastSeenAt != b[i].lastSeenAt ||
+        a[i].lastSeenKnown != b[i].lastSeenKnown) {
       return false;
     }
     if (a[i].tags.length != b[i].tags.length) return false;

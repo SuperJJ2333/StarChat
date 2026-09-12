@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<body data-test-result="pending">
+  <iframe id="page" src="/?screen=caibi-ledger-all&capture=1" style="width:390px;height:844px;border:0"></iframe>
+  <script type="module">
+    const transferId = "3c40c1aa-836b-4dae-8c49-cd73c2ebbc10";
+    const frame = document.querySelector("#page");
+    const pause = () => new Promise(resolve => setTimeout(resolve, 20));
+    async function ready() {
+      for (let attempt = 0; attempt < 250; attempt += 1) {
+        if (frame.contentDocument?.body?.dataset.appReady === "true") return frame.contentDocument;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      throw new Error("ledger screen did not become ready");
+    }
+    const required = (document, selector) => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error(`missing ${selector}`);
+      return node;
+    };
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+    const setValue = (node, value) => {
+      node.value = value;
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+      node.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const submit = async form => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await pause();
+    };
+    const reset = async document => {
+      const button = [...document.querySelectorAll("button")]
+        .find(node => node.textContent.includes("重置筛选"));
+      if (!button) throw new Error("missing reset control");
+      button.click();
+      await pause();
+    };
+    async function assertLayout(document, width, theme, background) {
+      const article = required(document, "article.ui-screen");
+      document.documentElement.style.setProperty("--size-screen-width", `${width}px`);
+      document.documentElement.dataset.theme = theme;
+      article.dataset.theme = theme;
+      await pause();
+      assert(Math.round(article.getBoundingClientRect().width) === width, `expected ${width}px device width`);
+      assert(article.scrollWidth <= article.clientWidth, `${width}px device overflowed horizontally`);
+      const results = required(document, ".c-ledger-results");
+      assert(getComputedStyle(results).backgroundColor === background, `${theme} results background mismatch`);
+      const row = required(document, ".c-ledger-row");
+      const style = getComputedStyle(row);
+      assert(parseFloat(style.borderBottomWidth) > 0, "ledger row divider is missing");
+      assert(style.borderBottomLeftRadius === "0px", "ledger row has a card radius");
+    }
+    try {
+      const page = await ready();
+      const form = required(page, "form.c-ledger-filter");
+      const kind = required(page, '[aria-label="流水类型"]');
+      const start = required(page, '[aria-label="开始日期"]');
+      const end = required(page, '[aria-label="结束日期（包含当天）"]');
+      const query = required(page, '[aria-label="账单搜索"]');
+      assert(required(page, ".c-ledger-row__icon"), "ledger icon is missing");
+
+      await assertLayout(page, 320, "dark", "rgb(25, 25, 25)");
+      await assertLayout(page, 390, "light", "rgb(247, 247, 247)");
+
+      setValue(kind, "转账");
+      setValue(start, "2026-09-10");
+      setValue(end, "2026-09-10");
+      setValue(query, "");
+      await submit(form);
+      const matched = [...page.querySelectorAll(".c-ledger-row")];
+      assert(matched.length === 1, "transfer/date filter did not yield exactly one row");
+      assert(matched[0].dataset.transactionId === transferId, "transfer/date filter yielded the wrong row");
+      assert(required(page, ".c-ledger-row__amount").textContent.trim() === "+200.00 点钻", "transfer amount mismatch");
+
+      let copied = null;
+      Object.defineProperty(page.defaultView.navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: async value => { copied = value; } }
+      });
+      matched[0].click();
+      await pause();
+      assert(page.body.textContent.includes("账单ID"), "row did not open the ledger detail");
+      required(page, '[aria-label="复制账单ID"]').click();
+      await pause();
+      assert(copied === transferId, "copied ledger ID was not exact");
+
+      required(page, "button.c-ledger-filter__button").click();
+      await pause();
+      setValue(kind, "全部");
+      setValue(start, "2026-09-06");
+      setValue(end, "2026-09-06");
+      setValue(query, "");
+      await submit(form);
+      assert(required(page, "app-empty-state").textContent.includes("暂无点钻流水"), "unmatched date did not show the empty state");
+      await reset(page);
+      assert(page.querySelectorAll(".c-ledger-row").length > 0, "reset did not restore the list");
+      assert(kind.value === "全部" && start.value === "" && end.value === "" && query.value === "", "reset did not clear filters");
+
+      setValue(query, "不存在的账单");
+      await pause();
+      assert(required(page, "app-empty-state").textContent.includes("暂无点钻流水"), "unmatched search did not show the empty state");
+      await reset(page);
+      assert(page.querySelectorAll(".c-ledger-row").length > 0, "search reset did not restore the list");
+      document.body.dataset.testResult = "passed";
+    } catch (error) {
+      document.body.dataset.testResult = "failed";
+      document.body.dataset.testMessage = error.message;
+    }
+  </script>
+</body>
+</html>

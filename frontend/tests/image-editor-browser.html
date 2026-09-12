@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>Image editor interactions</title>
+    <style>iframe { width: 390px; height: 844px; border: 0; }</style>
+  </head>
+  <body data-test-result="pending">
+    <iframe id="editor" src="/?screen=chat-image-editor-ready&amp;capture=1"></iframe>
+    <script type="module">
+      async function ready(frame) {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const document = frame.contentDocument;
+          if (document?.body?.dataset.appReady === "true") return document;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        throw new Error("image editor did not render");
+      }
+
+      const nextFrame = () => new Promise((resolve) => setTimeout(resolve, 0));
+      const samePixel = (left, right) => left.every((value, index) => value === right[index]);
+      const pixel = (canvas, x, y) => [...canvas.getContext("2d").getImageData(x, y, 1, 1).data];
+      function pointer(canvas, type, x, y, pointerId) {
+        const rect = canvas.getBoundingClientRect();
+        canvas.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, pointerId, clientX: rect.left + rect.width * x / canvas.width,
+          clientY: rect.top + rect.height * y / canvas.height
+        }));
+      }
+      async function draw(child, tool, canvas, from, to, pointerId) {
+        child.querySelector(`button[aria-label="${tool}"]`).click();
+        canvas.setPointerCapture = () => {};
+        pointer(canvas, "pointerdown", from.x, from.y, pointerId);
+        pointer(canvas, "pointermove", to.x, to.y, pointerId);
+        pointer(canvas, "pointerup", to.x, to.y, pointerId);
+        await nextFrame();
+      }
+
+      try {
+        const frame = document.querySelector("#editor");
+        const child = await ready(frame);
+        const picker = child.querySelector('[data-testid="image-editor-emoji-grid"]');
+        const emoji = child.querySelector('button[aria-label="表情"]');
+        const done = child.querySelector('button[aria-label="完成"]');
+        const eraser = child.querySelector('button[aria-label="橡皮擦"] .c-icon');
+        if (!picker || !emoji || !done || eraser?.dataset.icon !== "eraser") throw new Error("editor tools are incomplete");
+        if (!picker.hidden || child.defaultView.getComputedStyle(picker).display !== "none" || picker.getBoundingClientRect().height !== 0) throw new Error("hidden emoji picker still occupies footer space");
+        if (done.getBoundingClientRect().bottom > child.defaultView.innerHeight) throw new Error("completion action is below the viewport");
+        emoji.click();
+        const cells = [...picker.querySelectorAll('[data-testid="image-editor-emoji-cell"]')];
+        if (picker.hidden || child.defaultView.getComputedStyle(picker).display !== "grid" || cells.length !== 35) throw new Error("emoji picker did not open as a grid");
+        if (cells.some((cell) => cell.getBoundingClientRect().width !== 48 || cell.getBoundingClientRect().height !== 48)) throw new Error("emoji cells lost fixed touch targets");
+        cells[0].click();
+        if (!picker.hidden || child.defaultView.getComputedStyle(picker).display !== "none") throw new Error("emoji picker did not close after selection");
+
+        const canvas = child.querySelector(".c-image-editor__canvas");
+        const original = pixel(canvas, 240, 400);
+        await draw(child, "画笔", canvas, { x: 235, y: 400 }, { x: 245, y: 400 }, 1);
+        if (samePixel(pixel(canvas, 240, 400), original)) throw new Error("brush did not alter its local overlay pixel");
+        await draw(child, "橡皮擦", canvas, { x: 235, y: 400 }, { x: 245, y: 400 }, 2);
+        if (!samePixel(pixel(canvas, 240, 400), original)) throw new Error("eraser did not restore the original source pixel");
+        child.querySelector('button[aria-label="撤销"]').click(); await nextFrame();
+        if (samePixel(pixel(canvas, 240, 400), original)) throw new Error("undo did not restore the erased overlay");
+        child.querySelector('button[aria-label="重做"]').click(); await nextFrame();
+        if (!samePixel(pixel(canvas, 240, 400), original)) throw new Error("redo did not reapply local erasing");
+
+        await draw(child, "裁剪", canvas, { x: 80, y: 120 }, { x: 600, y: 800 }, 3);
+        const croppedOriginal = pixel(canvas, 160, 280);
+        await draw(child, "画笔", canvas, { x: 155, y: 280 }, { x: 165, y: 280 }, 4);
+        if (samePixel(pixel(canvas, 160, 280), croppedOriginal)) throw new Error("brush did not alter the cropped overlay pixel");
+        await draw(child, "橡皮擦", canvas, { x: 155, y: 280 }, { x: 165, y: 280 }, 5);
+        if (!samePixel(pixel(canvas, 160, 280), croppedOriginal)) throw new Error("crop changed the source position revealed by the eraser");
+        document.body.dataset.testResult = "passed";
+      } catch (error) {
+        document.body.dataset.testResult = "failed";
+        document.body.dataset.testMessage = error.message;
+      }
+    </script>
+  </body>
+</html>

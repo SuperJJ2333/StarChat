@@ -13,11 +13,25 @@ final class PreparedChatVideo {
 }
 
 /// Only call with an app-owned camera capture, never a user's gallery original.
+/// A failed rendition deliberately keeps the original so the account-owned
+/// outgoing job can retry; a successful standalone preparation releases it.
 Future<PreparedChatVideo> prepareCapturedChatVideo(File capture,
     {void Function(double)? onProgress}) async {
+  final prepared = await prepareLocalChatVideo(capture,
+      deleteSourceWhenDone: false, onProgress: onProgress);
+  if (await capture.exists()) await capture.delete();
+  return prepared;
+}
+
+/// Serializes compression through [transcodeForChat] and keeps only the
+/// bounded compressed bytes. The account-owned outgoing source calls this
+/// after admission, so no widget or room lease owns the asynchronous work.
+Future<PreparedChatVideo> prepareLocalChatVideo(File source,
+    {required bool deleteSourceWhenDone,
+    void Function(double)? onProgress}) async {
   VideoRendition? rendition;
   try {
-    rendition = await transcodeForChat(capture, onProgress: onProgress);
+    rendition = await transcodeForChat(source, onProgress: onProgress);
     final bytes = await rendition.file.readAsBytes();
     validateGroupVideoSize(bytes.length);
     final poster = await extractVideoPoster(rendition.file.path);
@@ -26,7 +40,7 @@ Future<PreparedChatVideo> prepareCapturedChatVideo(File capture,
     try {
       await rendition?.dispose();
     } finally {
-      if (await capture.exists()) await capture.delete();
+      if (deleteSourceWhenDone && await source.exists()) await source.delete();
     }
   }
 }
