@@ -578,10 +578,10 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _copyCode(String code) async {
+  Future<void> _copyLink(String label, String url) async {
     try {
-      await Clipboard.setData(ClipboardData(text: code));
-      widget.controller.showMessage('邀请码已复制');
+      await Clipboard.setData(ClipboardData(text: url));
+      widget.controller.showMessage('$label下载链接已复制');
     } catch (_) {
       widget.controller.showMessage('复制失败，请重试');
     }
@@ -661,32 +661,52 @@ final class _InviteSummarySectionState extends State<_InviteSummarySection> {
           ),
         ),
         _divider(),
-        CupertinoButton(
-          key: const Key('profile-invite-one-click-copy'),
-          padding: EdgeInsets.zero,
-          onPressed: () => _copyCode(invite.code),
-          child: Container(
-            height: 57,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 40,
-                  child: Icon(CupertinoIcons.doc_on_doc,
-                      size: 21, color: WeChatColors.brandPrimary),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text('一键复制',
-                      style: TextStyle(fontSize: 16, color: foreground)),
-                ),
-                const Icon(CupertinoIcons.chevron_right,
-                    size: 12, color: WeChatColors.textSecondary),
-              ],
-            ),
-          ),
+        // 一键复制下载链接（安卓/iOS 区分）：方便用户把官方下载页
+        // 分享给好友；与邀请码入口同款行样式。
+        _linkRow(
+          key: const Key('profile-invite-copy-android-link'),
+          icon: CupertinoIcons.phone,
+          label: '一键复制安卓下载链接',
+          onTap: () => _copyLink(
+              '安卓', 'https://www.liuhetong888.com/download'),
+        ),
+        _divider(),
+        _linkRow(
+          key: const Key('profile-invite-copy-ios-link'),
+          icon: CupertinoIcons.desktopcomputer,
+          label: '一键复制iOS下载链接',
+          onTap: () => _copyLink(
+              'iOS', 'https://www.liuhetong888.com/download?platform=ios'),
         ),
       ];
+
+  Widget _linkRow({
+    required Key key,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) =>
+      CupertinoButton(
+        key: key,
+        padding: EdgeInsets.zero,
+        onPressed: onTap,
+        child: Container(
+          height: 57,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 40,
+                child: Icon(icon, size: 21, color: WeChatColors.brandPrimary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text(label)),
+              const Icon(CupertinoIcons.chevron_right,
+                  size: 12, color: WeChatColors.textSecondary),
+            ],
+          ),
+        ),
+      );
 
   Widget _summaryRow({
     required Key key,

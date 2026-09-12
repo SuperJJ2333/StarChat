@@ -463,6 +463,35 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     super.initState();
     _bindIdentity();
     _readIdentity();
+    unawaited(_refreshPresence());
+  }
+
+  /// 任意入口（会话/朋友圈/搜索/通讯录）打开资料页即向服务端自取
+  /// 该好友最新详情：在线状态与备注不依赖入口数据新鲜度；非好友
+  /// （404）保持隐藏状态行；失败静默保留现有内容。
+  Future<void> _refreshPresence() async {
+    final userId = contact.userId;
+    try {
+      final fresh = await widget.api.fetchFriendDetail(userId);
+      if (!mounted || fresh == null || userId != contact.userId) return;
+      setState(() => contact = ContactDetails(
+            userId: fresh.userId,
+            username: fresh.username,
+            matrixUserId: fresh.matrixUserId,
+            nickname: fresh.nickname ?? contact.nickname,
+            remark: fresh.remark ?? contact.remark,
+            avatarUrl: fresh.avatarUrl ?? contact.avatarUrl,
+            avatarIsKnown: fresh.avatarIsKnown,
+            nudgeSuffix: fresh.nudgeSuffix,
+            momentsPermission: fresh.momentsPermission,
+            tags: fresh.tags,
+            starred: fresh.starred,
+            lastSeenAt: fresh.lastSeenAt,
+            lastSeenKnown: fresh.lastSeenKnown,
+          ));
+    } catch (_) {
+      // 网络失败：保留入口携带的数据（通讯录路径仍有缓存值）。
+    }
   }
 
   void _bindIdentity() {
@@ -491,6 +520,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     if (repositoryChanged || contactChanged) {
       _bindIdentity();
       _readIdentity();
+      if (contactChanged) unawaited(_refreshPresence());
     }
   }
 

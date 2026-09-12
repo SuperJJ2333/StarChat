@@ -22,6 +22,9 @@ final class FakeContactsGateway implements ContactsGateway {
   Future<void> deleteContactTags(List<String> ids) async {}
 
   @override
+  Future<ContactSummary?> fetchFriendDetail(String userId) async => null;
+
+  @override
   Future<List<ContactSummary>> listContacts() async => const [
         ContactSummary(
           userId: 'user-bob',

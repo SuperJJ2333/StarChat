@@ -37,6 +37,12 @@ final class FakeContactsGateway implements ContactsGateway {
   Future<void> deleteContactTags(List<String> ids) async {}
 
   @override
+  Future<ContactSummary?> fetchFriendDetail(String userId) async =>
+      (await listContacts())
+          .where((contact) => contact.userId == userId)
+          .firstOrNull;
+
+  @override
   Future<List<ContactSummary>> listContacts() async => const [
         ContactSummary(
           userId: '9eec2ca7-76db-45e2-a716-7b918330f094',
@@ -44,6 +50,8 @@ final class FakeContactsGateway implements ContactsGateway {
           nickname: 'Alice',
           remark: '产品小艾',
           matrixUserId: '@alice:matrix.example.test',
+          // 好友接口携带在线状态字段（无记录）：状态行显示“暂无在线记录”。
+          lastSeenKnown: true,
         ),
       ];
 
@@ -75,6 +83,12 @@ final class FakeContactsGateway implements ContactsGateway {
 }
 
 final class IndexedContactsGateway extends FakeContactsGateway {
+  @override
+  Future<ContactSummary?> fetchFriendDetail(String userId) async =>
+      (await listContacts())
+          .where((contact) => contact.userId == userId)
+          .firstOrNull;
+
   @override
   Future<List<ContactSummary>> listContacts() async => [
         ContactSummary(

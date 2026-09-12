@@ -2,7 +2,7 @@ from datetime import datetime,timezone
 from hashlib import sha256
 import json
 from uuid import uuid4
-from sqlalchemy import delete,func,or_,select
+from sqlalchemy import and_,delete,func,or_,select
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyRecord
 from app.core.outbox import OutboxPublisher
@@ -84,6 +84,22 @@ class FriendshipService:
             if profile is None:continue
             contact=contacts.get(user_id);items.append({'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'nudge_suffix':profile.nudge_suffix,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else [],'last_seen_at':last_seen.get(user_id).isoformat() if last_seen.get(user_id) else None})
         return items
+    def detail(self,actor,friend_id):
+        """单个好友详情（含在线状态 last_seen_at）；非好友返回 None。
+
+        供好友资料页在任意入口（会话/朋友圈/搜索/通讯录）打开时自取
+        最新数据，不依赖调用方所处列表的数据新鲜度。
+        """
+        with self.factory() as s:
+            row=s.scalar(select(Friendship).where(or_(and_(Friendship.user_low_id==actor,Friendship.user_high_id==friend_id),and_(Friendship.user_low_id==friend_id,Friendship.user_high_id==actor))))
+            if row is None:return None
+            seen=(select(Device.user_id,func.max(Device.last_seen_at).label('last_seen')).where(Device.revoked_at.is_(None),Device.user_id==friend_id).group_by(Device.user_id))
+            last_seen=s.execute(seen).first()
+            contact=s.scalar(select(ContactProfile).where(ContactProfile.owner_id==actor,ContactProfile.contact_id==friend_id))
+        profile=self.profile_reader.read_public_profiles([friend_id]).get(friend_id)
+        if profile is None:return None
+        return {'user_id':profile.user_id,'username':profile.username,'nickname':profile.nickname,'remark':contact.remark if contact else None,'avatar_url':profile.avatar_url,'matrix_user_id':profile.matrix_user_id,'nudge_suffix':profile.nudge_suffix,'moments_permission':contact.moments_permission if contact else 'DEFAULT','tags':contact.tags.split(',') if contact and contact.tags else [],'last_seen_at':last_seen[1].isoformat() if last_seen and last_seen[1] else None}
+
     def requests(self,actor):
         with self.factory() as s:
             rows=list(s.scalars(select(FriendRequest).where(or_(
