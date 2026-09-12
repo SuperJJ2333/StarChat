@@ -38,3 +38,13 @@ android-ci `backend` job 的 `tests/business_api` 失败（CI 13 项 / 本地复
 CI 后续运行报告 drift check 失败。共享工作区并行任务的提交（f6405c04 好友主页 moments 预览）新增 `GET /api/v1/friends/{friend_id}` 等端点但未重新生成契约；由于提交时序交叠，该漂移在 5ff6e6c4 推送时已存在。在当前 tip（7797b0bc）重新生成契约（+63 行），`--check` PASS；本地按 CI 组合方式全量回归 `tests/business_api tests/business_worker` → **1847 passed / 52 skipped / 0 failed**（14m01s，与 CI 收集数一致）。
 
 经服务器出口查询 GitHub API（android-ci runs #70–#77 连续 failure）确认 run #76 的 job 状态：Android debug build **success**（前一轮 Gradle 修复生效）；Business API & Worker 步骤通过；剩余失败为 `Flutter boundary tests (python)`（tests/mobile，1 项）与 `Flutter analyze & test` job——均属于并行移动任务的在途文件（搜索页 dart、UI 组件 registry），按"每个任务拥有独立文件"规则留给所属任务处理，不做跨任务抢改。job 日志下载需仓库权限（403），未能取到失败测试名。
+
+## 第三轮（同日）：tests/mobile 三项与 flutter analyze
+
+run #79（8f58cc23）失败定位（经服务器出口 API）：Business API & Worker、Infra、Getui、Android debug build 全部通过；backend job 仅剩 "Flutter boundary tests (python)" 的 3 项失败，Flutter job 红在 Analyze 步骤。修复（全部为测试/分析器层，不动生产代码）：
+
+1. `tests/mobile/test_ui_component_registry.py`：移动任务已将 registry 更新为 28 组件 / 363 屏（`verify()` 实测 PASS），测试内硬编码 tripwire 同步为 28/363。
+2. `tests/mobile/test_search_entry_uniformity.py`：正则 `GlobalSearchPage\((.*?)\)` 在实参含嵌套 `ContactActions(…)` 时于第一个右括号截断，`api:`/`matrix:`（matrix_home_page.dart L994-995 实际存在）被截掉；改为截到语句结尾 `\((.*?);`。
+3. `apps/mobile_flutter/test/core/session_capsule_recovery_test.dart`：删除接口已淘汰的死方法 `logout()`（接口现为 `logoutBusiness()`，测试内无调用）与未使用的 `package:matrix/matrix.dart` import——这两个 warning 使 CI `flutter analyze` 非零退出。
+
+验证：`flutter analyze` 0 issues；`flutter test test/core/session_capsule_recovery_test.dart` 2 passed；`pytest tests/mobile -q` 69 passed + 1 项本地并发行列竞态（`docs/verification/artifacts` 为 git 排除目录，并行代理增删导致的 TOCTOU，CI 提交态无并发写入者、用户所贴失败列表亦无此项）。Flutter job 的 "Test (full suite)" 存在既有的 29 项钱包基线失败（见 workflow/current-state 2026-09-11 记录），属钱包重构任务范围，本轮未动。
