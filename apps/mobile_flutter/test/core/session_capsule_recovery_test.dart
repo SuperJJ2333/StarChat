@@ -7,7 +7,6 @@ import 'package:liuhetong_mobile/core/business_auth_contracts.dart';
 import 'package:liuhetong_mobile/core/session_bootstrap_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_security_logger.dart';
-import 'package:matrix/matrix.dart';
 
 /// 可控心跳网关：按队列返回成功/失败，驱动离线胶囊恢复测试。
 final class HeartbeatBusiness
@@ -19,9 +18,6 @@ final class HeartbeatBusiness
 
   @override
   Future<String?> currentMatrixUserId() async => '@u:t';
-
-  @override
-  Future<void> logout() async {}
 
   @override
   Future<BusinessSessionRevocation?> clearLocalSession() async => null;
