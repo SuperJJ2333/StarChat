@@ -32,3 +32,9 @@ android-ci `backend` job 的 `tests/business_api` 失败（CI 13 项 / 本地复
 
 - Node 20 deprecation 警告来自 Actions runner 默认版本，非失败项，不处理。
 - 本地复现需 `.venv`（全局 site-packages 有无关 `scripts` 包遮蔽工作区命名空间包）+ `pip install -e services/business-api`（coincurve 等）。
+
+## 第二轮（同日）：friend_detail 契约漂移
+
+CI 后续运行报告 drift check 失败。共享工作区并行任务的提交（f6405c04 好友主页 moments 预览）新增 `GET /api/v1/friends/{friend_id}` 等端点但未重新生成契约；由于提交时序交叠，该漂移在 5ff6e6c4 推送时已存在。在当前 tip（7797b0bc）重新生成契约（+63 行），`--check` PASS；本地按 CI 组合方式全量回归 `tests/business_api tests/business_worker` → **1847 passed / 52 skipped / 0 failed**（14m01s，与 CI 收集数一致）。
+
+经服务器出口查询 GitHub API（android-ci runs #70–#77 连续 failure）确认 run #76 的 job 状态：Android debug build **success**（前一轮 Gradle 修复生效）；Business API & Worker 步骤通过；剩余失败为 `Flutter boundary tests (python)`（tests/mobile，1 项）与 `Flutter analyze & test` job——均属于并行移动任务的在途文件（搜索页 dart、UI 组件 registry），按"每个任务拥有独立文件"规则留给所属任务处理，不做跨任务抢改。job 日志下载需仓库权限（403），未能取到失败测试名。
