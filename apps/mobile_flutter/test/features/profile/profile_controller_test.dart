@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/profile/invite_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/features/profile/profile_avatar_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_page.dart';
@@ -82,6 +84,17 @@ final class _HeldProfileGateway extends FakeProfileGateway {
 final class _FailingProfileGateway extends FakeProfileGateway {
   @override
   Future<ProfileData> loadProfile() async => throw StateError('offline');
+}
+
+final class _ProfileInvitationGateway implements PersonalInvitationGateway {
+  @override
+  Future<PersonalInvitation> fetchPersonalInvitation() async =>
+      const PersonalInvitation(
+        code: 'A1B2C3',
+        maxUses: 10,
+        useCount: 2,
+        shareUrl: 'https://invite.example.test/A1B2C3',
+      );
 }
 
 final class _HeldAvatarInvalidator {
@@ -378,6 +391,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.state.profile!.nickname, 'Alice Updated');
     expect(controller.state.profile!.signature, 'Updated signature');
+  });
+
+  testWidgets('profile invitation copies the exact platform download links',
+      (tester) async {
+    String? clipboard;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboard = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(() =>
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    final controller = ProfileController(
+      gateway: FakeProfileGateway(),
+      avatarSource: FakeAvatarSource(),
+    );
+    await controller.load();
+
+    await tester.pumpWidget(CupertinoApp(
+      home: ProfileDetailsPage(
+        controller: controller,
+        onInvite: () {},
+        inviteGateway: _ProfileInvitationGateway(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('profile-invite-copy-android-link')));
+    await tester.pump();
+    expect(clipboard, 'https://www.liuhetong888.com/download');
+
+    await tester.tap(find.byKey(const Key('profile-invite-copy-ios-link')));
+    await tester.pump();
+    expect(clipboard, 'https://www.liuhetong888.com/download?platform=ios');
   });
 
   testWidgets(

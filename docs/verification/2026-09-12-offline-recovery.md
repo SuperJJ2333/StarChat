@@ -71,3 +71,9 @@
 HTML路径：`frontend/index.html?screen=messages-network-offline`、`messages-network-connecting`、`messages-network-service-unavailable`、`moments-timeline-cached-offline`、`moments-timeline-no-cache-offline`、`moments-timeline-explicit-retry`、`profile-home-cached-offline`、`profile-home-no-cache-offline`（后续id均作为screen参数）。注册表`packages/ui-contracts/changliao-component-registry.json`保持原onRetry/reconnecting并增加label/disabled、连接中与服务不可用状态。
 
 root实际浏览器检查390px页面与取消→重新打开→重试操作。首次发现只setAttribute未触发StrictElement渲染，已经退回修复并用真实浏览器RED/GREEN证明；初次失败快照与最终快照均保留。控制台仅已有favicon.ico 404，无页面渲染异常。截图/快照：`ui-profile-no-cache.png`、`ui-profile-retry-final.png/md`、`ui-moments-dialog.png`，全部在本任务artifact目录。
+
+## 安装前源码/设备漂移处理
+
+2092 是本次首次冻结候选，已完成源码构建与固定重建但**未安装**。安装前发现手机实际已经由其他工作升级为 `0.3.85-debug/2092`，本地 main 同时新增 `662c7152`/`1d1db6aa`。root 检查新提交后整合到工作分支（merge `f5caf48f`），保留好友资料任意入口在线状态自取和两个平台下载链接按钮。重新选择 `0.3.86-debug/2093`，因此前表2452/29是2092阶段结果，最终2093验证另记，不把旧包证据冒充新包。
+
+新 main 的 friendship 服务端改动属于已完成的其他任务，原始记录为`2026-09-12-presence-entries-and-links.md`；本次未部署服务端或执行迁移。工作分支合入这些既有源代码仅用于保留最新功能，不意味着本次重新验收它的历史生产发布。
