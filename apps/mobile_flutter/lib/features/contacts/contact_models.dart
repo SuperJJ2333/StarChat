@@ -14,6 +14,7 @@ final class ContactSummary {
     this.tags = const [],
     this.starred = false,
     this.lastSeenAt,
+    this.lastSeenKnown = false,
   });
 
   factory ContactSummary.fromJson(Map<String, dynamic> json) => ContactSummary(
@@ -31,6 +32,7 @@ final class ContactSummary {
             .toList(growable: false),
         starred: json['starred'] == true,
         lastSeenAt: DateTime.tryParse(json['last_seen_at']?.toString() ?? ''),
+        lastSeenKnown: json.containsKey('last_seen_at'),
       );
 
   final String userId;
@@ -48,6 +50,11 @@ final class ContactSummary {
   /// 该好友最近一次使用 App 的时间（服务端设备 last_seen_at 最大值）；
   /// null 表示暂无记录。仅好友资料页在线状态栏使用。
   final DateTime? lastSeenAt;
+
+  /// 数据源是否携带在线状态字段（/friends 与 /friends/{id} 为 true；
+  /// 会话/朋友圈/搜索等本地构造的视图为 false，状态行在其自取数据
+  /// 落地前不显示，避免误报“暂无在线记录”）。
+  final bool lastSeenKnown;
 
   bool get isStarred =>
       starred || tags.any((tag) => tag == 'starred' || tag == '星标好友');
@@ -84,6 +91,7 @@ final class ContactSummary {
         tags: tags,
         starred: starred,
         lastSeenAt: lastSeenAt,
+        lastSeenKnown: lastSeenKnown,
       );
 
   ContactDetails toDetails() => ContactDetails(
@@ -99,6 +107,7 @@ final class ContactSummary {
         tags: tags,
         starred: starred,
         lastSeenAt: lastSeenAt,
+        lastSeenKnown: lastSeenKnown,
       );
 }
 
@@ -134,6 +143,7 @@ final class ContactDetails {
     this.tags = const [],
     this.starred = false,
     this.lastSeenAt,
+    this.lastSeenKnown = false,
   });
 
   final String userId;
@@ -150,6 +160,9 @@ final class ContactDetails {
 
   /// 好友最近一次使用 App 的时间（同 [ContactSummary.lastSeenAt]）。
   final DateTime? lastSeenAt;
+
+  /// 数据源是否携带在线状态（同 [ContactSummary.lastSeenKnown]）。
+  final bool lastSeenKnown;
 
   String get displayName => ContactSummary(
         userId: userId,
@@ -217,6 +230,10 @@ abstract interface class AddFriendGateway {
 
 abstract interface class ContactsGateway {
   Future<List<ContactSummary>> listContacts();
+
+  /// 单个好友最新详情（含 last_seen_at）；非好友或获取失败由实现方
+  /// 返回 null / 抛错，资料页据此隐藏或保持状态行。
+  Future<ContactSummary?> fetchFriendDetail(String userId);
   Future<Map<String, dynamic>> contactTags();
   Future<Map<String, dynamic>> createContactTag(String name);
   Future<Map<String, dynamic>> renameContactTag(String id, String name);

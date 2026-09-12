@@ -934,6 +934,17 @@ final class BusinessApiClient
         .toList(growable: false);
   }
 
+  @override
+  Future<ContactSummary?> fetchFriendDetail(String userId) async {
+    try {
+      final body = await getJson('/friends/$userId');
+      return ContactSummary.fromJson(body);
+    } on BusinessApiException catch (error) {
+      if (error.statusCode == 404) return null; // 非好友：状态行隐藏。
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> friendRequests() => getJson('/friends/requests');
   @override
   Future<Map<String, dynamic>> submitComplaint({

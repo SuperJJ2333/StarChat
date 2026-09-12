@@ -61,6 +61,11 @@ def create_friendship_router(settings:Settings,factory,*,avatar_storage,rate_lim
         r=service.cancel(user,request_id,idempotency_key);return {'id':r.id,'status':r.status}
     @router.get('/friends',response_model=FriendListResponse)
     def friends(user=Depends(actor)):return {'items':service.list(user),'next_cursor':None}
+    @router.get('/friends/{friend_id}')
+    def friend_detail(friend_id:str,user=Depends(actor)):
+        r=service.detail(user,friend_id)
+        if r is None:raise AppError(code='FRIEND_NOT_FOUND',message='双方不是好友',status_code=404)
+        return r
     @router.patch('/friends/{friend_id}')
     def update(friend_id:str,body:ContactBody,idempotency_key:Annotated[str,Header(alias='Idempotency-Key')],user=Depends(actor)):
         r=service.update_profile(user,friend_id,body.remark,body.tags,body.moments_permission,idempotency_key);return {'user_id':r.contact_id,'remark':r.remark,'tags':r.tags.split(',') if r.tags else [],'moments_permission':r.moments_permission}

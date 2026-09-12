@@ -23,7 +23,11 @@ final class FriendIdentityCard extends StatelessWidget {
         remark: contact.remark,
         avatarUrl: contact.avatarUrl,
         identityCache: identityCache,
-        statusLabel: formatLastSeenLabel(contact.lastSeenAt),
+        // 仅当数据源携带在线状态（/friends 系接口）才显示状态行；
+        // 会话/朋友圈/搜索入口先隐藏，待资料页自取数据落地后出现。
+        statusLabel: contact.lastSeenKnown
+            ? formatLastSeenLabel(contact.lastSeenAt)
+            : null,
       );
 }
 
