@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import '../../core/amount_rules.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
-import '../../ui/components/user_avatar.dart';
 import 'chat_red_packet_controller.dart';
+import 'group_member_picker.dart';
+import 'matrix_user_avatar.dart';
 
 abstract interface class ChatRedPacketSupport {
   Future<double> balance();
@@ -37,7 +39,7 @@ final class BusinessChatRedPacketSupport implements ChatRedPacketSupport {
 
 final class ChatRoomMember {
   const ChatRoomMember(this.id, this.name,
-      {this.avatarUrl, this.businessAvatarUrl});
+      {this.avatarUrl, this.businessAvatarUrl, this.businessUserId});
   final String id;
   final String name;
 
@@ -46,6 +48,7 @@ final class ChatRoomMember {
 
   /// 业务头像（好友资料，http(s)，走统一缓存）。
   final String? businessAvatarUrl;
+  final String? businessUserId;
 }
 
 String redPacketTypeLabel(String mode) => switch (mode) {
@@ -62,12 +65,17 @@ final class ChatRedPacketSheet extends StatefulWidget {
     required this.onSent,
     this.support,
     this.members = const <ChatRoomMember>[],
+    this.resolveBusinessUser,
+    this.avatarMedia,
   });
   final ChatRedPacketController controller;
   final bool isGroup;
   final VoidCallback onSent;
   final ChatRedPacketSupport? support;
   final List<ChatRoomMember> members;
+  final Future<Map<String, dynamic>> Function(String matrixUserId)?
+      resolveBusinessUser;
+  final AvatarMediaCapability? avatarMedia;
   @override
   State<ChatRedPacketSheet> createState() => _State();
 }
@@ -79,8 +87,11 @@ final class _State extends State<ChatRedPacketSheet> {
   String mode = 'RANDOM';
   String? recipientId;
   String? recipientName;
+  String? recipientMatrixUserId;
   double? balance;
   double maxTotal = 20000;
+  bool resolvingRecipient = false;
+  int _resolutionGeneration = 0;
 
   @override
   void initState() {
@@ -120,6 +131,7 @@ final class _State extends State<ChatRedPacketSheet> {
   }
 
   Future<void> _send() async {
+    if (resolvingRecipient) return;
     final amountError = AmountRules.validate(total.text.trim());
     if (amountError != null) {
       await _alert(amountError);
@@ -221,85 +233,114 @@ final class _State extends State<ChatRedPacketSheet> {
   }
 
   Future<void> _pickRecipient() async {
+    if (resolvingRecipient) return;
     if (widget.members.isEmpty) {
       await _alert('群成员尚未加载，请稍后再试');
       return;
     }
-    // 专属红包接收人选择：与「转账」的好友选择页同一套 UI
-    //（UserAvatar 自定义头像 + 缓存机制 + 勾选态），从房间成员映射。
-    final selected = await showCupertinoModalPopup<ChatRoomMember>(
-      context: context,
-      builder: (sheetContext) => CupertinoPopupSurface(
-        child: SafeArea(
-          child: SizedBox(
-            height: 400,
-            child: Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Text('选择指定成员',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    key: const Key('chat-red-packet-member-list'),
-                    itemCount: widget.members.length,
-                    itemBuilder: (context, index) {
-                      final member = widget.members[index];
-                      return CupertinoButton(
-                        key: Key('chat-red-packet-member-${member.id}'),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        onPressed: () => Navigator.pop(sheetContext, member),
-                        child: Row(
-                          children: [
-                            UserAvatar(
-                              nickname: member.name,
-                              fallbackSeed: member.id,
-                              avatarUrl: member.businessAvatarUrl ??
-                                  (member.avatarUrl?.startsWith('http') == true
-                                      ? member.avatarUrl
-                                      : null),
-                              size: 36,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                                child: Text(member.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 16))),
-                            if (recipientId == member.id)
-                              const Icon(CupertinoIcons.check_mark,
-                                  size: 16, color: WeChatColors.brandPrimary),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                CupertinoButton(
-                  onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('取消'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final selected = await GroupMemberPicker.show(
+      context,
+      title: '选择指定成员',
+      avatarMedia: widget.avatarMedia,
+      itemKeyPrefix: 'chat-red-packet-member',
+      selectedMatrixUserId: recipientMatrixUserId,
+      members: [
+        for (final member in widget.members)
+          GroupMemberIdentity(
+            matrixUserId: member.id,
+            displayName: member.name,
+            matrixAvatarUri: member.avatarUrl == null
+                ? null
+                : Uri.tryParse(member.avatarUrl!),
+            businessUserId: member.businessUserId ??
+                (member.id.startsWith('@') ? null : member.id),
+            businessAvatarUrl: member.businessAvatarUrl,
+          )
+      ],
     );
+    if (!mounted) return;
     if (selected != null) {
+      final generation = ++_resolutionGeneration;
+      setState(() => resolvingRecipient = true);
+      final resolved = await _resolveMember(selected, generation);
+      if (!mounted || generation != _resolutionGeneration) return;
+      setState(() => resolvingRecipient = false);
+      if (resolved == null || !mounted) return;
       setState(() {
-        recipientId = selected.id;
-        recipientName = selected.name;
+        recipientId = resolved.businessUserId;
+        recipientMatrixUserId = resolved.matrixUserId;
+        recipientName = resolved.displayName;
       });
     }
+  }
+
+  Future<GroupMemberIdentity?> _resolveMember(
+      GroupMemberIdentity member, int generation) async {
+    if (member.businessUserId != null && member.businessUserId!.isNotEmpty) {
+      return member;
+    }
+    final lookup = widget.resolveBusinessUser;
+    if (lookup == null) {
+      await _showResolutionUnavailable();
+      return null;
+    }
+    try {
+      final profile = await lookup(member.matrixUserId);
+      if (!mounted || generation != _resolutionGeneration) return null;
+      final userId = profile['user_id']?.toString();
+      if (profile['matrix_user_id']?.toString() != member.matrixUserId ||
+          userId == null ||
+          userId.isEmpty) {
+        throw StateError('member identity mismatch');
+      }
+      return member.withBusinessIdentity(
+          userId: userId, avatarUrl: profile['avatar_url']?.toString());
+    } catch (_) {
+      final retry = mounted &&
+          generation == _resolutionGeneration &&
+          await _offerResolutionRetry();
+      if (retry && mounted && generation == _resolutionGeneration) {
+        return _resolveMember(member, generation);
+      }
+      return null;
+    }
+  }
+
+  Future<void> _showResolutionUnavailable() => showCupertinoDialog<void>(
+      context: context,
+      builder: (dialogContext) => CupertinoAlertDialog(
+              title: const Text('无法确认红包账号'),
+              content: const Text('当前会话暂不支持确认该群成员账号。'),
+              actions: [
+                CupertinoDialogAction(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('知道了')),
+              ]));
+
+  Future<bool> _offerResolutionRetry() async {
+    final retry = await showCupertinoDialog<bool>(
+        context: context,
+        builder: (dialogContext) => CupertinoAlertDialog(
+                title: const Text('无法确认红包账号'),
+                content: const Text('请重试或选择其他群成员。'),
+                actions: [
+                  CupertinoDialogAction(
+                      onPressed: () => Navigator.pop(dialogContext, false),
+                      child: const Text('取消')),
+                  CupertinoDialogAction(
+                      isDefaultAction: true,
+                      onPressed: () => Navigator.pop(dialogContext, true),
+                      child: const Text('重试')),
+                ]));
+    return retry == true;
   }
 
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
     final busy = state.status == ChatRedPacketStatus.creating ||
-        state.status == ChatRedPacketStatus.sharing;
+        state.status == ChatRedPacketStatus.sharing ||
+        resolvingRecipient;
     final exclusive = mode == 'EXCLUSIVE';
     return WeChatPageScaffold.navigation(
       backgroundColor: WeChatColors.resolve(
@@ -407,6 +448,16 @@ final class _State extends State<ChatRedPacketSheet> {
               ]),
             ),
             const SizedBox(height: 8),
+            if (resolvingRecipient)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child:
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  CupertinoActivityIndicator(),
+                  SizedBox(width: 8),
+                  Text('正在确认收款账号'),
+                ]),
+              ),
             Text(
               '单个红包金额不可超过 ${maxTotal.toStringAsFixed(2)} 点钻',
               key: const Key('chat-red-packet-limit-hint'),

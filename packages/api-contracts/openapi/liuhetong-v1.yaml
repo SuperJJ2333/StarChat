@@ -6388,6 +6388,39 @@
             ],
             "title": "Business Id"
           },
+          "counterparty_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Id"
+          },
+          "counterparty_nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Nickname"
+          },
+          "counterparty_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty Username"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6422,6 +6455,28 @@
               }
             ],
             "title": "Note"
+          },
+          "packet_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packet Mode"
+          },
+          "packet_room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packet Room"
           },
           "reason_code": {
             "title": "Reason Code",
@@ -6643,6 +6698,58 @@
           "txid"
         ],
         "title": "TxidBody",
+        "type": "object"
+      },
+      "UpdateVisibility": {
+        "additionalProperties": false,
+        "properties": {
+          "exclude_tag_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Exclude Tag Ids",
+            "type": "array"
+          },
+          "exclude_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Exclude User Ids",
+            "type": "array"
+          },
+          "include_tag_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Include Tag Ids",
+            "type": "array"
+          },
+          "include_user_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Include User Ids",
+            "type": "array"
+          },
+          "visibility": {
+            "enum": [
+              "PUBLIC",
+              "FRIENDS",
+              "INCLUDE",
+              "EXCLUDE",
+              "SELF"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "visibility"
+        ],
+        "title": "UpdateVisibility",
         "type": "object"
       },
       "UserSearchProjection": {
@@ -18443,77 +18550,6 @@
         ]
       }
     },
-    "/api/v1/moments/{moment_id}/visibility":
-      patch:
-        description: "作者本人单条修改朋友圈可见范围（谁可以看）。复用发布时的受众解析与校验；仅更新可见性五字段。"
-        operationId: update_moment_visibility_api_v1_moments__moment_id__visibility_patch
-        parameters:
-          - in: path
-            name: moment_id
-            required: true
-            schema:
-              type: string
-        requestBody:
-          required: true
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                  - visibility
-                properties:
-                  visibility:
-                    type: string
-                    enum:
-                      - PUBLIC
-                      - FRIENDS
-                      - INCLUDE
-                      - EXCLUDE
-                      - SELF
-                  include_user_ids:
-                    type: array
-                    items:
-                      type: string
-                  exclude_user_ids:
-                    type: array
-                    maxItems: 30
-                    items:
-                      type: string
-                  include_tag_ids:
-                    type: array
-                    maxItems: 30
-                    items:
-                      type: string
-                  exclude_tag_ids:
-                    type: array
-                    maxItems: 30
-                    items:
-                      type: string
-        responses:
-          "200":
-            description: Successful Response
-            content:
-              application/json:
-                schema:
-                  additionalProperties: true
-                  type: object
-          "401":
-            description: Application error
-            content:
-              application/json:
-                schema:
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-          "422":
-            description: Validation error
-            content:
-              application/json:
-                schema:
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-        security:
-          - bearerAuth: []
-        tags:
-          - moments
     "/api/v1/moments/preferences": {
       "get": {
         "operationId": "preferences_api_v1_moments_preferences_get",
@@ -19377,6 +19413,81 @@
           }
         ],
         "summary": "Report",
+        "tags": [
+          "moments"
+        ]
+      }
+    },
+    "/api/v1/moments/{moment_id}/visibility": {
+      "patch": {
+        "operationId": "update_visibility_api_v1_moments__moment_id__visibility_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "moment_id",
+            "required": true,
+            "schema": {
+              "title": "Moment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVisibility"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Update Visibility",
         "tags": [
           "moments"
         ]

@@ -25,6 +25,8 @@ abstract final class WeChatColors {
   static const errorSurface = Color(0xFFFFF1F0);
   static const errorBorder = Color(0xFFFFCCC7);
   static const warning = Color(0xFFFA9D3B);
+  /// Authoritative business-support identity only; never derived from Matrix.
+  static const supportIdentityYellow = Color(0xFFF6C343);
   static const redPacketPrimary = Color(0xFFE95C3A);
   static const redPacketMuted = Color(0xFFF2B7A8);
   static const redPacketPageBackground = Color(0xFFF5F5F5);

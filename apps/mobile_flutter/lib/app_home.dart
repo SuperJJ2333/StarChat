@@ -2051,10 +2051,12 @@ final class ProfileTabPage extends StatefulWidget {
 }
 
 /// 点钻页右上角/查看全部 → 全部账单页（复用既有账单列表）。
-void _openLedgerAllBills(BuildContext context, BusinessApiClient? api) {
+void _openLedgerAllBills(BuildContext context, BusinessApiClient? api,
+    ProfileRepository? identityCache) {
   if (api == null) return;
   Navigator.of(context).push(CupertinoPageRoute<void>(
-      builder: (_) => LedgerListPage(gateway: BusinessLedgerGateway(api))));
+      builder: (_) => LedgerListPage(
+          gateway: BusinessLedgerGateway(api), identityCache: identityCache)));
 }
 
 final class _ProfileTabPageState extends State<ProfileTabPage> {
@@ -2145,7 +2147,8 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
           CupertinoPageRoute(
               builder: (_) => CaibiPage(
                   api: widget.api,
-                  onOpenAllBills: () => _openLedgerAllBills(context, widget.api)))),
+                  onOpenAllBills: () => _openLedgerAllBills(
+                      context, widget.api, widget.identityCache)))),
       onWallet: () => Navigator.push(
           context,
           CupertinoPageRoute(
@@ -2181,10 +2184,12 @@ final class ProfilePage extends StatelessWidget {
     super.key,
     required this.api,
     required this.onLogout,
+    this.identityCache,
   });
 
   final BusinessApiClient api;
   final Future<void> Function() onLogout;
+  final ProfileRepository? identityCache;
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
@@ -2204,7 +2209,8 @@ final class ProfilePage extends StatelessWidget {
                   CupertinoPageRoute(
                     builder: (_) => CaibiPage(
                       api: api,
-                      onOpenAllBills: () => _openLedgerAllBills(context, api),
+                      onOpenAllBills: () => _openLedgerAllBills(
+                          context, api, identityCache),
                     ),
                   ),
                 ),

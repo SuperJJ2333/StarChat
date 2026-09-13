@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/transfer/chat_transfer_controller.dart';
 import 'package:liuhetong_mobile/features/transfer/chat_transfer_sheet.dart';
+import 'package:liuhetong_mobile/features/matrix/group_member_picker.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 
 final class FakeTransferBusiness implements ChatTransferBusinessGateway {
   int creates = 0;
@@ -157,4 +160,41 @@ void main() {
       reason: '输入过滤器把小数限制到两位',
     );
   });
+
+  testWidgets('nonfriend group member resolves a verified business user ID before transfer', (tester) async {
+    final business = FakeTransferBusiness();
+    await tester.pumpWidget(CupertinoApp(home: ChatTransferSheet(
+      controller: ChatTransferController(business: business, references: FakeTransferReference()),
+      balanceSource: FakeBalance(), onSent: () {}, avatarMedia: _AvatarMedia(),
+      groupMembers: const [GroupMemberIdentity(matrixUserId: '@guest:test', displayName: '群成员')],
+      resolveBusinessUser: (_) async => {'matrix_user_id': '@guest:test', 'user_id': 'user-guest'},
+    )));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('chat-transfer-recipient'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-transfer-contact-@guest:test'))); await tester.pump(); await tester.pump(const Duration(milliseconds: 300));
+    await tester.enterText(find.byKey(const Key('chat-transfer-amount')), '1');
+    await tester.tap(find.byKey(const Key('chat-transfer-send'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-transfer-confirm-action'))); await tester.pumpAndSettle();
+    expect(business.receiverId, 'user-guest');
+  });
+
+  testWidgets('mismatched lookup cannot submit a Matrix ID as a transfer receiver', (tester) async {
+    final business = FakeTransferBusiness();
+    await tester.pumpWidget(CupertinoApp(home: ChatTransferSheet(
+      controller: ChatTransferController(business: business, references: FakeTransferReference()),
+      onSent: () {}, avatarMedia: _AvatarMedia(),
+      groupMembers: const [GroupMemberIdentity(matrixUserId: '@guest:test', displayName: '群成员')],
+      resolveBusinessUser: (_) async => {'matrix_user_id': '@other:test', 'user_id': 'user-other'},
+    )));
+    await tester.tap(find.byKey(const Key('chat-transfer-recipient'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-transfer-contact-@guest:test')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('无法确认收款账号'), findsOneWidget);
+    expect(business.creates, 0);
+  });
+}
+
+final class _AvatarMedia implements AvatarMediaCapability {
+  @override Future<ResolvedAvatarUrl?> resolveAvatar({required Uri? avatarUri, required double size}) async => null;
 }

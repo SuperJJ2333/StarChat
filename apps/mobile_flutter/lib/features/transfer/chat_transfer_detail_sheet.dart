@@ -11,6 +11,7 @@ import '../finance/finance_message_presentation.dart';
 import '../ledger/ledger_business_gateway.dart';
 import '../ledger/ledger_gateway.dart';
 import '../ledger/ledger_pages.dart';
+import '../matrix/profile_repository.dart';
 import 'chat_transfer_detail_controller.dart';
 
 String chatTransferStatusLabel(String? status) => switch (status) {
@@ -29,6 +30,7 @@ final class ChatTransferDetailSheet extends StatefulWidget {
     this.onSettled,
     this.gateway,
     this.ledgerGateway,
+    this.identityCache,
   }) : assert(api != null || gateway != null);
 
   final BusinessApiClient? api;
@@ -37,6 +39,7 @@ final class ChatTransferDetailSheet extends StatefulWidget {
   final VoidCallback? onSettled;
   final ChatTransferDetailGateway? gateway;
   final LedgerGateway? ledgerGateway;
+  final ProfileRepository? identityCache;
 
   @override
   State<ChatTransferDetailSheet> createState() =>
@@ -216,8 +219,7 @@ final class _ChatTransferDetailSheetState
             ),
             const TextSpan(
               text: ' 点钻',
-              style: TextStyle(
-                  fontSize: 15, color: WeChatColors.textSecondary),
+              style: TextStyle(fontSize: 15, color: WeChatColors.textSecondary),
             ),
           ]),
           maxLines: 1,
@@ -298,6 +300,7 @@ final class _ChatTransferDetailSheetState
         builder: (_) => LedgerDetailPage(
               gateway: gateway,
               transactionId: billId,
+              identityCache: widget.identityCache,
             )));
   }
 
@@ -306,6 +309,9 @@ final class _ChatTransferDetailSheetState
     final gateway = _ledgerGateway;
     if (gateway == null) return;
     Navigator.of(context).push(CupertinoPageRoute<void>(
-        builder: (_) => LedgerListPage(gateway: gateway)));
+        builder: (_) => LedgerListPage(
+              gateway: gateway,
+              identityCache: widget.identityCache,
+            )));
   }
 }

@@ -12,8 +12,9 @@ from app.modules.transfer.projections import TransferReadProjection
 
 
 class StatementService:
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, *, profile_reader=None):
         self.session_factory = session_factory
+        self.profile_reader = profile_reader
 
     @staticmethod
     def kind_for(transaction: LedgerTransaction) -> str:
@@ -106,15 +107,19 @@ class StatementService:
                 else:
                     other = []
             counterparties[transaction.id] = other[0] if other else None
+        profiles = (self.profile_reader.read_public_profile_identities(
+            {value for value in counterparties.values() if value})
+            if self.profile_reader else {})
         result = []
         for transaction, amount in rows:
             result.append(self._project(transaction, amount,
                 transfer_for_tx.get(transaction.id),
                 counterparty=counterparties.get(transaction.id),
-                packet=packet_ctx.get(transaction.id)))
+                packet=packet_ctx.get(transaction.id),
+                counterparty_profile=profiles.get(counterparties.get(transaction.id))))
         return result
 
-    def _project(self, transaction, amount, transfer, counterparty=None, packet=None):
+    def _project(self, transaction, amount, transfer, counterparty=None, packet=None, counterparty_profile=None):
         # 账单名称后缀：交易对手（备注/昵称由客户端按通讯录优先渲染）。
         return {"id": transaction.id, "asset": "CAIBI", "amount": f"{money(Decimal(amount)):.2f}",
             "kind": self.kind_for(transaction), "reason_code": transaction.reason_code,
@@ -126,6 +131,8 @@ class StatementService:
             "accepted_at": self._utc(transfer.updated_at) if transfer and transfer.status == "ACCEPTED" else None,
             "transfer_created_at": self._utc(transfer.created_at) if transfer else None,
             "counterparty_id": counterparty,
+            "counterparty_nickname": counterparty_profile.nickname if counterparty_profile else None,
+            "counterparty_username": counterparty_profile.username if counterparty_profile else None,
             "packet_mode": packet.mode if packet else None,
             "packet_room": packet.room_id if packet else None}
 

@@ -58,6 +58,7 @@ import '../../ui/chat/wechat_call_bubble.dart';
 import '../../ui/chat/wechat_video_message.dart';
 import '../../ui/chat/chat_tools.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/finance/wechat_red_packet_card.dart';
@@ -113,6 +114,8 @@ import 'message_reminder_service.dart';
 import 'mention_composer_model.dart';
 import 'message_interaction_service.dart';
 import 'nudge_service.dart';
+import 'nudge_rate_limiter.dart';
+import 'group_member_picker.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
 import '../../ui/chat/room_image_gallery.dart';
@@ -231,6 +234,8 @@ Future<void> openGroupMemberProfile(
 }
 
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
+  OverlayEntry? _nudgeToast;
+  Timer? _nudgeToastTimer;
   bool _paymentEntryBusy = false;
 
   Future<ChatPaymentIntent?> _preparePayment() async {
@@ -943,36 +948,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 拍一拍限流（规格）：当前用户在本房间 60 秒内最多触发 3 次；
   /// 超过后对本房间任何用户均不可再拍，直到最早一次滑出 60 秒窗口。
-  static const _nudgeWindow = Duration(seconds: 60);
-  static const _nudgeMaxPerWindow = 3;
-  final List<DateTime> _nudgeTimestamps = <DateTime>[];
-
-  bool get _nudgeRateLimited {
-    final now = DateTime.now();
-    _nudgeTimestamps.removeWhere(
-        (at) => now.difference(at) >= _nudgeWindow);
-    return _nudgeTimestamps.length >= _nudgeMaxPerWindow;
-  }
-
   Future<void> _sendNudge(
     RoomMessageViewModel message,
     String targetDisplayName,
   ) async {
     final sender = ownProfile;
     final senderId = roomInfo.currentUserId;
+    final sessionEpoch = widget.api.sessionEpoch;
     if (sender == null || senderId == null) return;
-    if (_nudgeRateLimited) {
-      if (mounted) {
-        setState(() => mediaMessage = '拍一拍太频繁，请稍后再试');
-      }
+    final reservation = NudgeRateLimiter.shared
+        .reserve(senderId: senderId, roomId: roomInfo.id);
+    if (reservation == null) {
+      _showNudgeToast('拍一拍太频繁，请稍后再试');
       return;
     }
     try {
-      _nudgeTimestamps.add(DateTime.now());
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
       // already-open conversations as well.
       final latestProfile = await widget.api.loadProfile();
+      if (!mounted ||
+          widget.roomLease.canceled ||
+          widget.api.sessionEpoch != sessionEpoch ||
+          roomInfo.currentUserId != senderId) {
+        NudgeRateLimiter.shared.release(reservation);
+        return;
+      }
       if (mounted) {
         setState(() {
           ownProfile = latestProfile;
@@ -992,12 +993,37 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
-      // 发送失败不计入限流窗口（退回本次时间戳）。
-      if (_nudgeTimestamps.isNotEmpty) {
-        _nudgeTimestamps.removeLast();
-      }
-      if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
+      NudgeRateLimiter.shared.release(reservation);
+      _showNudgeToast('拍一拍发送失败，请重试');
     }
+  }
+
+  void _showNudgeToast(String message) {
+    if (!mounted) return;
+    _nudgeToastTimer?.cancel();
+    _nudgeToast?.remove();
+    final overlay = Overlay.of(context, rootOverlay: true);
+    _nudgeToast = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 24,
+        right: 24,
+        bottom: 96,
+        child: IgnorePointer(
+            child: Center(
+                child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: WeChatToast(
+              key: const Key('room-nudge-toast'),
+              message: message,
+              semanticType: WeChatToastSemanticType.error),
+        ))),
+      ),
+    );
+    overlay.insert(_nudgeToast!);
+    _nudgeToastTimer = Timer(const Duration(seconds: 3), () {
+      _nudgeToast?.remove();
+      _nudgeToast = null;
+    });
   }
 
   Future<void> _showReminderPicker(RoomMessageViewModel message) async {
@@ -1932,6 +1958,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     displayName: participant.displayName,
                   )
                   .avatarUrl,
+              businessUserId: contactsByMatrixId[participant.id]?.userId,
             ),
         ];
     final payment = await _preparePayment();
@@ -1970,6 +1997,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               isGroup: isGroup,
               support: BusinessChatRedPacketSupport(widget.api),
               members: members(),
+              resolveBusinessUser: widget.api.lookupUserByMatrixId,
+              avatarMedia: widget.roomLease,
               onSent: () => Navigator.pop(pageContext),
             ),
           ),
@@ -1987,6 +2016,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // Direct chats preselect the peer; group chats and chats without a
     // loaded profile require picking a specific user inside the sheet.
     final hasPeer = !isGroup && peer != null;
+    if (isGroup) await _refreshJoinedMemberCount();
     final payment = await _preparePayment();
     if (payment == null || !mounted) return;
     final transferController = ChatTransferController(
@@ -2003,20 +2033,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           peerAvatarUrl: hasPeer ? peer!.avatarUrl : null,
           balanceSource: BusinessChatTransferBalanceSource(widget.api),
           contactsSource: BusinessChatTransferContactsSource(widget.api),
-          // 群聊：收款用户选择器仅显示当前房间成员（修复出现非群聊用户）。
-          roomMembers: isGroup
-              ? <ContactSummary>[
+          groupMembers: isGroup
+              ? [
                   for (final participant in _joinedMembers
                       .where((member) => member.id != roomInfo.currentUserId))
-                    ContactSummary(
-                      userId: participant.id,
-                      username: participant.id,
-                      matrixUserId: participant.id,
-                      nickname: participant.displayName,
-                      avatarUrl: participant.avatarUri?.toString(),
-                    ),
+                    GroupMemberIdentity(
+                        matrixUserId: participant.id,
+                        displayName: _identityCache
+                            .resolveIdentity(
+                                matrixUserId: participant.id,
+                                displayName: participant.displayName)
+                            .displayName,
+                        matrixAvatarUri: participant.avatarUri,
+                        businessUserId:
+                            contactsByMatrixId[participant.id]?.userId,
+                        businessAvatarUrl:
+                            contactsByMatrixId[participant.id]?.avatarUrl)
                 ]
-              : const <ContactSummary>[],
+              : null,
+          resolveBusinessUser: widget.api.lookupUserByMatrixId,
+          avatarMedia: widget.roomLease,
           onSent: () => Navigator.pop(pageContext),
         ),
       ),
@@ -2783,6 +2819,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
+                identityCache: _identityCache,
               ),
         RoomMessageKind.transfer => message.transferId == null
             ? WeChatTransferCard(
@@ -2804,6 +2841,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
+                identityCache: _identityCache,
               ),
         RoomMessageKind.system => Text(
             message.text,
@@ -3574,6 +3612,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _nudgeToastTimer?.cancel();
+    _nudgeToast?.remove();
     callAudioActivity.removeListener(_handleCallAudioActivity);
     _disposing = true;
     dismissActionMenu();
@@ -3955,7 +3995,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           child: WeChatNavTitle(
             _navigationTitle,
             supportIdentities: isGroup ? null : _supportIdentities,
-            matrixUserId: isGroup ? null : (roomInfo.directPeerId ?? peer?.matrixUserId),
+            matrixUserId:
+                isGroup ? null : (roomInfo.directPeerId ?? peer?.matrixUserId),
           ),
         ),
         trailing: Row(

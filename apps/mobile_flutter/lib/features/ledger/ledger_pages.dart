@@ -27,6 +27,19 @@ String formatLedgerAmount(Object? value) {
   return '${match.group(1)}${match.group(2)}.$fraction 点钻';
 }
 
+/// Formats an API decimal for the list without binary floating-point parsing.
+String formatLedgerRowAmount(Object? value) {
+  final formatted = formatLedgerAmount(value);
+  if (formatted == '--') return '--';
+  final number = formatted.substring(0, formatted.length - 3);
+  return number.startsWith('-') || number.startsWith('+') ? number : '+$number';
+}
+
+String formatLedgerSignedAmount(Object? value) {
+  final amount = formatLedgerRowAmount(value);
+  return amount == '--' ? amount : '$amount 点钻';
+}
+
 /// Produces user-facing copy without exposing server-side reason-code names.
 String ledgerDisplayDescription(Map<String, dynamic> data) {
   final note = data['note'];
@@ -86,9 +99,21 @@ final class _LedgerListPageState extends State<LedgerListPage> {
   void initState() {
     super.initState();
     unawaited(_controller.load());
+    unawaited(_loadIdentity());
     _scroll.addListener(() {
       if (_scroll.position.extentAfter < 160) unawaited(_controller.loadMore());
     });
+  }
+
+  Future<void> _loadIdentity() async {
+    final cache = widget.identityCache;
+    if (cache == null) return;
+    try {
+      await cache.hydrate();
+      await cache.preload();
+    } catch (_) {
+      // The financial API data is still usable when identity refresh fails.
+    }
   }
 
   @override
@@ -118,7 +143,10 @@ final class _LedgerListPageState extends State<LedgerListPage> {
   Widget build(BuildContext context) => WeChatPageScaffold(
         title: '全部账单',
         child: ListenableBuilder(
-            listenable: _controller,
+            listenable: Listenable.merge([
+              _controller,
+              if (widget.identityCache != null) widget.identityCache!,
+            ]),
             builder: (context, _) => Column(children: [
                   _filters(),
                   Expanded(child: _body()),
@@ -162,6 +190,7 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                       .toList())),
         ]),
       );
+
   /// demo 美化：白底圆角日期胶囊 + 日历 icon + 箭头，
   /// 选择器复用 WeChatDatePicker（与「查找聊天记录」同款日历）。
   Widget _dateButton(bool isEnd) {
@@ -196,15 +225,15 @@ final class _LedgerListPageState extends State<LedgerListPage> {
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-              shown == null ? (isEnd ? '结束日期' : '开始日期') : _time(shown),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                color: active
-                    ? WeChatColors.resolveTextPrimary(context)
-                    : WeChatColors.textSecondary,
-              ),
+                shown == null ? (isEnd ? '结束日期' : '开始日期') : _time(shown),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: active
+                      ? WeChatColors.resolveTextPrimary(context)
+                      : WeChatColors.textSecondary,
+                ),
               ),
             ),
             const SizedBox(width: 3),
@@ -234,85 +263,73 @@ final class _LedgerListPageState extends State<LedgerListPage> {
 
   Widget _row(Map<String, dynamic> row) {
     final kind = '${row['kind'] ?? ''}';
-    final amount =
-        double.tryParse('${row['amount'] ?? ''}') ?? 0.0;
+    final amount = formatLedgerRowAmount(row['amount']);
     final (icon, iconBg, title) = switch (kind) {
-      'redpacket' => (
-          CupertinoIcons.gift_fill,
-          const Color(0xFFFA5151),
-          '红包'
-        ),
+      'redpacket' => (CupertinoIcons.gift_fill, const Color(0xFFFA5151), '红包'),
       'transfer' => (
           CupertinoIcons.arrow_left_right,
           WeChatColors.brandPrimary,
           '转账'
         ),
-      'deposit' => (
-          CupertinoIcons.arrow_up,
-          const Color(0xFFFA9D3B),
-          '充值'
-        ),
+      'deposit' => (CupertinoIcons.arrow_up, const Color(0xFFFA9D3B), '充值'),
       'withdrawal' => (
           CupertinoIcons.arrow_down,
           const Color(0xFF5F7BF7),
           '提现'
         ),
-      _ => (
-          CupertinoIcons.circle,
-          WeChatColors.textTertiary,
-          '其他'
-        ),
+      _ => (CupertinoIcons.circle, WeChatColors.textTertiary, '其他'),
     };
     final description = ledgerDisplayDescription(row);
     return CupertinoButton(
-        key: Key('ledger-row-${row['id']}'),
-        padding: const EdgeInsets.symmetric(
-            horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
-        onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
-            builder: (_) => LedgerDetailPage(
-                gateway: widget.gateway,
-                transactionId: row['id'] as String,
-                fromList: true))),
-        child: Row(children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+      key: Key('ledger-row-${row['id']}'),
+      padding: const EdgeInsets.symmetric(
+          horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
+      onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+          builder: (_) => LedgerDetailPage(
+              gateway: widget.gateway,
+              transactionId: row['id'] as String,
+              identityCache: widget.identityCache,
+              fromList: true))),
+      child: Row(children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+          child: Icon(icon, color: CupertinoColors.white, size: 16),
+        ),
+        const SizedBox(width: WeChatSpacing.md),
+        Expanded(
             child:
-                Icon(icon, color: CupertinoColors.white, size: 16),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(_billTitle(row, title), style: const TextStyle(fontSize: 16)),
+          const SizedBox(height: 2),
+          Text(
+            '${_shortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style:
+                const TextStyle(fontSize: 12, color: WeChatColors.textTertiary),
           ),
-          const SizedBox(width: WeChatSpacing.md),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(_billTitle(row, title),
-                    style: const TextStyle(fontSize: 16)),
-                const SizedBox(height: 2),
-                Text(
-                  '${_shortTime(row['created_at'])}${description.isEmpty ? '' : ' · $description'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 12, color: WeChatColors.textTertiary),
-                ),
-              ])),
-          Flexible(
-            child: Column(
+        ])),
+        SizedBox(
+          width: 112,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                amount >= 0
-                    ? '+${amount.toStringAsFixed(2)}'
-                    : amount.toStringAsFixed(2),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: amount >= 0
-                      ? WeChatColors.brandPrimary
-                      : WeChatColors.resolveTextPrimary(context),
+              FittedBox(
+                alignment: Alignment.centerRight,
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  amount,
+                  key: Key('ledger-row-amount-${row['id']}'),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: !amount.startsWith('-')
+                        ? WeChatColors.brandPrimary
+                        : WeChatColors.resolveTextPrimary(context),
+                  ),
                 ),
               ),
               Text(_statusText(row),
@@ -320,41 +337,54 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                       fontSize: 11, color: WeChatColors.textTertiary)),
             ],
           ),
-          ),
-        ]),
-      );
+        ),
+      ]),
+    );
   }
 
   /// 账单名称后缀：对手方备注→昵称→畅聊号（identityCache 通讯录优先）。
   String _billTitle(Map<String, dynamic> row, String kindTitle) {
     final counterparty = '${row['counterparty_id'] ?? ''}';
     final reason = '${row['reason_code'] ?? ''}';
-    String? peer;
-    if (counterparty.isNotEmpty) {
-      peer = widget.identityCache?.contactsByUserId[counterparty]?.displayName;
-    }
+    final peer = _counterpartyName(row, counterparty);
     switch (reason) {
       case 'RED_PACKET_CREATE':
         if (row['packet_mode'] == 'EXCLUSIVE' && peer != null) {
-          return '红包-转给\$peer';
+          return '红包-转给$peer';
         }
         if (row['packet_room'] != null) return '红包-发出群红包';
-        if (peer != null) return '红包-转给\$peer';
+        if (peer != null) return '红包-转给$peer';
         return '红包-发出';
       case 'RED_PACKET_CLAIM':
-        return peer != null ? '红包-领取\$peer的红包' : '领取红包';
+        return peer != null ? '红包-领取$peer的红包' : '领取红包';
       case 'RED_PACKET_REFUND':
       case 'RED_PACKET_EXPIRED':
         return '红包-退回';
       case 'CHAT_TRANSFER_DECLINED':
-        return peer != null ? '转账-已拒收' : '转账-已拒收';
+        return peer != null ? '转账-$peer（已拒收）' : '转账-已拒收';
       case 'CHAT_TRANSFER_ACCEPTED':
-        return peer != null ? '转账-已收款' : '转账-已收款';
+        return peer != null ? '转账-$peer（已收款）' : '转账-已收款';
     }
     if (row['kind'] == 'transfer') {
-      return peer != null ? '转账-\$peer' : '转账';
+      return peer != null ? '转账-$peer' : '转账';
     }
     return kindTitle;
+  }
+
+  String? _counterpartyName(Map<String, dynamic> row, String counterparty) {
+    final candidates = <String?>[
+      counterparty.isEmpty
+          ? null
+          : widget.identityCache?.contactsByUserId[counterparty]?.displayName,
+      row['counterparty_remark']?.toString(),
+      row['counterparty_nickname']?.toString(),
+      row['counterparty_username']?.toString(),
+    ];
+    for (final candidate in candidates) {
+      final trimmed = candidate?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    }
+    return null;
   }
 
   /// 账单状态→展示文案（金额下方行）。
@@ -383,6 +413,7 @@ final class _LedgerListPageState extends State<LedgerListPage> {
     String two(int v) => v.toString().padLeft(2, '0');
     return '${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
   }
+
   Widget _tail() {
     if (_controller.loadingMore) {
       return const Padding(
@@ -407,9 +438,11 @@ final class LedgerDetailPage extends StatefulWidget {
       {super.key,
       required this.gateway,
       required this.transactionId,
+      this.identityCache,
       this.fromList = false});
   final LedgerGateway gateway;
   final String transactionId;
+  final ProfileRepository? identityCache;
   final bool fromList;
   @override
   State<LedgerDetailPage> createState() => _LedgerDetailPageState();
@@ -420,6 +453,7 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
   String? _error, _feedback;
   bool _loading = true, _sessionEnded = false;
   int _generation = 0;
+  final _identityRefresh = ValueNotifier<int>(0);
   late final int _epoch = widget.gateway.sessionEpoch;
   late final StreamSubscription<void> _invalidations;
   @override
@@ -428,6 +462,16 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
     _invalidations =
         widget.gateway.sessionInvalidations.listen((_) => _endSession());
     unawaited(_load());
+    unawaited(_loadIdentity());
+  }
+
+  Future<void> _loadIdentity() async {
+    final cache = widget.identityCache;
+    if (cache == null) return;
+    try {
+      await cache.hydrate();
+      await cache.preload();
+    } catch (_) {}
   }
 
   Future<void> _load() async {
@@ -490,6 +534,7 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
   @override
   void dispose() {
     _invalidations.cancel();
+    _identityRefresh.dispose();
     super.dispose();
   }
 
@@ -501,30 +546,35 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
             padding: EdgeInsets.zero,
             onPressed: _showAllBills,
             child: const Text('全部账单')),
-        child: _loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : _error != null
-                ? Center(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      Text(_error!),
-                      if (!_sessionEnded &&
-                          _epoch == widget.gateway.sessionEpoch)
-                        CupertinoButton(
-                            onPressed: _load, child: const Text('重试')),
-                    ]),
-                  )
-                : _detail(),
+        child: ListenableBuilder(
+            listenable: widget.identityCache ?? _identityRefresh,
+            builder: (context, _) => _loading
+                ? const Center(child: CupertinoActivityIndicator())
+                : _error != null
+                    ? Center(
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(_error!),
+                          if (!_sessionEnded &&
+                              _epoch == widget.gateway.sessionEpoch)
+                            CupertinoButton(
+                                onPressed: _load, child: const Text('重试')),
+                        ]),
+                      )
+                    : _detail()),
       );
   Widget _detail() {
     final data = _item!;
     final transfer = data['kind'] == 'transfer';
+    final peer = _peerName(data);
+    final username = _peerUsername(data);
     final rows = <(String, String)>[
-      ('实际收支', formatLedgerAmount(data['amount'])),
+      ('实际收支', formatLedgerSignedAmount(data['amount'])),
+      ('当前状态', _detailStatusText(data)),
       ('说明', ledgerDisplayDescription(data)),
-      if (transfer) ('转账状态', _transferStatus(data['status'])),
-      if (!transfer) ('账单状态', '${data['status'] ?? '已入账'}'),
       if (transfer) ('转账本金', formatLedgerAmount(data['transfer_amount'])),
       if (transfer) ('付款方手续费', formatLedgerAmount(data['fee'])),
+      if (data['kind'] == 'redpacket') ('红包类型', _packetType(data)),
       if (transfer)
         ('转账时间', _time(data['transfer_created_at'] ?? data['created_at'])),
       if (transfer)
@@ -536,7 +586,11 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
       ('账单ID', '${data['id'] ?? '--'}'),
     ];
     return ListView(padding: const EdgeInsets.all(WeChatSpacing.lg), children: [
-      for (final row in rows) _detailRow(row.$1, row.$2),
+      _detailHero(data, peer),
+      const SizedBox(height: WeChatSpacing.md),
+      for (final row in rows.take(2)) _detailRow(row.$1, row.$2),
+      if (peer != null) _detailCounterpartyRow(peer, username),
+      for (final row in rows.skip(2)) _detailRow(row.$1, row.$2),
       CupertinoButton(
           key: const Key('ledger-copy-id'),
           onPressed: _copyId,
@@ -548,7 +602,140 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
         Center(
             child: Text(_feedback!,
                 style: const TextStyle(color: WeChatColors.textSecondary))),
+      const Padding(
+        padding: EdgeInsets.only(top: WeChatSpacing.lg),
+        child: Center(
+          child: Text('• 本账单由畅聊点钻系统生成',
+              style: TextStyle(fontSize: 12, color: WeChatColors.textTertiary)),
+        ),
+      ),
     ]);
+  }
+
+  String? _peerName(Map<String, dynamic> data) {
+    final id = data['counterparty_id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    final values = <String?>[
+      widget.identityCache?.contactsByUserId[id]?.displayName,
+      data['counterparty_remark']?.toString(),
+      data['counterparty_nickname']?.toString(),
+      data['counterparty_username']?.toString(),
+    ];
+    return values.firstWhere(
+        (value) => value != null && value.trim().isNotEmpty,
+        orElse: () => null);
+  }
+
+  String? _peerUsername(Map<String, dynamic> data) {
+    final id = data['counterparty_id']?.toString();
+    if (id == null || id.isEmpty) return null;
+    final values = <String?>[
+      widget.identityCache?.contactsByUserId[id]?.username,
+      data['counterparty_username']?.toString(),
+    ];
+    return values.firstWhere(
+        (value) => value != null && value.trim().isNotEmpty,
+        orElse: () => null);
+  }
+
+  String _packetType(Map<String, dynamic> data) {
+    if (data['packet_mode'] == 'EXCLUSIVE') return '专属红包';
+    if (data['packet_mode'] == 'RANDOM') return '拼手气群红包';
+    if (data['packet_room'] != null) return '普通群红包';
+    return '普通红包';
+  }
+
+  String _detailStatusText(Map<String, dynamic> data) {
+    final reason = '${data['reason_code'] ?? ''}';
+    if (reason == 'RED_PACKET_CLAIM') return '领取红包';
+    if (reason == 'RED_PACKET_CREATE') return '发出红包';
+    if (reason == 'RED_PACKET_REFUND' || reason == 'RED_PACKET_EXPIRED') {
+      return '退回';
+    }
+    if (data['kind'] == 'transfer') {
+      return data['status'] == 'ACCEPTED'
+          ? '已接受'
+          : _transferStatus(data['status']);
+    }
+    return '${data['status'] ?? '已入账'}';
+  }
+
+  Widget _detailHero(Map<String, dynamic> data, String? peer) {
+    final isPacket = data['kind'] == 'redpacket';
+    final isTransfer = data['kind'] == 'transfer';
+    final accepted = data['status'] == 'ACCEPTED';
+    final status = _detailStatusText(data);
+    final reversed = status == '退回';
+    final iconColor = isPacket
+        ? const Color(0xFFFA5151)
+        : isTransfer
+            ? const Color(0xFFFA9D3B)
+            : WeChatColors.brandPrimary;
+    final statusColor = reversed
+        ? WeChatColors.textTertiary
+        : accepted
+            ? const Color(0xFFFA9D3B)
+            : isPacket && status == '领取红包'
+                ? WeChatColors.brandPrimary
+                : WeChatColors.brandPrimary;
+    final title = isPacket
+        ? _packetHeroTitle(data, peer)
+        : isTransfer
+            ? (peer == null ? '转账' : '转账-$peer')
+            : (_kinds[data['kind']] ?? '其他');
+    return Container(
+      key: const Key('ledger-detail-hero'),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+      decoration: BoxDecoration(
+          color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+          borderRadius: BorderRadius.circular(8)),
+      child: Column(children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(color: iconColor, shape: BoxShape.circle),
+          child: Icon(
+              isPacket
+                  ? CupertinoIcons.gift_fill
+                  : isTransfer
+                      ? CupertinoIcons.arrow_left_right
+                      : CupertinoIcons.doc_text_fill,
+              color: CupertinoColors.white,
+              size: 26),
+        ),
+        const SizedBox(height: 10),
+        Text(title,
+            key: const Key('ledger-detail-title'),
+            style: const TextStyle(
+                fontSize: 14, color: WeChatColors.textSecondary)),
+        const SizedBox(height: 4),
+        Text(formatLedgerSignedAmount(data['amount']),
+            style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w700,
+                color: WeChatColors.resolveTextPrimary(context))),
+        const SizedBox(height: 8),
+        Container(
+          key: const Key('ledger-detail-status-pill'),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(4)),
+          child: Text(status,
+              style: TextStyle(fontSize: 12, color: statusColor)),
+        ),
+      ]),
+    );
+  }
+
+  String _packetHeroTitle(Map<String, dynamic> data, String? peer) {
+    final reason = '${data['reason_code'] ?? ''}';
+    if (reason == 'RED_PACKET_CLAIM' && peer != null) return '红包-领取$peer的红包';
+    if (reason == 'RED_PACKET_CREATE' && peer != null) return '红包-转给$peer';
+    if (reason == 'RED_PACKET_REFUND' || reason == 'RED_PACKET_EXPIRED') {
+      return '红包-退回';
+    }
+    return '红包';
   }
 
   Widget _detailRow(String label, String value) => Padding(
@@ -559,6 +746,25 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
             child: Text(label,
                 style: const TextStyle(color: WeChatColors.textSecondary))),
         Expanded(child: Text(value, textAlign: TextAlign.right)),
+      ]));
+
+  Widget _detailCounterpartyRow(String name, String? username) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: WeChatSpacing.sm),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(
+            width: 96,
+            child: Text('交易对方',
+                style: TextStyle(color: WeChatColors.textSecondary))),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(name, textAlign: TextAlign.right),
+          if (username != null)
+            Text('畅聊号：$username',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    fontSize: 12, color: WeChatColors.textTertiary)),
+        ])),
       ]));
   Future<void> _copyId() async {
     final id = _item?['id'];
@@ -588,6 +794,7 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
       return;
     }
     Navigator.of(context).pushReplacement(CupertinoPageRoute<void>(
-        builder: (_) => LedgerListPage(gateway: widget.gateway)));
+        builder: (_) => LedgerListPage(
+            gateway: widget.gateway, identityCache: widget.identityCache)));
   }
 }

@@ -25,8 +25,8 @@ const groupRedPacketFixture = Object.freeze({
   joinedMemberIds: Object.freeze(["me", "zhou-ran", "lin-xiao", "chen-mo", "xia-yu", "an-ning", "mu-chen", "yan-yu"])
 });
 const ledgerRows = Object.freeze([
-  Object.freeze({ id: "5c50c3be-17d8-4d9f-93c7-3d4a7ca0cf01", kind: "红包", title: "收到群红包", subtitle: "2026-09-11 09:41 · 已完成", amount: "+18.88 点钻" }),
-  Object.freeze({ id: "3c40c1aa-836b-4dae-8c49-cd73c2ebbc10", kind: "转账", title: "转账已收款", subtitle: "2026-09-10 18:20 · 已完成", amount: "+200.00 点钻" }),
+  Object.freeze({ id: "5c50c3be-17d8-4d9f-93c7-3d4a7ca0cf01", kind: "红包", title: "收到群红包", nickname: "陈默", remark: "徒步群", subtitle: "2026-09-11 09:41 · 已完成", amount: "+18.88 点钻" }),
+  Object.freeze({ id: "3c40c1aa-836b-4dae-8c49-cd73c2ebbc10", kind: "转账", title: "转账已收款", nickname: "周然", username: "zhouran", subtitle: "2026-09-10 18:20 · 已完成", amount: "+200.00 点钻" }),
   Object.freeze({ id: "eed4fc7e-708f-43fc-9e7d-9a7bf3b45f11", kind: "提现", title: "提现退回", subtitle: "2026-09-09 12:06 · 已退回", amount: "+88.00 点钻" }),
   Object.freeze({ id: "34b47208-a790-45bd-91dc-69b545405c75", kind: "充值", title: "点钻充值", subtitle: "2026-09-08 10:15 · 已完成", amount: "+500.00 点钻" }),
   Object.freeze({ id: "ca149b1f-2cd8-472c-9d67-1e04b9a95e46", kind: "其他", title: "系统调整", subtitle: "2026-09-07 16:45 · 已完成", amount: "+10.00 点钻" })
@@ -67,19 +67,22 @@ function copyBillIdControl(row, action) {
   return [copy, feedback];
 }
 function ledgerDetail(row, onBack) {
+  const hero = element("section", "c-ledger-detail-hero");
+  hero.append(element("span", "c-ledger-detail-hero__icon", row.kind === "红包" ? "🧧" : "↔"), element("p", "c-ledger-detail-hero__title", `${row.kind}-${row.remark || row.nickname || row.username || "账单"}`), element("p", "c-ledger-detail-hero__amount", row.amount), component("app-status-chip", { status: "success", label: row.subtitle.split(" · ").at(-1) }));
   const panel = element("section", "c-ledger-detail");
   const timing = row.kind === "转账"
     ? [["转账时间", "2026-09-10 18:05"], ["收款时间", "2026-09-10 18:20"]]
     : [["入账时间", row.subtitle.slice(0, 16)]];
   const status = row.subtitle.split(" · ").at(-1);
-  for (const [label, value] of [["金额", row.amount], ["状态", status], ["类型", row.kind], ["说明", row.title], ...timing, ["账单ID", row.id]]) {
+  const peer = row.remark || row.nickname || row.username;
+  for (const [label, value] of [["交易对方", peer ? `${peer}${row.username ? `\n畅聊号：${row.username}` : ""}` : "--"], ["金额", row.amount], ["状态", status], ["类型", row.kind], ["说明", row.title], ...timing, ["账单ID", row.id]]) {
     panel.append(element("dt", "c-ledger-detail__label", label), element("dd", "c-ledger-detail__value", value));
   }
   panel.append(...copyBillIdControl(row, "ledger:copy"));
   const back = ledgerButton("返回全部账单", "ledger:back");
   back.addEventListener("click", onBack);
   panel.append(back);
-  return panel;
+  return [hero, panel];
 }
 function ledger(definition) {
   const root = pageRoot(definition);
@@ -115,7 +118,7 @@ function ledger(definition) {
     filters.hidden = selected !== null;
     header.setAttribute("title", selected ? "账单详情" : "全部账单");
     header.renderContract();
-    if (selected) { results.append(ledgerDetail(selected, () => { selected = null; render(); })); return; }
+    if (selected) { results.append(...ledgerDetail(selected, () => { selected = null; render(); })); return; }
     if (mode === "loading") { results.append(component("app-status-chip", { status: "processing", label: "正在加载账单…" })); return; }
     if (mode === "error") {
       const retry = ledgerButton("重试", "ledger:retry");
@@ -136,7 +139,8 @@ function ledger(definition) {
     for (const row of matched.slice(0, page * pageSize)) {
       const item = button("c-ledger-row", `${row.title} ${row.amount}`, "ledger:detail");
       item.dataset.transactionId = row.id;
-      item.append(element("span", "c-ledger-row__title", row.title), element("span", "c-ledger-row__subtitle", row.subtitle), element("strong", "c-ledger-row__amount", row.amount));
+      const copy = row.remark || row.nickname || row.username;
+      item.append(element("span", "c-ledger-row__title", copy ? `${row.title} · ${copy}` : row.title), element("span", "c-ledger-row__subtitle", row.subtitle), element("strong", "c-ledger-row__amount", row.amount), element("span", "c-ledger-row__status", row.subtitle.split(" · ").at(-1)));
       item.addEventListener("click", () => { selected = row; render(); });
       results.append(item);
     }
@@ -167,12 +171,13 @@ function transactionDetail(definition) {
   root.append(navigation("账单详情", { leading: "返回" }));
   const content = element("div", "p-finance__content");
   const bill = ledgerRows[1];
-  content.append(
-    component("app-status-chip", { status: "success", label: "已完成" }),
-    component("app-amount-summary", { label: "实际入账", amount: "+200.00", asset: "点钻", hint: "转账本金 200.00 点钻 · 手续费由付款方承担" })
-  );
+  const hero = element("section", "c-ledger-detail-hero");
+  const amount = element("p", "c-ledger-detail-hero__amount", "+200.00");
+  amount.append(element("span", "c-ledger-detail-hero__unit", "点钻"));
+  hero.append(element("span", "c-ledger-detail-hero__icon", "↔"), element("p", "c-ledger-detail-hero__title", "转账-周然"), amount, component("app-status-chip", { status: "success", label: "已接受" }));
+  content.append(hero);
   const details = element("dl", "c-ledger-detail");
-  for (const [label, value] of [["金额", bill.amount], ["状态", "已完成"], ["类型", bill.kind], ["说明", "周然向你转账"], ["转账时间", "2026-09-10 18:05"], ["收款时间", "2026-09-10 18:20"], ["账单ID", bill.id]]) {
+  for (const [label, value] of [["交易对方", "周然\n畅聊号：zhouran"], ["金额", bill.amount], ["状态", "已接受"], ["说明", "周然向你转账"], ["转账时间", "2026-09-10 18:05"], ["收款时间", "2026-09-10 18:20"], ["账单ID", bill.id]]) {
     details.append(element("dt", "c-ledger-detail__label", label), element("dd", "c-ledger-detail__value", value));
   }
   content.append(details, ...copyBillIdControl(bill, "ledger:copy-single"), ledgerButton("全部账单", "open:caibi-ledger-all"));
@@ -180,6 +185,13 @@ function transactionDetail(definition) {
   return root;
 }
 function caibi(definition) {
+  if (definition.page === "group-member-picker") {
+    const root = pageRoot(definition);
+    root.append(navigation("选择群成员", { leading: "返回" }));
+    const content = element("div", "p-finance__content");
+    content.append(element("p", "c-ledger-page-note", "群转账和专属红包共用此选择器；仅显示已加入成员。"), component("app-group-member-picker", { title: "选择收款人", state: definition.state, selected: definition.state === "ready" ? "zhouran" : undefined }));
+    root.append(content); return root;
+  }
   const root = pageRoot(definition);
   root.append(navigation(definition.page === "home" ? "点钻" : definition.page === "history" ? "点钻记录" : definition.page === "transaction" ? "账单详情" : definition.state === "receiver-accepted" ? "收款" : "点钻转账", { leading: definition.page === "home" ? undefined : "返回" }));
   const content = element("div", "p-finance__content");

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_gateway.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_pages.dart';
+import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 
 void main() {
   test(
@@ -97,8 +99,10 @@ void main() {
         'fee': '0.20',
       }));
     await tester.pumpAndSettle();
-    expect(find.text('已收款'), findsOneWidget);
-    expect(find.text('12.00 点钻'), findsOneWidget);
+    expect(find.text('已接受'), findsNWidgets(2));
+    // The approved detail hero repeats the authoritative actual amount above
+    // the itemized "实际收支" row.
+    expect(find.text('+12.00 点钻'), findsNWidgets(2));
     expect(find.text('10.00 点钻'), findsOneWidget);
     expect(find.text('0.20 点钻'), findsOneWidget);
     expect(find.text('2026-09-11 01:02:03'), findsOneWidget);
@@ -182,6 +186,103 @@ void main() {
     ]);
     await tester.pump();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('uses live account-scoped remarks for counterparty bill titles',
+      (tester) async {
+    final cache = ProfileRepository.forTesting(
+      accountKey: 'matrix:@viewer:test',
+      store: _ProfileStore(),
+    );
+    addTearDown(cache.dispose);
+    await cache.applyUpdatedContact(const ContactSummary(
+      userId: 'peer-id',
+      username: 'xiaobei',
+      matrixUserId: '@xiaobei:test',
+      nickname: '小贝',
+      remark: '旧备注',
+    ));
+    final gateway = _Gateway();
+    await tester.pumpWidget(CupertinoApp(
+      home: LedgerListPage(gateway: gateway, identityCache: cache),
+    ));
+    gateway.completeList(items: [
+      {
+        ..._row('peer-title'),
+        'kind': 'transfer',
+        'counterparty_id': 'peer-id',
+      }
+    ]);
+    await tester.pump();
+    expect(find.text('转账-旧备注'), findsOneWidget);
+
+    await cache.applyUpdatedContact(const ContactSummary(
+      userId: 'peer-id',
+      username: 'xiaobei',
+      matrixUserId: '@xiaobei:test',
+      nickname: '小贝',
+      remark: '新备注',
+    ));
+    await tester.pump();
+    expect(find.text('转账-新备注'), findsOneWidget);
+  });
+
+  testWidgets('uses API counterparty nickname then username when no contact is cached',
+      (tester) async {
+    final gateway = _Gateway();
+    await tester.pumpWidget(_app(gateway));
+    gateway.completeList(items: [
+      {..._row('api-peer'), 'kind': 'transfer', 'counterparty_id': 'not-friend', 'counterparty_nickname': '  远方朋友  ', 'counterparty_username': 'remote-id'},
+      {..._row('username-peer'), 'kind': 'transfer', 'counterparty_id': 'blank-name', 'counterparty_nickname': ' ', 'counterparty_username': '  remote-id  '},
+    ]);
+    await tester.pump();
+    expect(find.text('转账-远方朋友'), findsOneWidget);
+    expect(find.text('转账-remote-id'), findsOneWidget);
+  });
+
+  testWidgets('keeps transfer counterparty and signed amount right edge at large text', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final gateway = _Gateway();
+    await tester.pumpWidget(CupertinoApp(home: MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+      child: LedgerListPage(gateway: gateway),
+    )));
+    gateway.completeList(items: [
+      {..._row('short'), 'kind': 'transfer', 'amount': '12', 'counterparty_nickname': '甲'},
+      {..._row('long'), 'kind': 'transfer', 'amount': '12345678901234567890', 'counterparty_username': 'long-account'},
+    ]);
+    await tester.pump();
+    expect(find.text('转账-甲'), findsOneWidget);
+    final shortBox = tester.getRect(find.byKey(const Key('ledger-row-amount-short')));
+    final longBox = tester.getRect(find.byKey(const Key('ledger-row-amount-long')));
+    expect(shortBox.right, closeTo(longBox.right, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'renders a non-transfer detail with its own title, status pill and counterparty account',
+      (tester) async {
+    final gateway = _Gateway();
+    await tester.pumpWidget(CupertinoApp(
+      home: LedgerDetailPage(gateway: gateway, transactionId: 'other-detail'),
+    ));
+    gateway.completeDetail({
+      ..._row('other-detail'),
+      'kind': 'other',
+      'reason_code': 'INTERNAL_RECONCILIATION',
+      'status': null,
+      'note': null,
+      'counterparty_id': 'bob-id',
+      'counterparty_nickname': 'Bob',
+      'counterparty_username': 'bob-account',
+    });
+    await tester.pump();
+
+    expect(find.byKey(const Key('ledger-detail-title')), findsOneWidget);
+    expect(find.text('转账-Bob'), findsNothing);
+    expect(find.byKey(const Key('ledger-detail-status-pill')), findsOneWidget);
+    expect(find.text('畅聊号：bob-account'), findsOneWidget);
   });
 
   testWidgets(
@@ -349,4 +450,16 @@ final class _Gateway implements LedgerGateway {
       _details.removeAt(0).completeError(StateError('expired'));
   void advanceEpoch() => sessionEpoch++;
   void emitInvalidation() => _invalidations.add(null);
+}
+
+final class _ProfileStore implements ProfileStore {
+  ProfileSnapshot? value;
+
+  @override
+  Future<ProfileSnapshot?> read(String accountKey) async => value;
+
+  @override
+  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
+    value = snapshot;
+  }
 }

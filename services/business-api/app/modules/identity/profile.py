@@ -50,6 +50,15 @@ class PublicProfileResult:
     nudge_suffix: str | None
 
 
+@dataclass(frozen=True)
+class PublicProfileIdentity:
+    """Public name fields for read models that do not render avatars."""
+
+    user_id: str
+    username: str
+    nickname: str
+
+
 class ProfileService:
     def __init__(self, session_factory, *, storage: PrivateObjectStorage, now_factory=None):
         self._session_factory = session_factory
@@ -72,6 +81,21 @@ class ProfileService:
         with self._session_factory() as session:
             users = list(session.scalars(select(User).where(User.id.in_(user_ids))))
             return {user.id: self._public_profile(user) for user in users}
+
+    def read_public_profile_identities(
+        self, user_ids: list[str] | set[str]
+    ) -> dict[str, PublicProfileIdentity]:
+        """Batch-read only names, without signing avatar URLs."""
+        if not user_ids:
+            return {}
+        with self._session_factory() as session:
+            users = list(session.scalars(select(User).where(User.id.in_(user_ids))))
+            return {
+                user.id: PublicProfileIdentity(
+                    user_id=user.id, username=user.username, nickname=user.nickname
+                )
+                for user in users
+            }
 
     def public_profile_by_matrix_user_id(
         self, matrix_user_id: str

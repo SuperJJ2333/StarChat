@@ -533,6 +533,18 @@
       ]
     },
     {
+      "id": "group-member-picker",
+      "flutter": {
+        "name": "GroupMemberPicker",
+        "file": "apps/mobile_flutter/lib/features/matrix/group_member_picker.dart",
+        "props": ["title", "members", "selectedMatrixUserId", "avatarMedia", "itemKeyPrefix", "onSelected"],
+        "variants": {"entry": ["group-transfer", "exclusive-red-packet"]},
+        "states": ["ready", "loading", "empty", "error", "selected"]
+      },
+      "html": {"tag": "app-group-member-picker"},
+      "tokens": ["brandPrimary", "textSecondary", "control", "sm", "md", "control"]
+    },
+    {
       "id": "contact-tag-management",
       "flutter": {
         "name": "ContactTagsPage",
@@ -785,6 +797,18 @@
         "spacing",
         "radius"
       ]
+    },
+    {
+      "id": "shared-official-name",
+      "flutter": {
+        "name": "WeChatOfficialName",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_official_name.dart",
+        "props": ["name", "supportIdentities", "userId", "matrixUserId"],
+        "variants": {"context": ["contact", "conversation", "title"]},
+        "states": ["verified", "unverified", "expired", "failure"]
+      },
+      "html": {"tag": "app-official-name"},
+      "tokens": ["WeChatColors.supportIdentityYellow = --color-support-identity", "WeChatTypography.caption = --type-caption-size"]
     },
     {
       "id": "moment-personal-cover",
@@ -1306,7 +1330,7 @@
     }
   },
   "screens": {
-    "expectedCount": 363
+    "expectedCount": 368
   },
   "adminCompletion20260910": {
     "html": [
@@ -1402,6 +1426,13 @@
     "acceptance": "Title stays 钱包; rebind icon inside TRON card; deposit/withdraw disabled until ACTIVE and ready; current point balance and full amount; 1 point = 1 USDT, zero fee, minimum 10 USDT; explicit PIN confirm/cancel/error.",
     "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
     "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
+  },
+  "financeSixRemediation20260913": {
+    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js", "frontend/src/styles/components.css"],
+    "demo": ["caibi-ledger-all", "caibi-transaction-detail", "caibi-group-member-picker-ready", "caibi-group-member-picker-loading", "caibi-group-member-picker-empty", "caibi-group-member-picker-error", "feedback-toast-nudge-rate-limited"],
+    "ledger": "Fixture ledger keeps signed amounts right-aligned, exposes status and name/畅聊号 fallback, and opens the approved hero detail with ID copy and all-bills navigation.",
+    "memberPicker": "Shared group-transfer/exclusive-red-packet demo only lists joined-member fixtures; search, empty, retry and selection are interactive. MXC/HTTP rendering remains native Matrix avatar behavior.",
+    "nudge": "Fixture-only WeChatToast demonstrates the fourth nudge blocked after three sends per actor and room within 60 seconds; no financial write is invoked."
   },
   "financeChatB4b20260911": {
     "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],

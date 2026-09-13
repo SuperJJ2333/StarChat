@@ -4,6 +4,7 @@ import '../../core/business_api_client.dart';
 import '../redpacket/red_packet_claim_detail_page.dart';
 import '../redpacket/red_packet_claim_dialog.dart';
 import '../transfer/chat_transfer_detail_sheet.dart';
+import '../matrix/profile_repository.dart';
 import 'finance_card_store.dart';
 import 'finance_message_card.dart';
 
@@ -23,6 +24,7 @@ final class FinanceMessageEntry extends StatefulWidget {
     required this.isOwn,
     this.senderName = '好友',
     this.senderAvatar,
+    this.identityCache,
   });
 
   final FinanceCardStore store;
@@ -34,6 +36,7 @@ final class FinanceMessageEntry extends StatefulWidget {
   final bool isOwn;
   final String senderName;
   final Widget? senderAvatar;
+  final ProfileRepository? identityCache;
 
   @override
   State<FinanceMessageEntry> createState() => _FinanceMessageEntryState();
@@ -123,6 +126,7 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
             onSettled: () {
               if (live()) store.invalidate(key);
             },
+            identityCache: widget.identityCache,
           ),
         ));
       }

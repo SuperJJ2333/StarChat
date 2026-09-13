@@ -4,6 +4,8 @@ import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_red_packet_sheet.dart';
 import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
+import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
 
 final class FakeRedPacketBusiness implements ChatRedPacketBusinessGateway {
   int creates = 0;
@@ -304,4 +306,41 @@ void main() {
     expect(gradient.colors.first, WeChatColors.redPacketCreateGradientTop);
     expect(gradient.colors.last, WeChatColors.redPacketCreateGradientBottom);
   });
+
+  testWidgets('exclusive nonfriend resolves and submits its business user ID', (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(business: business, references: FakeRedPacketReference(), roomId: '!room:test');
+    await tester.pumpWidget(CupertinoApp(home: ChatRedPacketSheet(
+      controller: controller, isGroup: true, onSent: () {}, avatarMedia: _AvatarMedia(),
+      members: const [ChatRoomMember('@guest:test', '群成员')],
+      resolveBusinessUser: (_) async => {'matrix_user_id': '@guest:test', 'user_id': 'user-guest'},
+    )));
+    await tester.enterText(find.byKey(const Key('chat-red-packet-total')), '8');
+    await tester.tap(find.byKey(const Key('chat-red-packet-type'))); await tester.pumpAndSettle();
+    await tester.tap(find.text('专属红包').last); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-member-@guest:test'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-send'))); await tester.pumpAndSettle();
+    expect(business.exclusiveRecipientId, 'user-guest');
+  });
+
+  testWidgets('exclusive mismatched lookup cannot submit Matrix ID', (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(business: business, references: FakeRedPacketReference(), roomId: '!room:test');
+    await tester.pumpWidget(CupertinoApp(home: ChatRedPacketSheet(
+      controller: controller, isGroup: true, onSent: () {}, avatarMedia: _AvatarMedia(),
+      members: const [ChatRoomMember('@guest:test', '群成员')],
+      resolveBusinessUser: (_) async => {'matrix_user_id': '@other:test', 'user_id': 'user-other'},
+    )));
+    await tester.tap(find.byKey(const Key('chat-red-packet-type'))); await tester.pumpAndSettle();
+    await tester.tap(find.text('专属红包').last); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-recipient'))); await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('chat-red-packet-member-@guest:test'))); await tester.pump(); await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('无法确认红包账号'), findsOneWidget);
+    expect(business.creates, 0);
+  });
+}
+
+final class _AvatarMedia implements AvatarMediaCapability {
+  @override Future<ResolvedAvatarUrl?> resolveAvatar({required Uri? avatarUri, required double size}) async => null;
 }

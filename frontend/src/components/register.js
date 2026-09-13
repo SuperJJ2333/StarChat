@@ -5,10 +5,11 @@ import { AppActionButton, AppComposer } from "./actions.js";
 import { AppAttachmentTile, AppMessageBubble, AppTimestamp, AppUnreadBadge, AppVoiceBubble } from "./chat.js";
 import { AppNavigationBar, AppStatusBar, AppTabBar } from "./chrome.js";
 import { AppActionSheet, AppDialog, AppEmptyState, AppNetworkCapsule, AppNudgeNotice, AppStatusChip, AppToast } from "./feedback.js";
-import { AppAmountSummary, AppRedPacketCard, AppTransactionRow, AppTransferCard } from "./finance.js";
+import { AppAmountSummary, AppGroupMemberPicker, AppRedPacketCard, AppTransactionRow, AppTransferCard } from "./finance.js";
 import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagManagement, AppContactTagMembers, AppIdentityHeader, AppListTile } from "./identity.js";
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
 import { AppEmojiInputDecoration, AppMessageSelectionSession } from "./selection.js";
+import { AppOfficialName } from "./official-name.js";
 
 const implementations = new Map([
   ["app-image-editor", AppImageEditor],
@@ -23,6 +24,7 @@ const implementations = new Map([
   ["app-message-selection-session", AppMessageSelectionSession],
   ["app-list-tile", AppListTile],
   ["app-avatar", AppAvatar],
+  ["app-official-name", AppOfficialName],
   ["app-identity-header", AppIdentityHeader],
   ["app-contact-index", AppContactIndex],
   ["app-message-bubble", AppMessageBubble],
@@ -40,6 +42,7 @@ const implementations = new Map([
   ["app-transfer-card", AppTransferCard],
   ["app-amount-summary", AppAmountSummary],
   ["app-transaction-row", AppTransactionRow],
+  ["app-group-member-picker", AppGroupMemberPicker],
   ["app-moment-tile", AppMomentTile],
   ["app-moment-grid", AppMomentGrid],
   ["app-moment-reactions", AppMomentReactions],

@@ -13,6 +13,7 @@ import '../features/contacts/contact_models.dart';
 import '../features/profile/complaint_models.dart';
 import '../features/redpacket/red_packet_controller.dart';
 import '../features/moments/moments_privacy_changes.dart';
+import 'support_identity_repository.dart';
 
 export 'business_api_error.dart';
 
@@ -52,7 +53,8 @@ final class BusinessApiClient
         ComplaintGateway,
         RedPacketViewGateway,
         PersonalInvitationGateway,
-        InviteHistoryGateway {
+        InviteHistoryGateway,
+        SupportIdentityGateway {
   BusinessApiClient({
     required this.baseUri,
     required this.sessionStore,
@@ -1075,6 +1077,27 @@ final class BusinessApiClient
       getJson(
         '/users/lookup?matrix_user_id=${Uri.encodeQueryComponent(matrixUserId)}',
       );
+
+  @override
+  Future<List<SupportIdentity>> lookupSupportIdentities(
+      List<String> userIds) async {
+    if (userIds.isEmpty || userIds.length > 100) {
+      throw ArgumentError.value(userIds, 'userIds', 'must contain 1..100 ids');
+    }
+    final response = await _authorized(
+      (headers) => _client.post(
+        _uri('/support/identities/lookup'),
+        headers: {...headers, 'Content-Type': 'application/json'},
+        body: jsonEncode({'user_ids': userIds}),
+      ),
+    );
+    final body = _decode(response);
+    return (body['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => SupportIdentity.fromJson(
+            item.map((key, value) => MapEntry(key.toString(), value))))
+        .toList(growable: false);
+  }
 
   @override
   Future<Map<String, dynamic>> requestFriend(

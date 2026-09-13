@@ -99,7 +99,7 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(create_support_router(settings, session_factory), prefix="/api/v1")
-    app.include_router(create_ledger_router(settings, session_factory), prefix="/api/v1")
+    app.include_router(create_ledger_router(settings, session_factory, avatar_storage=avatar_storage), prefix="/api/v1")
     app.include_router(create_redpacket_router(settings, session_factory, avatar_storage=avatar_storage, matrix_gateway=matrix_gateway), prefix="/api/v1")
     app.include_router(create_app_update_router(settings, session_factory), prefix="/api/v1")
     app.include_router(create_transfer_router(settings, session_factory), prefix="/api/v1")

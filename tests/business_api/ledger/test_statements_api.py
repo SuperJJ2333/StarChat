@@ -14,6 +14,10 @@ from app.modules.ledger.service import LedgerService
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
 from app.modules.transfer.service import ChatTransferService
 from app.modules.wallet.service import WalletLedger
+from app.modules.identity.enums import AccountStatus
+from app.modules.identity.models import User
+from app.modules.identity.profile import ProfileService
+from app.modules.ledger.statements import StatementService
 
 
 @pytest.fixture()
@@ -32,6 +36,62 @@ def bearer(settings, user_id):
     now = datetime.now(timezone.utc)
     token = jwt.encode({"sub": user_id, "iss": settings.jwt_issuer, "iat": int(now.timestamp()), "exp": int((now + timedelta(minutes=5)).timestamp())}, settings.jwt_secret, algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_statement_projects_only_authorized_counterparty_public_identity(context):
+    app, factory, settings, ledger = context
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        for user_id, username, nickname in [
+            ("alice", "alice", "Alice"), ("bob", "bob-account", "Bob"),
+            ("mallory", "mallory", "Mallory"),
+        ]:
+            session.add(User(id=user_id, username=username,
+                username_normalized=username, email=f"{username}@test.invalid",
+                email_normalized=f"{username}@test.invalid", password_hash="x",
+                status=AccountStatus.ACTIVE, matrix_user_id=f"@{username}:test",
+                nickname=nickname, created_at=now, updated_at=now,
+                profile_updated_at=now,
+                avatar_object_key=("avatars/bob/avatar.png" if user_id == "bob" else None)))
+    visible = ledger.post(entries={"alice": Decimal("-2.00"), "bob": Decimal("2.00")}, actor_id="alice", reason_code="USER_TRANSFER", idempotency_key="identity-visible", scope="caibi.transfer")
+    ledger.adjust(user_id="mallory", amount=Decimal("3.00"), actor_id="finance", reason_code="IDENTITY_TEST_SEED", idempotency_key="identity-mallory-seed")
+    hidden = ledger.post(entries={"mallory": Decimal("-3.00"), "bob": Decimal("3.00")}, actor_id="mallory", reason_code="USER_TRANSFER", idempotency_key="identity-hidden", scope="caibi.transfer")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/ledger/transactions/me/{visible.id}", headers=bearer(settings, "alice"))
+        assert response.status_code == 200
+        assert response.json()["counterparty_nickname"] == "Bob"
+        assert response.json()["counterparty_username"] == "bob-account"
+        assert "counterparty_remark" not in response.json()
+        assert (await client.get(f"/api/v1/ledger/transactions/me/{hidden.id}", headers=bearer(settings, "alice"))).status_code == 404
+
+
+def test_statement_counterparty_names_do_not_require_avatar_storage(context):
+    _app, factory, _settings, ledger = context
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add_all([
+            User(id="alice", username="alice", username_normalized="alice",
+                email="alice@test.invalid", email_normalized="alice@test.invalid",
+                password_hash="x", status=AccountStatus.ACTIVE, nickname="Alice",
+                created_at=now, updated_at=now, profile_updated_at=now),
+            User(id="bob", username="bob-account", username_normalized="bob-account",
+                email="bob@test.invalid", email_normalized="bob@test.invalid",
+                password_hash="x", status=AccountStatus.ACTIVE, nickname="Bob",
+                avatar_object_key="avatars/bob/avatar.png", created_at=now,
+                updated_at=now, profile_updated_at=now),
+        ])
+    transaction = ledger.post(
+        entries={"alice": Decimal("-2.00"), "bob": Decimal("2.00")},
+        actor_id="alice", reason_code="USER_TRANSFER",
+        idempotency_key="identity-no-avatar-storage", scope="caibi.transfer")
+
+    detail = StatementService(
+        factory, profile_reader=ProfileService(factory, storage=None)).get(
+            user_id="alice", transaction_id=transaction.id)
+
+    assert detail["counterparty_nickname"] == "Bob"
+    assert detail["counterparty_username"] == "bob-account"
 
 
 @pytest.mark.asyncio

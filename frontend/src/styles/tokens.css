@@ -1,4 +1,6 @@
 :root {
+  --color-support-identity: #f6c343;
+  --color-ledger-transfer: #fa9d3b;
   --admin-modal-scrim: #14203266;
   --moment-reaction-shadow: rgba(0, 0, 0, 0.07);
   --moment-reaction-radius: 8px;

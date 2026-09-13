@@ -83,3 +83,46 @@ export class AppTransactionRow extends StrictElement {
     return root;
   }
 }
+
+export class AppGroupMemberPicker extends StrictElement {
+  render() {
+    let state = this.attr("state", "ready");
+    const root = element("section", "c-group-member-picker");
+    root.dataset.state = state;
+    root.append(element("h2", "c-group-member-picker__title", this.attr("title", "选择群成员")));
+    const search = element("input", "c-group-member-picker__search");
+    search.type = "search";
+    search.placeholder = "搜索成员";
+    search.setAttribute("aria-label", "搜索成员");
+    const list = element("div", "c-group-member-picker__list");
+    const members = [
+      ["周然", "zhouran", "好友备注：周同学", "business"],
+      ["陈默", "chenmo", "群成员", "room"],
+      ["林晓", "linxiao", "畅聊号：linxiao", "business"],
+    ];
+    let selected = this.attr("selected", "");
+    const render = () => {
+      list.replaceChildren();
+      if (state === "loading") { list.append(element("p", "c-group-member-picker__empty", "正在加载当前群成员…")); return; }
+      if (state === "error") { const retry = button("c-group-member-picker__retry", "重试", "member-picker:retry"); retry.textContent = "重试"; retry.addEventListener("click", () => { state = "ready"; root.dataset.state = state; render(); }); list.append(element("p", "c-group-member-picker__empty", "成员加载失败，请重试"), retry); return; }
+      const filtered = state === "empty" ? [] : members.filter(([name, username]) => `${name} ${username}`.includes(search.value.trim()));
+      if (!filtered.length) { list.append(element("p", "c-group-member-picker__empty", state === "empty" ? "群成员尚未加载，请稍后再试" : "没有匹配的群成员")); return; }
+      for (const [name, username, detail, avatarSource] of filtered) {
+        const item = button("c-group-member-picker__item", `选择${name}`, "member-picker:select");
+        item.dataset.memberId = username; item.dataset.selected = String(selected === username);
+        item.dataset.avatarSource = avatarSource;
+        const avatarSlot = element("span", "c-group-member-picker__avatar");
+        const avatar = document.createElement("app-avatar");
+        avatar.setAttribute("name", name);
+        avatar.setAttribute("size", "conversation");
+        avatarSlot.append(avatar);
+        const identity = element("span", "c-group-member-picker__identity");
+        identity.append(element("strong", "c-group-member-picker__name", name), element("span", "c-group-member-picker__meta", detail));
+        item.append(avatarSlot, identity, element("span", "c-group-member-picker__check", selected === username ? "✓" : ""));
+        item.addEventListener("click", () => { selected = username; render(); }); list.append(item);
+      }
+    };
+    search.addEventListener("input", render);
+    root.append(search, list); render(); return root;
+  }
+}

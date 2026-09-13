@@ -13,6 +13,7 @@ from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.adjustments import AdjustmentWorkflow
 from app.modules.ledger.service import LedgerService, PointTransferService
 from app.modules.ledger.statements import StatementService
+from app.modules.identity.profile import ProfileService
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -52,15 +53,17 @@ class StatementItem(StrictModel):
     counterparty_id: str | None = None
     packet_mode: str | None = None
     packet_room: str | None = None
+    counterparty_nickname: str | None = None
+    counterparty_username: str | None = None
 
 class StatementPage(StrictModel):
     items: list[StatementItem]
     next_cursor: str | None
 
-def create_ledger_router(settings: Settings, session_factory) -> APIRouter:
+def create_ledger_router(settings: Settings, session_factory, *, avatar_storage=None) -> APIRouter:
     router = APIRouter(prefix="/ledger", tags=["ledger"])
     ledger = LedgerService(session_factory)
-    statements = StatementService(session_factory)
+    statements = StatementService(session_factory, profile_reader=ProfileService(session_factory, storage=avatar_storage))
     transfers = PointTransferService(ledger)
     payment_pin = PaymentPinService(session_factory, require_all=settings.payment_pin_require_all)
     workflow = AdjustmentWorkflow(session_factory, ledger, admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))

@@ -164,6 +164,7 @@ register("profile", "settings", [["default", "设置 / 默认"], ["privacy", "�
 register("caibi", "home", [["default", "点钻 / 默认"]]);
 register("caibi", "history", [["all", "点钻记录 / 全部"], ["credit", "点钻记录 / 上分"], ["debit", "点钻记录 / 下分"], ["transfer", "点钻记录 / 转账"], ["redpacket", "点钻记录 / 红包"]], { height: 980 });
 register("caibi", "ledger", [["all", "点钻账单 / 全部"], ["filtered", "点钻账单 / 组合筛选"], ["loading", "点钻账单 / 加载中"], ["empty", "点钻账单 / 空"], ["error", "点钻账单 / 加载失败"], ["paged", "点钻账单 / 下一页"], ["search", "点钻账单 / 搜索"]], { height: 1040 });
+register("caibi", "group-member-picker", [["ready", "群成员选择 / 群转账与专属红包"], ["loading", "群成员选择 / 加载中"], ["empty", "群成员选择 / 空群"], ["error", "群成员选择 / 加载失败"]]);
 register("caibi", "transfer", [["default", "点钻转账 / 默认"], ["amount", "点钻转账 / 金额"], ["fee", "点钻转账 / 手续费"], ["confirm", "点钻转账 / 确认"], ["processing", "点钻转账 / 处理中"], ["success", "点钻转账 / 成功"], ["receiver-accepted", "点钻转账 / 收款方已收款"], ["recipient-invalid", "点钻转账 / 收款人不存在"], ["amount-invalid", "点钻转账 / 金额错误"], ["insufficient", "点钻转账 / 余额不足"], ["duplicate", "点钻转账 / 重复提交"], ["unknown-result", "点钻转账 / 未知结果"]]);
 register("caibi", "transaction", [["detail", "点钻交易 / 详情"]]);
 
@@ -180,7 +181,7 @@ register("wallet", "transaction", [["summary", "钱包交易 / 摘要"], ["detai
 register("wallet", "state", [["history-failed", "钱包 / 记录加载失败"], ["empty", "钱包 / 空记录"], ["service-error", "钱包 / 服务异常"]]);
 
 register("feedback", "dialog", [["confirm", "Dialog / 确认"], ["error", "Dialog / 错误"], ["detail", "Dialog / 详情"], ["danger", "Dialog / 危险操作"]]);
-register("feedback", "toast", [["success", "Toast / 成功"], ["warning", "Toast / 警告"], ["error", "Toast / 错误"], ["info", "Toast / 信息"]]);
+register("feedback", "toast", [["success", "Toast / 成功"], ["warning", "Toast / 警告"], ["error", "Toast / 错误"], ["info", "Toast / 信息"], ["nudge-rate-limited", "拍一拍 / 同一用户同一群 60 秒内最多 3 次"]]);
 register("feedback", "empty", [["default", "Empty State / 无数据"], ["permission", "Empty State / 无权限"], ["network", "Empty State / 网络错误"], ["retry", "Empty State / 重试"]]);
 register("feedback", "loading", [["spinner", "加载 / 指示器"], ["skeleton", "加载 / 骨架"], ["disabled", "加载 / 禁用"]]);
 register("feedback", "permission", [["settings", "权限 / 系统设置入口"]]);

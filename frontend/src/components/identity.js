@@ -1,5 +1,6 @@
 import { StrictElement, button, element } from "./base.js";
 import { icon } from "../icons/icons.js";
+import { officialName } from "./official-name.js";
 
 export class AppAvatar extends StrictElement {
   render() {
