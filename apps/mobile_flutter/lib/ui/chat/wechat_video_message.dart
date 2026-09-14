@@ -205,13 +205,19 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   /// 加载/初始化失败后可重试（弱网大文件场景）。
   bool loadFailed = false;
 
+  /// 进度条拖动中：拖动期间 ticker 不再回写位置（低端机掉帧时
+  /// 回写会覆盖拖动值，表现为进度条跳动/拉不动），松手后统一 seek。
+  bool _seeking = false;
+  double? _seekPreviewMs;
+
   Future<bool> _initialize() async {
     final generation = ++_generation;
     loadFailed = false;
     VideoPlayerController? pendingController;
     try {
+      // 大视频弱网回下载常见 30s+；放宽到 120s，重试按钮仍在。
       final videoFile =
-          await widget.loadFile().timeout(const Duration(seconds: 30));
+          await widget.loadFile().timeout(const Duration(seconds: 120));
       if (!mounted || generation != _generation) return false;
       final controller = widget.controllerFactory?.call(videoFile) ??
           VideoPlayerController.file(videoFile);
@@ -323,7 +329,7 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
   void _startTicker() {
     _uiTicker?.cancel();
     _uiTicker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (!mounted) return;
+      if (!mounted || _seeking) return;
       if (_controller?.value.isPlaying == true) {
         setState(() {});
       } else {
@@ -650,20 +656,43 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
                 left: 12,
                 right: 12,
                 bottom: 62,
-                child: CupertinoSlider(
+                child: _VideoProgressBar(
                   key: const Key('video-viewer-progress'),
-                  value: controller.value.position.inMilliseconds
+                  positionMs: controller.value.position.inMilliseconds
                       .toDouble()
                       .clamp(
                           0,
                           controller.value.duration.inMilliseconds
                               .toDouble()
                               .clamp(1, double.infinity)),
-                  max: controller.value.duration.inMilliseconds
+                  durationMs: controller.value.duration.inMilliseconds
                       .toDouble()
                       .clamp(1, double.infinity),
-                  onChanged: (value) =>
-                      controller.seekTo(Duration(milliseconds: value.round())),
+                  seeking: _seeking,
+                  previewMs: _seekPreviewMs,
+                  onSeekStart: () => _seeking = true,
+                  onSeekUpdate: (value) {
+                    _seeking = true;
+                    setState(() => _seekPreviewMs = value);
+                  },
+                  onSeekEnd: (value) async {
+                    setState(() => _seekPreviewMs = value);
+                    try {
+                      await controller.seekTo(
+                          Duration(milliseconds: value.round()));
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => _hint = '跳转失败，请重试');
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          _seeking = false;
+                          _seekPreviewMs = null;
+                        });
+                      }
+                    }
+                  },
                 )),
           if (ready)
             Positioned(
@@ -710,4 +739,91 @@ final class _VideoViewerPageState extends State<VideoViewerPage>
       ),
     );
   }
+}
+
+/// 可拖动进度条：支持点击跳转与按住拖动自由跳转；
+/// 拖动期间上层暂停 ticker 回写（`seeking`），松手统一 seek。
+final class _VideoProgressBar extends StatelessWidget {
+  const _VideoProgressBar({
+    super.key,
+    required this.positionMs,
+    required this.durationMs,
+    required this.seeking,
+    required this.previewMs,
+    required this.onSeekStart,
+    required this.onSeekUpdate,
+    required this.onSeekEnd,
+  });
+
+  final double positionMs;
+  final double durationMs;
+  final bool seeking;
+  final double? previewMs;
+  final VoidCallback onSeekStart;
+  final ValueChanged<double> onSeekUpdate;
+  final ValueChanged<double> onSeekEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = (seeking ? (previewMs ?? positionMs) : positionMs)
+        .clamp(0.0, durationMs);
+    return SizedBox(
+      height: 28,
+      child: LayoutBuilder(builder: (context, constraints) {
+        final trackWidth = constraints.maxWidth;
+        double fractionOf(double dx) =>
+            (dx.clamp(0.0, trackWidth) / trackWidth) * durationMs;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) =>
+              onSeekEnd(fractionOf(details.localPosition.dx)),
+          onHorizontalDragStart: (details) {
+            onSeekStart();
+            onSeekUpdate(fractionOf(details.localPosition.dx));
+          },
+          onHorizontalDragUpdate: (details) =>
+              onSeekUpdate(fractionOf(details.localPosition.dx)),
+          onHorizontalDragEnd: (_) =>
+              onSeekEnd(previewMs ?? positionMs),
+          child: CustomPaint(
+            painter: _ProgressBarPainter(value / durationMs, seeking),
+            size: const Size(double.infinity, 28),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+final class _ProgressBarPainter extends CustomPainter {
+  const _ProgressBarPainter(this.fraction, this.active);
+
+  final double fraction;
+  final bool active;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centerY = size.height / 2;
+    final track = Paint()
+      ..color = const Color(0x66FFFFFF)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    final played = Paint()
+      ..color = const Color(0xFF07C160)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(0, centerY),
+        Offset(size.width, centerY), track);
+    final playedWidth = (size.width * fraction.clamp(0.0, 1.0));
+    if (playedWidth > 0) {
+      canvas.drawLine(Offset(0, centerY), Offset(playedWidth, centerY), played);
+    }
+    final knobPaint = Paint()
+      ..color = active ? const Color(0xFFFFFFFF) : const Color(0xDDFFFFFF);
+    canvas.drawCircle(Offset(playedWidth, centerY), active ? 8 : 6, knobPaint);
+  }
+
+  @override
+  bool shouldRepaint(_ProgressBarPainter old) =>
+      old.fraction != fraction || old.active != active;
 }

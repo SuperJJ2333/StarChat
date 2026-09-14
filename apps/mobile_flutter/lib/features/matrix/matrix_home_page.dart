@@ -789,15 +789,26 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     if (_openingRoom || widget.previewOnly) return;
     final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
-    // 立即反馈：打开会话需先取租约（弱网可达数秒），期间显示轻量
-    // loading 覆盖层，避免“点了没反应”被误认为失灵；重复点击由
-    // _openingRoom 阻断。
-    unawaited(showCupertinoModalPopup<void>(
-      context: context,
-      builder: (sheetContext) => const Center(
-        child: CupertinoActivityIndicator(radius: 14),
+    // 立即反馈：取租约期间（弱网/低端机可达数秒）显示悬浮转圈。
+    // 必须用 Overlay 而非 modal route——低端机（荣耀50 Plus）上
+    // “开 modal→pop→push”三者同帧竞争路由动画会吞掉房间 push，
+    // 表现为点击永远无响应；Overlay 不进路由栈，无此竞态。
+    final overlay = OverlayEntry(
+      builder: (_) => const Positioned.fill(
+        child: ColoredBox(
+          color: Color(0x33000000),
+          child: Center(child: CupertinoActivityIndicator(radius: 16)),
+        ),
       ),
-    ));
+    );
+    var overlayRemoved = false;
+    void removeOverlay() {
+      if (overlayRemoved) return;
+      overlayRemoved = true;
+      overlay.remove();
+    }
+
+    Overlay.of(context, rootOverlay: true).insert(overlay);
     MatrixRoomLease? lease;
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
@@ -833,16 +844,13 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         }
         await route.popped;
       });
-      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
+      removeOverlay();
       await navigator.push(route);
     } catch (error) {
-      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
+      removeOverlay();
       rethrow;
     } finally {
+      removeOverlay();
       await lease?.cancel();
       _readState.setRoomOpen(snapshot.id, open: false);
       final latest = _rooms.where((room) => room.id == snapshot.id);

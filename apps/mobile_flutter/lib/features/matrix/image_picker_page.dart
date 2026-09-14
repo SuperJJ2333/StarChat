@@ -741,9 +741,13 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
                   ]),
                 ),
               ),
+            // 选中热区：左上角 1/4 格（老年用户可轻松点中）；
+            // 圆圈 icon 本身保持 24px 不放大，仅扩大可点区域。
             Positioned(
-              top: 6,
-              left: 6,
+              top: 0,
+              left: 0,
+              width: 56,
+              height: 80,
               child: _checkCircle(photo),
             ),
           ]),
@@ -934,10 +938,17 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       scale: selected ? 1.0 : 0.92,
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
+      alignment: Alignment.topLeft,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _toggle(photo),
         child: Container(
+          width: 56,
+          height: 80,
+          color: const Color(0x00000000),
+          alignment: Alignment.topLeft,
+          padding: const EdgeInsets.only(top: 6, left: 6),
+          child: Container(
           width: 24,
           height: 24,
           alignment: Alignment.center,
@@ -955,6 +966,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
               ? const Icon(CupertinoIcons.check_mark,
                   size: 14, color: CupertinoColors.white)
               : const SizedBox.shrink(),
+        ),
         ),
       ),
     );

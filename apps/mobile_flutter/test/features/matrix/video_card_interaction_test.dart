@@ -50,7 +50,8 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: VideoViewerPage(loadFile: () => Completer<File>().future)));
     expect(find.text('正在加载视频…'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 31));
+    // 加载超时从 30s 放宽到 120s（大视频弱网回下载）。
+    await tester.pump(const Duration(seconds: 121));
     await tester.pump();
     expect(find.byKey(const Key('video-viewer-retry')), findsOneWidget);
     await tester.pumpWidget(const SizedBox());

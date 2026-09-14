@@ -118,6 +118,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'sent_video_local_registry.dart';
 import 'room_history_date_capability.dart';
 import '../../ui/chat/room_image_gallery.dart';
 import '../contacts/contact_actions.dart';
@@ -1378,15 +1379,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _openVideoViewer(RoomMessageViewModel message) async {
+    final localSent = SentVideoLocalRegistry.shared
+        .findByTransactionId(message.transactionId);
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
         builder: (_) => VideoViewerPage(
-          loadFile: () => resolveCachedVideoFile(
-            loaderCachesContent: true,
-            key: _mediaKey(message.id),
-            decrypt: () => _downloadMedia(message.id),
-          ),
+          loadFile: localSent != null
+              ? () async {
+                  // 发送方本地回读：压缩产物即发送内容，零下载零等待。
+                  return localSent;
+                }
+              : () => resolveCachedVideoFile(
+                  loaderCachesContent: true,
+                  key: _mediaKey(message.id),
+                  decrypt: () => _downloadMedia(message.id),
+                ),
           initialDuration: message.videoDuration,
           onForward: () => _forwardMessages([message]),
         ),
@@ -1588,9 +1596,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     for (final photo in result.photos) {
       final videoSource = photo.localVideoFile;
       if (photo.isVideo && videoSource != null) {
+        final jobId =
+            'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}';
+        // 登记本机产物：发送后点开优先本地回读——弱网下大视频回下载
+        // 超时是发送方“视频加载失败”的主因（产物保留未删除）。
+        unawaited(videoSource().then((file) {
+          if (file == null) return;
+          SentVideoLocalRegistry.shared.register(jobId: jobId, file: file);
+        }).catchError((_) {}));
         galleryVideos.add(MatrixOutgoingVideoFileRequest(
-          jobId:
-              'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}',
+          jobId: jobId,
           video: MatrixOutgoingVideoFile(
             id: photo.id,
             resolveSource: videoSource,

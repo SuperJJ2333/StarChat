@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 
 import 'message_action.dart';
@@ -452,7 +453,23 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
       child: interactive
           ? Listener(
               behavior: HitTestBehavior.opaque,
-              onPointerDown: (event) => _startDrag(handle, event.position),
+              // 低端机修复：手柄按下后立即在 pointer 路由上捕获该
+              // 指针——否则手指移出 44px 命中层后 move 被外层
+              // GestureDetector 赢走，表现为“拉不动/漂移”。
+              onPointerDown: (event) {
+                _startDrag(handle, event.position);
+                // 低端机修复：注册全局 pointer 路由，手指移出命中层后
+                // move/up 仍送达本手柄（否则被外层手势赢走→拉不动）。
+                GestureBinding.instance.pointerRouter
+                  ..addRoute(event.pointer, _routePointer)
+                  ..addRoute(event.pointer, (event) {
+                    if (event is PointerUpEvent ||
+                        event is PointerCancelEvent) {
+                      GestureBinding.instance.pointerRouter
+                          .removeRoute(event.pointer, _routePointer);
+                    }
+                  });
+              },
               onPointerMove: (event) => _updateDrag(handle, event.position),
               onPointerUp: (_) => _finishDrag(),
               onPointerCancel: (_) => _finishDrag(),
@@ -510,6 +527,18 @@ final class _SelectionOverlayBodyState extends State<_SelectionOverlayBody> {
     if (_dragging != handle) return;
     _setAnchor(handle, globalPosition);
     setState(() => _finger = globalPosition);
+  }
+
+  /// 全局 pointer 路由回调：捕获后所有 move 都经过这里。
+  void _routePointer(PointerEvent event) {
+    if (_dragging == _Handle.none) return;
+    if (event is PointerMoveEvent) {
+      _updateDrag(_dragging, event.position);
+    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
+      GestureBinding.instance.pointerRouter
+          .removeRoute(event.pointer, _routePointer);
+      _finishDrag();
+    }
   }
 
   Widget _handleHitLayer({

@@ -47,11 +47,18 @@ void main() {
             loadFile: () async => File('unused'),
             controllerFactory: (_) => player)));
     await tester.pumpAndSettle();
-    final slider = tester.widget<CupertinoSlider>(
-        find.byKey(const Key('video-viewer-progress')));
-    slider.onChanged!(30000);
+    // 新进度条：拖动更新预览，松手统一 seek（低端机不再被 ticker 回写干扰）。
+    final track = tester.getRect(find.byKey(const Key('video-viewer-progress')));
+    final gesture = await tester.startGesture(track.centerLeft);
+    await tester.pump(Duration(milliseconds: 80) ~/ 2);
+    await gesture.moveBy(Offset(track.width * 0.5, 0));
     await tester.pump();
-    expect(player.value.position, const Duration(seconds: 30));
+    await gesture.moveBy(Offset(2, 0));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(player.value.position.inMilliseconds,
+        greaterThan(const Duration(seconds: 10).inMilliseconds));
     await tester.tap(find.byKey(const Key('video-viewer-speed')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('1.5×'));
@@ -103,7 +110,8 @@ void main() {
     expect(forwarded, isTrue);
     expect(find.byType(CupertinoActionSheet), findsNothing);
     expect(find.byKey(const Key('video-viewer-download')), findsOneWidget);
-    await tester.pump(const Duration(seconds: 31));
+    // 加载超时 120s 的 pending timer 需要在用例内耗尽，避免泄漏报错。
+    await tester.pump(const Duration(seconds: 121));
     await tester.pumpWidget(const SizedBox());
   });
 }
