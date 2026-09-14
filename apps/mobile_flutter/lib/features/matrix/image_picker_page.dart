@@ -66,11 +66,13 @@ final class _GalleryPreviewPage extends StatefulWidget {
     required this.photo,
     required this.selected,
     required this.onToggle,
+    this.onSendFlash,
   });
 
   final GalleryPhoto photo;
   final bool selected;
   final bool Function() onToggle;
+  final VoidCallback? onSendFlash;
 
   @override
   State<_GalleryPreviewPage> createState() => _GalleryPreviewPageState();
@@ -119,6 +121,26 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
                   size: 22, color: CupertinoColors.white),
             ),
           ),
+          if (widget.onSendFlash != null)
+            Positioned(
+              right: 16,
+              bottom: 80,
+              child: CupertinoButton(
+                key: const Key('gallery-preview-flash'),
+                color: const Color(0xCC1B1B1D),
+                borderRadius: BorderRadius.circular(18),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                onPressed: widget.onSendFlash,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(CupertinoIcons.bolt_fill,
+                      size: 14, color: CupertinoColors.systemYellow),
+                  const SizedBox(width: 4),
+                  const Text('闪照',
+                      style: TextStyle(
+                          fontSize: 14, color: CupertinoColors.white)),
+                ]),
+              ),
+            ),
           Positioned(
             right: 16,
             bottom: 24,
@@ -199,6 +221,13 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       widget.pagerBuilder?.call() ??
       DeviceGallerySource.pagerFor(album, photosOnly: widget.photosOnly);
   final scrollController = ScrollController();
+  // 滑动多选：从某格的角标按下开始，滑过的格子依序选中/取消；
+  // 与点击预览互不干扰（角标区域外的按下仍是普通点击）。
+  bool _dragSelecting = false;
+  bool _dragModeAdd = true;
+  bool _dragStartApplied = false;
+  String? _pendingStartId;
+  final Set<String> _dragTouched = <String>{};
   List<GalleryPhoto> photos = const [];
   bool loading = true;
   bool loadingMore = false;
@@ -461,7 +490,8 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     ];
     // Videos always use the shared automatic compression pipeline after selection.
     if (!mounted) return;
-    Navigator.pop(context, (photos: chosen, original: selection.original));
+    Navigator.pop(
+        context, (photos: chosen, original: selection.original, flash: false));
   }
 
   @override
@@ -651,9 +681,19 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       );
     }
     final showFooter = loadingMore || hasMore;
-    return GridView.builder(
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onDragSelectDown,
+      onPointerMove: _onDragSelectMove,
+      onPointerUp: (_) => _endDragSelect(),
+      onPointerCancel: (_) => _endDragSelect(),
+      child: GridView.builder(
       key: const Key('image-picker-grid'),
       controller: scrollController,
+      // 滑动多选期间禁用手势滚动，避免“越选越滚”。
+      physics: _dragSelecting
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(2),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
@@ -709,7 +749,82 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           ]),
         );
       },
+      ),
     );
+  }
+
+  /// 角标区域（约 44×44 逻辑像素）内的按下进入滑动多选；
+  /// 其余区域保持“点击预览”。
+  void _onDragSelectDown(PointerDownEvent event) {
+    final hit = _cellAt(event.localPosition, inHandleArea: true);
+    if (hit == null) return;
+    // 只记录会话；未发生拖动时保持子组件角标点击的原生行为，
+    // 拖到新格子后才由滑动多选接管（并对起始格补一次切换）。
+    setState(() => _dragSelecting = true);
+    _dragModeAdd = !selection.isSelected(hit.id);
+    _dragTouched.clear();
+    _dragStartApplied = false;
+    _pendingStartId = hit.id;
+  }
+
+  void _onDragSelectMove(PointerMoveEvent event) {
+    if (!_dragSelecting) return;
+    final hit = _cellAt(event.localPosition);
+    if (hit == null) return;
+    if (!_dragStartApplied) {
+      _dragStartApplied = true;
+      final startId = _pendingStartId;
+      _pendingStartId = null;
+      if (startId != null && startId != hit.id) {
+        _dragTouched.add(startId);
+        _applyDragSelectTo(startId);
+      }
+    }
+    if (_dragTouched.contains(hit.id)) return;
+    _dragTouched.add(hit.id);
+    _applyDragSelectTo(hit.id);
+  }
+
+  void _endDragSelect() {
+    if (!_dragSelecting) return;
+    setState(() => _dragSelecting = false);
+    _dragTouched.clear();
+  }
+
+  void _applyDragSelectTo(String id) {
+    if (_dragModeAdd) {
+      if (selection.isSelected(id)) return;
+      // 复用 GallerySelection.toggle 的上限与提示语义。
+      selection.toggle(id);
+    } else {
+      if (!selection.isSelected(id)) return;
+      selection.toggle(id);
+    }
+  }
+
+  /// 由网格几何（4 列、间距 2、纵横比 0.82、网格内边距 2）反算命中的
+  /// 照片；[inHandleArea] 时还要求命中点位于该格左上角角标热区内。
+  ({String id})? _cellAt(Offset local, {bool inHandleArea = false}) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    const columns = 4, spacing = 2.0, padding = 2.0;
+    final width = box.size.width;
+    final cellExtent = (width - padding * 2 - spacing * (columns - 1)) / columns;
+    final rowExtent = cellExtent / 0.82;
+    final y = local.dy + scrollController.offset - padding;
+    final row = (y / (rowExtent + spacing)).floor();
+    final column = ((local.dx - padding) / (cellExtent + spacing)).floor();
+    if (row < 0 || column < 0 || column >= columns) return null;
+    final index = row * columns + column;
+    if (index < 0 || index >= photos.length) return null;
+    final photo = photos[index];
+    if (inHandleArea) {
+      final topInCell = y - row * (rowExtent + spacing);
+      final leftInCell = local.dx - padding - column * (cellExtent + spacing);
+      const handle = 44.0;
+      if (topInCell > handle || leftInCell > handle) return null;
+    }
+    return (id: photo.id);
   }
 
   /// 网格页脚：加载中转圈 / 失败可点重试 / 可加载更多提示。
@@ -791,6 +906,14 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
           photo: photo,
           selected: selection.isSelected(photo.id),
           onToggle: () => _toggle(photo),
+          onSendFlash: photo.isVideo
+              ? null
+              : () {
+                  // 先关预览页，再以闪照结果关闭整个选择器。
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop(
+                      (photos: [photo], original: true, flash: true));
+                },
         ),
       ),
     );

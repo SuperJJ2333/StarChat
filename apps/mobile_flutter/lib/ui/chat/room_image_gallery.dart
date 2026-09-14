@@ -39,7 +39,8 @@ class RoomImageGalleryPage extends StatefulWidget {
   final List<RoomGalleryImage> images;
   final String initialId;
   final Future<List<RoomGalleryImage>> Function() loadEarlier;
-  final Future<bool> Function(Uint8List) onForwardEdited;
+  final Future<bool> Function(Future<Uint8List> Function() export)
+      onForwardEdited;
   final Future<void> Function(Uint8List) onFavorite;
   final Object? sourceScope;
   @override

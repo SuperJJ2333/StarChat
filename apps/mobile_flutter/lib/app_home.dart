@@ -1774,9 +1774,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => !_matrixReady
-      ? const Center(child: CupertinoActivityIndicator())
-      : Stack(
+  Widget build(BuildContext context) => Stack(
           children: [
             CupertinoTabScaffold(
               tabBar: CupertinoTabBar(
@@ -1819,7 +1817,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               ),
               tabBuilder: (_, index) => CupertinoTabView(
                 builder: (_) => switch (index) {
-                  0 => MatrixHomePage(
+                  0 => !_matrixReady
+                      ? const _HomeWarmupPane(
+                          key: ValueKey('home-matrix-warmup'),
+                          message: '正在连接，稍候即可查看消息',
+                        )
+                      : MatrixHomePage(
                       api: widget.api,
                       matrix: widget.matrix,
                       themeController: widget.themeController,
@@ -1834,7 +1837,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                       onUnreadChanged: () => unawaited(_refreshUnreadCount()),
                     ),
                   1 => _chatIdentityCache == null
-                      ? const Center(child: CupertinoActivityIndicator())
+                      ? const _HomeWarmupPane(
+                          key: ValueKey('home-contacts-warmup'),
+                          message: '正在准备通讯录',
+                        )
                       : ContactsTabPage(
                           api: widget.api,
                           matrix: widget.matrix,
@@ -1902,6 +1908,27 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                 child: NotificationReadinessBanner()),
           ],
         );
+}
+
+/// 轻量后台加载占位：小号指示器+次级说明文案，不阻塞其余 Tab 与操作。
+final class _HomeWarmupPane extends StatelessWidget {
+  const _HomeWarmupPane({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CupertinoActivityIndicator(radius: 9),
+            const SizedBox(height: 8),
+            Text(message,
+                style: const TextStyle(
+                    fontSize: 13, color: WeChatColors.textSecondary)),
+          ],
+        ),
+      );
 }
 
 // Existing contacts use the hydrated snapshot immediately. A newly accepted

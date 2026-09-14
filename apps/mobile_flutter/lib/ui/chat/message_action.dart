@@ -32,6 +32,7 @@ final class MessageCapabilities {
     required this.sentAt,
     required this.serverNow,
     this.isSent = true,
+    this.isFlashPhoto = false,
   });
 
   final MessageContentKind kind;
@@ -39,6 +40,9 @@ final class MessageCapabilities {
   final DateTime sentAt;
   final DateTime serverNow;
   final bool isSent;
+
+  /// 闪照：阅后即焚，禁止转发（不进入转发管线）。
+  final bool isFlashPhoto;
 
   bool get canRecall {
     if (!isOwn) return false;
@@ -82,7 +86,9 @@ abstract final class MessageActionPolicy {
         .contains(message.kind)) {
       result.add(MessageAction.addToEmoji);
     }
-    if (isForwardable(message.kind)) result.add(MessageAction.forward);
+    if (isForwardable(message.kind) && !message.isFlashPhoto) {
+      result.add(MessageAction.forward);
+    }
     result.addAll(const {
       MessageAction.deleteLocal,
       MessageAction.multiSelect,

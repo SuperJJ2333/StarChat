@@ -186,7 +186,8 @@ final class ImageViewerPage extends StatefulWidget {
   /// 转发动作：把当前图片转发到目标会话。
   final Future<void> Function(String roomId)? forwardTo;
   final Future<void> Function()? onForward;
-  final Future<bool> Function(Uint8List)? onForwardEdited;
+  final Future<bool> Function(Future<Uint8List> Function() export)?
+      onForwardEdited;
   final Future<void> Function(Uint8List)? onFavorite;
   final ValueChanged<bool>? onZoomChanged;
   final GestureScaleStartCallback? onInteractionStart;

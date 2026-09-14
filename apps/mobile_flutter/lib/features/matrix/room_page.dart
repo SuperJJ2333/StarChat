@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
 import '../../core/support_identity_repository.dart';
+import '../../ui/chat/flash_photo.dart';
 import '../../core/performance_metrics.dart';
 import '../../core/chat_payment_intent.dart';
 import 'chat_payment_flow.dart';
@@ -501,6 +502,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Timer? mediaMessageTimer;
   OverlayEntry? _nudgeToast;
   Timer? _nudgeToastTimer;
+  FlashPhotoViewedStore? _flashViewed;
   bool mediaMessageVisible = false;
 
   /// 「拍摄」自动发送时的暂存缩略图（200px），随发送横幅一并展示。
@@ -543,6 +545,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       });
     }
     unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
+    unawaited(FlashPhotoViewedStore.load(
+            'matrix:${roomInfo.currentUserId ?? ''}')
+        .then((store) {
+      if (!mounted) return;
+      setState(() => _flashViewed = store);
+    }));
     // 聊天工具：幂等注册「统计助手」并登记本会话到作用域栈
     ensureStatisticsToolRegistered();
     StatisticsRoomScope.enter(roomInfo.id);
@@ -1507,6 +1515,47 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
+  /// 闪照发送：事件内容带 flash=1；不上传压缩缩略演绎版（接收端
+  /// 只见马赛克），也不写入明文预览缓存；本地回显原图走内存缓存。
+  Future<void> _sendFlashPhoto(
+    GalleryPhoto photo,
+    RoomTimelineController timeline,
+  ) async {
+    final matrix = widget.roomLease;
+    setState(() {
+      composerPanel = ComposerPanel.none;
+      mediaMessage = null;
+    });
+    await timeline.sendText(
+      '[闪照]',
+      kind: RoomMessageKind.image,
+      mimeType: photo.mimeType,
+      isFlashPhoto: true,
+      send: (transactionId) {
+        return _cacheSentImage(
+          null,
+          _enqueueMedia(() async {
+            final prepared =
+                await prepareGalleryMedia(photo, original: true, isGroup: isGroup);
+            // 发送端原图仅驻留内存（马赛克渲染与长按查看复用）。
+            await imageMemoryCache.putIfAbsent(
+              _mediaKey(transactionId).cacheId,
+              () async => prepared.bytes,
+            );
+            return matrix.sendEncryptedMedia(
+              roomInfo.id,
+              prepared.bytes,
+              prepared.mimeType,
+              extraContent: const {'flash': '1'},
+              txid: transactionId,
+              filename: '闪照.jpg',
+            );
+          }),
+        );
+      },
+    );
+  }
+
   /// 统一图片选择页（微信式九宫格多选）：默认发送压缩图，
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
   Future<void> _pickAndSendImages() async {
@@ -1517,13 +1566,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (_) => ImagePickerPage(isGroup: isGroup),
       ),
-    ) as ({List<GalleryPhoto> photos, bool original})?;
+    ) as ({List<GalleryPhoto> photos, bool original, bool flash})?;
     if (result == null ||
         result.photos.isEmpty ||
         timeline == null ||
         !mounted ||
         _disposing ||
         !identical(widget.roomLease, matrix)) {
+      return;
+    }
+    if (result.flash) {
+      await _sendFlashPhoto(result.photos.single, timeline);
       return;
     }
     setState(() {
@@ -2694,6 +2747,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
+  /// 闪照气泡：马赛克 + 闪电角标；未销毁时可打开查看页，销毁后仅提示。
+  Widget _flashPhotoBubble(RoomMessageViewModel message) {
+    final viewed = _flashViewed?.isViewed(message.id) ?? false;
+    return GestureDetector(
+      onTap: () => _openFlashViewer(message),
+      child: FlashPhotoBubble(
+        loadOriginal: () => imageMemoryCache.putIfAbsent(
+          _mediaKey(message.id).cacheId,
+          () => controller!.loadAttachment(message.id),
+        ),
+        viewed: viewed,
+      ),
+    );
+  }
+
+  Future<void> _openFlashViewer(RoomMessageViewModel message) async {
+    final store = _flashViewed;
+    if (store == null) return;
+    if (store.isViewed(message.id)) {
+      _showMediaMessage('闪照已销毁');
+      return;
+    }
+    await Navigator.of(context, rootNavigator: true).push(
+      CupertinoPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (_) => FlashPhotoViewerPage(
+          loadOriginal: () => imageMemoryCache.putIfAbsent(
+            _mediaKey(message.id).cacheId,
+            () => controller!.loadAttachment(message.id),
+          ),
+          onDestroyed: () {
+            store.markViewed(message.id);
+            if (mounted) setState(() {});
+          },
+        ),
+      ),
+    );
+  }
+
   /// R7：打开全屏图片查看器（含转发/下载操作）。
   Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
     try {
@@ -2795,7 +2887,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<bool> _forwardEditedImage(Uint8List bytes) async {
+  Future<bool> _forwardEditedImage(Future<Uint8List> Function() export) async {
     final matrix = widget.roomLease;
     final destinations = await matrix.forwardingDestinations();
     final prefs = await SharedPreferences.getInstance();
@@ -2804,6 +2896,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     final recent = RecentForwardStore(prefs);
     final transaction = 'image-edit-${DateTime.now().microsecondsSinceEpoch}';
+    // 选择器先开（无导出等待）；PNG 编码挪到确认后的发送态内完成。
     return await Navigator.of(context, rootNavigator: true).push<bool>(
           CupertinoPageRoute(
             builder: (_) => ChatForwardPickerPage(
@@ -2820,7 +2913,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ],
               recentRoomIds: recent.load(),
               onForward: (ids) async {
-                await matrix.enqueuePreparedMedia(
+                final bytes = await export();
+                final job = await matrix.enqueuePreparedMedia(
                   jobId: transaction,
                   media: MatrixOutgoingPreparedMedia(
                     id: transaction,
@@ -2831,6 +2925,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   ),
                   targetRoomIds: ids,
                 );
+                _trackForwardJobs(matrix, [job]);
                 unawaited(recent.record(ids).catchError((Object _) {}));
               },
             ),
@@ -2839,11 +2934,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         false;
   }
 
+  /// 转发入队后持续汇报：全部送达提示『已转发』，失败提示重试；
+  /// 避免确认后 5 秒级静默（下载/加密/上传均在后台队列）。
+  void _trackForwardJobs(
+    MatrixEncryptedMediaGateway matrix,
+    List<MatrixOutgoingWorkJob> jobs,
+  ) {
+    if (jobs.isEmpty) return;
+    final progress = (matrix as MatrixOutgoingProgressView).outgoingProgress;
+    var announced = false;
+    void check() {
+      if (announced || !mounted || _disposing) return;
+      var hasFailed = false;
+      var allTerminal = true;
+      for (final job in jobs) {
+        for (final item in job.items) {
+          final state = item.state;
+          if (state == MatrixOutgoingWorkState.failed) hasFailed = true;
+          if (state != MatrixOutgoingWorkState.sent &&
+              state != MatrixOutgoingWorkState.failed &&
+              state != MatrixOutgoingWorkState.canceled) {
+            allTerminal = false;
+          }
+        }
+      }
+      if (!allTerminal) return;
+      announced = true;
+      progress.removeListener(check);
+      if (!mounted || _disposing) return;
+      _showMediaMessage(hasFailed ? '转发失败，请稍后重试' : '已转发');
+    }
+
+    progress.addListener(check);
+    check();
+  }
+
   Widget _messageContent(RoomMessageViewModel message) =>
       switch (message.kind) {
         // R7 修复：图片气泡改用 ContainImageBubble——按解码实际宽高
         // contain 适配（不再固定 200x150 cover 裁切）。
-        RoomMessageKind.image => LayoutBuilder(
+        RoomMessageKind.image => message.isFlashPhoto
+            ? _flashPhotoBubble(message)
+            : LayoutBuilder(
             builder: (context, constraints) => ContainImageBubble(
               key: ValueKey('image-${message.stableId}'),
               sourceIdentity: (message.stableId, _previewKey(message).identity),
@@ -3158,6 +3290,30 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             onRetry: () =>
                 unawaited(_trackAction(() => _retryMessage(message))),
           )
+        else if (isImageMessage && message.isFlashPhoto)
+          // 闪照：马赛克无气泡媒体卡；长按菜单不含转发（能力过滤）。
+          WeChatMessageBubble(
+            key: ValueKey('flash-message-${message.stableId}'),
+            bubbleKey:
+                menuAnchorKeys.putIfAbsent(message.stableId, GlobalKey.new),
+            decorateContent: false,
+            content: _flashPhotoBubble(message),
+            senderBadge: message.isOwn ? null : _senderBadge(message),
+            senderName: message.isOwn ? null : displayName,
+            avatar: _avatar(message),
+            onAvatarTap: () => _openMessageSender(message),
+            onAvatarDoubleTap: () =>
+                _trackAction(() => _sendNudge(message, publicDisplayName)),
+            onAvatarLongPress: appendMentionDraft,
+            onLongPress: () => unawaited(_showMessageActions(
+                message, menuLinks.putIfAbsent(message.id, () => LayerLink()))),
+            direction: message.isOwn
+                ? MessageDirection.outgoing
+                : MessageDirection.incoming,
+            state: deliveryState,
+            onRetry: () =>
+                unawaited(_trackAction(() => _retryMessage(message))),
+          )
         else if (isImageMessage)
           // 微信式图片消息（R7 修复：ContainImageBubble 替换
           // EncryptedImageMessage——按解码实际宽高 contain 完整适配，
@@ -3313,6 +3469,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         isOwn: message.isOwn,
         sentAt: message.timestamp,
         serverNow: menuNow,
+        isFlashPhoto: message.isFlashPhoto,
       ),
     );
     if (message.kind == RoomMessageKind.voice &&
@@ -3582,6 +3739,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (messages.isEmpty) return;
     final matrix = widget.roomLease;
     if (_disposing) return;
+    if (messages.any((message) => message.isFlashPhoto)) {
+      if (mounted) _showMediaMessage('闪照不支持转发');
+      return;
+    }
     late final List<MatrixOutgoingForwardMessage> frozen;
     try {
       frozen = <MatrixOutgoingForwardMessage>[
@@ -3658,11 +3819,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 if (destinations.any((room) => room.id == id)) id,
             ],
             onForward: (roomIds) async {
-              await matrix.enqueueForward(
+              final jobs = await matrix.enqueueForward(
                 batchId: batchId,
                 messages: frozen,
                 targetRoomIds: roomIds,
               );
+              _trackForwardJobs(matrix, jobs);
               unawaited(store.record(roomIds).catchError((Object _) {}));
             },
           ),

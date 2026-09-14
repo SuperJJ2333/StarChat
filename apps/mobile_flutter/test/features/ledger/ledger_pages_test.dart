@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_gateway.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_pages.dart';
+import 'package:liuhetong_mobile/ui/foundation/wechat_tokens.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 
 void main() {
@@ -56,6 +57,45 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(gateway.listCalls.length, calls);
+  });
+
+  testWidgets('kind filter chips keep readable contrast in every state',
+      (tester) async {
+    final gateway = _Gateway();
+    await tester.pumpWidget(_app(gateway));
+    gateway.completeList(items: const []);
+    await tester.pump();
+
+    Widget? chipOf(Key key) =>
+        tester.widget<CupertinoButton>(find.byKey(key)).child;
+
+    // 未选中：表面底+品牌绿字（不再绿底绿字）。
+    final unselected = find.descendant(
+        of: find.byKey(const Key('ledger-kind-红包')), matching: find.text('红包'));
+    expect(
+        tester.widget<Text>(unselected).style?.color, WeChatColors.brandPrimary);
+    final unselectedButton =
+        tester.widget<CupertinoButton>(find.byKey(const Key('ledger-kind-红包')));
+    expect(unselectedButton.color, isNot(WeChatColors.brandPrimary));
+
+    await tester.tap(find.byKey(const Key('ledger-kind-红包')));
+    gateway.completeList(items: const []);
+    await tester.pump();
+
+    // 选中：品牌绿底+白字+加粗。
+    expect(tester.widget<Text>(unselected).style?.color, CupertinoColors.white);
+    expect(tester.widget<CupertinoButton>(find.byKey(const Key('ledger-kind-红包'))).color,
+        WeChatColors.brandPrimary);
+    expect(chipOf(const Key('ledger-kind-红包')), isNotNull);
+    // 其他未选项依旧绿字可读。
+    expect(
+        tester
+            .widget<Text>(find.descendant(
+                of: find.byKey(const Key('ledger-kind-转账')),
+                matching: find.text('转账')))
+            .style
+            ?.color,
+        WeChatColors.brandPrimary);
   });
 
   testWidgets('loads another page, opens its real detail and copies its id',

@@ -116,6 +116,13 @@ abstract interface class MatrixEncryptedMediaGateway {
       int? thumbnailHeight});
 }
 
+/// Read-only progress surface room UIs may observe for queued outgoing work
+/// (forwards/prepared media). Never exposes plaintext payloads.
+abstract interface class MatrixOutgoingProgressView {
+  Listenable get outgoingProgress;
+}
+
+
 @immutable
 final class MatrixClientContinuityMetadata {
   const MatrixClientContinuityMetadata({
@@ -1013,7 +1020,7 @@ final class MatrixForwardDestinationSnapshot {
 final class MatrixRoomLease
     implements
         _ManagedClientResourceBase,
-        MatrixEncryptedMediaGateway,
+        MatrixEncryptedMediaGateway, MatrixOutgoingProgressView,
         AvatarMediaCapability,
         NudgeBackend,
         MessageInteractionBackend {
@@ -1265,6 +1272,9 @@ final class MatrixRoomLease
       _onRevoked = callback;
 
   void bindOwnerDrain(Future<void> Function() drain) => _drainOwner = drain;
+
+  @override
+  Listenable get outgoingProgress => owner.outgoingWork;
 
   @override
   Future<String> sendEncryptedMedia(
@@ -2206,6 +2216,8 @@ final class _SdkRoomTimelineCapability
               ? int.tryParse(event.content['duration_ms']?.toString() ?? '') ??
                   0
               : 0),
+      isFlashPhoto: messageType == MessageTypes.Image &&
+          event.content['flash']?.toString() == '1',
       isRecalled: event.redacted,
       replyToEventId: ((event.content['m.relates_to'] as Map?)?['m.in_reply_to']
               as Map?)?['event_id']

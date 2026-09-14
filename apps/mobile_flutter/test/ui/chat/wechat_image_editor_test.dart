@@ -128,6 +128,31 @@ void main() {
     });
   }
 
+  testWidgets('forward callback runs before any export work (deferred PNG)',
+      (tester) async {
+    final source = (await tester.runAsync(_patternPng))!;
+    final exports = <Uint8List>[];
+    var forwardedBeforeExport = false;
+    var exportRequested = false;
+    await tester.pumpWidget(CupertinoApp(
+      home: WeChatImageEditorPage(
+        bytes: source,
+        onForward: (export) async {
+          // 选择器打开（回调触发）时必须尚未发生导出。
+          forwardedBeforeExport = !exportRequested;
+          exportRequested = true;
+          exports.add(await export());
+          return true;
+        },
+      ),
+    ));
+    await _waitForEditor(tester);
+    await _exportThroughForward(tester, exports);
+
+    expect(forwardedBeforeExport, isTrue,
+        reason: '导出必须发生在转发确认之后，选择器不能先等 PNG 编码');
+  });
+
   testWidgets('successful editor forward reports queued sending state',
       (tester) async {
     final source = (await tester.runAsync(_patternPng))!;
@@ -135,8 +160,8 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       home: WeChatImageEditorPage(
         bytes: source,
-        onForward: (bytes) async {
-          exports.add(bytes);
+        onForward: (export) async {
+          exports.add(await export());
           return true;
         },
       ),
@@ -155,8 +180,8 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       home: WeChatImageEditorPage(
         bytes: source,
-        onForward: (bytes) async {
-          exports.add(bytes);
+        onForward: (export) async {
+          exports.add(await export());
           return true;
         },
       ),
@@ -238,8 +263,8 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
         home: WeChatImageEditorPage(
             bytes: source,
-            onForward: (bytes) async {
-              exports.add(bytes);
+            onForward: (export) async {
+              exports.add(await export());
               return true;
             })));
     await _waitForEditor(tester);

@@ -146,6 +146,60 @@ void main() {
     expect(matrix.debugManagedResourceCount, 0);
   });
 
+  testWidgets('warm Matrix setup renders the shell instead of a blocking spinner',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final matrix = MatrixSdkE2eeClient(
+      Client('app-home-warmup'),
+      homeserver: Uri.parse('https://matrix.test'),
+    );
+    final blockerStarted = Completer<void>();
+    final allowBlocker = Completer<void>();
+    final blockerRegistration = matrix.registerVerificationLifecycle(
+      open: () async {
+        blockerStarted.complete();
+        await allowBlocker.future;
+      },
+      close: () async {},
+      revoke: () {},
+    );
+    await blockerStarted.future;
+    final api = BusinessApiClient(
+      baseUri: Uri.parse('https://business.test'),
+      sessionStore: SecureSessionStore(),
+    );
+    await tester.pumpWidget(CupertinoApp(
+      home: AppHome(
+        api: api,
+        matrix: matrix,
+        onLogout: () async {},
+        themeController: ThemeController(store: _ThemeStore()),
+      ),
+    ));
+    await tester.pump();
+
+    // 外壳（含底部 Tab）立即可见，不再被全屏转圈阻塞。
+    expect(find.byType(CupertinoTabBar), findsOneWidget);
+    expect(find.text('消息'), findsOneWidget);
+    expect(find.text('我'), findsOneWidget);
+    // 消息 tab 为轻量提示，而不是整页唯一转圈。
+    expect(find.byKey(const ValueKey('home-matrix-warmup')), findsOneWidget);
+
+    // 矩阵未就绪时其余 Tab 仍可自由切换（缓存就绪快慢不阻塞导航）。
+    await tester.tap(find.text('通讯录'));
+    await tester.pump();
+    expect(find.byType(CupertinoTabBar), findsOneWidget);
+    await tester.tap(find.text('我'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    allowBlocker.complete();
+    final blocker = await blockerRegistration;
+    await blocker.cancel();
+    await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
+    await tester.pump();
+  });
+
   testWidgets('watchdog starts while notification bootstrap is not ready',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

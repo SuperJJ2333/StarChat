@@ -84,7 +84,8 @@ final class WeChatImageEditorPage extends StatefulWidget {
   const WeChatImageEditorPage(
       {super.key, required this.bytes, this.onForward, this.onFavorite});
   final Uint8List bytes;
-  final Future<bool> Function(Uint8List)? onForward;
+  final Future<bool> Function(Future<Uint8List> Function() export)?
+      onForward;
   final Future<void> Function(Uint8List)? onFavorite;
   @override
   State<WeChatImageEditorPage> createState() => _WeChatImageEditorPageState();
@@ -380,20 +381,24 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
       _busy = true;
       _error = null;
     });
+    var done = true;
     try {
-      final bytes = await _export();
-      if (!mounted) return;
-      var done = true;
+      // 转发先开选择器、确认后再导出 PNG（大图编码数秒不再阻塞在
+      // 选择器之前）；保存/收藏仍需先拿到字节。
       if (action == 'forward') {
-        done = await widget.onForward!(bytes);
-      } else if (action == 'favorite') {
-        await widget.onFavorite!(bytes);
+        done = await widget.onForward!(_export);
       } else {
-        await ensureGallerySaveAccess();
-        final saved = await PhotoManager.editor.saveImage(bytes,
-            filename:
-                'ChatFlow-edited-${DateTime.now().millisecondsSinceEpoch}.png');
-        if (saved.id.isEmpty) throw StateError('Save failed');
+        final bytes = await _export();
+        if (!mounted) return;
+        if (action == 'favorite') {
+          await widget.onFavorite!(bytes);
+        } else {
+          await ensureGallerySaveAccess();
+          final saved = await PhotoManager.editor.saveImage(bytes,
+              filename:
+                  'ChatFlow-edited-${DateTime.now().millisecondsSinceEpoch}.png');
+          if (saved.id.isEmpty) throw StateError('Save failed');
+        }
       }
       if (mounted && done) {
         setState(() => _error = action == 'forward'

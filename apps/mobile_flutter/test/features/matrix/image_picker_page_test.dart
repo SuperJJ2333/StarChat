@@ -311,6 +311,58 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
+  testWidgets('swipe from a check circle selects crossed cells and caps at 9',
+      (tester) async {
+    final photos = [
+      for (var i = 1; i <= 10; i++)
+        GalleryPhoto(
+          id: 'photo-$i',
+          thumbnail: tinyPng,
+          compressedBytes: () async => Uint8List.fromList([i]),
+          originalBytes: () async => Uint8List.fromList([i, i]),
+        ),
+    ];
+    final pager = FakePager([photos]);
+    await tester.binding.setSurfaceSize(const Size(420, 1500));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(pagerBuilder: () => pager, maxCount: 9),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    Rect cell(int i) => tester.getRect(find.byKey(Key('image-picker-item-photo-$i')));
+    // 从第 1 格角标起按，横向滑过第 2 格：两格均被选中。
+    final start = cell(1).topLeft + const Offset(14, 14);
+    final gesture = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(cell(2).center - start);
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(find.text('发送(2)'), findsOneWidget,
+        reason: '滑动多选应把起始格与滑过格一起选中');
+
+    // 未拖动的按下仍走角标单击语义（不双切）。
+    await tester.tap(find.byKey(const Key('image-picker-check-photo-3')),
+        warnIfMissed: false);
+    await tester.pump();
+    expect(find.text('发送(3)'), findsOneWidget);
+
+    // 补齐到 9 后，第 10 张不可再选并给出上限提示。
+    for (var i = 4; i <= 9; i++) {
+      await tester.tap(find.byKey(Key('image-picker-check-photo-$i')),
+          warnIfMissed: false);
+      await tester.pump();
+    }
+    expect(find.text('发送(9)'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('image-picker-check-photo-10')),
+        warnIfMissed: false);
+    await tester.pump();
+    expect(find.text('最多选择9张图片'), findsOneWidget);
+    expect(find.text('发送(9)'), findsOneWidget);
+  });
+
   testWidgets('selecting photos enables send and reports selection',
       (tester) async {
     final photos = [

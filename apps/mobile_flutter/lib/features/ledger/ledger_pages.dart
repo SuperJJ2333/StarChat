@@ -174,19 +174,34 @@ final class _LedgerListPageState extends State<LedgerListPage> {
               scrollDirection: Axis.horizontal,
               child: Row(
                   children: _kinds.entries
-                      .map((entry) => Padding(
-                            padding:
-                                const EdgeInsets.only(right: WeChatSpacing.xs),
-                            child: CupertinoButton(
-                                key: Key('ledger-kind-${entry.value}'),
-                                color: _controller.kind == entry.key
-                                    ? WeChatColors.brandPrimary
-                                    : null,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10),
-                                onPressed: () => _controller.setKind(entry.key),
-                                child: Text(entry.value)),
-                          ))
+                      .map((entry) {
+                        // 对比度修复：选中=品牌绿底+白字；未选中=浅表面+
+                        // 细边框+品牌绿字（此前绿底叠默认绿字不可辨）。
+                        final selected = _controller.kind == entry.key;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: WeChatSpacing.xs),
+                          child: CupertinoButton(
+                              key: Key('ledger-kind-${entry.value}'),
+                              color: selected
+                                  ? WeChatColors.brandPrimary
+                                  : WeChatColors.elevatedSurface(context),
+                              borderRadius: BorderRadius.circular(8),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              minimumSize: const Size(0, 32),
+                              onPressed: () => _controller.setKind(entry.key),
+                              child: Text(
+                                entry.value,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: selected ? FontWeight.w600 : null,
+                                  color: selected
+                                      ? CupertinoColors.white
+                                      : WeChatColors.brandPrimary,
+                                ),
+                              )),
+                        );
+                      })
                       .toList())),
         ]),
       );

@@ -67,6 +67,7 @@ final class RoomMessageViewModel {
     this.imageWidth,
     this.imageHeight,
     this.isSdkLocalEcho = false,
+    this.isFlashPhoto = false,
   });
 
   final String id;
@@ -105,6 +106,10 @@ final class RoomMessageViewModel {
 
   /// SDK HTTP acknowledgement still carries the device timestamp until /sync.
   final bool isSdkLocalEcho;
+
+  /// 闪照：m.image 事件附带 flash=1。接收端仅渲染马赛克缩略，
+  /// 长按限时查看原图，阅后销毁且禁止转发。
+  final bool isFlashPhoto;
   String get stableId => transactionId ?? id;
 
   /// Exact presentation equality; includes non-text payload and delivery changes.
@@ -136,6 +141,7 @@ final class RoomMessageViewModel {
           imageWidth == other.imageWidth &&
           imageHeight == other.imageHeight &&
           isSdkLocalEcho == other.isSdkLocalEcho &&
+          isFlashPhoto == other.isFlashPhoto &&
           nudge?.senderId == other.nudge?.senderId &&
           nudge?.senderName == other.nudge?.senderName &&
           nudge?.targetUserId == other.nudge?.targetUserId &&
@@ -174,6 +180,7 @@ final class RoomMessageViewModel {
         imageWidth: imageWidth,
         imageHeight: imageHeight,
         isSdkLocalEcho: isSdkLocalEcho,
+        isFlashPhoto: isFlashPhoto,
         callVideo: callVideo,
         callConnected: callConnected,
         callDuration: callDuration,
@@ -719,6 +726,7 @@ final class RoomTimelineController extends ChangeNotifier {
     RoomMessageKind kind = RoomMessageKind.text,
     String? mimeType,
     Duration voiceDuration = const Duration(seconds: 1),
+    bool isFlashPhoto = false,
   }) async {
     if (_disposed) return;
     _restoreLatest();
@@ -739,7 +747,8 @@ final class RoomTimelineController extends ChangeNotifier {
         replyExcerpt: replyExcerpt,
         kind: kind,
         mimeType: mimeType,
-        voiceDuration: voiceDuration);
+        voiceDuration: voiceDuration,
+        isFlashPhoto: isFlashPhoto);
     final transport = adapter;
     _senders[tx] = () => send != null
         ? send(tx)
