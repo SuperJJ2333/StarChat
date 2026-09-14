@@ -79,6 +79,25 @@ void main() {
     expect(gateway.calls, 1);
   });
 
+  test('debug-suffixed version names still compare semantically', () {
+    // '0.3.89-debug' 之类后缀此前使语义比较返回 null，错误回退构建号。
+    expect(compareVersions('0.3.90', '0.3.89-debug'), 1);
+    expect(compareVersions('0.3.89-debug', '0.3.90'), -1);
+    expect(compareVersions('0.3.90-debug', '0.3.90'), 0);
+    final info = AppUpdateInfo(
+      latestVersion: '0.3.90',
+      latestBuild: 2115,
+      minSupportedBuild: 3,
+      notes: 'n',
+      apkUrl: 'https://example.com/a.apk',
+    );
+    // debug 2113 客户端（versionName 0.3.89-debug）应弹 2115 更新。
+    expect(
+        resolvePendingUpdate(
+            info: info, currentBuild: 2113, currentVersion: '0.3.89-debug'),
+        same(info));
+  });
+
   test('semantic version compare works despite abi-offset build numbers', () {
     // 服务端发布策略：latest_build 使用 arm64 清单值（2000+build）。
     // 旧版构建号比较在新客户端上失真，语义化版本名比较必须兜住：

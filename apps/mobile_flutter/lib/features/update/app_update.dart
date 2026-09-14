@@ -52,8 +52,16 @@ AppUpdateInfo? parseAppUpdate(Map<String, dynamic> map) {
 /// 任一版本无法按点分整数解析时返回 null（调用方回退构建号比较）。
 int? compareVersions(String a, String b) {
   if (a.trim().isEmpty || b.trim().isEmpty) return null;
-  final pa = a.trim().split('.');
-  final pb = b.trim().split('.');
+  // 剥离预发布/调试后缀（'0.3.89-debug'、'1.2.3-rc.1'）：后缀不应让
+  // 语义比较整体失效回退构建号（debug 包构建号偏移会误判）。
+  String normalize(String v) {
+    final trimmed = v.trim();
+    final dash = trimmed.indexOf('-');
+    return dash > 0 ? trimmed.substring(0, dash) : trimmed;
+  }
+
+  final pa = normalize(a).split('.');
+  final pb = normalize(b).split('.');
   final length = pa.length > pb.length ? pa.length : pb.length;
   for (var i = 0; i < length; i++) {
     final sa = i < pa.length ? pa[i] : '0';
