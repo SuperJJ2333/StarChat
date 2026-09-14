@@ -1758,8 +1758,11 @@ final class _FriendRequestTile extends StatelessWidget {
     };
     return SizedBox(
       height: 68,
-      child: WeChatListTile(
-        onTap: onTap,
+      // 打招呼消息在行内垂直居中（此前 CupertinoListTile 在固定高度
+      // 容器里把两行内容推向底部，观感不佳）。
+      child: Center(
+        child: WeChatListTile(
+          onTap: onTap,
         leading: UserAvatar(
             nickname: request['nickname']?.toString() ??
                 request['username']?.toString() ??
@@ -1786,8 +1789,9 @@ final class _FriendRequestTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-            const CupertinoListTileChevron(),
-          ],
+              const CupertinoListTileChevron(),
+            ],
+          ),
         ),
       ),
     );

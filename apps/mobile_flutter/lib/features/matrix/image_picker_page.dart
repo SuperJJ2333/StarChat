@@ -2,6 +2,7 @@ import '../../ui/chat/contain_image_bubble.dart';
 import 'gif_image_policy.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -473,10 +474,26 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     await PhotoManager.openSetting();
   }
 
+  // 同一格的抖动补偿：部分触屏（MIUI 等）一次按压会派发两次 tap，
+  // 选中随即被第二次 toggle 取消，用户感知为“点击圆圈无反应”。
+  // 窗口内的重复事件不再翻转状态（视为同一次按压的回声），真实取消
+  // 由窗口外的下一次点击完成。
+  final Map<String, int> _toggleGuardMs = <String, int>{};
+
+  /// 可注入时钟（测试用）。
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
   bool _toggle(GalleryPhoto photo) {
     if (!mounted || refreshing || !photos.any((item) => item.id == photo.id)) {
       return false;
     }
+    final nowMs = clock().millisecondsSinceEpoch;
+    final last = _toggleGuardMs[photo.id] ?? 0;
+    if (nowMs - last < 120) {
+      return selection.isSelected(photo.id);
+    }
+    _toggleGuardMs[photo.id] = nowMs;
     final changed = selection.toggle(photo.id);
     setState(() {});
     return changed;

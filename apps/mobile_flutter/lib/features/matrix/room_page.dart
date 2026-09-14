@@ -1591,6 +1591,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       composerPanel = ComposerPanel.none;
       mediaMessage = null;
     });
+    // 大视频发送前警告：相册视频走后台队列自动压缩，压缩结果在转码后
+    // 才能确定；超限会在消息上显示红色感叹号。体积明显过大时先征询，
+    // 避免“静默发送→失败”的体验。
+    for (final photo in result.photos) {
+      if (!photo.isVideo) continue;
+      var sourceBytes = 0;
+      try {
+        final source = await photo.localVideoFile?.call();
+        sourceBytes = await source?.length() ?? 0;
+      } catch (_) {}
+      final durationMs = photo.duration?.inMilliseconds ?? 0;
+      // 与转码预算同源的粗估：aggressive 档约按 20MB 预算反推码率；
+      // 超过 60 秒或源文件超过 200MB 时大概率压缩后仍超限。
+      final risky = sourceBytes > 200 * 1024 * 1024 ||
+          (durationMs > 60 * 1000 && sourceBytes > 20 * 1024 * 1024);
+      if (risky && mounted) {
+        final proceed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            title: const Text('视频体积较大'),
+            content: const Text('该视频时长或体积较大，将自动压缩后发送；'
+                '\n压缩后仍可能超过 20MB 上限导致发送失败。'
+                '\n建议裁剪或选择较短的视频。'),
+            actions: [
+              CupertinoDialogAction(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('取消')),
+              CupertinoDialogAction(
+                  isDefaultAction: true,
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('仍要发送')),
+            ],
+          ),
+        );
+        if (proceed != true) {
+          if (mounted) {
+            setState(() => composerPanel = ComposerPanel.none);
+          }
+          return;
+        }
+      }
+    }
     final sends = <Future<void>>[];
     final galleryVideos = <MatrixOutgoingVideoFileRequest>[];
     for (final photo in result.photos) {

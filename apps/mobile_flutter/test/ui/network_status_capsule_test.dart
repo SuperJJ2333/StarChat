@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/app_connection_status.dart';
-import 'package:liuhetong_mobile/ui/components/network_status_capsule.dart';
 import 'package:liuhetong_mobile/ui/components/wechat_scaffold.dart';
 
 void main() {

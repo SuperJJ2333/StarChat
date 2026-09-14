@@ -436,9 +436,40 @@ void main() {
     expect(find.text('发送(1)'), findsOneWidget);
 
     // 再点一次选中圆圈 = 取消选中（点击缩略图是预览，不再切换选中）。
+    // 间隔须超过抖动补偿窗口（120ms）：部分触屏一次按压会派发两次 tap，
+    // 窗口内的重复事件被视为回声忽略，避免“点击无反应”。
+    await tester.runAsync(() => Future<void>.delayed(
+        const Duration(milliseconds: 150)));
     await tester.tap(find.byKey(const Key('image-picker-check-photo-1')));
     await tester.pump();
     expect(find.text('发送(1)'), findsNothing);
+  });
+
+  testWidgets('rapid double tap on one circle toggles only once', (tester) async {
+    final photos = [
+      GalleryPhoto(
+        id: 'photo-1',
+        thumbnail: tinyPng,
+        compressedBytes: () async => Uint8List.fromList([1]),
+        originalBytes: () async => Uint8List.fromList([1, 1]),
+      ),
+    ];
+    final pager = FakePager([photos]);
+    await tester.pumpWidget(CupertinoApp(
+      home: ImagePickerPage(pagerBuilder: () => pager),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 模拟触屏回声：两次 tap 间隔小于抖动窗口，只应翻转一次。
+    await tester.tap(find.byKey(const Key('image-picker-check-photo-1')),
+        warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(find.byKey(const Key('image-picker-check-photo-1')),
+        warnIfMissed: false);
+    await tester.pump();
+    expect(find.text('发送(1)'), findsOneWidget,
+        reason: '双触发回声不应把选中立即取消');
   });
 
   testWidgets('gallery loads 20 per page with loading footer and prefetch',
