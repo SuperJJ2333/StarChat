@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
@@ -11,7 +12,6 @@ import '../finance/finance_message_presentation.dart';
 import '../ledger/ledger_business_gateway.dart';
 import '../ledger/ledger_gateway.dart';
 import '../ledger/ledger_pages.dart';
-import '../matrix/profile_repository.dart';
 import 'chat_transfer_detail_controller.dart';
 
 String chatTransferStatusLabel(String? status) => switch (status) {
@@ -30,7 +30,6 @@ final class ChatTransferDetailSheet extends StatefulWidget {
     this.onSettled,
     this.gateway,
     this.ledgerGateway,
-    this.identityCache,
   }) : assert(api != null || gateway != null);
 
   final BusinessApiClient? api;
@@ -39,7 +38,6 @@ final class ChatTransferDetailSheet extends StatefulWidget {
   final VoidCallback? onSettled;
   final ChatTransferDetailGateway? gateway;
   final LedgerGateway? ledgerGateway;
-  final ProfileRepository? identityCache;
 
   @override
   State<ChatTransferDetailSheet> createState() =>
@@ -50,6 +48,7 @@ final class _ChatTransferDetailSheetState
     extends State<ChatTransferDetailSheet> {
   late final ChatTransferDetailController _controller;
   late final LedgerGateway? _ledgerGateway;
+  String? _copyFeedback;
 
   @override
   void initState() {
@@ -74,7 +73,7 @@ final class _ChatTransferDetailSheetState
 
   @override
   Widget build(BuildContext context) => WeChatPageScaffold(
-        title: '收款',
+        title: '转账',
         child: ListenableBuilder(
           listenable: _controller,
           builder: (context, _) => _body(_controller.state),
@@ -118,11 +117,16 @@ final class _ChatTransferDetailSheetState
         billId is String && billId.isNotEmpty && _ledgerGateway != null;
     return ListView(
       key: const Key('chat-transfer-detail-page'),
-      padding: const EdgeInsets.all(WeChatSpacing.lg),
+      padding: const EdgeInsets.only(bottom: WeChatSpacing.md),
       children: [
-        _receiptHeader(_amount(detail['amount']), label),
-        const SizedBox(height: WeChatSpacing.lg),
-        _detailRows(detail, status),
+        _receiptHeader(detail['amount'], status, label, isReceiver),
+        _detailRows(detail, status, billId),
+        if (_copyFeedback != null) ...[
+          const SizedBox(height: WeChatSpacing.sm),
+          Text(_copyFeedback!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: WeChatColors.textSecondary)),
+        ],
         if (state.message != null) ...[
           const SizedBox(height: WeChatSpacing.md),
           Text(state.message!,
@@ -135,67 +139,75 @@ final class _ChatTransferDetailSheetState
             child: const Text('重试'),
           ),
         ],
-        const SizedBox(height: WeChatSpacing.xl),
+        const SizedBox(height: WeChatSpacing.lg),
         if (pending && isReceiver)
-          Row(children: [
-            Expanded(
-              child: ModernActionButton(
-                key: const Key('chat-transfer-detail-decline'),
-                icon: ChangliaoIcons.close,
-                label: '退还',
-                kind: ModernActionKind.secondary,
-                loading: state.loading,
-                onPressed: state.loading ? null : _controller.decline,
-              ),
-            ),
-            const SizedBox(width: WeChatSpacing.md),
-            Expanded(
-              child: ModernActionButton(
-                key: const Key('chat-transfer-detail-accept'),
-                icon: ChangliaoIcons.confirm,
-                label: '收款',
-                loading: state.loading,
-                onPressed: state.loading ? null : _controller.accept,
-              ),
-            ),
-          ]),
-        if (hasBillId)
-          CupertinoButton(
-            key: const Key('chat-transfer-detail-ledger'),
-            onPressed: () => _openLedgerDetail(billId),
-            child: const Text('账单详情'),
-          ),
+          Padding(
+              padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.md),
+              child: Row(children: [
+                Expanded(
+                  child: ModernActionButton(
+                    key: const Key('chat-transfer-detail-decline'),
+                    icon: ChangliaoIcons.close,
+                    label: '退还',
+                    kind: ModernActionKind.secondary,
+                    loading: state.loading,
+                    onPressed: state.loading ? null : _controller.decline,
+                  ),
+                ),
+                const SizedBox(width: WeChatSpacing.md),
+                Expanded(
+                  child: ModernActionButton(
+                    key: const Key('chat-transfer-detail-accept'),
+                    icon: ChangliaoIcons.confirm,
+                    label: '收款',
+                    loading: state.loading,
+                    onPressed: state.loading ? null : _controller.accept,
+                  ),
+                ),
+              ])),
         if (_ledgerGateway != null)
-          CupertinoButton(
-            key: const Key('chat-transfer-detail-all-bills'),
-            onPressed: _openAllBills,
-            child: const Text('全部账单'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                WeChatSpacing.lg, WeChatSpacing.lg, WeChatSpacing.lg, 0),
+            child: hasBillId
+                ? Row(children: [
+                    Expanded(
+                        child: _plainAction(
+                            key: const Key('chat-transfer-detail-all-bills'),
+                            label: '全部账单',
+                            onPressed: _openAllBills)),
+                    const SizedBox(width: WeChatSpacing.md),
+                    Expanded(
+                        child: _plainAction(
+                            key: const Key('chat-transfer-detail-ledger'),
+                            label: '账单详情',
+                            onPressed: () => _openLedgerDetail(billId))),
+                  ])
+                : _plainAction(
+                    key: const Key('chat-transfer-detail-all-bills'),
+                    label: '全部账单',
+                    onPressed: _openAllBills),
           ),
       ],
     );
   }
 
-  /// 收款页顶部（demo 一比一）：白底 hero + 品牌绿圆形图标 +
-  /// 大字金额 + 状态胶囊（已收款=绿底，其他=灰底）。
-  Widget _receiptHeader(String amount, String label) {
-    // demo 三态：待收=品牌绿 / 已收款=橙 / 退回或过期=灰。
-    final accepted = label.contains('已收款');
-    final pending = label.contains('待收') || label.contains('收款');
-    final iconColor = accepted
-        ? const Color(0xFFFA9D3B)
-        : pending
-            ? WeChatColors.brandPrimary
-            : WeChatColors.textTertiary;
+  Widget _receiptHeader(
+      Object? amount, String status, String label, bool isReceiver) {
+    final successful = status == 'ACCEPTED';
+    final active = status == 'PENDING' || successful;
+    final iconColor =
+        active ? WeChatColors.brandPrimary : WeChatColors.textTertiary;
     return Container(
       key: const Key('chat-transfer-receipt-hero'),
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 36, 24, 24),
       decoration: BoxDecoration(
-        color: CupertinoTheme.of(context).scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(12),
+        color: WeChatColors.elevatedSurface(context),
       ),
       child: Column(children: [
         Container(
+          key: const Key('chat-transfer-receipt-icon'),
           width: 52,
           height: 52,
           decoration: BoxDecoration(
@@ -206,10 +218,14 @@ final class _ChatTransferDetailSheetState
               color: CupertinoColors.white, size: 26),
         ),
         const SizedBox(height: 10),
+        Text(_receiptSummary(status, isReceiver),
+            style: const TextStyle(
+                fontSize: 14, color: WeChatColors.textSecondary)),
+        const SizedBox(height: 10),
         Text.rich(
           TextSpan(children: [
             TextSpan(
-              text: amount,
+              text: _heroAmount(amount),
               style: TextStyle(
                 color: WeChatColors.resolveTextPrimary(context),
                 fontSize: 44,
@@ -219,21 +235,16 @@ final class _ChatTransferDetailSheetState
             ),
             const TextSpan(
               text: ' 点钻',
-              style: TextStyle(fontSize: 15, color: WeChatColors.textSecondary),
+              style: TextStyle(fontSize: 16, color: WeChatColors.textSecondary),
             ),
           ]),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          key: const Key('chat-transfer-receipt-amount'),
         ),
         const SizedBox(height: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
           decoration: BoxDecoration(
-            color: accepted
-                ? const Color(0x1AFA9D3B)
-                : pending
-                    ? const Color(0x1407C160)
-                    : const Color(0xFFF5F5F5),
+            color: active ? const Color(0x1407C160) : const Color(0xFFF5F5F5),
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
@@ -241,11 +252,9 @@ final class _ChatTransferDetailSheetState
             key: const Key('chat-transfer-receipt-status'),
             style: TextStyle(
               fontSize: 12,
-              color: accepted
-                  ? const Color(0xFFD97B0F)
-                  : pending
-                      ? WeChatColors.brandPrimary
-                      : WeChatColors.textSecondary,
+              color: active
+                  ? WeChatColors.brandPrimary
+                  : WeChatColors.textSecondary,
             ),
           ),
         ),
@@ -253,8 +262,16 @@ final class _ChatTransferDetailSheetState
     );
   }
 
-  Widget _detailRows(Map<String, dynamic> detail, String status) {
+  String _receiptSummary(String status, bool isReceiver) => switch (status) {
+        'ACCEPTED' => isReceiver ? '你已收款' : '对方已收款',
+        'PENDING' => isReceiver ? '等待你收款' : '等待对方收款',
+        _ => '转账收款',
+      };
+
+  Widget _detailRows(
+      Map<String, dynamic> detail, String status, Object? billId) {
     final rows = <(String, String)>[
+      ('转账状态', _receiptStatus(status)),
       ('说明', _text(detail['note'])),
       ('转账时间', _time(detail['created_at'])),
       (
@@ -262,13 +279,50 @@ final class _ChatTransferDetailSheetState
         status == 'ACCEPTED' ? _time(detail['accepted_at']) : '尚未收款',
       ),
     ];
-    return Column(
-      children: rows.map((row) => _row(row.$1, row.$2)).toList(),
-    );
+    return Container(
+        margin: const EdgeInsets.fromLTRB(
+            WeChatSpacing.md, 10, WeChatSpacing.md, 0),
+        decoration: BoxDecoration(
+            color: WeChatColors.elevatedSurface(context),
+            borderRadius: BorderRadius.circular(8)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          for (var index = 0; index < rows.length; index++)
+            _row(rows[index].$1, rows[index].$2, showDivider: index > 0),
+          if (billId is String && billId.isNotEmpty)
+            CupertinoButton(
+                key: const Key('chat-transfer-detail-copy-bill'),
+                padding: EdgeInsets.zero,
+                onPressed: () => _copyBillId(billId),
+                child: Container(
+                    decoration: const BoxDecoration(
+                        border: Border(
+                            top: BorderSide(color: WeChatColors.divider))),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: WeChatSpacing.lg,
+                        vertical: WeChatSpacing.md),
+                    child: Row(children: [
+                      const SizedBox(
+                          width: 88,
+                          child: Text('账单ID',
+                              style: TextStyle(
+                                  color: WeChatColors.textSecondary))),
+                      Expanded(child: Text(billId, textAlign: TextAlign.right)),
+                      const SizedBox(width: WeChatSpacing.xs),
+                      const Icon(CupertinoIcons.doc_on_doc,
+                          size: 16, color: WeChatColors.textSecondary),
+                    ]))),
+        ]));
   }
 
-  Widget _row(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: WeChatSpacing.sm),
+  Widget _row(String label, String value, {bool showDivider = false}) =>
+      Container(
+        decoration: showDivider
+            ? const BoxDecoration(
+                border: Border(top: BorderSide(color: WeChatColors.divider)))
+            : null,
+        padding: const EdgeInsets.symmetric(
+            horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
             width: 88,
@@ -279,7 +333,33 @@ final class _ChatTransferDetailSheetState
         ]),
       );
 
-  String _amount(Object? value) => formatLedgerAmount(value);
+  Widget _plainAction(
+          {required Key key,
+          required String label,
+          required VoidCallback onPressed}) =>
+      CupertinoButton(
+          key: key,
+          padding: EdgeInsets.zero,
+          onPressed: onPressed,
+          child: Container(
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                  border: Border.all(color: WeChatColors.textTertiary),
+                  borderRadius: BorderRadius.circular(6)),
+              child: Text(label,
+                  style: const TextStyle(color: WeChatColors.textSecondary))));
+
+  String _receiptStatus(String status) => switch (status) {
+        'ACCEPTED' => '已收款',
+        'DECLINED' => '已退回',
+        'EXPIRED' => '已超时退回',
+        'PENDING' => '待收款',
+        _ => '状态未知',
+      };
+
+  String _heroAmount(Object? value) =>
+      formatLedgerAmount(value).replaceFirst(RegExp(r' 点钻$'), '');
 
   String _text(Object? value) =>
       value is String && value.isNotEmpty ? value : '--';
@@ -292,6 +372,20 @@ final class _ChatTransferDetailSheetState
         '${two(date.hour)}:${two(date.minute)}:${two(date.second)}';
   }
 
+  Future<void> _copyBillId(String billId) async {
+    if (!_controller.isAlive) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: billId));
+      if (mounted && _controller.isAlive) {
+        setState(() => _copyFeedback = '账单ID已复制');
+      }
+    } catch (_) {
+      if (mounted && _controller.isAlive) {
+        setState(() => _copyFeedback = '无法复制账单ID');
+      }
+    }
+  }
+
   void _openLedgerDetail(String billId) {
     if (!mounted || !_controller.isAlive) return;
     final gateway = _ledgerGateway;
@@ -300,7 +394,6 @@ final class _ChatTransferDetailSheetState
         builder: (_) => LedgerDetailPage(
               gateway: gateway,
               transactionId: billId,
-              identityCache: widget.identityCache,
             )));
   }
 
@@ -309,9 +402,6 @@ final class _ChatTransferDetailSheetState
     final gateway = _ledgerGateway;
     if (gateway == null) return;
     Navigator.of(context).push(CupertinoPageRoute<void>(
-        builder: (_) => LedgerListPage(
-              gateway: gateway,
-              identityCache: widget.identityCache,
-            )));
+        builder: (_) => LedgerListPage(gateway: gateway)));
   }
 }

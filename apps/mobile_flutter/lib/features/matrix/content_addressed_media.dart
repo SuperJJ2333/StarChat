@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
+import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:flutter/foundation.dart' show compute;
 import '../../core/app_config.dart';
@@ -27,6 +28,62 @@ Future<Uint8List> downloadMediaContent(Event event,
   }
   return (await event.downloadAndDecryptAttachment(getThumbnail: thumbnail))
       .bytes;
+}
+
+/// Cold forwarding loader with an encrypted-download byte budget. The legacy
+/// loader above intentionally remains unchanged for existing callers.
+Future<Uint8List> downloadMediaContentBounded(
+  Event event, {
+  required int maxDownloadBytes,
+  bool thumbnail = false,
+}) async {
+  final hashes = TrustedMediaHashes.fromEvent(event);
+  if (hashes != null &&
+      !(thumbnail ? event.isThumbnailEncrypted : event.isAttachmentEncrypted)) {
+    throw const FormatException('Missing encrypted media descriptor');
+  }
+  final file = await event.downloadAndDecryptAttachment(
+    getThumbnail: thumbnail,
+    downloadCallback: (url) => _downloadBounded(
+      event.room.client.httpClient,
+      event.room.client.accessToken,
+      url,
+      maxDownloadBytes,
+    ),
+  );
+  if (file.bytes.lengthInBytes > maxDownloadBytes) {
+    throw const MediaContentLimitException();
+  }
+  return file.bytes;
+}
+
+Future<Uint8List> _downloadBounded(
+  http.Client client,
+  String? accessToken,
+  Uri url,
+  int maxDownloadBytes,
+) async {
+  final request = http.Request('GET', url);
+  request.headers['authorization'] = 'Bearer $accessToken';
+  final response = await client.send(request);
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    final subscription = response.stream.listen((_) {});
+    await subscription.cancel();
+    throw http.ClientException(
+        'Media download failed: ${response.statusCode}', url);
+  }
+  final bytes = BytesBuilder(copy: false);
+  var length = 0;
+  await for (final chunk in response.stream) {
+    length += chunk.length;
+    if (length > maxDownloadBytes) throw const MediaContentLimitException();
+    bytes.add(chunk);
+  }
+  return bytes.takeBytes();
+}
+
+final class MediaContentLimitException implements Exception {
+  const MediaContentLimitException();
 }
 
 final _sha256Hex = RegExp(r'^[0-9a-f]{64}$');

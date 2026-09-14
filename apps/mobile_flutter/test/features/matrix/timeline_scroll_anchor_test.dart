@@ -3,6 +3,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/timeline_scroll_anchor.dart';
 
 void main() {
+  testWidgets('captures a row that intersects the viewport above its top edge',
+      (tester) async {
+    final scroll = ScrollController();
+    final viewportKey = GlobalKey();
+    final keys = <String, GlobalKey>{};
+    await tester.pumpWidget(Directionality(
+        textDirection: TextDirection.ltr,
+        child: SizedBox(
+            key: viewportKey,
+            width: 360,
+            height: 500,
+            child: ListView(controller: scroll, children: [
+              SizedBox(
+                  key: keys.putIfAbsent('tall', GlobalKey.new), height: 1000),
+              SizedBox(
+                  key: keys.putIfAbsent('next', GlobalKey.new), height: 40),
+            ]))));
+    scroll.jumpTo(300);
+    await tester.pump();
+    expect(TimelineScrollAnchor.capture(keys, viewportKey)?.eventId, 'tall');
+    await tester.pumpWidget(const SizedBox());
+    scroll.dispose();
+  });
+
   testWidgets(
       'overlapping reverse window restores actual variable-height row pixels',
       (tester) async {

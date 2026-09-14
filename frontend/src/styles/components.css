@@ -1007,6 +1007,9 @@ app-image-editor, app-room-image-gallery { display: block; height: 100%; min-hei
 .c-image-editor__settings input[type="color"] { width: var(--size-touch); height: var(--size-touch); padding: var(--space-xs); border: 0; background: transparent; }
 .c-image-editor__settings input[type="range"] { width: 110px; accent-color: var(--color-brand-primary); }
 .c-image-editor__text { width: 100%; padding: var(--space-sm); border-radius: var(--radius-card); font: inherit; }
+.c-image-editor__emoji-picker { display: grid; grid-template-columns: repeat(auto-fit, var(--size-action-primary)); justify-content: center; gap: var(--space-sm); width: min(calc(100% - var(--space-xl)), 328px); max-height: 160px; margin-inline: auto; overflow-y: auto; }
+.c-image-editor__emoji-picker[hidden] { display: none; }
+.c-image-editor__emoji-cell { width: var(--size-action-primary); min-width: var(--size-action-primary); height: var(--size-action-primary); min-height: var(--size-action-primary); padding: 0; font-size: var(--type-title-1-size); line-height: 1; }
 .c-image-editor__tools { justify-content: space-between; gap: var(--space-xs); }
 .c-image-editor__tools .c-image-editor__control { font-size: var(--type-title-1-size); }
 .c-image-editor__done { background: var(--color-brand-primary); color: var(--color-on-accent); padding-inline: var(--space-lg); }

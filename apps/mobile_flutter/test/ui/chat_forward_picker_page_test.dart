@@ -109,6 +109,29 @@ void main() {
     expect(find.byKey(const Key('forward-confirmation-sheet')), findsNothing);
   });
 
+  testWidgets('local admission exits before its background send settles',
+      (tester) async {
+    final backgroundSend = Completer<void>();
+    var admitted = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatForwardPickerPage(
+      candidates: [_candidate('a', '群聊')],
+      recentRoomIds: const [],
+      onForward: (_) async {
+        admitted++;
+        unawaited(backgroundSend.future);
+      },
+    )));
+    await tester.tap(find.byKey(const Key('forward-chat-a')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('forward-confirm-send')));
+    await tester.pumpAndSettle();
+    expect(admitted, 1);
+    expect(find.text('选择聊天'), findsNothing);
+    expect(find.byKey(const Key('forward-confirmation-sheet')), findsNothing);
+    backgroundSend.complete();
+  });
+
   testWidgets('bottom card previews content and cancel never sends',
       (tester) async {
     var sends = 0;

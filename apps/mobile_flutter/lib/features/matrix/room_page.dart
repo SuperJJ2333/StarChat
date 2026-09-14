@@ -13,7 +13,6 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
-import '../../core/support_identity_repository.dart';
 import '../../core/performance_metrics.dart';
 import '../../core/chat_payment_intent.dart';
 import 'chat_payment_flow.dart';
@@ -46,7 +45,6 @@ import '../../ui/chat/latest_message_anchor.dart';
 import 'room_image_preview_cache.dart';
 import 'group_announcement_page.dart';
 import 'video_send_stage.dart';
-import 'prepared_chat_video.dart';
 import 'video_transcode.dart';
 import '../../ui/chat/message_action_sheet.dart' show MessageSelectionBar;
 import '../../ui/chat/wechat_attachment_tile.dart';
@@ -58,7 +56,6 @@ import '../../ui/chat/wechat_call_bubble.dart';
 import '../../ui/chat/wechat_video_message.dart';
 import '../../ui/chat/chat_tools.dart';
 import '../../ui/components/wechat_scaffold.dart';
-import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/finance/wechat_red_packet_card.dart';
@@ -69,6 +66,7 @@ import '../transfer/chat_transfer_adapters.dart';
 import '../transfer/chat_transfer_controller.dart';
 import '../transfer/chat_transfer_sheet.dart';
 import 'matrix_e2ee_client.dart';
+import 'matrix_outgoing_work_coordinator.dart';
 import 'image_picker_page.dart';
 import 'gallery_media_payload.dart';
 import 'voice_recording_controller.dart';
@@ -114,10 +112,9 @@ import 'message_reminder_service.dart';
 import 'mention_composer_model.dart';
 import 'message_interaction_service.dart';
 import 'nudge_service.dart';
-import 'nudge_rate_limiter.dart';
-import 'group_member_picker.dart';
 import 'local_hidden_events.dart';
 import 'room_timeline_controller.dart';
+import 'room_history_date_capability.dart';
 import '../../ui/chat/room_image_gallery.dart';
 import '../contacts/contact_actions.dart';
 import '../finance/finance_card_store.dart';
@@ -234,8 +231,6 @@ Future<void> openGroupMemberProfile(
 }
 
 class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
-  OverlayEntry? _nudgeToast;
-  Timer? _nudgeToastTimer;
   bool _paymentEntryBusy = false;
 
   Future<ChatPaymentIntent?> _preparePayment() async {
@@ -360,6 +355,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       memoryNamespace: roomInfo.currentUserId ?? '',
       roomId: roomInfo.id);
   bool _locatingMessage = false;
+  bool _userTimelineDragActive = false;
+  bool? _pendingEarlierWindow;
+  double? _lastTimelineScrollOffset;
+  int _timelineScrollGeneration = 0;
+  ScrollPosition? _observedTimelineScrollPosition;
   VoicePlaybackController? _voicePlayback;
   VoicePlaybackController get voicePlayback =>
       _voicePlayback ??= VoicePlaybackController(
@@ -479,8 +479,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ProfileData? ownProfile;
   late final ProfileRepository _identityCache =
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
-  late SupportIdentityRepository _supportIdentities;
-  Timer? _supportTimer;
   late final FinanceCardStore _financeCardStore =
       FinanceCardStore(BusinessFinanceCardGateway(widget.api));
   ContactDetails? peer;
@@ -516,7 +514,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     roomInfo = widget.roomLease.roomInfo;
-    _supportIdentities = SupportIdentityRepository(widget.api);
     peer = widget.initialContact;
     joinedMemberCount = _joinedMembers.length;
     ownProfile = _identityCache.profile;
@@ -530,30 +527,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
     ConversationReadState.shared().setRoomOpen(roomInfo.id, open: true);
     unawaited(_identityCache.preload().catchError((_) {}));
-    final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
-    if (!isGroup && supportPeerId != null) {
-      unawaited(_supportIdentities.warm([supportPeerId]));
-      _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-        unawaited(_supportIdentities.warm([supportPeerId], force: true));
-      });
-    }
     unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
     // 聊天工具：幂等注册「统计助手」并登记本会话到作用域栈
     ensureStatisticsToolRegistered();
     StatisticsRoomScope.enter(roomInfo.id);
     unawaited(_trackMatrixOperation(_load()));
-  }
-
-  @override
-  void didUpdateWidget(covariant RoomPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.api, widget.api)) {
-      _supportIdentities.dispose();
-      _supportIdentities = SupportIdentityRepository(widget.api);
-      if (!isGroup && roomInfo.directPeerId != null) {
-        unawaited(_supportIdentities.warm([roomInfo.directPeerId]));
-      }
-    }
   }
 
   /// WeChat opens the 「选择提醒的人」 panel when a group message ends with a
@@ -946,34 +924,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
-  /// 拍一拍限流（规格）：当前用户在本房间 60 秒内最多触发 3 次；
-  /// 超过后对本房间任何用户均不可再拍，直到最早一次滑出 60 秒窗口。
   Future<void> _sendNudge(
     RoomMessageViewModel message,
     String targetDisplayName,
   ) async {
     final sender = ownProfile;
     final senderId = roomInfo.currentUserId;
-    final sessionEpoch = widget.api.sessionEpoch;
     if (sender == null || senderId == null) return;
-    final reservation = NudgeRateLimiter.shared
-        .reserve(senderId: senderId, roomId: roomInfo.id);
-    if (reservation == null) {
-      _showNudgeToast('拍一拍太频繁，请稍后再试');
-      return;
-    }
     try {
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
       // already-open conversations as well.
       final latestProfile = await widget.api.loadProfile();
-      if (!mounted ||
-          widget.roomLease.canceled ||
-          widget.api.sessionEpoch != sessionEpoch ||
-          roomInfo.currentUserId != senderId) {
-        NudgeRateLimiter.shared.release(reservation);
-        return;
-      }
       if (mounted) {
         setState(() {
           ownProfile = latestProfile;
@@ -993,37 +955,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
-      NudgeRateLimiter.shared.release(reservation);
-      _showNudgeToast('拍一拍发送失败，请重试');
+      if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
     }
-  }
-
-  void _showNudgeToast(String message) {
-    if (!mounted) return;
-    _nudgeToastTimer?.cancel();
-    _nudgeToast?.remove();
-    final overlay = Overlay.of(context, rootOverlay: true);
-    _nudgeToast = OverlayEntry(
-      builder: (_) => Positioned(
-        left: 24,
-        right: 24,
-        bottom: 96,
-        child: IgnorePointer(
-            child: Center(
-                child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: WeChatToast(
-              key: const Key('room-nudge-toast'),
-              message: message,
-              semanticType: WeChatToastSemanticType.error),
-        ))),
-      ),
-    );
-    overlay.insert(_nudgeToast!);
-    _nudgeToastTimer = Timer(const Duration(seconds: 3), () {
-      _nudgeToast?.remove();
-      _nudgeToast = null;
-    });
   }
 
   Future<void> _showReminderPicker(RoomMessageViewModel message) async {
@@ -1221,11 +1154,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 发送期间优先解码 200px 缩略图作为暂存内容先展示，提升发送体验。
   Future<void> _captureAndSendImage() async {
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
+    final timeline = controller;
     final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final captured = await service.captureToFile();
-      final timeline = controller;
-      if (captured == null || timeline == null || !mounted) return;
+      if (captured == null ||
+          timeline == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       await timeline.sendText('[图片消息]',
           kind: RoomMessageKind.image,
           mimeType: 'image/jpeg',
@@ -1236,7 +1176,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 final thumbnail = await buildChatImageThumbnail(bytes);
                 return _cacheSentImage(
                     bytes,
-                    matrix.sendEncryptedMedia(roomInfo.id, bytes, 'image/jpeg',
+                    matrix.sendEncryptedMedia(targetRoomId, bytes, 'image/jpeg',
                         txid: txid,
                         thumbnailBytes: thumbnail?.bytes,
                         thumbnailWidth: thumbnail?.width,
@@ -1250,14 +1190,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMedia({required bool image}) async {
+    final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
     final factory = widget.mediaSenderFactory;
     if (factory != null) {
-      final sender = factory(widget.roomLease);
+      final sender = factory(matrix);
       try {
         if (image) {
-          await sender.sendImage(roomInfo.id);
+          await sender.sendImage(targetRoomId);
         } else {
-          await sender.sendFile(roomInfo.id);
+          await sender.sendFile(targetRoomId);
         }
       } finally {
         await sender.dispose();
@@ -1268,26 +1210,48 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       await _pickAndSendImages();
       return;
     }
-    final service = MediaMessageService(widget.roomLease, isGroup: isGroup);
+    final timeline = controller;
+    if (timeline == null) return;
+    final service = MediaMessageService(matrix, isGroup: isGroup);
     try {
       final file = await service.pickFileForSend();
-      final timeline = controller;
-      if (file == null || timeline == null || !mounted) return;
+      if (file == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       await service.validateSelectedFile(file);
       final mime =
           file.mimeType == null || file.mimeType == 'application/octet-stream'
               ? mimeFromFileName(file.name)
               : file.mimeType!;
+      if (mime.startsWith('video/')) {
+        await matrix.enqueueVideoFile(
+          jobId: 'file-video-${DateTime.now().microsecondsSinceEpoch}',
+          video: MatrixOutgoingVideoFile(
+            id: file.path,
+            source: File(file.path),
+            filename: file.name,
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+          ),
+          targetRoomIds: [targetRoomId],
+        );
+        await timeline.showLatest();
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('正在发送');
+        }
+        return;
+      }
       await timeline.sendText(
         file.name,
-        kind: mime.startsWith('video/')
-            ? RoomMessageKind.video
-            : mime.startsWith('image/')
-                ? RoomMessageKind.image
-                : RoomMessageKind.file,
+        kind: mime.startsWith('image/')
+            ? RoomMessageKind.image
+            : RoomMessageKind.file,
         mimeType: mime,
         send: (txid) => _enqueueMedia(
-          () => service.sendSelectedFile(roomInfo.id, file, txid: txid),
+          () => service.sendSelectedFile(targetRoomId, file, txid: txid),
         ),
       );
     } on GroupVideoTooLargeException catch (error) {
@@ -1477,20 +1441,44 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// "原图"开关打开后逐张发送原图；逐张加密上传。
   Future<void> _pickAndSendImages() async {
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
+    final timeline = controller;
     final result = await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         builder: (_) => ImagePickerPage(isGroup: isGroup),
       ),
     ) as ({List<GalleryPhoto> photos, bool original})?;
-    if (result == null || result.photos.isEmpty) return;
-    final timeline = controller;
-    if (timeline == null || !mounted) return;
+    if (result == null ||
+        result.photos.isEmpty ||
+        timeline == null ||
+        !mounted ||
+        _disposing ||
+        !identical(widget.roomLease, matrix)) {
+      return;
+    }
     setState(() {
       composerPanel = ComposerPanel.none;
       mediaMessage = null;
     });
     final sends = <Future<void>>[];
+    final galleryVideos = <MatrixOutgoingVideoFileRequest>[];
     for (final photo in result.photos) {
+      final videoSource = photo.localVideoFile;
+      if (photo.isVideo && videoSource != null) {
+        galleryVideos.add(MatrixOutgoingVideoFileRequest(
+          jobId:
+              'gallery-video-${DateTime.now().microsecondsSinceEpoch}-${galleryVideos.length}',
+          video: MatrixOutgoingVideoFile(
+            id: photo.id,
+            resolveSource: videoSource,
+            filename: 'video.mp4',
+            body: '[视频消息]',
+            deleteSourceWhenDone: false,
+          ),
+          targetRoomIds: [targetRoomId],
+        ));
+        continue;
+      }
       sends.add(
         timeline.sendText(
           photo.isVideo ? '[视频消息]' : '[图片消息]',
@@ -1568,7 +1556,38 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ),
       );
     }
-    await Future.wait(sends);
+    if (galleryVideos.isNotEmpty) {
+      try {
+        await matrix.enqueueVideoFiles(requests: galleryVideos);
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          await timeline.showLatest();
+          _showMediaMessage('正在发送');
+        }
+      } on MatrixOutgoingWorkCapacityException {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('当前视频任务较多，请稍后重新选择');
+        }
+      } on StateError {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      } on ArgumentError {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      } catch (_) {
+        if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+          _showMediaMessage('视频暂时无法发送，请重新选择');
+        }
+      }
+    }
+    try {
+      await Future.wait(sends);
+    } catch (_) {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('部分媒体发送准备失败，请重试');
+      }
+    }
   }
 
   Future<String> _cacheSentImage(
@@ -1598,52 +1617,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return task;
   }
 
-  /// Camera completion immediately prepares a bounded payload, then enqueues
-  /// the encrypted send. Validation failures do not create a broken retry echo.
+  /// Camera completion admits the controlled capture before compression. The
+  /// account owner continues preparation after this page is left.
   Future<void> _startVideoCapture() async {
     if (_capturingVideo) return;
     final matrix = widget.roomLease;
+    final targetRoomId = roomInfo.id;
     final timeline = controller;
-    if (timeline == null) return;
     final service = MediaMessageService(matrix, isGroup: isGroup);
     setState(() => _capturingVideo = true);
     String? capturePath;
+    var admitted = false;
     try {
       capturePath = await service.captureVideoToFile();
-      if (capturePath == null || !mounted || _disposing) return;
+      if (capturePath == null ||
+          !mounted ||
+          _disposing ||
+          !identical(widget.roomLease, matrix)) {
+        return;
+      }
       _dismissComposerExtensions();
-      setState(() {
-        videoSend = const VideoSendState(phase: VideoSendPhase.transcoding);
-      });
-      final prepared = await prepareCapturedChatVideo(File(capturePath),
-          onProgress: (value) {
-        if (mounted && !_disposing) {
-          setState(() => videoSend = VideoSendState(
-              phase: VideoSendPhase.transcoding, progress: value));
-        }
-      });
-      if (!mounted || _disposing) return;
-      final posterDimensions = prepared.poster == null
-          ? null
-          : await decodeImageDimensions(prepared.poster!);
-      if (!mounted || _disposing) return;
-      setState(() {
-        videoSend = const VideoSendState(phase: VideoSendPhase.sendingEvent);
-      });
-      await timeline.sendText('[视频消息]',
-          kind: RoomMessageKind.video,
-          mimeType: 'video/mp4',
-          send: (txid) => _enqueueMedia(() => matrix.sendEncryptedMedia(
-              roomInfo.id, prepared.bytes, 'video/mp4',
-              txid: txid,
-              extraContent: prepared.durationMs == null
-                  ? null
-                  : {
-                      'info': {'duration': prepared.durationMs}
-                    },
-              thumbnailBytes: prepared.poster,
-              thumbnailWidth: posterDimensions?.$1,
-              thumbnailHeight: posterDimensions?.$2)));
+      final capture = File(capturePath);
+      await matrix.enqueueVideoFile(
+        jobId: 'capture-video-${DateTime.now().microsecondsSinceEpoch}',
+        video: MatrixOutgoingVideoFile(
+          id: capturePath,
+          source: capture,
+          filename: capture.uri.pathSegments.last,
+          body: '[视频消息]',
+          deleteSourceWhenDone: true,
+        ),
+        targetRoomIds: [targetRoomId],
+      );
+      admitted = true;
+      // This is a sender-originated item, so return the current room from an
+      // anchored older window to latest where its account pending bubble lives.
+      await timeline?.showLatest();
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('正在发送');
+      }
     } on GroupVideoTooLargeException catch (error) {
       if (mounted && !_disposing) _showMediaMessage(error.toString());
     } on VideoCompressionException catch (error) {
@@ -1653,7 +1665,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     } finally {
       // Covers navigation away while the system camera is still returning.
       try {
-        if (capturePath != null) {
+        if (!admitted && capturePath != null) {
           final capture = File(capturePath);
           if (await capture.exists()) await capture.delete();
         }
@@ -1949,16 +1961,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     displayName: participant.displayName,
                   )
                   .displayName,
-              // 好友走业务头像；非好友回退 Matrix 房间成员头像（mxc://），
-              // 由弹层用 MatrixUserAvatar 渲染——修复非好友头像不加载。
-              avatarUrl: participant.avatarUri?.toString(),
-              businessAvatarUrl: _identityCache
+              avatarUrl: _identityCache
                   .resolveIdentity(
                     matrixUserId: participant.id,
                     displayName: participant.displayName,
                   )
                   .avatarUrl,
-              businessUserId: contactsByMatrixId[participant.id]?.userId,
             ),
         ];
     final payment = await _preparePayment();
@@ -1997,8 +2005,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               isGroup: isGroup,
               support: BusinessChatRedPacketSupport(widget.api),
               members: members(),
-              resolveBusinessUser: widget.api.lookupUserByMatrixId,
-              avatarMedia: widget.roomLease,
               onSent: () => Navigator.pop(pageContext),
             ),
           ),
@@ -2016,7 +2022,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // Direct chats preselect the peer; group chats and chats without a
     // loaded profile require picking a specific user inside the sheet.
     final hasPeer = !isGroup && peer != null;
-    if (isGroup) await _refreshJoinedMemberCount();
     final payment = await _preparePayment();
     if (payment == null || !mounted) return;
     final transferController = ChatTransferController(
@@ -2033,26 +2038,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           peerAvatarUrl: hasPeer ? peer!.avatarUrl : null,
           balanceSource: BusinessChatTransferBalanceSource(widget.api),
           contactsSource: BusinessChatTransferContactsSource(widget.api),
-          groupMembers: isGroup
-              ? [
-                  for (final participant in _joinedMembers
-                      .where((member) => member.id != roomInfo.currentUserId))
-                    GroupMemberIdentity(
-                        matrixUserId: participant.id,
-                        displayName: _identityCache
-                            .resolveIdentity(
-                                matrixUserId: participant.id,
-                                displayName: participant.displayName)
-                            .displayName,
-                        matrixAvatarUri: participant.avatarUri,
-                        businessUserId:
-                            contactsByMatrixId[participant.id]?.userId,
-                        businessAvatarUrl:
-                            contactsByMatrixId[participant.id]?.avatarUrl)
-                ]
-              : null,
-          resolveBusinessUser: widget.api.lookupUserByMatrixId,
-          avatarMedia: widget.roomLease,
           onSent: () => Navigator.pop(pageContext),
         ),
       ),
@@ -2241,6 +2226,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   void _openHistorySearch() {
+    _cancelPendingTimelineWindowShift();
     final roomRoute = ModalRoute.of(context);
     final navigator = Navigator.of(context);
     void returnToRoom() {
@@ -2251,7 +2237,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 安全高亮+稳定分页），替换旧 GroupChatHistorySearchPage。
     var searchOpen = true;
     var searchGeneration = 0;
-    var calendarGeneration = 0;
+    var dateLookupGeneration = 0;
+    RoomHistoryDayLocation? resolvedDateLocation;
     final messagesById = <String, RoomMessageViewModel>{};
     List<ChatSearchMessage> currentSearchMessages() {
       final allMessages =
@@ -2321,25 +2308,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ]..sort((a, b) => b.timelineOrder.compareTo(a.timelineOrder));
     }
 
-    Future<void> loadThrough(DateTime boundary, int generation) async {
-      while (mounted &&
-          searchOpen &&
-          generation == calendarGeneration &&
-          !(controller?.historyExhausted ?? true)) {
-        final oldestDate = widget.roomLease.oldestTimelineEventDate;
-        if (oldestDate != null && oldestDate.toLocal().isBefore(boundary)) {
-          break;
-        }
-        final last = widget.roomLease.oldestTimelineEventId;
-        final token = widget.roomLease.historyToken;
-        await _loadEarlier();
-        if (last == widget.roomLease.oldestTimelineEventId &&
-            token == widget.roomLease.historyToken) {
-          break;
-        }
-      }
-    }
-
     // 群聊成员目录（统一拼音排序/过滤服务——R5/R12）。
     List<MemberDirectoryEntry> memberEntries() => <MemberDirectoryEntry>[
           for (final member in _joinedMembers)
@@ -2352,10 +2320,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   localPart(member.id),
             ),
         ];
-    final searchMessages = currentSearchMessages();
+    final dayMetadata =
+        controller?.loadedDayMetadata ?? const <RoomHistoryDayMetadata>[];
     final datesWithMessages = {
-      for (final m in searchMessages)
-        DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day),
+      // Calendar markers are raw timeline metadata. Do not build the full
+      // text/member/media search projection merely to open a calendar.
+      for (final metadata in dayMetadata)
+        DateTime(metadata.day.year, metadata.day.month, metadata.day.day),
     };
     final earliestMonth = widget.roomLease.creationDate ?? DateTime(1970);
     final latestMonth = DateTime.now();
@@ -2398,15 +2369,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
             return const <ChatSearchMessage>[];
           },
-          loadCalendarMonth: (month) async {
-            await loadThrough(
-                DateTime(month.year, month.month), ++calendarGeneration);
-            return {
-              for (final m in currentSearchMessages())
-                DateTime(m.timestamp.year, m.timestamp.month, m.timestamp.day)
-            };
-          },
-          onCalendarClosed: () => calendarGeneration++,
+          // Unknown past dates remain selectable. A month change must not
+          // trigger a network/history scan; explicit selection owns lookup.
+          allowUnknownPastDates: true,
+          onCalendarClosed: () => controller?.cancelPendingDateLookup(),
           onSearchInvalidated: () => searchGeneration++,
           memberEntries: memberEntries(),
           liveMemberEntries: memberEntries,
@@ -2463,22 +2429,45 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             returnToRoom();
             unawaited(_scrollToMessage(eventId));
           },
-          // R6：日期定位回调——定位当日最早一条消息。
           onJumpToDate: (date) {
-            // 找到当日时间线中最早一条可展示消息。
-            final dayMessages = currentSearchMessages()
-                .where((m) =>
-                    m.timestamp.year == date.year &&
-                    m.timestamp.month == date.month &&
-                    m.timestamp.day == date.day)
-                .toList();
-            if (dayMessages.isNotEmpty) {
-              // timelineOrder 升序 = 旧→新；最早 = order 最小。
-              dayMessages
-                  .sort((a, b) => a.timelineOrder.compareTo(b.timelineOrder));
-              returnToRoom();
-              unawaited(_scrollToMessage(dayMessages.first.eventId));
+            final location = resolvedDateLocation;
+            if (location == null || location.day != date) return;
+            returnToRoom();
+            unawaited(_scrollToMessage(location.eventId));
+          },
+          onDateLookup: (date) async {
+            final lookup = controller;
+            final generation = ++dateLookupGeneration;
+            if (lookup == null || !searchOpen) {
+              return CalendarDateLookupResult.incomplete;
             }
+            try {
+              final location = await lookup.locateDay(date);
+              if (!mounted ||
+                  !searchOpen ||
+                  generation != dateLookupGeneration ||
+                  !identical(lookup, controller)) {
+                throw const RoomHistoryLookupCancelled();
+              }
+              if (location == null) {
+                return CalendarDateLookupResult.confirmedEmpty;
+              }
+              resolvedDateLocation = location;
+              return CalendarDateLookupResult.located;
+            } on RoomHistoryLookupIncomplete {
+              if (mounted && searchOpen && generation == dateLookupGeneration) {
+                return CalendarDateLookupResult.incomplete;
+              }
+              throw const RoomHistoryLookupCancelled();
+            } on RoomHistoryLookupCancelled {
+              // A newer day, calendar close, lease change, or dispose won.
+              // The controller has already discarded its partial context.
+              rethrow;
+            }
+          },
+          onCancelDateLookup: () {
+            dateLookupGeneration++;
+            controller?.cancelPendingDateLookup();
           },
           datesWithMessages: datesWithMessages,
           earliestMonth: earliestMonth,
@@ -2487,7 +2476,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       ),
     ).whenComplete(() {
       searchOpen = false;
-      calendarGeneration++;
+      dateLookupGeneration++;
+      controller?.cancelPendingDateLookup();
       searchGeneration++;
     });
   }
@@ -2519,6 +2509,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<bool> _scrollToMessage(String eventId) async {
     if (_locatingMessage) return false;
+    _cancelPendingTimelineWindowShift();
+    final generation = _timelineScrollGeneration;
     _locatingMessage = true;
     var found = false;
     try {
@@ -2529,7 +2521,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         final oldest = widget.roomLease.oldestTimelineEventId;
         final token = widget.roomLease.historyToken;
         await _loadEarlier();
-        if (!mounted || (controller?.historyExhausted ?? true)) break;
+        if (!mounted ||
+            generation != _timelineScrollGeneration ||
+            (controller?.historyExhausted ?? true)) {
+          break;
+        }
         if (oldest == widget.roomLease.oldestTimelineEventId &&
             token == widget.roomLease.historyToken) {
           break;
@@ -2551,11 +2547,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         messageKeys: messageKeys,
         eventId: eventId,
         isMounted: () => mounted,
+        canContinue: () =>
+            mounted &&
+            generation == _timelineScrollGeneration &&
+            !_scrollInteractionActive(),
       );
     } finally {
       _locatingMessage = false;
     }
     if (!found) {
+      // A new drag, route transition or another locator invalidates this
+      // request. It is cancellation, not a user-visible "not found" result.
+      if (!mounted ||
+          generation != _timelineScrollGeneration ||
+          _scrollInteractionActive()) {
+        return false;
+      }
       if (mounted) _showMediaMessage('未找到该消息，请稍后重试');
       return false;
     }
@@ -2719,11 +2726,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<bool> _forwardEditedImage(Uint8List bytes) async {
-    final destinations = await widget.roomLease.forwardingDestinations();
+    final matrix = widget.roomLease;
+    final destinations = await matrix.forwardingDestinations();
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return false;
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return false;
+    }
     final recent = RecentForwardStore(prefs);
-    final completed = <String>{};
     final transaction = 'image-edit-${DateTime.now().microsecondsSinceEpoch}';
     return await Navigator.of(context, rootNavigator: true).push<bool>(
           CupertinoPageRoute(
@@ -2741,17 +2750,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ],
               recentRoomIds: recent.load(),
               onForward: (ids) async {
-                for (final id in ids) {
-                  if (completed.contains(id)) continue;
-                  await widget.roomLease.sendEditedImageTo(
-                    id,
-                    bytes,
-                    transactionId:
-                        '$transaction-${destinations.indexWhere((room) => room.id == id)}',
-                  );
-                  completed.add(id);
-                }
-                await recent.record(ids);
+                await matrix.enqueuePreparedMedia(
+                  jobId: transaction,
+                  media: MatrixOutgoingPreparedMedia(
+                    id: transaction,
+                    bytes: bytes,
+                    mimeType: 'image/png',
+                    filename: '编辑图片.png',
+                    body: '[编辑图片]',
+                  ),
+                  targetRoomIds: ids,
+                );
+                unawaited(recent.record(ids).catchError((Object _) {}));
               },
             ),
           ),
@@ -2819,7 +2829,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
-                identityCache: _identityCache,
               ),
         RoomMessageKind.transfer => message.transferId == null
             ? WeChatTransferCard(
@@ -2841,7 +2850,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
-                identityCache: _identityCache,
               ),
         RoomMessageKind.system => Text(
             message.text,
@@ -3501,17 +3509,44 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     List<RoomMessageViewModel> messages, {
     String? selectedTextOverride,
   }) async {
-    final interaction = _interaction;
-    if (interaction == null) {
-      if (mounted) setState(() => mediaMessage = '转发服务尚未就绪，请稍后重试');
+    if (messages.isEmpty) return;
+    final matrix = widget.roomLease;
+    if (_disposing) return;
+    late final List<MatrixOutgoingForwardMessage> frozen;
+    try {
+      frozen = <MatrixOutgoingForwardMessage>[
+        for (var index = 0; index < messages.length; index++)
+          matrix.snapshotForwardSource(
+            messages[index].id,
+            selectedPlainText: selectedTextOverride != null && index == 0
+                ? selectedTextOverride
+                : null,
+          ),
+      ];
+    } on StateError {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('该消息暂时无法转发，请稍后重试');
+      }
+      return;
+    } on ArgumentError {
+      if (mounted && !_disposing && identical(widget.roomLease, matrix)) {
+        _showMediaMessage('该消息暂时无法转发，请稍后重试');
+      }
       return;
     }
+    if (selectedTextOverride != null && messages.length != 1) {
+      throw ArgumentError('A selected range must belong to one message');
+    }
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return;
+    }
     final store = RecentForwardStore(prefs);
     final recentIds = store.load();
-    final destinations = await widget.roomLease.forwardingDestinations();
-    if (!mounted) return;
+    final destinations = await matrix.forwardingDestinations();
+    if (!mounted || _disposing || !identical(widget.roomLease, matrix)) {
+      return;
+    }
     List<ChatForwardCandidate> candidates() => <ChatForwardCandidate>[
           for (final room in destinations)
             ChatForwardCandidate(
@@ -3526,7 +3561,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (mounted) setState(() => mediaMessage = '没有可用的端到端加密会话');
       return;
     }
-    final completed = <(String, String)>{};
+    final batchId = 'forward-${DateTime.now().microsecondsSinceEpoch}';
     final forwarded =
         await Navigator.of(context, rootNavigator: true).push<bool>(
       CupertinoPageRoute<bool>(
@@ -3553,26 +3588,25 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 if (destinations.any((room) => room.id == id)) id,
             ],
             onForward: (roomIds) async {
-              for (final roomId in roomIds) {
-                for (final message in messages) {
-                  if (completed.contains((message.id, roomId))) continue;
-                  if (selectedTextOverride != null) {
-                    await interaction.forwardText(selectedTextOverride, roomId);
-                  } else {
-                    await interaction.forward(message.id, roomId);
-                  }
-                  completed.add((message.id, roomId));
-                }
-              }
-              await store.record(roomIds);
+              await matrix.enqueueForward(
+                batchId: batchId,
+                messages: frozen,
+                targetRoomIds: roomIds,
+              );
+              unawaited(store.record(roomIds).catchError((Object _) {}));
             },
           ),
         ),
       ),
     );
-    if (!mounted || forwarded != true) return;
+    if (!mounted ||
+        _disposing ||
+        !identical(widget.roomLease, matrix) ||
+        forwarded != true) {
+      return;
+    }
     setState(() {
-      mediaMessage = '已转发';
+      mediaMessage = '正在发送';
       selection.exit();
     });
   }
@@ -3612,8 +3646,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _nudgeToastTimer?.cancel();
-    _nudgeToast?.remove();
     callAudioActivity.removeListener(_handleCallAudioActivity);
     _disposing = true;
     dismissActionMenu();
@@ -3632,8 +3664,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .catchError((Object _) {}));
     _financeCardStore.dispose();
     _identityCache.removeListener(_identityChanged);
-    _supportTimer?.cancel();
-    _supportIdentities.dispose();
     final playback = _voicePlayback;
     if (playback != null) {
       unawaited(_trackMatrixOperation(
@@ -3642,6 +3672,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     unawaited(_trackMatrixOperation(_onVoiceCancel(VoiceArmedTarget.cancel)));
     _timelineRevision.dispose();
     _mentionRevision.dispose();
+    _observedTimelineScrollPosition?.isScrollingNotifier
+        .removeListener(_onTimelineScrollActivityChanged);
     controller?.removeListener(_changed);
     controller?.dispose();
     mediaMessageTimer?.cancel();
@@ -3730,24 +3762,108 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   /// 加载中的幂等/耗尽判定由 [RoomTimelineController.loadHistory] 负责。
   void _onMessageScroll() {
     if (_shiftingWindow || _locatingMessage) return;
-    if (messageScrollController.hasClients &&
-        messageScrollController.offset > 80) {
+    if (!messageScrollController.hasClients) return;
+    final position = messageScrollController.position;
+    _observeTimelineScrollActivity(position);
+    final previousOffset = _lastTimelineScrollOffset ?? 0;
+    final offset = position.pixels;
+    _lastTimelineScrollOffset = offset;
+    final towardEarlier = offset > previousOffset + .5;
+    final towardLater = offset < previousOffset - .5;
+    if (offset > 80) {
       controller?.pinWindow();
     }
     _observeVisibleMentions();
-    if (messageScrollController.hasClients &&
-        messageScrollController.position.extentBefore < 120 &&
-        (controller?.hasLaterWindow ?? false)) {
-      unawaited(_shiftWindow(() => controller!.showLaterWindow()));
+    if (towardLater && position.extentBefore < 120) {
+      // This listener precedes ScrollNotification for a user drag. Record
+      // the direction before starting the request, otherwise that matching
+      // notification would invalidate the request's own generation.
+      _setTimelineScrollDirection(earlier: false);
+      if (controller?.hasLaterWindow ?? false) {
+        _queueWindowShift(earlier: false);
+        unawaited(_applyPendingWindowShift());
+      } else {
+        unawaited(_prefetchFutureHistory());
+      }
       return;
     }
-    _prefetchHistory();
+    if (towardEarlier) unawaited(_prefetchHistory());
+  }
+
+  void _observeMessageScrollActivityIfAttached() {
+    if (messageScrollController.hasClients) {
+      _observeTimelineScrollActivity(messageScrollController.position);
+    }
   }
 
   bool _shiftingWindow = false;
+  bool? _timelineScrollTowardEarlier;
+  bool _scrollInteractionActive() =>
+      _userTimelineDragActive ||
+      (messageScrollController.hasClients &&
+          messageScrollController.position.isScrollingNotifier.value);
+
+  void _observeTimelineScrollActivity(ScrollPosition position) {
+    if (identical(_observedTimelineScrollPosition, position)) return;
+    _observedTimelineScrollPosition?.isScrollingNotifier
+        .removeListener(_onTimelineScrollActivityChanged);
+    _observedTimelineScrollPosition = position;
+    position.isScrollingNotifier.addListener(_onTimelineScrollActivityChanged);
+  }
+
+  void _onTimelineScrollActivityChanged() {
+    if (!_scrollInteractionActive()) {
+      unawaited(_applyPendingWindowShift());
+    }
+  }
+
+  void _queueWindowShift({required bool earlier}) {
+    _pendingEarlierWindow = earlier;
+  }
+
+  void _cancelPendingTimelineWindowShift({bool clearDirection = true}) {
+    _pendingEarlierWindow = null;
+    if (clearDirection) _timelineScrollTowardEarlier = null;
+    _timelineScrollGeneration++;
+  }
+
+  void _setTimelineScrollDirection({required bool earlier}) {
+    if (_timelineScrollTowardEarlier == earlier) return;
+    _timelineScrollTowardEarlier = earlier;
+    _cancelPendingTimelineWindowShift(clearDirection: false);
+  }
+
+  Future<void> _applyPendingWindowShift() async {
+    if (_shiftingWindow ||
+        _scrollInteractionActive() ||
+        !mounted ||
+        !messageScrollController.hasClients ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final earlier = _pendingEarlierWindow;
+    if (earlier == null) return;
+    final position = messageScrollController.position;
+    final atRequestedEdge = earlier
+        ? position.extentAfter <= position.viewportDimension * 2
+        : position.extentBefore < 120;
+    final hasWindow = earlier
+        ? controller?.hasEarlierWindow ?? false
+        : controller?.hasLaterWindow ?? false;
+    if (!atRequestedEdge || !hasWindow) {
+      _pendingEarlierWindow = null;
+      return;
+    }
+    _pendingEarlierWindow = null;
+    await _shiftWindow(earlier
+        ? () => controller!.showEarlierWindow()
+        : () => controller!.showLaterWindow());
+  }
+
   Future<void> _shiftWindow(Future<void> Function() shift) async {
     if (_shiftingWindow || !mounted) return;
     _shiftingWindow = true;
+    final generation = _timelineScrollGeneration;
     final anchor =
         TimelineScrollAnchor.capture(messageKeys, _timelineViewportKey);
     try {
@@ -3759,14 +3875,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             controller: messageScrollController,
             keys: messageKeys,
             eventIds: _visibleMessages().reversed.map((m) => m.id).toList(),
-            isMounted: () => mounted && !_disposing);
+            isMounted: () => mounted && !_disposing,
+            canRestore: () =>
+                generation == _timelineScrollGeneration &&
+                !_scrollInteractionActive());
       }
     } finally {
       _shiftingWindow = false;
+      _lastTimelineScrollOffset = messageScrollController.hasClients
+          ? messageScrollController.offset
+          : null;
     }
   }
 
   Future<void> _showLatestWindow() async {
+    _cancelPendingTimelineWindowShift();
     await controller?.showLatest();
     if (!mounted) return;
     _timelineRevision.value++;
@@ -3785,7 +3908,52 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         }
       }();
 
-  Future<void> _prefetchHistory() async {
+  Future<void>? _prefetchRequest;
+  Future<void> _prefetchHistory() =>
+      _prefetchRequest ??= _prefetchHistoryOnce().whenComplete(
+        () => _prefetchRequest = null,
+      );
+
+  Future<void>? _futureHistoryRequest;
+  Future<void> _prefetchFutureHistory() =>
+      _futureHistoryRequest ??= _prefetchFutureHistoryOnce().whenComplete(
+        () => _futureHistoryRequest = null,
+      );
+
+  Future<void> _prefetchFutureHistoryOnce() async {
+    final currentController = controller;
+    if (!mounted ||
+        _locatingMessage ||
+        _shiftingWindow ||
+        currentController == null ||
+        !messageScrollController.hasClients ||
+        !currentController.hasFutureHistory ||
+        messageScrollController.position.extentBefore >= 120 ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final generation = _timelineScrollGeneration;
+    try {
+      // A forward page can append newer rows before this user gesture ends.
+      // Pin first so refresh preserves the visible window until the guarded
+      // deferred shift runs after drag/ballistic motion has settled.
+      currentController.pinWindow();
+      await currentController.loadFutureHistory();
+    } catch (_) {
+      return;
+    }
+    if (!mounted ||
+        generation != _timelineScrollGeneration ||
+        !identical(currentController, controller) ||
+        ModalRoute.of(context)?.isCurrent != true ||
+        !(currentController.hasLaterWindow)) {
+      return;
+    }
+    _queueWindowShift(earlier: false);
+    await _applyPendingWindowShift();
+  }
+
+  Future<void> _prefetchHistoryOnce() async {
     if (!mounted ||
         _locatingMessage ||
         _shiftingWindow ||
@@ -3798,18 +3966,51 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         metrics.extentAfter > metrics.viewportDimension * 2) {
       return;
     }
-    try {
-      await _shiftWindow(() async {
-        if (!(controller?.hasEarlierWindow ?? false)) await _loadEarlier();
-        if (controller?.hasEarlierWindow ?? false) {
-          await controller?.showEarlierWindow();
+    if (!(controller?.hasEarlierWindow ?? false)) {
+      final generation = _timelineScrollGeneration;
+      final currentController = controller;
+      final oldest = widget.roomLease.oldestTimelineEventId;
+      final token = widget.roomLease.historyToken;
+      try {
+        await _loadEarlier();
+      } catch (_) {
+        return;
+      }
+      if (!mounted ||
+          generation != _timelineScrollGeneration ||
+          !identical(currentController, controller) ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          (oldest == widget.roomLease.oldestTimelineEventId &&
+              token == widget.roomLease.historyToken)) {
+        return;
+      }
+    }
+    if (controller?.hasEarlierWindow ?? false) {
+      _queueWindowShift(earlier: true);
+      await _applyPendingWindowShift();
+    }
+  }
+
+  void _requestWindowForUserScrollDelta(double delta) {
+    if (!messageScrollController.hasClients || delta == 0) return;
+    final position = messageScrollController.position;
+    if (delta < 0) {
+      // Any deliberate move back toward newer history supersedes an older
+      // prefetch, even when this update is not yet at the newer edge.
+      _setTimelineScrollDirection(earlier: false);
+      if (position.extentBefore < 120) {
+        if (controller?.hasLaterWindow ?? false) {
+          _queueWindowShift(earlier: false);
+          unawaited(_applyPendingWindowShift());
+        } else {
+          unawaited(_prefetchFutureHistory());
         }
-      });
-    } catch (_) {
+      }
       return;
     }
-    if (mounted && messageListScrolling.value) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _prefetchHistory());
+    if (delta > 0 && position.extentAfter <= position.viewportDimension * 2) {
+      _setTimelineScrollDirection(earlier: true);
+      unawaited(_prefetchHistory());
     }
   }
 
@@ -3826,9 +4027,36 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (notification is ScrollStartNotification) {
       MessageTextSelectionSession.dismissActive();
       messageListScrolling.value = true;
+      if (notification.dragDetails != null) {
+        _observeMessageScrollActivityIfAttached();
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+    }
+    if (notification is ScrollUpdateNotification &&
+        notification.dragDetails != null) {
+      _observeMessageScrollActivityIfAttached();
+      if (!_userTimelineDragActive) {
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+      _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
+    }
+    if (notification is OverscrollNotification &&
+        notification.dragDetails != null) {
+      _observeMessageScrollActivityIfAttached();
+      if (!_userTimelineDragActive) {
+        _userTimelineDragActive = true;
+        _timelineScrollGeneration++;
+      }
+      _requestWindowForUserScrollDelta(notification.dragDetails!.delta.dy);
     }
     if (notification is ScrollEndNotification) {
       messageListScrolling.value = false;
+      if (_userTimelineDragActive) {
+        _userTimelineDragActive = false;
+        unawaited(_applyPendingWindowShift());
+      }
     }
     return false;
   }
@@ -3958,7 +4186,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             onTap: () => unawaited(_returnToQuoteOrigin()),
           ),
         ),
-      if (controller?.hasLaterWindow ?? false)
+      if ((controller?.hasLaterWindow ?? false) ||
+          (controller?.isViewingHistoryContext ?? false))
         Positioned(
             right: 12,
             bottom: 12,
@@ -3992,12 +4221,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         middle: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: peer == null ? null : () => _openContact(peer!),
-          child: WeChatNavTitle(
-            _navigationTitle,
-            supportIdentities: isGroup ? null : _supportIdentities,
-            matrixUserId:
-                isGroup ? null : (roomInfo.directPeerId ?? peer?.matrixUserId),
-          ),
+          child: WeChatNavTitle(_navigationTitle),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,

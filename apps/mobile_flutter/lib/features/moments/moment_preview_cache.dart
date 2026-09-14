@@ -1,36 +1,66 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 
-/// 好友资料页朋友圈预览 / 在线状态的共享缓存（规格：无感加载）。
+import '../../core/business_api_client.dart';
+
+/// 好友资料页朋友圈预览的会话作用域缓存。
 ///
-/// - 冷启动后台预取：App 启动后为好友列表预取预览数据，进页直接渲染
-///   缓存，不发起请求；
-/// - 后台刷新：仅在缓存过期（默认 5 分钟）时于后台拉取最新数据，
-///   与缓存**逐字段比对**，有变化才通知 UI——避免每次进页都闪烁/刷新；
-/// - 进页永不阻塞：读取缓存是同步的，刷新永远在后台。
+/// 每个 API 客户端及其登录 epoch 都有独立的缓存。Expando 不会让已经
+/// 释放的 API 所有者常驻；cache 本身也只弱引用 API。这样账号切换后的
+/// 迟到请求不能将旧账号的授权结果发布给新会话。
 final class MomentPreviewCache {
-  MomentPreviewCache({this.ttl = const Duration(minutes: 5)});
+  MomentPreviewCache._(BusinessApiClient api, this.ttl)
+      : _api = WeakReference(api),
+        _epoch = api.sessionEpoch;
 
-  /// 缓存有效期：期内进页完全不发请求；过期后进页先显示缓存，
-  /// 后台静默刷新，有更新才重建 UI。
+  static final Expando<MomentPreviewCache> _byApi =
+      Expando<MomentPreviewCache>('moment-preview-cache');
+
+  factory MomentPreviewCache.forApi(BusinessApiClient api,
+      {Duration ttl = const Duration(minutes: 5)}) {
+    final existing = _byApi[api];
+    if (existing != null && existing._isCurrentFor(api)) return existing;
+    existing?._retire();
+    final created = MomentPreviewCache._(api, ttl);
+    _byApi[api] = created;
+    return created;
+  }
+
   final Duration ttl;
+  final WeakReference<BusinessApiClient> _api;
+  final int _epoch;
+  var _retired = false;
 
   final _entries = <String, _PreviewEntry>{};
   final _listeners = <String, Set<VoidCallback>>{};
-  final _inFlight = <String, Future<Map<String, dynamic>?>>{};
+  final _inFlight = <String, Future<void>>{};
+  final _revisions = <String, int>{};
+  final _queuedNotifications = <String>{};
 
-  /// 数据源：服务端预览接口。
-  Future<Map<String, dynamic>?> Function(String userId)? fetcher;
+  bool get _isCurrent {
+    final api = _api.target;
+    return !_retired && api != null && api.sessionEpoch == _epoch;
+  }
 
-  static final MomentPreviewCache instance = MomentPreviewCache();
+  bool _isCurrentFor(BusinessApiClient api) =>
+      _isCurrent && identical(_api.target, api);
+
+  void _retire() {
+    _retired = true;
+    _entries.clear();
+    _inFlight.clear();
+    _revisions.clear();
+    _queuedNotifications.clear();
+    _listeners.clear();
+  }
 
   /// 进页同步读取缓存（可能为 null：首次且预取未完成）。
   Map<String, dynamic>? peek(String userId) =>
-      _entries[userId]?.payload;
+      _isCurrent ? _entries[userId]?.payload : null;
 
-  /// 注册数据变化监听（进页时挂上，离页自动移除）。
   void addListener(String userId, VoidCallback listener) {
+    if (!_isCurrent) return;
     _listeners.putIfAbsent(userId, () => <VoidCallback>{}).add(listener);
   }
 
@@ -40,47 +70,73 @@ final class MomentPreviewCache {
   }
 
   void _notify(String userId) {
-    for (final listener in _listeners[userId] ?? const <VoidCallback>[]) {
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
+      _dispatchListeners(userId);
+      return;
+    }
+    if (!_queuedNotifications.add(userId)) return;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _queuedNotifications.remove(userId);
+      _dispatchListeners(userId);
+    });
+  }
+
+  void _dispatchListeners(String userId) {
+    // A listener can remove itself while handling the update, so use a stable
+    // snapshot instead of iterating the mutable per-user set.
+    final listeners = List<VoidCallback>.of(
+        _listeners[userId] ?? const <VoidCallback>[]);
+    for (final listener in listeners) {
       listener();
     }
   }
 
-  /// 冷启动/进页触发：缓存新鲜则什么都不做；过期或缺失才后台刷新。
+  /// 首次、过期或明确失效后静默刷新；同一作用域同一用户只保留一个请求。
   void ensureFresh(String userId) {
-    final fetch = fetcher;
-    if (fetch == null) return;
+    final api = _api.target;
+    if (!_isCurrent || api == null) return;
     final entry = _entries[userId];
-    final now = DateTime.now();
-    if (entry != null && now.difference(entry.fetchedAt) < ttl) return;
+    if (entry != null && DateTime.now().difference(entry.fetchedAt) < ttl) {
+      return;
+    }
     if (_inFlight.containsKey(userId)) return;
-    final future = fetch(userId).then((fresh) {
-      _inFlight.remove(userId);
-      if (fresh == null) return null;
-      final old = _entries[userId];
-      // 有更新才写入并通知：内容无变化（entry_visible/items 相同）
-      // 不触发 UI 重建，实现“有更新才刷新”。
-      if (old != null && _samePayload(old.payload, fresh)) {
-        old.fetchedAt = now; // 只续期时间戳。
-        return fresh;
+    final revision = _revisions[userId] ?? 0;
+    late final Future<void> request;
+    request = api.momentProfilePreview(userId).then((fresh) {
+      if (!_isCurrent || (_revisions[userId] ?? 0) != revision) {
+        return;
       }
-      _entries[userId] = _PreviewEntry(fresh, now);
+      final old = _entries[userId];
+      if (old != null && _samePayload(old.payload, fresh)) {
+        old.fetchedAt = DateTime.now();
+        return;
+      }
+      _entries[userId] = _PreviewEntry(fresh, DateTime.now());
       _notify(userId);
-      return fresh;
-    }).catchError((_) {
-      _inFlight.remove(userId);
-      return null;
+    }).onError((Object error, StackTrace stackTrace) {
+      if (_isCurrent &&
+          (_revisions[userId] ?? 0) == revision &&
+          error is BusinessApiException &&
+          (error.statusCode == 403 || error.statusCode == 404)) {
+        _entries.remove(userId);
+        _notify(userId);
+      }
+      // Transient failures retain same-scope cached UI but do not publish any
+      // value to a different API/epoch scope.
+    }).whenComplete(() {
+      if (identical(_inFlight[userId], request)) _inFlight.remove(userId);
     });
-    _inFlight[userId] = future;
+    _inFlight[userId] = request;
   }
 
-  /// 冷启动后台预取好友列表的全部预览（并发受限）。
   Future<void> prefetch(Iterable<String> userIds, {int concurrency = 3}) async {
     final pending = userIds.toList(growable: false);
+    var next = 0;
     final workers = List.generate(
         concurrency,
         (_) => Future.doWhile(() async {
-              if (pending.isEmpty) return false;
-              final userId = pending.removeAt(0);
+              if (!_isCurrent || next >= pending.length) return false;
+              final userId = pending[next++];
               ensureFresh(userId);
               await _inFlight[userId];
               return true;
@@ -88,36 +144,26 @@ final class MomentPreviewCache {
     await Future.wait(workers);
   }
 
-  /// 测试支持：清空全部缓存与数据源。
-  @visibleForTesting
-  void resetForTest() {
-    _entries.clear();
-    _listeners.clear();
-    _inFlight.clear();
-    fetcher = null;
-  }
-
-  /// 朋友圈发布/删除后主动失效（下次进页后台刷新一次）。
+  /// 权限变化先隐藏旧授权；已开始的请求由 revision 围栏拒绝。
   void invalidate(String userId) {
+    _revisions[userId] = (_revisions[userId] ?? 0) + 1;
     _entries.remove(userId);
+    _inFlight.remove(userId);
     _notify(userId);
   }
 
-  /// 逐字段比对：预览可见性与条目列表一致视为无更新。
   bool _samePayload(Map<String, dynamic> a, Map<String, dynamic> b) {
     if (a['entry_visible'] != b['entry_visible']) return false;
     final itemsA = (a['items'] as List? ?? const []).length;
     final itemsB = (b['items'] as List? ?? const []).length;
     if (itemsA != itemsB) return false;
-    // 深比对：直接比对 JSON 序列化结果（条目数少，代价可忽略）。
-    final keysA = (a['items'] as List? ?? const []).toString();
-    final keysB = (b['items'] as List? ?? const []).toString();
-    return keysA == keysB;
+    return (a['items'] as List? ?? const []).toString() ==
+        (b['items'] as List? ?? const []).toString();
   }
 }
 
 final class _PreviewEntry {
   _PreviewEntry(this.payload, this.fetchedAt);
-  Map<String, dynamic> payload;
+  final Map<String, dynamic> payload;
   DateTime fetchedAt;
 }

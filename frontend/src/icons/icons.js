@@ -26,6 +26,7 @@ export const iconDefinitions = Object.freeze({
   document: [path("M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"), polyline("14 2 14 8 20 8"), line(8, 13, 16, 13), line(8, 17, 16, 17)],
   download: [path("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"), polyline("7 10 12 15 17 10"), line(12, 15, 12, 3)],
   edit: [path("M12 20h9"), path("M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z")],
+  eraser: [path("m7 17 7.8-7.8 5 5L12 22H7z"), path("m5 14 4-4 5 5-4 4z"), line(4, 22, 20, 22)],
   emoji: [circle(12, 12, 9), circle(9, 10, .6), circle(15, 10, .6), path("M8 14a4.5 4.5 0 0 0 8 0")],
   error: [circle(12, 12, 9), line(12, 7, 12, 13), line(12, 17, 12.01, 17)],
   eye: [path("M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"), circle(12, 12, 2.5)],

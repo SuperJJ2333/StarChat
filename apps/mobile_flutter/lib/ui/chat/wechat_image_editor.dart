@@ -8,7 +8,45 @@ import '../../core/gallery_save_access.dart';
 import '../components/wechat_scaffold.dart';
 import '../foundation/wechat_tokens.dart';
 
-enum ImageEditTool { brush, emoji, text, crop, mosaic }
+enum ImageEditTool { brush, emoji, text, crop, mosaic, eraser }
+
+const _editorEmojis = [
+  '😀',
+  '😄',
+  '😂',
+  '🥹',
+  '😍',
+  '🥰',
+  '😎',
+  '😭',
+  '😡',
+  '🤔',
+  '🤗',
+  '😘',
+  '🥳',
+  '🤩',
+  '👍',
+  '👎',
+  '👏',
+  '🙏',
+  '💪',
+  '🤝',
+  '✌️',
+  '❤️',
+  '💛',
+  '💚',
+  '💙',
+  '🔥',
+  '🎉',
+  '🌹',
+  '🐱',
+  '🐶',
+  '🌈',
+  '☀️',
+  '⭐',
+  '🎂',
+  '🎁',
+];
 
 /// All coordinates are in decoded image pixels, independent of viewport/crop.
 @immutable
@@ -18,18 +56,21 @@ class ImageEditMark {
       required this.color,
       required this.width,
       this.text,
-      this.mosaic = false});
+      this.mosaic = false,
+      this.eraser = false});
   final List<Offset> points;
   final Color color;
   final double width;
   final String? text;
   final bool mosaic;
+  final bool eraser;
   ImageEditMark moved(Offset delta) => ImageEditMark(
       points: points.map((point) => point + delta).toList(),
       color: color,
       width: width,
       text: text,
-      mosaic: mosaic);
+      mosaic: mosaic,
+      eraser: eraser);
 }
 
 @immutable
@@ -55,7 +96,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
   int _cursor = -1;
   ImageEditTool _tool = ImageEditTool.brush;
   Color _color = CupertinoColors.white;
-  double _width = 5;
+  double _width = 8;
   List<Offset> _stroke = [];
   Offset? _start, _last;
   Rect? _cropSelection;
@@ -64,6 +105,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
   bool _busy = false;
   String? _error;
   ImageEditDocument get _doc => _history[_cursor];
+  double get _strokeWidth => _image!.width / 350 * _width;
 
   @override
   void initState() {
@@ -141,51 +183,49 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
       value = await showCupertinoModalPopup<String>(
           context: context,
           builder: (context) => Container(
-              height: 280,
+              height: WeChatDimensions.controlHeight * 6 + WeChatSpacing.sm * 4,
               color: CupertinoColors.systemBackground.resolveFrom(context),
               child: SafeArea(
-                  child: GridView.count(crossAxisCount: 7, children: [
-                for (final item in const [
-                  '😀',
-                  '😄',
-                  '😂',
-                  '🥹',
-                  '😍',
-                  '🥰',
-                  '😎',
-                  '😭',
-                  '😡',
-                  '🤔',
-                  '🤗',
-                  '😘',
-                  '🥳',
-                  '🤩',
-                  '👍',
-                  '👎',
-                  '👏',
-                  '🙏',
-                  '💪',
-                  '🤝',
-                  '✌️',
-                  '❤️',
-                  '💛',
-                  '💚',
-                  '💙',
-                  '🔥',
-                  '🎉',
-                  '🌹',
-                  '🐱',
-                  '🐶',
-                  '🌈',
-                  '☀️',
-                  '⭐',
-                  '🎂',
-                  '🎁'
-                ])
-                  CupertinoButton(
-                      onPressed: () => Navigator.pop(context, item),
-                      child: Text(item, style: const TextStyle(fontSize: 28)))
-              ]))));
+                  top: false,
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    const cellSize = WeChatDimensions.controlHeight;
+                    const gap = WeChatSpacing.sm;
+                    final columns =
+                        ((constraints.maxWidth - WeChatSpacing.xxl + gap) /
+                                (cellSize + gap))
+                            .floor()
+                            .clamp(1, 6);
+                    final gridWidth = columns * cellSize + (columns - 1) * gap;
+                    return Center(
+                        child: SizedBox(
+                            width: gridWidth,
+                            child: GridView.builder(
+                                key: const Key('image-editor-emoji-grid'),
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: WeChatSpacing.md),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: columns,
+                                        mainAxisSpacing: gap,
+                                        crossAxisSpacing: gap),
+                                itemCount: _editorEmojis.length,
+                                itemBuilder: (context, index) {
+                                  final item = _editorEmojis[index];
+                                  return CupertinoButton(
+                                      key: ValueKey(
+                                          'image-editor-emoji-cell-$item'),
+                                      padding: EdgeInsets.zero,
+                                      minimumSize:
+                                          const Size(cellSize, cellSize),
+                                      onPressed: () =>
+                                          Navigator.pop(context, item),
+                                      child: Text(item,
+                                          textScaler: TextScaler.noScaling,
+                                          style: const TextStyle(
+                                              fontSize:
+                                                  WeChatTypography.display)));
+                                })));
+                  }))));
     } else {
       final input = TextEditingController();
       value = await showCupertinoDialog<String>(
@@ -282,8 +322,9 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
         ImageEditMark(
             points: List.of(_stroke),
             color: _color,
-            width: _doc.crop.width / 350 * _width,
-            mosaic: _tool == ImageEditTool.mosaic)
+            width: _strokeWidth,
+            mosaic: _tool == ImageEditTool.mosaic,
+            eraser: _tool == ImageEditTool.eraser)
       ]));
     }
     _movingMark = null;
@@ -356,7 +397,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
       }
       if (mounted && done) {
         setState(() => _error = action == 'forward'
-            ? '已转发'
+            ? '正在发送'
             : action == 'favorite'
                 ? '已收藏'
                 : '已保存到相册');
@@ -426,8 +467,9 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                         ImageEditMark(
                             points: _stroke,
                             color: _color,
-                            width: _doc.crop.width / 350 * _width,
-                            mosaic: _tool == ImageEditTool.mosaic)
+                            width: _strokeWidth,
+                            mosaic: _tool == ImageEditTool.mosaic,
+                            eraser: _tool == ImageEditTool.eraser)
                     ]);
                     return Center(
                         child: SizedBox.fromSize(
@@ -463,6 +505,7 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
               const Text('拖动画面选择裁剪区域',
                   style: TextStyle(color: CupertinoColors.white)),
               CupertinoButton(
+                  key: const Key('image-editor-apply-crop'),
                   onPressed: !_busy &&
                           (_cropSelection?.width ?? 0) >= 16 &&
                           (_cropSelection?.height ?? 0) >= 16
@@ -504,6 +547,19 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                       onChanged:
                           _busy ? null : (v) => setState(() => _width = v)))
             ])
+          else if (_tool == ImageEditTool.eraser)
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: WeChatSpacing.sm),
+                  child: Text('轻触或拖动擦除编辑痕迹',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: CupertinoColors.white))),
+              CupertinoSlider(
+                  value: _width,
+                  min: 2,
+                  max: 28,
+                  onChanged: _busy ? null : (v) => setState(() => _width = v))
+            ])
           else
             const Padding(
                 padding: EdgeInsets.all(8),
@@ -515,17 +571,24 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
               (ImageEditTool.emoji, CupertinoIcons.smiley, '表情'),
               (ImageEditTool.text, CupertinoIcons.textformat, '文字'),
               (ImageEditTool.crop, CupertinoIcons.crop, '裁剪'),
-              (ImageEditTool.mosaic, CupertinoIcons.square_grid_3x2, '马赛克')
+              (ImageEditTool.mosaic, CupertinoIcons.square_grid_3x2, '马赛克'),
+              (ImageEditTool.eraser, null, '橡皮擦')
             ])
               CupertinoButton(
                   key: ValueKey('image-editor-${entry.$1.name}'),
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(WeChatSpacing.sm),
                   onPressed: _busy ? null : () => _selectTool(entry.$1),
-                  child: Icon(entry.$2,
-                      semanticLabel: entry.$3,
-                      color: _tool == entry.$1
-                          ? WeChatColors.brandPrimary
-                          : CupertinoColors.white)),
+                  child: entry.$1 == ImageEditTool.eraser
+                      ? _ImageEditorEraserIcon(
+                          semanticLabel: entry.$3,
+                          color: _tool == entry.$1
+                              ? WeChatColors.brandPrimary
+                              : CupertinoColors.white)
+                      : Icon(entry.$2,
+                          semanticLabel: entry.$3,
+                          color: _tool == entry.$1
+                              ? WeChatColors.brandPrimary
+                              : CupertinoColors.white)),
           ]),
           Align(
               alignment: Alignment.centerRight,
@@ -539,6 +602,49 @@ class _WeChatImageEditorPageState extends State<WeChatImageEditorPage> {
                           : const Text('完成')))),
         ],
       ])));
+}
+
+class _ImageEditorEraserIcon extends StatelessWidget {
+  const _ImageEditorEraserIcon(
+      {required this.semanticLabel, required this.color});
+  final String semanticLabel;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+      label: semanticLabel,
+      child: CustomPaint(
+          size: const Size.square(WeChatSpacing.xl),
+          painter: _ImageEditorEraserPainter(color)));
+}
+
+class _ImageEditorEraserPainter extends CustomPainter {
+  const _ImageEditorEraserPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final body = Path()
+      ..moveTo(6, 16)
+      ..lineTo(15, 7)
+      ..quadraticBezierTo(16, 6, 17, 7)
+      ..lineTo(20, 10)
+      ..quadraticBezierTo(21, 11, 20, 12)
+      ..lineTo(12, 20)
+      ..close();
+    canvas.drawPath(body, paint);
+    canvas.drawLine(const Offset(5, 20), const Offset(10, 20), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ImageEditorEraserPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class ImageEditorPainter extends CustomPainter {
@@ -556,6 +662,7 @@ class ImageEditorPainter extends CustomPainter {
     final bounds =
         Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
     canvas.drawImage(image, Offset.zero, Paint());
+    canvas.saveLayer(document.crop, Paint());
     for (final mark in document.marks) {
       if (mark.text != null) {
         final painter = TextPainter(
@@ -605,10 +712,16 @@ class ImageEditorPainter extends CustomPainter {
           ..strokeWidth = mark.width
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round
-          ..style = PaintingStyle.stroke;
+          ..style = PaintingStyle.stroke
+          ..blendMode = mark.eraser ? BlendMode.clear : BlendMode.srcOver;
         if (mark.points.length == 1) {
           canvas.drawCircle(
-              mark.points.first, mark.width / 2, Paint()..color = mark.color);
+              mark.points.first,
+              mark.width / 2,
+              Paint()
+                ..color = mark.color
+                ..blendMode =
+                    mark.eraser ? BlendMode.clear : BlendMode.srcOver);
         } else {
           final path = Path()
             ..moveTo(mark.points.first.dx, mark.points.first.dy);
@@ -619,6 +732,7 @@ class ImageEditorPainter extends CustomPainter {
         }
       }
     }
+    canvas.restore();
     if (selection != null) {
       canvas.drawRect(
           selection!,

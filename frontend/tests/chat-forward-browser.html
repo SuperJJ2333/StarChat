@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<body data-test-result="pending">
+  <iframe id="page" src="/?screen=chat-forward-background&capture=1" style="width:393px;height:852px;border:0"></iframe>
+  <script type="module">
+    document.body.dataset.testResult = "running";
+    const frame = document.querySelector("#page");
+    const pause = () => new Promise(resolve => setTimeout(resolve, 20));
+    const assert = (condition, message) => {
+      if (!condition) throw new Error(message);
+    };
+    const required = (document, selector) => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error(`missing ${selector}`);
+      return node;
+    };
+    const typeCharacters = async (node, value) => {
+      node.focus();
+      assert(node === node.ownerDocument.activeElement, "picker search did not receive keyboard focus");
+      for (const character of value) {
+        node.dispatchEvent(new KeyboardEvent("keydown", { key: character, bubbles: true }));
+        node.setRangeText(character, node.selectionStart, node.selectionEnd, "end");
+        node.dispatchEvent(new InputEvent("input", { data: character, inputType: "insertText", bubbles: true }));
+        node.dispatchEvent(new KeyboardEvent("keyup", { key: character, bubbles: true }));
+        await pause();
+        assert(node === node.ownerDocument.activeElement, "picker search lost focus while typing");
+      }
+    };
+    const assertLayout = async (document, width) => {
+      const article = required(document, "article.ui-screen");
+      document.documentElement.style.setProperty("--size-screen-width", `${width}px`);
+      await pause();
+      assert(Math.round(article.getBoundingClientRect().width) === width, `expected ${width}px device width`);
+      assert(article.scrollWidth <= article.clientWidth, `${width}px device overflowed horizontally`);
+      const composer = required(document, "app-composer");
+      const device = required(document, ".ui-device__viewport");
+      assert(composer.getBoundingClientRect().bottom >= device.getBoundingClientRect().bottom - 56, `composer was not anchored near the ${width}px device bottom`);
+    };
+    async function ready() {
+      for (let attempt = 0; attempt < 250; attempt += 1) {
+        const page = frame.contentDocument;
+        if (page?.querySelector("[data-demo-source='local-fixture']")) return page;
+        if (page?.body?.dataset.appReady === "false") {
+          throw new Error(page.querySelector(".ui-render-error")?.dataset.renderError ?? "forward screen failed to render");
+        }
+        await pause();
+      }
+      throw new Error("forward demo did not become ready");
+    }
+    try {
+      const page = await ready();
+      const demo = required(page, "[data-demo-source='local-fixture']").__chatForwardDemo;
+      assert(demo, "forward demo controls are unavailable");
+      required(page, '[data-source="gallery"] .c-forward-source-message__action');
+      required(page, '[data-source="recording"] .c-forward-source-message__action');
+      required(page, '[data-source="gallery"] .c-forward-source-message__action').click();
+      await pause();
+      required(page, '[data-testid="forward-picker"]');
+      const search = required(page, '[aria-label="搜索聊天"]');
+      await typeCharacters(search, "不存在");
+      required(page, ".c-forward-picker__empty");
+      search.value = "";
+      search.dispatchEvent(new InputEvent("input", { inputType: "deleteContentBackward", bubbles: true }));
+      await pause();
+      await typeCharacters(search, "然");
+      required(page, '[data-target-id="zhou-ran"]');
+      assert(!page.querySelector('[data-target-id="weekend-group"]'), "picker search did not filter targets");
+      required(page, '[data-target-id="zhou-ran"]').click();
+      await pause();
+      required(page, '[data-testid="forward-picker"]');
+      required(page, '[data-testid="forward-confirmation"]');
+      required(page, ".c-forward-confirmation__confirm").click();
+      await pause();
+      assert(!page.querySelector('[data-testid="forward-picker"]'), "picker remained after confirmation");
+      assert(!page.querySelector('[data-testid="forward-confirmation"]'), "confirmation remained after final confirmation");
+      const first = demo.jobs()[0];
+      assert(first.state === "sending", "held gallery job was not pending");
+      assert(required(page, `[data-job-id="${first.id}"]`).textContent.includes("发送中"), "pending gallery bubble is missing");
+      assert(!page.body.textContent.includes("已发送"), "gallery job showed success before completion");
+      const composer = required(page, '[aria-label="消息内容"]');
+      composer.value = "仍可输入";
+      composer.dispatchEvent(new Event("input", { bubbles: true }));
+      assert(composer.value === "仍可输入", "composer was blocked by the pending job");
+      demo.resolve(first.id);
+      await pause();
+      assert(demo.jobs()[0].state === "sent", "completed gallery job did not become sent");
+      assert(required(page, `[data-job-id="${first.id}"]`).textContent.includes("已发送"), "sent gallery bubble is missing");
+
+      required(page, '[data-action="back"]').click();
+      await pause();
+      required(page, '[data-source="recording"] .c-forward-source-message__action').click();
+      await pause();
+      required(page, '[data-target-id="weekend-group"]').click();
+      await pause();
+      required(page, ".c-forward-confirmation__confirm").click();
+      await pause();
+      const second = demo.jobs()[1];
+      assert(second.state === "sending", "held recording job was not pending");
+      assert(required(page, `[data-job-id="${second.id}"]`).textContent.includes("录像"), "recording did not use the shared pending bubble");
+      demo.reject(second.id);
+      await pause();
+      assert(demo.jobs()[0].state === "sent", "successful target was changed by another target failure");
+      assert(demo.jobs()[1].state === "failed", "rejected recording job did not fail");
+      const retry = required(page, `[data-job-id="${second.id}"] .c-forward-job__retry`);
+      retry.click();
+      await pause();
+      assert(demo.jobs().length === 2, "retry created a duplicate target job");
+      assert(demo.attempts(first.id) === 1 && demo.attempts(second.id) === 2, "retry affected the wrong target");
+      demo.resolve(second.id);
+      await pause();
+      const finalJobs = demo.jobs();
+      assert(finalJobs.every(job => job.state === "sent"), "retry did not complete only the failed target");
+      assert(!page.querySelector("app-status-chip"), "page-level blocking spinner was shown");
+      await assertLayout(page, 320);
+      await assertLayout(page, 390);
+      document.body.dataset.testResult = "passed";
+    } catch (error) {
+      document.body.dataset.testResult = "failed";
+      document.body.dataset.testMessage = error.message;
+    }
+  </script>
+</body>
+</html>

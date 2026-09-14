@@ -175,15 +175,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _warmMomentPreviewCache() {
     final cache = _chatIdentityCache;
     if (cache == null) return;
-    MomentPreviewCache.instance.fetcher ??= (userId) async {
-      try {
-        return await widget.api.momentProfilePreview(userId);
-      } on Exception {
-        return null; // 后台预取失败静默：下次进页再试。
-      }
-    };
     // 冷启动后台预取好友预览（并发 3，TTL 内不重复请求）。
-    unawaited(MomentPreviewCache.instance
+    unawaited(MomentPreviewCache.forApi(widget.api)
         .prefetch(cache.contacts.map((contact) => contact.userId)));
   }
 

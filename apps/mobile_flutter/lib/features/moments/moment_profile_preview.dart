@@ -30,13 +30,13 @@ class MomentProfilePreview extends StatefulWidget {
 
 class _MomentProfilePreviewState extends State<MomentProfilePreview> {
   Map<String, dynamic>? _cached;
-
-  static MomentPreviewCache get _cache => MomentPreviewCache.instance;
+  late MomentPreviewCache _cache;
 
   @override
   void initState() {
     super.initState();
     momentsPrivacyChanges.addListener(_refresh);
+    _cache = MomentPreviewCache.forApi(widget.api);
     _cache.addListener(widget.userId, _onCacheChanged);
     // 无感加载：先渲染缓存（若有）；TTL 过期才后台刷新，
     // 有更新才回调重建 —— 进页不再强制刷新。
@@ -55,7 +55,7 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
     if (!mounted) return;
     final latest = _cache.peek(widget.userId);
     // 仅内容变化才 setState（时间戳续期不触发）。
-    if (latest != null && latest != _cached) {
+    if (latest != _cached) {
       setState(() => _cached = latest);
     }
   }
@@ -70,10 +70,17 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
   @override
   void didUpdateWidget(covariant MomentProfilePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final nextCache = MomentPreviewCache.forApi(widget.api);
+    final revisionChanged =
+        oldWidget.refreshRevision != widget.refreshRevision;
     if (oldWidget.userId != widget.userId ||
-        oldWidget.api != widget.api ||
-        oldWidget.refreshRevision != widget.refreshRevision) {
+        !identical(_cache, nextCache) ||
+        revisionChanged) {
       _cache.removeListener(oldWidget.userId, _onCacheChanged);
+      _cache = nextCache;
+      if (revisionChanged && oldWidget.userId == widget.userId) {
+        _cache.invalidate(widget.userId);
+      }
       _cached = _cache.peek(widget.userId);
       _cache.addListener(widget.userId, _onCacheChanged);
       _cache.ensureFresh(widget.userId);

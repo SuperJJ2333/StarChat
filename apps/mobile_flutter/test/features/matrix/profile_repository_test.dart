@@ -399,6 +399,47 @@ void main() {
     expect(restored.contactsRevision, 7);
   });
 
+  test('ProfileSnapshot preserves unknown, empty and exact last-seen states',
+      () {
+    final exact = DateTime.utc(2026, 9, 12, 4, 5);
+    final snapshot = ProfileSnapshot(
+      profile: profile('Alice'),
+      contacts: [
+        const ContactSummary(
+          userId: 'unknown',
+          username: 'unknown',
+          matrixUserId: '@unknown:example.test',
+        ),
+        const ContactSummary(
+          userId: 'empty',
+          username: 'empty',
+          matrixUserId: '@empty:example.test',
+          lastSeenKnown: true,
+        ),
+        ContactSummary(
+          userId: 'exact',
+          username: 'exact',
+          matrixUserId: '@exact:example.test',
+          lastSeenAt: exact,
+          lastSeenKnown: true,
+        ),
+      ],
+    );
+
+    final encoded = snapshot.toJson();
+    final contacts = encoded['contacts'] as List;
+    expect(contacts[0].containsKey('last_seen_at'), isFalse);
+    expect(contacts[1]['last_seen_at'], isNull);
+    expect(contacts[2]['last_seen_at'], exact.toIso8601String());
+
+    final restored = ProfileSnapshot.fromJson(encoded)!;
+    expect(restored.contacts[0].lastSeenKnown, isFalse);
+    expect(restored.contacts[1].lastSeenKnown, isTrue);
+    expect(restored.contacts[1].lastSeenAt, isNull);
+    expect(restored.contacts[2].lastSeenKnown, isTrue);
+    expect(restored.contacts[2].lastSeenAt, exact);
+  });
+
   test('BUG 1：好友头像 URL 变化触发通知并递增 revision（通讯录实时重绘）', () async {
     var avatarGeneration = 3;
     final store = MemoryProfileStore();

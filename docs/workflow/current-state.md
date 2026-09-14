@@ -1,5 +1,9 @@
 # 移动交付恢复索引
 
+## 2026-09-12 媒体交互、访问时间与加载检查（Debug2094已安装，待用户验收）
+
+工作树`.worktrees/offline12`分支`codex/media-interactions-20260912`基线aac3d806：最近访问缓存/刷新、图片编辑emoji与独立橡皮擦、视频/转发账号后台任务、现有点钻流水布局已由显式gpt-5.6-terra实施并经Astra亲审。2026-09-12 17:14:47+08，Mi6实际覆盖安装0.3.87-debug/2094，拉回SHA `3a15b4aa…a8bffaf`、固定证书与交付包匹配；用户功能与性能待验收。Flutter2535pass/29既有失败、mobile67pass/3既有失败、frontend161pass/11既有失败，analyze/UI契约通过；verify缺.env阻断。没有push/生产发布。进入[任务记录](tasks/2026-09-12-media-interactions.md)或[修复与交付报告](../verification/2026-09-12-media-interactions.md)继续，避免重做已完成批次。
+
 更新日期：2026-09-10（Asia/Hong_Kong）。这里只是最近证据索引；部署前必须重新读取生产，不能把此文件当实时状态。每个任务拥有独立记录，新增任务不要覆盖其他任务条目。
 
 | 事项 | 最近已确认状态 | 证据/下一步 |
@@ -43,3 +47,15 @@ Astra审查、显式gpt-5.6-terra实施；本地分支codex/chat-selection-20260
 ## 2026-09-12 断网恢复、离线缓存与页面提示 Debug2093
 
 Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recovery-20260912`源码`01d6df58`整合main`1d1db6aa`，保留已安装2092的好友在线状态/平台下载链接；0.3.86-debug/2093已在Mi6保留数据安装，原签名与拉回APK完整SHA一致。最终Flutter2453通过/29既有钱包失败，分析通过；HTML/边界已有失败与verify缺.env如实记录。真实断网恢复≤5秒、iOS、多端及性能由用户继续验收；未push/部署/迁移。[任务记录](tasks/2026-09-12-offline-recovery.md) · [根因、验证、安装与用户用例](../verification/2026-09-12-offline-recovery.md)。
+
+
+## 2026-09-12 历史日期检索、滚动与群聊接收延迟（进行中）
+
+用户确认Mi6 Debug0.3.87/2096接收迟缓。当前codex/history-latency-20260912在offline12工作树合并2094与root main2096输入，尚未完成验证或发布；显式gpt-5.6-terra串行执行，Astra审查。日期整月串行回溯已定位，历史滚动复现和接收分层测试进行中；不把服务器当前低耗时当作实际事故归因。 [任务记录](tasks/2026-09-12-history-latency.md) · [计划](../superpowers/plans/2026-09-12-history-latency.md)。
+
+## 2026-09-12 23:36 历史检索/接收延迟（部分修复，执行与版本整合阻塞）
+工作树`.worktrees/offline12`、分支`codex/history-latency-20260912`：I0合并2094+2096为9e87c8a0，H2历史滚动修复bc7ca46a，H3真实SQLite量化27883fa8。H2定向24通过；全量Flutter2555/29、mobile67/3、frontend161/11，失败身份无新增；verify缺.env。日期检索H1及同步阶段计时尚未实现：显式Terra预算耗尽、新代理thread limit、CLI只读model probe认证401。Mi6已被另一路更新2099（23:17:37），本任务未构建/安装/覆盖；后续需对齐新版本并恢复Terra执行。进入[本任务记录](tasks/2026-09-12-history-latency.md)和[计划](../superpowers/plans/2026-09-12-history-latency.md)继续。
+该任务最终追加：65e94cda清理旧fixture warning，af426a3b完成fragment token小修；Astra44项相邻回归通过、全量analyze无问题，最终Flutter2556通过/29既有失败。日期UI/定位capability及真实50秒延迟仍未完成；详见[当前报告](../verification/2026-09-12-history-latency.md)。
+
+## 2026-09-13 账单/转账与历史整合 Debug2104（已安装，待用户验收）
+Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-history-2103-20260913源码e314d4f0整合main e2870554和既有H2。指定HTML账单/转账样式、按需日期检索与双向历史拖动保护已实现；同步阶段数字诊断已加入，但50秒接收延迟未定因。Mi6于03:21:25+08保留数据安装0.3.87-debug/2104，03:22:13拉回SHA260370f6…39b8bc9及固定证书一致。全Flutter2602通过/29旧钱包失败、mobile70通过、UI契约28/364通过、全分析无问题；frontend161/11旧失败，verify缺.env。未push/生产部署，用户自行真机测试。见[任务记录](tasks/2026-09-13-finance-history-2103.md)、[完整交付报告](../verification/2026-09-13-finance-history-2103.md)和[计划](../superpowers/plans/2026-09-13-finance-history-2103.md)。

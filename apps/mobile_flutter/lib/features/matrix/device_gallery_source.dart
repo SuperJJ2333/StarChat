@@ -34,6 +34,7 @@ final class GalleryPhoto {
     this.compressedPreviewFile,
     this.firstFrame,
     this.posterBytes,
+    this.localVideoFile,
     this.loadThumbnail,
     this.cachedThumbnail,
   }) : _thumbnail = thumbnail;
@@ -66,6 +67,11 @@ final class GalleryPhoto {
   /// 视频封面帧（约 480px，保持画面比例）：聊天消息发送时随事件附带，
   /// 接收端无需下载整个视频即可渲染海报。
   final Future<Uint8List?> Function()? posterBytes;
+
+  /// The platform asset remains the authority for a selected gallery video.
+  /// RoomPage freezes this callback's file into an account-owned outgoing job
+  /// before compression, rather than retaining a picker page or its bytes.
+  final Future<File?> Function()? localVideoFile;
 }
 
 /// 相册数据源异常分类：用于向用户呈现可操作的引导。
@@ -563,6 +569,7 @@ class DeviceGalleryPager {
           compressedPreviewFile:
               isVideo ? () async => _resolveVideoRendition(asset) : null,
           posterBytes: isVideo ? () async => _videoPosterBytes(asset) : null,
+          localVideoFile: isVideo ? () => asset.originFile : null,
           firstFrame: isVideo ? () => videoFirstFrameStore.load(asset) : null,
         ),
       );

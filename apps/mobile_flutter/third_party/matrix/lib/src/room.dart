@@ -1411,7 +1411,10 @@ class Room {
     }
 
     final chunk = TimelineChunk(
-        nextBatch: resp.end ?? '', prevBatch: resp.start ?? '', events: events);
+        nextBatch: resp.end ?? '',
+        prevBatch: resp.start ?? '',
+        events: events,
+        isFragment: true);
 
     return chunk;
   }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/room_history_date_capability.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
 class FakeTimelineAdapter implements RoomTimelineAdapter {
@@ -77,6 +78,69 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
   List<RoomMessageViewModel> snapshot() => List.of(items);
   @override
   void dispose() => disposed++;
+}
+
+final class DeferredHistoryTimelineAdapter extends FakeTimelineAdapter
+    implements RoomHistoryDateSource, RoomWindowedTimelineSource {
+  final historyRequests = <Completer<void>>[];
+  int latestCalls = 0;
+  bool viewingHistory = true;
+  RoomHistoryDayLocation? dateLocation;
+
+  @override
+  bool get isViewingHistoryContext => viewingHistory;
+
+  @override
+  void cancelPendingDateLookup() {}
+
+  @override
+  Future<void> loadHistory() {
+    final pending = Completer<void>();
+    historyRequests.add(pending);
+    return pending.future;
+  }
+
+  @override
+  Iterable<RoomHistoryDayMetadata> get loadedDayMetadata => const [];
+
+  @override
+  Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) async {
+    viewingHistory = true;
+    return dateLocation;
+  }
+
+  @override
+  void selectLatest() {
+    latestCalls++;
+    viewingHistory = false;
+  }
+
+  @override
+  void enableWindow() {}
+  @override
+  void setHiddenFilter(bool Function(String, DateTime?)? hidden) {}
+  @override
+  bool get hasEarlierWindow => false;
+  @override
+  bool get hasLaterWindow => false;
+  @override
+  int get totalMessages => items.length;
+  @override
+  Iterable<RoomMessageViewModel> get allMessages => items;
+  @override
+  RoomMessageViewModel? findMessage(String id) => null;
+  @override
+  RoomMessageViewModel? get newestMessage => items.lastOrNull;
+  @override
+  DateTime? previousTimestamp(String id) => null;
+  @override
+  bool selectAnchor(String id) => false;
+  @override
+  void selectEarlier() {}
+  @override
+  void selectLater() {}
+  @override
+  void pinWindow() {}
 }
 
 void main() {
@@ -362,5 +426,81 @@ void main() {
     expect(controller.messages.length, 2);
     await controller.loadHistory();
     expect(adapter.historyCalls, 2, reason: '耗尽后不再发起加载');
+  });
+
+  test('returning to latest invalidates an older history request owner',
+      () async {
+    final adapter = DeferredHistoryTimelineAdapter();
+    final controller = RoomTimelineController(adapter, windowed: true);
+
+    final older = controller.loadHistory();
+    expect(controller.historyLoading, isTrue);
+
+    await controller.showLatest();
+    expect(controller.historyLoading, isFalse,
+        reason: '回到实时流必须解除旧 context 的 loading 状态');
+    expect(adapter.latestCalls, 1);
+
+    final newer = controller.loadHistory();
+    expect(adapter.historyRequests, hasLength(2),
+        reason: '旧请求不能阻止新 context 发起历史请求');
+    adapter.historyRequests[0].complete();
+    await older;
+    expect(controller.historyLoading, isTrue,
+        reason: '旧 finally 不得清除新请求的 loading 状态');
+    adapter.historyRequests[1].complete();
+    await newer;
+    expect(controller.historyLoading, isFalse);
+    controller.dispose();
+  });
+
+  test('selectLatest restores live state through one adapter entry point',
+      () async {
+    final adapter = DeferredHistoryTimelineAdapter();
+    final controller = RoomTimelineController(adapter, windowed: true);
+
+    await controller.selectLatest();
+
+    expect(adapter.latestCalls, 1,
+        reason: 'date capability and viewport must not each restore live');
+    controller.dispose();
+  });
+
+  test('date context state publishes when the visible rows are unchanged',
+      () async {
+    final adapter = DeferredHistoryTimelineAdapter()
+      ..viewingHistory = false
+      ..dateLocation = RoomHistoryDayLocation(
+        eventId: r'$context',
+        day: DateTime(2026, 9, 13),
+      );
+    final controller = RoomTimelineController(adapter, windowed: true);
+    var publications = 0;
+    controller.addListener(() => publications++);
+
+    await controller.locateDay(DateTime(2026, 9, 13));
+    expect(controller.isViewingHistoryContext, isTrue);
+    expect(publications, 1,
+        reason: 'latest/context controls need a rebuild even with equal rows');
+
+    await controller.showLatest();
+    expect(controller.isViewingHistoryContext, isFalse);
+    expect(publications, 2);
+    controller.dispose();
+  });
+
+  test('sending from history restores live state and cancels stale loading',
+      () async {
+    final adapter = DeferredHistoryTimelineAdapter();
+    final controller = RoomTimelineController(adapter, windowed: true);
+    final older = controller.loadHistory();
+
+    await controller.sendText('return to live');
+
+    expect(adapter.latestCalls, 1);
+    expect(controller.historyLoading, isFalse);
+    adapter.historyRequests.single.complete();
+    await older;
+    controller.dispose();
   });
 }

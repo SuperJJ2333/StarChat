@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 import 'package:liuhetong_mobile/features/matrix/content_addressed_media.dart';
 import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
@@ -135,6 +136,84 @@ class _ReceivedMedia extends Event {
   }
 }
 
+/// A controllable streaming transport: it schedules each chunk separately so
+/// tests can prove a bounded reader cancels before later chunks are consumed.
+final class _StreamingHttpClient extends http.BaseClient {
+  _StreamingHttpClient(this.statusCode, this.chunks);
+
+  final int statusCode;
+  final List<List<int>> chunks;
+  final emittedChunkIndexes = <int>[];
+  String? authorization;
+  bool cancelled = false;
+  var closedNormally = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    authorization = request.headers['authorization'];
+    late StreamController<List<int>> controller;
+    controller = StreamController<List<int>>(
+      onListen: () {
+        void emit(int index) {
+          if (cancelled || index >= chunks.length) return;
+          emittedChunkIndexes.add(index);
+          controller.add(chunks[index]);
+          if (index + 1 == chunks.length) {
+            closedNormally = true;
+            controller.close();
+          } else {
+            scheduleMicrotask(() => emit(index + 1));
+          }
+        }
+
+        emit(0);
+      },
+      onCancel: () {
+        cancelled = !closedNormally;
+      },
+    );
+    return http.StreamedResponse(controller.stream, statusCode);
+  }
+}
+
+final class _DownloadClient extends Client {
+  _DownloadClient(http.Client httpClient)
+      : super('bounded-download-test', httpClient: httpClient);
+
+  @override
+  String? get accessToken => 'download-token';
+}
+
+final class _DownloadRoom extends Room {
+  _DownloadRoom(Client client) : super(id: '!bounded:test', client: client);
+}
+
+final class _DownloadedEvent extends Event {
+  _DownloadedEvent(Room room)
+      : super(
+          room: room,
+          eventId: r'$download',
+          senderId: '@sender:test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026),
+          content: {
+            'msgtype': MessageTypes.File,
+            'body': 'download.bin',
+            'url': 'mxc://test/download',
+          },
+        );
+
+  @override
+  Future<MatrixFile> downloadAndDecryptAttachment({
+    bool getThumbnail = false,
+    Future<Uint8List> Function(Uri)? downloadCallback,
+    bool fromLocalStoreOnly = false,
+  }) async {
+    final bytes = await downloadCallback!(Uri.parse('https://test/download'));
+    return MatrixFile(bytes: bytes, name: 'download.bin');
+  }
+}
+
 Future<MatrixRoomTimelineAdapter> _adapter(
     _UploadRoom room, List<Event> events) async {
   final client = room.client as _UploadClient;
@@ -212,6 +291,56 @@ void main() {
     final scratch = await root.createTemp('case-');
     PathProviderPlatform.instance = _Paths(scratch.absolute.path);
     addTearDown(() => scratch.delete(recursive: true));
+  });
+  test('bounded encrypted download authenticates and stops after its byte cap',
+      () async {
+    final transport = _StreamingHttpClient(200, const <List<int>>[
+      [1, 2],
+      [3, 4],
+      [5, 6]
+    ]);
+    final event = _DownloadedEvent(_DownloadRoom(_DownloadClient(transport)));
+
+    await expectLater(
+      downloadMediaContentBounded(event, maxDownloadBytes: 3),
+      throwsA(isA<MediaContentLimitException>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(transport.authorization, 'Bearer download-token');
+    expect(transport.cancelled, isTrue);
+    expect(transport.emittedChunkIndexes, [0, 1],
+        reason: 'The reader must not request the third chunk after overflow.');
+  });
+  test('bounded encrypted download cancels a non-success response stream',
+      () async {
+    final transport = _StreamingHttpClient(503, const <List<int>>[
+      [1, 2],
+      [3, 4],
+    ]);
+    final event = _DownloadedEvent(_DownloadRoom(_DownloadClient(transport)));
+
+    await expectLater(
+      downloadMediaContentBounded(event, maxDownloadBytes: 3),
+      throwsA(isA<http.ClientException>()),
+    );
+
+    expect(transport.authorization, 'Bearer download-token');
+    expect(transport.cancelled, isTrue);
+  });
+  test(
+      'bounded encrypted download accepts unknown declared size within its cap',
+      () async {
+    final transport = _StreamingHttpClient(200, const <List<int>>[
+      [1, 2, 3]
+    ]);
+    final event = _DownloadedEvent(_DownloadRoom(_DownloadClient(transport)));
+
+    expect(
+      await downloadMediaContentBounded(event, maxDownloadBytes: 3),
+      Uint8List.fromList([1, 2, 3]),
+    );
+    expect(transport.cancelled, isFalse);
   });
   test('20MiB encryption leaves the event loop responsive', () async {
     var eventLoopRan = false;

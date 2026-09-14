@@ -3,10 +3,12 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:matrix/matrix.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:matrix/src/models/timeline_chunk.dart';
 import 'package:matrix/src/utils/file_send_request_credentials.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_outgoing_work_coordinator.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
 
 class RetryTimeline extends Fake implements Timeline {
@@ -23,19 +25,39 @@ class RetryClient extends Client {
   Room? getRoomById(String id) => room.id == id ? room : null;
 }
 
+class OutgoingRetryClient extends RetryClient {
+  @override
+  bool isLogged() => true;
+  @override
+  String? get userID => '@me:test';
+  @override
+  String? get deviceID => 'DEVICE';
+}
+
+Future<MatrixClientContinuityMetadata> _continuity(Client client) async =>
+    MatrixClientContinuityMetadata(
+      isLoggedIn: client.isLogged(),
+      userId: client.userID,
+      deviceId: client.deviceID,
+      ed25519Fingerprint: 'fingerprint-${client.userID}',
+      databaseGeneration: 'generation-${client.userID}',
+    );
+
 Future<MatrixRoomTimelineAdapter> openAdapter(
     RetryRoom room, Timeline timeline) async {
   (room.client as RetryClient).room = room;
   room.timeline = timeline;
-  final owner =
-      MatrixSdkE2eeClient(room.client, homeserver: Uri.parse('https://test'));
+  final owner = MatrixSdkE2eeClient(room.client,
+      homeserver: Uri.parse('https://test'),
+      readContinuityMetadata: _continuity);
   final lease = await owner.openRoomLease(room.id);
   return MatrixRoomTimelineAdapter(
       await lease.openRoomTimeline(onUpdate: () {}));
 }
 
 class RetryRoom extends Room {
-  RetryRoom() : super(id: '!retry:test', client: RetryClient());
+  RetryRoom({RetryClient? client})
+      : super(id: '!retry:test', client: client ?? RetryClient());
   late Timeline timeline;
   @override
   Future<Timeline> getTimeline(
@@ -113,6 +135,173 @@ class RetryEvent extends Event {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+  test(
+      'account pending survives lease recreation, retries only failed item, and de-dupes event-id echo',
+      () async {
+    final room = RetryRoom(client: OutgoingRetryClient());
+    final timeline = RetryTimeline();
+    for (var index = 249; index >= 0; index--) {
+      timeline.events.add(Event(
+        room: room,
+        eventId: 'history-$index',
+        senderId: '@peer:test',
+        type: EventTypes.Message,
+        originServerTs: DateTime.utc(2026, 9, 11).add(Duration(seconds: index)),
+        content: {'msgtype': MessageTypes.Text, 'body': 'history $index'},
+      ));
+    }
+    final client = room.client as RetryClient..room = room;
+    room.timeline = timeline;
+    final owner = MatrixSdkE2eeClient(client,
+        homeserver: Uri.parse('https://test'),
+        readContinuityMetadata: _continuity);
+    final firstLease = await owner.openRoomLease(room.id);
+    var updates = 0;
+    late MatrixRoomTimelineAdapter firstAdapter;
+    final firstCapability = await firstLease.openRoomTimeline(onUpdate: () {
+      updates++;
+      firstAdapter.snapshot();
+    });
+    firstAdapter = MatrixRoomTimelineAdapter(firstCapability);
+    final firstController =
+        RoomTimelineController(firstAdapter, windowed: true);
+    final preparation = Completer<void>();
+    var sends = 0;
+    await owner.outgoingWork.enqueue(MatrixOutgoingWorkJob(
+      id: 'route-survival',
+      source: MatrixOutgoingWorkSource(
+        id: 'held-source',
+        retainedBytes: 1,
+        prepare: (_) => preparation.future,
+        release: () async {},
+      ),
+      items: [
+        MatrixOutgoingWorkItem(
+          id: 'target',
+          targetRoomId: room.id,
+          txid: 'outgoing-route-survival-0-0',
+          presentation: MatrixOutgoingWorkPresentation(
+            kind: MatrixOutgoingPresentationKind.text,
+            text: 'route stable',
+            createdAt: DateTime.utc(2026, 9, 12),
+          ),
+          send: (_) async {
+            if (sends++ == 0) throw StateError('offline');
+            return r'$owner-event';
+          },
+        ),
+      ],
+    ));
+    expect(updates, greaterThan(0));
+    await firstController.refresh();
+    expect(
+        firstController.messages
+            .where((m) => m.transactionId == 'outgoing-route-survival-0-0'),
+        hasLength(1));
+    timeline.events.insert(
+        0,
+        Event(
+          room: room,
+          eventId: 'later-server',
+          senderId: '@peer:test',
+          type: EventTypes.Message,
+          originServerTs: DateTime.utc(2026, 9, 12, 1),
+          content: {'msgtype': MessageTypes.Text, 'body': 'later server'},
+        ));
+    await firstController.refresh();
+    final pendingIndex = firstController.messages
+        .indexWhere((m) => m.transactionId == 'outgoing-route-survival-0-0');
+    final laterServerIndex =
+        firstController.messages.indexWhere((m) => m.id == 'later-server');
+    expect(pendingIndex, lessThan(laterServerIndex),
+        reason: 'latest window preserves the admission timestamp of held work');
+    await firstController.openAnchor('history-125');
+    expect(firstController.hasLaterWindow, isTrue);
+    expect(
+        firstController.messages
+            .where((m) => m.transactionId == 'outgoing-route-survival-0-0'),
+        isEmpty,
+        reason: 'background work belongs only to the latest viewport');
+    await firstController.showLatest();
+    expect(
+        firstController.messages
+            .where((m) => m.transactionId == 'outgoing-route-survival-0-0'),
+        hasLength(1));
+
+    firstController.dispose();
+    await firstLease.cancel();
+    final secondLease = await owner.openRoomLease(room.id);
+    late MatrixRoomTimelineAdapter secondAdapter;
+    final secondCapability = await secondLease.openRoomTimeline(onUpdate: () {
+      updates++;
+      secondAdapter.snapshot();
+    });
+    secondAdapter = MatrixRoomTimelineAdapter(secondCapability);
+    final secondController =
+        RoomTimelineController(secondAdapter, windowed: true);
+    expect(
+        secondController.messages
+            .where((m) => m.transactionId == 'outgoing-route-survival-0-0'),
+        hasLength(1));
+
+    preparation.complete();
+    await owner.outgoingWork.drain();
+    await secondController.refresh();
+    expect(
+        secondController.messages
+            .singleWhere(
+                (m) => m.transactionId == 'outgoing-route-survival-0-0')
+            .deliveryState,
+        RoomDeliveryState.failed);
+    await secondCapability.retry('outgoing-route-survival-0-0');
+    await owner.outgoingWork.drain();
+    // HTTP acknowledgement alone cannot make the row disappear.
+    await secondController.refresh();
+    expect(
+        secondController.messages
+            .where((m) => m.transactionId == 'outgoing-route-survival-0-0'),
+        hasLength(1));
+
+    // A local SDK echo can already know the event id while omitting the txid.
+    timeline.events.add(Event(
+      room: room,
+      eventId: r'$owner-event',
+      senderId: '@me:test',
+      type: EventTypes.Message,
+      status: EventStatus.sending,
+      originServerTs: DateTime.utc(2026, 9, 12),
+      content: {'msgtype': MessageTypes.Text, 'body': 'route stable'},
+    ));
+    await secondController.refresh();
+    expect(secondController.messages.where((m) => m.text == 'route stable'),
+        hasLength(1));
+
+    timeline.events
+      ..clear()
+      ..add(Event(
+        room: room,
+        eventId: r'$owner-event',
+        senderId: '@me:test',
+        type: EventTypes.Message,
+        status: EventStatus.synced,
+        originServerTs: DateTime.utc(2026, 9, 12),
+        content: {'msgtype': MessageTypes.Text, 'body': 'route stable'},
+      ));
+    await secondController.refresh();
+    final echoed = secondController.messages
+        .where((m) => m.text == 'route stable')
+        .toList();
+    expect(echoed, hasLength(1));
+    await Future<void>.delayed(Duration.zero);
+    // Repeated snapshots/acknowledgements must not feed a listener loop.
+    final beforeRepeatedSnapshot = updates;
+    await secondController.refresh();
+    expect(updates, beforeRepeatedSnapshot);
+    secondController.dispose();
+  });
+
   test(
       'timeline projects selected quote only from a string root encrypted payload',
       () async {

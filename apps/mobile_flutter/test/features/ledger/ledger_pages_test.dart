@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_gateway.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_pages.dart';
-import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 
 void main() {
   test(
@@ -99,10 +98,8 @@ void main() {
         'fee': '0.20',
       }));
     await tester.pumpAndSettle();
-    expect(find.text('已接受'), findsNWidgets(2));
-    // The approved detail hero repeats the authoritative actual amount above
-    // the itemized "实际收支" row.
-    expect(find.text('+12.00 点钻'), findsNWidgets(2));
+    expect(find.text('已收款'), findsOneWidget);
+    expect(find.text('12.00 点钻'), findsOneWidget);
     expect(find.text('10.00 点钻'), findsOneWidget);
     expect(find.text('0.20 点钻'), findsOneWidget);
     expect(find.text('2026-09-11 01:02:03'), findsOneWidget);
@@ -185,104 +182,126 @@ void main() {
       {..._row('large-id'), 'amount': '123456789012345678901234567890'}
     ]);
     await tester.pump();
+
+    final amountFinder = find.byKey(const Key('ledger-amount-large-id'));
+    final amount = tester.widget<Text>(amountFinder);
+    final paragraph = tester.renderObject<RenderParagraph>(amountFinder);
+    expect(amount.maxLines, isNull);
+    expect(amount.overflow, isNot(TextOverflow.ellipsis));
+    expect(paragraph.didExceedMaxLines, isFalse);
+    expect(tester.getSize(amountFinder).height, greaterThan(32));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('uses live account-scoped remarks for counterparty bill titles',
+  testWidgets('builds only the visible portion of a long ledger list',
       (tester) async {
-    final cache = ProfileRepository.forTesting(
-      accountKey: 'matrix:@viewer:test',
-      store: _ProfileStore(),
-    );
-    addTearDown(cache.dispose);
-    await cache.applyUpdatedContact(const ContactSummary(
-      userId: 'peer-id',
-      username: 'xiaobei',
-      matrixUserId: '@xiaobei:test',
-      nickname: '小贝',
-      remark: '旧备注',
-    ));
-    final gateway = _Gateway();
-    await tester.pumpWidget(CupertinoApp(
-      home: LedgerListPage(gateway: gateway, identityCache: cache),
-    ));
-    gateway.completeList(items: [
-      {
-        ..._row('peer-title'),
-        'kind': 'transfer',
-        'counterparty_id': 'peer-id',
-      }
-    ]);
-    await tester.pump();
-    expect(find.text('转账-旧备注'), findsOneWidget);
-
-    await cache.applyUpdatedContact(const ContactSummary(
-      userId: 'peer-id',
-      username: 'xiaobei',
-      matrixUserId: '@xiaobei:test',
-      nickname: '小贝',
-      remark: '新备注',
-    ));
-    await tester.pump();
-    expect(find.text('转账-新备注'), findsOneWidget);
-  });
-
-  testWidgets('uses API counterparty nickname then username when no contact is cached',
-      (tester) async {
-    final gateway = _Gateway();
-    await tester.pumpWidget(_app(gateway));
-    gateway.completeList(items: [
-      {..._row('api-peer'), 'kind': 'transfer', 'counterparty_id': 'not-friend', 'counterparty_nickname': '  远方朋友  ', 'counterparty_username': 'remote-id'},
-      {..._row('username-peer'), 'kind': 'transfer', 'counterparty_id': 'blank-name', 'counterparty_nickname': ' ', 'counterparty_username': '  remote-id  '},
-    ]);
-    await tester.pump();
-    expect(find.text('转账-远方朋友'), findsOneWidget);
-    expect(find.text('转账-remote-id'), findsOneWidget);
-  });
-
-  testWidgets('keeps transfer counterparty and signed amount right edge at large text', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(393, 852));
+    await tester.binding.setSurfaceSize(const Size(390, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final gateway = _Gateway();
-    await tester.pumpWidget(CupertinoApp(home: MediaQuery(
-      data: const MediaQueryData(textScaler: TextScaler.linear(2)),
-      child: LedgerListPage(gateway: gateway),
-    )));
+    await tester.pumpWidget(_app(gateway));
+    gateway.completeList(
+        items: List.generate(
+            180,
+            (index) => {
+                  ..._row('long-$index'),
+                  'created_at': '2026-09-12T01:02:03Z',
+                }));
+    await tester.pump();
+
+    expect(find.byKey(const Key('ledger-row-long-0')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-12')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-row-long-179')), findsNothing);
+    expect(
+        find
+            .byWidgetPredicate((widget) =>
+                widget is CupertinoButton &&
+                widget.key is ValueKey<String> &&
+                (widget.key! as ValueKey<String>)
+                    .value
+                    .startsWith('ledger-row-'))
+            .evaluate()
+            .length,
+        lessThan(20));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('groups DateTime records by their local day shown by time',
+      (tester) async {
+    final gateway = _Gateway();
+    final instant = DateTime.utc(2026, 9, 30, 23, 30, 45);
+    final local = instant.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final day = '${local.year}-${two(local.month)}-${two(local.day)}';
+    await tester.pumpWidget(_app(gateway));
     gateway.completeList(items: [
-      {..._row('short'), 'kind': 'transfer', 'amount': '12', 'counterparty_nickname': '甲'},
-      {..._row('long'), 'kind': 'transfer', 'amount': '12345678901234567890', 'counterparty_username': 'long-account'},
+      {..._row('local-time'), 'created_at': instant},
     ]);
     await tester.pump();
-    expect(find.text('转账-甲'), findsOneWidget);
-    final shortBox = tester.getRect(find.byKey(const Key('ledger-row-amount-short')));
-    final longBox = tester.getRect(find.byKey(const Key('ledger-row-amount-long')));
-    expect(shortBox.right, closeTo(longBox.right, 0.01));
-    expect(tester.takeException(), isNull);
+
+    expect(find.byKey(Key('ledger-day-$day')), findsOneWidget);
+    expect(find.text('${two(local.hour)}:${two(local.minute)} · local-time'),
+        findsOneWidget);
   });
 
   testWidgets(
-      'renders a non-transfer detail with its own title, status pill and counterparty account',
+      'groups continuous ledger rows by day with circular type icons, Chinese transfer status and exact amounts',
       (tester) async {
     final gateway = _Gateway();
+    await tester.binding.setSurfaceSize(const Size(390, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(CupertinoApp(
-      home: LedgerDetailPage(gateway: gateway, transactionId: 'other-detail'),
+      theme: const CupertinoThemeData(brightness: Brightness.dark),
+      home: MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1.4)),
+        child: LedgerListPage(gateway: gateway),
+      ),
     ));
-    gateway.completeDetail({
-      ..._row('other-detail'),
-      'kind': 'other',
-      'reason_code': 'INTERNAL_RECONCILIATION',
-      'status': null,
-      'note': null,
-      'counterparty_id': 'bob-id',
-      'counterparty_nickname': 'Bob',
-      'counterparty_username': 'bob-account',
-    });
+    gateway.completeList(items: [
+      {
+        ..._row('september-transfer'),
+        'kind': 'transfer',
+        'amount': '-12.30',
+        'status': 'PENDING',
+        'note': '午饭分摊',
+        'created_at': '2026-09-12T01:02:03Z',
+      },
+      {
+        ..._row('september-redpacket'),
+        'amount': '8',
+        'created_at': '2026-09-01T01:02:03Z',
+      },
+      {
+        ..._row('august-withdrawal'),
+        'kind': 'withdrawal',
+        'amount': '-100',
+        'created_at': '2026-08-31T01:02:03Z',
+      },
+    ]);
     await tester.pump();
 
-    expect(find.byKey(const Key('ledger-detail-title')), findsOneWidget);
-    expect(find.text('转账-Bob'), findsNothing);
-    expect(find.byKey(const Key('ledger-detail-status-pill')), findsOneWidget);
-    expect(find.text('畅聊号：bob-account'), findsOneWidget);
+    expect(find.byKey(const Key('ledger-filter-bar')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-12')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-09-01')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-day-2026-08-31')), findsOneWidget);
+    expect(
+        find.byKey(const Key('ledger-row-september-transfer')), findsOneWidget);
+    expect(find.byKey(const Key('ledger-row-icon-september-transfer')),
+        findsOneWidget);
+    expect(find.byKey(const Key('ledger-amount-september-transfer')),
+        findsOneWidget);
+    expect(find.text('-12.30'), findsOneWidget);
+    expect(find.text('+8.00'), findsOneWidget);
+    expect(find.text('-100.00'), findsOneWidget);
+    expect(find.text('待收款'), findsOneWidget);
+    expect(find.text('PENDING'), findsNothing);
+    final icon = tester.widget<Container>(
+        find.byKey(const Key('ledger-row-icon-september-transfer')));
+    expect((icon.decoration! as BoxDecoration).shape, BoxShape.circle);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('ledger-row-september-transfer')));
+    await tester.pump();
+    expect(gateway.detailIds, ['september-transfer']);
   });
 
   testWidgets(
@@ -450,16 +469,4 @@ final class _Gateway implements LedgerGateway {
       _details.removeAt(0).completeError(StateError('expired'));
   void advanceEpoch() => sessionEpoch++;
   void emitInvalidation() => _invalidations.add(null);
-}
-
-final class _ProfileStore implements ProfileStore {
-  ProfileSnapshot? value;
-
-  @override
-  Future<ProfileSnapshot?> read(String accountKey) async => value;
-
-  @override
-  Future<void> write(String accountKey, ProfileSnapshot snapshot) async {
-    value = snapshot;
-  }
 }

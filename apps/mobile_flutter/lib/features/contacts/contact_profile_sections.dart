@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/user_avatar.dart';
@@ -9,9 +11,10 @@ import '../matrix/profile_repository.dart';
 
 final class FriendIdentityCard extends StatelessWidget {
   const FriendIdentityCard(
-      {super.key, required this.contact, this.identityCache});
+      {super.key, required this.contact, this.identityCache, this.now});
   final ProfileRepository? identityCache;
   final ContactDetails contact;
+  final DateTime Function()? now;
 
   @override
   Widget build(BuildContext context) => ProfileIdentityCard(
@@ -23,11 +26,9 @@ final class FriendIdentityCard extends StatelessWidget {
         remark: contact.remark,
         avatarUrl: contact.avatarUrl,
         identityCache: identityCache,
-        // 仅当数据源携带在线状态（/friends 系接口）才显示状态行；
-        // 会话/朋友圈/搜索入口先隐藏，待资料页自取数据落地后出现。
-        statusLabel: contact.lastSeenKnown
-            ? formatLastSeenLabel(contact.lastSeenAt)
-            : null,
+        lastSeenAt: contact.lastSeenAt,
+        lastSeenKnown: contact.lastSeenKnown,
+        now: now,
       );
 }
 
@@ -42,7 +43,10 @@ final class ProfileIdentityCard extends StatelessWidget {
       this.remark,
       this.avatarUrl,
       this.identityCache,
-      this.statusLabel});
+      this.statusLabel,
+      this.lastSeenAt,
+      this.lastSeenKnown = false,
+      this.now});
   final String userId;
   final String username;
   final String? matrixUserId;
@@ -51,6 +55,9 @@ final class ProfileIdentityCard extends StatelessWidget {
   final String? avatarUrl;
   final ProfileRepository? identityCache;
   final String? statusLabel;
+  final DateTime? lastSeenAt;
+  final bool lastSeenKnown;
+  final DateTime Function()? now;
 
   @override
   Widget build(BuildContext context) {
@@ -133,6 +140,9 @@ final class ProfileIdentityCard extends StatelessWidget {
                       height: 20 / 14,
                     ),
                   ),
+                ] else if (lastSeenKnown) ...[
+                  const SizedBox(height: 4),
+                  _LastSeenStatusLine(lastSeenAt: lastSeenAt, now: now),
                 ],
               ],
             ),
@@ -141,6 +151,88 @@ final class ProfileIdentityCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Keeps only the relative-presence row fresh while this profile is visible.
+/// The timer is paused outside the foreground and restarted on resume.
+final class _LastSeenStatusLine extends StatefulWidget {
+  const _LastSeenStatusLine({this.lastSeenAt, this.now});
+
+  final DateTime? lastSeenAt;
+  final DateTime Function()? now;
+
+  @override
+  State<_LastSeenStatusLine> createState() => _LastSeenStatusLineState();
+}
+
+final class _LastSeenStatusLineState extends State<_LastSeenStatusLine>
+    with WidgetsBindingObserver {
+  Timer? _timer;
+  var _isForeground = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _isForeground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    if (_isForeground) _scheduleNextTick();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LastSeenStatusLine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isForeground &&
+        (oldWidget.lastSeenAt != widget.lastSeenAt ||
+            oldWidget.now != widget.now)) {
+      _scheduleNextTick();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _isForeground = true;
+      _scheduleNextTick(rebuild: true);
+    } else {
+      _isForeground = false;
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  void _scheduleNextTick({bool rebuild = false}) {
+    _timer?.cancel();
+    if (rebuild && mounted) setState(() {});
+    if (widget.lastSeenAt == null) return;
+    final now = (widget.now ?? DateTime.now)();
+    final untilNextMinute = Duration(minutes: 1) -
+        Duration(seconds: now.second, milliseconds: now.millisecond);
+    _timer = Timer(untilNextMinute, () {
+      if (!mounted) return;
+      setState(() {});
+      _scheduleNextTick();
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Text(
+        formatLastSeenLabel(widget.lastSeenAt,
+            now: (widget.now ?? DateTime.now)()),
+        key: const Key('friend-last-seen-status'),
+        style: const TextStyle(
+          color: WeChatColors.textSecondary,
+          fontSize: WeChatTypography.subhead,
+          height: 20 / 14,
+        ),
+      );
 }
 
 final class FriendActionColumn extends StatelessWidget {

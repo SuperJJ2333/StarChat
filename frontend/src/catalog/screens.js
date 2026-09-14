@@ -97,6 +97,7 @@ register("chat", "room", [
 ]);
 register("chat", "composer", [["text", "输入区 / 文本"], ["attachment", "输入区 / 附件"], ["voice", "输入区 / 语音"], ["keyboard", "输入区 / 键盘"]]);
 register("chat", "selection", [["active", "聊天 / 文字选择与菜单"]]);
+register("chat", "forward", [["background", "聊天 / 转发后台发送"]]);
 register("chat", "voice", [
   ["recording", "语音 / 录制"], ["slide-cancel", "语音 / 上滑取消"], ["cancel-zone", "语音 / 取消区"],
   ["too-short", "语音 / 不足 1 秒"], ["limit", "语音 / 60 秒上限"], ["preview", "语音 / 本地试听"],
@@ -189,7 +190,7 @@ register("feedback", "network", [["offline", "网络 / 断网"], ["reconnecting"
 register("feedback", "motion", [["reduced", "动效 / 减少动态效果"]]);
 register("feedback", "type-scale", [["085", "字号缩放 / 0.85"], ["100", "字号缩放 / 1.0"], ["140", "字号缩放 / 1.4"]]);
 
-register("chat", "image-editor", [["ready", "图片编辑 / 五种工具"], ["complete-sheet", "图片编辑 / 完成菜单"], ["loading", "图片编辑 / 打开中"], ["error", "图片编辑 / 打开失败"]]);
+register("chat", "image-editor", [["ready", "图片编辑 / 六种工具"], ["complete-sheet", "图片编辑 / 完成菜单"], ["loading", "图片编辑 / 打开中"], ["error", "图片编辑 / 打开失败"]]);
 register("chat", "image-gallery", [["ready", "聊天图片 / 左右浏览"]]);
 register("moments", "detail", [["own-comment", "朋友圈 / 自己评论短按与长按"]]);
 

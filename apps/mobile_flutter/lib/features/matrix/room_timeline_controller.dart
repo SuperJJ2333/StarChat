@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'room_history_date_capability.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import '../../core/notification/notification_feedback.dart';
@@ -212,6 +213,16 @@ abstract interface class RoomHistoryStatus {
   bool get canLoadHistory;
 }
 
+/// A context fragment may have newer remote pages even when its visible
+/// viewport is already at the latest loaded row.
+abstract interface class RoomFutureHistoryStatus {
+  bool get hasFutureHistory;
+  Future<void> loadFutureHistory();
+}
+
+/// Compatibility name for the single optional date/context capability.
+typedef RoomHistoryDateSource = RoomHistoryDateCapability;
+
 /// Optional SDK-backed viewport. Full history stays queryable without retaining
 /// presentation objects for every event. Legacy adapters remain valid.
 abstract interface class RoomWindowedTimelineSource {
@@ -242,6 +253,7 @@ final class RoomTimelineController extends ChangeNotifier {
     _sourceSnapshot = messages;
     _publishedNewestId = newestMessage?.id;
     _publishedHasLater = hasLaterWindow;
+    _publishedViewingHistory = isViewingHistoryContext;
     _updateReplyDependencies(messages);
     _reindex();
   }
@@ -255,6 +267,9 @@ final class RoomTimelineController extends ChangeNotifier {
   RoomWindowedTimelineSource? _windowSource;
   bool get hasEarlierWindow => _windowSource?.hasEarlierWindow ?? false;
   bool get hasLaterWindow => _windowSource?.hasLaterWindow ?? false;
+  bool get hasFutureHistory =>
+      adapter is RoomFutureHistoryStatus &&
+      (adapter as RoomFutureHistoryStatus).hasFutureHistory;
   int get totalMessages => _windowSource?.totalMessages ?? messages.length;
   Iterable<RoomMessageViewModel> get allMessages sync* {
     final seen = <String>{};
@@ -291,9 +306,21 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   Future<void> showLatest() async {
-    _windowSource?.selectLatest();
-    _echoRevision++;
+    _restoreLatest();
     await refresh();
+  }
+
+  void _restoreLatest() {
+    _timelineOperationGeneration++;
+    _activeHistoryRequest = null;
+    _historyLoadingOwner = null;
+    historyExhausted = false;
+    if (adapter is RoomHistoryDateCapability) {
+      (adapter as RoomHistoryDateCapability).selectLatest();
+    } else {
+      _windowSource?.selectLatest();
+    }
+    _echoRevision++;
   }
 
   Future<void> showEarlierWindow() async {
@@ -332,6 +359,7 @@ final class RoomTimelineController extends ChangeNotifier {
   late List<RoomMessageViewModel> _sourceSnapshot;
   int _echoRevision = 0;
   int _projectedEchoRevision = 0;
+  bool _publishedViewingHistory = false;
   final _localEchoes = <String, RoomMessageViewModel>{};
   final _eventTransactions = <String, String>{};
   final _senders = <String, Future<String> Function()>{};
@@ -441,8 +469,11 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 历史消息加载状态（上滑到顶自动加载的 UI 反馈）：
   /// [historyLoading] 为 true 时顶部显示加载图标；
   /// [historyExhausted] 为 true 表示已无更多历史（显示"没有更多了"）。
-  bool historyLoading = false;
+  Object? _activeHistoryRequest;
+  Object? _historyLoadingOwner;
+  bool get historyLoading => _historyLoadingOwner != null;
   bool historyExhausted = false;
+  int _timelineOperationGeneration = 0;
 
   int? _refreshFrame;
   Timer? _refreshDeadline;
@@ -497,14 +528,17 @@ final class RoomTimelineController extends ChangeNotifier {
         PerformanceMetrics.instance.enabled ? (Stopwatch()..start()) : null;
     final next = _snapshot();
     final newestId = newestMessage?.id;
+    final viewingHistory = isViewingHistoryContext;
     final repliesChanged = _updateReplyDependencies(next);
     if (repliesChanged ||
         !identical(next, messages) ||
         newestId != _publishedNewestId ||
-        hasLaterWindow != _publishedHasLater) {
+        hasLaterWindow != _publishedHasLater ||
+        viewingHistory != _publishedViewingHistory) {
       messages = next;
       _publishedNewestId = newestId;
       _publishedHasLater = hasLaterWindow;
+      _publishedViewingHistory = viewingHistory;
       _publish();
     }
     if (watch != null) {
@@ -560,24 +594,103 @@ final class RoomTimelineController extends ChangeNotifier {
   /// 上滑加载更早的历史消息：进行中/已耗尽时为幂等空操作；
   /// 加载后消息数不增长即判定历史已取尽。
   Future<void> loadHistory() async {
-    if (_disposed || historyLoading || historyExhausted) return;
-    historyLoading = true;
+    if (_disposed || _activeHistoryRequest != null || historyExhausted) return;
+    final generation = _timelineOperationGeneration;
+    final owner = Object();
+    _activeHistoryRequest = owner;
+    _historyLoadingOwner = owner;
     _publish();
     try {
       final before = messages.length;
       await adapter.loadHistory();
-      if (_disposed) return;
+      if (_disposed ||
+          !identical(_activeHistoryRequest, owner) ||
+          generation != _timelineOperationGeneration) {
+        return;
+      }
       messages = _snapshot();
       historyExhausted = adapter is RoomHistoryStatus
           ? !(adapter as RoomHistoryStatus).canLoadHistory
           : messages.length <= before;
     } finally {
-      historyLoading = false;
-      if (!_disposed) _publish();
+      if (identical(_activeHistoryRequest, owner)) {
+        _activeHistoryRequest = null;
+        if (identical(_historyLoadingOwner, owner)) {
+          _historyLoadingOwner = null;
+        }
+        if (!_disposed) _publish();
+      }
+    }
+  }
+
+  /// Loads newer remote pages for an anchored context. This is deliberately
+  /// distinct from [showLaterWindow], which only shifts already loaded rows.
+  Future<void> loadFutureHistory() async {
+    if (_disposed || adapter is! RoomFutureHistoryStatus) return;
+    final source = adapter as RoomFutureHistoryStatus;
+    if (_activeHistoryRequest != null || !source.hasFutureHistory) return;
+    final generation = _timelineOperationGeneration;
+    final owner = Object();
+    _activeHistoryRequest = owner;
+    try {
+      await source.loadFutureHistory();
+      if (_disposed ||
+          !identical(_activeHistoryRequest, owner) ||
+          generation != _timelineOperationGeneration) {
+        return;
+      }
+      historyExhausted = false;
+      await refresh();
+    } finally {
+      if (identical(_activeHistoryRequest, owner)) {
+        _activeHistoryRequest = null;
+      }
     }
   }
 
   Future<void> markRead() => adapter.markRead();
+
+  Iterable<RoomHistoryDayMetadata> get loadedDayMetadata =>
+      adapter is RoomHistoryDateCapability
+          ? (adapter as RoomHistoryDateCapability).loadedDayMetadata
+          : const [];
+
+  bool get isViewingHistoryContext =>
+      adapter is RoomHistoryDateCapability &&
+      (adapter as RoomHistoryDateCapability).isViewingHistoryContext;
+
+  Future<RoomHistoryDayLocation?> locateDay(DateTime localDay) async {
+    if (_disposed || adapter is! RoomHistoryDateCapability) return null;
+    final generation = ++_timelineOperationGeneration;
+    final wasLoading = historyLoading;
+    _activeHistoryRequest = null;
+    _historyLoadingOwner = null;
+    if (wasLoading) _publish();
+    final location =
+        await (adapter as RoomHistoryDateCapability).locateDay(localDay);
+    if (_disposed ||
+        generation != _timelineOperationGeneration ||
+        location == null) {
+      return null;
+    }
+    historyExhausted = false;
+    await refresh();
+    return location;
+  }
+
+  void cancelPendingDateLookup() {
+    if (_disposed) return;
+    _timelineOperationGeneration++;
+    final wasLoading = historyLoading;
+    _activeHistoryRequest = null;
+    _historyLoadingOwner = null;
+    if (adapter is RoomHistoryDateCapability) {
+      (adapter as RoomHistoryDateCapability).cancelPendingDateLookup();
+    }
+    if (wasLoading) _publish();
+  }
+
+  Future<void> selectLatest() => showLatest();
 
   Future<Uint8List> loadAttachment(String eventId) =>
       adapter.loadAttachment(eventId);
@@ -608,12 +721,9 @@ final class RoomTimelineController extends ChangeNotifier {
     Duration voiceDuration = const Duration(seconds: 1),
   }) async {
     if (_disposed) return;
-    if (_windowSource != null) {
-      _windowSource!.selectLatest();
-      _echoRevision++;
-      messages = _snapshot();
-      _reindex();
-    }
+    _restoreLatest();
+    messages = _snapshot();
+    _reindex();
     final tx = 'local-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
     final permitted = canSendNow?.call() ?? true;
     final local = RoomMessageViewModel(
