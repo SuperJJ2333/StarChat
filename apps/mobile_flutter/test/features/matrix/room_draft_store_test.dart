@@ -77,6 +77,28 @@ void main() {
     expect(draft.text, '原文');
     expect(draft.tokens, isEmpty);
   });
+  test('emoji drafts round-trip and corrupt payloads fail safe', () async {
+    final disk = MemoryStore();
+    final store = RoomDraftStore(disk);
+    const key = 'room.draft.test.emoji';
+
+    // 混合 emoji（含非 BMP 代理对与 ZWJ 序列）完整往返。
+    const emojiText = '你好😀 家人👨‍👩‍👧 🇨🇳!';
+    store.save(key, const RoomDraft(emojiText));
+    await store.flush(key);
+    final restored = await store.read(key);
+    expect(restored?.text, emojiText);
+
+    // 损坏负载：用全新 key 绕过内存缓存模拟"重启后读到坏数据"——
+    // read 返回 null 且不抛，输入框为空可正常进入会话。
+    const corruptKey = 'room.draft.test.corrupt';
+    disk.data[corruptKey] = '{not-json';
+    final corrupted = await store.read(corruptKey);
+    expect(corrupted, isNull);
+    // 再次读取同样安全（坏数据不会让后续进入阻断）。
+    expect(await store.read(corruptKey), isNull);
+  });
+
   test('rooms accounts and servers have separate persistent drafts', () async {
     final disk = MemoryStore();
     final store = RoomDraftStore(disk);

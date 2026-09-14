@@ -325,12 +325,24 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<void> _restoreDraft() async {
-    final draft = await RoomDraftStore.shared.read(_draftKey);
-    if (!mounted || _draftRevision != 0 || draft == null) return;
-    mentionComposer.tokens
-      ..clear()
-      ..addAll(draft.tokens);
-    _setComposerText(draft.text, draft.text.length);
+    // 草稿恢复绝不阻断会话进入：损坏/异常时丢弃草稿（输入框为空），
+    // 页面照常打开。此前 emoji 草稿场景出现过进入失败的报告。
+    try {
+      final draft = await RoomDraftStore.shared.read(_draftKey);
+      if (!mounted || _draftRevision != 0 || draft == null) return;
+      mentionComposer.tokens
+        ..clear()
+        ..addAll(draft.tokens);
+      _setComposerText(draft.text, draft.text.length);
+    } catch (error) {
+      if (!mounted) return;
+      // 丢弃无法恢复的草稿，避免同一条坏数据反复阻断进入。
+      try {
+        await RoomDraftStore.shared.flush(_draftKey);
+      } catch (_) {}
+      RoomDraftStore.shared.save(_draftKey, const RoomDraft(''));
+      unawaited(RoomDraftStore.shared.flush(_draftKey));
+    }
   }
 
   @override

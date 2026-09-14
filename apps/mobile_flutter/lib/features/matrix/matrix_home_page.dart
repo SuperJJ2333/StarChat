@@ -851,7 +851,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       rethrow;
     } finally {
       removeOverlay();
-      await lease?.cancel();
+      // 取消租约的失败绝不能跳过 _openingRoom 复位——否则此后消息页
+      // 所有会话点击都被守卫静默吞掉（用户感知：点击无反应）。
+      try {
+        await lease?.cancel();
+      } catch (_) {}
       _readState.setRoomOpen(snapshot.id, open: false);
       final latest = _rooms.where((room) => room.id == snapshot.id);
       _readState.markCleared(snapshot.id,
