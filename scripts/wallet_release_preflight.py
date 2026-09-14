@@ -30,6 +30,8 @@ REQUIRED_COLUMNS = {
     'ledger_manual_reserve_evaluations': 'id idempotency_key payload_digest source_identity observation_id cut_digest result_version evidence created_at',
     'wallet_deposit_intents': 'id user_id binding_id binding_version status expires_at',
     'wallet_deposit_receipts': 'id txid log_index status pending_obligation ledger_transaction_id',
+    'wallet_manual_deposit_cases': 'id receipt_id user_id binding_id binding_version facts_digest actor_id idempotency_key payload_digest created_at',
+    'wallet_manual_deposit_decisions': 'id case_id actor_id decision idempotency_key payload_digest created_at',
     'wallet_manual_payout_orders': 'id status',
     'ledger_outgoing_restrictions': 'scope active epoch reason_code actor_id updated_at',
     'wallet_manual_control_states': 'id epoch owns_pause owns_safety safety_epoch updated_at',
