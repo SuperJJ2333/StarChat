@@ -26,7 +26,9 @@ def test_all_bubble_avatar_branches_allow_stranger_profile():
     source = ROOM.read_text(encoding="utf-8")
     row = source.split("Widget _messageRow", 1)[1].split("Future<void> _forwardMessages", 1)[0]
     assert "onAvatarTap: contact == null ? null" not in row
-    assert row.count("onAvatarTap: () => _openMessageSender(message)") == 4
+    # 动图表情 / 视频 / 闪照 / 图片 / 其余内容共 5 个气泡分支，
+    # 每个都必须允许陌生人资料入口；新增分支时同步此计数。
+    assert row.count("onAvatarTap: () => _openMessageSender(message)") == 5
 
 
 def test_direct_details_share_friend_and_stranger_profile_routing():
