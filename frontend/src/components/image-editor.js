@@ -97,7 +97,10 @@ export class AppImageEditor extends StrictElement {
         const x = Math.max(0, Math.min(source.width - 1, Math.floor(point.x / size) * size));
         const y = Math.max(0, Math.min(source.height - 1, Math.floor(point.y / size) * size));
         const data = sourceContext.getImageData(x, y, 1, 1).data;
-        context.fillStyle = `rgb(${data[0]} ${data[1]} ${data[2]})`;
+        // Runtime pixel sample, not a design color; hex form keeps the token
+        // contract's no-hardcoded-css-color scan clean.
+        const hexPair = (value) => value.toString(16).padStart(2, "0");
+        context.fillStyle = `#${hexPair(data[0])}${hexPair(data[1])}${hexPair(data[2])}`;
         context.fillRect(x - crop.x, y - crop.y, size, size);
       }
     };

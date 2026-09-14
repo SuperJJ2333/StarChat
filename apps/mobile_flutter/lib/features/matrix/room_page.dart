@@ -1,4 +1,5 @@
 import 'timeline_scroll_anchor.dart';
+import 'nudge_rate_limiter.dart';
 // 会话聊天页（RoomPage）：私聊与群聊共用的消息时间线与交互。
 // 自 matrix_home_page.dart 拆分（巨石文件治理）。
 import 'dart:async';
@@ -33,6 +34,7 @@ import '../../ui/chat/message_bubble_menu.dart';
 import '../../ui/chat/message_menu_placement.dart';
 import '../../ui/chat/emoji_text_controller.dart';
 import '../../ui/chat/message_highlight_pulse.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/chat/message_text_selection.dart';
 import '../../ui/chat/quote_return_banner.dart';
 import '../../features/emoji/emoji_shortcode.dart';
@@ -497,6 +499,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   String? errorMessage;
   String? mediaMessage;
   Timer? mediaMessageTimer;
+  OverlayEntry? _nudgeToast;
+  Timer? _nudgeToastTimer;
   bool mediaMessageVisible = false;
 
   /// 「拍摄」自动发送时的暂存缩略图（200px），随发送横幅一并展示。
@@ -947,43 +951,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
-  /// 拍一拍限流（规格）：当前用户在本房间 60 秒内最多触发 3 次；
-  /// 超过后对本房间任何用户均不可再拍，直到最早一次滑出 60 秒窗口。
-  /// 按房间共享（重进会话不重置配额）。
-  static const _nudgeWindow = Duration(seconds: 60);
-  static const _nudgeMaxPerWindow = 3;
-  static final Map<String, List<DateTime>> _nudgeTimestampsByRoom =
-      <String, List<DateTime>>{};
-
-  bool get _nudgeRateLimited {
-    final now = DateTime.now();
-    final timestamps = _nudgeTimestampsByRoom.putIfAbsent(
-        roomInfo.id, () => <DateTime>[]);
-    timestamps.removeWhere((at) => now.difference(at) >= _nudgeWindow);
-    return timestamps.length >= _nudgeMaxPerWindow;
-  }
-
   Future<void> _sendNudge(
     RoomMessageViewModel message,
     String targetDisplayName,
   ) async {
     final sender = ownProfile;
     final senderId = roomInfo.currentUserId;
+    final sessionEpoch = widget.api.sessionEpoch;
     if (sender == null || senderId == null) return;
-    if (_nudgeRateLimited) {
-      if (mounted) {
-        setState(() => mediaMessage = '拍一拍太频繁，请稍后再试');
-      }
+    final reservation = NudgeRateLimiter.shared
+        .reserve(senderId: senderId, roomId: roomInfo.id);
+    if (reservation == null) {
+      _showNudgeToast('拍一拍太频繁，请稍后再试');
       return;
     }
     try {
-      _nudgeTimestampsByRoom
-          .putIfAbsent(roomInfo.id, () => <DateTime>[])
-          .add(DateTime.now());
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
       // already-open conversations as well.
       final latestProfile = await widget.api.loadProfile();
+      if (!mounted ||
+          widget.roomLease.canceled ||
+          widget.api.sessionEpoch != sessionEpoch ||
+          roomInfo.currentUserId != senderId) {
+        NudgeRateLimiter.shared.release(reservation);
+        return;
+      }
       if (mounted) {
         setState(() {
           ownProfile = latestProfile;
@@ -1003,10 +996,37 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
-      // 发送失败不计入限流窗口（退回本次时间戳）。
-      _nudgeTimestampsByRoom[roomInfo.id]?.removeLast();
-      if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
+      NudgeRateLimiter.shared.release(reservation);
+      _showNudgeToast('拍一拍发送失败，请重试');
     }
+  }
+
+  void _showNudgeToast(String message) {
+    if (!mounted) return;
+    _nudgeToastTimer?.cancel();
+    _nudgeToast?.remove();
+    final overlay = Overlay.of(context, rootOverlay: true);
+    _nudgeToast = OverlayEntry(
+      builder: (_) => Positioned(
+        left: 24,
+        right: 24,
+        bottom: 96,
+        child: IgnorePointer(
+            child: Center(
+                child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: WeChatToast(
+              key: const Key('room-nudge-toast'),
+              message: message,
+              semanticType: WeChatToastSemanticType.error),
+        ))),
+      ),
+    );
+    overlay.insert(_nudgeToast!);
+    _nudgeToastTimer = Timer(const Duration(seconds: 3), () {
+      _nudgeToast?.remove();
+      _nudgeToast = null;
+    });
   }
 
   Future<void> _showReminderPicker(RoomMessageViewModel message) async {
@@ -3714,6 +3734,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .catchError((Object _) {}));
     _financeCardStore.dispose();
     _identityCache.removeListener(_identityChanged);
+    _nudgeToastTimer?.cancel();
+    _nudgeToast?.remove();
     _supportTimer?.cancel();
     _supportIdentities.dispose();
     final playback = _voicePlayback;
@@ -4310,7 +4332,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     opacity: mediaMessageVisible ? 1 : 0,
                     duration: const Duration(milliseconds: 500),
                     child: Container(
-                      key: const Key('room-nudge-toast'),
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),

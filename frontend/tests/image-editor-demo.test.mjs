@@ -33,6 +33,11 @@ class Node {
 
 globalThis.HTMLElement = Node;
 globalThis.Node = Node;
+// The editor reads its palette from CSS custom properties; tests supply
+// deterministic values instead of a styling engine.
+if (!globalThis.getComputedStyle) {
+  globalThis.getComputedStyle = () => ({ getPropertyValue: () => "#888888" });
+}
 globalThis.document = {
   createElement: (tag) => new Node(tag),
   createElementNS: (_namespace, tag) => new Node(tag),

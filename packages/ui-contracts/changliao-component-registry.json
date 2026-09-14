@@ -135,18 +135,6 @@
       "comments": "Author can delete friend comments on own moments; server authorization required.",
       "video": "Group original <=20971520 bytes; check before preparation; background hash/encryption and independent upload."
     },
-    "2026-09-12-forward-background-jobs": {
-      "flutter": "apps/mobile_flutter/lib/ui/chat/chat_forward_picker_page.dart; apps/mobile_flutter/lib/features/matrix/room_page.dart",
-      "html": "frontend/src/screens/messaging.js",
-      "components": [
-        "app-message-bubble",
-        "app-attachment-tile",
-        "app-composer"
-      ],
-      "interaction": "Visible gallery-video and recording message actions open the searchable chat picker. A final confirmation immediately dismisses both picker and confirmation, creates one stable local job per target, and shows the destination conversation's pending bubble. Completion becomes sent only after the timeline echo; a failed item retries only its own stable job while sent targets do not resend.",
-      "media": "Gallery video and recording share the same in-conversation pending presentation; no page-blocking preparation indicator is shown.",
-      "demo": "The HTML screen uses controlled local fixtures only and makes no production upload or send request."
-    },
     "2026-09-10-admin-readability": {
       "scope": "administration-only",
       "html": [
@@ -545,6 +533,18 @@
       ]
     },
     {
+      "id": "group-member-picker",
+      "flutter": {
+        "name": "GroupMemberPicker",
+        "file": "apps/mobile_flutter/lib/features/matrix/group_member_picker.dart",
+        "props": ["title", "members", "selectedMatrixUserId", "avatarMedia", "itemKeyPrefix", "onSelected"],
+        "variants": {"entry": ["group-transfer", "exclusive-red-packet"]},
+        "states": ["ready", "loading", "empty", "error", "selected"]
+      },
+      "html": {"tag": "app-group-member-picker"},
+      "tokens": ["brandPrimary", "textSecondary", "control", "sm", "md", "control"]
+    },
+    {
       "id": "contact-tag-management",
       "flutter": {
         "name": "ContactTagsPage",
@@ -795,10 +795,21 @@
       },
       "tokens": [
         "surface",
-        "WeChatColors.supportIdentityYellow = --color-support-identity",
         "spacing",
         "radius"
       ]
+    },
+    {
+      "id": "shared-official-name",
+      "flutter": {
+        "name": "WeChatOfficialName",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_official_name.dart",
+        "props": ["name", "supportIdentities", "userId", "matrixUserId"],
+        "variants": {"context": ["contact", "conversation", "title"]},
+        "states": ["verified", "unverified", "expired", "failure"]
+      },
+      "html": {"tag": "app-official-name"},
+      "tokens": ["WeChatColors.supportIdentityYellow = --color-support-identity", "WeChatTypography.caption = --type-caption-size"]
     },
     {
       "id": "moment-personal-cover",
@@ -952,7 +963,6 @@
           "text",
           "crop",
           "mosaic",
-          "eraser",
           "undo",
           "redo",
           "complete-sheet",
@@ -964,14 +974,10 @@
       "html": {
         "tag": "app-image-editor"
       },
-        "tokens": [
-          "brandPrimary",
-          "textPrimary",
-          "textSecondary",
-          "controlHeight",
-          "display",
-          "sm",
-          "xl"
+      "tokens": [
+        "brandPrimary",
+        "textPrimary",
+        "textSecondary"
       ]
     },
     {
@@ -1325,7 +1331,7 @@
     }
   },
   "screens": {
-    "expectedCount": 364
+    "expectedCount": 369
   },
   "adminCompletion20260910": {
     "html": [
@@ -1365,7 +1371,7 @@
       "moments-detail-own-comment"
     ],
     "html": "frontend/src/components/image-editor.js",
-    "interaction": "六工具底部（画笔、表情、文字、裁剪、马赛克、橡皮擦）、撤销重做右上、完成右下；表情以居中 48px 网格展开并在选择后收起；橡皮擦只清除编辑覆盖层、显示裁剪后的原图。生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
+    "interaction": "五工具底部、撤销重做右上、完成右下；生成编辑图片后转发/保存/收藏；房间图片左右分页。自己的评论短按无操作，长按单个复制删除菜单。",
     "tokens": "Reuse existing color, spacing, typography, radius and touch-size tokens; landscape canvas colors are fixture artwork, not UI tokens",
     "verification": "Source review only; user explicitly requested no self testing"
   },
@@ -1422,11 +1428,18 @@
     "demoBoundary": "Fixture-only, no network financial writes, PIN 123456 only, completion never represents submitted payment.",
     "verification": "Static source review only; user no-self-test authorization retained. Figma retired; HTML demo only."
   },
+  "financeSixRemediation20260913": {
+    "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js", "frontend/src/styles/components.css"],
+    "demo": ["caibi-ledger-all", "caibi-transaction-detail", "caibi-group-member-picker-ready", "caibi-group-member-picker-loading", "caibi-group-member-picker-empty", "caibi-group-member-picker-error", "feedback-toast-nudge-rate-limited"],
+    "ledger": "Fixture ledger keeps signed amounts right-aligned, exposes status and name/畅聊号 fallback, and opens the approved hero detail with ID copy and all-bills navigation.",
+    "memberPicker": "Shared group-transfer/exclusive-red-packet demo only lists joined-member fixtures; search, empty, retry and selection are interactive. MXC/HTTP rendering remains native Matrix avatar behavior.",
+    "nudge": "Fixture-only WeChatToast demonstrates the fourth nudge blocked after three sends per actor and room within 60 seconds; no financial write is invoked."
+  },
   "financeChatB4b20260911": {
     "html": ["frontend/src/screens/finance.js", "frontend/src/components/finance.js"],
     "demo": ["redpacket-detail-viewer-claimed", "redpacket-detail-claiming", "redpacket-detail-unknown-result", "redpacket-detail-group-random-completed", "redpacket-detail-group-random-expired", "redpacket-create-group-random", "caibi-transfer-receiver-accepted", "caibi-ledger-all", "caibi-ledger-filtered", "caibi-ledger-loading", "caibi-ledger-empty", "caibi-ledger-error", "caibi-ledger-paged", "caibi-transaction-detail"],
     "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
-    "ledger": "Fixture-only HTML interaction keeps server-side-filter-shaped type, date and keyword controls; independent search, compact filters, month dividers and typed continuous rows do not create a month aggregate. Amount strings and immutable example transaction IDs are never Number-coerced.",
+    "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
     "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
   }
 }
