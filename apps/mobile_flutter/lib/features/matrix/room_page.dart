@@ -13,6 +13,7 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/support_identity_repository.dart';
 import '../../core/performance_metrics.dart';
 import '../../core/chat_payment_intent.dart';
 import 'chat_payment_flow.dart';
@@ -479,6 +480,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ProfileData? ownProfile;
   late final ProfileRepository _identityCache =
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
+  late SupportIdentityRepository _supportIdentities;
+  Timer? _supportTimer;
   late final FinanceCardStore _financeCardStore =
       FinanceCardStore(BusinessFinanceCardGateway(widget.api));
   ContactDetails? peer;
@@ -514,6 +517,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     callAudioActivity.addListener(_handleCallAudioActivity);
     widget.roomLease.bindOwnerDrain(_drainMatrixOperations);
     roomInfo = widget.roomLease.roomInfo;
+    _supportIdentities = SupportIdentityRepository(widget.api);
     peer = widget.initialContact;
     joinedMemberCount = _joinedMembers.length;
     ownProfile = _identityCache.profile;
@@ -527,11 +531,30 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     // 未读状态机（BUG 5）：本房间进入"查看中"，收到新消息不计未读。
     ConversationReadState.shared().setRoomOpen(roomInfo.id, open: true);
     unawaited(_identityCache.preload().catchError((_) {}));
+    final supportPeerId = roomInfo.directPeerId ?? peer?.matrixUserId;
+    if (!isGroup && supportPeerId != null) {
+      unawaited(_supportIdentities.warm([supportPeerId]));
+      _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        unawaited(_supportIdentities.warm([supportPeerId], force: true));
+      });
+    }
     unawaited(_trackMatrixOperation(_refreshJoinedMemberCount()));
     // 聊天工具：幂等注册「统计助手」并登记本会话到作用域栈
     ensureStatisticsToolRegistered();
     StatisticsRoomScope.enter(roomInfo.id);
     unawaited(_trackMatrixOperation(_load()));
+  }
+
+  @override
+  void didUpdateWidget(covariant RoomPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api)) {
+      _supportIdentities.dispose();
+      _supportIdentities = SupportIdentityRepository(widget.api);
+      if (!isGroup && roomInfo.directPeerId != null) {
+        unawaited(_supportIdentities.warm([roomInfo.directPeerId]));
+      }
+    }
   }
 
   /// WeChat opens the 「选择提醒的人」 panel when a group message ends with a
@@ -924,6 +947,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
   }
 
+  /// 拍一拍限流（规格）：当前用户在本房间 60 秒内最多触发 3 次；
+  /// 超过后对本房间任何用户均不可再拍，直到最早一次滑出 60 秒窗口。
+  /// 按房间共享（重进会话不重置配额）。
+  static const _nudgeWindow = Duration(seconds: 60);
+  static const _nudgeMaxPerWindow = 3;
+  static final Map<String, List<DateTime>> _nudgeTimestampsByRoom =
+      <String, List<DateTime>>{};
+
+  bool get _nudgeRateLimited {
+    final now = DateTime.now();
+    final timestamps = _nudgeTimestampsByRoom.putIfAbsent(
+        roomInfo.id, () => <DateTime>[]);
+    timestamps.removeWhere((at) => now.difference(at) >= _nudgeWindow);
+    return timestamps.length >= _nudgeMaxPerWindow;
+  }
+
   Future<void> _sendNudge(
     RoomMessageViewModel message,
     String targetDisplayName,
@@ -931,7 +970,16 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final sender = ownProfile;
     final senderId = roomInfo.currentUserId;
     if (sender == null || senderId == null) return;
+    if (_nudgeRateLimited) {
+      if (mounted) {
+        setState(() => mediaMessage = '拍一拍太频繁，请稍后再试');
+      }
+      return;
+    }
     try {
+      _nudgeTimestampsByRoom
+          .putIfAbsent(roomInfo.id, () => <DateTime>[])
+          .add(DateTime.now());
       // The profile service is authoritative for a sender's nudge suffix.
       // Refresh it at send time so a just-saved profile setting is used by
       // already-open conversations as well.
@@ -955,6 +1003,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             : (contactsByMatrixId[message.senderId]?.nudgeSuffix ?? ''),
       );
     } catch (_) {
+      // 发送失败不计入限流窗口（退回本次时间戳）。
+      _nudgeTimestampsByRoom[roomInfo.id]?.removeLast();
       if (mounted) setState(() => mediaMessage = '拍一拍发送失败，请重试');
     }
   }
@@ -3664,6 +3714,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .catchError((Object _) {}));
     _financeCardStore.dispose();
     _identityCache.removeListener(_identityChanged);
+    _supportTimer?.cancel();
+    _supportIdentities.dispose();
     final playback = _voicePlayback;
     if (playback != null) {
       unawaited(_trackMatrixOperation(
@@ -4221,7 +4273,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         middle: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: peer == null ? null : () => _openContact(peer!),
-          child: WeChatNavTitle(_navigationTitle),
+          child: WeChatNavTitle(
+            _navigationTitle,
+            supportIdentities: isGroup ? null : _supportIdentities,
+            matrixUserId:
+                isGroup ? null : (roomInfo.directPeerId ?? peer?.matrixUserId),
+          ),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -4253,6 +4310,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                     opacity: mediaMessageVisible ? 1 : 0,
                     duration: const Duration(milliseconds: 500),
                     child: Container(
+                      key: const Key('room-nudge-toast'),
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),

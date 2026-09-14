@@ -90,6 +90,9 @@ final class _NudgeTimeline extends Fake implements Timeline {
   final List<Event> events;
 
   @override
+  bool get isFragmentedTimeline => false;
+
+  @override
   bool get canRequestHistory => false;
 
   @override

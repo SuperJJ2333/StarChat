@@ -7,6 +7,7 @@ import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'ledger_controller.dart';
+import '../matrix/profile_repository.dart';
 import 'ledger_gateway.dart';
 
 const _kinds = <String?, String>{
@@ -99,8 +100,9 @@ String _transferStatus(Object? value) => switch (value) {
     };
 
 final class LedgerListPage extends StatefulWidget {
-  const LedgerListPage({super.key, required this.gateway});
+  const LedgerListPage({super.key, required this.gateway, this.identityCache});
   final LedgerGateway gateway;
+  final ProfileRepository? identityCache;
   @override
   State<LedgerListPage> createState() => _LedgerListPageState();
 }
@@ -456,9 +458,11 @@ final class LedgerDetailPage extends StatefulWidget {
       {super.key,
       required this.gateway,
       required this.transactionId,
+      this.identityCache,
       this.fromList = false});
   final LedgerGateway gateway;
   final String transactionId;
+  final ProfileRepository? identityCache;
   final bool fromList;
   @override
   State<LedgerDetailPage> createState() => _LedgerDetailPageState();

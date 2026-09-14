@@ -13,6 +13,7 @@ import '../ledger/ledger_business_gateway.dart';
 import '../ledger/ledger_gateway.dart';
 import '../ledger/ledger_pages.dart';
 import 'chat_transfer_detail_controller.dart';
+import '../matrix/profile_repository.dart';
 
 String chatTransferStatusLabel(String? status) => switch (status) {
       'ACCEPTED' => '对方已收款',
@@ -29,6 +30,7 @@ final class ChatTransferDetailSheet extends StatefulWidget {
     required this.viewerId,
     this.onSettled,
     this.gateway,
+    this.identityCache,
     this.ledgerGateway,
   }) : assert(api != null || gateway != null);
 
@@ -37,6 +39,7 @@ final class ChatTransferDetailSheet extends StatefulWidget {
   final String viewerId;
   final VoidCallback? onSettled;
   final ChatTransferDetailGateway? gateway;
+  final ProfileRepository? identityCache;
   final LedgerGateway? ledgerGateway;
 
   @override
@@ -394,6 +397,7 @@ final class _ChatTransferDetailSheetState
         builder: (_) => LedgerDetailPage(
               gateway: gateway,
               transactionId: billId,
+              identityCache: widget.identityCache,
             )));
   }
 
@@ -402,6 +406,7 @@ final class _ChatTransferDetailSheetState
     final gateway = _ledgerGateway;
     if (gateway == null) return;
     Navigator.of(context).push(CupertinoPageRoute<void>(
-        builder: (_) => LedgerListPage(gateway: gateway)));
+        builder: (_) => LedgerListPage(
+              gateway: gateway, identityCache: widget.identityCache)));
   }
 }
