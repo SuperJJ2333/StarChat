@@ -17,7 +17,8 @@ http.Response json(Object body) => http.Response(jsonEncode(body), 200,
 
 Future<BusinessApiClient> client(
     Future<http.Response> Function(http.Request) handler,
-    {Map<String, dynamic>? capabilities}) async {
+    {Map<String, dynamic>? capabilities,
+    Map<String, dynamic>? balance}) async {
   final session = SecureSessionStore(fixtures.MemoryStore());
   await session.saveSession(
       accessToken: 'e30.eyJzdWIiOiJhbGljZSJ9.test', refreshToken: 'refresh');
@@ -32,8 +33,11 @@ Future<BusinessApiClient> client(
                     'manual_payout_enabled': true,
                     'manual_payout_execution_enabled': true,
                     'conversion_enabled': true,
+                    'caibi_payout_enabled': true,
                   }))
-              : handler(request)));
+              : request.url.path.endsWith('/wallet/balances/me')
+                  ? Future.value(json(balance ?? {'caibi_available': '100.00'}))
+                  : handler(request)));
 }
 
 Future<void> tap(WidgetTester tester, Finder finder) async {
@@ -46,6 +50,15 @@ Future<void> tap(WidgetTester tester, Finder finder) async {
   await tester.tap(finder);
   await tester.pumpAndSettle();
 }
+
+Future<void> openBinding(WidgetTester tester) =>
+    tap(tester, find.byKey(const Key('manual-wallet-rebind')));
+
+Future<void> openDeposit(WidgetTester tester) =>
+    tap(tester, find.byKey(const Key('manual-deposit-open')));
+
+Future<void> openPayout(WidgetTester tester) =>
+    tap(tester, find.byKey(const Key('manual-payout-open')));
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -67,6 +80,7 @@ void main() {
     });
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
+    await openBinding(tester);
     expect(find.text('设置身份验证器'), findsNothing);
     await tester.scrollUntilVisible(
         find.byKey(const Key('manual-binding-address')), 200,
@@ -100,6 +114,7 @@ void main() {
     await tester.pumpWidget(
         CupertinoApp(home: ManualWalletPage(client: api, clock: () => now)));
     await tester.pumpAndSettle();
+    await openBinding(tester);
     await tester.enterText(
         find.byKey(const Key('manual-binding-address')), 'T${'2' * 33}');
     await tap(tester, find.byKey(const Key('manual-challenge')));
@@ -134,6 +149,7 @@ void main() {
     });
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
+    await openBinding(tester);
     await tester.enterText(
         find.byKey(const Key('manual-binding-address')), 'T${'2' * 33}');
     await tap(tester, find.byKey(const Key('manual-challenge')));
@@ -164,24 +180,29 @@ void main() {
   testWidgets(
       'quote displays locked destination and exact zero fee before confirmation',
       (tester) async {
-    final api = await client((request) async => json(
-        request.url.path.endsWith('/binding')
+    final api = await client(
+        (request) async => json(request.url.path.endsWith('/binding')
             ? fixtures.binding
-            : fixtures.quote));
+            : {
+                ...fixtures.quote,
+                'funding_asset': 'CAIBI',
+                'funding_amount': '10.00',
+              }));
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
-    await tap(tester, find.text('提现'));
+    await openPayout(tester);
     await tester.enterText(find.byKey(const Key('manual-payout-amount')), '10');
     await tap(tester, find.byKey(const Key('manual-quote-create')));
     expect(find.text('target'), findsOneWidget);
     expect(find.byKey(const Key('manual-target-copy')), findsOneWidget);
+    expect(find.text('扣除点钻：10.00'), findsOneWidget);
     expect(find.text('服务费 USDT：0.000000'), findsOneWidget);
-    expect(find.text('总冻结 USDT：10.000000'), findsOneWidget);
+    expect(find.text('总冻结 USDT：10.000000'), findsNothing);
     expect(find.byKey(const Key('wallet-withdraw-address')), findsNothing);
   });
 
   testWidgets(
-      'unknown payout restarts with original quote and key but fresh OTP',
+      'unknown USDT payout replays its original quote and idempotency key before new authorization',
       (tester) async {
     final posts = <http.Request>[];
     final api = await client((request) async {
@@ -199,16 +220,13 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await tap(tester, find.text('提现'));
-    await tester.enterText(
-        find.byKey(const Key('manual-payout-otp')), '654321');
     await tap(tester, find.byKey(const Key('manual-payout-confirm')));
     expect(posts, hasLength(1));
     expect(posts.single.headers['Idempotency-Key'], original['key']);
-    expect(jsonDecode(posts.single.body),
-        {'quote_id': 'original-quote', 'mfa_proof': '654321'});
+    expect(jsonDecode(posts.single.body), {'quote_id': 'original-quote'});
     final prefs = await SharedPreferences.getInstance();
-    expect(
-        prefs.getKeys().map(prefs.getString).join(), isNot(contains('654321')));
+    expect(prefs.getKeys().map(prefs.getString).join(),
+        isNot(contains('authorization')));
     expect(find.text('状态：requested'), findsOneWidget);
   });
 

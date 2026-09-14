@@ -1,7 +1,9 @@
 import 'package:flutter/cupertino.dart';
 
 import '../foundation/wechat_tokens.dart';
+import '../../core/support_identity_repository.dart';
 import 'user_avatar.dart';
+import 'wechat_official_name.dart';
 
 final class WeChatContactTile extends StatelessWidget {
   const WeChatContactTile({
@@ -11,12 +13,18 @@ final class WeChatContactTile extends StatelessWidget {
     this.avatarUrl,
     this.onTap,
     this.trailing,
+    this.supportIdentities,
+    this.userId,
+    this.matrixUserId,
   });
   final String nickname;
   final String fallbackSeed;
   final String? avatarUrl;
   final VoidCallback? onTap;
   final Widget? trailing;
+  final SupportIdentityRepository? supportIdentities;
+  final String? userId;
+  final String? matrixUserId;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -34,10 +42,15 @@ final class WeChatContactTile extends StatelessWidget {
             ),
             const SizedBox(width: WeChatSpacing.md),
             Expanded(
-              child: Text(nickname,
-                  style: TextStyle(
-                      color: WeChatColors.resolveTextPrimary(context),
-                      fontSize: WeChatTypography.callout)),
+              child: WeChatOfficialName(
+                name: nickname,
+                supportIdentities: supportIdentities,
+                userId: userId,
+                matrixUserId: matrixUserId,
+                nameStyle: TextStyle(
+                    color: WeChatColors.resolveTextPrimary(context),
+                    fontSize: WeChatTypography.callout),
+              ),
             ),
             if (trailing != null) trailing!,
             const SizedBox(width: WeChatSpacing.lg),

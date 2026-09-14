@@ -13,6 +13,7 @@ from app.integrations.tron.finality import TransactionEvidence, POLICY, SOURCE_I
 from app.integrations.tron.reader import USDT_CONTRACT
 from app.integrations.tron.message_signature import canonical_address
 from app.modules.identity.models import User, AccountStatus
+from app.core.errors import AppError
 from app.modules.ledger.reserve import lock_budget
 from app.modules.ledger.wallet_obligations import synchronize_wallet_liability, transfer_pending_to_credit, invalidate_wallet_reserve
 from app.modules.wallet.binding_models import WalletBinding, WalletBindingState
@@ -29,6 +30,7 @@ def utc(value):
 
 class DepositReceiptService:
     reserve_policy = 'full_backing'
+    deposit_auto_conversion_enabled = False
     def __init__(self, session_factory, *, finality_adapter, official_config,
                  activation_baseline_time, activation_baseline_height, clock, wallet_ledger=None):
         if (official_config is None or not isinstance(official_config.version, str)
@@ -62,7 +64,8 @@ class DepositReceiptService:
 
     def _match(self, session, row, *, reevaluate=False):
         if row.reason_code != 'UNMATCHED' and not (reevaluate and row.reason_code in {
-                'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE', 'MULTIPLE_MATCHING_LOGS'}):
+                'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE', 'AUTO_CONVERSION_RETRY_REQUIRED',
+                'MULTIPLE_MATCHING_LOGS'}):
             return None, row.reason_code
         if row.amount < 10:
             return None, 'BELOW_MINIMUM'
@@ -113,7 +116,8 @@ class DepositReceiptService:
                 raise ValueError('deposit receipt not found')
             quarantined = session.scalar(select(DepositReceiptAnomaly.id).where(
                 DepositReceiptAnomaly.receipt_id == row.id).limit(1)) is not None
-            if quarantined or row.status != 'REVIEW' or row.reason_code not in {'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE'}:
+            if quarantined or row.status != 'REVIEW' or row.reason_code not in {
+                    'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE', 'AUTO_CONVERSION_RETRY_REQUIRED'}:
                 return self._result(row, quarantined)
             txid = row.txid
         results = self._ingest(txid, actor_id=actor_id, retry_receipt_id=receipt_id)
@@ -167,7 +171,8 @@ class DepositReceiptService:
                         candidate, reason = self._match(session, row, reevaluate=True)
                         if candidate is not None:
                             matching_intents.append(candidate.id)
-                        if row.id == retry_receipt_id and row.reason_code in {'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE'}:
+                        if row.id == retry_receipt_id and row.reason_code in {
+                                'DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE', 'AUTO_CONVERSION_RETRY_REQUIRED'}:
                             row.reason_code = reason
                             rows.append(row)
                             candidates.append(candidate)
@@ -272,6 +277,10 @@ class DepositReceiptService:
                                 row.reason_code = 'TRON_DEPOSIT_CREDIT'
                                 row.intent_id, row.user_id, row.ledger_transaction_id = candidate.id, candidate.user_id, transaction.id
                                 candidate.status, candidate.closed_at = 'FULFILLED', now
+                                if self.deposit_auto_conversion_enabled:
+                                    from app.modules.wallet.deposit_conversion import convert_credited_receipt
+                                    convert_credited_receipt(session, self.factory, receipt_id=row.id,
+                                        actor_id=actor_id, enabled=True, reserve_policy=self.reserve_policy)
                                 session.flush()
                     except DecimalException:
                         # The public ledger may not support all Numeric(30,6)
@@ -281,9 +290,15 @@ class DepositReceiptService:
                         invalidate_wallet_reserve(session)
                     except ValueError as error:
                         if str(error) not in {'reserve evidence missing','reserve evidence stale','insufficient reserve coverage',
-                                              'reserve issuance blocked during unresolved payouts','pending obligation not reconciled'}:
+                                               'reserve issuance blocked during unresolved payouts','pending obligation not reconciled',
+                                               'wallet paused','wallet account restricted','deposit auto conversion disabled',
+                                               'wallet globally restricted','conversion output below 0.01'}:
                             raise
-                        row.reason_code = 'RESERVE_UNAVAILABLE'
+                        row.reason_code = 'AUTO_CONVERSION_RETRY_REQUIRED' if self.deposit_auto_conversion_enabled else 'RESERVE_UNAVAILABLE'
+                    except AppError as error:
+                        if error.code not in {'WALLET_ACCOUNT_UNAVAILABLE', 'WALLET_RECOVERY_HOLD'}:
+                            raise
+                        row.reason_code = 'AUTO_CONVERSION_RETRY_REQUIRED'
                 audit_write(session, actor_id, row.id, 'wallet.deposit_receipt_recorded', 'TRON_RECEIPT_' + row.status)
                 results.append(self._result(row))
             session.flush()

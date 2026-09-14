@@ -328,6 +328,9 @@
   font-size: var(--type-title-1-size);
   line-height: var(--type-title-1-line);
 }
+.c-official-name { display: inline-flex; min-width: 0; align-items: baseline; gap: var(--space-xs); }
+.c-official-name__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-official-name__badge { flex: 0 0 auto; color: var(--color-support-identity); font-size: var(--type-caption-size); line-height: var(--type-caption-line); }
 
 .c-identity-header__username,
 .c-identity-header__signature {

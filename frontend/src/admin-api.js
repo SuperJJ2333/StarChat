@@ -62,6 +62,13 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
   return {
     getLedgerEntries: async (filters={})=>{const query=new URLSearchParams();for(const [key,value] of Object.entries(filters))if(value!==undefined&&value!==null&&value!=='')query.set(key,String(value));return request(`/api/v1/admin/ledger-entries?${query}`,{cache:'no-store'});},
     getDepositRepairCandidates: async filters=>request(`/api/v1/admin/wallet/manual/deposit-repairs/candidates?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    getManualDepositCaseContext: async filters=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/context?${new URLSearchParams(filters)}`,{cache:'no-store'}),
+    createManualDepositCase: async (body,options)=>command('/api/v1/admin/wallet/manual/manual-deposit-cases',body,options),
+    getManualDepositCase: async caseId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}`,{cache:'no-store'}),
+    decideManualDepositCase: async (caseId,body,options)=>command(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/decision`,body,options),
+    previewManualDepositCase: async caseId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/preview`,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:'{}'}),
+    executeManualDepositCase: async (caseId,body,options)=>command(`/api/v1/admin/wallet/manual/manual-deposit-cases/${encodeURIComponent(caseId)}/execute`,body,options),
+    getManualDepositCaseOperation: async operationId=>request(`/api/v1/admin/wallet/manual/manual-deposit-cases/operations/${encodeURIComponent(operationId)}`,{cache:'no-store'}),
     previewWalletRepair: async (kind,body)=>request(`/api/v1/admin/wallet/manual/${kind}/preview`,{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify(body)}),
     executeWalletRepair: async (kind,body,options)=>command(`/api/v1/admin/wallet/manual/${kind}`,body,options),
     getWalletRepair: async (kind,id)=>request(`/api/v1/admin/wallet/manual/${kind}/${encodeURIComponent(id)}`,{cache:'no-store'}),
@@ -123,6 +130,7 @@ export function createAdminApi({ baseUrl = DEFAULT_BASE_URL, token = null, token
     },
     getChainTransaction: async (txid, logIndex) => request(`/api/v1/admin/wallet/chain/transactions/${encodeURIComponent(txid)}/${encodeURIComponent(logIndex)}`),
     getContext: async () => normalizeAdminContext(await request("/api/v1/admin/context")),
+    getSupportAgents: async ({query,limit=25,offset=0,dispatch_eligible}={}) => { const q=new URLSearchParams({limit:String(limit),offset:String(offset)}); if(query)q.set('query',query); if(dispatch_eligible!==undefined)q.set('dispatch_eligible',String(dispatch_eligible)); return request(`/api/v1/admin/support-agents?${q}`,{cache:'no-store'}); },
     login: async ({ username, password, device_key = "admin-browser", device_name = "ChatFlow Admin" }) => request("/api/v1/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, device_key, device_name }) }),
     getModule: async (module, options = {}) => {
       const accessToken = typeof options === 'string' ? options : token;

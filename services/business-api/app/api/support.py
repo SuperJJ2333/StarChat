@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
@@ -30,6 +31,9 @@ class PresenceRequest(StrictModel):
     active_tickets: int = Field(ge=0)
     skills: set[str]
 
+class IdentityLookupRequest(StrictModel):
+    user_ids: list[Annotated[str, Field(min_length=1, max_length=255)]] = Field(min_length=1, max_length=100)
+
 def create_support_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/support", tags=["support"])
     queue = SupportQueueService(session_factory)
@@ -44,6 +48,10 @@ def create_support_router(settings: Settings, session_factory) -> APIRouter:
     @router.get("/identities/{user_id}")
     def identity(user_id: str):
         return queue.get_identity(user_id)
+
+    @router.post("/identities/lookup")
+    def identity_lookup(body: IdentityLookupRequest, user_id: str = Depends(actor)):
+        return JSONResponse({"items": queue.lookup_identities(body.user_ids)}, headers={"Cache-Control": "no-store"})
 
     allowed_categories = {"发布不实信息", "涉嫌欺诈骗钱", "存在侵权行为", "骚扰行为", "其他问题"}
 

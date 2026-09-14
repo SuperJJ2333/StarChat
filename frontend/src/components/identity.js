@@ -51,7 +51,7 @@ export class AppIdentityHeader extends StrictElement {
     avatar.append(avatarComponent);
     const body = element("div", "c-identity-header__body");
     body.append(
-      element("h2", "c-identity-header__name", this.attr("name", "林晓")),
+      (() => { const name = element("h2", "c-identity-header__name"); name.append(officialName(this.attr("name", "林晓"), this.attr("official"))); return name; })(),
       element("p", "c-identity-header__username", `畅聊号：${this.attr("username", "linxiao")}`),
       element("p", "c-identity-header__signature", this.attr("signature", "保持好奇，也保持联系。"))
     );

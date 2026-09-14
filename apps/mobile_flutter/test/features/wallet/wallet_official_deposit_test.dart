@@ -11,9 +11,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
+import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
 import 'package:liuhetong_mobile/features/wallet/wallet_page.dart';
 
 import 'wallet_page_audit_test.dart' show MemoryStore;
+import 'manual_wallet_api_test.dart' as fixtures;
+import 'manual_wallet_flow_test.dart' as flow;
 
 // Synthetic address: deterministic bytes, no private key or real wallet.
 String syntheticAddress() {
@@ -38,6 +41,16 @@ http.Response jsonResponse(Object data, [int status = 200]) =>
         headers: {'content-type': 'application/json; charset=utf-8'});
 
 Map<String, dynamic> depositBody() => {
+      ...fixtures.intent,
+      'source_address': 'source',
+      'official_address': syntheticAddress(),
+      'expires_at': DateTime.now()
+          .toUtc()
+          .add(const Duration(hours: 1))
+          .toIso8601String(),
+    };
+
+Map<String, dynamic> officialAddressBody() => {
       'address': syntheticAddress(),
       'asset': 'USDT',
       'network': 'TRC20',
@@ -65,13 +78,13 @@ void main() {
       expect(request.method, 'GET');
       expect(request.url.path, '/api/v1/wallet/official-deposit-address');
       expect(request.headers['authorization'], startsWith('Bearer '));
-      return jsonResponse(depositBody());
+      return jsonResponse(officialAddressBody());
     });
     expect((await api.walletDepositAddress())['address'], syntheticAddress());
   });
 
   testWidgets(
-      'funds closed still shows official address notice raw QR and exact clipboard',
+      'open deposit intent shows a validated official QR and exact clipboard',
       (tester) async {
     String? copied;
     tester.binding.defaultBinaryMessenger
@@ -83,18 +96,22 @@ void main() {
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null));
-    final api = await client((request) async => jsonResponse(
-        request.url.path.endsWith('deposit-address') ? depositBody() : {}));
+    final api = await flow.client(
+        (request) async => flow.json(request.url.path.endsWith('/binding')
+            ? fixtures.binding
+            : request.method == 'POST'
+                ? depositBody()
+                : {}));
     await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('获取充值地址'));
-    await tester.pumpAndSettle();
+    await flow.openDeposit(tester);
+    await tester.enterText(
+        find.byKey(const Key('manual-deposit-amount')), '10');
+    await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));
     expect(find.text(syntheticAddress()), findsOneWidget);
-    expect(find.text(depositBody()['notice'] as String), findsOneWidget);
-    expect(find.text('已生成专属充值地址'), findsNothing);
     final actual = tester
         .widget<CustomPaint>(find.descendant(
-            of: find.byKey(const Key('wallet-deposit-qr')),
+            of: find.byKey(const Key('manual-deposit-qr')),
             matching: find.byWidgetPredicate((widget) =>
                 widget is CustomPaint && widget.painter is QrPainter)))
         .painter as QrPainter;
@@ -104,36 +121,42 @@ void main() {
       expect((await actual.toImageData(180))!.buffer.asUint8List(),
           (await expected.toImageData(180))!.buffer.asUint8List());
     });
-    await tester.ensureVisible(find.byKey(const Key('wallet-deposit-copy')));
-    await tester.tap(find.byKey(const Key('wallet-deposit-copy')));
+    await tester.ensureVisible(find.byKey(const Key('manual-official-copy')));
+    await tester.tap(find.byKey(const Key('manual-official-copy')));
     await tester.pumpAndSettle();
     expect(copied, syntheticAddress());
   });
 
   testWidgets(
-      'loading prevents duplicates and failed refresh clears previous address',
+      'failed intent refresh clears old official QR while retaining recovery',
       (tester) async {
     var calls = 0;
     final pending = Completer<http.Response>();
-    final api = await client((request) async {
-      if (!request.url.path.endsWith('deposit-address')) {
-        return jsonResponse({});
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
+      }
+      if (request.method == 'POST') {
+        return flow.json(depositBody());
       }
       calls++;
-      return calls == 1 ? jsonResponse(depositBody()) : pending.future;
+      return pending.future;
     });
     await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('获取充值地址'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('获取充值地址'));
+    await flow.openDeposit(tester);
+    await tester.enterText(
+        find.byKey(const Key('manual-deposit-amount')), '10');
+    await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    final original = await store.read('deposit');
+    await tester.tap(find.byKey(const Key('manual-refresh')));
     await tester.pump();
-    await tester.tap(find.byKey(const Key('wallet-deposit-load')));
+    await tester.tap(find.byKey(const Key('manual-refresh')));
     await tester.pump();
-    expect(calls, 2);
-    expect(find.byKey(const Key('wallet-deposit-loading')), findsOneWidget);
-    expect(find.byKey(const Key('wallet-deposit-address')), findsNothing);
-    expect(find.byKey(const Key('wallet-deposit-qr')), findsNothing);
+    expect(calls, 1);
+    expect(find.byKey(const Key('manual-deposit-qr')), findsNothing);
     pending.complete(jsonResponse({
       'error': {
         'code': 'OFFICIAL_ADDRESS_NOT_CONFIGURED',
@@ -141,8 +164,11 @@ void main() {
       }
     }, 503));
     await tester.pumpAndSettle();
-    expect(find.text('官方充值地址尚未配置，请联系管理员'), findsOneWidget);
-    expect(find.byKey(const Key('wallet-deposit-copy')), findsNothing);
+    expect(find.textContaining('官方充值地址尚未配置，请联系管理员'), findsOneWidget);
+    expect(find.byKey(const Key('manual-official-copy')), findsNothing);
+    final recovery = await store.read('deposit');
+    expect(recovery?['id'], 'intent');
+    expect(recovery?['key'], original?['key']);
   });
 
   for (final bad in [
@@ -153,17 +179,22 @@ void main() {
   ]) {
     testWidgets('invalid address rejected without QR: ${bad.length}',
         (tester) async {
-      final api = await client((request) async => jsonResponse(
-          request.url.path.endsWith('deposit-address')
-              ? {...depositBody(), 'address': bad}
-              : {}));
+      final api = await flow.client(
+          (request) async => flow.json(request.url.path.endsWith('/binding')
+              ? fixtures.binding
+              : request.method == 'POST'
+                  ? {...depositBody(), 'official_address': bad}
+                  : {}));
       await tester.pumpWidget(CupertinoApp(home: WalletPage(api: api)));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('获取充值地址'));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('wallet-deposit-address')), findsNothing);
-      expect(find.byKey(const Key('wallet-deposit-qr')), findsNothing);
+      await flow.openDeposit(tester);
+      await tester.enterText(
+          find.byKey(const Key('manual-deposit-amount')), '10');
+      await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));
+      expect(find.byKey(const Key('manual-official-copy')), findsNothing);
+      expect(find.byKey(const Key('manual-deposit-qr')), findsNothing);
       expect(find.text('充值地址数据无效，请联系管理员'), findsOneWidget);
+      if (bad.isNotEmpty) expect(find.text(bad), findsNothing);
     });
   }
 }

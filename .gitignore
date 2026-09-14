@@ -86,3 +86,6 @@ docs/verification/artifacts/2026-09-10/conversation-state-main/
 
 # Main 2082 local merge backups and signed APK evidence.
 docs/verification/artifacts/2026-09-10/main-2082/
+# Local-only heavy evidence payloads (12 GiB zips/APKs) kept out of git.
+docs/verification/archives/
+codegraph.json

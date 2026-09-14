@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     # U03：充值确认阈值（客户端展示与服务端判定同一来源）。
     wallet_confirmation_threshold: int = 20
     wallet_conversions_enabled: bool = False
+    wallet_deposit_auto_conversion_enabled: bool = False
     wallet_sandbox_store_path: str | None = None
     tron_observer_database_path: str | None = None
     wallet_binding_domain: str | None = None
@@ -111,6 +112,8 @@ class Settings(BaseSettings):
             raise ValueError('manual liquidity policy requires explicit manual TRON mode')
         if self.wallet_handover_preparation_mode and (independent or self.wallet_conversions_enabled):
             raise ValueError('handover preparation requires every money capability disabled')
+        if self.wallet_deposit_auto_conversion_enabled and not self.wallet_conversions_enabled:
+            raise ValueError('deposit auto conversion requires conversions enabled')
         if self.wallet_handover_preparation_mode and (self.wallet_real_mode != 'manual_tron' or self.wallet_real_funds_enabled):
             raise ValueError('handover preparation requires manual TRON with funds disabled')
         if self.wallet_real_mode == 'disabled':

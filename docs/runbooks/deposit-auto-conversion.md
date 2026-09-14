@@ -1,0 +1,11 @@
+# 充值自动兑换点钻运维说明
+
+依据 ADR-0070 和用户确认，新确认充值按1 USDT = 1 CAIBI（点钻）自动兑换；已有主动双向兑换接口保持可用。API与worker都必须配置 BUSINESS_WALLET_DEPOSIT_AUTO_CONVERSION_ENABLED=true，同时 BUSINESS_WALLET_CONVERSIONS_ENABLED=true。新增开关默认false。生产独立充值门禁wallet_deposits_enabled不依赖旧wallet_real_funds_enabled。
+
+正常充值、普通人工修复、窗口外人工补录均与兑换共用事务。修复结果保留原字段，新增可选conversion对象，包含receipt_id/original_ledger_transaction_id/conversion_id/wallet_ledger_transaction_id/caibi_ledger_transaction_id/source_amount/target_amount/remainder。原充值USDT账本不是点钻账本；新增兑换的CAIBI分录由既有点钻账单服务作为充值展示，无需新APP包或接口破坏性变更。
+
+USDT保留六位精度，兑换向下取两位，余数留USDT可用余额。临时暂停/限制/储备失败时不提交半笔资金，已确认链上收据保留REVIEW/AUTO_CONVERSION_RETRY_REQUIRED/pending；worker在扫描及储备覆盖合格后重试。不可直接改状态、余额或删旧账。人工归属不合格仍使用原审批流程。
+
+历史兑换工具仅绑定本任务已批准的两笔收据，先preview确认归属、金额、原账本与双余额摘要，再由配置的实际owner执行同一原子事务。每收据固定deposit-receipt:<receipt_id>幂等，公共用户接口拒绝该前缀。保留原收据及原信用账本，新增等额兑换两腿、审计和Outbox；重复执行只验证原结果。
+
+回退只恢复旧API/worker镜像及开关，不回滚数据库或撤销已执行资金记录。需要纠错时必须通过关联冲正流程。本任务候选与执行证据见独立任务记录2026-09-13-wallet-conversion-production.md；实时结果以生产复核为准。

@@ -72,7 +72,8 @@ class PayoutReconciliationService:
             lock_budget(session)
             fresh = self.deposits._authorize(session, actor_id, authorize)
             command = session.get(RepairCommand, operation_id)
-            if command is None or command.actor_id != actor_id or command.receipt_id is not None:
+            preview = session.get(RepairPreview, command.preview_id) if command is not None else None
+            if command is None or command.actor_id != actor_id or command.receipt_id is not None or preview is None or preview.kind != 'PAYOUT':
                 fail('REPAIR_OPERATION_NOT_FOUND', 404)
             row = session.get(ManualPayoutOrder, command.result['order_id'])
             fresh()
@@ -91,7 +92,8 @@ class PayoutReconciliationService:
             replay = session.scalar(select(RepairCommand).where(RepairCommand.actor_id == actor_id,
                 RepairCommand.idempotency_key == idempotency_key))
             if replay:
-                if replay.payload_digest != payload_digest or replay.receipt_id is not None:
+                replay_preview = session.get(RepairPreview, replay.preview_id)
+                if replay.payload_digest != payload_digest or replay.receipt_id is not None or replay_preview is None or replay_preview.kind != 'PAYOUT':
                     fail('IDEMPOTENCY_CONFLICT')
                 fresh()
                 return replay.result
@@ -108,7 +110,8 @@ class PayoutReconciliationService:
             replay = session.scalar(select(RepairCommand).where(RepairCommand.actor_id == actor_id,
                 RepairCommand.idempotency_key == idempotency_key))
             if replay:
-                if replay.payload_digest != payload_digest or replay.receipt_id is not None:
+                replay_preview = session.get(RepairPreview, replay.preview_id)
+                if replay.payload_digest != payload_digest or replay.receipt_id is not None or replay_preview is None or replay_preview.kind != 'PAYOUT':
                     fail('IDEMPOTENCY_CONFLICT')
                 return fresh
             if session.get(RepairCommand, operation_id):

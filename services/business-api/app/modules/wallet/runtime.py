@@ -67,6 +67,7 @@ def create_manual_wallet_runtime(settings, factory, rate_limiter):
             owner_admin_id=settings.wallet_manual_owner_admin_id, mfa_verifier=mfa, finality=finality, clock=clock)
         receipts.reserve_policy = settings.wallet_reserve_policy
         receipts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
+        receipts.deposit_auto_conversion_enabled = settings.wallet_deposit_auto_conversion_enabled
         payouts.reserve_policy = settings.wallet_reserve_policy
         payouts.wallet_ledger.reserve_policy = settings.wallet_reserve_policy
         payouts.conversions_enabled = settings.wallet_conversions_enabled

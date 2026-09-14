@@ -2,6 +2,8 @@
 /// No retries, generated idempotency keys, persistence, or payload logging here.
 library;
 
+import 'package:crypto/crypto.dart';
+
 import '../../core/business_api_client.dart';
 
 final _decimal = RegExp(r'^(0|[1-9][0-9]{0,23})\.[0-9]{6}$');
@@ -53,6 +55,38 @@ String _money(Map<String, dynamic> json, String key) {
 String _literal(Map<String, dynamic> json, String key, String expected) {
   final value = _string(json, key);
   if (value != expected) _invalid();
+  return value;
+}
+
+String _tronAddress(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  if (value is! String ||
+      value.length != 34 ||
+      !RegExp(r'^T[1-9A-HJ-NP-Za-km-z]{33}$').hasMatch(value)) {
+    throw const FormatException('充值地址数据无效，请联系管理员');
+  }
+  var decoded = BigInt.zero;
+  for (final codeUnit in value.codeUnits) {
+    final digit = alphabet.indexOf(String.fromCharCode(codeUnit));
+    if (digit < 0) throw const FormatException('充值地址数据无效，请联系管理员');
+    decoded = decoded * BigInt.from(58) + BigInt.from(digit);
+  }
+  final bytes = List<int>.filled(25, 0);
+  for (var index = bytes.length - 1; index >= 0; index--) {
+    bytes[index] = (decoded & BigInt.from(0xff)).toInt();
+    decoded >>= 8;
+  }
+  if (decoded != BigInt.zero || bytes.first != 0x41) {
+    throw const FormatException('充值地址数据无效，请联系管理员');
+  }
+  final checksum =
+      sha256.convert(sha256.convert(bytes.sublist(0, 21)).bytes).bytes;
+  for (var index = 0; index < 4; index++) {
+    if (bytes[21 + index] != checksum[index]) {
+      throw const FormatException('充值地址数据无效，请联系管理员');
+    }
+  }
   return value;
 }
 
@@ -401,7 +435,7 @@ final class ManualDepositIntent {
           _integer(json, 'binding_version', 1),
           _integer(json, 'binding_effective_from_block', 0),
           _string(json, 'source_address'),
-          _string(json, 'official_address'),
+          _tronAddress(json, 'official_address'),
           _string(json, 'official_config_version'),
           _literal(json, 'network', 'tron-mainnet'),
           ManualDepositRules.fromJson(_object(json, 'rules_snapshot')),

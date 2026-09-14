@@ -252,7 +252,8 @@ class DepositRepairService:
             lock_budget(session)
             fresh = self._authorize(session, actor_id, authorize)
             row = session.get(RepairCommand, operation_id)
-            if row is None or row.actor_id != actor_id or row.receipt_id is None:
+            preview = session.get(RepairPreview, row.preview_id) if row is not None else None
+            if row is None or row.actor_id != actor_id or row.receipt_id is None or preview is None or preview.kind != 'DEPOSIT':
                 fail('REPAIR_OPERATION_NOT_FOUND', 404)
             fresh()
             return row.result
@@ -270,7 +271,8 @@ class DepositRepairService:
             replay = session.scalar(select(RepairCommand).where(RepairCommand.actor_id == actor_id,
                 RepairCommand.idempotency_key == idempotency_key))
             if replay:
-                if replay.payload_digest != payload_digest or replay.receipt_id is None:
+                replay_preview = session.get(RepairPreview, replay.preview_id)
+                if replay.payload_digest != payload_digest or replay.receipt_id is None or replay_preview is None or replay_preview.kind != 'DEPOSIT':
                     fail('IDEMPOTENCY_CONFLICT')
                 fresh()
                 return replay.result
@@ -287,7 +289,8 @@ class DepositRepairService:
             replay = session.scalar(select(RepairCommand).where(RepairCommand.actor_id == actor_id,
                 RepairCommand.idempotency_key == idempotency_key))
             if replay:
-                if replay.payload_digest != payload_digest or replay.receipt_id is None:
+                replay_preview = session.get(RepairPreview, replay.preview_id)
+                if replay.payload_digest != payload_digest or replay.receipt_id is None or replay_preview is None or replay_preview.kind != 'DEPOSIT':
                     fail('IDEMPOTENCY_CONFLICT')
                 fresh()
                 return replay.result
@@ -322,11 +325,17 @@ class DepositRepairService:
                 scope='wallet.deposit.receipt', session=session)
             row.status, row.pending_obligation = 'CREDITED', False
             row.intent_id, row.user_id, row.ledger_transaction_id = intent.id, intent.user_id, transaction.id
+            conversion = None
+            if self.receipts.deposit_auto_conversion_enabled:
+                from app.modules.wallet.deposit_conversion import convert_credited_receipt
+                conversion = convert_credited_receipt(session, self.factory, receipt_id=row.id,
+                    actor_id=actor_id, enabled=True, reserve_policy=self.receipts.reserve_policy)
             # A still-open intent closes normally; an expired snapshot remains expired.
             if intent.status == 'OPEN':
                 intent.status, intent.closed_at = 'FULFILLED', now
             result = dict(operation_id=operation_id, case_id=preview.id, status='EXECUTED', receipt_id=row.id,
-                intent_id=intent.id, user_id=intent.user_id, amount=str(row.amount), ledger_transaction_id=transaction.id)
+                intent_id=intent.id, user_id=intent.user_id, amount=str(row.amount), ledger_transaction_id=transaction.id,
+                **({'conversion': conversion} if conversion else {}))
             session.add(RepairCommand(operation_id=operation_id, actor_id=actor_id, idempotency_key=idempotency_key,
                 payload_digest=payload_digest, preview_id=preview.id, receipt_id=row.id, intent_id=intent.id,
                 result=result, created_at=now))

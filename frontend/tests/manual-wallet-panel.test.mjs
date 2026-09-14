@@ -7,6 +7,11 @@ class Element {
   replaceChildren(...children) { this.children=children; }
   setAttribute(name,value) { this[name]=value; }
   addEventListener(name,fn) { this.handlers[name]=fn; }
+  remove() { this.removed=true; }
+  focus() {}
+  showModal() { this.open=true; }
+  close() { this.open=false; this.handlers.close?.(); }
+  getBoundingClientRect() { return {left:0,right:1,top:0,bottom:1}; }
   find(tag) { return [this,...this.children.flatMap(c=>c.find(tag))].filter(c=>c.tag===tag); }
 }
 const settle=()=>new Promise(r=>setImmediate(r));
@@ -85,14 +90,14 @@ test('simple incident form accepts one password and confirmation, explains histo
   manualWalletIncidentAction:async(id,kind,body)=>{calls.push(kind);incident={...incident,status:kind==='resolve'?'RESOLVED':'ACKNOWLEDGED',version:incident.version+1,...(kind==='review'?{condition_active:false,clearance_digest:digest}:{})};return incident;},
   manualWalletControlAction:async()=>assert.fail('incident action cannot resume money')},{storage:store});
  await settle();await panel.find('button').find(x=>x.textContent==='查看事故').handlers.click();
- const form=panel.find('form').find(x=>x.name==='incident-process');assert.ok(form);
- assert.equal(panel.find('form').filter(x=>x.name.startsWith('incident-')).length,1);
+ const form=document.body.find('form').find(x=>x.name==='incident-process');assert.ok(form);
+ assert.equal(document.body.find('form').filter(x=>x.name.startsWith('incident-')).length,1);
  assert.deepEqual(form.find('input').map(x=>x.name),['accept_incident','operation_password']);
  assert.equal(form.find('input')[0]['aria-label'],'我确认处理这起事故；完成后可前往“资金启停”恢复资金');
- assert.ok(panel.find('details').some(x=>x.find('summary').some(x=>x.textContent==='技术详情与时间线')));
- assert.ok(panel.find('dd').some(x=>x.textContent?.includes('17:08:55')));
+ assert.ok(document.body.find('details').some(x=>x.find('summary').some(x=>x.textContent==='技术详情与时间线')));
+ assert.ok(document.body.find('dd').some(x=>x.textContent?.includes('17:08:55')));
  assert.ok(panel.find('p').some(x=>x.textContent?.includes('链上数据正常')));
- assert.ok(panel.find('p').some(x=>x.textContent?.includes('当时链上数据未满足健康要求')));
+ assert.ok(document.body.find('p').some(x=>x.textContent?.includes('当时链上数据未满足健康要求')));
  form.find('input')[0].checked=true;form.find('input')[1].value='synthetic-password';
  await form.handlers.submit({preventDefault(){}});
  assert.deepEqual(calls,['ack','review','resolve']);assert.equal(form.find('input')[1].value,'');
@@ -192,7 +197,7 @@ const storage=()=>{const data=new Map();return {data,getItem:k=>data.get(k)??nul
 const digest='a'.repeat(64);
 const order={id:'order',status:'REQUESTED',amount:'100000000000000001.000001',digest,snapshot:{amount:'100000000000000001.000001',fee:'0.000000',hold:'100000000000000001.000001',receive:'100000000000000001.000001',target_address:'fixture-target',official_address:'fixture-source',network:'TRON',contract:'fixture-contract',owner_admin_id:'owner'},candidates:[]};
 function setup(extra={},options={}) {
-  globalThis.document={createElement:tag=>new Element(tag)};
+  globalThis.document={body:new Element('body'),createElement:tag=>new Element(tag)};
   const api={getManualPayouts:async()=>({items:[order]}),getManualPayout:async()=>order,getWalletMfaStatus:async()=>({configured:true,enabled:true}),getWalletIncidents:async()=>({items:[]}),getWalletMonitorStatus:async()=>({stale:false,external_delivery_configured:true}),...extra};
   return manualWalletPanel(api,{actor:{id:'owner'},storage:storage(),...options});
 }
@@ -407,11 +412,11 @@ test('incident review uses current version and returned clearance and preserves 
   calls.push({id,kind,body,options}); incident={...incident,version:incident.version+1,condition_active:false,clearance_digest:digest,status:kind==='resolve'?'RESOLVED':'ACKNOWLEDGED'}; return incident;
  }}); await settle(); await panel.find('button').find(n=>n.textContent==='查看事故').handlers.click();
  assert.equal(panel.find('form').some(n=>n.name==='incident-resolve'),false);
- const submit=async code=>{const form=panel.find('form').find(n=>n.name==='incident-process');form.find('input').find(n=>n.name==='accept_incident').checked=true;form.find('input').find(n=>n.name==='mfa_proof').value=code;await form.handlers.submit({preventDefault(){}});};
+ const submit=async code=>{const form=document.body.find('form').find(n=>n.name==='incident-process');form.find('input').find(n=>n.name==='accept_incident').checked=true;form.find('input').find(n=>n.name==='mfa_proof').value=code;await form.handlers.submit({preventDefault(){}});};
  await submit('123456'); await submit('654321');
  assert.equal(calls[0].body.expected_version,2); assert.equal(calls[1].body.expected_version,3);
  assert.equal(calls[1].body.clearance_digest,digest);
- assert.ok(panel.find('p').some(n=>n.textContent?.includes('下一步：前往“资金启停”')));
+ assert.ok(document.body.find('p').some(n=>n.textContent?.includes('下一步：前往“资金启停”')));
  assert.equal(panel.find('form').some(n=>n.name==='incident-resolve'),false);
 });
 
@@ -496,7 +501,7 @@ test('refresh returns false for every failed panel or selected detail and true a
   await panel.find('button').find(n=>n.textContent==='查看出款').handlers.click();
   await panel.find('button').find(n=>n.textContent==='查看事故').handlers.click();
   failing=true;assert.equal(await panel.refresh(),false,failed);
-  assert.ok(panel.find('p').some(n=>n.textContent?.includes('过期')),failed);
+  assert.ok([...panel.find('p'),...document.body.find('p')].some(n=>n.textContent?.includes('过期')),failed);
   failing=false;assert.equal(await panel.refresh(),true,failed);
  }
 });

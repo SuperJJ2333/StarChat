@@ -1,4 +1,16 @@
 :root {
+  --image-editor-landscape-0-sky: #b8d5dd;
+  --image-editor-landscape-0-ridge: #537d83;
+  --image-editor-landscape-0-foreground: #d5c7af;
+  --image-editor-landscape-1-sky: #e3cbb5;
+  --image-editor-landscape-1-ridge: #8a8990;
+  --image-editor-landscape-1-foreground: #d7b492;
+  --image-editor-landscape-2-sky: #b9c9bd;
+  --image-editor-landscape-2-ridge: #527b6d;
+  --image-editor-landscape-2-foreground: #dfd7b9;
+  --image-editor-sky-haze: #f0eee6;
+  --image-editor-sun: #fff5db;
+  --image-editor-brush: #ffffff;
   --color-support-identity: #f6c343;
   --color-ledger-transfer: #fa9d3b;
   --admin-modal-scrim: #14203266;
@@ -136,6 +148,7 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
+  --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #d7e7f0;
   --color-bubble-incoming: #ffffff;
@@ -156,6 +169,7 @@
   --color-on-accent: #ffffff;
   --color-danger: #fa5151;
   --color-warning: #fa9d3b;
+  --color-support-identity: #f6c343;
   --color-red-packet-muted: #f2b7a8;
   --color-bubble-outgoing: #2e4556;
   --color-bubble-incoming: #2c2c2c;

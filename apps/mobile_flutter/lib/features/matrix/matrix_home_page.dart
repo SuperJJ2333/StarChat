@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 
 import '../../core/app_config.dart';
 import '../../core/business_api_client.dart';
+import '../../core/support_identity_repository.dart';
 import '../contacts/contacts_page.dart';
 import '../contacts/scan_qr_page.dart';
 import '../../ui/chat/group_avatar_mosaic.dart';
@@ -161,6 +162,7 @@ final class _RoomSnapshot {
     required this.unread,
     required this.muted,
     required this.isDirect,
+    required this.directPeerId,
     required this.lastEventId,
     required this.groupName,
     required this.memberCount,
@@ -183,6 +185,7 @@ final class _RoomSnapshot {
   final int unread;
   final bool muted;
   final bool isDirect;
+  final String? directPeerId;
   final String? lastEventId;
   final String groupName;
   final int memberCount;
@@ -253,6 +256,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   final Set<String> _directJoinInFlight = {};
   List<MatrixGroupInviteSnapshot> _invites = const [];
   late ProfileRepository _identityCache;
+  late SupportIdentityRepository _supportIdentities;
+  Timer? _supportTimer;
 
   Future<void> _loadAutoAllowPreference() async {
     if (_autoAllowGroupJoin != null) return;
@@ -338,6 +343,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     super.initState();
     decryptionStates = DecryptionStateController();
     _identityCache = widget.identityCache ?? ProfileRepository(widget.api);
+    _supportIdentities = SupportIdentityRepository(widget.api);
     conversationPreferencesChanged.addListener(_preferencesChanged);
     if (widget.previewOnly) {
       unawaited(_refreshClientSnapshot());
@@ -356,6 +362,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       _sendPresenceHeartbeat();
       // Renew short-lived profile image URLs without clearing visible avatars.
       unawaited(_identityCache.refreshContactsQuietly());
+    });
+    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _warmSupportIdentities(_rooms, force: true);
     });
     unawaited(_refreshClientSnapshot());
     unawaited(_refreshMembers());
@@ -467,6 +476,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
           _reminderRoomId = snapshot.reminderRoomId;
           _rooms = List.unmodifiable(nextRooms);
         });
+        _warmSupportIdentities(nextRooms);
       });
     } catch (_) {/* Keep cached presentation during sync/revocation. */}
   }
@@ -504,6 +514,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       unread: _conversationUnread(room),
       muted: preference.muted || !room.notificationsEnabled,
       isDirect: room.isDirect,
+      directPeerId: room.directPeerId,
       lastEventId: room.lastEvent?.eventId,
       groupName: room.name,
       memberCount: room.members.length,
@@ -551,8 +562,18 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     _identityCache.removeListener(_identityChanged);
     _detachMatrixListeners();
     _presenceTimer?.cancel();
+    _supportTimer?.cancel();
+    _supportIdentities.dispose();
     decryptionStates.dispose();
     super.dispose();
+  }
+
+  void _warmSupportIdentities(Iterable<_RoomSnapshot> rooms,
+      {bool force = false}) {
+    unawaited(_supportIdentities.warm([
+      for (final room in rooms)
+        if (room.isDirect && room.directPeerId != null) room.directPeerId,
+    ], force: force));
   }
 
   void _identityChanged() {
@@ -569,6 +590,17 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     super.didUpdateWidget(oldWidget);
     final accountChanged = !identical(widget.matrix, oldWidget.matrix) &&
         oldWidget.matrix.userId != widget.matrix.userId;
+    if (!identical(widget.api, oldWidget.api)) {
+      _supportIdentities.dispose();
+      _supportIdentities = SupportIdentityRepository(widget.api);
+      _conversationRows.clear();
+      _warmSupportIdentities(_rooms);
+    }
+    if (accountChanged && identical(widget.api, oldWidget.api)) {
+      _supportIdentities.dispose();
+      _supportIdentities = SupportIdentityRepository(widget.api);
+      _conversationRows.clear();
+    }
     final replacementIdentity = widget.identityCache;
     var identityChanged = false;
     if (replacementIdentity != null && replacementIdentity != _identityCache) {
@@ -832,6 +864,8 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       child: ConversationListTile(
         key: ValueKey<String>('conversation-${room.id}'),
         title: room.title,
+        supportIdentities: room.isDirect ? _supportIdentities : null,
+        matrixUserId: room.isDirect ? room.directPeerId : null,
         subtitle: room.subtitle,
         hasPendingMention: hasMention,
         timeLabel: room.timeLabel,

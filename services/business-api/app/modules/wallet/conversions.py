@@ -12,7 +12,7 @@ from app.modules.wallet.safety import audit_write, precise_amount
 
 
 def convert_in_session(session, factory, *, user_id, direction, amount,
-                       requested_amount, idempotency_key, reserve_policy, now=None):
+                       requested_amount, idempotency_key, reserve_policy, now=None, actor_id=None):
     """Caller owns authorization and transaction; no nested commit or provider I/O."""
     from app.modules.wallet.service import WalletLedger
     if direction not in {'CAIBI_TO_USDT', 'USDT_TO_CAIBI'}:
@@ -36,7 +36,7 @@ def convert_in_session(session, factory, *, user_id, direction, amount,
         status='COMPLETED', created_at=now or datetime.now(timezone.utc))
     ledger, wallet = LedgerService(factory), WalletLedger(factory)
     ledger.reserve_policy = wallet.reserve_policy = reserve_policy
-    common = dict(actor_id=user_id, reason_code=direction, idempotency_key=f'convert:{row.id}',
+    common = dict(actor_id=actor_id or user_id, reason_code=direction, idempotency_key=f'convert:{row.id}',
         scope='wallet.conversion', session=session)
     if direction == 'CAIBI_TO_USDT':
         ledger.post(entries={user_id: -amount, 'PLATFORM_CLEARING': amount}, **common)
@@ -45,7 +45,7 @@ def convert_in_session(session, factory, *, user_id, direction, amount,
         wallet.post(entries={user_id: -amount, 'PLATFORM_CONVERSION': amount}, **common)
         ledger.post(entries={user_id: amount, 'PLATFORM_CLEARING': -amount}, **common)
     session.add(row)
-    audit_write(session, user_id, row.id, 'wallet.converted', direction)
+    audit_write(session, actor_id or user_id, row.id, 'wallet.converted', direction)
     session.flush()
     return row
 

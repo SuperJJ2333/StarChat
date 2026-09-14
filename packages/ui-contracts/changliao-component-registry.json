@@ -774,7 +774,8 @@
           "remark",
           "avatarUrl",
           "identityCache",
-          "statusLabel"
+          "statusLabel",
+          "supportIdentities"
         ],
         "variants": {
           "relationship": [
@@ -794,6 +795,7 @@
       },
       "tokens": [
         "surface",
+        "WeChatColors.supportIdentityYellow = --color-support-identity",
         "spacing",
         "radius"
       ]

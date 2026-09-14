@@ -41,7 +41,8 @@ export function createWalletAccess({api,actorId,getActorId=()=>actorId,now=()=>p
 export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,onLogin}={}) {
   const make=(tag,text)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
   const root=make('section');root.className='admin-wallet-access';
-  const content=make('div');root.append(content);
+  const content=make('div'),pending=make('p','正在确认钱包验证状态…');
+  pending.setAttribute('role','status');pending.hidden=true;root.append(content,pending);
   let child,dialog,disposed=false,background,previousOverflow,poll,setup,dialogKind;
   const channel=typeof BroadcastChannel==='function'?new BroadcastChannel('chatflow-wallet-access'):null;
   function clearContent(){child?.dispose?.();child=null;content.replaceChildren();}
@@ -50,12 +51,18 @@ export function walletAccessPanel(api,{actor,renderContent,renderSetup,onExit,on
   function show(state){
     if(disposed)return;
     if(state.kind==='ready'||state.kind==='legacy'){
-      close();content.hidden=false;
+      close();pending.hidden=true;content.hidden=false;
       if(!child){child=renderContent(guarded,state.kind==='ready');content.append(child);}
       return;
     }
+    // A recheck has no server result yet. Hide private content fail-closed, but
+    // do not turn the transient request into a modal that steals focus.
+    if(state.kind==='unknown'){
+      close();content.hidden=true;clearContent();pending.hidden=false;
+      return;
+    }
     // Remove sensitive nodes, including detached detail dialogs, before adding blur.
-    content.hidden=true;clearContent();
+    pending.hidden=true;content.hidden=true;clearContent();
     if(!dialog){
       dialog=make('dialog');dialog.className='wallet-access-dialog';dialog.setAttribute('aria-labelledby','wallet-access-title');
       dialog.addEventListener('cancel',event=>{event.preventDefault();exit();});

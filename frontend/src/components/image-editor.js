@@ -1,17 +1,33 @@
 import { StrictElement, button, element } from "./base.js";
 import { icon } from "../icons/icons.js";
 
+function colorToken(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(`--image-editor-${name}`).trim();
+}
+
+function opaqueMosaic(ctx, x, y, size) {
+  const source = ctx.getImageData(x, y, 1, 1).data;
+  const tile = ctx.createImageData(size, size);
+  for (let offset = 0; offset < tile.data.length; offset += 4) {
+    tile.data[offset] = source[0];
+    tile.data[offset + 1] = source[1];
+    tile.data[offset + 2] = source[2];
+    tile.data[offset + 3] = 255;
+  }
+  ctx.putImageData(tile, x, y);
+}
+
 // Local canvas fixtures keep this demo independent of remote images and accounts.
 function picture(index = 0) {
   const canvas = element("canvas");
   canvas.width = 720; canvas.height = 960;
   const ctx = canvas.getContext("2d");
-  const palettes = [["#b8d5dd", "#537d83", "#d5c7af"], ["#e3cbb5", "#8a8990", "#d7b492"], ["#b9c9bd", "#527b6d", "#dfd7b9"]];
-  const colors = palettes[index % palettes.length];
+  const palette = index % 3;
+  const colors = ["sky", "ridge", "foreground"].map((part) => colorToken(`landscape-${palette}-${part}`));
   const sky = ctx.createLinearGradient(0, 0, 0, 650);
-  sky.addColorStop(0, colors[0]); sky.addColorStop(1, "#f0eee6");
+  sky.addColorStop(0, colors[0]); sky.addColorStop(1, colorToken("sky-haze"));
   ctx.fillStyle = sky; ctx.fillRect(0, 0, 720, 960);
-  ctx.fillStyle = "#fff5db"; ctx.beginPath(); ctx.arc(530, 235, 65, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = colorToken("sun"); ctx.beginPath(); ctx.arc(530, 235, 65, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = colors[1]; ctx.beginPath(); ctx.moveTo(0, 590); ctx.lineTo(220, 380); ctx.lineTo(460, 610); ctx.lineTo(720, 440); ctx.lineTo(720, 960); ctx.lineTo(0, 960); ctx.fill();
   ctx.fillStyle = colors[2]; ctx.beginPath(); ctx.moveTo(0, 850); ctx.quadraticCurveTo(470, 590, 720, 750); ctx.lineTo(720, 960); ctx.lineTo(0, 960); ctx.fill();
   return canvas;
@@ -50,7 +66,7 @@ export class AppImageEditor extends StrictElement {
     const tools = element("div", "c-image-editor__tools");
     const settings = element("div", "c-image-editor__settings");
     const status = element("p", "c-image-editor__status"); status.setAttribute("role", "status");
-    const color = element("input"); color.type = "color"; color.value = "#ffffff"; color.setAttribute("aria-label", "画笔与文字颜色");
+    const color = element("input"); color.type = "color"; color.value = colorToken("brush"); color.setAttribute("aria-label", "画笔与文字颜色");
     const width = element("input"); width.type = "range"; width.min = "2"; width.max = "32"; width.value = "8"; width.setAttribute("aria-label", "画笔粗细");
     const text = element("input", "c-image-editor__text"); text.placeholder = "输入文字，再点击图片放置"; text.setAttribute("aria-label", "图片文字"); text.hidden = true;
     let selectedEmoji = null;

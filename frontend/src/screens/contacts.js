@@ -64,7 +64,7 @@ function friendProfile(definition) {
   root.append(navigation(isUser ? "用户资料" : "好友资料", { leading: "返回", action: isUser ? "" : "更多" }));
   const content = element("div", "p-friend-profile__content");
   const contact = definition.state === "support" ? fixtures.contacts[2] : fixtures.contacts[0];
-  content.append(component("app-identity-header", { name: contact.name, username: contact.username, signature: contact.subtitle }));
+  content.append(component("app-identity-header", { name: contact.name, username: contact.username, signature: contact.subtitle, official: "官方客服" }));
   const preview = element("section", "c-profile-preview");
   preview.append(element("h2", "c-profile-preview__title", "朋友圈"), element("div", "c-profile-preview__images"));
   for (let index = 0; index < 3; index += 1) preview.querySelector(".c-profile-preview__images").append(element("span", "c-profile-preview__image", `动态 ${index + 1}`));

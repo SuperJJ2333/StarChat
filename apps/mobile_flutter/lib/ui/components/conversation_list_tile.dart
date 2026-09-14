@@ -4,6 +4,8 @@ import '../chat/wechat_unread_badge.dart';
 import '../chat/conversation_mention_banner.dart';
 import '../foundation/changliao_icons.dart';
 import '../foundation/wechat_tokens.dart';
+import '../../core/support_identity_repository.dart';
+import 'wechat_official_name.dart';
 
 final class ConversationListTile extends StatelessWidget {
   const ConversationListTile({
@@ -18,6 +20,9 @@ final class ConversationListTile extends StatelessWidget {
     this.pinnedGroup = false,
     this.onTap,
     this.onLongPress,
+    this.supportIdentities,
+    this.userId,
+    this.matrixUserId,
   });
 
   final String title;
@@ -30,6 +35,9 @@ final class ConversationListTile extends StatelessWidget {
   final bool pinnedGroup;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final SupportIdentityRepository? supportIdentities;
+  final String? userId;
+  final String? matrixUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -64,11 +72,12 @@ final class ConversationListTile extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                    WeChatOfficialName(
+                      name: title,
+                      supportIdentities: supportIdentities,
+                      userId: userId,
+                      matrixUserId: matrixUserId,
+                      nameStyle: TextStyle(
                         color: theme.textTheme.textStyle.color,
                         fontSize: WeChatTypography.body,
                         fontWeight: FontWeight.w600,

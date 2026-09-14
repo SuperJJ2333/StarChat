@@ -2180,13 +2180,14 @@
             "title": "Amount"
           },
           "reason_code": {
+            "default": "SUPPORT_CAIBI_GRANT",
             "maxLength": 100,
             "minLength": 1,
             "title": "Reason Code",
             "type": "string"
           },
           "user_id": {
-            "maxLength": 36,
+            "maxLength": 320,
             "minLength": 1,
             "title": "User Id",
             "type": "string"
@@ -2194,8 +2195,7 @@
         },
         "required": [
           "user_id",
-          "amount",
-          "reason_code"
+          "amount"
         ],
         "title": "DirectCaibiGrantBody",
         "type": "object"
@@ -3117,6 +3117,27 @@
         "title": "HandoverView",
         "type": "object"
       },
+      "IdentityLookupRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "user_ids": {
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "user_ids"
+        ],
+        "title": "IdentityLookupRequest",
+        "type": "object"
+      },
       "IncidentCommandBody": {
         "additionalProperties": false,
         "properties": {
@@ -3479,6 +3500,73 @@
           "status"
         ],
         "title": "ManualControlView",
+        "type": "object"
+      },
+      "ManualDepositCaseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ownership_attestation": {
+            "const": true,
+            "title": "Ownership Attestation",
+            "type": "boolean"
+          },
+          "reason_detail": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason Detail",
+            "type": "string"
+          },
+          "receipt_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Receipt Id",
+            "type": "string"
+          },
+          "user_id": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "user_id",
+          "reason_detail",
+          "ownership_attestation"
+        ],
+        "title": "ManualDepositCaseBody",
+        "type": "object"
+      },
+      "ManualDepositDecisionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmed": {
+            "const": true,
+            "title": "Confirmed",
+            "type": "boolean"
+          },
+          "decision": {
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason_detail": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "reason_detail",
+          "confirmed"
+        ],
+        "title": "ManualDepositDecisionBody",
         "type": "object"
       },
       "ManualDiagnosticView": {
@@ -6272,13 +6360,23 @@
       "RoleBody": {
         "additionalProperties": false,
         "properties": {
+          "badge": {
+            "anyOf": [
+              {
+                "maxLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Badge"
+          },
           "role_code": {
-            "$ref": "#/components/schemas/RoleCode"
+            "$ref": "#/components/schemas/RoleCode",
+            "default": "SUPPORT_AGENT"
           }
         },
-        "required": [
-          "role_code"
-        ],
         "title": "RoleBody",
         "type": "object"
       },
@@ -9407,7 +9505,193 @@
         ]
       }
     },
+    "/api/v1/admin/support-agents": {
+      "get": {
+        "operationId": "support_agents_api_v1_admin_support_agents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 320,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dispatch_eligible",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dispatch Eligible"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Support Agents",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/v1/admin/support-roles/{target_user_id}": {
+      "delete": {
+        "operationId": "revoke_all_support_roles_api_v1_admin_support_roles__target_user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_user_id",
+            "required": true,
+            "schema": {
+              "title": "Target User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Revoke All Support Roles",
+        "tags": [
+          "admin"
+        ]
+      },
       "post": {
         "operationId": "assign_support_role_api_v1_admin_support_roles__target_user_id__post",
         "parameters": [
@@ -10947,6 +11231,533 @@
         "tags": [
           "admin",
           "manual-wallet-handover"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases": {
+      "post": {
+        "operationId": "manual_case_create_api_v1_admin_wallet_manual_manual_deposit_cases_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualDepositCaseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Create",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/context": {
+      "get": {
+        "operationId": "manual_case_context_api_v1_admin_wallet_manual_manual_deposit_cases_context_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "txid",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Txid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "log_index",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Log Index",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Context",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/operations/{operation_id}": {
+      "get": {
+        "operationId": "manual_case_operation_api_v1_admin_wallet_manual_manual_deposit_cases_operations__operation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Operation",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/{case_id}": {
+      "get": {
+        "operationId": "manual_case_get_api_v1_admin_wallet_manual_manual_deposit_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Get",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/{case_id}/decision": {
+      "post": {
+        "operationId": "manual_case_decision_api_v1_admin_wallet_manual_manual_deposit_cases__case_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualDepositDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Decision",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/{case_id}/execute": {
+      "post": {
+        "operationId": "manual_case_execute_api_v1_admin_wallet_manual_manual_deposit_cases__case_id__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "idempotency-key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepairExecuteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Execute",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/manual-deposit-cases/{case_id}/preview": {
+      "post": {
+        "operationId": "manual_case_preview_api_v1_admin_wallet_manual_manual_deposit_cases__case_id__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Manual Case Preview",
+        "tags": [
+          "admin",
+          "admin-wallet-repairs"
         ]
       }
     },
@@ -21184,6 +21995,71 @@
           }
         ],
         "summary": "Complaint",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/identities/lookup": {
+      "post": {
+        "operationId": "identity_lookup_api_v1_support_identities_lookup_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Identity Lookup",
         "tags": [
           "support"
         ]

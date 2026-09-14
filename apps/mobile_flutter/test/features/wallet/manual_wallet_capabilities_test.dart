@@ -14,6 +14,9 @@ void main() {
         (tester) async {
       final writes = <http.Request>[];
       final api = await flow.client((request) async {
+        if (request.url.path.endsWith('/payout-quotes/quote')) {
+          return flow.json(fixtures.quote);
+        }
         if (request.method == 'POST') {
           writes.add(request);
           return flow
@@ -31,11 +34,8 @@ void main() {
       await tester
           .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
       await tester.pumpAndSettle();
-      await flow.tap(tester, find.text(slot == 'deposit' ? '充值' : '提现'));
-      if (slot == 'payout') {
-        await tester.enterText(
-            find.byKey(const Key('manual-payout-otp')), '123456');
-      }
+      await flow.tap(
+          tester, find.text(slot == 'deposit' ? '查看已有充值申请' : '查看已有提现申请'));
       await flow.tap(
           tester,
           find.byKey(Key(slot == 'deposit'
@@ -57,31 +57,31 @@ void main() {
             'funding_enabled': deposits,
             'manual_payout_enabled': requests,
             'manual_payout_execution_enabled': execution,
-            'conversion_enabled': false,
+            'conversion_enabled': true,
+            'caibi_payout_enabled': true,
           });
           await tester
               .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
           await tester.pumpAndSettle();
-          await flow.tap(tester, find.text('充值'));
           expect(
               tester
                       .widget<CupertinoButton>(
-                          find.byKey(const Key('manual-deposit-create')))
+                          find.byKey(const Key('manual-deposit-open')))
                       .onPressed !=
                   null,
               deposits);
-          await flow.tap(tester, find.text('提现'));
           expect(
               tester
                       .widget<CupertinoButton>(
-                          find.byKey(const Key('manual-quote-create')))
+                          find.byKey(const Key('manual-payout-open')))
                       .onPressed !=
                   null,
-              requests);
-          expect(
-              find.text(
-                  execution ? '最低 10 USDT · 免手续费 · 人工处理' : '付款暂未开放，申请后等待处理'),
-              findsOneWidget);
+              requests && execution);
+          if (requests && execution) {
+            await flow.openPayout(tester);
+            expect(
+                find.byKey(const Key('manual-quote-create')), findsOneWidget);
+          }
         });
       }
     }
@@ -91,18 +91,16 @@ void main() {
         .client((_) async => flow.json(fixtures.binding), capabilities: {});
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
-    await flow.tap(tester, find.text('充值'));
     expect(
         tester
             .widget<CupertinoButton>(
-                find.byKey(const Key('manual-deposit-create')))
+                find.byKey(const Key('manual-deposit-open')))
             .onPressed,
         isNull);
-    await flow.tap(tester, find.text('提现'));
     expect(
         tester
             .widget<CupertinoButton>(
-                find.byKey(const Key('manual-quote-create')))
+                find.byKey(const Key('manual-payout-open')))
             .onPressed,
         isNull);
   });
@@ -127,7 +125,7 @@ void main() {
     await tester.pumpWidget(
         CupertinoApp(home: ManualWalletPage(client: api, clock: () => now)));
     await tester.pumpAndSettle();
-    await flow.tap(tester, find.text('充值'));
+    await flow.openDeposit(tester);
     await tester.enterText(
         find.byKey(const Key('manual-deposit-amount')), '10');
     await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));

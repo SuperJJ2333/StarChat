@@ -65,6 +65,9 @@ def usdt_liability(session):
 
 
 class WalletSafetyMixin:
+    @staticmethod
+    def _reserved_conversion_key(value):
+        return isinstance(value, str) and value.startswith('deposit-receipt:')
     def _offline_provider(self):
         from app.integrations.custody.sandbox import SandboxCustodyProvider
         if not isinstance(self.provider, SandboxCustodyProvider):
@@ -156,7 +159,8 @@ class WalletSafetyMixin:
         manual = getattr(self, 'manual_runtime', None)
         if manual is None:
             self._offline_provider()
-        if direction not in {'USDT_TO_CAIBI', 'CAIBI_TO_USDT'} or not idempotency_key or len(idempotency_key) > 128:
+        if (direction not in {'USDT_TO_CAIBI', 'CAIBI_TO_USDT'} or not idempotency_key
+                or len(idempotency_key) > 128 or self._reserved_conversion_key(idempotency_key)):
             raise ValueError('invalid conversion intent')
         amount = precise_amount(amount, Decimal('0.01') if direction == 'CAIBI_TO_USDT' else Decimal('0.000001'))
         requested_amount = amount

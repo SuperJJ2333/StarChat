@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/support_identity_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
@@ -77,6 +78,7 @@ final class ContactsPage extends StatefulWidget {
     this.onAppearance,
     this.onGroupAddressList,
     this.identityCache,
+    this.supportIdentities,
   });
 
   final ContactsGateway api;
@@ -96,6 +98,7 @@ final class ContactsPage extends StatefulWidget {
   /// "+"菜单的"发起群聊"继续走 [onGroupChat]。
   final VoidCallback? onGroupAddressList;
   final ProfileRepository? identityCache;
+  final SupportIdentityRepository? supportIdentities;
 
   @override
   State<ContactsPage> createState() => _ContactsPageState();
@@ -105,6 +108,11 @@ final class _ContactsPageState extends State<ContactsPage> {
   late Future<List<ContactSummary>> contacts;
   final scrollController = ScrollController();
   final sectionOffsets = <String, double>{};
+  SupportIdentityRepository? _support;
+  Timer? _supportTimer;
+  bool _ownsSupport = false;
+  List<ContactSummary> _supportContacts = const [];
+  int _contactsLoadGeneration = 0;
 
   @override
   void initState() {
@@ -114,8 +122,62 @@ final class _ContactsPageState extends State<ContactsPage> {
         ? widget.api.listContacts()
         : Future.value(List.unmodifiable(cached));
     widget.identityCache?.addListener(_identityChanged);
+    _configureSupport();
+    _observeSupportContacts(contacts);
     unawaited(
         widget.identityCache?.refreshContactsQuietly() ?? Future<void>.value());
+  }
+
+  Future<void> _warmSupport(Iterable<ContactSummary> values) =>
+      _support?.warm([
+            for (final contact in values) ...[
+              contact.userId,
+              contact.matrixUserId,
+            ],
+          ]) ??
+      Future<void>.value();
+
+  void _setSupportContacts(List<ContactSummary> values) {
+    _supportContacts = List.unmodifiable(values);
+    unawaited(_warmSupport(_supportContacts));
+  }
+
+  void _observeSupportContacts(Future<List<ContactSummary>> future) {
+    final generation = ++_contactsLoadGeneration;
+    future.then((values) {
+      if (!mounted || generation != _contactsLoadGeneration) return;
+      _setSupportContacts(values);
+    }, onError: (_, __) {});
+  }
+
+  void _configureSupport() {
+    _support = widget.supportIdentities ??
+        (widget.api is SupportIdentityGateway
+            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+            : null);
+    _ownsSupport = widget.supportIdentities == null && _support != null;
+    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_support?.warm([
+            for (final contact in _supportContacts) ...[
+              contact.userId,
+              contact.matrixUserId,
+            ],
+          ], force: true) ??
+          Future<void>.value());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ContactsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.api, widget.api) ||
+        oldWidget.supportIdentities != widget.supportIdentities) {
+      _supportTimer?.cancel();
+      if (_ownsSupport) _support?.dispose();
+      _configureSupport();
+      _contactsLoadGeneration++;
+      _setSupportContacts(widget.identityCache?.contacts ?? _supportContacts);
+    }
   }
 
   void _identityChanged() {
@@ -125,10 +187,12 @@ final class _ContactsPageState extends State<ContactsPage> {
         List.unmodifiable(widget.identityCache?.contacts ?? const []),
       );
     });
+    _setSupportContacts(widget.identityCache?.contacts ?? const []);
   }
 
   void reload() {
     final next = widget.api.listContacts();
+    _observeSupportContacts(next);
     setState(() {
       contacts = next;
     });
@@ -136,6 +200,8 @@ final class _ContactsPageState extends State<ContactsPage> {
 
   @override
   void dispose() {
+    _supportTimer?.cancel();
+    if (_ownsSupport) _support?.dispose();
     widget.identityCache?.removeListener(_identityChanged);
     scrollController.dispose();
     super.dispose();
@@ -343,6 +409,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                                     .cacheKey ??
                                 contact.username,
                             avatarUrl: contact.avatarUrl,
+                            supportIdentities: _support,
+                            userId: contact.userId,
+                            matrixUserId: contact.matrixUserId,
                             onTap: () async {
                               final changed = await Navigator.of(context,
                                       rootNavigator: true)
@@ -350,6 +419,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                                 CupertinoPageRoute(
                                   builder: (_) => ContactProfilePage(
                                     identityCache: widget.identityCache,
+                                    supportIdentities: _support,
                                     api: widget.api,
                                     initialContact: contact.toDetails(),
                                     onMessage: widget.onMessage,
@@ -439,6 +509,7 @@ final class ContactProfilePage extends StatefulWidget {
     this.onVideo,
     this.onContactUpdated,
     this.onContactDeleted,
+    this.supportIdentities,
   });
 
   final ContactsGateway api;
@@ -449,6 +520,7 @@ final class ContactProfilePage extends StatefulWidget {
   final ContactAction? onVideo;
   final Future<void> Function(ContactDetails contact)? onContactUpdated;
   final Future<void> Function(String userId)? onContactDeleted;
+  final SupportIdentityRepository? supportIdentities;
 
   @override
   State<ContactProfilePage> createState() => _ContactProfilePageState();
@@ -458,13 +530,31 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   late ContactDetails contact = widget.initialContact;
   ContactSelection? _contactSelection;
   var _presenceRequestGeneration = 0;
+  SupportIdentityRepository? _support;
+  Timer? _supportTimer;
+  bool _ownsSupport = false;
 
   @override
   void initState() {
     super.initState();
     _bindIdentity();
     _readIdentity();
+    _configureSupport();
     unawaited(_refreshPresence());
+  }
+
+  void _configureSupport() {
+    _support = widget.supportIdentities ??
+        (widget.api is SupportIdentityGateway
+            ? SupportIdentityRepository(widget.api as SupportIdentityGateway)
+            : null);
+    _ownsSupport = widget.supportIdentities == null && _support != null;
+    unawaited(_support?.warm([contact.userId, contact.matrixUserId]) ??
+        Future<void>.value());
+    _supportTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_support?.warm([contact.userId, contact.matrixUserId], force: true) ??
+          Future<void>.value());
+    });
   }
 
   /// 任意入口（会话/朋友圈/搜索/通讯录）打开资料页即向服务端自取
@@ -615,15 +705,28 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
     if (repositoryChanged || contactChanged) {
       _bindIdentity();
       _readIdentity();
+      if (contactChanged) {
+        unawaited(_support?.warm([contact.userId, contact.matrixUserId],
+                force: true) ??
+            Future<void>.value());
+      }
     }
     if (repositoryChanged || contactChanged || apiChanged) {
       unawaited(_refreshPresence());
+    }
+    if (!identical(oldWidget.api, widget.api) ||
+        oldWidget.supportIdentities != widget.supportIdentities) {
+      _supportTimer?.cancel();
+      if (_ownsSupport) _support?.dispose();
+      _configureSupport();
     }
   }
 
   @override
   void dispose() {
     _presenceRequestGeneration++;
+    _supportTimer?.cancel();
+    if (_ownsSupport) _support?.dispose();
     _contactSelection?.removeListener(_identityChanged);
     _contactSelection?.dispose();
     super.dispose();
@@ -676,7 +779,9 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
           child: ListView(
             children: [
               FriendIdentityCard(
-                  contact: contact, identityCache: widget.identityCache),
+                  contact: contact,
+                  identityCache: widget.identityCache,
+                  supportIdentities: _support),
               if (widget.api is BusinessApiClient)
                 MomentProfilePreview(
                     contactActions: ContactActions(

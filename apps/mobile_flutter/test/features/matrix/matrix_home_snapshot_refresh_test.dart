@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,10 @@ import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
 
 void main() {
+  test('support API fixture decodes a Matrix identity', () async {
+    final items = await _supportApi().lookupSupportIdentities(['@peer:matrix.example']);
+    expect(items.single.verifiedBadge, '官方客服');
+  });
   test('coalesces a burst into one running pass and one fresh trailing pass',
       () async {
     final first = Completer<int>();
@@ -296,6 +301,22 @@ void main() {
     expect(calls, greaterThanOrEqualTo(2));
     await tester.pumpWidget(const SizedBox());
   });
+  testWidgets('direct row shows a business-verified support suffix', (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(), homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(matrix: matrix, snapshotLoader: () async => _directSnapshot(), api: _supportApi()));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('@官方客服'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('group row never receives a support suffix', (tester) async {
+    final matrix = MatrixSdkE2eeClient(_NoNetworkClient(), homeserver: Uri.parse('https://matrix.example'));
+    await tester.pumpWidget(_home(matrix: matrix, snapshotLoader: () async => _snapshot('官方群'), api: _supportApi()));
+    await tester.pumpAndSettle();
+    expect(find.text('@官方客服'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }
 
 Future<void> _pumpHome(WidgetTester tester,
@@ -311,10 +332,11 @@ Widget _home({
   required Future<MatrixConversationSnapshot> Function() snapshotLoader,
   bool previewOnly = true,
   ProfileRepository? identityCache,
+  BusinessApiClient? api,
 }) =>
     CupertinoApp(
         home: MatrixHomePage(
-      api: _api(),
+      api: api ?? _api(),
       matrix: matrix,
       themeController: ThemeController(store: _MemoryThemeStore()),
       onCreateGroup: () {},
@@ -327,6 +349,11 @@ BusinessApiClient _api() => BusinessApiClient(
     baseUri: Uri.parse('https://business.example'),
     sessionStore: SecureSessionStore(_MemoryStore()),
     client: MockClient((_) async => http.Response('{}', 500)));
+
+BusinessApiClient _supportApi() => BusinessApiClient(
+    baseUri: Uri.parse('https://business.example'),
+    sessionStore: SecureSessionStore(_MemoryStore()),
+    client: MockClient((_) async => http.Response.bytes(utf8.encode('{"items":[{"query_id":"@peer:matrix.example","user_id":"support","matrix_user_id":"@peer:matrix.example","badge":"官方客服","role":"SUPPORT_AGENT"}]}'), 200, headers: const {'content-type': 'application/json; charset=utf-8'})));
 
 MatrixConversationSnapshot _snapshot(String id) => MatrixConversationSnapshot(
       vaultRoomId: null,

@@ -35,7 +35,7 @@ def runtime(monkeypatch):
                  'app.modules.wallet.binding_models',
                  'app.modules.wallet.incident_models', 'app.modules.wallet.safety',
                  'app.modules.wallet.monitoring', 'app.modules.wallet.funding_models',
-                 'app.modules.wallet.receipt_models', 'app.modules.wallet.manual_payout_models',
+                 'app.modules.wallet.receipt_models', 'app.modules.wallet.repair_models', 'app.modules.wallet.manual_payout_models',
                  'app.modules.wallet.manual_control_models', 'app.modules.wallet.handover_models',
                  'app.modules.wallet.funding_scan_models', 'app.modules.wallet.funding_coverage_models',
                  'app.modules.ledger.manual_reserve',
@@ -202,7 +202,8 @@ def test_manual_disabled_release_does_not_claim_monitor_acceptance(runtime, caps
 
 
 @pytest.mark.parametrize('table', ['wallet_manual_control_commands', 'wallet_handover_preparations',
-    'outbox_handover_dispositions', 'wallet_deposit_receipts'])
+    'outbox_handover_dispositions', 'wallet_deposit_receipts', 'wallet_manual_deposit_cases',
+    'wallet_manual_deposit_decisions'])
 def test_manual_release_requires_new_schema(runtime, capsys, table):
     helper, engine = runtime
     with engine.begin() as connection:

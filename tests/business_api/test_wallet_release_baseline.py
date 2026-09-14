@@ -10,6 +10,7 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     root = Path(__file__).resolve().parents[2] / 'services/business-api'
     config = Config(str(root / 'alembic.ini'))
     config.set_main_option('script_location', str(root / 'migrations'))
+    config.set_main_option('path_separator', 'os')
     scripts = ScriptDirectory.from_config(config)
     assert len(scripts.get_heads()) == 1
     ancestors = {revision.revision for revision in scripts.walk_revisions()}
@@ -18,7 +19,9 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     merge = scripts.get_revision('0056_merge_moment_comments')
     assert set(merge.down_revision) == {
         '0055_admin_sessions', '0040_moment_comment_images'}
-    assert scripts.get_heads() == ['0064_admin_deposit_repairs']
+    assert scripts.get_heads() == ['0066_manual_deposit_cases']
+    assert scripts.get_revision('0066_manual_deposit_cases').down_revision == '0065_support_profiles'
+    assert scripts.get_revision('0065_support_profiles').down_revision == '0064_admin_deposit_repairs'
     assert scripts.get_revision('0064_admin_deposit_repairs').down_revision == '0063_merge_wallet_access'
     assert set(scripts.get_revision('0063_merge_wallet_access').down_revision) == {
         '0062_matrix_login_broker', '0062_wallet_access_grant'}
@@ -35,4 +38,5 @@ def test_release_preflight_pins_the_integrated_migration_head():
         'integrated_wallet_preflight', root / 'scripts/wallet_release_preflight.py')
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    assert helper.EXPECTED_HEAD == '0064_admin_deposit_repairs'
+    assert helper.EXPECTED_HEAD == '0066_manual_deposit_cases'
+    assert 'wallet_manual_deposit_cases' in helper.REQUIRED_COLUMNS

@@ -10,11 +10,12 @@ import { statusLabel } from "./admin-formatters.js";
 import { chainPanel } from "./admin-chain-panel.js?v=20260910-completion";
 import { manualWalletPanel } from "./admin-manual-wallet-panel.js?v=20260910-completion";
 import { walletAccessPanel } from './admin-wallet-access.js?v=20260910-completion';
+import { supportPanel } from './admin-support-panel.js?v=20260913-support';
 
 const modules = [
-  ["发点钻给客服", "批次与审计记录", "finance", "admin.adjustments.read"],
+  ["客服点钻派发", "批次与审计记录", "finance", "admin.adjustments.read"],
   ["封禁 IP 和用户", "封禁与解封操作", "security", "admin.bans.read"],
-  ["升级为客服", "角色和权限范围", "support-role", "admin.support_roles.read"],
+  ["客服管理", "角色和权限范围", "support-role", "admin.support_roles.read"],
   ["平台注册用户统计", "用户查询与注册明细", "analytics", "admin.analytics.read"],
   ["在线客户数量", "实时在线列表", "online", "admin.presence.read"],
   ["朋友圈原生广告", "素材与投放统计", "ads", "admin.ads.read"],
@@ -55,6 +56,8 @@ function tableFor(key, dataset = {}) {
   return table;
 }
 function modulePanel(key, title, context) {
+  if(key==='support-role')return supportPanel(browserAdminApi(),{mode:'manage'});
+  if(key==='finance')return supportPanel(browserAdminApi(),{mode:'grant'});
   if(key==='ledger')return ledgerPanel(browserAdminApi());
   if(key==='wallet') return walletAccessPanel(browserAdminApi(),{
     actor:context.actor,onExit:context.onWalletExit,onLogin:expireSession,

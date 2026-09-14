@@ -102,7 +102,8 @@ class ManualWalletMaintenanceTask:
             try:
                 ids, self._receipt_after = self._page(DepositReceipt,
                     (DepositReceipt.status == 'REVIEW') & DepositReceipt.pending_obligation.is_(True)
-                    & DepositReceipt.reason_code.in_(('DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE')),
+                    & DepositReceipt.reason_code.in_(('DEFERRED_RESERVE_CHECK', 'RESERVE_UNAVAILABLE',
+                                                       'AUTO_CONVERSION_RETRY_REQUIRED')),
                     self._receipt_after)
             except Exception:
                 ids = []

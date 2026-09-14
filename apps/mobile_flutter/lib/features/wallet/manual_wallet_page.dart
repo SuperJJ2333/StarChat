@@ -145,6 +145,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     quoteOp = await store.read('quote');
     payoutOp = await store.read('payout');
     if (depositOp == null) deposit = null;
+    if (widget.section == ManualWalletSection.deposit &&
+        depositOp?['id'] != null) {
+      depositDeadline?.cancel();
+      depositDeadline = null;
+      deposit = null;
+      if (mounted) setState(() {});
+    }
     if (quoteOp == null && payoutOp == null) quote = null;
     if (payoutOp == null) payout = null;
     try {
@@ -180,7 +187,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     if (widget.section == ManualWalletSection.payout && payout == null) {
       final quoteId = payoutOp?['quote_id'] ?? quoteOp?['id'];
-      if (quoteId is String) quote = await api.payoutQuote(quoteId);
+      if (quoteId is String) {
+        quote = await api.payoutQuote(quoteId);
+        if (payoutOp == null && !widget.clock().isBefore(quote!.expiresAt)) {
+          await clearDefinitivelyInvalidPayout();
+        }
+      }
     }
     if (widget.section == ManualWalletSection.payout ||
         widget.section == ManualWalletSection.overview) {
@@ -496,6 +508,14 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     await loadPointsBalance();
   }
 
+  Future<void> clearDefinitivelyInvalidPayout() async {
+    await store.clear('payout');
+    await store.clear('quote');
+    payoutOp = quoteOp = null;
+    payout = null;
+    quote = null;
+  }
+
   Future<void> requestPayout() async {
     await ensureCurrentScope();
     final quoteId = payoutOp?['quote_id'] ?? quote?.id ?? quoteOp?['id'];
@@ -512,6 +532,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         await recordPayout();
         return;
       } on BusinessApiException catch (error) {
+        if ({'WALLET_PAYOUT_QUOTE_EXPIRED', 'WALLET_PAYOUT_QUOTE_CHANGED'}
+            .contains(error.code)) {
+          await clearDefinitivelyInvalidPayout();
+        }
         if (!{'PAYMENT_PIN_REQUIRED', 'PAYMENT_PIN_SETUP_REQUIRED'}
             .contains(error.code)) {
           rethrow;
@@ -525,10 +549,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     // a newly rebound destination from the current wallet card.
     quote = await api.payoutQuote(quoteId);
     if (!widget.clock().isBefore(quote!.expiresAt)) {
-      if (recovering) {
-        await store.clear('payout');
-        payoutOp = null;
-      }
+      await clearDefinitivelyInvalidPayout();
       throw const FormatException('本次报价已过期，请重新填写金额');
     }
     if (!mounted) return;
@@ -566,11 +587,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     } on BusinessApiException catch (error) {
       if ({'WALLET_PAYOUT_QUOTE_EXPIRED', 'WALLET_PAYOUT_QUOTE_CHANGED'}
           .contains(error.code)) {
-        await store.clear('payout');
-        await store.clear('quote');
-        payoutOp = quoteOp = null;
-        payout = null;
-        quote = null;
+        await clearDefinitivelyInvalidPayout();
       }
       rethrow;
     }

@@ -58,7 +58,8 @@ class BanBody(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=1)
 class RoleBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    role_code: RoleCode
+    role_code: RoleCode = RoleCode.SUPPORT_AGENT
+    badge: str | None = Field(default=None, max_length=6)
 class NoticeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=160)
@@ -80,9 +81,9 @@ class RetractBody(BaseModel):
     reason_code: str = Field(min_length=1, max_length=100)
 class DirectCaibiGrantBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    user_id: str = Field(min_length=1, max_length=36)
+    user_id: str = Field(min_length=1, max_length=320)
     amount: Decimal = Field(gt=0, decimal_places=2)
-    reason_code: str = Field(min_length=1, max_length=100)
+    reason_code: str = Field(default="SUPPORT_CAIBI_GRANT", min_length=1, max_length=100)
 class AppUpdateSettingsBody(BaseModel):
     latest_version: str = Field(min_length=1, max_length=32)
     latest_build: int = Field(ge=1)
@@ -178,7 +179,12 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.post("/support-roles/{target_user_id}", status_code=201)
     def assign_support_role(target_user_id: str, body: RoleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.set_support_role(actor_id=user_id, user_id=target_user_id, role_code=body.role_code, idempotency_key=idempotency_key, trace_id=trace(request))
+        return controls.set_support_role(actor_id=user_id, target=target_user_id, role_code=body.role_code, badge=body.badge, idempotency_key=idempotency_key, trace_id=trace(request))
+
+    @router.get("/support-agents")
+    def support_agents(query: str | None = Query(default=None, max_length=320), limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), dispatch_eligible: bool | None = None, user_id: str = Depends(actor)):
+        require(user_id, Permission.SYSTEM_ADMIN)
+        return controls.support_agents(query=query, limit=limit, offset=offset, dispatch_eligible=dispatch_eligible)
 
     @router.post("/notices", status_code=201)
     def create_notice(body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -203,7 +209,12 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.delete("/support-roles/{target_user_id}/{role_code}")
     def revoke_support_role(target_user_id: str, role_code: RoleCode, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.revoke_support_role(actor_id=user_id, user_id=target_user_id, role_code=role_code, idempotency_key=idempotency_key, trace_id=trace(request))
+        return controls.revoke_support_role(actor_id=user_id, user_id=controls.resolve_support_target(target_user_id), role_code=role_code, idempotency_key=idempotency_key, trace_id=trace(request))
+
+    @router.delete("/support-roles/{target_user_id}")
+    def revoke_all_support_roles(target_user_id: str, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
+        require(user_id, Permission.SYSTEM_ADMIN)
+        return controls.revoke_all_support_roles(actor_id=user_id, user_id=controls.resolve_support_target(target_user_id), idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/ads/{ad_id}/schedule")
     def schedule_ad(ad_id: str, body: AdScheduleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -244,16 +255,17 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.post("/finance/adjustments", status_code=201)
     def grant_caibi_to_support(body: DirectCaibiGrantBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
+        target_user_id = controls.resolve_support_target(body.user_id)
         with session_factory() as session:
-            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == body.user_id)))
+            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == target_user_id)))
         if RoleCode.SUPPORT_AGENT not in roles:
             raise AppError(code="SUPPORT_ROLE_REQUIRED", message="仅可向已配置的客服账号发放点钻", status_code=422)
         try:
-            transaction = adjustment_workflow.ledger.adjust(user_id=body.user_id, amount=body.amount, actor_id=user_id, reason_code=body.reason_code, idempotency_key=idempotency_key)
+            transaction = adjustment_workflow.ledger.adjust(user_id=target_user_id, amount=body.amount, actor_id=user_id, reason_code=body.reason_code, idempotency_key=idempotency_key)
         except ValueError as exc:
             raise AppError(code="CAIBI_GRANT_INVALID", message="点钻发放请求无效", status_code=422) from exc
         audit.record(actor_id=user_id, subject_type="ledger_transaction", subject_id=transaction.id, action="admin.caibi.granted", result="SUCCESS", reason_code=body.reason_code, trace_id=trace(request))
-        return {"transaction_id": transaction.id, "user_id": body.user_id, "amount": f"{body.amount:.2f}", "status": "POSTED", "idempotency_key": idempotency_key}
+        return {"transaction_id": transaction.id, "user_id": target_user_id, "amount": f"{body.amount:.2f}", "status": "POSTED", "idempotency_key": idempotency_key}
 
     @router.post("/finance/withdrawals/{withdrawal_id}/review")
     def review_withdrawal(withdrawal_id: str, body: dict, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):

@@ -1,5 +1,9 @@
 from types import SimpleNamespace
+from datetime import datetime, timezone
+from decimal import Decimal
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
 
 import importlib.util
 from pathlib import Path
@@ -9,6 +13,35 @@ _spec = importlib.util.spec_from_file_location('manual_payout_worker_fixture',
 _fixture = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_fixture)
 core, request, claim = _fixture.core, _fixture.request, _fixture.claim
+
+
+def test_auto_conversion_retry_review_receipt_is_selected_by_worker():
+    from app.core.database import Base, create_session_factory
+    from app.modules.wallet import repair_models  # noqa: F401
+    from app.modules.wallet.receipt_models import DepositReceipt
+    from tasks.manual_wallet import ManualWalletMaintenanceTask
+
+    engine = create_engine('sqlite+pysqlite:///:memory:', poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    factory = create_session_factory(engine)
+    now = datetime.now(timezone.utc)
+    with factory.begin() as session:
+        session.add(DepositReceipt(id='auto-retry', network='TRC20', contract='contract', txid='a' * 64,
+            log_index=0, source_address='source', official_address='official', official_config_version='v1',
+            amount_units='10000000', amount=Decimal('10'), block_number=1, block_id='block', block_time=now,
+            evidence_policy='policy', evidence_source='source', observed_at=now, facts_digest='digest',
+            status='REVIEW', reason_code='AUTO_CONVERSION_RETRY_REQUIRED', pending_obligation=True,
+            intent_id=None, user_id='user', ledger_transaction_id=None))
+    retried = []
+    runtime = SimpleNamespace(funds_enabled=True, binding=None, payouts=None,
+        receipts=SimpleNamespace(retry_credit=lambda receipt_id, *, actor_id:
+            retried.append((receipt_id, actor_id)) or {'status': 'CREDITED'}))
+    task = ManualWalletMaintenanceTask(factory, runtime=runtime,
+        scanner=SimpleNamespace(run_once=lambda **_: {'status': 'OK'}),
+        monitor=SimpleNamespace(run_once=lambda: {'status': 'PUBLISHED', 'complete': True}))
+    assert task.run_once()['receipts_credited'] == 1
+    assert retried == [('auto-retry', 'wallet-receipt-retry-worker')]
+    engine.dispose()
 
 
 def test_disabled_credit_keeps_deferred_chain_observation_running(core):

@@ -115,7 +115,7 @@ export function chainPanel(api, {actorId}={}) {
         for (const value of [time(item.timestamp_ms), directionLabel(item), item.amount, `${item.txid} / ${item.log_index}`, accounting(item)]) tr.append(node("td", value));
         const cell = node("td"), action = node("button", "详情", "admin-secondary"); action.type = "button";
         action.addEventListener("click", () => showDetail(item)); cell.append(action); tr.append(cell); body.append(tr);
-        if(actorId){const repair=node('button',item.direction==='INFLOW'?'充值补入账':'提现核对','admin-secondary');repair.type='button';repair.addEventListener('click',()=>{repairModal?.close();repairModal=walletRepairDialog(api,item,{actorId,onClose:()=>{repairModal=null;}});});cell.append(repair);}
+        if(actorId){const repair=node('button',item.direction==='INFLOW'?'充值补入账':'提现核对','admin-secondary');repair.type='button';repair.addEventListener('click',()=>{repairModal?.close();repairModal=walletRepairDialog(api,item,{actorId,onClose:()=>{repairModal=null;},onCompleted:()=>panel.refresh()});});cell.append(repair);}
       }
       table.append(head, body); rows.replaceChildren(table);
       previous.disabled = offset === 0; next.disabled = offset + page.items.length >= page.total;

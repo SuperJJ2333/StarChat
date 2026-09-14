@@ -49,6 +49,9 @@ void main() {
       if (request.url.path.endsWith('/binding')) {
         return flow.json(fixtures.binding);
       }
+      if (request.url.path.endsWith('/payout-quotes/quote')) {
+        return flow.json(fixtures.quote);
+      }
       writes++;
       await completion.future;
       return flow.json(fixtures.payout);
@@ -59,8 +62,6 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.tap(tester, find.text('提现'));
-    await tester.enterText(
-        find.byKey(const Key('manual-payout-otp')), '654321');
     final button = find.byKey(const Key('manual-payout-confirm'));
     await tester.ensureVisible(button);
     await tester.pumpAndSettle();
@@ -100,7 +101,7 @@ void main() {
     await store.begin('payout', {'quote_id': 'quote', 'id': 'order'});
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
-    await flow.tap(tester, find.text('提现'));
+    await flow.tap(tester, find.text('查看已有提现申请'));
     expect(find.text('状态：claimed'), findsOneWidget);
     expect(find.text('取消提现申请'), findsNothing);
     expect(find.byKey(const Key('manual-payout-confirm')), findsNothing);

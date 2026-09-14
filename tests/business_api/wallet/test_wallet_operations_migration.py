@@ -1,4 +1,4 @@
-"""Only the additive 0041 step is applied; this is not historical-chain validation."""
+"""Validate 0041's original schema, then its later 0051 heartbeat expansion."""
 import importlib.util
 import os
 from decimal import Decimal
@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, inspect, text
 
 
 MIGRATION_PATH = Path(__file__).resolve().parents[3] / 'services/business-api/migrations/versions/0041_wallet_operations.py'
+MONITOR_DELIVERY_MIGRATION_PATH = Path(__file__).resolve().parents[3] / 'services/business-api/migrations/versions/0051_monitor_delivery.py'
 TABLES = {'wallet_daily_closes', 'wallet_incidents', 'wallet_incident_commands',
           'wallet_alert_receipts', 'wallet_monitor_heartbeats'}
 
@@ -21,6 +22,27 @@ def migration():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def monitor_delivery_migration():
+    spec = importlib.util.spec_from_file_location('monitor_delivery_migration', MONITOR_DELIVERY_MIGRATION_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def assert_model_matches_database(connection, model, engine):
+    inspector = inspect(connection)
+    table = model.__table__
+    actual = {column['name']: column for column in inspector.get_columns(table.name)}
+    assert set(actual) == set(table.columns.keys())
+    for column in table.columns:
+        assert actual[column.name]['nullable'] == column.nullable
+        assert str(actual[column.name]['type'].compile(dialect=engine.dialect)) == str(column.type.compile(dialect=engine.dialect))
+    expected_unique = {tuple(column.name for column in constraint.columns) for constraint in table.constraints
+                       if constraint.__class__.__name__ == 'UniqueConstraint'}
+    assert {tuple(constraint['column_names']) for constraint in inspector.get_unique_constraints(table.name)} == expected_unique
+    assert inspector.get_pk_constraint(table.name)['constrained_columns'] == [column.name for column in table.primary_key.columns]
 
 
 def test_migration_has_stable_ddl_and_refuses_destructive_downgrade():
@@ -62,17 +84,14 @@ def test_0041_preserves_journal_and_matches_operational_models():
             assert connection.scalar(text('SELECT value FROM migration_preservation_marker')) == 'before-0041'
             journal_after = inspector.get_columns('wallet_ledger_entries')
             assert [(c['name'], str(c['type']), c['nullable']) for c in journal_before] == [(c['name'], str(c['type']), c['nullable']) for c in journal_after]
-            for model in models:
-                table = model.__table__
-                actual = {c['name']: c for c in inspector.get_columns(table.name)}
-                assert set(actual) == set(table.columns.keys())
-                for column in table.columns:
-                    assert actual[column.name]['nullable'] == column.nullable
-                    assert str(actual[column.name]['type'].compile(dialect=engine.dialect)) == str(column.type.compile(dialect=engine.dialect))
-                expected_unique = {tuple(c.name for c in constraint.columns) for constraint in table.constraints
-                                   if constraint.__class__.__name__ == 'UniqueConstraint'}
-                assert {tuple(c['column_names']) for c in inspector.get_unique_constraints(table.name)} == expected_unique
-                assert inspector.get_pk_constraint(table.name)['constrained_columns'] == [c.name for c in table.primary_key.columns]
+            for model in models[:-1]:
+                assert_model_matches_database(connection, model, engine)
+            heartbeat = {column['name']: column for column in inspector.get_columns('wallet_monitor_heartbeats')}
+            assert set(heartbeat) == {'id', 'last_attempt_at', 'last_success_at', 'last_error_code'}
+            assert heartbeat['id']['type'].length == 36 and heartbeat['id']['nullable'] is False
+            assert heartbeat['last_attempt_at']['type'].timezone is True and heartbeat['last_attempt_at']['nullable'] is False
+            assert heartbeat['last_success_at']['type'].timezone is True and heartbeat['last_success_at']['nullable'] is True
+            assert heartbeat['last_error_code']['type'].length == 100 and heartbeat['last_error_code']['nullable'] is True
             foreign_keys = inspector.get_foreign_keys('wallet_daily_closes')
             assert len(foreign_keys) == 1 and foreign_keys[0]['referred_table'] == 'wallet_daily_closes'
             assert foreign_keys[0]['constrained_columns'] == ['previous_id']
@@ -80,6 +99,13 @@ def test_0041_preserves_journal_and_matches_operational_models():
                 with Operations.context(MigrationContext.configure(connection)):
                     migration().downgrade()
             assert connection.scalar(text('SELECT amount FROM wallet_ledger_entries')) == Decimal('12.345678')
+        with engine.begin() as connection:
+            with Operations.context(MigrationContext.configure(connection)):
+                monitor_delivery_migration().upgrade()
+        with engine.connect() as connection:
+            assert_model_matches_database(connection, WalletMonitorHeartbeat, engine)
+            assert connection.scalar(text('SELECT amount FROM wallet_ledger_entries')) == Decimal('12.345678')
+            assert connection.scalar(text('SELECT value FROM migration_preservation_marker')) == 'before-0041'
     finally:
         if engine is not None:
             engine.dispose()

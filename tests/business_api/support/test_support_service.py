@@ -28,6 +28,12 @@ def test_support_identity_is_server_authoritative(session_factory):
 
 def test_queue_assigns_online_least_active_and_transfer_close(session_factory):
     service = SupportQueueService(session_factory)
+    now = datetime.now(timezone.utc)
+    with session_factory.begin() as session:
+        session.add_all([
+            UserRole(id="agent-a-role", user_id="agent-a", role_code=RoleCode.SUPPORT_AGENT, assigned_by="admin", assigned_at=now),
+            UserRole(id="agent-b-role", user_id="agent-b", role_code=RoleCode.SUPPORT_AGENT, assigned_by="admin", assigned_at=now),
+        ])
     ticket = service.open_ticket("user-1", "room-opaque", "billing")
     service.set_agent_presence("agent-a", online=True, active_tickets=2, skills={"billing"})
     service.set_agent_presence("agent-b", online=True, active_tickets=0, skills={"billing"})

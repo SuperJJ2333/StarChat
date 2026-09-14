@@ -32,6 +32,7 @@ test("light and dark themes expose the same semantic color keys", async () => {
     "--color-red-packet-muted",
     "--color-scrim",
     "--color-social-link",
+    "--color-support-identity",
     "--color-surface-elevated",
     "--color-surface-primary",
     "--color-text-primary",
@@ -59,6 +60,13 @@ test("red packet muted token matches Flutter in both themes", async () => {
     flutter,
     /static const redPacketMuted = Color\(0xFFF2B7A8\);/u
   );
+});
+
+test("support identity yellow matches Flutter", async () => {
+  const css = await readFile(new URL("src/styles/tokens.css", root), "utf8");
+  const flutter = await readFile(new URL("../apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart", root), "utf8");
+  for (const theme of ["light", "dark"]) assert.match(themeBlock(css, theme), /--color-support-identity:\s*#f6c343;/u);
+  assert.match(flutter, /supportIdentityYellow = Color\(0xFFF6C343\)/u);
 });
 
 test("index loads the approved style layers in fixed order", async () => {

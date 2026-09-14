@@ -18,32 +18,115 @@ http.Response rejected(String code) => http.Response(
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  testWidgets('definitively expired payout permits a fresh quote after restart',
+  for (final code in const [
+    'WALLET_PAYOUT_QUOTE_EXPIRED',
+    'WALLET_PAYOUT_QUOTE_CHANGED',
+  ]) {
+    testWidgets('$code clears a recovered payout and permits a fresh quote',
+        (tester) async {
+      final api = await flow.client((r) async {
+        if (r.url.path.endsWith('/binding')) {
+          return flow.json(fixtures.binding);
+        }
+        if (r.url.path.contains('/payout-quotes/')) {
+          return flow.json(fixtures.quote);
+        }
+        return rejected(code);
+      });
+      final store = ManualOperationStore(api);
+      await store.initialize();
+      await store.begin('payout', {'quote_id': 'expired-quote'});
+      await store.begin('quote', {'amount': '10.000000', 'version': 1});
+      await tester
+          .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+      await tester.pumpAndSettle();
+      await flow.tap(tester, find.text('查看已有提现申请'));
+      await flow.tap(tester, find.byKey(const Key('manual-payout-confirm')));
+      expect(await store.read('payout'), isNull);
+      expect(await store.read('quote'), isNull);
+      await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
+      await tester.pumpWidget(CupertinoApp(
+          home: ManualWalletPage(
+              client: api, section: ManualWalletSection.payout)));
+      await tester.pumpAndSettle();
+      expect(
+          tester
+              .widget<CupertinoTextField>(
+                  find.byKey(const Key('manual-payout-amount')))
+              .enabled,
+          isTrue);
+    });
+  }
+
+  testWidgets('unknown recovered payout failure retains its original key',
       (tester) async {
-    final api = await flow.client((r) async => r.url.path.endsWith('/binding')
-        ? flow.json(fixtures.binding)
-        : rejected('WALLET_PAYOUT_QUOTE_EXPIRED'));
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
+      }
+      if (request.url.path.contains('/payout-quotes/')) {
+        return flow.json(fixtures.quote);
+      }
+      throw Exception('offline');
+    });
     final store = ManualOperationStore(api);
     await store.initialize();
-    await store.begin('payout', {'quote_id': 'expired-quote'});
+    final original = await store.begin('payout', {'quote_id': 'quote'});
     await store.begin('quote', {'amount': '10.000000', 'version': 1});
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
-    await flow.tap(tester, find.text('提现'));
+    await flow.tap(tester, find.text('查看已有提现申请'));
+    await flow.tap(tester, find.byKey(const Key('manual-payout-confirm')));
+    expect((await store.read('payout'))?['key'], original['key']);
+    expect((await store.read('quote'))?['amount'], '10.000000');
+  });
+
+  testWidgets(
+      'expired recovered quote after PIN is required clears both records',
+      (tester) async {
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
+      }
+      if (request.url.path.contains('/payout-quotes/')) {
+        return flow.json(fixtures.quote);
+      }
+      return rejected('PAYMENT_PIN_REQUIRED');
+    });
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    await store.begin('payout', {'quote_id': 'quote'});
+    await store.begin('quote', {'amount': '10.000000', 'version': 1});
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpAndSettle();
+    await flow.tap(tester, find.text('查看已有提现申请'));
     await tester.enterText(
         find.byKey(const Key('manual-payout-otp')), '123456');
     await flow.tap(tester, find.byKey(const Key('manual-payout-confirm')));
     expect(await store.read('payout'), isNull);
-    await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
-    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    expect(await store.read('quote'), isNull);
+  });
+
+  testWidgets('expired new quote draft is discarded when reopening payout',
+      (tester) async {
+    final api = await flow.client((request) async {
+      if (request.url.path.endsWith('/binding')) {
+        return flow.json(fixtures.binding);
+      }
+      if (request.url.path.contains('/payout-quotes/')) {
+        return flow.json(fixtures.quote);
+      }
+      throw StateError('Unexpected request');
+    });
+    final store = ManualOperationStore(api);
+    await store.initialize();
+    await store.begin('quote', {'id': 'quote', 'amount': '10.000000'});
+    await tester.pumpWidget(CupertinoApp(
+        home: ManualWalletPage(
+            client: api, section: ManualWalletSection.payout)));
     await tester.pumpAndSettle();
-    await flow.tap(tester, find.text('提现'));
-    expect(
-        tester
-            .widget<CupertinoTextField>(
-                find.byKey(const Key('manual-payout-amount')))
-            .enabled,
-        isTrue);
+    expect(await store.read('quote'), isNull);
+    expect(await store.read('payout'), isNull);
   });
 
   testWidgets('binding version rejection permits refreshed deposit request',
@@ -85,6 +168,7 @@ void main() {
     });
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
+    await flow.openBinding(tester);
     await tester.enterText(
         find.byKey(const Key('manual-binding-address')), 'T${'2' * 33}');
     await flow.tap(tester, find.byKey(const Key('manual-challenge')));

@@ -1,7 +1,7 @@
 """Immutable chain facts with separately controlled attribution lifecycle."""
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, String, UniqueConstraint, event, inspect
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, String, UniqueConstraint, event, inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -37,6 +37,7 @@ class DepositReceipt(Base):
     intent_id: Mapped[str | None] = mapped_column(ForeignKey('wallet_deposit_intents.id'))
     user_id: Mapped[str | None] = mapped_column(String(36))
     ledger_transaction_id: Mapped[str | None] = mapped_column(ForeignKey('wallet_ledger_transactions.id'))
+    manual_case_id: Mapped[str | None] = mapped_column(ForeignKey('wallet_manual_deposit_cases.id'), unique=True)
 
 
 class DepositReceiptAnomaly(Base):
@@ -52,7 +53,7 @@ class DepositReceiptAnomaly(Base):
 @event.listens_for(DepositReceipt, 'before_update')
 def immutable_receipt(mapper, connection, target):
     state = inspect(target)
-    mutable = {'status', 'reason_code', 'pending_obligation', 'intent_id', 'user_id', 'ledger_transaction_id'}
+    mutable = {'status', 'reason_code', 'pending_obligation', 'intent_id', 'user_id', 'ledger_transaction_id', 'manual_case_id'}
     if any(state.attrs[c.name].history.has_changes() for c in target.__table__.columns if c.name not in mutable):
         raise ValueError('immutable deposit receipt facts')
     changed = state.attrs.status.history
@@ -60,8 +61,16 @@ def immutable_receipt(mapper, connection, target):
             and not any(state.attrs[name].history.has_changes() for name in mutable - {'reason_code'})):
         return
     if (list(changed.deleted) != ['REVIEW'] or target.status != 'CREDITED'
-            or target.pending_obligation or not target.intent_id or not target.ledger_transaction_id):
+            or target.pending_obligation or not target.user_id or not target.ledger_transaction_id
+            or bool(target.intent_id) == bool(target.manual_case_id)):
         raise ValueError('immutable deposit receipt lifecycle')
+    if target.manual_case_id:
+        row = connection.execute(text("""SELECT 1 FROM wallet_manual_deposit_cases c
+            JOIN wallet_manual_deposit_decisions d ON d.case_id=c.id AND d.decision='APPROVED'
+            WHERE c.id=:case_id AND c.receipt_id=:receipt_id AND c.user_id=:user_id"""),
+            {'case_id':target.manual_case_id,'receipt_id':target.id,'user_id':target.user_id}).first()
+        if row is None:
+            raise ValueError('manual deposit case requires reciprocal approved decision')
 
 
 @event.listens_for(DepositReceipt, 'before_delete')

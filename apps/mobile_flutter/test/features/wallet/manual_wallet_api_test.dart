@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -20,6 +21,23 @@ class MemoryStore implements SecureKeyValueStore {
 const at = '2026-09-07T10:00:00+00:00';
 const token = 'e30.eyJzdWIiOiJhbGljZSJ9.test';
 const refreshedToken = 'e30.eyJzdWIiOiJhbGljZSJ9.refreshed';
+String syntheticTronAddress() {
+  final payload = [0x41, ...List<int>.generate(20, (index) => index + 1)];
+  final bytes = [
+    ...payload,
+    ...sha256.convert(sha256.convert(payload).bytes).bytes.take(4),
+  ];
+  var value = bytes.fold(
+      BigInt.zero, (total, byte) => (total << 8) + BigInt.from(byte));
+  const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  var result = '';
+  while (value > BigInt.zero) {
+    result = alphabet[(value % BigInt.from(58)).toInt()] + result;
+    value ~/= BigInt.from(58);
+  }
+  return result;
+}
+
 final binding = <String, dynamic>{
   'status': 'ACTIVE',
   'id': 'binding',
@@ -57,7 +75,7 @@ final intent = <String, dynamic>{
   'binding_version': 1,
   'binding_effective_from_block': 101,
   'source_address': 'source',
-  'official_address': 'official',
+  'official_address': syntheticTronAddress(),
   'official_config_version': 'v1',
   'network': 'tron-mainnet',
   'rules_snapshot': rules,
@@ -116,6 +134,15 @@ final enrollment = <String, dynamic>{
 };
 
 void main() {
+  test('deposit intent rejects malformed official TRON addresses', () {
+    for (final address in ['', 'T${'2' * 33}', 'https://invalid.example']) {
+      expect(
+          () => ManualDepositIntent.fromJson(
+              {...intent, 'official_address': address}),
+          throwsFormatException);
+    }
+  });
+
   test('authentication refresh preserves financial body and idempotency key',
       () async {
     final session = SecureSessionStore(MemoryStore());

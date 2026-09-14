@@ -37,7 +37,7 @@ These rules apply to the entire repository. A deeper `AGENTS.md` may add stricte
 - Never give the server user recovery keys, room keys, message plaintext, plaintext attachments, or decrypted call media.
 - CAIBI（展示名：彩币） uses two decimal places and USDT uses six. Use `Decimal`/`NUMERIC`; never use binary floating point for assets.
 - Ledger transactions and entries are append-only and balanced per asset. Correct errors with linked reversal transactions.
-- CAIBI and USDT are isolated. Do not add conversion, USDT P2P transfer, or USDT red packets.
+- CAIBI and USDT may be converted in both directions at a fixed 1:1 ratio: 1 USDT = 1 CAIBI (user-approved on 2026-09-13). This supersedes the previous prohibition on conversion. Preserve each asset's precision and balanced ledger accounting, and apply all financial-write, approval, idempotency, and audit requirements to conversions. Do not add USDT P2P transfer or USDT red packets.
 - Every financial write requires an idempotency key, a stable reason code, actor identity, audit record, and transactional Outbox event.
 
 ## Development workflow

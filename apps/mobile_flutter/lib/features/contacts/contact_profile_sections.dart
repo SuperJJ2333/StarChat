@@ -5,15 +5,22 @@ import 'package:flutter/cupertino.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../../ui/components/wechat_official_name.dart';
+import '../../core/support_identity_repository.dart';
 import 'contact_models.dart';
 import 'user_identity.dart';
 import '../matrix/profile_repository.dart';
 
 final class FriendIdentityCard extends StatelessWidget {
   const FriendIdentityCard(
-      {super.key, required this.contact, this.identityCache, this.now});
+      {super.key,
+      required this.contact,
+      this.identityCache,
+      this.supportIdentities,
+      this.now});
   final ProfileRepository? identityCache;
   final ContactDetails contact;
+  final SupportIdentityRepository? supportIdentities;
   final DateTime Function()? now;
 
   @override
@@ -26,6 +33,7 @@ final class FriendIdentityCard extends StatelessWidget {
         remark: contact.remark,
         avatarUrl: contact.avatarUrl,
         identityCache: identityCache,
+        supportIdentities: supportIdentities,
         lastSeenAt: contact.lastSeenAt,
         lastSeenKnown: contact.lastSeenKnown,
         now: now,
@@ -43,6 +51,7 @@ final class ProfileIdentityCard extends StatelessWidget {
       this.remark,
       this.avatarUrl,
       this.identityCache,
+      this.supportIdentities,
       this.statusLabel,
       this.lastSeenAt,
       this.lastSeenKnown = false,
@@ -54,6 +63,7 @@ final class ProfileIdentityCard extends StatelessWidget {
   final String? remark;
   final String? avatarUrl;
   final ProfileRepository? identityCache;
+  final SupportIdentityRepository? supportIdentities;
   final String? statusLabel;
   final DateTime? lastSeenAt;
   final bool lastSeenKnown;
@@ -95,11 +105,12 @@ final class ProfileIdentityCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                WeChatOfficialName(
+                  name: displayName,
+                  supportIdentities: supportIdentities,
+                  userId: userId,
+                  matrixUserId: matrixUserId,
+                  nameStyle: const TextStyle(
                     fontSize: WeChatTypography.title1,
                     fontWeight: FontWeight.w700,
                     height: 30 / 22,

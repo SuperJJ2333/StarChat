@@ -34,7 +34,7 @@ void main() {
     expect(
         find.descendant(
             of: find.byKey(const Key('manual-wallet-summary')),
-            matching: find.text('已登记')),
+            matching: find.text('已绑定')),
         findsOneWidget);
     expect(find.textContaining('地址状态：'), findsNothing);
     expect(
@@ -42,9 +42,7 @@ void main() {
             of: find.byKey(const Key('manual-wallet-summary')),
             matching: find.textContaining('下次可改绑')),
         findsOneWidget);
-    final segments = tester.widget<CupertinoSlidingSegmentedControl<int>>(
-        find.byType(CupertinoSlidingSegmentedControl<int>));
-    expect(segments.children.keys.toList(), [1, 2, 0]);
+    expect(find.byType(CupertinoSlidingSegmentedControl<int>), findsNothing);
     expect(
         find.descendant(
             of: find.byType(CupertinoNavigationBar),
@@ -52,7 +50,7 @@ void main() {
         findsOneWidget);
     await flow.tap(tester, find.byKey(const Key('manual-current-copy')));
     expect(copied, 'T${'3' * 33}');
-    await flow.tap(tester, find.byKey(const Key('manual-binding-address')));
+    await flow.openBinding(tester);
     await tester.enterText(
         find.byKey(const Key('manual-binding-address')), 'T${'2' * 33}');
     await flow.tap(tester, find.byKey(const Key('manual-binding-copy')));
@@ -73,12 +71,15 @@ void main() {
       }, capabilities: {
         'user_auth_mode': 'address_only',
         'funding_enabled': true,
-        'manual_payout_enabled': true
+        'manual_payout_enabled': true,
+        'manual_payout_execution_enabled': true,
+        'conversion_enabled': true,
+        'caibi_payout_enabled': true,
       });
       await tester
           .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
       await tester.pumpAndSettle();
-      await flow.tap(tester, find.text(deposit ? '充值' : '提现'));
+      await (deposit ? flow.openDeposit(tester) : flow.openPayout(tester));
       final field = find.byKey(
           Key(deposit ? 'manual-deposit-amount' : 'manual-payout-amount'));
       await tester.enterText(field, '10');

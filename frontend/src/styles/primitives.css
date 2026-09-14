@@ -1084,7 +1084,7 @@ app-transfer-card {
 .c-wallet-demo__change { width: var(--size-touch); padding: var(--space-sm); background: transparent; color: inherit; }
 .c-wallet-demo__change svg { width: var(--size-icon-lg); height: var(--size-icon-lg); }
 .c-wallet-demo__pin-summary { text-align: center; display: grid; gap: var(--space-lg); }
-.c-wallet-demo__amount { font-size: var(--type-brand-size) !important; }
+.c-wallet-demo h2.c-wallet-demo__amount { font-size: var(--type-brand-size); }
 .c-wallet-demo__pin-boxes { display: grid; grid-template-columns: repeat(6, 1fr); }
 .c-wallet-demo__pin-boxes span {
   display: grid; place-items: center; min-height: var(--size-action-primary);

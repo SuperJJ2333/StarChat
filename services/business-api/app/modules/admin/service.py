@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, or_, select
 
 from app.core.errors import AppError
 from app.core.outbox import OutboxPublisher
@@ -11,6 +11,7 @@ from app.modules.admin.models import AdminBan, AdminCommand, OfficialNotice, Not
 from app.modules.audit.writer import AuditWriter
 from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import User, UserRole
+from app.modules.support.service import set_support_badge, support_profile_badges
 from app.modules.moments.models import NativeMomentAd
 
 
@@ -55,18 +56,56 @@ class AdminControlService:
             return result
         return self._command("admin.unban", idempotency_key, {"ban_id":ban_id,"reason_code":reason_code}, mutate)
 
-    def set_support_role(self, *, actor_id: str, user_id: str, role_code: RoleCode, idempotency_key: str, trace_id: str) -> dict:
+    _SUPPORT_ROLES = frozenset((RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR))
+
+    @staticmethod
+    def _validate_badge(badge: str | None) -> str | None:
+        if badge is None:
+            return None
+        if not 2 <= len(badge) <= 6 or any(not ('\u4e00' <= char <= '\u9fff') for char in badge):
+            raise AppError(code="SUPPORT_BADGE_INVALID", message="客服后缀须为2至6个汉字", status_code=422)
+        return badge
+
+    @staticmethod
+    def _resolve_target(session, target: str) -> User:
+        cleaned = target.strip()
+        normalized = cleaned.casefold()
+        if not normalized:
+            raise AppError(code="SUPPORT_TARGET_INVALID", message="客服目标无效", status_code=422)
+        if '@' in normalized:
+            users = list(session.scalars(select(User).where(User.email_normalized == normalized)))
+        else:
+            users = list(session.scalars(select(User).where(or_(User.id == cleaned, User.username_normalized == normalized))))
+        if not users:
+            raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
+        if len(users) != 1:
+            raise AppError(code="SUPPORT_TARGET_AMBIGUOUS", message="客服目标不唯一", status_code=422)
+        return users[0]
+
+    def resolve_support_target(self, target: str) -> str:
+        """Public exact resolver for support administration and point grants."""
+        with self._session_factory() as session:
+            return self._resolve_target(session, target).id
+
+    def set_support_role(self, *, actor_id: str, target: str, role_code: RoleCode = RoleCode.SUPPORT_AGENT, badge: str | None = None, idempotency_key: str, trace_id: str) -> dict:
         if role_code not in {RoleCode.SUPPORT_AGENT, RoleCode.FINANCE_SUPPORT, RoleCode.SUPPORT_SUPERVISOR}:
             raise AppError(code="ADMIN_ROLE_INVALID", message="仅可配置客服角色", status_code=422)
+        badge = self._validate_badge(badge)
+        target_user_id = self.resolve_support_target(target)
         def mutate(session):
-            if session.get(User, user_id) is None: raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
-            row = session.scalar(select(UserRole).where(UserRole.user_id == user_id, UserRole.role_code == role_code))
-            if row is None: session.add(UserRole(id=str(uuid4()), user_id=user_id, role_code=role_code, assigned_by=actor_id, assigned_at=self._now()))
-            result={"user_id":user_id,"role_code":role_code.value,"status":"ASSIGNED"}
-            self._record(session, actor_id, "user_role", user_id, "admin.support_role.assigned", "SUPPORT_ROLE_ASSIGN", trace_id, {"role_code":role_code.value})
-            OutboxPublisher.enqueue(session, topic="admin", event_type="admin.support_role.assigned", aggregate_type="user", aggregate_id=user_id, payload={"role_code":role_code.value})
+            if session.get(User, target_user_id) is None:
+                raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
+            row = session.scalar(select(UserRole).where(UserRole.user_id == target_user_id, UserRole.role_code == role_code))
+            if row is None: session.add(UserRole(id=str(uuid4()), user_id=target_user_id, role_code=role_code, assigned_by=actor_id, assigned_at=self._now()))
+            profile_badge = set_support_badge(session, user_id=target_user_id, badge=badge, now=self._now())
+            result={"user_id":target_user_id,"role_code":role_code.value,"badge":profile_badge,"status":"ASSIGNED"}
+            self._record(session, actor_id, "user_role", target_user_id, "admin.support_role.assigned", "SUPPORT_ROLE_ASSIGN", trace_id, {"role_code":role_code.value, "badge": profile_badge})
+            OutboxPublisher.enqueue(session, topic="admin", event_type="admin.support_role.assigned", aggregate_type="user", aggregate_id=target_user_id, payload={"role_code":role_code.value, "badge": profile_badge})
             return result
-        return self._command("admin.support-role", idempotency_key, {"user_id":user_id,"role_code":role_code.value}, mutate)
+        payload = {"user_id": target_user_id, "role_code": role_code.value}
+        if badge is not None:
+            payload["badge"] = badge
+        return self._command("admin.support-role", idempotency_key, payload, mutate)
 
     def create_notice(self, *, actor_id: str, title: str, content: str, audience: str, publish_at: datetime | None, idempotency_key: str, trace_id: str) -> dict:
         now=self._now()
@@ -152,6 +191,8 @@ class AdminControlService:
             return {"ad_id":ad_id,"impressions":campaign.impressions,"clicks":campaign.clicks}
 
     def revoke_support_role(self, *, actor_id: str, user_id: str, role_code: RoleCode, idempotency_key: str, trace_id: str) -> dict:
+        if role_code not in self._SUPPORT_ROLES:
+            raise AppError(code="ADMIN_ROLE_INVALID", message="仅可撤销客服角色", status_code=422)
         def mutate(session):
             row=session.scalar(select(UserRole).where(UserRole.user_id==user_id,UserRole.role_code==role_code))
             if row is not None: session.delete(row)
@@ -160,6 +201,49 @@ class AdminControlService:
             OutboxPublisher.enqueue(session,topic="admin",event_type="admin.support_role.revoked",aggregate_type="user",aggregate_id=user_id,payload={"role_code":role_code.value})
             return result
         return self._command("admin.support-role.revoke",idempotency_key,{"user_id":user_id,"role_code":role_code.value},mutate)
+
+    def revoke_all_support_roles(self, *, actor_id: str, user_id: str, idempotency_key: str, trace_id: str) -> dict:
+        def mutate(session):
+            if session.get(User, user_id) is None:
+                raise AppError(code="USER_NOT_FOUND", message="用户不存在", status_code=404)
+            rows = list(session.scalars(select(UserRole).where(UserRole.user_id == user_id, UserRole.role_code.in_(self._SUPPORT_ROLES))))
+            roles = sorted(row.role_code.value for row in rows)
+            for row in rows:
+                session.delete(row)
+            result = {"user_id": user_id, "roles": roles, "status": "REVOKED"}
+            self._record(session, actor_id, "user_role", user_id, "admin.support_roles.revoked", "SUPPORT_ROLE_REVOKE", trace_id, {"roles": roles})
+            OutboxPublisher.enqueue(session, topic="admin", event_type="admin.support_roles.revoked", aggregate_type="user", aggregate_id=user_id, payload={"roles": roles})
+            return result
+        return self._command("admin.support-roles.revoke-all", idempotency_key, {"user_id": user_id}, mutate)
+
+    def support_agents(self, *, query: str | None, limit: int, offset: int, dispatch_eligible: bool | None) -> dict:
+        support_roles = self._SUPPORT_ROLES
+        with self._session_factory() as session:
+            support_user_ids = select(UserRole.user_id).where(UserRole.role_code.in_(support_roles)).distinct()
+            statement = select(User.id, User.username, User.nickname, User.email_normalized).where(User.id.in_(support_user_ids))
+            agent_role = exists(select(UserRole.id).where(UserRole.user_id == User.id, UserRole.role_code == RoleCode.SUPPORT_AGENT))
+            if dispatch_eligible is True:
+                statement = statement.where(agent_role)
+            elif dispatch_eligible is False:
+                statement = statement.where(~agent_role)
+            if query and query.strip():
+                raw = query.strip()
+                normalized = raw.casefold()
+                literal = normalized.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                pattern = f"%{literal}%"
+                statement = statement.where(or_(User.id == raw, User.username_normalized.ilike(pattern, escape='\\'), User.nickname.ilike(pattern, escape='\\'), User.email_normalized.ilike(pattern, escape='\\')))
+            total = session.scalar(select(func.count()).select_from(statement.order_by(None).subquery())) or 0
+            users = session.execute(statement.order_by(User.username, User.id).offset(offset).limit(limit)).all()
+            user_ids = [user.id for user in users]
+            role_rows = session.execute(select(UserRole.user_id, UserRole.role_code).where(UserRole.user_id.in_(user_ids), UserRole.role_code.in_(support_roles))).all()
+            roles_by_user: dict[str, list[str]] = {}
+            for user_id, role in role_rows:
+                roles_by_user.setdefault(user_id, []).append(role.value)
+            profiles = support_profile_badges(session, user_ids)
+        def masked(email: str) -> str:
+            local, domain = email.split('@', 1)
+            return f"{local[:1]}***@{domain}"
+        return {"items": [{"id": u.id, "username": u.username, "nickname": u.nickname, "masked_email": masked(u.email_normalized), "roles": sorted(roles_by_user[u.id]), "badge": profiles.get(u.id, "官方客服"), "dispatch_eligible": RoleCode.SUPPORT_AGENT.value in roles_by_user[u.id]} for u in users], "total": total, "limit": limit, "offset": offset}
 
     def _command(self, scope, key, payload, mutate):
         request_hash=hashlib.sha256(json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest()

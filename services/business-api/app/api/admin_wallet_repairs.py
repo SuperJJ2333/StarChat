@@ -8,6 +8,7 @@ from app.api.admin_wallet_auth import wallet_grant_service
 from app.modules.identity.tokens import TokenService
 from app.modules.wallet.repairs import DepositRepairService, fail
 from app.modules.wallet.repair_payouts import PayoutReconciliationService
+from app.modules.wallet.manual_deposit_cases import ManualDepositCaseService
 
 
 class RepairBody(BaseModel):
@@ -44,6 +45,33 @@ class RepairExecuteBody(RepairBody):
         return value
 
 
+class ManualDepositCaseBody(RepairBody):
+    receipt_id: str = Field(min_length=1, max_length=36)
+    user_id: str = Field(min_length=1, max_length=36)
+    reason_detail: str = Field(min_length=1, max_length=500)
+    ownership_attestation: Literal[True]
+
+    @field_validator('ownership_attestation', mode='before')
+    @classmethod
+    def explicit_ownership_attestation(cls, value):
+        if value is not True:
+            raise ValueError('explicit boolean ownership attestation required')
+        return value
+
+
+class ManualDepositDecisionBody(RepairBody):
+    decision: Literal['APPROVED', 'REJECTED']
+    reason_detail: str = Field(min_length=1, max_length=500)
+    confirmed: Literal[True]
+
+    @field_validator('confirmed', mode='before')
+    @classmethod
+    def explicit_decision_confirmation(cls, value):
+        if value is not True:
+            raise ValueError('explicit boolean confirmation required')
+        return value
+
+
 def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trusted=lambda: False):
     router = APIRouter(prefix='/wallet/manual', tags=['admin-wallet-repairs'])
     clock = lambda: datetime.now(timezone.utc)
@@ -53,6 +81,8 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
     deposits = (DepositRepairService(factory, receipts=runtime.receipts,
         owner_admin_id=settings.wallet_manual_owner_admin_id, clock_trusted=clock_trusted) if runtime else None)
     payouts = PayoutReconciliationService(factory, payouts=runtime.payouts, deposits=deposits) if runtime else None
+    cases = (ManualDepositCaseService(factory, receipts=runtime.receipts,
+        owner_admin_id=settings.wallet_manual_owner_admin_id, clock_trusted=clock_trusted) if runtime else None)
 
     def actor(authorization: Annotated[str | None, Header()] = None):
         if not authorization or not authorization.startswith('Bearer '):
@@ -103,6 +133,34 @@ def create_admin_wallet_repairs_router(settings, factory, *, runtime, clock_trus
     @router.get('/deposit-repairs/{operation_id}')
     def deposit_status(operation_id: str, claims=Depends(actor)):
         return response(deposits.status(**context(claims), operation_id=operation_id))
+
+    @router.get('/manual-deposit-cases/context')
+    def manual_case_context(claims=Depends(actor), txid: str = Query(pattern='^[a-f0-9]{64}$'), log_index: int = Query(ge=0)):
+        return response(cases.context(**context(claims), txid=txid, log_index=log_index))
+
+    @router.post('/manual-deposit-cases')
+    def manual_case_create(body: ManualDepositCaseBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
+        write_gate(); return response(cases.create(**write_context(claims), **body.model_dump(), idempotency_key=idempotency_key))
+
+    @router.get('/manual-deposit-cases/operations/{operation_id}')
+    def manual_case_operation(operation_id: str, claims=Depends(actor)):
+        return response(cases.status(**context(claims), operation_id=operation_id))
+
+    @router.post('/manual-deposit-cases/{case_id}/decision')
+    def manual_case_decision(case_id: str, body: ManualDepositDecisionBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
+        write_gate(); return response(cases.decide(**write_context(claims), case_id=case_id, **body.model_dump(), idempotency_key=idempotency_key))
+
+    @router.post('/manual-deposit-cases/{case_id}/preview')
+    def manual_case_preview(case_id: str, claims=Depends(actor)):
+        return response(cases.preview(**context(claims), case_id=case_id))
+
+    @router.post('/manual-deposit-cases/{case_id}/execute')
+    def manual_case_execute(case_id: str, body: RepairExecuteBody, claims=Depends(actor), idempotency_key: str = Header(min_length=1, max_length=128)):
+        write_gate(); return response(cases.execute(**write_context(claims), case_id=case_id, **body.model_dump(exclude={'confirmed'}), idempotency_key=idempotency_key))
+
+    @router.get('/manual-deposit-cases/{case_id}')
+    def manual_case_get(case_id: str, claims=Depends(actor)):
+        return response(cases.get(**context(claims), case_id=case_id))
 
     @router.post('/payout-reconciliations/preview')
     def payout_preview(body: PayoutReconciliationPreviewBody, claims=Depends(actor)):

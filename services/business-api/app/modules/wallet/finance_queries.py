@@ -30,12 +30,12 @@ class WalletFinanceQuery:
                 verified = row.evidence_policy == POLICY and row.reason_code not in {'INVALID_ASSET_EVIDENCE', 'INCONSISTENT_EVIDENCE'}
                 user = session.execute(select(User.username, User.nickname).where(User.id == row.user_id)).first() if row.user_id else None
                 binding = session.scalar(select(WalletBinding.id).where(WalletBinding.address == row.source_address).limit(1))
-                attribution = 'LINKED' if row.user_id else 'BOUND_ORDER_UNMATCHED' if binding else 'UNBOUND'
-                explanation = ('已由充值入账记录关联用户' if row.user_id else
+                attribution = 'MANUAL_CASE' if row.manual_case_id else 'LINKED' if row.user_id else 'BOUND_ORDER_UNMATCHED' if binding else 'UNBOUND'
+                explanation = ('已由人工补录单关联用户' if row.manual_case_id else '已由充值入账记录关联用户' if row.user_id else
                     '付款地址有绑定记录，但尚无通过匹配核验的充值订单；需复核订单时间、金额及绑定生效区间' if binding else
                     '尚无可核验的地址绑定与充值订单归属，不能据地址展示推定用户')
                 return dict(kind='DEPOSIT', record_id=row.id, ledger_status=row.status, user_id=row.user_id,
-                    ledger_transaction_id=row.ledger_transaction_id, intent_id=row.intent_id, reason_code=row.reason_code,
+                    ledger_transaction_id=row.ledger_transaction_id, intent_id=row.intent_id, manual_case_id=row.manual_case_id, reason_code=row.reason_code,
                     attribution_status=attribution, attribution_reason_text=explanation,
                     user_username=user.username if user else None, user_nickname=user.nickname if user else None,
                     evidence_status='CONFLICT' if conflict else 'VERIFIED' if verified else 'UNVERIFIED')

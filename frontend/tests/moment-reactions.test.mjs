@@ -9,6 +9,7 @@ class Node {
   hasAttribute(name) { return name in this.attributes; }
   addEventListener(name, handler) { this.listeners[name] = handler; }
   dispatchEvent(event) { this.event = event; }
+  querySelector(selector) { return all(this, node => node.tagName === selector)[0] ?? null; }
 }
 globalThis.HTMLElement = Node;
 globalThis.document = { createElement: (tag) => new Node(tag) };
@@ -27,12 +28,26 @@ test("reactions present individual profile controls and comment timestamp", () =
 });
 
 test("detail reply state and self comment operations are distinguishable", () => {
-  const view = new AppMomentReactions();
-  view.setAttribute("detail", "true");
-  view.setAttribute("selected", "true");
-  view.setAttribute("own", "true");
-  const root = view.render();
+  const ownView = new AppMomentReactions();
+  ownView.setAttribute("detail", "true");
+  ownView.setAttribute("selected", "true");
+  ownView.setAttribute("own", "true");
+  const root = ownView.render();
   assert.equal(root.dataset.detail, "true");
   assert.ok(all(root, n => n.dataset.selected === "true").length);
-  assert.equal(all(root, n => n.dataset.action === "moment:comment-actions").length, 1);
+  const ownReply = all(root, n => n.tagName === "button" && n.attributes["aria-label"] === "自己的评论，长按复制或删除")[0];
+  assert.ok(ownReply);
+  assert.equal(ownReply.dataset.action, undefined);
+  let stopped = false;
+  ownReply.listeners.click({ stopPropagation() { stopped = true; } });
+  assert.equal(stopped, true);
+  let prevented = false;
+  ownReply.listeners.contextmenu({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  const menu = all(root, n => n.tagName === "app-anchored-action-menu")[0];
+  assert.deepEqual(JSON.parse(menu.attributes.options), [{ id: "copy", label: "复制" }, { id: "delete", label: "删除" }]);
+
+  const replyView = new AppMomentReactions();
+  const replyRoot = replyView.render();
+  assert.equal(all(replyRoot, n => n.dataset.action === "moment:reply").length, 1);
 });
