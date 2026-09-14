@@ -789,6 +789,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     if (_openingRoom || widget.previewOnly) return;
     final navigator = Navigator.of(context, rootNavigator: true);
     _openingRoom = true;
+    // 立即反馈：打开会话需先取租约（弱网可达数秒），期间显示轻量
+    // loading 覆盖层，避免“点了没反应”被误认为失灵；重复点击由
+    // _openingRoom 阻断。
+    unawaited(showCupertinoModalPopup<void>(
+      context: context,
+      builder: (sheetContext) => const Center(
+        child: CupertinoActivityIndicator(radius: 14),
+      ),
+    ));
     MatrixRoomLease? lease;
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
@@ -824,7 +833,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         }
         await route.popped;
       });
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       await navigator.push(route);
+    } catch (error) {
+      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      rethrow;
     } finally {
       await lease?.cancel();
       _readState.setRoomOpen(snapshot.id, open: false);

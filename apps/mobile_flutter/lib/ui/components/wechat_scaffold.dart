@@ -58,7 +58,9 @@ final class WeChatPageScaffold extends StatelessWidget {
                   )),
         child: SafeArea(
             child: Column(children: [
-          WeChatNetworkStatusCapsule(),
+          // 顶部状态胶囊仅在真正离线/服务不可用时出现；
+          // “正在连接”由首页行内提示承担，避免导航栏下方常驻加载感。
+          WeChatNetworkStatusCapsule(showConnecting: false),
           Expanded(child: child),
         ])),
       );

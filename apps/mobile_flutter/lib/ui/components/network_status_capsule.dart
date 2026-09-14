@@ -51,9 +51,13 @@ final class NetworkStatusCapsule extends StatelessWidget {
 }
 
 final class WeChatNetworkStatusCapsule extends StatelessWidget {
-  WeChatNetworkStatusCapsule({super.key, AppConnectionStatusHub? hub})
+  WeChatNetworkStatusCapsule(
+      {super.key, AppConnectionStatusHub? hub, this.showConnecting = true})
       : hub = hub ?? AppConnectionStatusHub.shared;
   final AppConnectionStatusHub hub;
+
+  /// false 时“正在连接”不渲染胶囊（媒体查看器等处保持原行为可传 true）。
+  final bool showConnecting;
 
   @override
   Widget build(BuildContext context) =>
@@ -62,7 +66,8 @@ final class WeChatNetworkStatusCapsule extends StatelessWidget {
           builder: (context, status, _) {
             final label = switch (status) {
               AppConnectionStatus.offline => '网络不可用，联网后自动重试',
-              AppConnectionStatus.connecting => '正在连接…',
+              AppConnectionStatus.connecting =>
+                showConnecting ? '正在连接…' : null,
               AppConnectionStatus.serviceUnavailable => '服务暂时不可用',
               _ => null,
             };
