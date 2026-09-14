@@ -27,3 +27,12 @@
 
 - 用户真机验收：闪照全链路、转发提速体感、启动无“正在加载”残留、点会话立即反馈。
 - iOS 企业签名回传后的 OTA 发布为独立事务。
+
+
+## iOS 待签 IPA 交付（2026-09-14 20:00 前后）
+
+- GitHub Actions run `34838665737`（commit `c21af3d6`，0.3.89+2111）success；artifact `ChatFlow-iOS-signed` 59,432,386 字节，解包后 `liuhetong_mobile.ipa` 59,810,103 字节。
+- 交付文件：`docs/verification/artifacts/2026-09-14/release-2111/ios/ChatFlow-0.3.89-build2111-for-enterprise-resign.ipa`
+- SHA256：`BEAF4F6BD5312B606A851BEF24A51446BEFAF1498B7E94B2A5B2E903C323D283`
+- 包内核验：bundle id `com.liuhetong.liuhetongMobile`、version 0.3.89、build 2111、SQLCipher framework 在位；统计 HTML SHA `89eab232…` 与 Android 2111 包及已发布资源一致。
+- 签名状态：App Store 团队签名（enterprise=false），仅供企业重签。请完成企业签名后回传；回传包核验（安装兼容、entitlements、嵌入库）通过后再更新 manifest.plist 与 iOS 更新设置（独立事务）。
