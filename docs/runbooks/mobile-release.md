@@ -14,12 +14,17 @@ Android release disables cleartext traffic. Only `src/debug/AndroidManifest.xml`
 
 ## 版本升级清单（每次发版必做）
 
-版本号必须**成对**修改，只改 pubspec 会挂 `tests/mobile/test_app_build_contract.py` 门禁：
+版本号必须**成对**修改：`apps/mobile_flutter/pubspec.yaml` 的 `version: X.Y.Z+build` 与
+`apps/mobile_flutter/lib/core/app_config.dart` 的 `appVersionName`/`appBuildNumber`。
+**必须用脚本升版，不要手工改文件**（0.3.90/2114 以来四次发版 2115/2116/2117/2118 都曾
+漏改其中一处打红 android-ci）：
 
-1. `apps/mobile_flutter/pubspec.yaml` → `version: X.Y.Z+build`
-2. `apps/mobile_flutter/lib/core/app_config.dart` → `appVersionName = 'X.Y.Z'`、`appBuildNumber = build`（`appVersionName` 与 `appBuildNumber` 两行都要改）
+```powershell
+pwsh -File scripts/bump_version.ps1 -Version 0.3.91+2118
+```
 
-改完本地跑 `pytest tests/mobile/test_app_build_contract.py -q` 确认。历史教训：0.3.90/2114 以来三次发版（2115、2116、2117）都曾漏改 `app_config.dart` 导致 android-ci 红灯。
+脚本同时改写两处并立即运行 `tests/mobile/test_app_build_contract.py` 门禁；提交前若被
+人工绕过，该测试也会在 CI 拦下不一致。
 
 ## Public-domain Android build
 
