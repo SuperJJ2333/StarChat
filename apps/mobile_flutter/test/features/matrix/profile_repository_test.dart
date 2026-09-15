@@ -555,6 +555,33 @@ void main() {
     expect(cache.contacts.single.lastSeenAt, DateTime.utc(2026, 9, 12, 1));
     cache.dispose();
   });
+  test('contactDetailsByUserId returns null when matrix binding is blank', () {
+      final blank = ContactSummary(
+        userId: 'zhsb-id',
+        username: 'zhsb',
+        matrixUserId: '   ',
+        nickname: 'zhsb',
+      );
+      final cache = ProfileRepository.forTesting(accountKey: 'k', store: MemoryProfileStore())
+        ..upsertContactDetails(blank.toDetails());
+      // 空 matrixUserId 的条目不是权威联系人：解析必须返回 null，
+      // 由调用方走目录刷新/回填，绝不拿空 id 去开加密私聊。
+      expect(cache.contactDetailsByUserId('zhsb-id'), isNull);
+    });
+
+    test('contactDetailsByUserId resolves the authoritative contact', () {
+      final cache = ProfileRepository.forTesting(accountKey: 'k2', store: MemoryProfileStore())
+        ..upsertContactDetails(const ContactDetails(
+          userId: 'zhsb-id',
+          username: 'zhsb',
+          matrixUserId: '@zhsb:matrix.localhost',
+          nickname: 'zhsb',
+        ));
+      final resolved = cache.contactDetailsByUserId('zhsb-id');
+      expect(resolved, isNotNull);
+      expect(resolved!.matrixUserId, '@zhsb:matrix.localhost');
+      expect(resolved.nickname, 'zhsb');
+    });
 }
 
 ProfileData profile(String nickname) => ProfileData(
@@ -575,6 +602,8 @@ ContactSummary contact(
       avatarUrl: avatarUrl,
       lastSeenAt: lastSeenAt,
     );
+
+
 
 final class MemoryProfileStore implements ProfileStore {
   final values = <String, ProfileSnapshot>{};

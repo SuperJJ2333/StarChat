@@ -452,6 +452,20 @@ final class ProfileRepository extends ChangeNotifier {
 
   /// Resolve at paint time and subscribe to this repository for later changes.
   /// Incoming public names are fallbacks, never a replacement for a local remark.
+  /// 按 业务 userId 解析权威联系人详情（发消息统一入口用）。
+  /// 权威顺序：本地缓存（业务 friends 快照，含备注/标签）→
+  /// 无缓存条目或 matrixUserId 为空白时返回 null，由调用方走目录刷新。
+  ContactDetails? contactDetailsByUserId(String userId) {
+    final details = contactsByUserId[userId];
+    if (details == null) return null;
+    if (details.matrixUserId.trim().isEmpty) return null;
+    return details.toDetails();
+  }
+
+  /// 覆盖写入单条好友缓存（含 contactsByUserId/contactsByMatrixId 双索引）。
+  Future<void> upsertContactDetails(ContactDetails details) =>
+      applyUpdatedContact(details.toSummary());
+
   UserIdentity resolveIdentity({
     String? userId,
     String? matrixUserId,

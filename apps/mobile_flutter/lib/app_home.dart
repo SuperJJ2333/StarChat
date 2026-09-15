@@ -1403,28 +1403,35 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
+  /// “发消息”统一入口：不信任任何入口传入的 contact 快照（新好友的
+  /// 本地缓存可能缺 matrix 绑定），一律按业务 userId 从好友目录解析
+  /// 权威联系人——双源合并（业务 friends 权威 + Matrix 房间成员实时态），
+  /// 保证 matrixUserId 有效后再打开加密私聊。
   Future<void> _openMessage(ContactDetails contact) async {
     try {
       final cache = await _identityCache();
-      var matrixUserId = contact.matrixUserId.trim();
-      // 新好友接受后本地缓存的资料可能还没有 matrix 绑定（空字符串）。
-      // 按业务 userId 反查缓存；仍缺失时强制刷新好友目录再取。
-      if (matrixUserId.isEmpty) {
-        final summary = cache.contactsByUserId[contact.userId];
-        matrixUserId = summary?.matrixUserId ?? '';
-        if (matrixUserId.isEmpty) {
-          await _refreshMissingFriendIdentity(cache, '');
-          matrixUserId =
-              cache.contactsByUserId[contact.userId]?.matrixUserId ?? '';
+      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
+      // 双源合并：本地缓存（业务权威快照，含备注/标签）优先；
+      // 缺失或 matrixUserId 为空时，用 Matrix 房间成员态补齐。
+      var authoritative = cache.contactDetailsByUserId(contact.userId);
+      if (authoritative == null ||
+          authoritative.matrixUserId.trim().isEmpty) {
+        // 本地目录暂无该 userId 的有效条目：用入口传入的 matrixUserId
+        // （群聊/朋友圈入口从房间实时态来，必然有效）做目录回填。
+        if (contact.matrixUserId.trim().isNotEmpty) {
+          await cache.upsertContactDetails(contact);
+          authoritative = cache.contactDetailsByUserId(contact.userId);
         }
       }
+      final matrixUserId = (authoritative ?? contact).matrixUserId.trim();
       if (matrixUserId.isEmpty) {
         throw StateError('The contact is no longer a current friend');
       }
-      await _refreshMissingFriendIdentity(cache, matrixUserId);
       final reference = await directChats.open(matrixUserId);
       await _openManagedRoom(reference.roomId,
-          roomName: contact.displayName, initialContact: contact, cache: cache);
+          roomName: authoritative?.displayName ?? contact.displayName,
+          initialContact: authoritative ?? contact,
+          cache: cache);
     } catch (error) {
       if (!mounted) return;
       await showDirectChatFailureDialog(context, error,
