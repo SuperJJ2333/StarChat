@@ -12,6 +12,15 @@ The TestFlight job validates Team/Bundle/profile secrets, updates the generated 
 
 Android release disables cleartext traffic. Only `src/debug/AndroidManifest.xml` enables HTTP for local `adb reverse` and emulator acceptance; production Business API and Matrix build parameters must use HTTPS.
 
+## 版本升级清单（每次发版必做）
+
+版本号必须**成对**修改，只改 pubspec 会挂 `tests/mobile/test_app_build_contract.py` 门禁：
+
+1. `apps/mobile_flutter/pubspec.yaml` → `version: X.Y.Z+build`
+2. `apps/mobile_flutter/lib/core/app_config.dart` → `appVersionName = 'X.Y.Z'`、`appBuildNumber = build`（`appVersionName` 与 `appBuildNumber` 两行都要改）
+
+改完本地跑 `pytest tests/mobile/test_app_build_contract.py -q` 确认。历史教训：0.3.90/2114 以来三次发版（2115、2116、2117）都曾漏改 `app_config.dart` 导致 android-ci 红灯。
+
 ## Public-domain Android build
 
 The `liuhetong888.com` release must be built only after the public gateway,
