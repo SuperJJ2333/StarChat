@@ -1617,6 +1617,7 @@ final class MatrixRoomLease
     if (drain == null) return;
     try {
       await Future<void>.sync(drain).timeout(owner.lifecycleDrainTimeout);
+    
     } on TimeoutException {
       owner.securityLogger.record(
         stage: MatrixSecurityStage.roomLeaseDrain,

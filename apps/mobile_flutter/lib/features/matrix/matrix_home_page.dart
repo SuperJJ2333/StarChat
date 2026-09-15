@@ -814,7 +814,6 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
       lease = await widget.matrix.openRoomLease(snapshot.id);
-      if (!mounted) return;
       _readState.setRoomOpen(snapshot.id, open: true);
       _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
       unawaited(widget.matrix.conversations
@@ -851,11 +850,16 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       rethrow;
     } finally {
       removeOverlay();
-      // 取消租约的失败绝不能跳过 _openingRoom 复位——否则此后消息页
-      // 所有会话点击都被守卫静默吞掉（用户感知：点击无反应）。
-      try {
-        await lease?.cancel();
-      } catch (_) {}
+      // 关键：租约取消（生命周期串行队列 + drain，实测输入草稿后退出
+      // 可达 6 秒以上）绝不占住 _openingRoom——否则用户关掉房间立刻
+      // 点下一个会话会被守卫静默吞掉（“要等 5 秒以上才能进入”）。
+      // 取消已脱离页面上下文，转为后台任务并吞掉异常。
+      final closing = lease;
+      unawaited(() async {
+        try {
+          await closing?.cancel();
+        } catch (_) {}
+      }());
       _readState.setRoomOpen(snapshot.id, open: false);
       final latest = _rooms.where((room) => room.id == snapshot.id);
       _readState.markCleared(snapshot.id,
