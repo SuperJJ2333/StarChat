@@ -253,6 +253,13 @@ final class MatrixClientFactory {
     final client = Client(
       clientName,
       preserveStoreOnInvalidToken: true,
+      // Broker-only login gate advertises token (and legacy password) flows;
+      // declaring the token type here keeps checkHomeserver from rejecting the
+      // homeserver when the legacy password advertisement is dropped.
+      supportedLoginTypes: const {
+        AuthenticationTypes.password,
+        AuthenticationTypes.token,
+      },
       verificationMethods: {
         KeyVerificationMethod.emoji,
         KeyVerificationMethod.numbers,

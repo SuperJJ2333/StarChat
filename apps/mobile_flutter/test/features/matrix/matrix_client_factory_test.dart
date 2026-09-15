@@ -263,6 +263,11 @@ class LogoutTrackingClient extends Client {
   bool loggedIn;
   String? matrixUserId;
   String? matrixDeviceId;
+
+  /// Server-side rotation: when set, login() returns this device id even if
+  /// the caller asked for a different one (single-device policy kicks it).
+  String? rotatedDeviceId;
+  String? adoptedDeviceId;
   final Object? syncError;
   var logoutCalls = 0;
   var syncCalls = 0;
@@ -295,6 +300,36 @@ class LogoutTrackingClient extends Client {
       (null, GetVersionsResponse(versions: const []), const <LoginFlow>[]);
 
   @override
+  Future<void> init({
+    String? newToken,
+    DateTime? newTokenExpiresAt,
+    String? newRefreshToken,
+    Uri? newHomeserver,
+    String? newUserID,
+    String? newDeviceName,
+    String? newDeviceID,
+    String? newOlmAccount,
+    bool waitForFirstSync = true,
+    bool waitUntilLoadCompletedLoaded = true,
+    void Function()? onMigration,
+  }) async {
+    adoptedDeviceId = newDeviceID;
+    return super.init(
+      newToken: newToken,
+      newTokenExpiresAt: newTokenExpiresAt,
+      newRefreshToken: newRefreshToken,
+      newHomeserver: newHomeserver,
+      newUserID: newUserID,
+      newDeviceName: newDeviceName,
+      newDeviceID: newDeviceID,
+      newOlmAccount: newOlmAccount,
+      waitForFirstSync: waitForFirstSync,
+      waitUntilLoadCompletedLoaded: waitUntilLoadCompletedLoaded,
+      onMigration: onMigration,
+    );
+  }
+
+  @override
   Future<LoginResponse> login(
     String type, {
     AuthenticationIdentifier? identifier,
@@ -309,7 +344,7 @@ class LogoutTrackingClient extends Client {
   }) async {
     loggedIn = true;
     matrixUserId ??= '@alice:matrix.test';
-    matrixDeviceId ??= deviceId ?? 'DEVICE-A';
+    matrixDeviceId = rotatedDeviceId ?? matrixDeviceId ?? deviceId ?? 'DEVICE-A';
     return LoginResponse(
       accessToken: 'test-access-token',
       deviceId: matrixDeviceId!,
@@ -488,6 +523,46 @@ void main() {
         loginToken: 'test-new', homeserver: Uri.parse('https://matrix.test'));
     expect(matrix.isLoggedIn, isTrue);
     expect(opens, 2);
+  });
+
+  test('token refresh adopts a server-rotated device id instead of L04',
+      () async {
+    // iOS 覆盖安装后本机仍保留 2085 时代的身份（device-OLD）；单设备策略下
+    // 其它设备登录已轮换服务端 device。此前 refresh 路径对 device 不一致
+    // 直接抛错（L04），现在必须采纳服务端权威 device 并继续。
+    final loginBody = {
+      'user_id': '@a:test',
+      'device_id': 'device-NEW',
+      'access_token': 'rotated-token',
+    };
+    final stale = LogoutTrackingClient('stale',
+        loggedIn: true,
+        matrixUserId: '@a:test',
+        matrixDeviceId: 'device-OLD',
+        httpClient: MockClient((request) async => http.Response(
+              jsonEncode(loginBody),
+              200,
+              headers: const {'content-type': 'application/json'},
+            )))
+      ..rotatedDeviceId = 'device-NEW';
+    final secureStore = SecureSessionStore(MemoryStore());
+    final factory = MatrixClientFactory(
+      sessionStore: secureStore,
+      homeserver: Uri.parse('https://matrix.test'),
+      fingerprintReader: (_) => 'fingerprint-a',
+    );
+    final matrix = MatrixSdkE2eeClient(stale,
+        homeserver: Uri.parse('https://matrix.test'),
+        suspendClient: (_) async {},
+        resumeClient: () async => stale,
+        clearClientData: (_) async {},
+        readContinuityMetadata: factory.continuityMetadata);
+
+    await matrix.loginWithToken(
+        loginToken: 'test-once', homeserver: Uri.parse('https://matrix.test'));
+    expect(stale.adoptedDeviceId, 'device-NEW',
+        reason: 'server-rotated device id must be adopted (was L04 before)');
+    expect(matrix.isLoggedIn, isTrue);
   });
 
   test('token login after confirmed local clear opens fresh client', () async {

@@ -4573,10 +4573,15 @@ final class MatrixSdkE2eeClient
             deviceId: expectedDeviceId,
             initialDeviceDisplayName: active.deviceName ?? '畅聊移动端',
           );
-          if (response.userId != expectedUserId ||
-              response.deviceId != expectedDeviceId) {
+          if (response.userId != expectedUserId) {
             throw StateError('Matrix credential refresh identity mismatch');
           }
+          // 单设备策略下服务端可能轮换 device id（本机在别处登录后旧设备
+          // 被顶掉，典型：iOS 覆盖安装后强制重登）。token 已证明账号归属，
+          // 此时采纳服务端权威 device id 并继续；拒绝会造成无法恢复的 L04。
+          // LoginResponse.deviceId is non-null per spec; keep the fallback
+          // off the analyzer's dead-null path by using it directly.
+          final adoptedDeviceId = response.deviceId;
           active.onLoginStateChanged.add(LoginState.softLoggedOut);
           await active.init(
             newToken: response.accessToken,
@@ -4588,9 +4593,12 @@ final class MatrixSdkE2eeClient
             newRefreshToken: response.refreshToken,
             newHomeserver: homeserver,
             newUserID: expectedUserId,
-            newDeviceID: expectedDeviceId,
+            newDeviceID: adoptedDeviceId,
             newDeviceName: active.deviceName ?? '畅聊移动端',
           );
+          // 刷新前的 softLoggedOut 过渡标记在凭据采纳后恢复 loggedIn，
+          // 否则 credentialsInvalid 恒为 true（登录页会一直显示 L04）。
+          active.onLoginStateChanged.add(LoginState.loggedIn);
           // Revoking a remote device removes its public keys. Re-register the
           // retained identity, without generating a replacement Olm account.
           final encryption = active.encryption;
