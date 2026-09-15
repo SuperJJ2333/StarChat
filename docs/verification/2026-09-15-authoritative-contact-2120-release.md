@@ -46,3 +46,32 @@
 - 包内核验：bundle id、0.3.92/2120、SQLCipher 在位、统计 HTML SHA 与 Android 一致。
 - 签名身份沿用同一企业描述文件（与 2085/2117 相同）。请完成企业签名后回传，
   核验通过后更新 manifest.plist 与 iOS 设置（独立事务）。
+
+
+## iOS 0.3.92/2120 企业 OTA 分发（2026-09-15 夜）
+
+用户回传企业签名包 `ChatFlow-0.3.92-build2120-enterprise.ipa`
+（SHA256 `E8E63A58018754784773859B315EC4781894FAC75344112B12E0B261037B4FAC`，60,444,412 字节）。
+
+核验：provision 与线上 2085/2117 企业包完全一致（20260107buaawxworklocalNOTI /
+Team ZXB3TS7QD4 / 企业分发 / 到期 2026-12-03 / aps production）；
+bundle id `com.liuhetong.liuhetongMobile`、0.3.92/2120、SQLCipher 在位、
+统计 HTML SHA 与 Android 一致；与待签包差异仅 Mach-O 重签与已知签名通道
+新增项（ATHelper.dylib / libutils.dylib / flag），Flutter 资产零变化。
+
+分发：
+
+- 分块上传 + 服务端合并 SHA 门一致 → 安装为
+  `/opt/starchat/frontend/downloads/ios/ChatFlow-0.3.92-2120-enterprise-e8e63a58.ipa`。
+- `manifest.plist` `.new` 暂存 + plist 校验 + 原子换入：software-package 指向
+  2120 企业 IPA、bundle-version 2120；旧 manifest 备份 `manifest.plist.bak-20260915-2117`。
+- iOS 更新设置发布（trace `ios-enterprise-0.3.92-2120-20260915`，5 条审计）：
+  app_ios_* → 0.3.92/2120，下载 URL 保持 iOS 下载页；Android 行（2120）未改动。
+- 公网验证（服务器 + 工作站 SOCKS 双侧）：IPA 206 + 正确 MIME；manifest 200
+  application/xml 且指向 2120；下载页 200；未授权 401 存活；2117 企业包保留 200（回退）。
+
+## 待办
+
+- iPhone 覆盖安装 2120 → 登录（验证 L04 修复：轮换 device 应被采纳）→ 闪照/发消息/视频验收。
+- 回退：恢复 `manifest.plist.bak-20260915-2117` + 2117 企业 IPA（原位保留）+
+  `publish_ios_2120.py rollback`。
