@@ -1406,8 +1406,23 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openMessage(ContactDetails contact) async {
     try {
       final cache = await _identityCache();
-      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
-      final reference = await directChats.open(contact.matrixUserId);
+      var matrixUserId = contact.matrixUserId.trim();
+      // 新好友接受后本地缓存的资料可能还没有 matrix 绑定（空字符串）。
+      // 按业务 userId 反查缓存；仍缺失时强制刷新好友目录再取。
+      if (matrixUserId.isEmpty) {
+        final summary = cache.contactsByUserId[contact.userId];
+        matrixUserId = summary?.matrixUserId ?? '';
+        if (matrixUserId.isEmpty) {
+          await _refreshMissingFriendIdentity(cache, '');
+          matrixUserId =
+              cache.contactsByUserId[contact.userId]?.matrixUserId ?? '';
+        }
+      }
+      if (matrixUserId.isEmpty) {
+        throw StateError('The contact is no longer a current friend');
+      }
+      await _refreshMissingFriendIdentity(cache, matrixUserId);
+      final reference = await directChats.open(matrixUserId);
       await _openManagedRoom(reference.roomId,
           roomName: contact.displayName, initialContact: contact, cache: cache);
     } catch (error) {
