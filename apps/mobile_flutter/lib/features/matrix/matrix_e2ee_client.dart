@@ -4845,7 +4845,26 @@ final class MatrixSdkE2eeClient
     return _serializeLifecycle(() async {
       final active = _client;
       if (active == null) return;
-      await _waitForClientOperationsToDrain();
+      // 挂起是安全关闭：drain 只决定“等不等未完成操作”，超时也必须继续
+      // 关闭。此前 drain 超时会把整个 suspend 抛成失败，留下“半挂起”态
+      // （_accessRevoked=true 而 client 未关闭），后续登录的 selectAccount
+      // 再次 drain 仍超时 → account_storage 阶段 L07，且原账号重登报
+      // “会话暂停失败”。
+      try {
+        await _waitForClientOperationsToDrain();
+      } on TimeoutException {
+        securityLogger.record(
+          stage: MatrixSecurityStage.lifecycle,
+          outcome: MatrixSecurityOutcome.timeout,
+          eventCode: MatrixSecurityCode.lifecycleSuspendDrainTimeout,
+        );
+      } catch (_) {
+        securityLogger.record(
+          stage: MatrixSecurityStage.lifecycle,
+          outcome: MatrixSecurityOutcome.failure,
+          eventCode: MatrixSecurityCode.lifecycleDrainTimeout,
+        );
+      }
       // Reopening the retained store can restore the old token from disk.
       // Keep its invalid status after the SDK object and stream are disposed.
       _credentialsInvalid = credentialsInvalid;

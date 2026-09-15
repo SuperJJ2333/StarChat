@@ -27,6 +27,7 @@ enum MatrixSecurityCode {
   roomLeaseDrainTimeout('E2EE_ROOM_LEASE_DRAIN_TIMEOUT'),
   roomLeaseDrainFailed('E2EE_ROOM_LEASE_DRAIN_FAILED'),
   lifecycleDrainTimeout('E2EE_LIFECYCLE_DRAIN_TIMEOUT'),
+  lifecycleSuspendDrainTimeout('E2EE_LIFECYCLE_SUSPEND_DRAIN_TIMEOUT'),
   lifecycleSuspendFailed('E2EE_LIFECYCLE_SUSPEND_FAILED'),
   lifecycleResumeRejectCloseFailed('E2EE_LIFECYCLE_RESUME_REJECT_CLOSE_FAILED'),
   lifecycleResourceRevokeFailed('E2EE_LIFECYCLE_RESOURCE_REVOKE_FAILED'),
