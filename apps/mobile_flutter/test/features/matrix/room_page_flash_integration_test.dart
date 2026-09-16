@@ -11,6 +11,8 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
 import 'package:liuhetong_mobile/ui/chat/flash_photo.dart';
+import 'package:liuhetong_mobile/ui/chat/contain_image_bubble.dart';
+import 'package:liuhetong_mobile/ui/chat/room_image_gallery.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_message_bubble.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'profile_repository_test.dart' show MemoryProfileStore;
@@ -68,6 +70,17 @@ final class _FlashTimeline extends Fake implements Timeline {
       : events = [
           Event(
             room: room,
+            eventId: r'$normal-before',
+            senderId: '@peer:test',
+            type: EventTypes.Message,
+            originServerTs: DateTime.utc(2026, 9, 13),
+            content: const {
+              'msgtype': 'm.image',
+              'body': '普通图片1',
+            },
+          ),
+          Event(
+            room: room,
             eventId: r'$flash',
             senderId: '@peer:test',
             type: EventTypes.Message,
@@ -76,6 +89,17 @@ final class _FlashTimeline extends Fake implements Timeline {
               'msgtype': 'm.image',
               'body': '[闪照]',
               'flash': '1',
+            },
+          ),
+          Event(
+            room: room,
+            eventId: r'$normal-after',
+            senderId: '@peer:test',
+            type: EventTypes.Message,
+            originServerTs: DateTime.utc(2026, 9, 15),
+            content: const {
+              'msgtype': 'm.image',
+              'body': '普通图片2',
             },
           ),
         ];
@@ -172,12 +196,13 @@ void main() {
     expect(find.byKey(const Key('flash-photo-bubble')), findsOneWidget);
     expect(find.byKey(const Key('flash-bolt-badge')), findsOneWidget);
 
-    // 长按菜单不含「转发」（直接触发气泡长按回调，避免路由残留）。
-    final row = find
-        .byType(WeChatMessageBubble)
-        .evaluate()
-        .map((element) => element.widget as WeChatMessageBubble)
-        .firstWhere((widget) => widget.onLongPress != null);
+    // 长按菜单不含「转发」（直接触发该闪照气泡的长按回调，避免路由残留）。
+    final flashBubble = find.ancestor(
+        of: find.byType(FlashPhotoBubble),
+        matching: find.byType(WeChatMessageBubble));
+    expect(flashBubble, findsOneWidget);
+    final row = tester.widget<WeChatMessageBubble>(flashBubble);
+    expect(row.onLongPress, isNotNull);
     row.onLongPress!();
     await tester.pump();
     await tester.pump();
@@ -213,6 +238,43 @@ void main() {
 
     await tester.pumpWidget(const CupertinoApp(home: SizedBox.shrink()));
     await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'ordinary gallery dataset excludes flash: normal images only, no flash loader',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FlashClient('c');
+    await _pumpRoom(tester, client);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final bubbles = find.byType(ContainImageBubble);
+    expect(bubbles, findsWidgets,
+        reason: '普通图片渲染普通气泡（闪照走马赛克气泡）');
+    expect(find.byType(FlashPhotoBubble), findsOneWidget,
+        reason: '闪照只以马赛克气泡出现');
+
+    // 打开普通图片的 Gallery：交给 Gallery 的数据集必须是“只有普通图片”，
+    // 邻居预取（±1）因此不可能触达闪照 loader。
+    final firstBubble =
+        tester.widget<ContainImageBubble>(bubbles.first);
+    expect(firstBubble.onTap, isNotNull);
+    firstBubble.onTap!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    final gallery = tester.widget<RoomImageGalleryPage>(
+        find.byType(RoomImageGalleryPage));
+    expect([for (final photo in gallery.images) photo.id],
+        [r'$normal-after', r'$normal-before'],
+        reason: '闪照绝不出现在普通 Gallery 数据集中（Gallery 按新→旧排列）');
+    expect(gallery.images, hasLength(2));
+    expect(gallery.initialId, r'$normal-before');
+
+    // 预取跑过若干帧后也不得抛错（闪照事件没有可加载的 mxc）。
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     expect(tester.takeException(), isNull);
   });
 }

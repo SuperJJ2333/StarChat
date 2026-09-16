@@ -16,28 +16,22 @@ void main() {
           reason: '周一开头排列');
     });
 
-    test('验收：仅 1、3、10 日有消息，其余灰显禁用；扫描中日为独立状态',
-        () {
-      final withMessages = {
-        DateTime(2026, 9, 1),
-        DateTime(2026, 9, 3),
-        DateTime(2026, 9, 10),
-      };
-      final scanning = <DateTime>{DateTime(2026, 9, 20)};
-      for (var day = 1; day <= 30; day++) {
-        final date = DateTime(2026, 9, day);
-        final status = dayStatus(date,
-            datesWithMessages: withMessages, scanningDates: scanning);
-        if (withMessages.contains(date)) {
-          expect(status, CalendarDayStatus.hasMessages);
-        } else if (scanning.contains(date)) {
-          expect(status, CalendarDayStatus.scanning,
-              reason: '扫描中不得冒充无消息');
-        } else {
-          expect(status, CalendarDayStatus.noMessages,
-              reason: '确认无消息才禁用灰显');
-        }
-      }
+    test('日期状态用 typed metadata：未覆盖的日期是 unknown，不是空', () {
+      final days = RoomHistoryMonthDays(
+        month: const CalendarMonth(2026, 9),
+        dayStates: {
+          1: RoomHistoryDayState.knownPresent,
+          20: RoomHistoryDayState.knownEmpty,
+        },
+      );
+      expect(days.stateOf(1), RoomHistoryDayState.knownPresent);
+      expect(days.stateOf(20), RoomHistoryDayState.knownEmpty);
+      expect(days.stateOf(15), RoomHistoryDayState.unknown,
+          reason: '覆盖不足的日期绝不能显示成"无消息"');
+      expect(days.presentDates, {DateTime(2026, 9, 1)});
+      expect(days.emptyDates, {DateTime(2026, 9, 20)});
+      expect(days.unknownDates, hasLength(28),
+          reason: 'unknown 必须逐个列出，便于 UI 保持可点');
     });
 
     test('点击 9 月 3 日定位当天最早一条（非最后一条）', () {

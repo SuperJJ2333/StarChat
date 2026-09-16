@@ -261,5 +261,20 @@ final class MatrixRoomTimelineAdapter
   void cancelPendingDateLookup() => _dateCapability?.cancelPendingDateLookup();
 
   @override
+  CalendarMonth? get earliestMonth => _dateCapability?.earliestMonth;
+
+  @override
+  Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) =>
+      _dateCapability?.loadMonthDays(month) ??
+      Future.value(RoomHistoryMonthDays(month: month));
+
+  @override
+  void cancelMonthLookup() => _dateCapability?.cancelMonthLookup();
+
+  @override
+  String? anchorForDay(DateTime localDay) =>
+      _dateCapability?.anchorForDay(localDay);
+
+  @override
   void dispose() => _capability.dispose();
 }

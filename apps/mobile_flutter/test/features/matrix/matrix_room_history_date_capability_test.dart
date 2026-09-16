@@ -6,6 +6,7 @@ import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_room_timeline_adapter.dart';
 import 'package:liuhetong_mobile/features/matrix/room_history_date_capability.dart';
 import 'package:liuhetong_mobile/features/matrix/room_timeline_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final class _DateTimeline extends Fake implements Timeline {
   @override
@@ -398,5 +399,117 @@ void main() {
         reason:
             'the loaded next-day boundary already proves no more scan helps');
     await lease.cancel();
+  });
+
+  group('Task A：月级日期 metadata', () {
+    test('整月为空由两次有界探测确认，且不加载正文/媒体/上下文', () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final month = const CalendarMonth(2026, 9);
+      // 该月起点之后最早的可见事件在 10 月 → 服务端确认 9 月整月为空。
+      client.timestampResult = GetEventByTimestampResponse(
+        eventId: r'$next-month',
+        originServerTs: DateTime(2026, 10, 2).millisecondsSinceEpoch,
+      );
+      final (lease, capability) = await _openCapability(room);
+
+      final days = await capability.loadMonthDays(month);
+
+      expect(days.month, month);
+      expect(days.hasUnknown, isFalse);
+      expect(days.coverageComplete, isTrue);
+      expect(days.stateOf(15), RoomHistoryDayState.knownEmpty);
+      expect(days.presentDates, isEmpty);
+      expect(client.timestampCalls, hasLength(2),
+          reason: '只有两次有界探测：月起点向后、月终点向前');
+      expect(client.timestampCalls.first.$3, Direction.f);
+      expect(client.timestampCalls.last.$3, Direction.b);
+      expect(room.contextEventIds, isEmpty,
+          reason: '月 metadata 查询绝不切换/加载历史上下文');
+      await lease.cancel();
+    });
+
+    test('月内首个事件成为 anchor，earliestMonth 与 anchorForDay 不再访问服务端',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final month = const CalendarMonth(2026, 9);
+      client.timestampResult = GetEventByTimestampResponse(
+        eventId: r'$first-of-month',
+        originServerTs: DateTime(2026, 9, 12, 9).millisecondsSinceEpoch,
+      );
+      final (lease, capability) = await _openCapability(room);
+
+      final days = await capability.loadMonthDays(month);
+
+      expect(days.stateOf(12), RoomHistoryDayState.knownPresent);
+      expect(days.anchors[12], r'$first-of-month');
+      expect(days.stateOf(5), RoomHistoryDayState.knownEmpty,
+          reason: '月起点到首个事件之间已确认无事件');
+      expect(days.hasUnknown, isFalse);
+      expect(capability.earliestMonth, month);
+      final probes = client.timestampCalls.length;
+      expect(capability.anchorForDay(DateTime(2026, 9, 12)), r'$first-of-month');
+      expect(capability.anchorForDay(DateTime(2026, 9, 13)), isNull);
+      expect(client.timestampCalls, hasLength(probes),
+          reason: 'anchor 查询必须是本地索引读取');
+      await lease.cancel();
+    });
+
+    test('已知月份命中缓存：重复打开不产生新的探测', () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final month = const CalendarMonth(2026, 9);
+      client.timestampResult = GetEventByTimestampResponse(
+        eventId: r'$next-month',
+        originServerTs: DateTime(2026, 10, 2).millisecondsSinceEpoch,
+      );
+      final (lease, capability) = await _openCapability(room);
+
+      await capability.loadMonthDays(month);
+      final probes = client.timestampCalls.length;
+      final again = await capability.loadMonthDays(month);
+
+      expect(client.timestampCalls, hasLength(probes));
+      expect(again.stateOf(15), RoomHistoryDayState.knownEmpty);
+      await lease.cancel();
+    });
+
+    test('取消在途月查询后，过期响应不得把该月发布成"确认空"', () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final month = const CalendarMonth(2026, 9);
+      client.pendingTimestamp = Completer<GetEventByTimestampResponse>();
+      final (lease, capability) = await _openCapability(room);
+
+      final pending = capability.loadMonthDays(month);
+      await Future<void>.delayed(Duration.zero);
+      capability.cancelMonthLookup();
+      client.pendingTimestamp!.complete(GetEventByTimestampResponse(
+        eventId: r'$next-month',
+        originServerTs: DateTime(2026, 10, 2).millisecondsSinceEpoch,
+      ));
+
+      final days = await pending;
+      expect(days.hasUnknown, isTrue,
+          reason: '取消 ≠ 确认空；未覆盖的月份必须保持 unknown');
+      expect(days.stateOf(15), RoomHistoryDayState.unknown);
+      expect(capability.anchorForDay(DateTime(2026, 9, 15)), isNull);
+      await lease.cancel();
+    });
+
+    test('没有任何日期证据时 earliestMonth 是 null，绝不是 1970', () async {
+      SharedPreferences.setMockInitialValues({});
+      final client = _DateClient();
+      final room = _DateRoom(client);
+      final (lease, capability) = await _openCapability(room);
+
+      expect(capability.earliestMonth, isNull);
+      await lease.cancel();
+    });
   });
 }

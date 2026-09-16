@@ -54,6 +54,8 @@ import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'matrix_room_timeline_adapter.dart';
 import 'room_history_date_capability.dart';
+import 'room_history_day_index.dart';
+import 'room_history_day_index_store.dart';
 import 'room_timeline_viewport.dart';
 import 'matrix_recovery_service.dart';
 import 'matrix_security_logger.dart';
@@ -1764,6 +1766,8 @@ final class _SdkRoomTimelineCapability
     };
     _outgoingWork = _lease.owner.outgoingWork;
     _outgoingWork.addListener(_outgoingListener);
+    // 日期索引 metadata 预热：日历打开时即可读到本地覆盖证据（无网络）。
+    unawaited(_ensureDayIndex());
   }
 
   final MatrixRoomLease _lease;
@@ -2640,6 +2644,216 @@ final class _SdkRoomTimelineCapability
         if (!adopted) resolvedContext.cancelSubscriptions();
       }
     });
+  }
+
+  // —— Task A：日期索引 + 月级 metadata 查询 ——
+  //
+  // 与“聊天正文加载”彻底解耦：索引只保存日期/边界/anchor/覆盖状态；
+  // 月查询优先读本地索引，缺覆盖时做**有界**探测（最多 2 次
+  // timestamp_to_event），绝不线性扫描历史、绝不加载正文或媒体。
+
+  RoomHistoryDayIndex? _dayIndex;
+  final Map<String, RoomHistoryMonthDays> _monthCache = {};
+  int _monthGeneration = 0;
+  bool _monthLookupCancelled = false;
+
+  /// 日期索引的加载 Future 只创建一次：并发调用不得产生两个索引实例，
+  /// 否则后完成的空索引会覆盖已填充的那个。
+  Future<void>? _dayIndexLoad;
+
+  Future<void> _ensureDayIndex() => _dayIndexLoad ??= _loadDayIndex();
+
+  Future<void> _loadDayIndex() async {
+    final accountKey = _lease.owner._client?.userID ?? 'unknown';
+    try {
+      _dayIndex = await RoomHistoryDayIndexStore.load(accountKey);
+    } catch (_) {
+      // 持久化不可用（首次运行/测试环境）时退化为内存索引：日期状态一致，
+      // 只是重启后丢失本地覆盖证据。
+      _dayIndex = RoomHistoryDayIndex();
+    }
+  }
+
+  void _recordLoadedDaysIntoIndex(RoomHistoryDayIndex index) {
+    final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);
+    final events = <({String eventId, DateTime timestamp})>[];
+    DateTime? oldest;
+    DateTime? newest;
+    for (final event in _loadedEvents) {
+      if (!_visibleDateEvent(event, hidden)) continue;
+      events.add((eventId: event.eventId, timestamp: event.originServerTs));
+      if (oldest == null || event.originServerTs.isBefore(oldest)) {
+        oldest = event.originServerTs;
+      }
+      if (newest == null || event.originServerTs.isAfter(newest)) {
+        newest = event.originServerTs;
+      }
+    }
+    index.recordVisibleEvents(_lease.roomId, events);
+    final createdAt = _lease.creationDate;
+    if (createdAt != null) {
+      index.recordRoomCreatedAt(_lease.roomId, createdAt);
+    }
+    // 本机连续分页得到的时间窗是“已覆盖”区间：区间内无事件即可判定为空。
+    if (oldest != null && newest != null) {
+      index.recordCoverage(_lease.roomId, from: oldest, to: newest);
+    }
+  }
+
+  @override
+  CalendarMonth? get earliestMonth {
+    final earliest = _dayIndex?.earliestKnownDay(_lease.roomId);
+    if (earliest != null) return CalendarMonth.of(earliest);
+    final createdAt = _lease.creationDate;
+    if (createdAt != null) return CalendarMonth.of(createdAt);
+    return null; // 不伪造 1970：调用方显示“仍可向前探索”。
+  }
+
+  @override
+  void cancelMonthLookup() {
+    _monthGeneration++;
+    _monthLookupCancelled = true;
+  }
+
+  @override
+  String? anchorForDay(DateTime localDay) {
+    if (_disposed) return null;
+    final anchor = _dayIndex?.anchorFor(_lease.roomId, localDay);
+    return (anchor == null || anchor.isEmpty) ? null : anchor;
+  }
+
+  @override
+  Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) async {
+    _ensureActive();
+    await _ensureDayIndex();
+    final index = _dayIndex!;
+    final cacheKey = '${_lease.roomId}|${month.key}';
+    final cached = _monthCache[cacheKey];
+    if (cached != null && !cached.hasUnknown) return cached;
+
+    final generation = ++_monthGeneration;
+    _monthLookupCancelled = false;
+    _recordLoadedDaysIntoIndex(index);
+    var result = index.monthDays(_lease.roomId, month);
+    if (!result.hasUnknown) {
+      return _monthCache[cacheKey] = result;
+    }
+
+    try {
+      final probes = await _probeMonthRange(month, generation);
+      if (probes == null) {
+        return RoomHistoryMonthDays(
+            month: month,
+            dayStates: result.dayStates,
+            anchors: result.anchors,
+            coverageComplete: false,
+            earliestDay: result.earliestDay);
+      }
+      final (first, last) = probes;
+      final monthStart = month.firstDay;
+      final monthEnd = month.lastDay;
+      final firstEvent = first;
+      final firstDay = firstEvent == null
+          ? null
+          : DateTime(firstEvent.$2.year, firstEvent.$2.month, firstEvent.$2.day);
+      if (firstDay == null || firstDay.isAfter(monthEnd)) {
+        // 服务端确认：该月起点之后最早的事件已在下个月 → 整月为空。
+        for (var day = 1; day <= month.daysInMonth; day++) {
+          index.recordDayProbe(_lease.roomId,
+              DateTime(month.year, month.month, day),
+              present: false, contributeToCoverage: true);
+        }
+      } else {
+        // [monthStart, firstDay) 无事件；firstDay 有事件且带 anchor。
+        for (var cursor = monthStart;
+            cursor.isBefore(firstDay);
+            cursor = cursor.add(const Duration(days: 1))) {
+          index.recordDayProbe(_lease.roomId, cursor,
+              present: false, contributeToCoverage: true);
+        }
+        index.recordDayProbe(_lease.roomId, firstDay,
+            present: true,
+            anchorEventId: firstEvent!.$1,
+            anchorTimestamp: firstEvent.$2);
+        final lastEvent = last;
+        if (lastEvent != null) {
+          final lastDay = DateTime(
+              lastEvent.$2.year, lastEvent.$2.month, lastEvent.$2.day);
+          if (!lastDay.isBefore(monthStart)) {
+            index.recordDayProbe(_lease.roomId, lastDay,
+                present: true,
+                anchorEventId: lastEvent.$1,
+                anchorTimestamp: lastEvent.$2);
+            for (var cursor = lastDay.add(const Duration(days: 1));
+                !cursor.isAfter(monthEnd);
+                cursor = cursor.add(const Duration(days: 1))) {
+              index.recordDayProbe(_lease.roomId, cursor,
+                  present: false, contributeToCoverage: true);
+            }
+          }
+        }
+      }
+      result = index.monthDays(_lease.roomId, month);
+      await _persistDayIndex();
+      if (generation != _monthGeneration) {
+        // 已切月/已取消：过期结果不得发布。
+        return RoomHistoryMonthDays(month: month);
+      }
+      if (!result.hasUnknown) _monthCache[cacheKey] = result;
+      return result;
+    } catch (error) {
+      // 预算耗尽/网络失败 ≠ 确认空：保留 unknown，并把月份标记为 error。
+      return RoomHistoryMonthDays(
+        month: month,
+        dayStates: result.dayStates,
+        anchors: result.anchors,
+        coverageComplete: result.coverageComplete,
+        earliestDay: result.earliestDay,
+        error: error,
+      );
+    }
+  }
+
+  /// 两次有界探测：该月起点之后的首个事件、该月终点之前的末个事件。
+  /// 返回 null 表示查询被取消（generation 失效）。
+  Future<((String, DateTime)?, (String, DateTime)?)?> _probeMonthRange(
+      CalendarMonth month, int generation) async {
+    const budget = Duration(seconds: 5);
+    final room = _lease._activeRoom;
+    Future<(String, DateTime)?> probe(DateTime at, Direction direction) async {
+      try {
+        final event = await room.client
+            .getEventByTimestamp(room.id, at.millisecondsSinceEpoch, direction)
+            .timeout(budget);
+        if (_disposed || generation != _monthGeneration) return null;
+        return (
+          event.eventId,
+          // 日期索引按设备本地日历日建键（与气泡日期一致）：这里必须转成
+          // 本地时间再取年月日，否则 UTC 边界会造成整体错一天。
+          DateTime.fromMillisecondsSinceEpoch(event.originServerTs)
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (_monthLookupCancelled) return null;
+    final forward = await probe(month.firstDay, Direction.f);
+    if (_disposed || generation != _monthGeneration) return null;
+    final backward = await probe(month.lastDay, Direction.b);
+    if (_disposed || generation != _monthGeneration) return null;
+    return (forward, backward);
+  }
+
+  Future<void> _persistDayIndex() async {
+    final index = _dayIndex;
+    if (index == null) return;
+    final accountKey = _lease.owner._client?.userID ?? 'unknown';
+    try {
+      await RoomHistoryDayIndexStore.save(accountKey, index);
+    } catch (_) {
+      // 索引持久化失败不得影响查询结果。
+    }
   }
 
   @override

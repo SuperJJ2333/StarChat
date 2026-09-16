@@ -103,7 +103,7 @@ void main() {
       // 身份预热仍是 fire-and-forget：打开房间不等待它。
       expect(home.indexOf('unawaited(_warmChatIdentity('), greaterThan(0));
       final openRoomStart =
-          home.indexOf('Future<void> _openRoom(_RoomSnapshot snapshot)');
+          home.indexOf('Future<void> _openRoom(_RoomSnapshot snapshot');
       expect(openRoomStart, greaterThan(0));
       final delegated =
           home.indexOf('await openRoom(RoomOpenRequest(', openRoomStart);
@@ -115,6 +115,11 @@ void main() {
           reason: '_openRoom 内不得串行等待身份预载（先 push 后台补齐）');
       expect(body.contains('openRoomLease('), isFalse,
           reason: 'RoomLease 生命周期已收敛到 AppHome 的统一房间导航');
+      // Task B：锚点必须通过正式请求参数传递（不使用全局变量/SharedPreferences）。
+      final requestBody = home.substring(delegated, delegated + 400);
+      expect(requestBody.contains('anchorEventId: anchorEventId'), isTrue,
+          reason: 'anchor 走 RoomOpenRequest，不落盘不共享');
+      expect(requestBody.contains('roomId: snapshot.id'), isTrue);
 
       // AppHome 的统一打开流程：先取租约再 push，中途不串行等待身份预载。
       final appHome = readFile('lib/app_home.dart');

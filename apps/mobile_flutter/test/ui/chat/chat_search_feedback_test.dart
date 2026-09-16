@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/member_directory_service.dart';
+import 'package:liuhetong_mobile/features/matrix/chat_media_shared_logic.dart'
+    as logic;
 import 'package:liuhetong_mobile/features/matrix/chat_search_query_controller.dart';
 import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 
@@ -159,9 +161,12 @@ void main() {
               search: (f, {cursor, limit = 50}) async => [],
               memberEntries: const [],
               onJumpToMessage: (_) {},
-              datesWithMessages: {DateTime(2026, 9, 6)},
-              earliestMonth: DateTime(2026, 9),
-              latestMonth: DateTime(2026, 9),
+              earliestMonth: const logic.CalendarMonth(2026, 9),
+              latestMonth: const logic.CalendarMonth(2026, 9),
+              loadCalendarMonth: (month) async => logic.RoomHistoryMonthDays(
+                month: month,
+                dayStates: const {6: logic.RoomHistoryDayState.knownPresent},
+              ),
               onJumpToDate: (_) => Navigator.of(roomContext)
                   .popUntil((route) => route == roomRoute),
             )));

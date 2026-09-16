@@ -265,6 +265,7 @@ final class ChatSearchMessage {
     this.mediaCategory,
     this.hasMedia = false,
     this.isVideo = false,
+    this.isFlashPhoto = false,
     this.duration,
   });
 
@@ -286,6 +287,9 @@ final class ChatSearchMessage {
   final ChatSearchMediaCategory? mediaCategory;
   final bool hasMedia;
   final bool isVideo;
+
+  /// 闪照（阅后即焚）：不属于普通媒体资产，见 [MediaMessageAccessPolicy]。
+  final bool isFlashPhoto;
   final Duration? duration;
 }
 
@@ -322,9 +326,12 @@ final class ChatSearchFilters {
 
   bool matchesMedia(ChatSearchMessage message) => switch (mediaCategory) {
         null => true,
+        // 「图片与视频」是普通媒体资产：闪照必须被排除
+        // （安全旁路修复，策略集中在 MediaMessageAccessPolicy）。
         ChatSearchMediaCategory.imageVideo =>
           message.mediaCategory == ChatSearchMediaCategory.imageVideo &&
-              message.hasMedia,
+              message.hasMedia &&
+              !message.isFlashPhoto,
         ChatSearchMediaCategory.file =>
           message.mediaCategory == ChatSearchMediaCategory.file,
         ChatSearchMediaCategory.link =>

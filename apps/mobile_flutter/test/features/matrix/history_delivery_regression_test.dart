@@ -18,10 +18,15 @@ void main() {
     expect(source, contains('RoomHistoryStatus'));
     final room = File('lib/features/matrix/room_page.dart').readAsStringSync();
     expect(room, isNot(contains("Key('chat-history-loading')")));
-    expect(room, contains('controller?.loadedDayMetadata'),
-        reason: 'calendar markers use raw loaded timeline metadata');
-    expect(room, isNot(contains('loadCalendarMonth:')),
-        reason: 'opening or changing a month must not scan history');
+    expect(room, isNot(contains('loadedDayMetadata')),
+        reason: 'calendar day metadata comes from RoomHistoryDayIndex, not the '
+            'timeline projection');
+    expect(room, contains('loadCalendarMonth:'),
+        reason: 'the calendar reads bounded month metadata');
+    expect(room, contains('load.loadMonthDays(month)'),
+        reason: 'month metadata must go through the date capability');
+    expect(room, isNot(contains('DateTime(1970')),
+        reason: 'an unknown earliest month must never be faked as 1970');
     expect(room, contains('final token = widget.roomLease.historyToken;'),
         reason: 'the independent text-search pagination contract remains');
   });

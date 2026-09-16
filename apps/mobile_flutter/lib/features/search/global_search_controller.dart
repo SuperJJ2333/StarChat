@@ -1,0 +1,138 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import 'global_search_index.dart';
+import 'global_search_models.dart';
+
+/// 全局搜索查询生命周期（Task B）：
+/// 200~300ms 防抖、query generation、取消、stale 结果抑制、章节限量
+/// （首页每节最多 [sectionLimit] 条 + 「更多…」入口）。
+///
+/// 安全边界：联系人来自本机身份缓存投影，房间来自本机会话快照，
+/// 聊天记录来自 [GlobalSearchIndex]（本机已解密内容）。控制器**不发起任何
+/// Business API 请求**，因此查询词与明文都不出设备。
+final class GlobalSearchController extends ChangeNotifier {
+  GlobalSearchController({
+    required this.loadContacts,
+    required this.loadRooms,
+    required this.index,
+    this.debounce = const Duration(milliseconds: 250),
+    this.sectionLimit = 3,
+    this.hitLimit = 200,
+  });
+
+  final Future<List<GlobalSearchContactResult>> Function() loadContacts;
+  final Future<List<GlobalSearchRoomResult>> Function() loadRooms;
+  final GlobalSearchIndex index;
+  final Duration debounce;
+  final int sectionLimit;
+  final int hitLimit;
+
+  String _query = '';
+  String get query => _query;
+  bool loading = false;
+  Object? error;
+  GlobalSearchResults results = GlobalSearchResults.empty;
+  int _epoch = 0;
+  Timer? _timer;
+  bool _disposed = false;
+
+  /// 空查询：页面保持干净（不显示任何结果）。
+  bool get isBlank => _query.trim().isEmpty;
+  bool get hasResults => results.isNotEmpty;
+  bool get hasMoreContacts => results.contacts.length > sectionLimit;
+  bool get hasMoreRooms => results.rooms.length > sectionLimit;
+  bool get hasMoreConversations => results.conversations.length > sectionLimit;
+
+  List<GlobalSearchContactResult> get visibleContacts =>
+      _limited(results.contacts, sectionLimit);
+  List<GlobalSearchRoomResult> get visibleRooms =>
+      _limited(results.rooms, sectionLimit);
+  List<GlobalSearchConversationHit> get visibleConversations =>
+      _limited(results.conversations, sectionLimit);
+
+  static List<T> _limited<T>(List<T> all, int limit) =>
+      all.length > limit ? all.sublist(0, limit) : all;
+
+  /// 关键词变化：防抖调度；立即清空结果（空查询立即生效）。
+  void setQuery(String value) {
+    if (_query == value) return;
+    _query = value;
+    _epoch++;
+    _timer?.cancel();
+    _timer = null;
+    if (isBlank) {
+      loading = false;
+      error = null;
+      results = GlobalSearchResults.empty;
+      notifyListeners();
+      return;
+    }
+    loading = true;
+    error = null;
+    notifyListeners();
+    _timer = Timer(debounce, () => unawaited(refresh()));
+  }
+
+  /// 立即执行（测试与「提交搜索」用）；迟到的旧代次结果会被丢弃。
+  Future<void> refresh() async {
+    _timer?.cancel();
+    _timer = null;
+    if (_disposed) return;
+    if (isBlank) {
+      results = GlobalSearchResults.empty;
+      loading = false;
+      error = null;
+      notifyListeners();
+      return;
+    }
+    final epoch = ++_epoch;
+    loading = true;
+    error = null;
+    notifyListeners();
+    try {
+      final contacts = await loadContacts();
+      if (epoch != _epoch || _disposed) return; // stale：旧查询不得覆盖新结果
+      final rooms = await loadRooms();
+      if (epoch != _epoch || _disposed) return;
+      final needle = _query.trim().toLowerCase();
+      final hits = index.search(needle, limit: hitLimit);
+      results = GlobalSearchResults(
+        contacts: [
+          for (final contact in contacts)
+            if (_matchesContact(contact, needle)) contact,
+        ],
+        rooms: [
+          for (final room in rooms)
+            if (!room.isDirect && _matchesRoom(room, needle)) room,
+        ],
+        conversations: aggregateConversationHits(hits),
+      );
+      loading = false;
+      notifyListeners();
+    } catch (error) {
+      if (epoch != _epoch || _disposed) return;
+      this.error = error;
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  static bool _matchesContact(
+          GlobalSearchContactResult contact, String needle) =>
+      contact.displayName.toLowerCase().contains(needle) ||
+      contact.username.toLowerCase().contains(needle) ||
+      (contact.nickname?.toLowerCase().contains(needle) ?? false);
+
+  static bool _matchesRoom(GlobalSearchRoomResult room, String needle) =>
+      room.displayName.toLowerCase().contains(needle);
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    _timer = null;
+    super.dispose();
+  }
+}

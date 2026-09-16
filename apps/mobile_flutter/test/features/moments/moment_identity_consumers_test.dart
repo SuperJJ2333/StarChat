@@ -121,6 +121,13 @@ void main() {
     await tester.pumpWidget(
         CupertinoApp(home: GlobalSearchPage(api: api, identityCache: cache)));
     await tester.pumpAndSettle();
+    // Task B：空查询是空态（旧实现会把全部联系人与聊天记录平铺），
+    // 因此先输入命中该联系人的关键词。
+    expect(find.text('Old'), findsNothing);
+    await tester.enterText(find.byType(CupertinoSearchTextField), 'friend');
+    await tester.pumpAndSettle();
+    expect(find.text('Old'), findsOneWidget);
+
     await cache.applyUpdatedContact(old.copyWith(remark: 'First remark'));
     await tester.pumpAndSettle();
     expect(find.text('First remark'), findsOneWidget);

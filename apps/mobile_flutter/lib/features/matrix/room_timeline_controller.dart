@@ -717,6 +717,34 @@ final class RoomTimelineController extends ChangeNotifier {
     return location;
   }
 
+  /// 日期索引中已知的最早月份（可为 null = 未知，**不得**回退成 1970）。
+  CalendarMonth? get earliestMonth => adapter is RoomHistoryDateCapability
+      ? (adapter as RoomHistoryDateCapability).earliestMonth
+      : null;
+
+  /// 月级 metadata 查询（只读日期状态；不加载正文/媒体）。
+  ///
+  /// 本地索引优先，覆盖不足时有界探测；过期结果由 capability 的 generation
+  /// guard 丢弃，调用方还需用自己的 generation 再次校验。
+  Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) {
+    if (_disposed || adapter is! RoomHistoryDateCapability) {
+      return Future.value(RoomHistoryMonthDays(month: month));
+    }
+    return (adapter as RoomHistoryDateCapability).loadMonthDays(month);
+  }
+
+  void cancelMonthLookup() {
+    if (_disposed) return;
+    if (adapter is RoomHistoryDateCapability) {
+      (adapter as RoomHistoryDateCapability).cancelMonthLookup();
+    }
+  }
+
+  /// 该日已知 anchor（月 metadata 已给出时跳过重复 timestamp_to_event）。
+  String? anchorForDay(DateTime localDay) => adapter is RoomHistoryDateCapability
+      ? (adapter as RoomHistoryDateCapability).anchorForDay(localDay)
+      : null;
+
   void cancelPendingDateLookup() {
     if (_disposed) return;
     _timelineOperationGeneration++;

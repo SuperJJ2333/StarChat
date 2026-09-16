@@ -28,15 +28,13 @@ final class ChatSearchPage extends StatefulWidget {
     this.memberAvatarBuilder,
     this.mediaThumbnailBuilder,
     this.onOpenMedia,
-    this.datesWithMessages = const {},
-    this.scanningDates = const {},
     this.earliestMonth,
     this.latestMonth,
     this.onJumpToDate,
     this.onDateLookup,
     this.onCancelDateLookup,
     this.loadCalendarMonth,
-    this.allowUnknownPastDates = false,
+    this.onCancelCalendarMonthLookup,
     this.onCalendarClosed,
     this.onSearchInvalidated,
   });
@@ -63,25 +61,25 @@ final class ChatSearchPage extends StatefulWidget {
   final String Function(String senderId)? senderDisplayName;
   final Listenable? identityChanges;
 
-  /// R6：月历数据——有消息日期集合（不再硬编码空集）。
-  final Set<DateTime> datesWithMessages;
-
-  /// 尚未完成历史扫描的日期（独立加载态）。
-  final Set<DateTime> scanningDates;
-
-  /// 可访问历史最早/最新月份（导航钳制；null 用当前月）。
-  final DateTime? earliestMonth;
-  final DateTime? latestMonth;
+  /// 可访问历史最早/最新月份（导航钳制）。
+  ///
+  /// [earliestMonth] 为 null 表示"尚无证据表明更早已无可显示消息"，此时允许
+  /// 继续向前翻月（每个月都是独立的有界 metadata 查询），**不得**用它伪造
+  /// 1970-01。[latestMonth] 为 null 时使用当前月。
+  final logic.CalendarMonth? earliestMonth;
+  final logic.CalendarMonth? latestMonth;
 
   /// 日期定位回调（选中日期后直接定位，不再只弹说明——R6 修复）。
   final void Function(DateTime date)? onJumpToDate;
   final Future<CalendarDateLookupResult> Function(DateTime date)? onDateLookup;
   final VoidCallback? onCancelDateLookup;
-  final Future<Set<DateTime>> Function(DateTime month)? loadCalendarMonth;
 
-  /// Date metadata may be incomplete. When enabled, local past/today dates
-  /// remain selectable without scanning a month; future dates remain disabled.
-  final bool allowUnknownPastDates;
+  /// 月级日期 metadata 加载（Task A：只读日期状态，不加载正文/媒体）。
+  final Future<logic.RoomHistoryMonthDays> Function(logic.CalendarMonth month)?
+      loadCalendarMonth;
+
+  /// 取消在途月查询（切月/关闭）。
+  final VoidCallback? onCancelCalendarMonthLookup;
   final VoidCallback? onCalendarClosed;
   final VoidCallback? onSearchInvalidated;
 
@@ -288,21 +286,16 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
   }
 
   Future<void> _openCalendar() async {
-    // R6 修复：月历接真实数据（不再硬编码 2025-2026/空日期集合）。
-    final now = DateTime.now();
-    final earliest = logic.CalendarMonth(widget.earliestMonth?.year ?? now.year,
-        widget.earliestMonth?.month ?? now.month);
-    final latest = logic.CalendarMonth(widget.latestMonth?.year ?? now.year,
-        widget.latestMonth?.month ?? now.month);
+    // Task A：月历只读日期 metadata（RoomHistoryMonthDays），与聊天正文解耦。
+    // 最早月份缺失时不伪造 1970，交由 room 侧索引/创建时间决定。
+    final now = logic.CalendarMonth.of(DateTime.now());
     final picked = await Navigator.of(context).push<DateTime>(
       CupertinoPageRoute(
         builder: (_) => CalendarPickerPage(
-          earliest: earliest,
-          latest: latest,
-          datesWithMessages: widget.datesWithMessages,
-          scanningDates: widget.scanningDates,
+          earliest: widget.earliestMonth,
+          latest: widget.latestMonth ?? now,
           loadMonth: widget.loadCalendarMonth,
-          allowUnknownPastDates: widget.allowUnknownPastDates,
+          onCancelMonthLookup: widget.onCancelCalendarMonthLookup,
           onDateLookup: widget.onDateLookup,
           onCancelDateLookup: widget.onCancelDateLookup,
         ),
@@ -710,30 +703,46 @@ final class _MemberPickerPageState extends State<MemberPickerPage> {
   }
 }
 
-/// 规格 #7：月历选择页（周一开头、三态日期、导航钳制）。
+/// 规格 #7：月历选择页（周一开头、typed 日期状态、导航钳制）。
+///
+/// 数据来源是 [logic.RoomHistoryMonthDays]（**只有日期 metadata**，与聊天正文
+/// 解耦）：knownPresent 高亮可点；knownEmpty 弱化且不可点（有证据的确认空）；
+/// unknown 是普通可点文字（点击触发该日的**有界**定位查询，绝不显示成
+/// "无消息"）；未来日期一律不可点；月 metadata 加载中/失败是独立状态，绝不
+/// 冒充"本月没有聊天记录"。
+///
+/// 切月与关闭都会取消在途月查询（generation guard + [onCancelMonthLookup]），
+/// 过期响应必须丢弃。
 final class CalendarPickerPage extends StatefulWidget {
   const CalendarPickerPage({
     super.key,
-    required this.earliest,
     required this.latest,
-    this.datesWithMessages = const {},
-    this.scanningDates = const {},
+    this.earliest,
+    this.initialMonth,
+    this.loadMonth,
+    this.onCancelMonthLookup,
     this.onDateTap,
     this.onDateLookup,
     this.onCancelDateLookup,
-    this.loadMonth,
-    this.allowUnknownPastDates = false,
   });
 
-  final logic.CalendarMonth earliest;
+  /// 最新可访问月份（导航上界，通常是当前月）。
   final logic.CalendarMonth latest;
-  final Set<DateTime> datesWithMessages;
-  final Set<DateTime> scanningDates;
+
+  /// 已知最早月份。null = 尚无证据；此时允许继续向前翻月（每个月都是独立的
+  /// 有界查询），**不得**回退成 1970-01。
+  final logic.CalendarMonth? earliest;
+
+  /// 打开时显示的月份；缺省用 [latest]。
+  final logic.CalendarMonth? initialMonth;
+
+  /// 月级日期 metadata 加载（本地索引优先；不得加载正文/媒体）。
+  final Future<logic.RoomHistoryMonthDays> Function(logic.CalendarMonth month)?
+      loadMonth;
+  final VoidCallback? onCancelMonthLookup;
   final void Function(DateTime date)? onDateTap;
   final Future<CalendarDateLookupResult> Function(DateTime date)? onDateLookup;
   final VoidCallback? onCancelDateLookup;
-  final Future<Set<DateTime>> Function(DateTime month)? loadMonth;
-  final bool allowUnknownPastDates;
 
   @override
   State<CalendarPickerPage> createState() => _CalendarPickerPageState();
@@ -741,16 +750,18 @@ final class CalendarPickerPage extends StatefulWidget {
 
 final class _CalendarPickerPageState extends State<CalendarPickerPage> {
   late logic.CalendarMonth _current;
-  Set<DateTime> _dates = {};
-  int _generation = 0;
-  bool _loading = false;
-  bool _failed = false;
+  final Map<String, logic.RoomHistoryMonthDays> _months = {};
+  int _monthGeneration = 0;
+  bool _monthLoading = false;
+  Object? _monthError;
   bool _picked = false;
   DateTime? _lookupDate;
   DateTime? _retryDate;
   CalendarDateLookupResult? _lookupResult;
   bool _lookupFailed = false;
   int _lookupGeneration = 0;
+
+  logic.RoomHistoryMonthDays? get _days => _months[_current.key];
 
   void _discardDateLookup() {
     if (_lookupDate == null) return;
@@ -769,7 +780,7 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
 
   Future<void> _lookupDateAndPick(DateTime date) async {
     final lookup = widget.onDateLookup;
-    if (lookup == null) return _pickLegacy(date);
+    if (lookup == null) return _pick(date);
     final generation = ++_lookupGeneration;
     setState(() {
       _lookupDate = date;
@@ -803,63 +814,97 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
     if (date != null) await _lookupDateAndPick(date);
   }
 
-  Future<void> _loadMonth() async {
+  /// 读取当前月的日期 metadata。缓存月直接复用，不重复查询。
+  ///
+  /// [announceLoading] 为 false 时由调用方（initState）直接设置状态字段，
+  /// 避免在 initState 内同步 setState。
+  Future<void> _loadMonth({bool announceLoading = true}) async {
     final loader = widget.loadMonth;
-    if (loader == null) return;
-    final generation = ++_generation;
-    setState(() {
-      _loading = true;
-      _failed = false;
-    });
-    try {
-      final dates = await loader(DateTime(_current.year, _current.month));
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _dates = dates;
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted && generation == _generation) {
+    final month = _current;
+    final generation = ++_monthGeneration;
+    if (loader == null) {
+      if (announceLoading) {
         setState(() {
-          _loading = false;
-          _failed = true;
+          _monthLoading = false;
+          _monthError = null;
         });
       }
+      return;
+    }
+    if (announceLoading) {
+      setState(() {
+        _monthLoading = true;
+        _monthError = null;
+      });
+    }
+    try {
+      final days = await loader(month);
+      if (!mounted || generation != _monthGeneration) return;
+      setState(() {
+        _months[month.key] = days;
+        _monthLoading = false;
+        _monthError = days.error;
+      });
+    } catch (error) {
+      if (!mounted || generation != _monthGeneration) return;
+      setState(() {
+        _monthLoading = false;
+        _monthError = error;
+      });
     }
   }
 
   void _navigate(logic.CalendarMonth month) {
+    if (month == _current) return;
     _discardDateLookup();
+    widget.onCancelMonthLookup?.call();
     setState(() {
       _current = month;
+      _monthError = null;
       _retryDate = null;
       _lookupResult = null;
       _lookupFailed = false;
     });
-    if (!widget.allowUnknownPastDates) unawaited(_loadMonth());
-  }
-
-  @override
-  void dispose() {
-    if (!_picked) _discardDateLookup();
-    super.dispose();
+    unawaited(_loadMonth());
   }
 
   @override
   void initState() {
     super.initState();
-    _current = widget.latest;
-    _dates = widget.datesWithMessages;
-    if (!widget.allowUnknownPastDates) unawaited(_loadMonth());
+    _current = widget.initialMonth ?? widget.latest;
+    _monthLoading = widget.loadMonth != null;
+    unawaited(_loadMonth(announceLoading: false));
+  }
+
+  @override
+  void dispose() {
+    // 关闭即放弃在途月查询与日期定位：过期结果不得回到已关闭的页面。
+    _monthGeneration++;
+    widget.onCancelMonthLookup?.call();
+    if (!_picked) _discardDateLookup();
+    super.dispose();
+  }
+
+  bool _canNavigateTo(logic.CalendarMonth target) {
+    if (target.compareTo(widget.latest) > 0) return false;
+    final earliest = widget.earliest;
+    if (earliest == null) return true;
+    return target.compareTo(earliest) >= 0;
   }
 
   @override
   Widget build(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    final canPrev = widget.latest.canNavigateTo(_current.previous,
-        earliest: widget.earliest, latest: widget.latest);
-    final canNext = widget.latest.canNavigateTo(_current.next,
-        earliest: widget.earliest, latest: widget.latest);
+    final canPrev = _canNavigateTo(_current.previous);
+    final canNext = _canNavigateTo(_current.next);
+    final days = _days;
+    final today = DateTime.now();
+    final todayDay = DateTime(today.year, today.month, today.day);
+    final monthKnownEmpty = !_monthLoading &&
+        _monthError == null &&
+        days != null &&
+        !days.hasUnknown &&
+        days.presentDates.isEmpty;
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
         if (didPop && !_picked) _discardDateLookup();
@@ -920,12 +965,25 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
               ),
             ),
             const SizedBox(height: 4),
-            if (_loading)
+            // 月 metadata 状态：加载中/失败是独立状态，不得显示成本月无记录。
+            if (_monthLoading)
               const Padding(
-                  padding: EdgeInsets.all(8), child: Text('正在查找历史日期…')),
-            if (_failed)
+                key: Key('calendar-month-loading'),
+                padding: EdgeInsets.all(8),
+                child: Text('正在读取日期信息…'),
+              ),
+            if (!_monthLoading && _monthError != null)
               CupertinoButton(
-                  onPressed: _loadMonth, child: const Text('历史加载失败，点击重试')),
+                key: const Key('calendar-month-error'),
+                onPressed: _loadMonth,
+                child: const Text('日期信息加载失败，点击重试'),
+              ),
+            if (monthKnownEmpty)
+              const Padding(
+                key: Key('calendar-month-empty'),
+                padding: EdgeInsets.all(8),
+                child: Text('本月没有聊天记录，可切换到其他月份'),
+              ),
             if (_lookupDate != null)
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const CupertinoActivityIndicator(
@@ -946,28 +1004,16 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
               ),
             if (_lookupResult == CalendarDateLookupResult.confirmedEmpty)
               CupertinoButton(
-                key: const Key('calendar-date-lookup-retry'),
+                key: const Key('calendar-date-lookup-empty'),
                 onPressed: _retryDateLookup,
                 child: const Text('本日暂无聊天记录'),
               ),
             if (_lookupResult == CalendarDateLookupResult.incomplete)
               CupertinoButton(
-                key: const Key('calendar-date-lookup-retry'),
+                key: const Key('calendar-date-lookup-incomplete'),
                 onPressed: _retryDateLookup,
-                child: const Text('历史范围尚未加载完成，请重试该日期'),
+                child: const Text('该日期暂时无法确认，点击重试'),
               ),
-            if (widget.allowUnknownPastDates &&
-                !_dates.any((d) =>
-                    d.year == _current.year && d.month == _current.month))
-              const Padding(
-                  padding: EdgeInsets.all(8), child: Text('尚未加载聊天记录，可选择日期查询')),
-            if (!widget.allowUnknownPastDates &&
-                !_loading &&
-                !_failed &&
-                !_dates.any((d) =>
-                    d.year == _current.year && d.month == _current.month))
-              const Padding(
-                  padding: EdgeInsets.all(8), child: Text('本月暂无聊天记录')),
             // 日期网格。
             Expanded(
               child: GridView.builder(
@@ -977,36 +1023,33 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                     crossAxisCount: 7, childAspectRatio: 1),
                 itemCount: _leadingBlanks() + _current.daysInMonth,
                 itemBuilder: (context, index) {
-                  final blank = index < _leadingBlanks();
-                  if (blank) return const SizedBox.shrink();
-                  final day = index - _leadingBlanks() + 1;
+                  final leading = _leadingBlanks();
+                  if (index < leading) return const SizedBox.shrink();
+                  final day = index - leading + 1;
                   final date = DateTime(_current.year, _current.month, day);
-                  final status = logic.dayStatus(date,
-                      datesWithMessages: _dates,
-                      scanningDates: widget.scanningDates);
-                  final today = DateTime.now();
-                  final future = date
-                      .isAfter(DateTime(today.year, today.month, today.day));
-                  final known = status == logic.CalendarDayStatus.hasMessages;
-                  final unknownPastOrToday = widget.allowUnknownPastDates &&
-                      status == logic.CalendarDayStatus.noMessages &&
-                      !future;
-                  final knownForDisplay =
-                      known && (!widget.allowUnknownPastDates || !future);
-                  final enabled = widget.allowUnknownPastDates
-                      ? (known || unknownPastOrToday) && !future
-                      : known;
+                  final future = date.isAfter(todayDay);
+                  final state = days?.stateOf(day) ??
+                      logic.RoomHistoryDayState.unknown;
+                  final knownPresent = !future &&
+                      state == logic.RoomHistoryDayState.knownPresent;
+                  final knownEmpty = !future &&
+                      state == logic.RoomHistoryDayState.knownEmpty;
+                  final scanning = !future &&
+                      !knownPresent &&
+                      !knownEmpty &&
+                      _monthLoading;
+                  // unknown（含加载中未定论的日期）保持可点：点击会走该日的
+                  // 有界定位查询；knownEmpty 与未来日期不可点。
+                  final enabled = !future && !knownEmpty && _lookupDate == null;
                   return GestureDetector(
                     key: Key('calendar-day-$day'),
-                    onTap: enabled && _lookupDate == null
-                        ? () => _lookupDateAndPick(date)
-                        : null,
+                    onTap: enabled ? () => _lookupDateAndPick(date) : null,
                     child: Container(
                       margin: const EdgeInsets.all(2),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: knownForDisplay
+                        color: knownPresent
                             ? WeChatColors.brandPrimary.withValues(alpha: .12)
                             : null,
                       ),
@@ -1014,15 +1057,11 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
                         '$day',
                         style: TextStyle(
                           fontSize: 15,
-                          color: switch (status) {
-                            _ when knownForDisplay =>
-                              WeChatColors.resolveTextPrimary(context),
-                            logic.CalendarDayStatus.scanning =>
-                              WeChatColors.textTertiary,
-                            _ when unknownPastOrToday =>
-                              WeChatColors.resolveTextPrimary(context),
-                            _ => const Color(0xFFCCCCCC),
-                          },
+                          color: future || knownEmpty
+                              ? const Color(0xFFCCCCCC)
+                              : scanning
+                                  ? WeChatColors.textTertiary
+                                  : WeChatColors.resolveTextPrimary(context),
                         ),
                       ),
                     ),
@@ -1038,7 +1077,7 @@ final class _CalendarPickerPageState extends State<CalendarPickerPage> {
 
   int _leadingBlanks() => _current.firstWeekdayMondayBased - 1;
 
-  void _pickLegacy(DateTime date) {
+  void _pick(DateTime date) {
     if (_picked) return;
     _picked = true;
     if (widget.onDateTap != null) {

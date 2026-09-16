@@ -14,6 +14,7 @@ final class RoomOpenRequest {
     required this.roomId,
     required this.roomName,
     this.initialContact,
+    this.anchorEventId,
     this.onRoomReady,
     this.onRoomClosed,
   });
@@ -24,6 +25,10 @@ final class RoomOpenRequest {
   /// 导航栏展示名；为空时由打开流程向会话目录取（roomDisplayName）。
   final String roomName;
   final ContactDetails? initialContact;
+
+  /// 正式的房间导航 anchor 契约（全局搜索/深链）：进入房间后定位并高亮
+  /// 该事件。绝不通过全局变量或 SharedPreferences 传递。
+  final String? anchorEventId;
 
   /// 租约已取、RoomPage 尚未 push 时回调。消息列表在此补完「进入房间」的
   /// 已读/未读收尾（等待动画与身份预热已在调用方完成）。

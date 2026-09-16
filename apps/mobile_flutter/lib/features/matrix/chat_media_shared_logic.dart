@@ -5,76 +5,14 @@
 // #7 月历日期定位
 // ──────────────────────────────────────────────────────────────
 
-/// 月历中一天的呈现状态（确认无消息=禁用；扫描中=独立加载态，
-/// 不得冒充无消息）。
-enum CalendarDayStatus { hasMessages, noMessages, scanning, outOfRange }
-
-final class CalendarMonth {
-  const CalendarMonth(this.year, this.month);
-
-  final int year;
-  final int month;
-
-  @override
-  bool operator ==(Object other) =>
-      other is CalendarMonth && other.year == year && other.month == month;
-
-  @override
-  int get hashCode => Object.hash(year, month);
-
-  @override
-  String toString() => '$year-${month.toString().padLeft(2, '0')}';
-
-  CalendarMonth get previous => month == 1
-      ? CalendarMonth(year - 1, 12)
-      : CalendarMonth(year, month - 1);
-
-  CalendarMonth get next =>
-      month == 12 ? CalendarMonth(year + 1, 1) : CalendarMonth(year, month + 1);
-
-  /// 月标题（yyyy年M月）。
-  String get title => '$year年$month月';
-
-  /// 该月总天数。
-  int get daysInMonth {
-    final firstOfNext = month == 12
-        ? DateTime(year + 1, 1, 1)
-        : DateTime(year, month + 1, 1);
-    return firstOfNext.subtract(const Duration(days: 1)).day;
-  }
-
-  /// 该月 1 号是周几（1=周一 … 7=周日；月历按周一开头）。
-  int get firstWeekdayMondayBased {
-    final raw = DateTime(year, month, 1).weekday; // DateTime: 1=Mon..7=Sun.
-    return raw;
-  }
-
-  bool contains(DateTime date) => date.year == year && date.month == month;
-
-  /// 月份导航范围限制：最早与最新可访问消息月份之间。
-  bool canNavigateTo(CalendarMonth target,
-          {required CalendarMonth earliest, required CalendarMonth latest}) =>
-      !(target.year < earliest.year ||
-          (target.year == earliest.year && target.month < earliest.month) ||
-          target.year > latest.year ||
-          (target.year == latest.year && target.month > latest.month));
-}
+// 月历日期模型统一由 RoomHistoryDayIndex 提供（Task A：日期 metadata 与
+// 正文加载解耦），此处 re-export 以保持既有调用方与测试的导入不变。
+export 'room_history_day_index.dart'
+    show CalendarMonth, RoomHistoryDayState, RoomHistoryMonthDays;
 
 /// 设备当前时区下的日期映射（与气泡日期一致：local 时区）。
 DateTime calendarDayOf(DateTime time) =>
     DateTime(time.year, time.month, time.day);
-
-/// 月份内各天状态：
-/// - [datesWithMessages] 确认有消息（完整历史扫描后）；
-/// - [scanningDates] 尚未完成扫描（显示"加载中"独立状态）；
-/// - 其余确认无消息 → 禁用灰显（#CCCCCC）。
-CalendarDayStatus dayStatus(DateTime date,
-    {required Set<DateTime> datesWithMessages, required Set<DateTime> scanningDates}) {
-  final day = calendarDayOf(date);
-  if (scanningDates.contains(day)) return CalendarDayStatus.scanning;
-  if (datesWithMessages.contains(day)) return CalendarDayStatus.hasMessages;
-  return CalendarDayStatus.noMessages;
-}
 
 /// 点击日期：定位**该日最早一条**可展示消息（非最后一条）。
 /// 输入为当日消息列表（timelineOrder 升序=旧→新），返回最早。

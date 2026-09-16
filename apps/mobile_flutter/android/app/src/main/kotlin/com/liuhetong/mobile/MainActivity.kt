@@ -19,6 +19,21 @@ class MainActivity : FlutterActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    /// FLAG_SECURE lease 计数（闪照查看器持有；> 0 时保持安全窗口）。
+    private var secureLeaseCount = 0
+
+    /// 按 lease 计数应用/清除 FLAG_SECURE。必须在 UI 线程调用。
+    private fun applySecureFlag() {
+        runOnUiThread {
+            val window = window ?: return@runOnUiThread
+            if (secureLeaseCount > 0) {
+                window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 原生推送桥。
@@ -252,6 +267,47 @@ class MainActivity : FlutterActivity() {
         // 优先级，不阻止息屏后 CPU 休眠与 WiFi 低功耗断连——长轮询同步
         // 仍会停。此通道在保活期间持有 PARTIAL WakeLock + 高性能
         // WifiLock，并提供电池优化白名单引导（厂商 ROM 清理的必要条件）。
+        // 闪照安全窗口（Task E）：FLAG_SECURE 按 lease 引用计数开关。
+        // count > 0 → 系统截图/普通录屏/最近任务快照拿不到该 window 内容；
+        // 归零才清除，避免多个查看器互相误关（重复释放不会变负）。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/screen_security")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "acquireSecure" -> {
+                        secureLeaseCount += 1
+                        applySecureFlag()
+                        result.success(secureLeaseCount)
+                    }
+                    "releaseSecure" -> {
+                        if (secureLeaseCount > 0) secureLeaseCount -= 1
+                        applySecureFlag()
+                        result.success(secureLeaseCount)
+                    }
+                    // Activity 重建（配置变更/回前台）后重申：不改计数，
+                    // 只按当前计数重新应用 FLAG_SECURE。
+                    "reassertSecure" -> {
+                        applySecureFlag()
+                        result.success(secureLeaseCount)
+                    }
+                    // 账号切换/异常兜底：一次性归零。
+                    "releaseAllSecure" -> {
+                        secureLeaseCount = 0
+                        applySecureFlag()
+                        result.success(0)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        // Android 由 FLAG_SECURE 从源头阻断捕获，不产生 captureActive 事件
+        // （保持事件通道存在以便 Dart 侧统一订阅；仅在需要时回放 false）。
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/screen_capture")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    events.success(mapOf("type" to "captureState", "active" to false))
+                }
+
+                override fun onCancel(arguments: Any?) {}
+            })
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/keepalive")
             .setMethodCallHandler { call, result ->
                 when (call.method) {

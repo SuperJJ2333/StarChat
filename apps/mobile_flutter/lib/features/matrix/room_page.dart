@@ -126,6 +126,9 @@ import '../contacts/contact_actions.dart';
 import '../finance/finance_card_store.dart';
 import '../finance/finance_message_entry.dart';
 import '../finance/finance_message_presentation.dart';
+import 'media_message_access_policy.dart';
+import 'room_media_gallery_projection.dart';
+import '../search/global_search_index.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
 /// The local account must be present in that snapshot; callers must not infer
@@ -151,6 +154,7 @@ class RoomPage extends StatefulWidget {
     required this.roomLease,
     this.mediaSenderFactory,
     this.initialContact,
+    this.initialAnchorEventId,
     required this.onCreateGroup,
     this.reminderService,
     this.onMessage,
@@ -174,6 +178,10 @@ class RoomPage extends StatefulWidget {
 
   /// 语音转文字实现（可注入；默认系统语音识别）。
   final VoiceTranscriber? voiceTranscriber;
+
+  /// 正式的房间导航契约：全局搜索/深链可携带 anchorEventId 打开房间，
+  /// 进入后定位并高亮该消息（不使用全局变量或 SharedPreferences 传参）。
+  final String? initialAnchorEventId;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -1193,6 +1201,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   void _changed() {
     if (_disposing || !mounted) return;
     unawaited(_ingestMentions());
+    _applyInitialAnchorIfNeeded();
+    _recordGlobalSearchIndex();
     final timeline = controller;
     // Sending switches to the latest window and publishes a local bubble before
     // SDK acknowledgment. Scroll to that bubble even while transport is pending.
@@ -1553,6 +1563,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   Future<Uint8List> _loadImagePreview(RoomMessageViewModel message) async {
+    // 安全不变量：闪照不得经普通预览/磁盘缓存管线加载（会在气泡与专用
+    // 查看器里走独立内存缓存，见 MediaMessageAccessPolicy）。
+    _mediaPolicyFor(message).assertOrdinaryMediaAllowed('imagePreview');
     if (_mediaHashes(message.id) != null) {
       final key = _previewKey(message);
       if (key.eventId.startsWith('thumb:')) {
@@ -2520,6 +2533,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             timestamp: message.timestamp.toLocal(),
             timelineOrder: message.timestamp.millisecondsSinceEpoch,
             visibleText: message.text,
+            isFlashPhoto: message.isFlashPhoto,
             displayText: switch (message.kind) {
               RoomMessageKind.image =>
                 message.mimeType?.startsWith('video/') == true
@@ -2533,7 +2547,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               RoomMessageKind.transfer => '[转账消息]',
               _ => message.text,
             },
-            mediaCategory: switch (message.kind) {
+            mediaCategory: _ordinarySearchMediaAllowed(message)
+                ? switch (message.kind) {
               RoomMessageKind.video => ChatSearchMediaCategory.imageVideo,
               RoomMessageKind.image
                   when message.mimeType?.startsWith('video/') == true =>
@@ -2547,8 +2562,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   ).hasMatch(message.text) =>
                 ChatSearchMediaCategory.link,
               _ => null,
-            },
-            hasMedia: message.kind != RoomMessageKind.text,
+            }
+                : null,
+            hasMedia: _ordinarySearchMediaAllowed(message) &&
+                message.kind != RoomMessageKind.text,
             isVideo: message.kind == RoomMessageKind.video ||
                 message.mimeType?.startsWith('video/') == true,
             duration: message.videoDuration,
@@ -2568,16 +2585,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                   localPart(member.id),
             ),
         ];
-    final dayMetadata =
-        controller?.loadedDayMetadata ?? const <RoomHistoryDayMetadata>[];
-    final datesWithMessages = {
-      // Calendar markers are raw timeline metadata. Do not build the full
-      // text/member/media search projection merely to open a calendar.
-      for (final metadata in dayMetadata)
-        DateTime(metadata.day.year, metadata.day.month, metadata.day.day),
-    };
-    final earliestMonth = widget.roomLease.creationDate ?? DateTime(1970);
-    final latestMonth = DateTime.now();
+    // Task A：月历日期 metadata 来自 RoomHistoryDayIndex（只读日期状态），
+    // 不再从时间线正文投影；最早月份缺失时保持 null，绝不伪造 1970。
+    final earliestMonth = controller?.earliestMonth;
+    final latestMonth = CalendarMonth.of(DateTime.now());
 
     Navigator.push<void>(
       context,
@@ -2617,9 +2628,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             }
             return const <ChatSearchMessage>[];
           },
-          // Unknown past dates remain selectable. A month change must not
-          // trigger a network/history scan; explicit selection owns lookup.
-          allowUnknownPastDates: true,
+          // Task A：月历只读日期 metadata（有界月查询），正文/媒体不参与。
+          earliestMonth: earliestMonth,
+          latestMonth: latestMonth,
+          loadCalendarMonth: (month) async {
+            final load = controller;
+            if (load == null || !searchOpen) {
+              return RoomHistoryMonthDays(month: month);
+            }
+            return load.loadMonthDays(month);
+          },
+          onCancelCalendarMonthLookup: () => controller?.cancelMonthLookup(),
           onCalendarClosed: () => controller?.cancelPendingDateLookup(),
           onSearchInvalidated: () => searchGeneration++,
           memberEntries: memberEntries(),
@@ -2639,29 +2658,38 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               size: 36,
             );
           },
-          mediaThumbnailBuilder: (context, message) =>
-              FutureBuilder<Uint8List?>(
-            future: message.isVideo
-                ? _loadVideoPoster(message.eventId)
-                : _loadImagePreview(messagesById[message.eventId]!),
-            builder: (context, snapshot) {
-              final bytes = snapshot.data;
-              if (bytes != null) {
-                return Image(
-                  image: boundedChatImageProvider(bytes, maxEdge: 360),
-                  fit: BoxFit.contain,
+          mediaThumbnailBuilder: (context, message) {
+            // 安全不变量：普通媒体网格永远不得触碰闪照 loader
+            // （闪照在搜索投影里已无 media 分类/hasMedia=false）。
+            if (!MediaMessageAccessPolicy.forMessage(
+                    isFlashPhoto: message.isFlashPhoto)
+                .includeInSearchMedia) {
+              throw StateError(
+                  'Flash photo must not use ordinary search media grid');
+            }
+            return FutureBuilder<Uint8List?>(
+              future: message.isVideo
+                  ? _loadVideoPoster(message.eventId)
+                  : _loadImagePreview(messagesById[message.eventId]!),
+              builder: (context, snapshot) {
+                final bytes = snapshot.data;
+                if (bytes != null) {
+                  return Image(
+                    image: boundedChatImageProvider(bytes, maxEdge: 360),
+                    fit: BoxFit.contain,
+                  );
+                }
+                return Center(
+                  child: snapshot.connectionState == ConnectionState.waiting
+                      ? const CupertinoActivityIndicator()
+                      : const Icon(
+                          CupertinoIcons.photo,
+                          color: WeChatColors.textTertiary,
+                        ),
                 );
-              }
-              return Center(
-                child: snapshot.connectionState == ConnectionState.waiting
-                    ? const CupertinoActivityIndicator()
-                    : const Icon(
-                        CupertinoIcons.photo,
-                        color: WeChatColors.textTertiary,
-                      ),
-              );
-            },
-          ),
+              },
+            );
+          },
           onOpenMedia: (eventId) {
             final message = messagesById[eventId];
             if (message == null) return;
@@ -2688,6 +2716,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             final generation = ++dateLookupGeneration;
             if (lookup == null || !searchOpen) {
               return CalendarDateLookupResult.incomplete;
+            }
+            // Task A：月索引已经给出该日 anchor 时直接采用，不再重复访问
+            // timestamp_to_event（anchor 来自本机已解密的可见事件）。
+            final anchor = lookup.anchorForDay(date);
+            if (anchor != null) {
+              resolvedDateLocation =
+                  RoomHistoryDayLocation(eventId: anchor, day: date);
+              return CalendarDateLookupResult.located;
             }
             try {
               final location = await lookup.locateDay(date);
@@ -2717,9 +2753,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             dateLookupGeneration++;
             controller?.cancelPendingDateLookup();
           },
-          datesWithMessages: datesWithMessages,
-          earliestMonth: earliestMonth,
-          latestMonth: latestMonth,
         ),
       ),
     ).whenComplete(() {
@@ -2912,6 +2945,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// R7：打开全屏图片查看器（含转发/下载操作）。
   Future<void> _openImageViewerWithForward(RoomMessageViewModel message) async {
+    // 第二层保护：即使将来搜索/气泡过滤回归，闪照也绝不能进入普通查看器
+    // 或普通原图 loader（只允许专用安全查看器 FlashPhotoViewerPage）。
+    if (!_mediaPolicyFor(message).canUseOrdinaryViewer) {
+      _showMediaMessage('闪照仅可在闪照查看器中打开');
+      return;
+    }
     try {
       final images = _galleryImages();
       if (!mounted || !images.any((image) => image.id == message.id)) return;
@@ -2941,6 +2980,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _openImageViewer(RoomMessageViewModel message) =>
       _openImageViewerWithForward(message);
 
+  /// 媒体安全策略（闪照不属于普通媒体资产；集中规则见
+  /// [MediaMessageAccessPolicy]，禁止在各处散落 isFlashPhoto 判断）。
+  MediaMessageAccessPolicy _mediaPolicyFor(RoomMessageViewModel message) =>
+      MediaMessageAccessPolicy.forMessage(isFlashPhoto: message.isFlashPhoto);
+
+  /// 普通「图片与视频」历史搜索是否允许收录该消息。
+  bool _ordinarySearchMediaAllowed(RoomMessageViewModel message) =>
+      _mediaPolicyFor(message).includeInSearchMedia;
+
   List<RoomGalleryImage> _galleryImages() {
     final all = controller?.allMessages ?? const <RoomMessageViewModel>[];
     final visible = hiddenEvents?.visibleItems(
@@ -2951,20 +2999,31 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         ) ??
         all;
     return [
-      for (final message in visible)
-        if (message.kind == RoomMessageKind.image &&
-            !message.isRecalled &&
-            message.deliveryState == RoomDeliveryState.sent)
-          RoomGalleryImage(
-            id: message.id,
-            sourceIdentity: _previewKey(message).identity,
-            loadPreview: () => _loadImagePreview(message),
-            loadOriginal: () => withMediaLoadPriority(
+      // 安全不变量（含历史分页与预取）：闪照永远不进入普通 Gallery，
+      // 投影规则集中在 ordinaryGalleryMessages。
+      for (final message in ordinaryGalleryMessages(visible))
+        RoomGalleryImage(
+          id: message.id,
+          sourceIdentity: _previewKey(message).identity,
+          loadPreview: () {
+            _mediaPolicyFor(message)
+                .assertOrdinaryMediaAllowed('gallery.preview');
+            return _loadImagePreview(message);
+          },
+          loadOriginal: () {
+            _mediaPolicyFor(message)
+                .assertOrdinaryMediaAllowed('gallery.original');
+            return withMediaLoadPriority(
                 MediaLoadPriority.interactive,
-                () => controller!.loadAttachment(message.id)),
-            originalSize: message.attachmentSize,
-            onForward: () => _forwardMessages([message]),
-          ),
+                () => controller!.loadAttachment(message.id));
+          },
+          originalSize: message.attachmentSize,
+          onForward: () {
+            _mediaPolicyFor(message)
+                .assertOrdinaryMediaAllowed('gallery.forward');
+            return _forwardMessages([message]);
+          },
+        ),
     ];
   }
 
@@ -4021,6 +4080,49 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       for (final member in room.members.take(9))
         avatar(member.id, member.displayName, member.avatarUri),
     ]);
+  }
+
+  /// 正式的房间导航契约：全局搜索/深链可携带 anchorEventId 打开房间，
+  /// 进入后定位并高亮该消息（不使用全局变量或 SharedPreferences 传参）。
+  bool _initialAnchorApplied = false;
+
+  void _applyInitialAnchorIfNeeded() {
+    final anchor = widget.initialAnchorEventId;
+    if (_initialAnchorApplied || anchor == null || anchor.isEmpty) return;
+    final timeline = controller;
+    if (timeline == null || timeline.messages.isEmpty) return;
+    _initialAnchorApplied = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(_scrollToMessage(anchor));
+    });
+  }
+
+  /// 把本机已解密、用户可见的消息投影进全局搜索索引（device-side only：
+  /// 不落盘、不上传；闪照/撤回/空白正文永不进入）。
+  void _recordGlobalSearchIndex() {
+    final timeline = controller;
+    if (timeline == null) return;
+    GlobalSearchIndex.shared.recordRoom(
+      roomId: roomInfo.id,
+      roomName: roomInfo.name,
+      isGroup: isGroup,
+      roomAvatarSeed: roomInfo.id,
+      messages: [
+        for (final message in timeline.allMessages)
+          if (!message.isRecalled &&
+              !message.isFlashPhoto &&
+              message.text.trim().isNotEmpty)
+            GlobalSearchMessageRecord(
+              eventId: message.id,
+              senderId: message.senderId,
+              senderName: _senderDisplayName(message),
+              timestamp: message.timestamp,
+              body: message.text,
+              senderIsSelf: message.isOwn,
+            ),
+      ],
+    );
   }
 
   @override

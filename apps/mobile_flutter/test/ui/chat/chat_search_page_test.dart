@@ -145,11 +145,14 @@ void main() {
         home: CalendarPickerPage(
           earliest: const logic.CalendarMonth(2026, 9),
           latest: const logic.CalendarMonth(2026, 9),
-          datesWithMessages: {
-            DateTime(2026, 9, 1),
-            DateTime(2026, 9, 3),
-            DateTime(2026, 9, 10),
-          },
+          loadMonth: (month) async => logic.RoomHistoryMonthDays(
+            month: month,
+            dayStates: const {
+              1: logic.RoomHistoryDayState.knownPresent,
+              3: logic.RoomHistoryDayState.knownPresent,
+              10: logic.RoomHistoryDayState.knownPresent,
+            },
+          ),
         ),
       ));
       await tester.pumpAndSettle();
@@ -165,7 +168,10 @@ void main() {
         home: CalendarPickerPage(
           earliest: const logic.CalendarMonth(2026, 9),
           latest: const logic.CalendarMonth(2026, 9),
-          datesWithMessages: {DateTime(2026, 9, 3)},
+          loadMonth: (month) async => logic.RoomHistoryMonthDays(
+            month: month,
+            dayStates: const {3: logic.RoomHistoryDayState.knownPresent},
+          ),
           onDateTap: (date) => result = date,
         ),
       ));

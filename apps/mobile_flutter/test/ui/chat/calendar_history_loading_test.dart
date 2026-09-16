@@ -1,10 +1,18 @@
 import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 import 'package:liuhetong_mobile/features/matrix/chat_media_shared_logic.dart';
+import 'package:liuhetong_mobile/ui/chat/chat_search_page.dart';
 
+/// Task A：日期定位结果必须区分「已定位 / 确认无记录 / 暂时无法确认」，
+/// 且切月/取消后过期结果不得回写页面。
 void main() {
+  /// 没有任何本地覆盖证据的月份：所有日期都是 unknown（保持可点，点击才会
+  /// 触发该日的有界定位查询）。
+  RoomHistoryMonthDays unresolvedMonth(CalendarMonth month) =>
+      RoomHistoryMonthDays(month: month);
+
   testWidgets(
       'date lookup stays on the calendar, can cancel a stale result, and retries failures',
       (tester) async {
@@ -15,7 +23,7 @@ void main() {
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 9),
       latest: const CalendarMonth(2026, 9),
-      allowUnknownPastDates: true,
+      loadMonth: (month) async => unresolvedMonth(month),
       onDateLookup: (_) {
         calls++;
         if (calls == 1) return first.future;
@@ -24,6 +32,7 @@ void main() {
       },
       onCancelDateLookup: () => cancelled++,
     )));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const Key('calendar-day-5')));
     await tester.pump();
@@ -55,16 +64,19 @@ void main() {
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 9),
       latest: const CalendarMonth(2026, 9),
-      allowUnknownPastDates: true,
+      loadMonth: (month) async => unresolvedMonth(month),
       onDateLookup: (_) async => incomplete
           ? CalendarDateLookupResult.incomplete
           : CalendarDateLookupResult.confirmedEmpty,
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-day-5')));
     await tester.pumpAndSettle();
-    expect(find.text('历史范围尚未加载完成，请重试该日期'), findsOneWidget);
+    expect(find.byKey(const Key('calendar-date-lookup-incomplete')),
+        findsOneWidget);
+    expect(find.textContaining('该日期暂时无法确认'), findsOneWidget);
     incomplete = false;
-    await tester.tap(find.byKey(const Key('calendar-date-lookup-retry')));
+    await tester.tap(find.byKey(const Key('calendar-date-lookup-incomplete')));
     await tester.pumpAndSettle();
     expect(find.text('本日暂无聊天记录'), findsOneWidget);
   });
@@ -76,10 +88,11 @@ void main() {
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 8),
       latest: const CalendarMonth(2026, 9),
-      allowUnknownPastDates: true,
+      loadMonth: (month) async => unresolvedMonth(month),
       onDateLookup: (_) => pending.future,
       onCancelDateLookup: () => cancelled++,
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-day-5')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('calendar-prev-month')));
@@ -96,62 +109,56 @@ void main() {
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 8),
       latest: const CalendarMonth(2026, 9),
-      allowUnknownPastDates: true,
+      loadMonth: (month) async => unresolvedMonth(month),
       onDateLookup: (_) async => CalendarDateLookupResult.confirmedEmpty,
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-day-5')));
     await tester.pumpAndSettle();
     expect(find.text('本日暂无聊天记录'), findsOneWidget);
     await tester.tap(find.byKey(const Key('calendar-prev-month')));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('本日暂无聊天记录'), findsNothing);
   });
 
-  testWidgets(
-      'previous month loads real history and ignores stale month response',
+  testWidgets('一个月只查询一次 metadata，重复返回同一月份复用结果',
       (tester) async {
-    final september = Completer<Set<DateTime>>();
-    final august = Completer<Set<DateTime>>();
-    DateTime? picked;
+    final loads = <CalendarMonth>[];
     await tester.pumpWidget(CupertinoApp(
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 8),
       latest: const CalendarMonth(2026, 9),
-      loadMonth: (month) => month.month == 9 ? september.future : august.future,
-      onDateTap: (date) => picked = date,
+      loadMonth: (month) async {
+        loads.add(month);
+        return unresolvedMonth(month);
+      },
     )));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('calendar-prev-month')));
-    await tester.pump();
-    august.complete({DateTime(2026, 8, 15)});
-    await tester.pump();
-    september.complete({DateTime(2026, 9, 1)});
-    await tester.pump();
-    await tester.tap(find.text('15'));
-    await tester.pump();
-    expect(picked, DateTime(2026, 8, 15));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('calendar-next-month')));
+    await tester.pumpAndSettle();
+    expect(loads, [
+      const CalendarMonth(2026, 9),
+      const CalendarMonth(2026, 8),
+      const CalendarMonth(2026, 9),
+    ]);
   });
 
-  testWidgets(
-      'empty month is explicit, failures retry, repeated date tap only chooses once',
+  testWidgets('repeated date tap only chooses once when no lookup is wired',
       (tester) async {
-    var calls = 0;
     var picks = 0;
     await tester.pumpWidget(CupertinoApp(
         home: CalendarPickerPage(
       earliest: const CalendarMonth(2026, 9),
       latest: const CalendarMonth(2026, 9),
-      loadMonth: (_) async {
-        if (++calls == 1) throw StateError('offline');
-        return {};
-      },
+      loadMonth: (month) async => unresolvedMonth(month),
       onDateTap: (_) => picks++,
     )));
-    await tester.pump();
-    expect(find.text('历史加载失败，点击重试'), findsOneWidget);
-    await tester.tap(find.text('历史加载失败，点击重试'));
     await tester.pumpAndSettle();
-    expect(find.text('本月暂无聊天记录'), findsOneWidget);
     await tester.tap(find.text('15'));
-    expect(picks, 0);
+    await tester.tap(find.text('15'));
+    await tester.pump();
+    expect(picks, 1);
   });
 }

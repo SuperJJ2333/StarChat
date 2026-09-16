@@ -1,5 +1,35 @@
 # 移动交付恢复索引
 
+## 2026-09-17 第三阶段：聊天历史日期查询、全局搜索、闪照隐私与屏幕捕获安全（本地完成，未构建/未真机）
+
+五项修复（A–E），全部 TDD 落地：
+**A 日期查询**与聊天正文解耦——新增 `RoomHistoryDayIndex`（metadata only：日期/边界/anchor/覆盖/schema 版本）
+与 `loadMonthDays(CalendarMonth)`（本地索引优先，缺覆盖时**最多 2 次** `timestamp_to_event`、各 5s 超时，不加载正文/媒体，
+不切换历史 context）；日期状态用 `RoomHistoryDayState`（knownPresent/knownEmpty/unknown/loading/error），
+`unknown` 绝不显示成“无消息”且保持可点，`knownEmpty` 需证据（早于房间创建时间 / 本机连续覆盖区间 / targeted 探测结论）；
+`room_page.dart` 删除 `roomLease.creationDate ?? DateTime(1970)` 兜底，最早月份改为 索引→创建时间→null；
+月历页去掉 `allowUnknownPastDates` 旁路，打开/切月即读当月 metadata，切月与关闭取消在途查询（generation + 过期丢弃）；
+月索引 anchor 经 `anchorForDay()` 直达定位，跳过重复 `timestamp_to_event`。
+**B 全局搜索**重做为 typed 结果（`GlobalSearchResults` 联系人/群聊/聊天记录，≤3 条 + 更多入口，会话聚合），
+设备侧内存索引 `GlobalSearchIndex`（不上传、不落盘、不参与 E2EE），debounce 250ms + generation 抑制过期结果；
+修复“空查询把全部联系人+群名+聊天记录平铺”的旧缺陷（空查询=空态）；room+event 锚点经
+`RoomOpenRequest.anchorEventId → RoomPage.initialAnchorEventId` 定位并高亮。
+**C 闪照隐私**：搜索投影补 `isFlashPhoto`（修闪照混入普通媒体资产）、新增单一判据
+`MediaMessageAccessPolicy` 与 `ordinaryGalleryMessages()`；普通 Gallery 数据集在构造上不含闪照，
+因此邻居预取（±1）不可能触达闪照 loader；`_openImageViewerWithForward` 对闪照 fail-closed。
+**D** 闪照查看时长 5s → **3s**（单一常量，代码/文案/测试同步）。
+**E 屏幕捕获安全**：Android `MainActivity.kt` 新增 `FLAG_SECURE` + `secureLeaseCount` 引用计数
+（首个租约开启、归零才清除、重申只重新应用）、`chatflow/screen_security` 与 `chatflow/screen_capture` 通道；
+Dart `ScreenCaptureProtection`（租约幂等、平台异常静默降级）；iOS `AppDelegate.swift` 上报
+`UIScreen.isCaptured`/`sceneCaptureState` 与 `userDidTakeScreenshotNotification`（只做事后销毁）。
+闪照查看器：捕获中禁止 reveal（长按不消耗次数）、捕获开始/系统截图/退后台立即销毁且不回前台恢复、
+动态水印、销毁态文案；**明确不声称** iOS 能阻止截图/录屏，也不对抗 root/越狱/第二台相机拍屏。
+`flutter analyze lib test` 无问题；全量 `flutter test` **2826 通过 / 0 失败（退出码 0）**，
+日志 `artifacts/2026-09-17/flutter-full-stage3-final.txt`（阶段二 2740）。**未构建 APK/IPA、未真机、未部署**，
+真机验收（Android 截图/录屏/最近任务、iOS 录屏与截图时序、翻月与跳转手感）由用户执行。进入
+[任务记录](tasks/2026-09-17-chat-history-search-flash-screen-security.md)或
+[根因/验证/剩余风险](../verification/2026-09-17-chat-history-search-flash-screen-security.md)。
+
 ## 2026-09-17 第二阶段：房间导航统一（RoomNavigationCoordinator）+ 通话身份修复（本地完成，未构建/未部署）
 
 处理第一阶段遗留两项：① 消息列表 `MatrixHomePage._openRoom` 仍是绕过 AppHome 的第二套

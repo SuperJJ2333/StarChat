@@ -105,6 +105,24 @@ final class DeferredHistoryTimelineAdapter extends FakeTimelineAdapter
   void cancelPendingDateLookup() {}
 
   @override
+  CalendarMonth? get earliestMonth => earliest;
+
+  @override
+  Future<RoomHistoryMonthDays> loadMonthDays(CalendarMonth month) async =>
+      monthDays ?? RoomHistoryMonthDays(month: month);
+
+  @override
+  void cancelMonthLookup() => monthLookupCancels++;
+
+  @override
+  String? anchorForDay(DateTime localDay) => dayAnchors[localDay];
+
+  CalendarMonth? earliest;
+  RoomHistoryMonthDays? monthDays;
+  int monthLookupCancels = 0;
+  final dayAnchors = <DateTime, String>{};
+
+  @override
   Future<void> loadHistory() {
     final pending = Completer<void>();
     historyRequests.add(pending);

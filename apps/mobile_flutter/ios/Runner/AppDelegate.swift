@@ -37,6 +37,7 @@ import CallKit
   private func configureChannels(messenger: FlutterBinaryMessenger) {
     iosCalls.attach(messenger: messenger)
     secureSession.attach(messenger: messenger)
+    configureScreenCaptureChannels(messenger: messenger)
 
     FlutterMethodChannel(name: "chatflow/voice_audio_session", binaryMessenger: messenger)
       .setMethodCallHandler { [weak self] call, result in
@@ -198,5 +199,89 @@ import CallKit
       guard let self = self else { return }
       if result as? Bool == true, self.pendingTap == tap { self.pendingTap = nil }
     }
+  }
+
+  // MARK: - 闪照屏幕捕获（Task E）
+  //
+  // iOS 没有官方等价于 Android FLAG_SECURE 的通用截图阻止 API：
+  // - 不使用 secure UITextField hack / private API / 未公开 UIView trick；
+  // - 这里只做两件事：① 上报「正在录屏或镜像」状态（禁止 reveal）；
+  //   ② 上报系统截图**已完成**的事件（事后销毁闪照，不声称阻止截图）。
+  // 不涉及相册权限、不扫描/删除用户截图、不上传任何内容。
+
+  private var screenCaptureChannel: FlutterEventChannel?
+  private var screenSecurityChannel: FlutterMethodChannel?
+  private var screenCaptureSink: FlutterEventSink?
+  private var captureObserversRegistered = false
+
+  private func configureScreenCaptureChannels(messenger: FlutterBinaryMessenger) {
+    // iOS 无 FLAG_SECURE 等价能力：acquire/release 为显式 no-op（保持 Dart
+    // 侧统一契约），绝不伪装成截图保护。
+    let security = FlutterMethodChannel(name: "chatflow/screen_security", binaryMessenger: messenger)
+    security.setMethodCallHandler { call, result in
+      switch call.method {
+      case "acquireSecure", "releaseSecure", "releaseAllSecure", "reassertSecure":
+        result(0) // 明确：iOS 不支持通用截图阻止
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    screenSecurityChannel = security
+
+    let capture = FlutterEventChannel(name: "chatflow/screen_capture", binaryMessenger: messenger)
+    capture.setStreamHandler(self)
+    screenCaptureChannel = capture
+    registerCaptureObservers()
+    publishCaptureState()
+  }
+
+  private func registerCaptureObservers() {
+    guard !captureObserversRegistered else { return }
+    captureObserversRegistered = true
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(screenCapturedDidChange),
+      name: UIScreen.capturedDidChangeNotification,
+      object: nil
+    )
+    // 该通知在系统截图**完成之后**触发：只能事后销毁，不能阻止。
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(userDidTakeScreenshot),
+      name: UIApplication.userDidTakeScreenshotNotification,
+      object: nil
+    )
+  }
+
+  @objc private func screenCapturedDidChange() {
+    publishCaptureState()
+  }
+
+  @objc private func userDidTakeScreenshot() {
+    screenCaptureSink?(["type": "screenshot"])
+  }
+
+  /// 现代系统优先 scene capture state；否则回退 UIScreen.isCaptured。
+  private func publishCaptureState() {
+    var active = UIScreen.main.isCaptured
+    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+      if #available(iOS 17.0, *) {
+        active = scene.traitCollection.sceneCaptureState != .inactive
+      }
+    }
+    screenCaptureSink?(["type": "captureState", "active": active])
+  }
+}
+
+extension AppDelegate: FlutterStreamHandler {
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    screenCaptureSink = events
+    publishCaptureState()
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    screenCaptureSink = nil
+    return nil
   }
 }

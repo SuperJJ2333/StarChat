@@ -767,13 +767,15 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                       unawaited(_openRoomById(roomId))))),
       onAppearance: () => showThemePickerSheet(context, widget.themeController),
       appearanceKey: const Key('messages-appearance'));
-  Future<void> _openRoomById(String roomId) async {
+  Future<void> _openRoomById(String roomId, {String? anchorEventId}) async {
     if (roomId.isEmpty || widget.previewOnly) return;
     try {
       await widget.matrix.conversations.waitForJoinedRoom(roomId);
       await _refreshClientSnapshot();
       final matches = _rooms.where((room) => room.id == roomId);
-      if (mounted && matches.isNotEmpty) await _openRoom(matches.first);
+      if (mounted && matches.isNotEmpty) {
+        await _openRoom(matches.first, anchorEventId: anchorEventId);
+      }
     } catch (_) {/* The next sync makes the room available in the list. */}
   }
 
@@ -799,7 +801,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
-  Future<void> _openRoom(_RoomSnapshot snapshot) async {
+  Future<void> _openRoom(_RoomSnapshot snapshot, {String? anchorEventId}) async {
     // 只读占位页（启动期缓存列表）与未注入统一导航时不打开房间。
     final openRoom = widget.onOpenRoom;
     if (widget.previewOnly || openRoom == null) return;
@@ -835,6 +837,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             ? snapshot.title
             : groupRoomNavigationTitle(
                 snapshot.groupName, snapshot.memberCount),
+        anchorEventId: anchorEventId,
         // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
         // 已读/未读收尾。
         onRoomReady: () {
@@ -1057,6 +1060,11 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           api: widget.api,
                           matrix: widget.matrix,
                           identityCache: _identityCache,
+                          // 房间打开复用消息列表既有的 RoomLease/RoomPage 生命周期
+                          // （含 anchor 定位），搜索页不复制一套开会话实现。
+                          onOpenRoom: (room, {anchorEventId}) =>
+                              _openRoomById(room.roomId,
+                                  anchorEventId: anchorEventId),
                         ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),

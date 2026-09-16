@@ -1519,6 +1519,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               roomLease: lease,
               roomName: name,
               initialContact: request.initialContact,
+              initialAnchorEventId: request.anchorEventId,
               onCreateGroup: _createGroupChat,
               onMessage: _openMessage,
               onVoice: (contact) => _openCall(contact, CallMediaType.audio),
