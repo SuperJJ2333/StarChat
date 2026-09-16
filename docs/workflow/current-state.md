@@ -1,5 +1,22 @@
 # 移动交付恢复索引
 
+## 2026-09-16 iOS build 2121 登录 L04/L07：device 轮换与 session 生命周期修复（本地完成，未构建/未发布）
+
+主工作树基线 `8ef5cbac`：根因是 `MatrixLocalBinding.deviceId` 被当作身份锚点——服务端单设备策略
+轮换 device（OLD→NEW）后，SDK 已把新 device 写进本地库，而 binding 未迁移，`continuityMetadata`
+抛错 → `matrix_login` 阶段 **L04**；失败清理里 `suspend()` 读同一 continuity 又失败，留下
+「`_accessRevoked=true` 且 client 未关闭」的半挂起态，之后 `selectAccount` 必然再失败 → **L07**
+（且非空库永不清理 binding，2121 用户升级后也不自愈）。修复：① 只把 `deviceId` 从身份锚点中移除，
+账号 / homeserver / Ed25519 指纹 / 库代号仍严格失败关闭；② 服务端 token 登录证明归属后原子迁移
+binding（只改 deviceId），并为旧版本遗留态提供一次受同一密码学锚点约束的自愈；③ `suspend()` 重构为
+「除非 client 自身 dispose 失败否则必定完成关闭」，continuity 读取失败显式标记 unknown 而非假装已验证；
+④ `selectAccount` 合并为单一生命周期临界区；⑤ 新增 allowlist 诊断事件码与加盐哈希标识字段。
+Flutter 全量 **2699 通过 / 0 失败（退出码 0）**，`dart analyze`（本任务 8 个文件）无问题；含一次变异
+敏感性检查。**未构建 APK/IPA、未安装真机、未部署**；ADR-0072 为提案待批准，真机验收由用户执行。
+进入[任务记录](tasks/2026-09-16-ios-device-rotation-l04-l07.md)或
+[根因 / 验证 / 剩余风险](../verification/2026-09-16-device-rotation-binding-migration.md)。
+
+
 ## 2026-09-12 媒体交互、访问时间与加载检查（Debug2094已安装，待用户验收）
 
 工作树`.worktrees/offline12`分支`codex/media-interactions-20260912`基线aac3d806：最近访问缓存/刷新、图片编辑emoji与独立橡皮擦、视频/转发账号后台任务、现有点钻流水布局已由显式gpt-5.6-terra实施并经Astra亲审。2026-09-12 17:14:47+08，Mi6实际覆盖安装0.3.87-debug/2094，拉回SHA `3a15b4aa…a8bffaf`、固定证书与交付包匹配；用户功能与性能待验收。Flutter2535pass/29既有失败、mobile67pass/3既有失败、frontend161pass/11既有失败，analyze/UI契约通过；verify缺.env阻断。没有push/生产发布。进入[任务记录](tasks/2026-09-12-media-interactions.md)或[修复与交付报告](../verification/2026-09-12-media-interactions.md)继续，避免重做已完成批次。

@@ -1,3 +1,16 @@
+/// 服务端 device id 轮换无法在本地安全落地时抛出。
+///
+/// 只表示"这次轮换未被采纳"，不表示身份损坏：调用方必须保留原 binding 并失败关闭，
+/// 绝不能把它当成清库或重建身份的理由。`reason` 是固定枚举式原因码，不含标识。
+final class MatrixDeviceBindingRotationRejected implements Exception {
+  const MatrixDeviceBindingRotationRejected(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'MATRIX_DEVICE_BINDING_ROTATION_REJECTED';
+}
+
 final class MatrixLocalBinding {
   factory MatrixLocalBinding({
     required int version,

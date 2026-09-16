@@ -258,6 +258,113 @@ final class SecureSessionStore {
   Future<void> _clearMatrixBindingUnlocked() =>
       _storage.delete(_matrixBindingKey);
 
+  /// 服务端权威 device id 轮换后的原子迁移。
+  ///
+  /// 单设备登录策略会让服务端把本机保留的 device-OLD 换成 device-NEW。token 登录
+  /// 已经证明账号归属，此时本地 binding 必须跟着走，否则后续每一次 continuity
+  /// 校验都会把"可恢复的轮换"误判成身份损坏（L04），并让账号切换流程也永久
+  /// 卡在 account_storage（L07）。
+  ///
+  /// 只允许改写 `deviceId`。以下字段必须与 binding 完全一致，否则拒绝迁移并保留
+  /// 原 binding（失败关闭）：
+  /// `matrixUserId`、`homeserver`、`ed25519Fingerprint`（binding 已记录时）。
+  /// `databaseGeneration` 与 binding 自身保持原值——它不是从调用方传入的事实，
+  /// 而是这次绑定所属本地库的代号，随 device id 一起被继承。
+  ///
+  /// 整个读改写过程在 `_runMatrixIdentityOperation` 串行区内完成，因此与其它
+  /// scope/binding 操作原子互斥。返回迁移后的 binding；没有 binding 时返回 null
+  /// （此时由 continuityMetadata 建立首次绑定，无需迁移）。
+  Future<MatrixLocalBinding?> rotateMatrixDeviceBinding({
+    required String expectedUserId,
+    required String expectedHomeserver,
+    required String previousDeviceId,
+    required String nextDeviceId,
+    required String? ed25519Fingerprint,
+  }) =>
+      _runMatrixIdentityOperation(() async {
+        final binding = await _matrixBindingUnlocked();
+        if (binding == null) return null;
+        if (binding.deviceId != previousDeviceId) {
+          throw const MatrixDeviceBindingRotationRejected('device-changed');
+        }
+        return _rewriteBindingDeviceId(
+          binding,
+          expectedUserId: expectedUserId,
+          expectedHomeserver: expectedHomeserver,
+          nextDeviceId: nextDeviceId,
+          ed25519Fingerprint: ed25519Fingerprint,
+        );
+      });
+
+  /// 重新打开本地库时补齐 device id。
+  ///
+  /// 与 [rotateMatrixDeviceBinding] 的区别只在于调用方无法提供"轮换前的 device id"
+  /// （那次轮换可能发生在上一进程、且进程在写入 binding 之前被杀）。因此这里不比较
+  /// `binding.deviceId`，而把判定完全落在真正的密码学锚点上：Matrix 用户、homeserver
+  /// 与 Ed25519 fingerprint 必须逐字相同，且新 device id 非空、与原值不同。
+  /// 只差 device id 的 binding 描述的是同一个本地密码学身份，服务端随时可以轮换
+  /// 这个标签，因此补齐它不弱化任何身份校验；任何 fingerprint/generation/user/
+  /// homeserver 的不一致仍然失败关闭。
+  Future<MatrixLocalBinding?> adoptMatrixDeviceId({
+    required String expectedUserId,
+    required String expectedHomeserver,
+    required String nextDeviceId,
+    required String? ed25519Fingerprint,
+  }) =>
+      _runMatrixIdentityOperation(() async {
+        final binding = await _matrixBindingUnlocked();
+        if (binding == null) return null;
+        return _rewriteBindingDeviceId(
+          binding,
+          expectedUserId: expectedUserId,
+          expectedHomeserver: expectedHomeserver,
+          nextDeviceId: nextDeviceId,
+          ed25519Fingerprint: ed25519Fingerprint,
+        );
+      });
+
+  Future<MatrixLocalBinding> _rewriteBindingDeviceId(
+    MatrixLocalBinding binding, {
+    required String expectedUserId,
+    required String expectedHomeserver,
+    required String nextDeviceId,
+    required String? ed25519Fingerprint,
+  }) async {
+    if (binding.matrixUserId != expectedUserId) {
+      throw const MatrixDeviceBindingRotationRejected('matrix-user');
+    }
+    if (binding.homeserver != expectedHomeserver) {
+      throw const MatrixDeviceBindingRotationRejected('homeserver');
+    }
+    final existingFingerprint = binding.ed25519Fingerprint;
+    if (existingFingerprint != null &&
+        (ed25519Fingerprint == null ||
+            ed25519Fingerprint.isEmpty ||
+            existingFingerprint != ed25519Fingerprint)) {
+      throw const MatrixDeviceBindingRotationRejected('fingerprint');
+    }
+    if (binding.deviceId == nextDeviceId) return binding;
+    if (nextDeviceId.isEmpty) {
+      throw const MatrixDeviceBindingRotationRejected('empty-device');
+    }
+    // version 2 的 binding 必须带 fingerprint；缺失时拒绝迁移而不是写出一个
+    // 无法解析的 binding。
+    final fingerprint = existingFingerprint ?? ed25519Fingerprint;
+    if (fingerprint == null || fingerprint.isEmpty) {
+      throw const MatrixDeviceBindingRotationRejected('fingerprint');
+    }
+    final migrated = MatrixLocalBinding(
+      version: 2,
+      matrixUserId: binding.matrixUserId,
+      deviceId: nextDeviceId,
+      homeserver: binding.homeserver,
+      databaseGeneration: binding.databaseGeneration,
+      ed25519Fingerprint: fingerprint,
+    );
+    await _saveMatrixBindingUnlocked(migrated);
+    return migrated;
+  }
+
   Future<MatrixLocalBinding?> matrixBinding() =>
       _runMatrixIdentityOperation(_matrixBindingUnlocked);
 

@@ -21,6 +21,7 @@ import 'features/auth/login_controller.dart';
 import 'features/auth/authentication_flow.dart';
 import 'features/matrix/call_ui_manager.dart' show callNavigatorKey;
 import 'features/matrix/matrix_client_factory.dart';
+import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_home_page.dart';
 import 'ui/foundation/changliao_icons.dart';
@@ -54,9 +55,13 @@ Future<void> main() async {
       baseUri: Uri.parse(AppConfig.businessApiBaseUrl),
       sessionStore: store,
     );
+    // 本地生命周期诊断只记录加盐哈希后的标识，原始 Matrix user/device id 与
+    // token 永远不出现在日志里。
+    final diagnosticHasher = MatrixDiagnosticHasher(await store.diagnosticSalt());
     final matrixFactory = MatrixClientFactory(
       sessionStore: store,
       homeserver: Uri.parse(AppConfig.matrixHomeserver),
+      diagnosticHasher: diagnosticHasher,
     );
     final sdkClient = await matrixFactory.create();
     final matrix = MatrixSdkE2eeClient(
@@ -67,6 +72,8 @@ Future<void> main() async {
       selectClientAccount: matrixFactory.selectAccount,
       clearClientData: matrixFactory.clearLocalChatData,
       readContinuityMetadata: matrixFactory.continuityMetadata,
+      rotateDeviceBinding: matrixFactory.rotateDeviceBinding,
+      diagnosticHasher: diagnosticHasher,
     );
     final session = SessionBootstrapController(
       business: api,

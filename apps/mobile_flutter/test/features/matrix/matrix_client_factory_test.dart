@@ -686,8 +686,29 @@ void main() {
     expect(retained.userId, '@alice:matrix.test');
     expect(retained.deviceId, 'DEVICE-A');
     expect(retained.ed25519Fingerprint, 'FINGERPRINT-A');
-    client.matrixDeviceId = 'UNEXPECTED';
-    await expectLater(factory.continuityMetadata(client), throwsStateError);
+
+    // 单设备登录策略下服务端会轮换 device id。这不是身份损坏：账号、homeserver、
+    // Ed25519 fingerprint 与库代号都一致，因此 binding 必须跟着权威 device 走，
+    // 否则每一次 continuity 校验都会失败（L04）。
+    client.matrixDeviceId = 'ROTATED-BY-SERVER';
+    final rotated = await factory.continuityMetadata(client);
+    expect(rotated.deviceId, 'ROTATED-BY-SERVER');
+    final binding = await store.matrixBinding();
+    expect(binding?.deviceId, 'ROTATED-BY-SERVER');
+    expect(binding?.matrixUserId, '@alice:matrix.test');
+    expect(binding?.databaseGeneration, retained.databaseGeneration,
+        reason: '轮换只改 device id，不得更换本地库代号');
+    expect(binding?.ed25519Fingerprint, 'FINGERPRINT-A');
+
+    // 真正的密码学身份变化仍然必须失败关闭。
+    final changedFingerprint = MatrixClientFactory(
+        sessionStore: store,
+        homeserver: Uri.parse('https://matrix.test'),
+        fingerprintReader: (_) => 'FINGERPRINT-B');
+    await expectLater(
+        changedFingerprint.continuityMetadata(client), throwsStateError);
+    expect((await store.matrixBinding())?.ed25519Fingerprint, 'FINGERPRINT-A',
+        reason: '被拒绝的轮换不得改写 fingerprint');
   });
 
   test('stale binding on an empty store is reset so reinstall can log in',
@@ -2465,6 +2486,8 @@ void main() {
     await expectLater(matrix.suspend(), throwsStateError);
 
     expect(events, [
+      '{"trace_id":"trace-test","stage":"lifecycle",'
+          '"outcome":"success","event_code":"E2EE_LIFECYCLE_SUSPEND_BEGIN"}',
       '{"trace_id":"trace-test","stage":"room_lease_drain",'
           '"outcome":"timeout","event_code":"E2EE_ROOM_LEASE_DRAIN_TIMEOUT"}',
     ]);

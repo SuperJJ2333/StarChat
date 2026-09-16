@@ -139,11 +139,39 @@ final class MatrixClientContinuityMetadata {
   final String? ed25519Fingerprint;
   final String databaseGeneration;
 
+  /// 真正的连续性锚点是 Matrix 用户、Olm(Ed25519) fingerprint 与本地库代号。
+  ///
+  /// `deviceId` 不参与比较：它只是服务端设备标签，单设备登录策略会随时轮换它。
+  /// 把它算作身份会让一次可恢复的权威轮换被误判成"恢复出另一个身份"，
+  /// 从而让 resume 永久失败（L04），并让后续账号切换卡在 account_storage（L07）。
+  /// 任何真正的密码学身份变化（用户、fingerprint、库代号）仍然会被拒绝。
   bool hasSameContinuity(MatrixClientContinuityMetadata other) =>
       userId == other.userId &&
-      deviceId == other.deviceId &&
       ed25519Fingerprint == other.ed25519Fingerprint &&
       databaseGeneration == other.databaseGeneration;
+}
+
+/// 采纳一次经过服务端 token 登录证明的 device id 轮换。
+typedef MatrixDeviceRotation = Future<void> Function(
+  Client client, {
+  required String expectedUserId,
+  required String previousDeviceId,
+  required String nextDeviceId,
+});
+
+/// 上次挂起之后本地库的连续性判定结果。
+///
+/// 关闭安全与连续性信任必须分开：client 可以（也必须）已安全关闭，同时连续性
+/// 处于 [unknown]。任何调用方都不得把 [unknown] 当作已验证。
+enum MatrixSuspendedContinuity {
+  /// 当前没有已挂起的 client。
+  none,
+
+  /// 连续性已验证，可以安全 resume。
+  validated,
+
+  /// 已安全关闭，但连续性无法验证：不得据此认为会话可信。
+  unknown,
 }
 
 abstract interface class MatrixManagedSubscription {
@@ -748,7 +776,8 @@ final class MatrixConversationCapability {
             : await _owner._loadLocalHistory(client);
         var count = 0;
         for (final room in client.rooms) {
-          final cutoff = localHistory?.clearedThrough(room.id);
+          // 清空历史与删除会话都把该房间的未读视为已处理。
+          final cutoff = localHistory?.lastHistoryCutoff(room.id);
           if (cutoff != null &&
               (room.lastEvent == null ||
                   !room.lastEvent!.originServerTs.isAfter(cutoff))) {
@@ -824,14 +853,38 @@ final class MatrixConversationCapability {
         }
       });
 
+  /// 「清空聊天记录」：清除本机历史，不改变会话本身的成员关系与可见性。
+  ///
+  /// 只写 [LocalHistoryClearance] 的截止时间。绝不能写 [LocalClearedHistory]
+  /// 的截止时间——那是「删除该聊天」的删除信号，会让会话从消息列表消失。
+  Future<void> clearLocalHistory(
+    String roomId, {
+    required Iterable<String> messageIds,
+    required DateTime cutoff,
+  }) =>
+      _owner._withClient((client) async {
+        final store = await _owner._loadLocalHistory(client);
+        await store.clearHistoryThrough(roomId, cutoff);
+        for (final eventId in messageIds) {
+          await store.hide(roomId, eventId);
+        }
+      });
+
   MatrixConversationRoomSnapshot _snapshotRoom(
       Room room, SharedPreferencesLocalHiddenEvents? localHistory) {
     final preference = preferenceForRoom(room);
     final originalEvent = room.lastEvent;
-    final cutoff = localHistory?.clearedThrough(room.id);
-    final locallyDeleted = cutoff != null &&
+    // 两个截止时间语义不同，不能混用：
+    // - clearedThrough：「删除该聊天」，连会话一起移出消息列表。
+    // - historyClearedThrough：「清空聊天记录」，只隐藏本机历史，
+    //   会话本身必须继续留在消息列表里。
+    bool coversCutoff(DateTime? cutoff) =>
+        cutoff != null &&
         (originalEvent == null ||
             !originalEvent.originServerTs.isAfter(cutoff));
+    final locallyDeleted = coversCutoff(localHistory?.clearedThrough(room.id));
+    final historyCleared = locallyDeleted ||
+        coversCutoff(localHistory?.historyClearedThrough(room.id));
     final cachedEvent = originalEvent == null
         ? null
         : _owner._decryptedTimelineEvents[(
@@ -885,7 +938,7 @@ final class MatrixConversationCapability {
       preference: locallyDeleted
           ? preference.copyWith(hidden: true, manualUnread: false)
           : preference,
-      notificationCount: locallyDeleted ? 0 : room.notificationCount,
+      notificationCount: historyCleared ? 0 : room.notificationCount,
       notificationsEnabled: room.pushRuleState == PushRuleState.notify,
       isJoined: room.membership == Membership.join,
     );
@@ -1139,6 +1192,14 @@ final class MatrixRoomLease
   ) =>
       _withLeaseOperation(
           (room) => writeConversationPreference(room, preference));
+
+  /// 「清空聊天记录」：只清除本机历史，会话本身继续留在消息列表。
+  Future<void> clearLocalHistory({
+    required Iterable<String> messageIds,
+    required DateTime cutoff,
+  }) =>
+      owner.conversations.clearLocalHistory(roomId,
+          messageIds: messageIds, cutoff: cutoff);
 
   Future<DateTime?> serverNow() => _withLeaseOperation((room) async {
         final homeserver = room.client.homeserver;
@@ -3862,6 +3923,8 @@ final class MatrixSdkE2eeClient
     Future<void> Function(Client? client)? clearClientData,
     Future<MatrixClientContinuityMetadata> Function(Client client)?
         readContinuityMetadata,
+    MatrixDeviceRotation? rotateDeviceBinding,
+    MatrixDiagnosticHasher? diagnosticHasher,
     MatrixSecurityLogger? securityLogger,
     MatrixOutgoingWorkCoordinator Function(String accountId)?
         outgoingWorkFactory,
@@ -3876,6 +3939,8 @@ final class MatrixSdkE2eeClient
         _clearClientData = clearClientData ?? _defaultClear,
         _readContinuityMetadata =
             readContinuityMetadata ?? _unconfiguredContinuityMetadata,
+        _rotateDeviceBinding = rotateDeviceBinding,
+        _diagnosticHasher = diagnosticHasher,
         _memberRefreshPolicy = _MemberRefreshPolicy(
           now: memberRefreshNow ?? DateTime.now,
           freshness: memberRefreshTtl,
@@ -3904,6 +3969,8 @@ final class MatrixSdkE2eeClient
   final Future<void> Function(Client? client) _clearClientData;
   final Future<MatrixClientContinuityMetadata> Function(Client client)
       _readContinuityMetadata;
+  final MatrixDeviceRotation? _rotateDeviceBinding;
+  final MatrixDiagnosticHasher? _diagnosticHasher;
   final MatrixSecurityLogger securityLogger;
   Future<void> _lifecycleTail = Future.value();
   final Duration lifecycleDrainTimeout;
@@ -3911,6 +3978,13 @@ final class MatrixSdkE2eeClient
   Completer<void>? _clientOperationsDrained;
   bool _accessRevoked = false;
   MatrixClientContinuityMetadata? _suspendedMetadata;
+
+  /// 挂起时直接从 SDK client 观察到的身份标签（客户端事实，不是连续性验证）。
+  /// 它让登录流程在连续性无法验证时仍然能识别"本地仍是同一账号"，从而不会
+  /// 误走账号切换路径；连续性是否可信只由 [_suspendedMetadata] 决定。
+  ({String? userId, String? deviceId, bool isLoggedIn})? _suspendedIdentity;
+  MatrixSuspendedContinuity _suspendedContinuity =
+      MatrixSuspendedContinuity.none;
   bool _clearFailed = false;
   bool _freshLoginAfterClear = false;
   bool _activeContinuityValidated = false;
@@ -3935,6 +4009,23 @@ final class MatrixSdkE2eeClient
   int get debugManagedResourceCount => _managedResources.length;
   @visibleForTesting
   bool get debugHasActiveClient => _client != null;
+  @visibleForTesting
+  MatrixSuspendedContinuity get debugSuspendedContinuity => _suspendedContinuity;
+
+  MatrixDiagnosticIdentity? _identity({
+    String? matrixUserId,
+    String? deviceId,
+    String? previousDeviceId,
+    String? databaseGeneration,
+    String? fingerprint,
+  }) =>
+      _diagnosticHasher?.of(
+        matrixUserId: matrixUserId,
+        deviceId: deviceId,
+        previousDeviceId: previousDeviceId,
+        databaseGeneration: databaseGeneration,
+        fingerprint: fingerprint,
+      );
 
   /// Account-owned in-process outgoing work. It is replaced whenever the
   /// Matrix session identity changes and never belongs to a room lease.
@@ -4519,7 +4610,15 @@ final class MatrixSdkE2eeClient
   String? get lastRecoveryKey => _lastRecoveryKey;
   @override
   bool get isLoggedIn =>
-      _client?.isLogged() ?? _suspendedMetadata?.isLoggedIn ?? false;
+      _client?.isLogged() ??
+      _suspendedMetadata?.isLoggedIn ??
+      _suspendedIdentity?.isLoggedIn ??
+      false;
+
+  /// 语义：本地保留/恢复出来的 Matrix token 目前不可信，必须先经过 broker
+  /// token 刷新才能使用。它不等于"已登出"——恢复已有账号后
+  /// [selectAccount] 会把它置为 true，正是为了让随后的保留身份刷新路径
+  /// （`loginWithToken`）接管并换发新 token；刷新成功后必须复位为 false。
   @override
   bool get credentialsInvalid =>
       _credentialsInvalid ||
@@ -4527,13 +4626,15 @@ final class MatrixSdkE2eeClient
   @override
   String? get userId {
     final active = _client;
-    return active == null ? _suspendedMetadata?.userId : active.userID;
+    if (active != null) return active.userID;
+    return _suspendedMetadata?.userId ?? _suspendedIdentity?.userId;
   }
 
   @override
   String? get deviceId {
     final active = _client;
-    return active == null ? _suspendedMetadata?.deviceId : active.deviceID;
+    if (active != null) return active.deviceID;
+    return _suspendedMetadata?.deviceId ?? _suspendedIdentity?.deviceId;
   }
 
   @override
@@ -4561,8 +4662,21 @@ final class MatrixSdkE2eeClient
           if (expectedUserId == null || expectedDeviceId == null) {
             throw StateError('Matrix continuity identity is unavailable');
           }
+          // 调用方传进来的 device id 只是"保留身份"的提示。它来自挂起时的观察值，
+          // 而本机库可能已经在上一次轮换里被服务端改写。真正能刷新的设备是本进程
+          // 持有的这个 client，因此以它为权威；把陈旧提示当成硬失败会让账号
+          // 永久卡在 L04（重启才会自愈）。
           if (deviceId != null && deviceId != expectedDeviceId) {
-            throw StateError('Matrix credential refresh device mismatch');
+            securityLogger.record(
+              stage: MatrixSecurityStage.deviceRotation,
+              outcome: MatrixSecurityOutcome.success,
+              eventCode: MatrixSecurityCode.deviceRotationDetected,
+              identity: _identity(
+                matrixUserId: expectedUserId,
+                deviceId: expectedDeviceId,
+                previousDeviceId: deviceId,
+              ),
+            );
           }
           final response = await MatrixApi(
             homeserver: homeserver,
@@ -4608,6 +4722,23 @@ final class MatrixSdkE2eeClient
                   oldKeyCount: null,
                   unusedFallbackKey: null)) {
             throw StateError('Matrix device key registration failed');
+          }
+          // 服务端已通过 token 登录证明账号归属，因此这次 device 轮换是权威的。
+          // 必须把 ChatFlow 自己维护的 MatrixLocalBinding 一起原子迁移，否则
+          // 紧接着的 continuity 校验会看到
+          // client.deviceID=device-NEW / binding.deviceId=device-OLD 而抛错（L04），
+          // 并把本机库留在"库已新、绑定仍旧"的状态上，让下一次 selectAccount
+          // 也永久失败（L07）。
+          if (adoptedDeviceId != expectedDeviceId) {
+            final rotate = _rotateDeviceBinding;
+            if (rotate != null) {
+              await rotate(
+                active,
+                expectedUserId: expectedUserId,
+                previousDeviceId: expectedDeviceId,
+                nextDeviceId: adoptedDeviceId,
+              );
+            }
           }
         } else {
           await active.login(
@@ -4839,52 +4970,134 @@ final class MatrixSdkE2eeClient
 
   @override
   Future<void> suspend() {
+    _beginSuspensionRevocation();
+    return _serializeLifecycle(_suspendWithinLifecycle);
+  }
+
+  /// 同步撤销对外能力。必须在进入串行区之前完成，避免等待期间被继续使用。
+  void _beginSuspensionRevocation() {
     _accessRevoked = true;
     _outgoingWork.revoke('Matrix session suspended');
     _revokeManagedResources();
-    return _serializeLifecycle(() async {
-      final active = _client;
-      if (active == null) return;
-      // 挂起是安全关闭：drain 只决定“等不等未完成操作”，超时也必须继续
-      // 关闭。此前 drain 超时会把整个 suspend 抛成失败，留下“半挂起”态
-      // （_accessRevoked=true 而 client 未关闭），后续登录的 selectAccount
-      // 再次 drain 仍超时 → account_storage 阶段 L07，且原账号重登报
-      // “会话暂停失败”。
-      try {
-        await _waitForClientOperationsToDrain();
-      } on TimeoutException {
-        securityLogger.record(
-          stage: MatrixSecurityStage.lifecycle,
-          outcome: MatrixSecurityOutcome.timeout,
-          eventCode: MatrixSecurityCode.lifecycleSuspendDrainTimeout,
-        );
-      } catch (_) {
-        securityLogger.record(
-          stage: MatrixSecurityStage.lifecycle,
-          outcome: MatrixSecurityOutcome.failure,
-          eventCode: MatrixSecurityCode.lifecycleDrainTimeout,
-        );
-      }
-      // Reopening the retained store can restore the old token from disk.
-      // Keep its invalid status after the SDK object and stream are disposed.
-      _credentialsInvalid = credentialsInvalid;
-      _decryptedTimelineEvents.clear();
-      _lastRecoveryKey = null;
-      final metadata = await _readContinuityMetadata(active);
-      try {
-        await _detachMemberRefreshListener();
-        await _detachManagedSubscriptions();
-        await _detachManagedResources();
-        await _suspendClient(active);
-      } catch (error, stackTrace) {
-        _attachMemberRefreshListener(active);
-        await _attachManagedResources(active);
-        await _attachManagedSubscriptions(active);
-        Error.throwWithStackTrace(error, stackTrace);
-      }
-      _client = null;
-      _suspendedMetadata = metadata;
-    });
+  }
+
+  /// 挂起是一次安全关闭，必须必达。
+  ///
+  /// 顺序固定为：撤销访问 → 尽力 drain → 尽力读取 continuity（失败只记录）
+  /// → detach → dispose → 清空 [_client] → 记录观察到的身份与连续性判定。
+  ///
+  /// 只有底层 client 自己的 dispose 失败才允许中断关闭；诊断与可选的 continuity
+  /// 读取都不得阻止它。此前 continuity 读取失败会让整个 suspend 抛错，留下
+  /// 「`_accessRevoked=true` 而 client 未关闭、数据库仍打开」的半挂起态，之后
+  /// 每一次 selectAccount 都再次失败，表现为 account_storage 阶段 L07。
+  /// 关闭安全与连续性信任必须分开：关闭失败 → 抛错保留句柄以便重试；
+  /// continuity 读取失败 → 记录为 [MatrixSuspendedContinuity.unknown]，绝不假装已验证。
+  Future<void> _suspendWithinLifecycle() async {
+    final active = _client;
+    if (active == null) return;
+    securityLogger.beginLifecycleOperation();
+    securityLogger.record(
+      stage: MatrixSecurityStage.lifecycle,
+      outcome: MatrixSecurityOutcome.success,
+      eventCode: MatrixSecurityCode.lifecycleSuspendBegin,
+    );
+    try {
+      await _waitForClientOperationsToDrain();
+    } on TimeoutException {
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.timeout,
+        eventCode: MatrixSecurityCode.lifecycleSuspendDrainTimeout,
+      );
+    } catch (_) {
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.lifecycleDrainTimeout,
+      );
+    }
+    // Reopening the retained store can restore the old token from disk.
+    // Keep its invalid status after the SDK object and stream are disposed.
+    _credentialsInvalid = credentialsInvalid;
+    _decryptedTimelineEvents.clear();
+    _lastRecoveryKey = null;
+    final identity = (
+      userId: active.userID,
+      deviceId: active.deviceID,
+      isLoggedIn: active.isLogged(),
+    );
+    MatrixClientContinuityMetadata? metadata;
+    var continuity = MatrixSuspendedContinuity.unknown;
+    try {
+      metadata = await _readContinuityMetadata(active);
+      continuity = MatrixSuspendedContinuity.validated;
+    } catch (_) {
+      // 关闭照常继续；这里只记下"连续性未能验证"。
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.lifecycleContinuityReadFailed,
+        identity: _identity(
+          matrixUserId: identity.userId,
+          deviceId: identity.deviceId,
+        ),
+      );
+    }
+    try {
+      await _detachMemberRefreshListener();
+      await _detachManagedSubscriptions();
+      await _detachManagedResources();
+    } catch (error, stackTrace) {
+      // 资源撤销失败：底层组件已经记录了自己的事件，这里恢复句柄以便重试，
+      // 并且不再尝试关闭——否则会在资源仍在使用时关闭数据库。
+      _attachMemberRefreshListener(active);
+      await _attachManagedResources(active);
+      await _attachManagedSubscriptions(active);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+    securityLogger.record(
+      stage: MatrixSecurityStage.lifecycle,
+      outcome: MatrixSecurityOutcome.success,
+      eventCode: MatrixSecurityCode.lifecycleClientDisposeBegin,
+      identity: _identity(
+        matrixUserId: identity.userId,
+        deviceId: identity.deviceId,
+      ),
+    );
+    try {
+      await _suspendClient(active);
+    } catch (error, stackTrace) {
+      // 只有这里才允许中断挂起：client 自身关闭失败必须保留句柄并让调用方看到，
+      // 以便重试；绝不能假装已经挂起。
+      securityLogger.record(
+        stage: MatrixSecurityStage.lifecycle,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: metadata == null
+            ? MatrixSecurityCode.lifecycleSuspendCloseFailed
+            : MatrixSecurityCode.lifecycleClientDisposeFailed,
+        identity: _identity(
+          matrixUserId: identity.userId,
+          deviceId: identity.deviceId,
+        ),
+      );
+      await _attachManagedResources(active);
+      await _attachManagedSubscriptions(active);
+      _attachMemberRefreshListener(active);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+    _client = null;
+    _suspendedIdentity = identity;
+    _suspendedMetadata = metadata;
+    _suspendedContinuity = continuity;
+    securityLogger.record(
+      stage: MatrixSecurityStage.lifecycle,
+      outcome: MatrixSecurityOutcome.success,
+      eventCode: MatrixSecurityCode.lifecycleSuspendCompleted,
+      identity: _identity(
+        matrixUserId: identity.userId,
+        deviceId: identity.deviceId,
+      ),
+    );
   }
 
   @override
@@ -4896,6 +5109,11 @@ final class MatrixSdkE2eeClient
     return operation;
   }
 
+  /// 账号切换是一个临界区：撤销旧能力、关闭旧 client、切换安全存储 scope、
+  /// 打开目标账号的库、校验连续性，全部串行完成。
+  ///
+  /// 若把 suspend 留在临界区之外，bootstrap/后台恢复的并发 suspend 就可能插进
+  /// 「A 已关闭、B 尚未打开」之间，或让 scope 已经切到 B 而 client 仍属于 A。
   Future<void> _selectAccount(
       String matrixUserId, Uri selectedHomeserver) async {
     final select = _selectClientAccount;
@@ -4903,8 +5121,16 @@ final class MatrixSdkE2eeClient
     if (select == null || resume == null || selectedHomeserver != homeserver) {
       throw StateError('Retained account storage is not configured');
     }
-    await suspend();
+    _beginSuspensionRevocation();
+    securityLogger.beginLifecycleOperation();
+    securityLogger.record(
+      stage: MatrixSecurityStage.accountSelection,
+      outcome: MatrixSecurityOutcome.success,
+      eventCode: MatrixSecurityCode.accountSelectBegin,
+      identity: _identity(matrixUserId: matrixUserId),
+    );
     await _serializeLifecycle(() async {
+      await _suspendWithinLifecycle();
       // Old UI capabilities must never be rebound to another identity.
       for (final registration in _managedSubscriptions) {
         registration.canceled = true;
@@ -4914,9 +5140,21 @@ final class MatrixSdkE2eeClient
       }
       _managedSubscriptions.clear();
       _managedResources.clear();
-      await select(selectedHomeserver.toString(), matrixUserId);
       _suspendedMetadata = null;
+      _suspendedIdentity = null;
+      _suspendedContinuity = MatrixSuspendedContinuity.none;
       _activeContinuityValidated = false;
+      try {
+        await select(selectedHomeserver.toString(), matrixUserId);
+      } catch (error, stackTrace) {
+        securityLogger.record(
+          stage: MatrixSecurityStage.accountSelection,
+          outcome: MatrixSecurityOutcome.failure,
+          eventCode: MatrixSecurityCode.accountSelectResumeFailed,
+          identity: _identity(matrixUserId: matrixUserId),
+        );
+        Error.throwWithStackTrace(error, stackTrace);
+      }
       final next = await resume();
       try {
         if (next.userID != null && next.userID != matrixUserId) {
@@ -4928,6 +5166,8 @@ final class MatrixSdkE2eeClient
         _replaceOutgoingWork(next);
         _suspendedMetadata = metadata;
         _activeContinuityValidated = true;
+        // 语义：刚从库里恢复出来的 token 不可信，必须先经过 broker token 刷新
+        // （保留身份刷新路径）。它不是"已登出"，刷新成功后会被复位为 false。
         _credentialsInvalid = next.isLogged();
         _freshLoginAfterClear = false;
         _localHistoryStore = null;
@@ -4937,9 +5177,37 @@ final class MatrixSdkE2eeClient
         _attachOutgoingEchoListener(next);
         _attachDecryptionListener(next);
         _attachMemberRefreshListener(next);
-      } catch (_) {
-        await _suspendClient(next);
-        rethrow;
+      } catch (error, stackTrace) {
+        // 目标账号的连续性未能确认：绝不发布这个 client，也不留下
+        // "scope 已切换但没有任何身份"的半成品状态。
+        _client = null;
+        _suspendedMetadata = null;
+        _suspendedIdentity = null;
+        _activeContinuityValidated = false;
+        securityLogger.record(
+          stage: MatrixSecurityStage.accountSelection,
+          outcome: MatrixSecurityOutcome.failure,
+          eventCode: MatrixSecurityCode.accountSelectContinuityMismatch,
+          identity: _identity(
+            matrixUserId: next.userID ?? matrixUserId,
+            deviceId: next.deviceID,
+          ),
+        );
+        try {
+          await _suspendClient(next);
+        } catch (_) {
+          _pendingCloseClient = next;
+          securityLogger.record(
+            stage: MatrixSecurityStage.accountSelection,
+            outcome: MatrixSecurityOutcome.failure,
+            eventCode: MatrixSecurityCode.lifecycleClientDisposeFailed,
+            identity: _identity(
+              matrixUserId: next.userID ?? matrixUserId,
+              deviceId: next.deviceID,
+            ),
+          );
+        }
+        Error.throwWithStackTrace(error, stackTrace);
       }
     });
   }
@@ -5005,6 +5273,8 @@ final class MatrixSdkE2eeClient
       _localPreferenceAccountIdToClear = null;
       _pendingCloseClient = null;
       _suspendedMetadata = null;
+      _suspendedIdentity = null;
+      _suspendedContinuity = MatrixSuspendedContinuity.none;
       _activeContinuityValidated = false;
       _clearFailed = false;
       _freshLoginAfterClear = true;
@@ -5309,6 +5579,20 @@ final class MatrixSdkE2eeClient
     if (!allowedFreshLogin &&
         (suspendedMetadata == null ||
             !suspendedMetadata.hasSameContinuity(resumedMetadata))) {
+      securityLogger.record(
+        stage: MatrixSecurityStage.continuity,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: suspendedMetadata == null
+            ? MatrixSecurityCode.continuityResumeUnverified
+            : _continuityMismatchCode(suspendedMetadata, resumedMetadata),
+        identity: _identity(
+          matrixUserId: resumedMetadata.userId,
+          deviceId: resumedMetadata.deviceId,
+          previousDeviceId: suspendedMetadata?.deviceId,
+          databaseGeneration: resumedMetadata.databaseGeneration,
+          fingerprint: resumedMetadata.ed25519Fingerprint,
+        ),
+      );
       await _rejectResumeClient(resumed);
       throw StateError('Matrix client resumed with a different identity');
     }
@@ -5323,6 +5607,10 @@ final class MatrixSdkE2eeClient
     }
     _bindDecryptionCache(resumedMetadata);
     _client = resumed;
+    // 挂起期的观察值不再适用：此刻的权威事实就是这个 client。
+    _suspendedMetadata = null;
+    _suspendedIdentity = null;
+    _suspendedContinuity = MatrixSuspendedContinuity.none;
     _ensureOutgoingWorkIdentity(resumed);
     _attachOutgoingEchoListener(resumed);
     _attachDecryptionListener(resumed);
@@ -5330,6 +5618,20 @@ final class MatrixSdkE2eeClient
     _freshLoginAfterClear = false;
     _activeContinuityValidated = true;
     return resumed;
+  }
+
+  /// 把 resume 失败归因到具体哪一项连续性锚点不一致，便于本地诊断。
+  MatrixSecurityCode _continuityMismatchCode(
+    MatrixClientContinuityMetadata previous,
+    MatrixClientContinuityMetadata next,
+  ) {
+    if (previous.userId != next.userId) {
+      return MatrixSecurityCode.continuityBindingMismatch;
+    }
+    if (previous.ed25519Fingerprint != next.ed25519Fingerprint) {
+      return MatrixSecurityCode.continuityFingerprintMismatch;
+    }
+    return MatrixSecurityCode.continuityGenerationMismatch;
   }
 
   void _replaceOutgoingWork(Client client) {

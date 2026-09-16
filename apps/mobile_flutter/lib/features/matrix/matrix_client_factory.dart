@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../core/matrix_local_binding.dart';
 import '../../core/session_store.dart';
 import 'matrix_e2ee_client.dart';
+import 'matrix_security_logger.dart';
 
 typedef MatrixClientOpener = Future<Client> Function({
   required String clientName,
@@ -33,6 +34,8 @@ final class MatrixClientFactory {
     MatrixClientMigrator? clientMigrator,
     String? Function(Client client)? fingerprintReader,
     String Function()? databaseGenerationFactory,
+    MatrixSecurityLogger? securityLogger,
+    this.diagnosticHasher,
   })  : supportDirectoryPath = supportDirectoryPath ?? _defaultSupportPath,
         opener = opener ?? _openPersistentClient,
         disposer = disposer ?? _disposeClient,
@@ -40,7 +43,9 @@ final class MatrixClientFactory {
         clientMigrator = clientMigrator ?? _migrateHomeserver,
         fingerprintReader = fingerprintReader ?? _readFingerprint,
         databaseGenerationFactory =
-            databaseGenerationFactory ?? _newDatabaseGeneration;
+            databaseGenerationFactory ?? _newDatabaseGeneration,
+        securityLogger = securityLogger ??
+            MatrixSecurityLogger.create(sink: (line) => debugPrint(line));
 
   static const clientName = 'liuhetong_mobile';
   static const databaseFileName = 'liuhetong_matrix.sqlite';
@@ -54,7 +59,24 @@ final class MatrixClientFactory {
   final MatrixClientMigrator clientMigrator;
   final String? Function(Client client) fingerprintReader;
   final String Function() databaseGenerationFactory;
+  final MatrixSecurityLogger securityLogger;
+  final MatrixDiagnosticHasher? diagnosticHasher;
   String? _unboundDatabaseGeneration;
+
+  MatrixDiagnosticIdentity? _identity({
+    String? matrixUserId,
+    String? deviceId,
+    String? previousDeviceId,
+    String? databaseGeneration,
+    String? fingerprint,
+  }) =>
+      diagnosticHasher?.of(
+        matrixUserId: matrixUserId,
+        deviceId: deviceId,
+        previousDeviceId: previousDeviceId,
+        databaseGeneration: databaseGeneration,
+        fingerprint: fingerprint,
+      );
 
   Future<String> _databasePath(String directory) async {
     final scope = await sessionStore.matrixStorageScope();
@@ -115,8 +137,6 @@ final class MatrixClientFactory {
             _unboundDatabaseGeneration ??= databaseGenerationFactory(),
       );
     }
-    final generation = binding?.databaseGeneration ??
-        (_unboundDatabaseGeneration ??= databaseGenerationFactory());
     final userId = client.userID;
     final deviceId = client.deviceID;
     final fingerprint = fingerprintReader(client);
@@ -124,10 +144,18 @@ final class MatrixClientFactory {
         deviceId == null ||
         fingerprint == null ||
         fingerprint.isEmpty) {
+      securityLogger.record(
+        stage: MatrixSecurityStage.continuity,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.continuityIdentityUnavailable,
+        identity: _identity(matrixUserId: userId, deviceId: deviceId),
+      );
       throw StateError('Matrix continuity identity is unavailable');
     }
     final expectedHomeserver = homeserver.toString();
     if (binding == null) {
+      final generation =
+          _unboundDatabaseGeneration ??= databaseGenerationFactory();
       await sessionStore.saveMatrixBinding(MatrixLocalBinding(
         version: 2,
         matrixUserId: userId,
@@ -136,21 +164,87 @@ final class MatrixClientFactory {
         databaseGeneration: generation,
         ed25519Fingerprint: fingerprint,
       ));
-    } else if (binding.matrixUserId != userId ||
-        binding.deviceId != deviceId ||
+      return MatrixClientContinuityMetadata(
+        isLoggedIn: client.isLogged(),
+        userId: userId,
+        deviceId: deviceId,
+        ed25519Fingerprint: fingerprint,
+        databaseGeneration: generation,
+      );
+    }
+    final generation = binding.databaseGeneration;
+    if (binding.matrixUserId != userId ||
         binding.homeserver != expectedHomeserver) {
+      // 账号或 homeserver 不一致：这不是 device 轮换，而是真正的身份错配。
+      securityLogger.record(
+        stage: MatrixSecurityStage.continuity,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.continuityBindingMismatch,
+        identity: _identity(
+          matrixUserId: userId,
+          deviceId: deviceId,
+          previousDeviceId: binding.deviceId,
+          databaseGeneration: generation,
+        ),
+      );
       throw StateError('Matrix client does not match the local binding');
-    } else if (binding.ed25519Fingerprint == null) {
+    }
+    if (binding.ed25519Fingerprint == null) {
+      // Legacy v1 binding: record the identity this store actually holds.
       await sessionStore.saveMatrixBinding(MatrixLocalBinding(
         version: 2,
         matrixUserId: binding.matrixUserId,
-        deviceId: binding.deviceId,
+        deviceId: deviceId,
         homeserver: binding.homeserver,
         databaseGeneration: binding.databaseGeneration,
         ed25519Fingerprint: fingerprint,
       ));
     } else if (binding.ed25519Fingerprint != fingerprint) {
+      // Olm(Ed25519) 身份不同 = 真正的密码学身份错配，必须失败关闭。
+      securityLogger.record(
+        stage: MatrixSecurityStage.continuity,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.continuityFingerprintMismatch,
+        identity: _identity(
+          matrixUserId: userId,
+          deviceId: deviceId,
+          previousDeviceId: binding.deviceId,
+          databaseGeneration: generation,
+          fingerprint: fingerprint,
+        ),
+      );
       throw StateError('Matrix client does not match the local binding');
+    } else if (binding.deviceId != deviceId) {
+      // 只差 device id：单设备登录策略下服务端权威轮换。账号、homeserver、
+      // Ed25519 fingerprint、databaseGeneration 全部一致，说明本地密码学身份
+      // 没有变化，变化的只是服务端设备标签。补齐它，把 binding 与本机库对齐。
+      securityLogger.record(
+        stage: MatrixSecurityStage.deviceRotation,
+        outcome: MatrixSecurityOutcome.success,
+        eventCode: MatrixSecurityCode.deviceRotationDetected,
+        identity: _identity(
+          matrixUserId: userId,
+          deviceId: deviceId,
+          previousDeviceId: binding.deviceId,
+          databaseGeneration: generation,
+        ),
+      );
+      await sessionStore.adoptMatrixDeviceId(
+        expectedUserId: userId,
+        expectedHomeserver: expectedHomeserver,
+        nextDeviceId: deviceId,
+        ed25519Fingerprint: fingerprint,
+      );
+      securityLogger.record(
+        stage: MatrixSecurityStage.deviceRotation,
+        outcome: MatrixSecurityOutcome.success,
+        eventCode: MatrixSecurityCode.deviceRotationBindingMigrated,
+        identity: _identity(
+          matrixUserId: userId,
+          deviceId: deviceId,
+          databaseGeneration: generation,
+        ),
+      );
     }
     return MatrixClientContinuityMetadata(
       isLoggedIn: client.isLogged(),
@@ -159,6 +253,69 @@ final class MatrixClientFactory {
       ed25519Fingerprint: fingerprint,
       databaseGeneration: generation,
     );
+  }
+
+  /// 采纳一次由服务端 token 登录证明过的权威 device id 轮换。
+  ///
+  /// 调用方（[MatrixSdkE2eeClient.loginWithToken]）已经确认：
+  /// server response 的 `user_id` 等于本机保留身份、token 登录成功、`device_id`
+  /// 非空。这里再独立复核 client 的最终状态与 fingerprint，然后原子迁移 binding。
+  /// 任何一项不成立都抛 [MatrixDeviceBindingRotationRejected]，并保留原 binding。
+  Future<void> rotateDeviceBinding(
+    Client client, {
+    required String expectedUserId,
+    required String previousDeviceId,
+    required String nextDeviceId,
+  }) async {
+    final userId = client.userID;
+    final deviceId = client.deviceID;
+    final fingerprint = fingerprintReader(client);
+    final identity = _identity(
+      matrixUserId: userId,
+      deviceId: deviceId,
+      previousDeviceId: previousDeviceId,
+    );
+    if (userId != expectedUserId ||
+        deviceId != nextDeviceId ||
+        previousDeviceId.isEmpty ||
+        nextDeviceId.isEmpty ||
+        previousDeviceId == nextDeviceId ||
+        fingerprint == null ||
+        fingerprint.isEmpty) {
+      securityLogger.record(
+        stage: MatrixSecurityStage.deviceRotation,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.deviceRotationBindingRejected,
+        identity: identity,
+      );
+      throw const MatrixDeviceBindingRotationRejected('unverified-client');
+    }
+    try {
+      final migrated = await sessionStore.rotateMatrixDeviceBinding(
+        expectedUserId: expectedUserId,
+        expectedHomeserver: homeserver.toString(),
+        previousDeviceId: previousDeviceId,
+        nextDeviceId: nextDeviceId,
+        ed25519Fingerprint: fingerprint,
+      );
+      securityLogger.record(
+        stage: MatrixSecurityStage.deviceRotation,
+        outcome: MatrixSecurityOutcome.success,
+        eventCode: migrated == null
+            // 还没有 binding：首次绑定由 continuityMetadata 建立，轮换无处可迁。
+            ? MatrixSecurityCode.deviceRotationDetected
+            : MatrixSecurityCode.deviceRotationBindingMigrated,
+        identity: identity,
+      );
+    } on MatrixDeviceBindingRotationRejected {
+      securityLogger.record(
+        stage: MatrixSecurityStage.deviceRotation,
+        outcome: MatrixSecurityOutcome.failure,
+        eventCode: MatrixSecurityCode.deviceRotationBindingRejected,
+        identity: identity,
+      );
+      rethrow;
+    }
   }
 
   /// Closes the active handle while retaining the encrypted database, its key,
