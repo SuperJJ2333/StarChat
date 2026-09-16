@@ -2,7 +2,7 @@
 
 日期：2026-09-17 00:35:11 +08（Asia/Hong_Kong）
 关联验证：[2026-09-17-redpacket-transfer-profile](2026-09-17-redpacket-transfer-profile.md)
-基线 commit：`5d43ce34`；本任务源码提交 `35090fd0`（工作树 `D:\pythonProject\outsource\StarChat`，分支 main，未 push）
+基线 commit：`5d43ce34`；本任务源码提交 `457896c4`（工作树 `D:\pythonProject\outsource\StarChat`，分支 main，未 push）
 
 本记录只覆盖本次交付；不改变 iOS 与正式版 Android 的发布状态。
 
@@ -85,4 +85,5 @@
 - 旧消息（2124 之前发送）不含收款对象标识，无法显示「转给xx」/「给xxx的专属红包」，
   显示为中性文案；如需覆盖旧消息需新增服务端脱敏字段，属新范围。
 - 功能均由用户自行真机验收；本任务未在设备上启动应用做交互测试。
+
 

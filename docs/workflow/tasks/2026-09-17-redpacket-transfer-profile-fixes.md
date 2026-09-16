@@ -15,7 +15,7 @@
   2124 交付记录 [2026-09-17-redpacket-profile-2124-mi6](../../verification/2026-09-17-redpacket-profile-2124-mi6.md)。
 - 当前状态：实现、本地验证、生产 API 部署完成；2124 debug 包已安装 Mi 6；**待用户真机验收**
 - 负责人、工作树、文件所有权、源码commit：主工作树 `D:\pythonProject\outsource\StarChat`
-  （分支 main；本任务源码提交 `35090fd0`，基线 `5d43ce34`，未 push）。拥有：
+  （分支 main；本任务源码提交 `457896c4`，基线 `5d43ce34`，未 push）。拥有：
   `core/business_api_client` 无关；拥有 `features/finance/*`、`ui/finance/wechat_transfer_card.dart`、
   `features/matrix/{room_page,room_timeline_controller,matrix_room_timeline_adapter,matrix_e2ee_client,
   chat_red_packet_controller,chat_red_packet_adapters,chat_red_packet_sheet}.dart`、
@@ -39,8 +39,8 @@
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android Debug（仅 Mi 6 真机） | 0.3.92-debug / 2124 | `35090fd0` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.92-debug-2124/ChatFlow-0.3.92-debug-2124-arm64-rebuilt.apk`，SHA256 `8ff43006…98c52d`（源码中间包 `91185032…56ad331`） | 2026-09-17 00:35:11 +08 覆盖安装成功，firstInstallTime 未变；**未做正式发布** |
-| 业务 API（生产） | `starchat-business-api:redpacket-total-20260917` digest `sha256:be11636c878b…c8aeb5`（基于在线镜像 `sha256:e61c6152…e828c3` 单文件叠加） | `35090fd0`（仅 `services/business-api/app/modules/redpacket/service.py`） | 容器 `starchat-business-api-1` | 释放目录 `/opt/starchat/releases/redpacket-total-20260917/`（0700）：`payload-api/…/service.py` SHA256 `888237f2…137877d`、`api-release.json`、`api-rollback.json`、`Dockerfile.api`、`rehearsal.py`、`backup/` | 2026-09-17 00:34:14 +08 切换完成；健康 200、未授权 401、alembic head 0067 未变 |
+| Android Debug（仅 Mi 6 真机） | 0.3.92-debug / 2124 | `457896c4` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.92-debug-2124/ChatFlow-0.3.92-debug-2124-arm64-rebuilt.apk`，SHA256 `8ff43006…98c52d`（源码中间包 `91185032…56ad331`） | 2026-09-17 00:35:11 +08 覆盖安装成功，firstInstallTime 未变；**未做正式发布** |
+| 业务 API（生产） | `starchat-business-api:redpacket-total-20260917` digest `sha256:be11636c878b…c8aeb5`（基于在线镜像 `sha256:e61c6152…e828c3` 单文件叠加） | `457896c4`（仅 `services/business-api/app/modules/redpacket/service.py`） | 容器 `starchat-business-api-1` | 释放目录 `/opt/starchat/releases/redpacket-total-20260917/`（0700）：`payload-api/…/service.py` SHA256 `888237f2…137877d`、`api-release.json`、`api-rollback.json`、`Dockerfile.api`、`rehearsal.py`、`backup/` | 2026-09-17 00:34:14 +08 切换完成；健康 200、未授权 401、alembic head 0067 未变 |
 | iOS | 未构建 | — | — | — | 未发布 |
 
 测试记录：
@@ -119,4 +119,5 @@
   生产 `starchat-business-api-1` 是否仍为 `sha256:be11636c878b…`（或后续已批准版本），
   且 `/opt/business-api/app/modules/redpacket/service.py` 为 `888237f2…137877d`；
   仓库 `services/business-api/app/modules/redpacket/service.py` 是否仍含 `total_visible`。
+
 

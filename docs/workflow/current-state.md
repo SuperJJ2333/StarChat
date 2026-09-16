@@ -15,7 +15,7 @@ Flutter 全量 **2712 通过 / 0 失败**、`flutter analyze` 无问题；`pytes
 **1812 通过 / 58 跳过**；四项变异探针均按预期转红。
 2026-09-17 00:35:11 +08 Mi 6 保留数据覆盖安装 **0.3.92-debug/2124**（此前 2123），
 拉回 `base.apk` SHA256 `8ff43006…98c52d` 与固定证书 `75b31c66…ba61fff` 一致，firstInstallTime 未变。
-源码提交 `35090fd0`（基线 `5d43ce34`，未 push）。
+源码提交 `457896c4`（基线 `5d43ce34`，未 push）。
 生产 API 2026-09-17 00:34:14 +08 切换为 `starchat-business-api:redpacket-total-20260917`
 （基于在线镜像单文件叠加，健康 200 / 未登录 401 / alembic head 0067 未变 / 61 键环境与 3 个挂载一致）。
 **Android 仅真机测试包，未做正式发布**，未构建 iOS。进入
@@ -132,4 +132,5 @@ Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recov
 
 ## 2026-09-13 账单/转账与历史整合 Debug2104（已安装，待用户验收）
 Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-history-2103-20260913源码e314d4f0整合main e2870554和既有H2。指定HTML账单/转账样式、按需日期检索与双向历史拖动保护已实现；同步阶段数字诊断已加入，但50秒接收延迟未定因。Mi6于03:21:25+08保留数据安装0.3.87-debug/2104，03:22:13拉回SHA260370f6…39b8bc9及固定证书一致。全Flutter2602通过/29旧钱包失败、mobile70通过、UI契约28/364通过、全分析无问题；frontend161/11旧失败，verify缺.env。未push/生产部署，用户自行真机测试。见[任务记录](tasks/2026-09-13-finance-history-2103.md)、[完整交付报告](../verification/2026-09-13-finance-history-2103.md)和[计划](../superpowers/plans/2026-09-13-finance-history-2103.md)。
+
 
