@@ -39,6 +39,7 @@ import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/direct_chat_entry.dart';
+import 'features/matrix/room_navigation_coordinator.dart';
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/moments/moment_preview_cache.dart';
 import 'features/ledger/ledger_pages.dart';
@@ -193,6 +194,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       openExisting: _openCanonicalDirectRoom,
     ),
   );
+
+  /// 房间页面导航协调器：同一 roomId 只允许一个活动 RoomPage。
+  /// 好友资料、消息列表、通知、群聊通讯录与建群后都经由它打开房间。
+  late final RoomNavigationCoordinator _roomNavigation =
+      RoomNavigationCoordinator(
+    openRoom: _openManagedRoomRoute,
+    navigatorOf: _rootNavigatorOrNull,
+  );
+
+  NavigatorState? _rootNavigatorOrNull() =>
+      mounted ? Navigator.of(context, rootNavigator: true) : null;
 
   /// 打开规范登记的私聊房间：受邀未加入时先加入；对端建的房间我方
   /// m.direct 可能缺失，补写后房间才具备 DM 语义（否则渲染成"群聊"，
@@ -1348,9 +1360,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     try {
       final cache = await _identityCache();
-      await ensureCurrentFriendIdentity(cache, contact.matrixUserId);
-      if (!mounted) return;
-      final reference = await directChats.open(contact.matrixUserId);
+      // 与「发消息」同一身份规则：业务 userId 为主键解析权威联系人，
+      // 不使用入口快照可能过期的 matrixUserId（否则会把通话拨给旧 Matrix 用户）。
+      final target = await resolveCallTarget(
+          cache: cache, directChats: directChats, entry: contact);
+      final authoritative = target.contact;
       if (!mounted) return;
       if (callUi.hasActiveCall) {
         callUi.restoreCall();
@@ -1366,9 +1380,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         CupertinoPageRoute(
           builder: (pageContext) => CallPage(
             controller: calls,
-            displayName: contact.displayName,
-            fallbackSeed: contact.username,
-            avatarUrl: contact.avatarUrl,
+            // 通话页展示信息同样取自权威联系人：不允许「房间用新身份、
+            // 页面显示旧资料」。
+            displayName: authoritative.displayName,
+            fallbackSeed: authoritative.username,
+            avatarUrl: authoritative.avatarUrl,
             mediaBackend: callBackend,
             autoCloseOnEnd: true,
             onMinimize: () {
@@ -1381,8 +1397,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       );
       unawaited(navigation.whenComplete(releasePresentation));
       await calls.start(
-        roomId: reference.roomId,
-        matrixUserId: contact.matrixUserId,
+        roomId: target.roomId,
+        matrixUserId: authoritative.matrixUserId.trim(),
         type: type,
       );
       await navigation;
@@ -1423,9 +1439,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       final reference =
           await directChats.open(authoritative.matrixUserId.trim());
       await _openManagedRoom(reference.roomId,
-          roomName: authoritative.displayName,
-          initialContact: authoritative,
-          cache: cache);
+          roomName: authoritative.displayName, initialContact: authoritative);
     } catch (error) {
       // 先释放闸门再弹窗：弹窗“重试”会同步回调本方法。
       _directMessageGate.release(openingKey);
@@ -1458,14 +1472,42 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openRoomFromAddressList(String roomId) =>
       _openManagedRoom(roomId);
 
+  /// 房间页面打开的唯一入口：由 [RoomNavigationCoordinator] 按 roomId 去重，
+  /// 同一房间已打开时回到既有页面而不是叠加新页面。
   Future<void> _openManagedRoom(String roomId,
-      {String? roomName,
-      ContactDetails? initialContact,
-      ProfileRepository? cache}) async {
-    final identityCache = cache ?? await _identityCache();
-    final name =
-        roomName ?? await widget.matrix.conversations.roomDisplayName(roomId);
+          {String? roomName, ContactDetails? initialContact}) =>
+      _roomNavigation.open(RoomOpenRequest(
+        roomId: roomId,
+        roomName: roomName ?? '',
+        initialContact: initialContact,
+      ));
+
+  /// 消息列表（MatrixHomePage）委托的房间打开入口：展示数据由列表提供，
+  /// 租约/路由/去重仍由本协调器持有。
+  Future<void> _openManagedRoomRequest(RoomOpenRequest request) =>
+      _roomNavigation.open(request);
+
+  /// 打开流程（协调器持有 registry）：取租约 → RoomPage → 登记路由 →
+  /// revoke 绑定 → push → 页面退出后释放租约。
+  ///
+  /// 生命周期语义与改造前一致：未 mounted 时取消租约；push 抛异常也会释放
+  /// 登记与租约；revoke 时只关闭自己这一层（`popUntil` 到自身 + 当前则 pop）。
+  /// 租约取消按 roomId 串行，不会阻塞打开**其它**房间。
+  Future<void> _openManagedRoomRoute(
+      RoomOpenRequest request, RoomRouteHandle handle) async {
+    final roomId = request.roomId;
+    final identityCache = await _identityCache();
+    final name = request.roomName.trim().isEmpty
+        ? await widget.matrix.conversations.roomDisplayName(roomId)
+        : request.roomName.trim();
     final lease = await widget.matrix.openRoomLease(roomId);
+    var closed = false;
+    void notifyClosed() {
+      if (closed) return;
+      closed = true;
+      request.onRoomClosed?.call();
+    }
+
     if (!mounted) {
       await lease.cancel();
       return;
@@ -1476,7 +1518,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               api: widget.api,
               roomLease: lease,
               roomName: name,
-              initialContact: initialContact,
+              initialContact: request.initialContact,
               onCreateGroup: _createGroupChat,
               onMessage: _openMessage,
               onVoice: (contact) => _openCall(contact, CallMediaType.audio),
@@ -1484,15 +1526,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               reminderService: reminderService,
               initialIdentityCache: identityCache,
             ));
+    handle.register(route);
     lease.setOnRevoked(() async {
       if (route.isActive) {
         navigator.popUntil((candidate) => identical(candidate, route));
         if (route.isCurrent) navigator.pop();
       }
     });
+    request.onRoomReady?.call();
     try {
       await navigator.push(route);
     } finally {
+      handle.release(route);
+      notifyClosed();
       await lease.cancel();
     }
   }
@@ -1555,14 +1601,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
     controller.dispose();
     if (!mounted || roomId == null || !identical(matrix, widget.matrix)) return;
-    final roomName = await matrix.conversations.roomDisplayName(roomId);
     final identityCache = await _identityCache();
     if (!mounted || !identical(matrix, widget.matrix)) return;
-    final lease = await matrix.openRoomLease(roomId);
-    if (!mounted || !identical(matrix, widget.matrix)) {
-      await lease.cancel();
-      return;
-    }
+    // 建群成功后同样走统一房间导航（登记 roomId，避免与消息列表/通知
+    // 重复打开同一房间）；身份预热保持原样的后台任务。
     unawaited(() async {
       try {
         await identityCache.preload();
@@ -1577,33 +1619,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         }
       } catch (_) {}
     }());
-    final navigator = Navigator.of(context, rootNavigator: true);
-    late final Route<void> route;
-    route = CupertinoPageRoute<void>(
-      builder: (_) => RoomPage(
-        api: widget.api,
-        roomLease: lease,
-        roomName: roomName,
-        onCreateGroup: _createGroupChat,
-        onMessage: _openMessage,
-        onVoice: (contact) => _openCall(contact, CallMediaType.audio),
-        onVideo: (contact) => _openCall(contact, CallMediaType.video),
-        reminderService: reminderService,
-        initialIdentityCache: identityCache,
-      ),
-    );
-    lease.setOnRevoked(() async {
-      if (route.isActive) {
-        navigator.popUntil((candidate) => identical(candidate, route));
-        navigator.removeRoute(route);
-      }
-      await route.popped;
-    });
-    try {
-      await navigator.push(route);
-    } finally {
-      await lease.cancel();
-    }
+    await _openManagedRoom(roomId);
   }
 
   @override
@@ -1617,6 +1633,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     _backgroundCallPermissionTimer = null;
     _disposeSyncWatchdog();
     directChats.dispose();
+    // 账号切换/退出登录：房间导航登记不得泄漏到下一个账号。
+    _roomNavigation.dispose();
     pendingFriendRequests.dispose();
     unawaited(_disposeMatrixResources());
     super.dispose();
@@ -1796,141 +1814,144 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) => Stack(
-          children: [
-            CupertinoTabScaffold(
-              tabBar: CupertinoTabBar(
-                onTap: (index) {
-                  if (index == 2) unawaited(_momentsUnread?.refresh());
-                  if (index == 0) unawaited(_refreshUnreadCount());
-                },
-                activeColor: const Color(0xff07c160),
-                items: [
-                  BottomNavigationBarItem(
-                    icon: MessagesTabIcon(
-                      unreadCount: _totalUnreadCount,
-                      active: false,
-                      onClearUnread: _clearAllUnread,
-                    ),
-                    activeIcon: MessagesTabIcon(
-                      unreadCount: _totalUnreadCount,
-                      active: true,
-                      onClearUnread: _clearAllUnread,
-                    ),
-                    label: '消息',
+        children: [
+          CupertinoTabScaffold(
+            tabBar: CupertinoTabBar(
+              onTap: (index) {
+                if (index == 2) unawaited(_momentsUnread?.refresh());
+                if (index == 0) unawaited(_refreshUnreadCount());
+              },
+              activeColor: const Color(0xff07c160),
+              items: [
+                BottomNavigationBarItem(
+                  icon: MessagesTabIcon(
+                    unreadCount: _totalUnreadCount,
+                    active: false,
+                    onClearUnread: _clearAllUnread,
                   ),
-                  BottomNavigationBarItem(
-                    icon: _contactsBadge(const Icon(ChangliaoIcons.contacts)),
-                    activeIcon: _contactsBadge(
-                        const Icon(ChangliaoIcons.contactsFilled)),
-                    label: '通讯录',
+                  activeIcon: MessagesTabIcon(
+                    unreadCount: _totalUnreadCount,
+                    active: true,
+                    onClearUnread: _clearAllUnread,
                   ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(ChangliaoIcons.discover),
-                    activeIcon: Icon(ChangliaoIcons.discoverFilled),
-                    label: '发现',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(ChangliaoIcons.me),
-                    activeIcon: Icon(ChangliaoIcons.meFilled),
-                    label: '我',
-                  ),
-                ],
-              ),
-              tabBuilder: (_, index) => CupertinoTabView(
-                builder: (_) => switch (index) {
-                  0 => !_matrixReady
-                      ? const _HomeWarmupPane(
-                          key: ValueKey('home-matrix-warmup'),
-                          message: '正在连接，稍候即可查看消息',
-                        )
-                      : MatrixHomePage(
-                      api: widget.api,
-                      matrix: widget.matrix,
-                      themeController: widget.themeController,
-                      onCreateGroup: _createGroupChat,
+                  label: '消息',
+                ),
+                BottomNavigationBarItem(
+                  icon: _contactsBadge(const Icon(ChangliaoIcons.contacts)),
+                  activeIcon:
+                      _contactsBadge(const Icon(ChangliaoIcons.contactsFilled)),
+                  label: '通讯录',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(ChangliaoIcons.discover),
+                  activeIcon: Icon(ChangliaoIcons.discoverFilled),
+                  label: '发现',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(ChangliaoIcons.me),
+                  activeIcon: Icon(ChangliaoIcons.meFilled),
+                  label: '我',
+                ),
+              ],
+            ),
+            tabBuilder: (_, index) => CupertinoTabView(
+              builder: (_) => switch (index) {
+                0 => !_matrixReady
+                    ? const _HomeWarmupPane(
+                        key: ValueKey('home-matrix-warmup'),
+                        message: '正在连接，稍候即可查看消息',
+                      )
+                    : MatrixHomePage(
+                        api: widget.api,
+                        matrix: widget.matrix,
+                        themeController: widget.themeController,
+                        onCreateGroup: _createGroupChat,
+                        onMessage: _openMessage,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                        reminderService: reminderService,
+                        identityCache: _chatIdentityCache,
+                        onUnreadChanged: () => unawaited(_refreshUnreadCount()),
+                        // 消息列表不再自建 RoomLease/RoomPage：统一交给
+                        // AppHome 的房间导航协调器（同一 roomId 只有一个页面）。
+                        onOpenRoom: _openManagedRoomRequest,
+                      ),
+                1 => _chatIdentityCache == null
+                    ? const _HomeWarmupPane(
+                        key: ValueKey('home-contacts-warmup'),
+                        message: '正在准备通讯录',
+                      )
+                    : ContactsTabPage(
+                        api: widget.api,
+                        matrix: widget.matrix,
+                        pendingFriendRequests: pendingFriendRequests,
+                        onFriendRequests: _openFriendRequests,
+                        directChats: directChats,
+                        // 通讯录好友资料「发消息」使用与朋友圈/群聊同一个
+                        // 统一入口（唯一实现，见 _openMessage）。
+                        onMessage: _openMessage,
+                        onVoice: (contact) =>
+                            _openCall(contact, CallMediaType.audio),
+                        onVideo: (contact) =>
+                            _openCall(contact, CallMediaType.video),
+                        onGroupChat: _createGroupChat,
+                        onScan: _scanFromTab,
+                        onAppearance: () => showThemePickerSheet(
+                            context, widget.themeController),
+                        onGroupAddressList: _openGroupAddressList,
+                        identityCache: _chatIdentityCache,
+                      ),
+                2 => DiscoveryPage(
+                    contactActions: ContactActions(
                       onMessage: _openMessage,
                       onVoice: (contact) =>
                           _openCall(contact, CallMediaType.audio),
                       onVideo: (contact) =>
                           _openCall(contact, CallMediaType.video),
-                      reminderService: reminderService,
-                      identityCache: _chatIdentityCache,
-                      onUnreadChanged: () => unawaited(_refreshUnreadCount()),
                     ),
-                  1 => _chatIdentityCache == null
-                      ? const _HomeWarmupPane(
-                          key: ValueKey('home-contacts-warmup'),
-                          message: '正在准备通讯录',
-                        )
-                      : ContactsTabPage(
-                          api: widget.api,
-                          matrix: widget.matrix,
-                          pendingFriendRequests: pendingFriendRequests,
-                          onFriendRequests: _openFriendRequests,
-                          directChats: directChats,
-                          // 通讯录好友资料「发消息」使用与朋友圈/群聊同一个
-                          // 统一入口（唯一实现，见 _openMessage）。
-                          onMessage: _openMessage,
-                          onVoice: (contact) =>
-                              _openCall(contact, CallMediaType.audio),
-                          onVideo: (contact) =>
-                              _openCall(contact, CallMediaType.video),
-                          onGroupChat: _createGroupChat,
-                          onScan: _scanFromTab,
-                          onAppearance: () => showThemePickerSheet(
-                              context, widget.themeController),
-                          onGroupAddressList: _openGroupAddressList,
-                          identityCache: _chatIdentityCache,
-                        ),
-                  2 => DiscoveryPage(
-                      contactActions: ContactActions(
-                        onMessage: _openMessage,
-                        onVoice: (contact) =>
-                            _openCall(contact, CallMediaType.audio),
-                        onVideo: (contact) =>
-                            _openCall(contact, CallMediaType.video),
-                      ),
-                      onCreateGroup: _createGroupChat,
-                      onAddFriend: _addFriendFromTab,
-                      onScan: _scanFromTab,
-                      onAppearance: () =>
-                          showThemePickerSheet(context, widget.themeController),
-                      unreadController: _momentsUnread,
-                      matrix: widget.matrix,
-                      api: widget.api,
-                      identityCache: _chatIdentityCache,
+                    onCreateGroup: _createGroupChat,
+                    onAddFriend: _addFriendFromTab,
+                    onScan: _scanFromTab,
+                    onAppearance: () =>
+                        showThemePickerSheet(context, widget.themeController),
+                    unreadController: _momentsUnread,
+                    matrix: widget.matrix,
+                    api: widget.api,
+                    identityCache: _chatIdentityCache,
+                  ),
+                _ => ProfileTabPage(
+                    contactActions: ContactActions(
+                      onMessage: _openMessage,
+                      onVoice: (contact) =>
+                          _openCall(contact, CallMediaType.audio),
+                      onVideo: (contact) =>
+                          _openCall(contact, CallMediaType.video),
                     ),
-                  _ => ProfileTabPage(
-                      contactActions: ContactActions(
-                        onMessage: _openMessage,
-                        onVoice: (contact) =>
-                            _openCall(contact, CallMediaType.audio),
-                        onVideo: (contact) =>
-                            _openCall(contact, CallMediaType.video),
-                      ),
-                      api: widget.api,
-                      onLogout: widget.onLogout,
-                      onClearLocalChatData: widget.matrix.clearLocalChatData,
-                      identityCache: _chatIdentityCache,
-                    ),
-                },
-              ),
+                    api: widget.api,
+                    onLogout: widget.onLogout,
+                    onClearLocalChatData: widget.matrix.clearLocalChatData,
+                    identityCache: _chatIdentityCache,
+                  ),
+              },
             ),
-            // 来电页不再作为 Stack 覆盖层：CallUiManager 经根 Navigator
-            // （callNavigatorKey）推送，任意推入路由/子页面也盖不住。
-            // 应用内通知横幅：覆盖在 Tab 内容之上（PRD §7/§40）。
-            InAppBannerOverlay(
-              controller: notificationBanners,
-              onOpenConversation: (conversationId) =>
-                  unawaited(_openConversationFromNotification(conversationId)),
-            ),
-            const Positioned(
-                left: 0,
-                right: 0,
-                bottom: 64,
-                child: NotificationReadinessBanner()),
-          ],
-        );
+          ),
+          // 来电页不再作为 Stack 覆盖层：CallUiManager 经根 Navigator
+          // （callNavigatorKey）推送，任意推入路由/子页面也盖不住。
+          // 应用内通知横幅：覆盖在 Tab 内容之上（PRD §7/§40）。
+          InAppBannerOverlay(
+            controller: notificationBanners,
+            onOpenConversation: (conversationId) =>
+                unawaited(_openConversationFromNotification(conversationId)),
+          ),
+          const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 64,
+              child: NotificationReadinessBanner()),
+        ],
+      );
 }
 
 /// 轻量后台加载占位：小号指示器+次级说明文案，不阻塞其余 Tab 与操作。

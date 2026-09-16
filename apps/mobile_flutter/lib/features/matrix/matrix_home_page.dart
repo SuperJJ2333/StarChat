@@ -32,7 +32,7 @@ export 'conversation_presentation.dart'
     show directRoomNavigationTitle, groupRoomNavigationTitle;
 export 'room_page.dart' show RoomPage;
 import '../search/global_search_page.dart';
-import 'room_page.dart';
+import 'room_navigation_coordinator.dart';
 import 'room_mention_store.dart';
 import 'matrix_control_rooms.dart';
 import 'message_reminder_service.dart';
@@ -205,6 +205,7 @@ class MatrixHomePage extends StatefulWidget {
     this.identityCache,
     this.previewOnly = false,
     this.onUnreadChanged,
+    this.onOpenRoom,
     this.snapshotLoader,
     this.onRoomProjection,
     this.onIdentityProjection,
@@ -221,6 +222,12 @@ class MatrixHomePage extends StatefulWidget {
   final ProfileRepository? identityCache;
   final bool previewOnly;
   final VoidCallback? onUnreadChanged;
+
+  /// 房间页面的统一打开入口（AppHome 注入）。消息列表只负责等待动画、
+  /// 已读/未读与展示数据，RoomLease 与 RoomPage 路由由 AppHome 的
+  /// RoomNavigationCoordinator 持有（同一 roomId 只有一个活动 RoomPage）。
+  /// 为空时不打开房间（如启动期的只读占位页）。
+  final Future<void> Function(RoomOpenRequest request)? onOpenRoom;
   @visibleForTesting
   final Future<MatrixConversationSnapshot> Function()? snapshotLoader;
 
@@ -249,7 +256,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   String? _vaultRoomId;
   String? _reminderRoomId;
   Timer? _presenceTimer;
-  bool _openingRoom = false;
+
+  /// 正在打开（等待动画已显示）的 roomId：只对同一房间去重，跨房间不阻塞。
+  final Set<String> _openingRooms = <String>{};
   final ConversationReadState _readState = ConversationReadState.shared();
   bool? _autoAllowGroupJoin;
   final Set<String> _autoJoinInFlight = {};
@@ -768,17 +777,22 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     } catch (_) {/* The next sync makes the room available in the list. */}
   }
 
-  Future<void> _warmChatIdentity([Iterable<String> matrixUserIds = const []]) async {
+  Future<void> _warmChatIdentity(
+      [Iterable<String> matrixUserIds = const []]) async {
     final cache = _identityCache;
     final matrix = widget.matrix;
     try {
       await cache.preload();
-      if (!mounted || !identical(cache, _identityCache) ||
+      if (!mounted ||
+          !identical(cache, _identityCache) ||
           !identical(matrix, widget.matrix)) {
         return;
       }
-      await cache.precacheAvatarImages(context, matrixUserIds: matrixUserIds,
-          shouldContinue: () => mounted && identical(cache, _identityCache) &&
+      await cache.precacheAvatarImages(context,
+          matrixUserIds: matrixUserIds,
+          shouldContinue: () =>
+              mounted &&
+              identical(cache, _identityCache) &&
               identical(matrix, widget.matrix));
     } catch (_) {
       // Keep the last successful identity snapshot while offline.
@@ -786,9 +800,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
   }
 
   Future<void> _openRoom(_RoomSnapshot snapshot) async {
-    if (_openingRoom || widget.previewOnly) return;
-    final navigator = Navigator.of(context, rootNavigator: true);
-    _openingRoom = true;
+    // 只读占位页（启动期缓存列表）与未注入统一导航时不打开房间。
+    final openRoom = widget.onOpenRoom;
+    if (widget.previewOnly || openRoom == null) return;
+    // 同一房间的重复点击只保留一次等待动画；跨房间不互相阻塞
+    // （旧实现用全局 bool，关掉房间后取消租约期间会吞掉下一个会话）。
+    if (!_openingRooms.add(snapshot.id)) return;
     // 立即反馈：取租约期间（弱网/低端机可达数秒）显示悬浮转圈。
     // 必须用 Overlay 而非 modal route——低端机（荣耀50 Plus）上
     // “开 modal→pop→push”三者同帧竞争路由动画会吞掉房间 push，
@@ -809,67 +826,46 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
 
     Overlay.of(context, rootOverlay: true).insert(overlay);
-    MatrixRoomLease? lease;
     unawaited(_warmChatIdentity(
         snapshot.groupMembers.take(9).map((member) => member.id)));
     try {
-      lease = await widget.matrix.openRoomLease(snapshot.id);
-      _readState.setRoomOpen(snapshot.id, open: true);
-      _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
-      unawaited(widget.matrix.conversations
-          .markReadOnOpen(snapshot.id)
-          .catchError((_) {}));
-      widget.onUnreadChanged?.call();
-      final openedLease = lease;
-      final route = CupertinoPageRoute<void>(
-          builder: (_) => RoomPage(
-                api: widget.api,
-                roomLease: openedLease,
-                roomName: snapshot.isDirect
-                    ? snapshot.title
-                    : groupRoomNavigationTitle(
-                        snapshot.groupName, snapshot.memberCount),
-                onCreateGroup: widget.onCreateGroup,
-                onMessage: widget.onMessage,
-                onVoice: widget.onVoice,
-                onVideo: widget.onVideo,
-                reminderService: widget.reminderService,
-                initialIdentityCache: _identityCache,
-              ));
-      lease.setOnRevoked(() async {
-        if (route.isActive) {
-          navigator.popUntil((candidate) => identical(candidate, route));
-          navigator.removeRoute(route);
-        }
-        await route.popped;
-      });
-      removeOverlay();
-      await navigator.push(route);
-    } catch (error) {
-      removeOverlay();
-      rethrow;
+      await openRoom(RoomOpenRequest(
+        roomId: snapshot.id,
+        roomName: snapshot.isDirect
+            ? snapshot.title
+            : groupRoomNavigationTitle(
+                snapshot.groupName, snapshot.memberCount),
+        // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
+        // 已读/未读收尾。
+        onRoomReady: () {
+          removeOverlay();
+          _readState.setRoomOpen(snapshot.id, open: true);
+          _readState.markCleared(snapshot.id, eventId: snapshot.lastEventId);
+          unawaited(widget.matrix.conversations
+              .markReadOnOpen(snapshot.id)
+              .catchError((_) {}));
+          widget.onUnreadChanged?.call();
+        },
+        // 页面退出（或打开失败）后恢复列表态。
+        onRoomClosed: () {
+          _readState.setRoomOpen(snapshot.id, open: false);
+          final latest = _rooms.where((room) => room.id == snapshot.id);
+          _readState.markCleared(snapshot.id,
+              eventId: latest.isEmpty
+                  ? snapshot.lastEventId
+                  : latest.first.lastEventId);
+          if (mounted) {
+            unawaited(_refreshClientSnapshot());
+            widget.onUnreadChanged?.call();
+          }
+        },
+      ));
+    } catch (_) {
+      // 房间打开失败由统一入口负责租约与登记清理；列表侧只需收尾等待动画。
+      // （旧实现把错误抛成未捕获异步异常，用户同样看不到任何反馈。）
     } finally {
       removeOverlay();
-      // 关键：租约取消（生命周期串行队列 + drain，实测输入草稿后退出
-      // 可达 6 秒以上）绝不占住 _openingRoom——否则用户关掉房间立刻
-      // 点下一个会话会被守卫静默吞掉（“要等 5 秒以上才能进入”）。
-      // 取消已脱离页面上下文，转为后台任务并吞掉异常。
-      final closing = lease;
-      unawaited(() async {
-        try {
-          await closing?.cancel();
-        } catch (_) {}
-      }());
-      _readState.setRoomOpen(snapshot.id, open: false);
-      final latest = _rooms.where((room) => room.id == snapshot.id);
-      _readState.markCleared(snapshot.id,
-          eventId:
-              latest.isEmpty ? snapshot.lastEventId : latest.first.lastEventId);
-      _openingRoom = false;
-      if (mounted) {
-        unawaited(_refreshClientSnapshot());
-        widget.onUnreadChanged?.call();
-      }
+      _openingRooms.remove(snapshot.id);
     }
   }
 

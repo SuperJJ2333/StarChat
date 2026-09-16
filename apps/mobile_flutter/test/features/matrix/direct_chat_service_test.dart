@@ -100,18 +100,32 @@ void main() {
 
     test('打开聊天先 push 再后台预热（5 秒延迟根因修复）', () {
       final home = readFile('lib/features/matrix/matrix_home_page.dart');
-      final warm = home.indexOf('unawaited(_warmChatIdentity(');
-      final push = home.indexOf('await navigator.push(');
-      expect(warm, greaterThan(0));
-      expect(push, greaterThan(0));
-      // 预载/头像预解码只存在于 _warmChatIdentity（后台），
-      // _openRoom 主体内 push 前无任何 await preload。
+      // 身份预热仍是 fire-and-forget：打开房间不等待它。
+      expect(home.indexOf('unawaited(_warmChatIdentity('), greaterThan(0));
       final openRoomStart =
           home.indexOf('Future<void> _openRoom(_RoomSnapshot snapshot)');
-      final body = home.substring(
-          openRoomStart, home.indexOf('await navigator.push(', openRoomStart));
+      expect(openRoomStart, greaterThan(0));
+      final delegated =
+          home.indexOf('await openRoom(RoomOpenRequest(', openRoomStart);
+      expect(delegated, greaterThan(openRoomStart));
+      // 预载/头像预解码只存在于 _warmChatIdentity（后台），
+      // _openRoom 主体内在委托统一入口前无任何 await preload，也不自取租约。
+      final body = home.substring(openRoomStart, delegated);
       expect(body.contains('await _identityCache.preload()'), isFalse,
           reason: '_openRoom 内不得串行等待身份预载（先 push 后台补齐）');
+      expect(body.contains('openRoomLease('), isFalse,
+          reason: 'RoomLease 生命周期已收敛到 AppHome 的统一房间导航');
+
+      // AppHome 的统一打开流程：先取租约再 push，中途不串行等待身份预载。
+      final appHome = readFile('lib/app_home.dart');
+      final routeStart = appHome.indexOf('Future<void> _openManagedRoomRoute(');
+      expect(routeStart, greaterThan(0));
+      final routeBody = appHome.substring(
+          routeStart, appHome.indexOf('handle.register(route);', routeStart));
+      expect(routeBody.contains('await widget.matrix.openRoomLease(roomId)'),
+          isTrue);
+      expect(routeBody.contains('preload()'), isFalse,
+          reason: '房间打开流程不得串行等待身份预载');
     });
   });
 }

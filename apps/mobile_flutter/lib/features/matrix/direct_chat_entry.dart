@@ -1,4 +1,5 @@
 import '../contacts/contact_models.dart';
+import 'direct_chat_controller.dart';
 import 'profile_repository.dart';
 
 /// 好友资料「发消息 / 通话」的统一身份入口。
@@ -90,6 +91,26 @@ String directMessageOpenKey(ContactDetails contact) {
   return userId.isNotEmpty ? userId : contact.matrixUserId.trim();
 }
 
+/// 好友资料「语音/视频通话」入口的权威目标解析。
+///
+/// 与「发消息」同一规则（业务 `userId` 为主键，见 [resolveFriendContact]）：
+/// 入口快照里可能过期的 `matrixUserId` 绝不直接用于开房或发起呼叫，
+/// 否则会把通话拨给用户旧的 Matrix 身份。返回的权威联系人同时供通话页
+/// 展示使用（避免「房间用新身份、页面显示旧资料」）。
+Future<({ContactDetails contact, String roomId})> resolveCallTarget({
+  required ProfileRepository cache,
+  required DirectChatController directChats,
+  required ContactDetails entry,
+}) async {
+  final authoritative = await resolveFriendContact(cache, entry);
+  final matrixUserId = authoritative.matrixUserId.trim();
+  if (matrixUserId.isEmpty) {
+    throw StateError('The contact is no longer a current friend');
+  }
+  final room = await directChats.open(matrixUserId);
+  return (contact: authoritative, roomId: room.roomId);
+}
+
 /// 同一好友「发消息」的单飞闸门。
 ///
 /// `DirectChatController` 已按 `matrixUserId` 合并并发的房间打开请求，但每个
@@ -125,8 +146,7 @@ ContactDetails? _currentFriend(ProfileRepository cache, ContactDetails entry) {
 
 /// 用入口快照的 Matrix ID 补齐目录条目的通信映射，保留目录中的本机字段
 /// （备注/标签/朋友圈权限/在线状态）。
-ContactDetails _withMatrixBinding(
-        ContactSummary known, String matrixUserId) =>
+ContactDetails _withMatrixBinding(ContactSummary known, String matrixUserId) =>
     ContactDetails(
       userId: known.userId,
       username: known.username,

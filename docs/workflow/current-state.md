@@ -1,5 +1,25 @@
 # 移动交付恢复索引
 
+## 2026-09-17 第二阶段：房间导航统一（RoomNavigationCoordinator）+ 通话身份修复（本地完成，未构建/未部署）
+
+处理第一阶段遗留两项：① 消息列表 `MatrixHomePage._openRoom` 仍是绕过 AppHome 的第二套
+RoomLease/RoomPage/路由生命周期（且用全局 `bool _openingRoom` 守卫）；② `_openCall` 仍用入口
+快照里可能过期的 `contact.matrixUserId`。修复：新增 `RoomNavigationCoordinator`
+（`lib/features/matrix/room_navigation_coordinator.dart`）以 **roomId** 为唯一键——
+正在打开复用同一 future（不重复取租约/push）、已打开 `popUntil` 回到原页面（不 push 第二层）、
+退出/异常清理登记、dispose/clear 不跨账号泄漏；`_openManagedRoom` 改为经协调器，
+`MatrixHomePage` 只保留 overlay/已读/展示职责并委托 `onOpenRoom`，建群后打开也改为复用；
+`_openCall` 改用新增的 `resolveCallTarget`（复用 `resolveFriendContact`），audio/video 均用权威
+`matrixUserId`，`CallPage` 展示权威联系人。`DirectChatController`、
+`CoordinatedDirectChatGateway`、E2EE、通话媒体链路均未改动；生产代码中
+`builder: (_) => RoomPage(` 只剩 1 处（协调器打开流程），**无 legacy RoomPage 入口**。
+`flutter analyze` 无问题；全量 `flutter test` **2740 通过 / 0 失败**（阶段一 2721，+19）；
+4 个变异探针按预期转红。**未构建 APK/IPA、未安装真机、未部署**（用户明确本次不需要）。
+风险：真实租约 revoke 时序/真机取消时长未在设备验证；建群后 revoke 实现语义等价但有微调，
+建议真机回归「建群 → 退出群聊」。进入
+[任务记录](tasks/2026-09-17-room-navigation-call-identity.md)或
+[验证记录](../verification/2026-09-17-room-navigation-call-identity.md)。
+
 ## 2026-09-17 好友资料「发消息」统一入口 + Mi 6 Debug 0.3.92/2125（已安装，待用户真机验收）
 
 用户报「多个好友资料入口上层实现不统一」：朋友圈/群聊走 `AppHome._openMessage`，通讯录在
