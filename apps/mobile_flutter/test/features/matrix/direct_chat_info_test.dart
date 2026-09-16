@@ -45,6 +45,32 @@ void main() {
     expect(find.text('退出群聊'), findsNothing);
   });
 
+  testWidgets('聊天信息页「清空聊天记录」文字居中', (tester) async {
+    tester.view.physicalSize = const Size(400, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(CupertinoApp(
+      home: DirectChatInfoPage(
+        peerName: '安然',
+        peerId: '@anran:test',
+        avatarMedia: _FakeAvatarMedia(),
+        preference: const ConversationPreference(),
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onPreferenceChanged: (_) async {},
+      ),
+    ));
+    final label = find.text('清空聊天记录');
+    final row =
+        find.ancestor(of: label, matching: find.byType(CupertinoListTile));
+    expect(row, findsOneWidget);
+    expect(
+        (tester.getCenter(label).dx - tester.getCenter(row).dx).abs(),
+        lessThan(1.0),
+        reason: '「清空聊天记录」文字必须相对所在行居中，而非左对齐');
+  });
+
   testWidgets('规格§四：点击"消息通知"展开三态（默认/静音/特别关注）', (tester) async {
     await tester.pumpWidget(CupertinoApp(
       home: DirectChatInfoPage(

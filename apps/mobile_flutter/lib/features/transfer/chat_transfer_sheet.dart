@@ -53,8 +53,12 @@ final class ChatTransferSheet extends StatefulWidget {
     this.groupMembers,
     this.resolveBusinessUser,
     this.avatarMedia,
+    this.isGroup = false,
   });
   final ChatTransferController controller;
+
+  /// 群聊会话：收款人只能来自当前房间成员，任何情况下都不得回退到通讯录。
+  final bool isGroup;
 
   /// Direct-chat peer, preselected as the default recipient when present.
   final String? peerId;
@@ -204,11 +208,21 @@ final class _State extends State<ChatTransferSheet> {
         ),
       );
 
+  /// 私聊：收款人强制为当前房间对方，不提供任何其他候选。
+  bool get _recipientLocked =>
+      widget.peerId != null && widget.peerId!.isNotEmpty;
+
   Future<void> _pickRecipient() async {
     if (resolvingRecipient) return;
+    if (_recipientLocked) return;
     final groupMembers = widget.groupMembers;
-    if (groupMembers != null) {
-      if (groupMembers.isEmpty) {
+    if (widget.isGroup) {
+      // 群聊只允许当前房间成员；通讯录绝不参与群聊收款人选择。
+      if (groupMembers == null || groupMembers.isEmpty) {
+        if (widget.roomMembers.isNotEmpty) {
+          await _pickFromList(widget.roomMembers);
+          return;
+        }
         await _alert('群成员尚未加载，请稍后再试');
         return;
       }
@@ -235,11 +249,7 @@ final class _State extends State<ChatTransferSheet> {
       });
       return;
     }
-    // 群聊：只允许选择当前房间成员。
-    if (widget.roomMembers.isNotEmpty) {
-      await _pickFromList(widget.roomMembers);
-      return;
-    }
+    // 私聊且对端资料尚未就绪：此时才允许从通讯录选择收款人。
     var source = widget.contactsSource;
     if (source == null) {
       await _alert('通讯录暂不可用，无法选择收款用户');
@@ -434,22 +444,27 @@ final class _State extends State<ChatTransferSheet> {
                 Expanded(
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: busy ? null : _pickRecipient,
+                    onTap:
+                        busy || _recipientLocked ? null : _pickRecipient,
                     child: Text(
-                      recipientName ?? '请选择收款用户',
+                      _recipientLocked
+                          ? (recipientName ?? '当前会话对方')
+                          : (recipientName ?? '请选择收款用户'),
                       key: const Key('chat-transfer-recipient'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                           fontSize: 16,
-                          color: recipientName == null
+                          color: recipientName == null && !_recipientLocked
                               ? WeChatColors.textTertiary
                               : WeChatColors.resolveTextPrimary(context)),
                     ),
                   ),
                 ),
-                const Icon(CupertinoIcons.chevron_right,
-                    size: 15, color: WeChatColors.textTertiary),
+                // 私聊收款人固定为对方，不显示可点击的箭头。
+                if (!_recipientLocked)
+                  const Icon(CupertinoIcons.chevron_right,
+                      size: 15, color: WeChatColors.textTertiary),
               ]),
             ),
             if (resolvingRecipient)

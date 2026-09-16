@@ -188,6 +188,34 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('聊天信息页「清空聊天记录」文字居中', (tester) async {
+    tester.view.physicalSize = const Size(393, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = GroupChatInfoController(FakeGroupChatInfoGateway());
+
+    await tester.pumpWidget(CupertinoApp(
+      home: GroupChatInfoPage(
+        controller: controller,
+        onAddMember: () {},
+        onSearchHistory: () {},
+        onClearLocalHistory: () async {},
+        onLeft: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final label = find.text('清空聊天记录');
+    final row =
+        find.ancestor(of: label, matching: find.byType(CupertinoListTile));
+    expect(row, findsOneWidget);
+    expect(
+        (tester.getCenter(label).dx - tester.getCenter(row).dx).abs(),
+        lessThan(1.0),
+        reason: '「清空聊天记录」文字必须相对所在行居中，而非左对齐');
+  });
+
   testWidgets('group info and QR show unnamed for a blank explicit name',
       (tester) async {
     final gateway = FakeGroupChatInfoGateway();

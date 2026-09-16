@@ -17,6 +17,7 @@ migration-artifacts/
 *.egg-info/
 /build/
 *.lnk
+*.apk
 coverage.xml
 htmlcov/
 docs/verification/**/*.tmp

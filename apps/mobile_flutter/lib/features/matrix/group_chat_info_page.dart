@@ -395,9 +395,11 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                   ),
                   const SizedBox(height: 12),
                   WeChatListTile(
-                    title: const Text(
-                      '清空聊天记录',
-                      style: TextStyle(color: WeChatColors.danger),
+                    title: const Center(
+                      child: Text(
+                        '清空聊天记录',
+                        style: TextStyle(color: WeChatColors.danger),
+                      ),
                     ),
                     onTap: _confirmClear,
                   ),

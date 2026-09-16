@@ -38,6 +38,7 @@ from app.modules.wallet.manual_payout_models import ManualPayoutEvent, ManualPay
 from app.modules.wallet.models import WalletControl, WalletSafetyState
 from app.modules.wallet.monitor_lock import monitor_scan_lock
 from app.modules.wallet.monitoring import WalletMonitorHeartbeat
+from app.modules.wallet.owner_transfer_models import WalletManualOwnerTransfer
 from app.modules.wallet.receipt_models import DepositReceipt, DepositReceiptAnomaly
 from app.modules.wallet.safety import usdt_liability
 
@@ -487,6 +488,20 @@ class ManualReserveMonitor:
             raise AppError(code='WALLET_MONITOR_EVIDENCE_EXPIRED',
                 message='链上核验证据已过期，请重新复核', status_code=503)
 
+    def _owner_transfer_declared(self, session, coverage):
+        """ADR-0071: an immutable owner declaration explains this exact outflow."""
+        row = session.scalar(select(WalletManualOwnerTransfer).where(
+            WalletManualOwnerTransfer.txid == coverage.txid,
+            WalletManualOwnerTransfer.log_index == coverage.log_index))
+        if row is None or row.to_address != coverage.to_address:
+            return False
+        try:
+            with localcontext() as context:
+                context.prec = 100
+                return Decimal(row.amount_units) == Decimal(coverage.amount_units)
+        except (ValueError, TypeError, ArithmeticError):
+            return False
+
     def _coverage(self, session, cut):
         rows = session.execute(select(Coverage, DepositReceipt,
                 select(DepositReceiptAnomaly.id).where(DepositReceiptAnomaly.receipt_id == DepositReceipt.id).exists(),
@@ -551,7 +566,8 @@ class ManualReserveMonitor:
                             or event.evidence.get('block_number') != coverage.block_number
                             or event.evidence.get('timestamp_ms') != coverage.timestamp_ms
                             or str(event.evidence.get('amount_units')) != coverage.amount_units):
-                        return 'MANUAL_UNALLOCATED_OUTFLOW'
+                        if not self._owner_transfer_declared(session, coverage):
+                            return 'MANUAL_UNALLOCATED_OUTFLOW'
                 digest = hashlib.sha256(json.dumps(facts, sort_keys=True).encode()).hexdigest()
                 if any(proof['transaction_facts_digest'] != digest for proof in proofs):
                     return 'MANUAL_COVERAGE_CONFLICT'

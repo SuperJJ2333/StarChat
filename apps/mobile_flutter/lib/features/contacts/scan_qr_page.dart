@@ -245,7 +245,7 @@ final class _ScanQrPageState extends State<ScanQrPage>
     try {
       if (!mounted) return;
       final picked = await Navigator.of(context, rootNavigator: true)
-          .push<({List<GalleryPhoto> photos, bool original})>(
+          .push<({List<GalleryPhoto> photos, bool original, bool flash})>(
         CupertinoPageRoute(
             builder: (_) => const ImagePickerPage(
                   photosOnly: true,

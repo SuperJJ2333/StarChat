@@ -17,6 +17,21 @@ Flutter 全量 **2699 通过 / 0 失败（退出码 0）**，`dart analyze`（�
 [根因 / 验证 / 剩余风险](../verification/2026-09-16-device-rotation-binding-migration.md)。
 
 
+## 2026-09-16 「清空聊天记录」误删会话修复 + 文字居中（本地完成，未构建/未发布）
+
+主工作树基线 `8ef5cbac`：新增 `LocalHistoryClearance` 与 `history-cleared-through` 键，
+把「清空聊天记录」与「删除该聊天」的截止时间信号分开，修复清空后私聊/群聊会话从消息列表
+消失的问题；同时把「聊天信息」页「清空聊天记录」文字改为居中。Flutter 全量 2680 通过 /
+0 失败（退出码 0），`features/matrix` 1312 通过，`flutter analyze` 无问题。
+
+2026-09-16 22:18:11 +08，Mi 6 实际保留数据覆盖安装 **0.3.92-debug/2122**（此前
+0.3.90-debug/2118），固定签名身份 `75b31c66…ba61fff` 与拉回 `base.apk` SHA256
+`5153073e…fcf519d` 核对一致，firstInstallTime 未变。**仅真机测试包，未做正式发布**，
+未构建 iOS。功能待用户自行真机验收。进入[任务记录](tasks/2026-09-16-clear-chat-history-room-visibility.md)、
+[计划](../superpowers/plans/2026-09-16-clear-chat-history-room-visibility.md)、
+[修复验证记录](../verification/2026-09-16-clear-chat-history-room-visibility.md)或
+[2122 交付记录](../verification/2026-09-16-clear-history-2122-mi6.md)。
+
 ## 2026-09-12 媒体交互、访问时间与加载检查（Debug2094已安装，待用户验收）
 
 工作树`.worktrees/offline12`分支`codex/media-interactions-20260912`基线aac3d806：最近访问缓存/刷新、图片编辑emoji与独立橡皮擦、视频/转发账号后台任务、现有点钻流水布局已由显式gpt-5.6-terra实施并经Astra亲审。2026-09-12 17:14:47+08，Mi6实际覆盖安装0.3.87-debug/2094，拉回SHA `3a15b4aa…a8bffaf`、固定证书与交付包匹配；用户功能与性能待验收。Flutter2535pass/29既有失败、mobile67pass/3既有失败、frontend161pass/11既有失败，analyze/UI契约通过；verify缺.env阻断。没有push/生产发布。进入[任务记录](tasks/2026-09-12-media-interactions.md)或[修复与交付报告](../verification/2026-09-12-media-interactions.md)继续，避免重做已完成批次。

@@ -111,11 +111,14 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   }
   let journal;
   try { journal = operationJournal(storage ?? globalThis.localStorage, actor?.id); } catch { root.append(node('p', '无法保存管理员请求恢复记录，写操作已关闭。')); }
+  const commandForms = [];
+  function syncCommandForms() { for (const entry of commandForms) entry.submit.disabled = entry.blocked(); }
   function commandForm(parent, name, label, inputs, run, operation) {
     for (const input of inputs) if (input.type === 'password') secretInputs.add(input);
     const form = node('form'); form.name = name; form.className = 'admin-command-form';
     const blocked=()=>!journal||authMode==='loading'||authMode==='unavailable'||authMode==='operation_password'&&!operationConfigured&&name!=='operation-password';
     const submit = node('button', label); submit.type = 'submit'; submit.className = 'admin-primary'; submit.disabled = blocked();
+    commandForms.push({ name, submit, blocked });
     const state = node('p'); state.setAttribute('role', 'status');
     if (journal && operation) {
       const pending = journal.pending(operation);
@@ -198,7 +201,7 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
     try {
       const current=await api.getWalletOperationSecurity();if(disposed||generation!==mfaGeneration)return;
       if(!['totp','operation_password'].includes(current.auth_mode)||typeof current.configured!=='boolean'||!Number.isSafeInteger(current.version)||current.version<0)throw Error('INVALID_SECURITY_STATE');
-      authMode=current.auth_mode;operationConfigured=current.configured;
+      authMode=current.auth_mode;operationConfigured=current.configured;syncCommandForms();
       if(authMode==='totp')return loadMfa();
       const signature=JSON.stringify(current); if(securitySnapshot===signature){clearStale(mfa);for(const el of descendants(mfa))if(el.type==='submit')el.disabled=!journal;return;} securitySnapshot=signature;
       mfa.replaceChildren(node('h4','操作密码'),node('p',current.configured?'已设置 · 仅用于后台敏感操作':'首次设置 · 使用独立于登录密码的密码'),...refreshAction('刷新安全设置',loadSecurity));
@@ -216,13 +219,13 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
         if(onSecurityChanged){await onSecurityChanged();return;} await loadSecurity();await Promise.all([loadOrders(),loadIncidents(),loadControl(),loadHandover()]);
       });
       mfa.append(node('p','密码不会保存到浏览器。更改后，旧授权立即失效。'));
-    }catch(error){if(disposed||generation!==mfaGeneration)return;authMode='unavailable';authFailure(error);if(!disposed&&generation===mfaGeneration)return stale(mfa,'安全设置暂不可用，敏感操作已关闭。');}
+    }catch(error){if(disposed||generation!==mfaGeneration)return;authMode='unavailable';syncCommandForms();authFailure(error);if(!disposed&&generation===mfaGeneration)return stale(mfa,'安全设置暂不可用，敏感操作已关闭。');}
   }
   async function loadMfa() {
     if (disposed) return;
     const generation = ++mfaGeneration;
     try {
-      const current = await api.getWalletMfaStatus(); if (disposed || generation !== mfaGeneration) return;authMode='totp';
+      const current = await api.getWalletMfaStatus(); if (disposed || generation !== mfaGeneration) return;authMode='totp';syncCommandForms();
       const signature=JSON.stringify(current);if(mfaSnapshot===signature){clearStale(mfa);for(const el of descendants(mfa))if(el.type==='submit')el.disabled=!journal;return;}mfaSnapshot=signature;
       mfa.replaceChildren(node('h4','动态验证 MFA'), ...refreshAction('刷新 MFA 状态',loadMfa));
       if (!current.configured) {
@@ -330,6 +333,26 @@ export function manualWalletPanel(api, {actor, storage, clipboard = globalThis.n
   incidentFilters.append(action('查询',()=>loadIncidents(null,{filters:Object.fromEntries(Object.entries(incidentInputs).map(([k,v])=>[k,v.value])),page:0,pages:[null]})),action('重置',()=>loadIncidents(null,{filters:{},page:0,pages:[null],reset:true})));
   incidentFilters.addEventListener('submit',event=>event.preventDefault());
   const monitoring=node('section');monitoring.className='wallet-surface';monitoring.append(node('h4','监控与事故'),fundSummary,monitor,diagnostics,node('p','历史事故与当前检查分别展示。处理事故不会启用资金，恢复需要单独核验。'),...refreshAction('刷新监控和事故',()=>loadIncidents(null,{page:0,pages:[null]})),incidentFilters,incidents);primary.append(monitoring);
+  if (walletAccess) {
+    const ownerTransfer=node('section');ownerTransfer.className='wallet-surface';
+    ownerTransfer.append(node('h4','所有者转出申报'),
+      node('p','仅用于申报持有者本人已完成的链上转出（ADR-0071）。申报生成不可变记录与账本分录，使复核可以对账；未申报的转出仍会阻止恢复资金。'));
+    const txidInput=field('txid','链上交易哈希（64 位十六进制）');txidInput.pattern='[a-f0-9]{64}';
+    const logInput=field('log_index','日志序号 log_index（通常为 0）');logInput.pattern='[0-9]+';
+    const reasonInput=field('reason_code','原因码（大写字母开头，如 OWNER_TEST_DRAW）');reasonInput.pattern='[A-Z][A-Z0-9_]{2,99}';
+    const detailInput=field('reason_detail','用途说明（1–500 字）');
+    const attestation=node('input');attestation.type='checkbox';attestation.setAttribute('aria-label','我确认该转出由本人（官方钱包持有人）操作');
+    commandForm(ownerTransfer,'owner-transfer','预检并申报',[txidInput,logInput,reasonInput,detailInput,attestation],async(values,state)=>{
+      const payload={txid:values.txid,log_index:Number(values.log_index),reason_code:values.reason_code,reason_detail:values.reason_detail,ownership_attested:attestation.checked};
+      const snapshot=await api.previewOwnerTransfer(payload);
+      if(snapshot.blockers?.length){state.textContent=`预检未通过：${snapshot.blockers.join('、')}。未提交申报，资金状态未变。`;return;}
+      state.textContent=`预检通过：${snapshot.amount_units?(Number(snapshot.amount_units)/1000000):'—'} USDT。正在提交申报…`;
+      const result=await api.executeOwnerTransfer(payload,{idempotencyKey:`owner-transfer:${values.txid}:${values.log_index}`});
+      state.textContent=`已申报（${result.replayed?'重复请求，已返回原记录':'新记录'}）。请刷新监控和事故，再对事故执行“检查并处理”复核结案，之后到资金启停恢复资金。`;
+    },'owner-transfer');
+    ownerTransfer.append(node('p','预检会核对链上证据与监控覆盖事实；收款地址与金额以链上为准，不可手填。'));
+    primary.append(ownerTransfer);
+  }
   let reservePolicy;
   let incidentGeneration=0, incidentSelection=0;
   async function loadIncidents(cursor = incidentCursor,{filters=activeIncidentFilters,page=incidentPage,pages=incidentPages,reset=false}={}) {

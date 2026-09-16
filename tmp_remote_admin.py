@@ -1,20 +1,9 @@
-from typing import Annotated, Literal
-from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import JSONResponse, Response
+from typing import Annotated
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 from decimal import Decimal
 from sqlalchemy import func, select
-from datetime import date, datetime, timedelta, timezone
-from app.modules.wallet.reporting import ReportDataError, WalletReportService, to_csv
-from app.api.wallet_report_contracts import DailyWalletReport
-from app.api.admin_report_contracts import AdminOverview, PointIssuancePage, PointIssuanceDetail, AdminUserPage, AdminModulePage
-from app.modules.admin.user_reports import user_page
-from app.modules.admin.ledger_entries import ledger_page
-from app.api.admin_wallet_repairs import create_admin_wallet_repairs_router
-from app.api.admin_wallet_owner_transfers import create_admin_owner_transfer_router
-from app.modules.wallet.clock_health import ClockHealth
-from app.modules.admin.dashboard_reports import registration_trend
-from app.modules.ledger.supply_reports import point_supply, issuance_page, issuance_detail
+from datetime import datetime, timedelta, timezone
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.identity.tokens import TokenService
@@ -43,13 +32,7 @@ from app.modules.settings.service import (
     SettingService,
 )
 from app.modules.wallet.service import WalletService
-from app.integrations.custody.factory import create_custody_provider
-from app.api.wallet_operations import create_wallet_operations_router
-from app.api.wallet_chain import create_wallet_chain_router
-from app.api.manual_wallet_admin import create_manual_wallet_admin_router
-from app.api.manual_wallet_operations import create_manual_wallet_operations_router
-from app.api.manual_wallet_handover import create_manual_wallet_handover_router
-from app.api.admin_wallet_security import create_admin_wallet_security_router
+from app.integrations.custody.sandbox import SandboxCustodyProvider
 
 class BanBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -59,8 +42,7 @@ class BanBody(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=1)
 class RoleBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    role_code: RoleCode = RoleCode.SUPPORT_AGENT
-    badge: str | None = Field(default=None, max_length=6)
+    role_code: RoleCode
 class NoticeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=160)
@@ -82,9 +64,9 @@ class RetractBody(BaseModel):
     reason_code: str = Field(min_length=1, max_length=100)
 class DirectCaibiGrantBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    user_id: str = Field(min_length=1, max_length=320)
+    user_id: str = Field(min_length=1, max_length=36)
     amount: Decimal = Field(gt=0, decimal_places=2)
-    reason_code: str = Field(default="SUPPORT_CAIBI_GRANT", min_length=1, max_length=100)
+    reason_code: str = Field(min_length=1, max_length=100)
 class AppUpdateSettingsBody(BaseModel):
     latest_version: str = Field(min_length=1, max_length=32)
     latest_build: int = Field(ge=1)
@@ -107,27 +89,14 @@ MODULE_PERMISSIONS = {
     "wallet": Permission.FINANCE_REVIEW,
 }
 
-def create_admin_router(settings: Settings, session_factory, *, manual_runtime=None) -> APIRouter:
+def create_admin_router(settings: Settings, session_factory) -> APIRouter:
     router = APIRouter(prefix="/admin", tags=["admin"])
     tokens = TokenService(session_factory, jwt_secret=settings.jwt_secret or "development-jwt-secret-at-least-thirty-two-bytes", jwt_issuer=settings.jwt_issuer, require_session_claims=settings.environment != "test")
     rbac = RbacService(session_factory)
     audit = AuditWriter(session_factory)
     controls = AdminControlService(session_factory)
     adjustment_workflow = AdjustmentWorkflow(session_factory, LedgerService(session_factory), admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
-    wallet_provider, _wallet_mode = create_custody_provider(settings)
-    wallet_service = WalletService(session_factory, wallet_provider,
-        confirmation_threshold=settings.wallet_confirmation_threshold,
-        conversions_enabled=settings.wallet_conversions_enabled and settings.environment != "production" and wallet_provider is not None)
-    router.include_router(create_wallet_operations_router(settings, session_factory, wallet_service))
-    router.include_router(create_wallet_chain_router(settings, session_factory))
-    router.include_router(create_manual_wallet_admin_router(settings, session_factory))
-    router.include_router(create_manual_wallet_operations_router(settings, session_factory))
-    router.include_router(create_manual_wallet_handover_router(settings, session_factory))
-    router.include_router(create_admin_wallet_security_router(settings, session_factory))
-    router.include_router(create_admin_wallet_repairs_router(settings, session_factory,
-        runtime=manual_runtime, clock_trusted=ClockHealth().trusted))
-    router.include_router(create_admin_owner_transfer_router(settings, session_factory,
-        runtime=manual_runtime, clock_trusted=ClockHealth().trusted))
+    wallet_service = WalletService(session_factory, SandboxCustodyProvider(secret=settings.wallet_webhook_secret or "development-wallet-webhook-secret"), withdrawal_admin_threshold=Decimal(str(getattr(settings, "adjustment_admin_threshold", "10000.00"))))
 
     def actor(authorization: Annotated[str | None, Header()] = None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -142,33 +111,6 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     def trace(request: Request) -> str:
         return getattr(request.state, "trace_id", "admin-command")
 
-    @router.get("/wallet/reports/daily", response_model=DailyWalletReport,
-                responses={200: {"content": {"text/csv": {"schema": {"type": "string"}}}}})
-    def daily_wallet_report(day: date, request: Request,
-                            format: Literal["json", "csv"] = "json",
-                            user_id: str = Depends(actor)):
-        """Snapshot of ledger evidence; explicitly not a finalized daily close."""
-        require(user_id, Permission.FINANCE_REVIEW)
-        try:
-            report = WalletReportService(session_factory).daily(day)
-        except OverflowError as exc:
-            raise AppError(code="WALLET_REPORT_TOO_LARGE", message="报表证据超出在线导出上限，未返回不完整报表", status_code=413) from exc
-        except ReportDataError as exc:
-            raise AppError(code="WALLET_REPORT_DATA_INVALID", message="账本证据存在异常，报表未生成，请财务核对", status_code=409) from exc
-        except ValueError as exc:
-            raise AppError(code="WALLET_REPORT_DATE_INVALID", message="报表日期无效或晚于当前香港日期", status_code=422) from exc
-        payload = to_csv(report) if format == "csv" else report
-        audit.record(actor_id=user_id, subject_type="wallet_report", subject_id=report["digest"],
-            action="wallet.report.exported" if format == "csv" else "wallet.report.viewed",
-            result="SUCCESS", reason_code="WALLET_DAILY_REPORT", trace_id=trace(request),
-            after={"day": day.isoformat(), "format": format, "digest": report["digest"], "finalized": False})
-        headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
-                   "X-Wallet-Report-Digest": report["digest"]}
-        if format == "csv":
-            headers["Content-Disposition"] = f'attachment; filename="wallet-daily-{day.isoformat()}.csv"'
-            return Response(content=payload, media_type="text/csv; charset=utf-8", headers=headers)
-        return JSONResponse(content=payload, headers=headers)
-
     @router.post("/security/bans", status_code=201)
     def create_ban(body: BanBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
@@ -182,12 +124,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.post("/support-roles/{target_user_id}", status_code=201)
     def assign_support_role(target_user_id: str, body: RoleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.set_support_role(actor_id=user_id, target=target_user_id, role_code=body.role_code, badge=body.badge, idempotency_key=idempotency_key, trace_id=trace(request))
-
-    @router.get("/support-agents")
-    def support_agents(query: str | None = Query(default=None, max_length=320), limit: int = Query(default=50, ge=1, le=100), offset: int = Query(default=0, ge=0), dispatch_eligible: bool | None = None, user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.support_agents(query=query, limit=limit, offset=offset, dispatch_eligible=dispatch_eligible)
+        return controls.set_support_role(actor_id=user_id, user_id=target_user_id, role_code=body.role_code, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/notices", status_code=201)
     def create_notice(body: NoticeBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -212,12 +149,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.delete("/support-roles/{target_user_id}/{role_code}")
     def revoke_support_role(target_user_id: str, role_code: RoleCode, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.revoke_support_role(actor_id=user_id, user_id=controls.resolve_support_target(target_user_id), role_code=role_code, idempotency_key=idempotency_key, trace_id=trace(request))
-
-    @router.delete("/support-roles/{target_user_id}")
-    def revoke_all_support_roles(target_user_id: str, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
-        require(user_id, Permission.SYSTEM_ADMIN)
-        return controls.revoke_all_support_roles(actor_id=user_id, user_id=controls.resolve_support_target(target_user_id), idempotency_key=idempotency_key, trace_id=trace(request))
+        return controls.revoke_support_role(actor_id=user_id, user_id=target_user_id, role_code=role_code, idempotency_key=idempotency_key, trace_id=trace(request))
 
     @router.post("/ads/{ad_id}/schedule")
     def schedule_ad(ad_id: str, body: AdScheduleBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -258,17 +190,16 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     @router.post("/finance/adjustments", status_code=201)
     def grant_caibi_to_support(body: DirectCaibiGrantBody, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        target_user_id = controls.resolve_support_target(body.user_id)
         with session_factory() as session:
-            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == target_user_id)))
+            roles = set(session.scalars(select(UserRole.role_code).where(UserRole.user_id == body.user_id)))
         if RoleCode.SUPPORT_AGENT not in roles:
             raise AppError(code="SUPPORT_ROLE_REQUIRED", message="仅可向已配置的客服账号发放点钻", status_code=422)
         try:
-            transaction = adjustment_workflow.ledger.adjust(user_id=target_user_id, amount=body.amount, actor_id=user_id, reason_code=body.reason_code, idempotency_key=idempotency_key)
+            transaction = adjustment_workflow.ledger.adjust(user_id=body.user_id, amount=body.amount, actor_id=user_id, reason_code=body.reason_code, idempotency_key=idempotency_key)
         except ValueError as exc:
             raise AppError(code="CAIBI_GRANT_INVALID", message="点钻发放请求无效", status_code=422) from exc
         audit.record(actor_id=user_id, subject_type="ledger_transaction", subject_id=transaction.id, action="admin.caibi.granted", result="SUCCESS", reason_code=body.reason_code, trace_id=trace(request))
-        return {"transaction_id": transaction.id, "user_id": target_user_id, "amount": f"{body.amount:.2f}", "status": "POSTED", "idempotency_key": idempotency_key}
+        return {"transaction_id": transaction.id, "user_id": body.user_id, "amount": f"{body.amount:.2f}", "status": "POSTED", "idempotency_key": idempotency_key}
 
     @router.post("/finance/withdrawals/{withdrawal_id}/review")
     def review_withdrawal(withdrawal_id: str, body: dict, request: Request, idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=128)], user_id: str = Depends(actor)):
@@ -298,7 +229,7 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
     def get_app_update_settings(user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
         service = SettingService(session_factory)
-        values = service.get_many(APP_UPDATE_SETTING_KEYS)
+        values = {key: service.get(key) for key in APP_UPDATE_SETTING_KEYS}
         return {
             "latest_version": values[APP_LATEST_VERSION_KEY],
             "latest_build": int(values[APP_LATEST_BUILD_KEY]) if values[APP_LATEST_BUILD_KEY] else None,
@@ -320,7 +251,8 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             APP_UPDATE_NOTES_KEY: body.notes,
             APP_APK_URL_KEY: body.apk_url,
         }
-        service.set_many(payload, actor_id=user_id, trace_id=trace(request))
+        for key, value in payload.items():
+            service.set(key, value, actor_id=user_id, trace_id=trace(request))
         return {"status": "OK", "latest_version": body.latest_version, "latest_build": body.latest_build, "min_supported_build": body.min_supported_build, "idempotency_key": idempotency_key}
 
     @router.get("/session")
@@ -352,19 +284,15 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
         permissions = ["*"] if is_admin else [name for name, required in frontend_map.items() if required in actual]
         overview_data = {}
         if is_admin:
-            overview_data = overview(request, user_id, 30)
+            overview_data = overview(request, user_id)
         modules = {}
         for name, required in MODULE_PERMISSIONS.items():
-            if name == 'wallet' and getattr(settings, 'wallet_access_grant_enabled', False):
-                continue
             if is_admin or required in actual:
                 modules[name] = module_data(name, user_id).get("items", [])
         return {"actor": {"id": info["user_id"], "username": info["username"], "display_name": "畅聊管理员", "roles": info["roles"]}, "permissions": permissions, "overview": overview_data, "modules": modules}
-    @router.get("/overview", response_model=AdminOverview)
-    def overview(request: Request, user_id: str = Depends(actor), days: int = Query(default=30, enum=[7, 30, 90])):
+    @router.get("/overview")
+    def overview(request: Request, user_id: str = Depends(actor)):
         require(user_id, Permission.SYSTEM_ADMIN)
-        if days not in (7, 30, 90):
-            raise AppError(code="ADMIN_REPORT_FILTER_INVALID", message="统计周期必须为 7、30 或 90 天", status_code=422)
         with session_factory() as session:
             registered = session.scalar(select(func.count()).select_from(User)) or 0
             active = session.scalar(select(func.count()).select_from(User).where(User.status == AccountStatus.ACTIVE)) or 0
@@ -372,75 +300,17 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
             online = session.scalar(select(func.count(func.distinct(Device.user_id))).join(User, User.id == Device.user_id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= online_cutoff)) or 0
             pending_withdrawals = session.scalar(select(func.count()).select_from(Withdrawal).where(Withdrawal.status.in_(("REQUESTED", "FINANCE_APPROVED")))) or 0
             today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            today_point_volume = session.scalar(select(func.coalesce(func.sum(func.abs(LedgerEntry.amount)), 0)).join(LedgerTransaction, LedgerEntry.transaction_id == LedgerTransaction.id).where(LedgerEntry.asset == "CAIBI", LedgerTransaction.asset == "CAIBI", LedgerEntry.account_id.notlike("PLATFORM_%"), LedgerTransaction.created_at >= today_start)) or 0
-            report_now = datetime.now(timezone.utc)
-            trend = registration_trend(session, days=days, now=report_now)
-            supply = point_supply(session, now=report_now)
+            today_point_volume = session.scalar(select(func.coalesce(func.sum(func.abs(LedgerEntry.amount)), 0)).join(LedgerTransaction, LedgerEntry.transaction_id == LedgerTransaction.id).where(LedgerEntry.account_id.notlike("PLATFORM_%"), LedgerTransaction.created_at >= today_start)) or 0
         audit.record(actor_id=user_id, subject_type="admin", subject_id=user_id, action="admin.overview.viewed", result="SUCCESS", reason_code="ADMIN_DASHBOARD_VIEW", trace_id=getattr(request.state, "trace_id", "unknown"), source_ip=request.client.host if request.client else None)
-        return {"registered_users": registered, "active_users": active, "online_customers": online, "pending_withdrawals": pending_withdrawals, "today_point_volume": f"{today_point_volume:.2f}", "brand": "ChatFlow", "registration_trend": trend, "registration_timezone": "Asia/Hong_Kong", "registration_today_partial": True, "point_supply": supply}
+        return {"registered_users": registered, "active_users": active, "online_customers": online, "pending_withdrawals": pending_withdrawals, "today_point_volume": f"{today_point_volume:.2f}", "brand": "ChatFlow"}
 
-    @router.get('/ledger-entries')
-    def ledger_entries(request: Request, user_id: str = Depends(actor),
-                       limit: int = Query(default=50, ge=1, le=100),
-                       cursor: str | None = Query(default=None, max_length=1024),
-                       username: str | None = Query(default=None, max_length=128),
-                       nickname: str | None = Query(default=None, max_length=128),
-                       email: str | None = Query(default=None, max_length=128),
-                       scene: Literal['GROUP', 'EXCLUSIVE', 'DIRECT', 'TRANSFER', 'OTHER', 'UNKNOWN'] | None = None,
-                       mode: Literal['RANDOM', 'EQUAL', 'EXCLUSIVE', 'OTHER'] | None = None,
-                       start_at: str | None = Query(default=None, max_length=40),
-                       end_at: str | None = Query(default=None, max_length=40)):
-        require(user_id, Permission.AUDIT_VIEW)
-        with session_factory() as session:
-            try:
-                result = ledger_page(session, limit=limit, cursor=cursor, filters=dict(
-                    username=username, nickname=nickname, email=email, scene=scene, mode=mode,
-                    start_at=start_at, end_at=end_at))
-            except ValueError as exc:
-                raise AppError(code='ADMIN_REPORT_FILTER_INVALID', message='流水筛选或分页参数无效', status_code=422) from exc
-        audit.record(actor_id=user_id, subject_type='admin', subject_id=user_id,
-            action='admin.ledger.viewed', result='SUCCESS', reason_code='ADMIN_LEDGER_VIEW', trace_id=trace(request))
-        return JSONResponse(result, headers={'Cache-Control': 'no-store'})
-
-    @router.get("/point-issuance", response_model=PointIssuancePage)
-    def point_issuance(user_id: str = Depends(actor), limit: int = Query(default=50, ge=1, le=100),
-                       cursor: str | None = Query(default=None, max_length=512),
-                       kind: Literal["issued", "returned"] | None = None):
-        require(user_id, Permission.AUDIT_VIEW)
-        with session_factory() as session:
-            if session.get_bind().dialect.name == "postgresql":
-                session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
-            try:
-                return issuance_page(session, limit=limit, cursor=cursor, kind=kind)
-            except ValueError as exc:
-                raise AppError(code="ADMIN_REPORT_FILTER_INVALID", message="发行记录筛选或分页参数无效", status_code=422) from exc
-
-    @router.get("/point-issuance/{transaction_id}", response_model=PointIssuanceDetail)
-    def point_issuance_detail(transaction_id: str, user_id: str = Depends(actor)):
-        require(user_id, Permission.AUDIT_VIEW)
-        with session_factory() as session:
-            if session.get_bind().dialect.name == "postgresql":
-                session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
-            result = issuance_detail(session, transaction_id)
-        if result is None:
-            raise AppError(code="ADMIN_ISSUANCE_NOT_FOUND", message="发行或回收交易不存在", status_code=404)
-        return result
-
-    @router.get("/modules/{module}", response_model=AdminUserPage | AdminModulePage)
-    def module_data(module: str, user_id: str = Depends(actor),
-                    q: Annotated[str | None, Query(max_length=128)] = None,
-                    limit: Annotated[int, Query(ge=1, le=100)] = 100,
-                    cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None):
+    @router.get("/modules/{module}")
+    def module_data(module: str, user_id: str = Depends(actor)):
         permission = MODULE_PERMISSIONS.get(module)
         if permission is None:
             raise AppError(code="ADMIN_MODULE_NOT_FOUND", message="模块不存在", status_code=404)
         require(user_id, permission)
         with session_factory() as session:
-            if module in ('analytics', 'security'):
-                try:
-                    return {'module': module, **user_page(session, q=q, limit=limit, cursor=cursor)}
-                except ValueError as exc:
-                    raise AppError(code='ADMIN_USER_FILTER_INVALID', message='用户筛选或分页参数无效', status_code=422) from exc
             if module == "online":
                 cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
                 rows = session.execute(select(User, Device.last_seen_at).join(Device, Device.user_id == User.id).where(User.status == AccountStatus.ACTIVE, Device.revoked_at.is_(None), Device.last_seen_at >= cutoff).order_by(Device.last_seen_at.desc()).limit(100)).all()
@@ -449,6 +319,12 @@ def create_admin_router(settings: Settings, session_factory, *, manual_runtime=N
                     if u.id in seen: continue
                     seen.add(u.id); items.append({"id": u.id, "username": u.username, "status": "在线", "last_seen_at": last_seen.isoformat()})
                 return {"items": items, "module": module}
+            if module == "analytics":
+                rows = session.scalars(select(User).order_by(User.created_at.desc()).limit(100)).all()
+                return {"items": [{"id": u.id, "username": u.username, "status": u.status.value, "created_at": u.created_at.isoformat()} for u in rows], "module": module}
+            if module == "security":
+                rows = session.scalars(select(User).order_by(User.updated_at.desc()).limit(100)).all()
+                return {"module": module, "items": [{"id": u.id, "username": u.username, "status": u.status.value, "updated_at": u.updated_at.isoformat()} for u in rows]}
             if module == "support-role":
                 rows = session.execute(select(User, UserRole.role_code).join(UserRole, UserRole.user_id == User.id).order_by(UserRole.assigned_at.desc()).limit(100)).all()
                 return {"module": module, "items": [{"id": u.id, "username": u.username, "role": role.value, "assigned_at": next((r.assigned_at.isoformat() for r in session.scalars(select(UserRole).where(UserRole.user_id == u.id, UserRole.role_code == role).limit(1)).all()), None)} for u, role in rows]}

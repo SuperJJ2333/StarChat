@@ -84,7 +84,14 @@ void main() {
         references: FakeTransferReference(),
       ),
       balanceSource: FakeBalance(),
-      contactsSource: FakeContacts(),
+      isGroup: true,
+      groupMembers: const [
+        GroupMemberIdentity(
+          matrixUserId: '@alice:example.test',
+          displayName: '爱丽丝',
+          businessUserId: 'user-alice',
+        ),
+      ],
       onSent: () {},
     );
     await tester.pumpWidget(CupertinoApp(home: sheet));
@@ -106,7 +113,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('chat-transfer-recipient')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-transfer-contact-user-alice')));
+    await tester.tap(
+        find.byKey(const Key('chat-transfer-contact-@alice:example.test')));
     await tester.pumpAndSettle();
     expect(find.text('爱丽丝'), findsOneWidget);
 
@@ -166,6 +174,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: ChatTransferSheet(
       controller: ChatTransferController(business: business, references: FakeTransferReference()),
       balanceSource: FakeBalance(), onSent: () {}, avatarMedia: _AvatarMedia(),
+      isGroup: true,
       groupMembers: const [GroupMemberIdentity(matrixUserId: '@guest:test', displayName: '群成员')],
       resolveBusinessUser: (_) async => {'matrix_user_id': '@guest:test', 'user_id': 'user-guest'},
     )));
@@ -178,11 +187,54 @@ void main() {
     expect(business.receiverId, 'user-guest');
   });
 
+  testWidgets('群聊收款人只能来自当前群成员，群成员未就绪时绝不回退通讯录',
+      (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+        home: ChatTransferSheet(
+      controller: ChatTransferController(
+        business: FakeTransferBusiness(),
+        references: FakeTransferReference(),
+      ),
+      isGroup: true,
+      balanceSource: FakeBalance(),
+      contactsSource: FakeContacts(),
+      onSent: () {},
+    )));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('chat-transfer-recipient')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('chat-transfer-contact-list')), findsNothing,
+        reason: '群聊不得打开通讯录列表');
+    expect(find.text('爱丽丝'), findsNothing, reason: '不得出现非本群成员');
+    expect(find.text('鲍勃'), findsNothing, reason: '不得出现非本群成员');
+    expect(find.text('群成员尚未加载，请稍后再试'), findsOneWidget);
+  });
+
+  testWidgets('私聊转账收款人固定为对方，不可更改', (tester) async {
+    await _pump(tester, peerId: 'user-bob', peerName: '鲍勃');
+
+    await tester.tap(find.byKey(const Key('chat-transfer-recipient')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('chat-transfer-contact-list')), findsNothing,
+        reason: '私聊不得打开收款人选择');
+    expect(find.text('爱丽丝'), findsNothing, reason: '私聊不得出现其他用户');
+    expect(
+        tester
+            .widget<Text>(find.byKey(const Key('chat-transfer-recipient')))
+            .data,
+        '鲍勃',
+        reason: '收款人必须保持为当前会话对方');
+  });
+
   testWidgets('mismatched lookup cannot submit a Matrix ID as a transfer receiver', (tester) async {
     final business = FakeTransferBusiness();
     await tester.pumpWidget(CupertinoApp(home: ChatTransferSheet(
       controller: ChatTransferController(business: business, references: FakeTransferReference()),
       onSent: () {}, avatarMedia: _AvatarMedia(),
+      isGroup: true,
       groupMembers: const [GroupMemberIdentity(matrixUserId: '@guest:test', displayName: '群成员')],
       resolveBusinessUser: (_) async => {'matrix_user_id': '@other:test', 'user_id': 'user-other'},
     )));

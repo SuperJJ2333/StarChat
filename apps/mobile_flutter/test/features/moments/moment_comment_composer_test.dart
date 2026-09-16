@@ -61,7 +61,7 @@ void main() {
                       api: api,
                       momentId: 'm1',
                       galleryPicker: (_, __) async =>
-                          (photos: [photo], original: true))))));
+                          (photos: [photo], original: true, flash: false))))));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('moment-comment-gallery')));
@@ -118,7 +118,7 @@ void main() {
                     api: api,
                     momentId: 'm1',
                     galleryPicker: (_, __) async =>
-                        (photos: [photo], original: false))))));
+                        (photos: [photo], original: false, flash: false))))));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('moment-comment-gallery')));
@@ -179,7 +179,7 @@ void main() {
                         api: api,
                         momentId: 'm1', galleryPicker: (_, limit) async {
                       expect(limit, 9);
-                      return (photos: [photo], original: true);
+                      return (photos: [photo], original: true, flash: false);
                     })))));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
@@ -238,7 +238,7 @@ void main() {
       requests++;
       return http.Response('{}', 200);
     });
-    final selected = Completer<({List<GalleryPhoto> photos, bool original})?>();
+    final selected = Completer<MomentGallerySelection?>();
     await tester.pumpWidget(CupertinoApp(
         home: Builder(
             builder: (context) => CupertinoButton(
@@ -259,7 +259,7 @@ void main() {
             throw StateError('must not read stale selection'),
         compressedBytes: () async =>
             throw StateError('must not read stale selection'));
-    selected.complete((photos: [photo], original: false));
+    selected.complete((photos: [photo], original: false, flash: false));
     await tester.pump();
     expect(requests, 0);
     expect(tester.takeException(), isNull);

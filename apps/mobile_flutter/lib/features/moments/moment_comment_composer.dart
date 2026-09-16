@@ -8,9 +8,16 @@ import '../matrix/image_picker_page.dart';
 import '../matrix/profile_repository.dart';
 import 'moment_models.dart';
 
+/// 相册选择结果。字段必须与 `ImagePickerPage` 的出栈记录**完全一致**——
+/// 记录是结构类型，字段不一致会让路由无法完成出栈，表现为相册页卡死。
+typedef MomentGallerySelection = ({
+  List<GalleryPhoto> photos,
+  bool original,
+  bool flash,
+});
+
 typedef MomentGalleryPicker
-    = Future<({List<GalleryPhoto> photos, bool original})?> Function(
-        BuildContext context, int maxCount);
+    = Future<MomentGallerySelection?> Function(BuildContext context, int maxCount);
 
 Future<MomentCommentView?> showMomentCommentComposer(BuildContext context,
         {required BusinessApiClient api,
@@ -108,12 +115,16 @@ class _CommentComposerState extends State<_CommentComposer> {
       final maxCount = 9 - images.length;
       final selected = await (widget.galleryPicker?.call(context, maxCount) ??
           Navigator.of(context, rootNavigator: true)
-              .push<({List<GalleryPhoto> photos, bool original})>(
-                  CupertinoPageRoute(
-                      builder: (_) => ImagePickerPage(
-                          photosOnly: true, maxCount: maxCount))));
+              .push<MomentGallerySelection>(CupertinoPageRoute(
+                  builder: (_) => ImagePickerPage(
+                      photosOnly: true, maxCount: maxCount))));
       if (!mounted || selected == null) return;
       await ensureAccount();
+      if (!mounted) return;
+      // 评论只支持图片/GIF：闪照是聊天专属的阅后即焚形态，不接受。
+      if (selected.flash) {
+        throw const FormatException('评论不支持闪照');
+      }
       if (!mounted) return;
       if (selected.photos.length > maxCount) {
         throw const FormatException('最多选择9张图片');

@@ -5,8 +5,10 @@ import '../../core/amount_rules.dart';
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../contacts/contact_models.dart';
 import 'chat_red_packet_controller.dart';
 import 'group_member_picker.dart';
+import 'matrix_e2ee_client.dart' show MatrixRoomMemberSnapshot;
 import 'matrix_user_avatar.dart';
 
 abstract interface class ChatRedPacketSupport {
@@ -49,6 +51,35 @@ final class ChatRoomMember {
   /// 业务头像（好友资料，http(s)，走统一缓存）。
   final String? businessAvatarUrl;
   final String? businessUserId;
+}
+
+/// 把当前房间的已加入成员投影成可选择成员。
+///
+/// 只包含本会话成员（排除自己，绝不含通讯录好友）。好友身份同时保留
+/// Matrix 头像（mxc，供房间头像解析）与业务头像/业务账号（供确认收款账号），
+/// 显示名优先使用好友备注，其次 Matrix 显示名。
+List<ChatRoomMember> chatRoomMembersFor({
+  required Iterable<MatrixRoomMemberSnapshot> members,
+  required String? currentUserId,
+  required Map<String, ContactDetails> contactsByMatrixId,
+}) {
+  final result = <ChatRoomMember>[];
+  for (final member in members) {
+    if (!member.isJoined) continue;
+    if (currentUserId != null && member.id == currentUserId) continue;
+    final contact = contactsByMatrixId[member.id];
+    final remark = contact?.remark?.trim();
+    result.add(ChatRoomMember(
+      member.id,
+      (remark == null || remark.isEmpty)
+          ? (contact?.displayName ?? member.displayName)
+          : remark,
+      avatarUrl: member.avatarUri?.toString(),
+      businessAvatarUrl: contact?.avatarUrl,
+      businessUserId: contact?.userId,
+    ));
+  }
+  return result;
 }
 
 String redPacketTypeLabel(String mode) => switch (mode) {

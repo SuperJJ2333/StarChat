@@ -206,7 +206,7 @@ void main() {
         compressedBytes: () async => throw StateError('Must use original'),
         originalBytes: () async => Uint8List.fromList([1, 2, 3]));
     Navigator.of(tester.element(find.byType(ImagePickerPage)))
-        .pop((photos: [photo], original: false));
+        .pop((photos: [photo], original: false, flash: false));
     await tester.pump();
     await completeFileWork(
         tester, () => find.byType(RequestFriendPage).evaluate().isNotEmpty);
@@ -239,7 +239,7 @@ void main() {
         compressedBytes: () async => Uint8List(0),
         originalBytes: () async => Uint8List.fromList([4]));
     Navigator.of(tester.element(find.byType(ImagePickerPage)))
-        .pop((photos: [photo], original: false));
+        .pop((photos: [photo], original: false, flash: false));
     await tester.pump();
     await completeFileWork(
         tester, () => find.text('未在所选照片中识别到二维码，请更换照片').evaluate().isNotEmpty);

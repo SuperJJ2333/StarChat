@@ -54,6 +54,23 @@
 - MANUAL_CONTROL_SNAPSHOT_CONFLICT：控制状态已变化；刷新后核对新状态，再确认操作。
 - 网络中断或请求结果未知：先刷新状态，页面保留原请求参数和幂等键；不要通过换键重复提交来猜测结果。
 
+## MANUAL_UNALLOCATED_OUTFLOW：持有者自主转出的申报与恢复（ADR-0071）
+
+原因：监控发现官方钱包的一笔链上转出没有对应任何已结算出款订单。若该转出**不是**持有者操作的，按安全事件处置（先转移剩余资金、更换凭据、保留 txid 取证），事故保持暂停。
+
+若确认是持有者本人已完成的转出（测试、对外付款等），2026-09-15 起可通过「所有者转出申报」恢复（ADR-0071）：
+
+1. 管理后台「USDT 钱包」→「所有者转出申报」（需钱包访问授权 + 独立操作密码）。填写链上交易哈希、log_index（通常 0）、原因码与用途说明，勾选所有权声明后提交。预检会核对链上证据与监控覆盖事实；收款地址与金额以链上为准，不可手填。
+2. 申报成功生成不可变记录与平衡账本分录（托管 → 所有者提款，`PLATFORM_OWNER_DRAWING`），不影响用户负债与储备充足性判断。
+3. 刷新「监控与事故」，对 `MANUAL_UNALLOCATED_OUTFLOW` 事故执行「检查并处理事故」：复核通过 → 结案。
+4. 「资金启停」→「核验并恢复人工钱包」。
+
+接口等价物：`POST /api/v1/admin/wallet/manual/owner-transfers/preview`、`POST /api/v1/admin/wallet/manual/owner-transfers`（Header `Idempotency-Key`，建议固定值 `owner-transfer:<txid>:<log_index>` 以便安全重试）、`GET /api/v1/admin/wallet/manual/owner-transfers/<txid>`。
+
+生产前提：部署迁移 `0067_wallet_owner_transfers`，且 API 环境开启 `WALLET_OWNER_TRANSFERS_ENABLED=true`（默认关闭）。未开启时接口返回 `OWNER_TRANSFERS_DISABLED`。
+
+在任何情况下都不要手改数据库来"解释"一笔转出：恢复核验基于不可变事实，伪造订单或清空事故无法通过复核，且违反账本与审计约束。
+
 事故结案与资金恢复是两个独立动作。不要直接改数据库标志或清空事故记录，也不要重建观察库来恢复；这些操作无法完成现有恢复核验。
 
 接口对应关系位于 /api/v1/admin/wallet/manual/operations：事故操作为 /incidents/{incident_id}/ack、/review、/resolve；资金状态为 GET /control，恢复为 POST /control/resume。正常使用后台，由页面管理版本、摘要和幂等键。

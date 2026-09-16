@@ -93,6 +93,7 @@ import 'matrix_room_timeline_adapter.dart';
 import 'chat_red_packet_adapters.dart';
 import 'chat_red_packet_controller.dart';
 import 'chat_red_packet_sheet.dart';
+import 'group_member_picker.dart';
 import 'group_chat_info_controller.dart';
 import 'group_chat_info_page.dart';
 import '../contacts/member_directory_service.dart';
@@ -732,6 +733,46 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     roomInfo = refreshed;
     if (mounted) setState(() => joinedMemberCount = count);
     return count;
+  }
+
+  /// 群聊收款人/专属红包成员：实时拉取当前房间已加入成员。
+  ///
+  /// 只包含本会话成员，绝不含通讯录好友；好友备注与业务身份来自身份缓存，
+  /// Matrix 头像与业务头像分别保留，供两种头像解析路径使用。
+  Future<List<GroupMemberIdentity>> _liveGroupMemberIdentities() async {
+    final epoch = widget.api.sessionEpoch;
+    final refreshed = await widget.roomLease.refreshRoomInfo();
+    if (!mounted ||
+        widget.roomLease.canceled ||
+        widget.api.sessionEpoch != epoch) {
+      throw StateError('群成员状态已失效');
+    }
+    roomInfo = refreshed;
+    final identity = _identityCache;
+    return [
+      for (final member in refreshed.members)
+        if (member.isJoined && member.id != refreshed.currentUserId)
+          _groupMemberIdentity(member, identity),
+    ];
+  }
+
+  GroupMemberIdentity _groupMemberIdentity(
+    MatrixRoomMemberSnapshot member,
+    ProfileRepository identity,
+  ) {
+    final contact = identity.contactsByMatrixId[member.id];
+    return GroupMemberIdentity(
+      matrixUserId: member.id,
+      displayName: identity
+          .resolveIdentity(
+            matrixUserId: member.id,
+            displayName: member.displayName,
+          )
+          .displayName,
+      matrixAvatarUri: member.avatarUri,
+      businessUserId: contact?.userId,
+      businessAvatarUrl: contact?.avatarUrl,
+    );
   }
 
   String get _navigationTitle => isGroup
@@ -2142,25 +2183,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         widget.api.sessionEpoch != apiEpoch) {
       return;
     }
-    List<ChatRoomMember> members() => <ChatRoomMember>[
-          for (final participant in _joinedMembers
-              .where((member) => member.id != roomInfo.currentUserId))
-            ChatRoomMember(
-              participant.id,
-              _identityCache
-                  .resolveIdentity(
-                    matrixUserId: participant.id,
-                    displayName: participant.displayName,
-                  )
-                  .displayName,
-              avatarUrl: _identityCache
-                  .resolveIdentity(
-                    matrixUserId: participant.id,
-                    displayName: participant.displayName,
-                  )
-                  .avatarUrl,
-            ),
-        ];
+    List<ChatRoomMember> members() => chatRoomMembersFor(
+          members: _joinedMembers,
+          currentUserId: roomInfo.currentUserId,
+          contactsByMatrixId: _identityCache.contactsByMatrixId,
+        );
     final payment = await _preparePayment();
     if (payment == null) return;
     if (!mounted ||
@@ -2197,6 +2224,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               isGroup: isGroup,
               support: BusinessChatRedPacketSupport(widget.api),
               members: members(),
+              // 非好友群成员没有本地业务身份，必须提供实时查询入口，
+              // 否则选择后只能弹「无法确认红包账号」。
+              resolveBusinessUser:
+                  isGroup ? widget.api.lookupUserByMatrixId : null,
+              avatarMedia: widget.roomLease,
               onSent: () => Navigator.pop(pageContext),
             ),
           ),
@@ -2216,6 +2248,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final hasPeer = !isGroup && peer != null;
     final payment = await _preparePayment();
     if (payment == null || !mounted) return;
+    // 群聊收款人必须实时来自当前房间成员；加载失败时降级为空列表，
+    // 由弹层提示“群成员尚未加载”，绝不回退到通讯录（否则会出现非群成员）。
+    var groupMembers = const <GroupMemberIdentity>[];
+    if (isGroup) {
+      try {
+        groupMembers = await _liveGroupMemberIdentities();
+      } catch (_) {
+        groupMembers = const <GroupMemberIdentity>[];
+      }
+      if (!mounted) {
+        payment.clear();
+        return;
+      }
+    }
     final transferController = ChatTransferController(
       business: BusinessChatTransferGateway(widget.api, payment: payment),
       references: TimelineChatTransferReferenceGateway(timeline),
@@ -2225,11 +2271,18 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (pageContext) => ChatTransferSheet(
           controller: transferController,
+          isGroup: isGroup,
           peerId: hasPeer ? peer!.userId : null,
           peerName: hasPeer ? peer!.displayName : null,
           peerAvatarUrl: hasPeer ? peer!.avatarUrl : null,
           balanceSource: BusinessChatTransferBalanceSource(widget.api),
-          contactsSource: BusinessChatTransferContactsSource(widget.api),
+          groupMembers: isGroup ? groupMembers : null,
+          resolveBusinessUser: isGroup ? widget.api.lookupUserByMatrixId : null,
+          avatarMedia: widget.roomLease,
+          // 私聊对端资料未就绪时才允许从通讯录选择；群聊永不使用通讯录。
+          contactsSource: isGroup
+              ? null
+              : BusinessChatTransferContactsSource(widget.api),
           onSent: () => Navigator.pop(pageContext),
         ),
       ),
@@ -2677,18 +2730,17 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _clearLocalHistory() async {
     final store = hiddenEvents;
     if (store == null) return;
-    if (store is LocalClearedHistory) {
-      var cutoff = DateTime.now();
-      for (final message
-          in controller?.allMessages ?? const <RoomMessageViewModel>[]) {
-        if (message.timestamp.isAfter(cutoff)) cutoff = message.timestamp;
-      }
-      await (store as LocalClearedHistory).clearThrough(roomInfo.id, cutoff);
+    final messages = controller?.allMessages ?? const <RoomMessageViewModel>[];
+    var cutoff = DateTime.now();
+    for (final message in messages) {
+      if (message.timestamp.isAfter(cutoff)) cutoff = message.timestamp;
     }
-    for (final message
-        in controller?.allMessages ?? const <RoomMessageViewModel>[]) {
-      await store.hide(roomInfo.id, message.id);
-    }
+    // 走「清空聊天记录」契约：只写本机历史清除截止时间。若误用
+    // MatrixConversationMutation.delete 的删除信号，会话会从消息列表消失。
+    await widget.roomLease.clearLocalHistory(
+      messageIds: messages.map((message) => message.id),
+      cutoff: cutoff,
+    );
     for (final id
         in unreadMentions?.pendingEventIdsNewestFirst() ?? <String>[]) {
       unreadMentions?.onRedacted(id);

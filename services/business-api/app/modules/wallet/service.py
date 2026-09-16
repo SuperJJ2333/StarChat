@@ -43,13 +43,13 @@ class WalletLedger:
             if persisted != normalized or existing.actor_id != actor_id or existing.reason_code != reason_code:
                 raise ValueError("wallet ledger idempotency key reused with different payload")
             return existing
-        liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CUSTODY', 'PLATFORM_CONVERSION'}), Decimal('0'))
+        liability_delta = sum((delta for account, delta in normalized.items() if account not in {'PLATFORM_CUSTODY', 'PLATFORM_CONVERSION', 'PLATFORM_OWNER_DRAWING'}), Decimal('0'))
         if liability_delta > 0:
             require_coverage(session, reserve, usdt_delta=liability_delta, policy=self.reserve_policy)
         from app.modules.ledger.account_locks import lock_accounts
         lock_accounts(session, [a for a,d in normalized.items() if d < 0], asset="USDT-TRC20")
         for account,delta in normalized.items():
-            if delta < 0 and account not in {'PLATFORM_CUSTODY', 'PLATFORM_CONVERSION'}:
+            if delta < 0 and account not in {'PLATFORM_CUSTODY', 'PLATFORM_CONVERSION', 'PLATFORM_OWNER_DRAWING'}:
                 current=session.scalar(select(func.coalesce(func.sum(WalletLedgerEntry.amount),0)).where(WalletLedgerEntry.account_id==account, WalletLedgerEntry.asset=="USDT-TRC20"))
                 if usdt(Decimal(current))+delta < 0: raise ValueError("insufficient USDT balance")
         tx=WalletLedgerTransaction(id=str(uuid4()),asset="USDT-TRC20",scope=scope,idempotency_key=idempotency_key,actor_id=actor_id,reason_code=reason_code,created_at=now); session.add(tx); session.flush()

@@ -4590,6 +4590,45 @@
         "title": "OperationPasswordBody",
         "type": "object"
       },
+      "OwnerTransferBody": {
+        "additionalProperties": false,
+        "properties": {
+          "log_index": {
+            "minimum": 0.0,
+            "title": "Log Index",
+            "type": "integer"
+          },
+          "ownership_attested": {
+            "title": "Ownership Attested",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "pattern": "^[A-Z][A-Z0-9_]{2,99}$",
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "reason_detail": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason Detail",
+            "type": "string"
+          },
+          "txid": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Txid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "txid",
+          "log_index",
+          "reason_code",
+          "reason_detail",
+          "ownership_attested"
+        ],
+        "title": "OwnerTransferBody",
+        "type": "object"
+      },
       "PasswordLoginResponse": {
         "properties": {
           "access_token": {
@@ -12301,6 +12340,217 @@
         "tags": [
           "admin",
           "manual-wallet-operations"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/owner-transfers": {
+      "post": {
+        "operationId": "execute_api_v1_admin_wallet_manual_owner_transfers_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerTransferBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Execute",
+        "tags": [
+          "admin",
+          "admin-wallet-owner-transfers"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/owner-transfers/preview": {
+      "post": {
+        "operationId": "preview_api_v1_admin_wallet_manual_owner_transfers_preview_post",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerTransferBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Preview",
+        "tags": [
+          "admin",
+          "admin-wallet-owner-transfers"
+        ]
+      }
+    },
+    "/api/v1/admin/wallet/manual/owner-transfers/{txid}": {
+      "get": {
+        "operationId": "status_api_v1_admin_wallet_manual_owner_transfers__txid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "txid",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Txid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Status",
+        "tags": [
+          "admin",
+          "admin-wallet-owner-transfers"
         ]
       }
     },

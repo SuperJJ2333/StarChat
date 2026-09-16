@@ -131,14 +131,14 @@ final class _DirectChatInfoPageState extends State<DirectChatInfoPage> {
               ));
             }),
             const SizedBox(height: 12),
-            Center(
-              child: WeChatListTile(
-                title: const Text(
+            WeChatListTile(
+              title: const Center(
+                child: Text(
                   '清空聊天记录',
                   style: TextStyle(color: WeChatColors.danger),
                 ),
-                onTap: _clear,
               ),
+              onTap: _clear,
             ),
           ]),
         ),

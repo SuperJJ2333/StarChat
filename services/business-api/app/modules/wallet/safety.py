@@ -57,7 +57,8 @@ def exact_wallet_liability(totals, pending, receipts):
 
 def usdt_liability(session):
     totals = session.execute(select(WalletLedgerEntry.account_id, func.sum(WalletLedgerEntry.amount)).where(
-        WalletLedgerEntry.account_id.notin_(['PLATFORM_CUSTODY', 'PLATFORM_CONVERSION']), WalletLedgerEntry.asset == 'USDT-TRC20'
+        WalletLedgerEntry.account_id.notin_(['PLATFORM_CUSTODY', 'PLATFORM_CONVERSION', 'PLATFORM_OWNER_DRAWING']),
+        WalletLedgerEntry.asset == 'USDT-TRC20'
     ).group_by(WalletLedgerEntry.account_id)).all()
     pending = session.scalar(select(func.coalesce(func.sum(Deposit.amount), 0)).where(Deposit.status == 'MANUAL_REVIEW'))
     receipts = session.scalar(select(func.coalesce(func.sum(DepositReceipt.amount), 0)).where(DepositReceipt.pending_obligation.is_(True)))

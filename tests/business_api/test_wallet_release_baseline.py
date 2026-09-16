@@ -19,7 +19,8 @@ def test_wallet_and_moments_production_branches_have_one_shared_head():
     merge = scripts.get_revision('0056_merge_moment_comments')
     assert set(merge.down_revision) == {
         '0055_admin_sessions', '0040_moment_comment_images'}
-    assert scripts.get_heads() == ['0066_manual_deposit_cases']
+    assert scripts.get_heads() == ['0067_wallet_owner_transfers']
+    assert scripts.get_revision('0067_wallet_owner_transfers').down_revision == '0066_manual_deposit_cases'
     assert scripts.get_revision('0066_manual_deposit_cases').down_revision == '0065_support_profiles'
     assert scripts.get_revision('0065_support_profiles').down_revision == '0064_admin_deposit_repairs'
     assert scripts.get_revision('0064_admin_deposit_repairs').down_revision == '0063_merge_wallet_access'
