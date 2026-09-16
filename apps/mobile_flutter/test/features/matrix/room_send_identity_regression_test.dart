@@ -40,12 +40,13 @@ final class _Transport
   @override
   Future<void> markRead() async {}
   @override
-  Future<String> sendRedPacketReference(
-          String packetId, String greeting) async =>
+  Future<String> sendRedPacketReference(String packetId, String greeting,
+          {String? mode, String? recipientId, String? recipientMatrixId}) async =>
       'unused';
   @override
   Future<String> sendTransferReference(
-          String transferId, String amount, String? note) async =>
+          String transferId, String amount, String? note,
+          {String? receiverId, String? receiverMatrixId}) async =>
       'unused';
   @override
   void dispose() {}

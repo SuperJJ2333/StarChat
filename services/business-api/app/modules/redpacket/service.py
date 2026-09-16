@@ -55,6 +55,17 @@ class RedPacketService:
             ]
             server_time = datetime.now(timezone.utc)
             viewer_claim = next((claim for claim in claims if claim["user_id"] == user_id), None)
+            # 总点钻可见性：发起方始终可见；其他成员仅在红包已领完
+            # （COMPLETED）或已过期（EXPIRED / expires_at 已过）后可见——
+            # 此时总额已由全部领取记录公开，进行中一律隐藏（None）。
+            total_visible = (
+                packet.sender_id == user_id
+                or packet.status in ("COMPLETED", "EXPIRED")
+                or (
+                    packet.status == "OPEN"
+                    and self._aware(packet.expires_at) <= server_time
+                )
+            )
             best_luck_eligible = (
                 packet.room_id is not None
                 and packet.mode == "RANDOM"
@@ -66,8 +77,9 @@ class RedPacketService:
             payload = {
                 "id": packet.id, "sender_id": packet.sender_id, "mode": packet.mode,
                 "asset": "CAIBI",
-                # 红包总额仅发起方可见（非发起方为 null，前端隐藏）。
-                "total": str(packet.total) if packet.sender_id == user_id else None,
+                # 红包总额：发起方或红包已终结（领完/过期）时可见，
+                # 其余情况为 null，前端不得渲染金额。
+                "total": str(packet.total) if total_visible else None,
                 "share_count": packet.share_count,
                 "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
                 "room_id": packet.room_id, "server_time": server_time.isoformat(),

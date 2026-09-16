@@ -34,10 +34,17 @@ final class FakeRedPacketBusiness implements ChatRedPacketBusinessGateway {
 final class FakeRedPacketReference implements ChatRedPacketReferenceGateway {
   int sends = 0;
   bool fail = true;
+  String? lastMode;
+  String? lastRecipientId;
+  String? lastRecipientMatrixId;
 
   @override
-  Future<void> sendReference(String packetId, String greeting) async {
+  Future<void> sendReference(String packetId, String greeting,
+      {String? mode, String? recipientId, String? recipientMatrixId}) async {
     sends++;
+    lastMode = mode;
+    lastRecipientId = recipientId;
+    lastRecipientMatrixId = recipientMatrixId;
     if (fail) throw Exception('matrix unavailable');
   }
 }

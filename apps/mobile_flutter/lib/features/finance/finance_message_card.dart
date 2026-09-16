@@ -15,6 +15,8 @@ final class FinanceMessageCard extends StatefulWidget {
       required this.greeting,
       required this.amount,
       required this.isOwn,
+      this.redPacketMode,
+      this.restrictedRecipientName,
       this.onTap});
   final FinanceCardStore store;
   final FinanceCardKind kind;
@@ -22,6 +24,14 @@ final class FinanceMessageCard extends StatefulWidget {
   final String greeting;
   final String amount;
   final bool isOwn;
+
+  /// 红包类型（EQUAL/RANDOM/EXCLUSIVE）；旧消息缺少该字段时为 null。
+  final String? redPacketMode;
+
+  /// 群聊里转账收款人 / 专属红包指定成员的**本机**展示名（备注 → 昵称 →
+  /// 房间显示名）。业务明细对该查看者不可见时用它渲染「转给xx」/「给xxx
+  /// 的专属红包」，绝不使用消息里他人写入的备注。
+  final String? restrictedRecipientName;
   final VoidCallback? onTap;
   @override
   State<FinanceMessageCard> createState() => _FinanceMessageCardState();
@@ -69,17 +79,27 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
           valueListenable: _notifier,
           builder: (context, state, _) => _card(state)));
   Widget _card(FinanceCardState state) {
-    final enabled = state.detail != null && state.error == null && !state.ended;
-    final retry = state.error != null && !state.ended;
+    // 业务明细不可见（群聊里别人发的转账 / 指定他人的专属红包）不是错误：
+    // 卡片按消息里的公开信息只读呈现，不显示错误文案，也不提供重试。
+    final restricted = state.restricted;
+    final enabled = state.detail != null &&
+        state.error == null &&
+        !state.ended &&
+        !restricted;
+    final retry = !restricted && state.error != null && !state.ended;
     if (widget.kind == FinanceCardKind.redPacket) {
       final card = WeChatRedPacketCard(
           greeting: widget.greeting,
           state: redPacketVisualState(state.detail),
-          labelOverride: state.detail == null
-              ? state.ended
-                  ? '会话已结束'
-                  : state.error ?? (state.loading ? '加载中' : '状态未知')
-              : null,
+          labelOverride: restricted
+              ? exclusiveRedPacketLabel(
+                  mode: widget.redPacketMode,
+                  recipientName: widget.restrictedRecipientName)
+              : state.detail == null
+                  ? state.ended
+                      ? '会话已结束'
+                      : state.error ?? (state.loading ? '加载中' : '状态未知')
+                  : null,
           onTap: enabled ? widget.onTap : null);
       return retry
           ? Column(mainAxisSize: MainAxisSize.min, children: [
@@ -93,17 +113,21 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
     final sender = '${detail?['sender_id'] ?? ''}';
     final receiver = '${detail?['receiver_id'] ?? ''}';
     final label = detail == null
-        ? state.ended
-            ? '会话已结束'
-            : state.error ?? (state.loading ? '加载中' : '状态未知')
+        ? restricted
+            ? transferCounterpartyLabel(widget.restrictedRecipientName)
+            : state.ended
+                ? '会话已结束'
+                : state.error ?? (state.loading ? '加载中' : '状态未知')
         : transferLabel(
             status: status,
             viewerId: state.viewerId,
             senderId: sender,
             receiverId: receiver);
     final card = WeChatTransferCard(
-        amount:
-            detail?['amount'] is String ? detail!['amount'] as String : '--',
+        // 明细不可见时用会话消息里的金额（本来就发给了整个房间）。
+        amount: detail?['amount'] is String
+            ? detail!['amount'] as String
+            : widget.amount,
         state: switch (status) {
           'ACCEPTED' => TransferCardState.accepted,
           'DECLINED' || 'EXPIRED' => TransferCardState.returned,
@@ -111,6 +135,9 @@ final class _FinanceMessageCardState extends State<FinanceMessageCard> {
         },
         isOwn: widget.isOwn,
         labelOverride: label,
+        // 第三方视角状态未知：底部左侧「转账」，右侧不臆造状态。
+        footerLabel: restricted ? '转账' : null,
+        statusLabel: restricted ? '' : null,
         onTap: enabled ? widget.onTap : null);
     return retry
         ? Column(mainAxisSize: MainAxisSize.min, children: [

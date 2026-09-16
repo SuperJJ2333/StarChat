@@ -47,6 +47,7 @@ final class ChatTransferSheet extends StatefulWidget {
     this.peerId,
     this.peerName,
     this.peerAvatarUrl,
+    this.peerMatrixUserId,
     this.balanceSource,
     this.contactsSource,
     this.roomMembers = const [],
@@ -64,6 +65,9 @@ final class ChatTransferSheet extends StatefulWidget {
   final String? peerId;
   final String? peerName;
   final String? peerAvatarUrl;
+
+  /// 私聊对方 Matrix 账号：随转账引用消息写入房间，供成员本机解析展示名。
+  final String? peerMatrixUserId;
   final VoidCallback onSent;
   final ChatTransferBalanceSource? balanceSource;
   final ChatTransferContactsSource? contactsSource;
@@ -153,6 +157,7 @@ final class _State extends State<ChatTransferSheet> {
       receiverId: recipientId!,
       amount: value.toStringAsFixed(2),
       note: note.text.trim(),
+      receiverMatrixId: recipientMatrixUserId ?? widget.peerMatrixUserId,
     );
     if (!mounted) return;
     final state = widget.controller.state;

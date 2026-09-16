@@ -310,26 +310,74 @@ void main() {
     });
   });
 
-  test('typed 403 clears cached detail', () async {
+  test('typed 403 marks the card as view-restricted without an error', () {
+    fakeAsync((async) {
+      final gateway = _Gateway();
+      final store = FinanceCardStore(gateway);
+      final lease = store.lease(FinanceCardKey.redPacket('forbidden'));
+      lease.setVisible(true);
+      async.flushMicrotasks();
+      gateway.complete('forbidden');
+      async.flushMicrotasks();
+      async.flushMicrotasks();
+      store.invalidate(lease.key);
+      async.flushMicrotasks();
+      async.flushMicrotasks();
+      gateway.redError(
+          'forbidden',
+          const BusinessApiException(
+              statusCode: 403, code: 'DENIED', message: 'denied'));
+      async.flushMicrotasks();
+      async.flushMicrotasks();
+      expect(lease.notifier.value.detail, isNull);
+      expect(lease.notifier.value.error, isNull);
+      expect(lease.notifier.value.restricted, isTrue);
+      expect(lease.notifier.value.terminal, isTrue);
+      final calls = gateway.redCalls;
+      // 受限卡片不再轮询：第三方看群红包/转账不会被反复请求。
+      async.elapse(const Duration(minutes: 5));
+      async.flushMicrotasks();
+      expect(gateway.redCalls, calls);
+      lease.dispose();
+      store.dispose();
+    });
+  });
+
+  test('typed 404 marks the card as view-restricted without an error', () {
+    fakeAsync((async) {
+      final gateway = _Gateway();
+      final store = FinanceCardStore(gateway);
+      final lease = store.lease(FinanceCardKey.transfer('hidden'));
+      lease.setVisible(true);
+      async.flushMicrotasks();
+      gateway.transferError(
+          'hidden',
+          const BusinessApiException(
+              statusCode: 404, code: 'CHAT_TRANSFER_NOT_FOUND', message: 'nf'));
+      async.flushMicrotasks();
+      async.flushMicrotasks();
+      expect(lease.notifier.value.detail, isNull);
+      expect(lease.notifier.value.error, isNull);
+      expect(lease.notifier.value.restricted, isTrue);
+      async.elapse(const Duration(minutes: 5));
+      async.flushMicrotasks();
+      expect(gateway.callsFor('hidden'), 1);
+      lease.dispose();
+      store.dispose();
+    });
+  });
+
+  test('non-access failures still surface the retryable error', () async {
     final gateway = _Gateway();
     final store = FinanceCardStore(gateway);
-    final lease = store.lease(FinanceCardKey.redPacket('forbidden'));
+    final lease = store.lease(FinanceCardKey.transfer('offline'));
     lease.setVisible(true);
     await _settle();
-    gateway.complete('forbidden');
+    gateway.transferError('offline', StateError('offline'));
     await _settle();
     await _settle();
-    store.invalidate(lease.key);
-    await _settle();
-    await _settle();
-    gateway.redError(
-        'forbidden',
-        const BusinessApiException(
-            statusCode: 403, code: 'DENIED', message: 'denied'));
-    await _settle();
-    await _settle();
-    expect(lease.notifier.value.detail, isNull);
-    expect(lease.notifier.value.error, '无权查看该状态');
+    expect(lease.notifier.value.error, '加载状态失败，请重试');
+    expect(lease.notifier.value.restricted, isFalse);
     lease.dispose();
     store.dispose();
   });
@@ -501,8 +549,16 @@ final class _Gateway implements FinanceCardGateway {
   }
 
   @override
-  Future<Map<String, dynamic>> chatTransferDetail(String id) async =>
-      {'id': id, 'status': 'PENDING'};
+  Future<Map<String, dynamic>> chatTransferDetail(String id) {
+    _calls[id] = (_calls[id] ?? 0) + 1;
+    if (_immediate) return Future.value({'id': id, 'status': 'PENDING'});
+    final completer = Completer<Map<String, dynamic>>();
+    (_pending[id] ??= []).add(completer);
+    return completer.future;
+  }
+
+  void transferError(String id, Object error) =>
+      _pending[id]!.removeAt(0).completeError(error);
   void complete(String id,
           {String value = 'value', String status = 'PENDING'}) =>
       _pending[id]!

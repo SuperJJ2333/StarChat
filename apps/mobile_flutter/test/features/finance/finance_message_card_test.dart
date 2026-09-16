@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/core/business_api_error.dart';
 import 'package:liuhetong_mobile/features/finance/finance_card_store.dart';
 import 'package:liuhetong_mobile/features/finance/finance_message_card.dart';
 
@@ -151,6 +152,102 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused); await tester.pump(const Duration(seconds: 31)); expect(gateway.calls, 1);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed); await tester.pump(); await tester.pump(const Duration(seconds: 15)); expect(gateway.calls, 2); store.dispose();
   });
+
+  testWidgets(
+      'group transfer hidden from a third party shows 转给xx with the room amount, no error and no retry',
+      (tester) async {
+    final gateway = _RestrictedGateway(
+        const BusinessApiException(
+            statusCode: 404, code: 'CHAT_TRANSFER_NOT_FOUND', message: 'nf'));
+    final store = FinanceCardStore(gateway);
+    var taps = 0;
+    await tester.pumpWidget(CupertinoApp(
+        home: FinanceMessageCard(
+            store: store,
+            kind: FinanceCardKind.transfer,
+            id: 'group-transfer',
+            greeting: '',
+            amount: '100.00',
+            isOwn: false,
+            restrictedRecipientName: '张三',
+            onTap: () => taps++)));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('转给张三'), findsOneWidget);
+    expect(find.text('100.00 点钻'), findsOneWidget);
+    expect(find.textContaining('加载状态失败'), findsNothing);
+    expect(find.text('对方转给你'), findsNothing);
+    expect(find.text('重试'), findsNothing);
+    expect(find.text('待收款'), findsNothing);
+    await tester.tap(find.byKey(const Key('wechat-transfer-card')));
+    expect(taps, 0);
+    store.dispose();
+  });
+
+  testWidgets(
+      'exclusive red packet hidden from a third party shows 给xxx的专属红包 without error or retry',
+      (tester) async {
+    final gateway = _RestrictedGateway(
+        const BusinessApiException(
+            statusCode: 403, code: 'RED_PACKET_FORBIDDEN', message: 'denied'));
+    final store = FinanceCardStore(gateway);
+    await tester.pumpWidget(CupertinoApp(
+        home: FinanceMessageCard(
+            store: store,
+            kind: FinanceCardKind.redPacket,
+            id: 'exclusive',
+            greeting: '恭喜发财，大吉大利',
+            amount: '--',
+            isOwn: false,
+            redPacketMode: 'EXCLUSIVE',
+            restrictedRecipientName: '李四')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('给李四的专属红包'), findsOneWidget);
+    expect(find.text('恭喜发财，大吉大利'), findsOneWidget);
+    expect(find.text('无权查看该状态'), findsNothing);
+    expect(find.textContaining('加载状态失败'), findsNothing);
+    expect(find.text('重试'), findsNothing);
+    store.dispose();
+  });
+
+  testWidgets('restricted card without a recipient name stays neutral', (tester) async {
+    final gateway = _RestrictedGateway(
+        const BusinessApiException(
+            statusCode: 403, code: 'RED_PACKET_FORBIDDEN', message: 'denied'));
+    final store = FinanceCardStore(gateway);
+    await tester.pumpWidget(CupertinoApp(
+        home: FinanceMessageCard(
+            store: store,
+            kind: FinanceCardKind.redPacket,
+            id: 'legacy-exclusive',
+            greeting: '恭喜发财',
+            amount: '--',
+            isOwn: false)));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('专属红包'), findsOneWidget);
+    expect(find.text('重试'), findsNothing);
+    store.dispose();
+  });
+}
+
+/// 业务明细对该查看者不可见（403/404）的网关。
+final class _RestrictedGateway implements FinanceCardGateway {
+  _RestrictedGateway(this.error);
+  final Object error;
+  final invalidations = StreamController<void>.broadcast();
+  @override
+  int get sessionEpoch => 1;
+  @override
+  Stream<void> get sessionInvalidations => invalidations.stream;
+  @override
+  Future<String?> currentUserId() async => 'third-party';
+  @override
+  Future<Map<String, dynamic>> redPacketDetail(String id) async => throw error;
+  @override
+  Future<Map<String, dynamic>> chatTransferDetail(String id) async =>
+      throw error;
 }
 
 final class _Gateway implements FinanceCardGateway {

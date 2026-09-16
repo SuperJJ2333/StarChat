@@ -57,20 +57,31 @@ class FakeTimelineAdapter implements RoomTimelineAdapter {
   @override
   Future<String> sendRedPacketReference(
     String packetId,
-    String greeting,
-  ) async {
+    String greeting, {
+    String? mode,
+    String? recipientId,
+    String? recipientMatrixId,
+  }) async {
     redPackets.add('$packetId:$greeting');
+    redPacketTargets
+        .add('${mode ?? ''}|${recipientId ?? ''}|${recipientMatrixId ?? ''}');
     return 'event-red-packet';
   }
 
   final transfers = <String>[];
+  final redPacketTargets = <String>[];
+  final transferTargets = <String>[];
   @override
   Future<String> sendTransferReference(
     String transferId,
     String amount,
-    String? note,
-  ) async {
+    String? note, {
+    String? receiverId,
+    String? receiverMatrixId,
+  }) async {
     transfers.add('$transferId:$amount:$note');
+    transferTargets
+        .add('${receiverId ?? ''}|${receiverMatrixId ?? ''}');
     return 'event-transfer';
   }
 
@@ -304,6 +315,15 @@ void main() {
     expect(adapter.redPackets, ['packet-1:恭喜发财']);
     await controller.sendTransferReference('transfer-1', '20.00', '午饭');
     expect(adapter.transfers, ['transfer-1:20.00:午饭']);
+    // 收款/指定对象账号标识随引用消息进入房间（供第三方本机解析展示名）。
+    await controller.sendRedPacketReference('packet-2', '恭喜发财',
+        mode: 'EXCLUSIVE',
+        recipientId: 'business-2',
+        recipientMatrixId: '@bob:test');
+    await controller.sendTransferReference('transfer-2', '8.88', null,
+        receiverId: 'business-9', receiverMatrixId: '@carol:test');
+    expect(adapter.redPacketTargets, ['||', 'EXCLUSIVE|business-2|@bob:test']);
+    expect(adapter.transferTargets, ['|', 'business-9|@carol:test']);
     controller.dispose();
     expect(adapter.disposed, 1);
   });

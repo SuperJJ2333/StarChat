@@ -53,6 +53,11 @@ final class RoomMessageViewModel {
     this.transferId,
     this.transferAmount,
     this.transferNote,
+    this.transferReceiverId,
+    this.transferReceiverMatrixId,
+    this.redPacketMode,
+    this.redPacketRecipientId,
+    this.redPacketRecipientMatrixId,
     this.voiceDuration = const Duration(seconds: 1),
     this.isRecalled = false,
     this.replyToEventId,
@@ -83,6 +88,16 @@ final class RoomMessageViewModel {
   final String? transferId;
   final String? transferAmount;
   final String? transferNote;
+
+  /// 群聊转账的收款对象（发送时随消息一起写入房间，仅账号标识）。
+  /// 业务明细对第三方不可见时，本机用它解析展示名（本机备注 → 昵称）。
+  final String? transferReceiverId;
+  final String? transferReceiverMatrixId;
+
+  /// 红包类型与专属红包的指定对象（同上，仅用于第三方只读展示）。
+  final String? redPacketMode;
+  final String? redPacketRecipientId;
+  final String? redPacketRecipientMatrixId;
   final Duration voiceDuration;
   final bool isRecalled;
   final String? replyToEventId;
@@ -128,6 +143,11 @@ final class RoomMessageViewModel {
           transferId == other.transferId &&
           transferAmount == other.transferAmount &&
           transferNote == other.transferNote &&
+          transferReceiverId == other.transferReceiverId &&
+          transferReceiverMatrixId == other.transferReceiverMatrixId &&
+          redPacketMode == other.redPacketMode &&
+          redPacketRecipientId == other.redPacketRecipientId &&
+          redPacketRecipientMatrixId == other.redPacketRecipientMatrixId &&
           voiceDuration == other.voiceDuration &&
           isRecalled == other.isRecalled &&
           replyToEventId == other.replyToEventId &&
@@ -170,6 +190,11 @@ final class RoomMessageViewModel {
         transferId: transferId,
         transferAmount: transferAmount,
         transferNote: transferNote,
+        transferReceiverId: transferReceiverId,
+        transferReceiverMatrixId: transferReceiverMatrixId,
+        redPacketMode: redPacketMode,
+        redPacketRecipientId: redPacketRecipientId,
+        redPacketRecipientMatrixId: redPacketRecipientMatrixId,
         voiceDuration: voiceDuration,
         isRecalled: isRecalled,
         replyToEventId: replyToEventId,
@@ -198,9 +223,16 @@ bool shouldShowMessageTimeSeparator(
 abstract interface class RoomTimelineAdapter {
   List<RoomMessageViewModel> snapshot();
   Future<String> sendText(String text);
-  Future<String> sendRedPacketReference(String packetId, String greeting);
+
+  /// 发送红包引用消息。[mode]/[recipientId]/[recipientMatrixId] 描述红包类型
+  /// 与专属对象，随消息进入房间（仅为账号标识，供其他成员本机解析展示名）。
+  Future<String> sendRedPacketReference(String packetId, String greeting,
+      {String? mode, String? recipientId, String? recipientMatrixId});
+
+  /// 发送转账引用消息。[receiverId]/[receiverMatrixId] 为目的收款账号标识。
   Future<String> sendTransferReference(
-      String transferId, String amount, String? note);
+      String transferId, String amount, String? note,
+      {String? receiverId, String? receiverMatrixId});
   Future<Uint8List> loadAttachment(String eventId);
 
   /// 加载消息附带的压缩缩略图（发送端生成的 ≤800px/≤100KB 减缩版）。
@@ -707,16 +739,24 @@ final class RoomTimelineController extends ChangeNotifier {
 
   Future<String> sendRedPacketReference(
     String packetId,
-    String greeting,
-  ) =>
-      adapter.sendRedPacketReference(packetId, greeting);
+    String greeting, {
+    String? mode,
+    String? recipientId,
+    String? recipientMatrixId,
+  }) =>
+      adapter.sendRedPacketReference(packetId, greeting,
+          mode: mode, recipientId: recipientId,
+          recipientMatrixId: recipientMatrixId);
 
   Future<String> sendTransferReference(
     String transferId,
     String amount,
-    String? note,
-  ) =>
-      adapter.sendTransferReference(transferId, amount, note);
+    String? note, {
+    String? receiverId,
+    String? receiverMatrixId,
+  }) =>
+      adapter.sendTransferReference(transferId, amount, note,
+          receiverId: receiverId, receiverMatrixId: receiverMatrixId);
 
   Future<void> sendText(
     String text, {

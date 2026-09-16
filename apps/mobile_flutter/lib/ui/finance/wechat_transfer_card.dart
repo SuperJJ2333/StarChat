@@ -12,6 +12,8 @@ final class WeChatTransferCard extends StatelessWidget {
     required this.state,
     required this.isOwn,
     this.labelOverride,
+    this.footerLabel,
+    this.statusLabel,
     this.onTap,
   });
   final String amount;
@@ -19,6 +21,12 @@ final class WeChatTransferCard extends StatelessWidget {
   final bool isOwn;
   final VoidCallback? onTap;
   final String? labelOverride;
+
+  /// 底部左侧说明行覆盖（第三方视角显示「转账」，而不是「对方转给你」）。
+  final String? footerLabel;
+
+  /// 底部右侧状态覆盖；空字符串表示该视角下状态未知、不展示。
+  final String? statusLabel;
 
   String get label =>
       labelOverride ??
@@ -35,6 +43,12 @@ final class WeChatTransferCard extends StatelessWidget {
         dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
     final foreground =
         dark ? WeChatColors.darkTextPrimary : WeChatColors.lightTextPrimary;
+    final resolvedStatus = statusLabel ??
+        switch (state) {
+          TransferCardState.pending => '待收款',
+          TransferCardState.accepted => '已收款',
+          TransferCardState.returned => '已退回',
+        };
     final barColor = switch (state) {
       TransferCardState.pending => WeChatColors.brandPrimary,
       TransferCardState.accepted => const Color(0xFFFA9D3B),
@@ -149,23 +163,20 @@ final class WeChatTransferCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  isOwn ? '转账给对方' : '对方转给你',
+                  footerLabel ?? (isOwn ? '转账给对方' : '对方转给你'),
                   style: const TextStyle(
                       color: WeChatColors.textSecondary, fontSize: 11),
                 ),
-                Text(
-                  switch (state) {
-                    TransferCardState.pending => '待收款',
-                    TransferCardState.accepted => '已收款',
-                    TransferCardState.returned => '已退回',
-                  },
-                  style: TextStyle(
-                    color: state == TransferCardState.returned
-                        ? WeChatColors.textTertiary
-                        : WeChatColors.textSecondary,
-                    fontSize: 11,
+                if (resolvedStatus.isNotEmpty)
+                  Text(
+                    resolvedStatus,
+                    style: TextStyle(
+                      color: state == TransferCardState.returned
+                          ? WeChatColors.textTertiary
+                          : WeChatColors.textSecondary,
+                      fontSize: 11,
+                    ),
                   ),
-                ),
               ],
             ),
           ),

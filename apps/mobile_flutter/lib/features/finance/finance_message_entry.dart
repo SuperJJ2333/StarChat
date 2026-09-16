@@ -25,8 +25,9 @@ final class FinanceMessageEntry extends StatefulWidget {
     this.senderName = '好友',
     this.senderAvatar,
     this.identityCache,
+    this.redPacketMode,
+    this.restrictedRecipientName,
   });
-
   final FinanceCardStore store;
   final BusinessApiClient api;
   final FinanceCardKind kind;
@@ -37,6 +38,12 @@ final class FinanceMessageEntry extends StatefulWidget {
   final String senderName;
   final Widget? senderAvatar;
   final ProfileRepository? identityCache;
+
+  /// 红包类型（EQUAL/RANDOM/EXCLUSIVE，旧消息为 null）。
+  final String? redPacketMode;
+
+  /// 第三方视角（非收款人/非指定成员）展示名，由当前账号本机解析。
+  final String? restrictedRecipientName;
 
   @override
   State<FinanceMessageEntry> createState() => _FinanceMessageEntryState();
@@ -84,6 +91,7 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
       final state = await lease.ensureFresh();
       if (!live() ||
           state.ended ||
+          state.restricted ||
           state.error != null ||
           state.detail == null) {
         return;
@@ -145,6 +153,8 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
         greeting: widget.greeting,
         amount: widget.amount,
         isOwn: widget.isOwn,
+        redPacketMode: widget.redPacketMode,
+        restrictedRecipientName: widget.restrictedRecipientName,
         onTap: _open,
       );
 }

@@ -8,7 +8,8 @@ abstract interface class ChatTransferBusinessGateway {
 }
 
 abstract interface class ChatTransferReferenceGateway {
-  Future<void> sendReference(String transferId, String amount, String? note);
+  Future<void> sendReference(String transferId, String amount, String? note,
+      {String? receiverId, String? receiverMatrixId});
 }
 
 enum ChatTransferStatus { idle, creating, sharing, sent, failed, shareFailed }
@@ -19,11 +20,17 @@ final class ChatTransferState {
       this.transferId,
       this.amount,
       this.note,
+      this.receiverId,
+      this.receiverMatrixId,
       this.message});
   final ChatTransferStatus status;
   final String? transferId;
   final String? amount;
   final String? note;
+
+  /// 收款账号标识（随引用消息进入房间，供其他成员本机解析展示名）。
+  final String? receiverId;
+  final String? receiverMatrixId;
   final String? message;
 }
 
@@ -36,7 +43,8 @@ final class ChatTransferController extends ChangeNotifier {
   Future<void> submit(
       {required String receiverId,
       required String amount,
-      String? note}) async {
+      String? note,
+      String? receiverMatrixId}) async {
     if (state.status == ChatTransferStatus.creating ||
         state.status == ChatTransferStatus.sharing) {
       return;
@@ -53,8 +61,10 @@ final class ChatTransferController extends ChangeNotifier {
           status: ChatTransferStatus.sharing,
           transferId: transferId,
           amount: amount,
-          note: note));
-      await _share(transferId, amount, note);
+          note: note,
+          receiverId: receiverId,
+          receiverMatrixId: receiverMatrixId));
+      await _share(transferId, amount, note, receiverId, receiverMatrixId);
     } on ChatPaymentCancelled {
       _set(const ChatTransferState());
     } catch (error) {
@@ -73,24 +83,32 @@ final class ChatTransferController extends ChangeNotifier {
         status: ChatTransferStatus.sharing,
         transferId: id,
         amount: amount,
-        note: state.note));
-    await _share(id, amount, state.note);
+        note: state.note,
+        receiverId: state.receiverId,
+        receiverMatrixId: state.receiverMatrixId));
+    await _share(id, amount, state.note, state.receiverId, state.receiverMatrixId);
   }
 
-  Future<void> _share(String id, String amount, String? note) async {
+  Future<void> _share(String id, String amount, String? note, String? receiverId,
+      String? receiverMatrixId) async {
     try {
-      await references.sendReference(id, amount, note);
+      await references.sendReference(id, amount, note,
+          receiverId: receiverId, receiverMatrixId: receiverMatrixId);
       _set(ChatTransferState(
           status: ChatTransferStatus.sent,
           transferId: id,
           amount: amount,
-          note: note));
+          note: note,
+          receiverId: receiverId,
+          receiverMatrixId: receiverMatrixId));
     } catch (_) {
       _set(ChatTransferState(
           status: ChatTransferStatus.shareFailed,
           transferId: id,
           amount: amount,
           note: note,
+          receiverId: receiverId,
+          receiverMatrixId: receiverMatrixId,
           message: '转账已创建，但发送到会话失败；重试不会重复扣款'));
     }
   }

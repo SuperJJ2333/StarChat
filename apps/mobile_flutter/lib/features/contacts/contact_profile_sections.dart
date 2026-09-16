@@ -84,6 +84,15 @@ final class ProfileIdentityCard extends StatelessWidget {
             username: username,
             nickname: nickname,
             remark: remark);
+    // 「昵称」行必须展示对方**昵称**：备注只是本机展示覆盖（已作为标题），
+    // 不得重复冒充昵称。备注未设置时标题即昵称，本行冗余不展示。
+    final nicknameText =
+        (identityCache?.contactsByUserId[userId]?.nickname ?? nickname ?? '')
+            .trim();
+    final remarkText = (remark ?? '').trim();
+    final showNicknameRow = remarkText.isNotEmpty &&
+        nicknameText.isNotEmpty &&
+        nicknameText != remarkText;
     return Container(
       constraints: const BoxConstraints(minHeight: 126),
       color: CupertinoTheme.of(context).brightness == Brightness.dark
@@ -116,11 +125,11 @@ final class ProfileIdentityCard extends StatelessWidget {
                     height: 30 / 22,
                   ),
                 ),
-                if (remark != null && remark!.trim().isNotEmpty) ...[
+                if (showNicknameRow) ...[
                   const SizedBox(height: 4),
                   Text(
-                    '昵称：${remark!.trim()}',
-                    key: const Key('profile-remark-row'),
+                    '昵称：$nicknameText',
+                    key: const Key('profile-nickname-row'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(

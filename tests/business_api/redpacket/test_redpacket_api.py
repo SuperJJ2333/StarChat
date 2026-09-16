@@ -4,7 +4,7 @@ from decimal import Decimal
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
@@ -13,6 +13,7 @@ from app.main import create_app
 from app.modules.identity.enums import AccountStatus, RoleCode
 from app.modules.identity.models import User, UserRole
 from app.modules.ledger.service import LedgerService
+from app.modules.redpacket.models import RedPacket
 
 class FakeMatrixGateway:
     """F06：成员关系测试替身——Matrix join 成员集合按房间返回。"""
@@ -110,6 +111,46 @@ async def test_red_packet_detail_includes_claimer_public_profiles(context):
         assert "avatar_url" in claim
         assert payload["sender_nickname"] == "发送者甲"
         assert payload["sender_username"] == "sender01"
+
+
+@pytest.mark.asyncio
+async def test_red_packet_total_visible_to_sender_and_after_completion_or_expiry(context):
+    """总点钻可见性：发起方始终可见；其他成员仅在领完/过期后可见。
+
+    进行中红包对非发起方返回 total=None（客户端据此完全不渲染金额，
+    不再出现「null 点钻」）。
+    """
+    app, factory, settings, _gateway = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        opening = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "total-open"}, json={"mode": "EQUAL", "total": "2.00", "share_count": 2, "room_id": "!room:test"})
+        assert opening.status_code == 201
+        open_id = opening.json()["id"]
+        sender_view = await client.get(f"/api/v1/red-packets/{open_id}", headers=bearer(settings, "sender"))
+        assert sender_view.json()["total"] == "2.00"
+        member_view = await client.get(f"/api/v1/red-packets/{open_id}", headers=bearer(settings, "alice"))
+        assert member_view.status_code == 200
+        assert member_view.json()["total"] is None
+        claimed = await client.post(f"/api/v1/red-packets/{open_id}/claims", headers={**bearer(settings, "alice"), "Idempotency-Key": "total-claim-open"})
+        assert claimed.status_code == 201
+        partial = await client.get(f"/api/v1/red-packets/{open_id}", headers=bearer(settings, "alice"))
+        assert partial.json()["status"] == "OPEN"
+        assert partial.json()["total"] is None
+
+        completed = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "total-completed"}, json={"mode": "EQUAL", "total": "1.00", "share_count": 1, "room_id": "!room:test"})
+        completed_id = completed.json()["id"]
+        assert (await client.post(f"/api/v1/red-packets/{completed_id}/claims", headers={**bearer(settings, "alice"), "Idempotency-Key": "total-claim-completed"})).status_code == 201
+        finished = await client.get(f"/api/v1/red-packets/{completed_id}", headers=bearer(settings, "alice"))
+        assert finished.json()["status"] == "COMPLETED"
+        assert finished.json()["total"] == "1.00"
+
+        expiring = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "total-expired"}, json={"mode": "EQUAL", "total": "1.00", "share_count": 1, "room_id": "!room:test"})
+        expiring_id = expiring.json()["id"]
+        with factory.begin() as session:
+            session.execute(update(RedPacket).where(RedPacket.id == expiring_id).values(expires_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+        expired = await client.get(f"/api/v1/red-packets/{expiring_id}", headers=bearer(settings, "alice"))
+        assert expired.status_code == 200
+        assert expired.json()["status"] == "OPEN"
+        assert expired.json()["total"] == "1.00"
 
 
 @pytest.mark.asyncio

@@ -2262,6 +2262,14 @@ final class _SdkRoomTimelineCapability
       transferId: event.content['transfer_id']?.toString(),
       transferAmount: event.content['transfer_amount']?.toString(),
       transferNote: event.content['transfer_note']?.toString(),
+      transferReceiverId: event.content['transfer_receiver_id']?.toString(),
+      transferReceiverMatrixId:
+          event.content['transfer_receiver_matrix_id']?.toString(),
+      redPacketMode: event.content['red_packet_mode']?.toString(),
+      redPacketRecipientId:
+          event.content['red_packet_recipient_id']?.toString(),
+      redPacketRecipientMatrixId:
+          event.content['red_packet_recipient_matrix_id']?.toString(),
       voiceDuration: Duration(milliseconds: durationMilliseconds ?? 1000),
       videoDuration: messageType == MessageTypes.Video
           ? Duration(
@@ -2316,14 +2324,20 @@ final class _SdkRoomTimelineCapability
 
   @override
   Future<String> sendTransferReference(
-          String transferId, String amount, String? note) =>
+          String transferId, String amount, String? note,
+          {String? receiverId, String? receiverMatrixId}) =>
       _withOperation(() async =>
           await _lease._activeRoom.sendEvent({
             'msgtype': changliaoTransferMessageType,
             'body': '[畅聊点钻转账]',
             'transfer_id': transferId,
             'transfer_amount': amount,
-            if (note != null && note.isNotEmpty) 'transfer_note': note
+            if (note != null && note.isNotEmpty) 'transfer_note': note,
+            // 收款对象仅为账号标识：其他成员在本机解析展示名（备注保密）。
+            if (receiverId != null && receiverId.isNotEmpty)
+              'transfer_receiver_id': receiverId,
+            if (receiverMatrixId != null && receiverMatrixId.isNotEmpty)
+              'transfer_receiver_matrix_id': receiverMatrixId,
           }) ??
           (throw StateError('转账消息发送失败')));
 
@@ -2339,13 +2353,20 @@ final class _SdkRoomTimelineCapability
       });
 
   @override
-  Future<String> sendRedPacketReference(String packetId, String greeting) =>
+  Future<String> sendRedPacketReference(String packetId, String greeting,
+          {String? mode, String? recipientId, String? recipientMatrixId}) =>
       _withOperation(() async =>
           await _lease._activeRoom.sendEvent({
             'msgtype': changliaoRedPacketMessageType,
             'body': '[畅聊点钻红包]',
             'packet_id': packetId,
             'greeting': greeting,
+            // 类型与专属对象仅为账号标识：其他成员在本机解析展示名。
+            if (mode != null && mode.isNotEmpty) 'red_packet_mode': mode,
+            if (recipientId != null && recipientId.isNotEmpty)
+              'red_packet_recipient_id': recipientId,
+            if (recipientMatrixId != null && recipientMatrixId.isNotEmpty)
+              'red_packet_recipient_matrix_id': recipientMatrixId,
           }) ??
           (throw StateError('红包消息发送失败')));
 

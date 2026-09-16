@@ -74,6 +74,15 @@ String redPacketDisplayName({
   return '好友';
 }
 
+/// 总点钻展示值：**只有**服务端在「查看者是发红包本人，或红包已领完/
+/// 已过期」时才返回 total；其余情况（未领取的普通成员查看领取详情）
+/// 返回 null，此时完全不渲染金额——绝不显示「null 点钻」。
+String? redPacketVisibleTotal(Map<String, dynamic>? detail) {
+  final total = detail?['total']?.toString().trim();
+  if (total == null || total.isEmpty || total == 'null') return null;
+  return total;
+}
+
 /// Index of the 手气最佳 record: the earliest claim with the highest amount.
 int? bestLuckRecordIndex(List<RedPacketClaimRecord> records,
     {Map<String, dynamic>? detail}) {
@@ -265,8 +274,9 @@ final class _RedPacketClaimDetailPageState
     String senderName,
     String? senderAvatarUrl,
     String? status,
-  ) =>
-      Container(
+  ) {
+    final total = redPacketVisibleTotal(detail);
+    return Container(
         key: const Key('red-packet-claim-detail-hero'),
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(24, 40, 24, 42),
@@ -307,27 +317,30 @@ final class _RedPacketClaimDetailPageState
             ),
           ),
           const SizedBox(height: 6),
-          Text.rich(
-            TextSpan(children: [
-              TextSpan(
-                text: detail == null ? '' : '${detail['total']}',
-                style: const TextStyle(
-                  fontSize: 44,
-                  fontWeight: FontWeight.w700,
-                  color: CupertinoColors.white,
-                  height: 1.1,
+          // 未领取的普通成员看不到总点钻（服务端 total 为 null）：
+          // 直接不渲染金额行，绝不显示「null 点钻」。
+          if (total != null)
+            Text.rich(
+              TextSpan(children: [
+                TextSpan(
+                  text: total,
+                  style: const TextStyle(
+                    fontSize: 44,
+                    fontWeight: FontWeight.w700,
+                    color: CupertinoColors.white,
+                    height: 1.1,
+                  ),
                 ),
-              ),
-              const TextSpan(
-                text: ' 点钻',
-                style: TextStyle(
-                  fontSize: 15,
-                  color: CupertinoColors.white,
+                const TextSpan(
+                  text: ' 点钻',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: CupertinoColors.white,
+                  ),
                 ),
-              ),
-            ]),
-            key: const Key('red-packet-claim-detail-total'),
-          ),
+              ]),
+              key: const Key('red-packet-claim-detail-total'),
+            ),
           const SizedBox(height: 8),
           Text(
             detail == null
@@ -343,12 +356,14 @@ final class _RedPacketClaimDetailPageState
           ),
         ]),
       );
+  }
 
   /// 列表头：N人已领 · 共 已领/总额（demo 一比一）。
   Widget _recordsHeader() {
     final detail = controller.detail;
     if (detail == null) return const SizedBox.shrink();
-    final total = detail['total']?.toString() ?? '0';
+    final visibleTotal = redPacketVisibleTotal(detail);
+    final total = visibleTotal ?? '0';
     final claimedCount = detail['claimed_count']?.toString() ?? '0';
     var claimedTotal = 0.0;
     for (final record in parseRedPacketClaims(detail)) {
@@ -363,7 +378,7 @@ final class _RedPacketClaimDetailPageState
           Text('$claimedCount人已领',
               style: const TextStyle(
                   fontSize: 13, color: WeChatColors.textSecondary)),
-          if (controller.detail?['total'] != null)
+          if (visibleTotal != null)
             Text('共 $claimedText/$total 点钻',
                 style: const TextStyle(
                     fontSize: 13, color: WeChatColors.textSecondary)),

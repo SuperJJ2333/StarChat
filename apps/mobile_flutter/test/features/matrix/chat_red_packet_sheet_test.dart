@@ -35,8 +35,16 @@ final class FakeRedPacketBusiness implements ChatRedPacketBusinessGateway {
 }
 
 final class FakeRedPacketReference implements ChatRedPacketReferenceGateway {
+  String? lastMode;
+  String? lastRecipientId;
+  String? lastRecipientMatrixId;
   @override
-  Future<void> sendReference(String packetId, String greeting) async {}
+  Future<void> sendReference(String packetId, String greeting,
+      {String? mode, String? recipientId, String? recipientMatrixId}) async {
+    lastMode = mode;
+    lastRecipientId = recipientId;
+    lastRecipientMatrixId = recipientMatrixId;
+  }
 }
 
 final class FakeSupport implements ChatRedPacketSupport {
@@ -242,9 +250,10 @@ void main() {
   testWidgets('exclusive red packet requires picking a group member',
       (tester) async {
     final business = FakeRedPacketBusiness();
+    final references = FakeRedPacketReference();
     final controller = ChatRedPacketController(
       business: business,
-      references: FakeRedPacketReference(),
+      references: references,
       roomId: '!room:test',
     );
     await _pump(
@@ -282,6 +291,10 @@ void main() {
     expect(business.mode, 'EXCLUSIVE');
     expect(business.exclusiveRecipientId, 'user-alice');
     expect(business.shareCount, 1);
+    // 红包类型与指定对象随引用消息进入房间（供其他成员本机解析展示名）。
+    expect(references.lastMode, 'EXCLUSIVE');
+    expect(references.lastRecipientId, 'user-alice');
+    expect(references.lastRecipientMatrixId, 'user-alice');
   });
 
   testWidgets('page uses the wechat red packet gradient background',

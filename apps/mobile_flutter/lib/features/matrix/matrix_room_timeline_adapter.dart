@@ -14,9 +14,11 @@ abstract interface class RoomTimelineCapability {
   Future<String> sendText(String text);
   Future<String> sendTextWithTransaction(String text, String transactionId);
   Future<String> sendTransferReference(
-      String transferId, String amount, String? note);
+      String transferId, String amount, String? note,
+      {String? receiverId, String? receiverMatrixId});
   Future<Uint8List?> loadThumbnail(String eventId);
-  Future<String> sendRedPacketReference(String packetId, String greeting);
+  Future<String> sendRedPacketReference(String packetId, String greeting,
+      {String? mode, String? recipientId, String? recipientMatrixId});
   Future<Uint8List> loadAttachment(String eventId);
   Future<void> retry(String transactionId);
   Future<void> loadHistory();
@@ -191,14 +193,21 @@ final class MatrixRoomTimelineAdapter
   @override
   Future<String> sendRedPacketReference(
     String packetId,
-    String greeting,
-  ) async =>
-      _capability.sendRedPacketReference(packetId, greeting);
+    String greeting, {
+    String? mode,
+    String? recipientId,
+    String? recipientMatrixId,
+  }) async =>
+      _capability.sendRedPacketReference(packetId, greeting,
+          mode: mode, recipientId: recipientId,
+          recipientMatrixId: recipientMatrixId);
 
   @override
   Future<String> sendTransferReference(
-          String transferId, String amount, String? note) =>
-      _capability.sendTransferReference(transferId, amount, note);
+          String transferId, String amount, String? note,
+          {String? receiverId, String? receiverMatrixId}) =>
+      _capability.sendTransferReference(transferId, amount, note,
+          receiverId: receiverId, receiverMatrixId: receiverMatrixId);
 
   @override
   Future<Uint8List?> loadThumbnail(String eventId) =>

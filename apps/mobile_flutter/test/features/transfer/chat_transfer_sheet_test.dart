@@ -23,9 +23,15 @@ final class FakeTransferBusiness implements ChatTransferBusinessGateway {
 }
 
 final class FakeTransferReference implements ChatTransferReferenceGateway {
+  String? lastReceiverId;
+  String? lastReceiverMatrixId;
   @override
   Future<void> sendReference(
-      String transferId, String amount, String? note) async {}
+      String transferId, String amount, String? note,
+      {String? receiverId, String? receiverMatrixId}) async {
+    lastReceiverId = receiverId;
+    lastReceiverMatrixId = receiverMatrixId;
+  }
 }
 
 final class FakeBalance implements ChatTransferBalanceSource {
@@ -78,10 +84,11 @@ void main() {
   testWidgets('group chat requires picking a recipient before transfer',
       (tester) async {
     final business = FakeTransferBusiness();
+    final references = FakeTransferReference();
     final sheet = ChatTransferSheet(
       controller: ChatTransferController(
         business: business,
-        references: FakeTransferReference(),
+        references: references,
       ),
       balanceSource: FakeBalance(),
       isGroup: true,
@@ -126,6 +133,9 @@ void main() {
     expect(business.creates, 1);
     expect(business.receiverId, 'user-alice');
     expect(business.amount, '5.00');
+    // 收款账号标识随引用消息进入房间：其他成员据此在本机解析「转给xx」。
+    expect(references.lastReceiverId, 'user-alice');
+    expect(references.lastReceiverMatrixId, '@alice:example.test');
   });
 
   testWidgets('invalid amounts are rejected before the confirm dialog',

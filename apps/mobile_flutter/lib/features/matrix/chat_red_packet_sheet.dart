@@ -200,6 +200,8 @@ final class _State extends State<ChatRedPacketSheet> {
       mode: widget.isGroup ? mode : 'EQUAL',
       shareCount: mode == 'EXCLUSIVE' ? 1 : shareCount,
       exclusiveRecipientId: mode == 'EXCLUSIVE' ? recipientId : null,
+      exclusiveRecipientMatrixId:
+          mode == 'EXCLUSIVE' ? recipientMatrixUserId : null,
     );
     if (!mounted) return;
     final state = widget.controller.state;

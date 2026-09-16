@@ -24,6 +24,8 @@ final class TimelineChatTransferReferenceGateway
   final RoomTimelineController timeline;
 
   @override
-  Future<void> sendReference(String transferId, String amount, String? note) =>
-      timeline.sendTransferReference(transferId, amount, note);
+  Future<void> sendReference(String transferId, String amount, String? note,
+          {String? receiverId, String? receiverMatrixId}) =>
+      timeline.sendTransferReference(transferId, amount, note,
+          receiverId: receiverId, receiverMatrixId: receiverMatrixId);
 }

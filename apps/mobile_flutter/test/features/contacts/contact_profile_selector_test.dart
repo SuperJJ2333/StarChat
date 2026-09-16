@@ -407,7 +407,8 @@ void main() {
     await store.writeEntered.future;
 
     final newerUpdate = repository.applyUpdatedContact(
-        repository.contacts.single.copyWith(remark: 'Newer remark'));
+        repository.contacts.single
+            .copyWith(remark: 'Newer remark', nickname: 'Newer nickname'));
     await tester.pump();
     store.releaseWrite.complete();
     await newerUpdate;
@@ -415,7 +416,7 @@ void main() {
     await tester.pump();
 
     expect(repository.contacts.single.remark, 'Newer remark');
-    expect(find.text('昵称：Newer remark'), findsOneWidget);
+    expect(find.text('昵称：Newer nickname'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
@@ -445,7 +446,8 @@ void main() {
     await store.writeEntered.future;
 
     final newerUpdate = repository.applyUpdatedContact(
-        repository.contacts.single.copyWith(remark: 'Newer remark'));
+        repository.contacts.single
+            .copyWith(remark: 'Newer remark', nickname: 'Newer nickname'));
     await tester.pump();
     store.releaseWrite.complete();
     await newerUpdate;
@@ -453,7 +455,7 @@ void main() {
     await tester.pump();
 
     expect(repository.contacts.single.lastSeenKnown, isFalse);
-    expect(find.text('昵称：Newer remark'), findsOneWidget);
+    expect(find.text('昵称：Newer nickname'), findsOneWidget);
     expect(find.text('5分钟前在线'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });

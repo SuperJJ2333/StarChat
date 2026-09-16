@@ -34,7 +34,10 @@ final class TimelineRedPacketReferenceGateway
   final RoomTimelineController timeline;
 
   @override
-  Future<void> sendReference(String packetId, String greeting) async {
-    await timeline.sendRedPacketReference(packetId, greeting);
+  Future<void> sendReference(String packetId, String greeting,
+          {String? mode, String? recipientId, String? recipientMatrixId}) async {
+    await timeline.sendRedPacketReference(packetId, greeting,
+        mode: mode, recipientId: recipientId,
+        recipientMatrixId: recipientMatrixId);
   }
 }

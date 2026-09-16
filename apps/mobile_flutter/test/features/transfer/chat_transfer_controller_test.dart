@@ -24,12 +24,17 @@ final class FakeTransferReference implements ChatTransferReferenceGateway {
   int sends = 0;
   bool fail = false;
   String? lastTransferId;
+  String? lastReceiverId;
+  String? lastReceiverMatrixId;
 
   @override
   Future<void> sendReference(
-      String transferId, String amount, String? note) async {
+      String transferId, String amount, String? note,
+      {String? receiverId, String? receiverMatrixId}) async {
     sends++;
     lastTransferId = transferId;
+    lastReceiverId = receiverId;
+    lastReceiverMatrixId = receiverMatrixId;
     if (fail) throw Exception('matrix unavailable');
   }
 }

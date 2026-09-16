@@ -12,7 +12,8 @@ abstract interface class ChatRedPacketBusinessGateway {
 }
 
 abstract interface class ChatRedPacketReferenceGateway {
-  Future<void> sendReference(String packetId, String greeting);
+  Future<void> sendReference(String packetId, String greeting,
+      {String? mode, String? recipientId, String? recipientMatrixId});
 }
 
 enum ChatRedPacketStatus { idle, creating, sharing, sent, failed, shareFailed }
@@ -22,9 +23,17 @@ final class ChatRedPacketState {
       {this.status = ChatRedPacketStatus.idle,
       this.packetId,
       this.greeting,
+      this.mode,
+      this.recipientId,
+      this.recipientMatrixId,
       this.message});
   final ChatRedPacketStatus status;
   final String? packetId, greeting, message;
+
+  /// 红包类型与专属对象（随引用消息进入房间，仅供成员本机解析展示名）。
+  final String? mode;
+  final String? recipientId;
+  final String? recipientMatrixId;
 }
 
 final class ChatRedPacketController extends ChangeNotifier {
@@ -33,13 +42,14 @@ final class ChatRedPacketController extends ChangeNotifier {
       required this.references,
       this.roomId,
       this.recipientId,
+      this.recipientMatrixId,
       int? joinedMemberCount,
       this.refreshJoinedMemberCount})
       : _joinedMemberCount = joinedMemberCount,
         assert((roomId == null) != (recipientId == null));
   final ChatRedPacketBusinessGateway business;
   final ChatRedPacketReferenceGateway references;
-  final String? roomId, recipientId;
+  final String? roomId, recipientId, recipientMatrixId;
   final Future<int> Function()? refreshJoinedMemberCount;
   int? _joinedMemberCount;
   bool _disposed = false;
@@ -60,14 +70,18 @@ final class ChatRedPacketController extends ChangeNotifier {
       required String greeting,
       String mode = 'EQUAL',
       int shareCount = 1,
-      String? exclusiveRecipientId}) async {
+      String? exclusiveRecipientId,
+      String? exclusiveRecipientMatrixId}) async {
     if (_disposed) return;
     if (state.status == ChatRedPacketStatus.creating ||
         state.status == ChatRedPacketStatus.sharing) {
       return;
     }
-    final target = mode == 'EXCLUSIVE' ? exclusiveRecipientId : recipientId;
-    if (mode == 'EXCLUSIVE' &&
+    final exclusive = mode == 'EXCLUSIVE';
+    final target = exclusive ? exclusiveRecipientId : recipientId;
+    final targetMatrixId =
+        exclusive ? exclusiveRecipientMatrixId : recipientMatrixId;
+    if (exclusive &&
         (roomId == null || target == null || target.isEmpty)) {
       _set(const ChatRedPacketState(
           status: ChatRedPacketStatus.failed, message: '请选择专属红包接收人'));
@@ -93,8 +107,11 @@ final class ChatRedPacketController extends ChangeNotifier {
       _set(ChatRedPacketState(
           status: ChatRedPacketStatus.sharing,
           packetId: id,
-          greeting: greeting));
-      await _share(id, greeting);
+          greeting: greeting,
+          mode: mode,
+          recipientId: target,
+          recipientMatrixId: targetMatrixId));
+      await _share(id, greeting, mode, target, targetMatrixId);
     } on _MemberCountRefreshFailure {
       if (!_disposed) {
         _set(const ChatRedPacketState(
@@ -115,20 +132,38 @@ final class ChatRedPacketController extends ChangeNotifier {
     final id = state.packetId, greeting = state.greeting;
     if (id == null || greeting == null) return;
     _set(ChatRedPacketState(
-        status: ChatRedPacketStatus.sharing, packetId: id, greeting: greeting));
-    await _share(id, greeting);
+        status: ChatRedPacketStatus.sharing,
+        packetId: id,
+        greeting: greeting,
+        mode: state.mode,
+        recipientId: state.recipientId,
+        recipientMatrixId: state.recipientMatrixId));
+    await _share(
+        id, greeting, state.mode, state.recipientId, state.recipientMatrixId);
   }
 
-  Future<void> _share(String id, String greeting) async {
+  Future<void> _share(String id, String greeting, String? mode,
+      String? recipientId, String? recipientMatrixId) async {
     try {
-      await references.sendReference(id, greeting);
+      await references.sendReference(id, greeting,
+          mode: mode,
+          recipientId: recipientId,
+          recipientMatrixId: recipientMatrixId);
       _set(ChatRedPacketState(
-          status: ChatRedPacketStatus.sent, packetId: id, greeting: greeting));
+          status: ChatRedPacketStatus.sent,
+          packetId: id,
+          greeting: greeting,
+          mode: mode,
+          recipientId: recipientId,
+          recipientMatrixId: recipientMatrixId));
     } catch (_) {
       _set(ChatRedPacketState(
           status: ChatRedPacketStatus.shareFailed,
           packetId: id,
           greeting: greeting,
+          mode: mode,
+          recipientId: recipientId,
+          recipientMatrixId: recipientMatrixId,
           message: '红包已创建，但发送到会话失败；重试不会重复扣款'));
     }
   }

@@ -742,4 +742,82 @@ void main() {
     expect(room.sends, isEmpty);
     expect(failed.cancellations, 0);
   });
+
+  test(
+      'finance reference events carry only the counterparty identifier '
+      '(never a remark) for本地展示', () async {
+    final room = RetryRoom(client: OutgoingRetryClient());
+    final timeline = RetryTimeline();
+    final adapter = await openAdapter(room, timeline);
+    await adapter.sendTransferReference('transfer-1', '20.00', '午饭',
+        receiverId: 'business-bob', receiverMatrixId: '@bob:test');
+    expect(room.sends.last, containsPair('transfer_id', 'transfer-1'));
+    expect(room.sends.last, containsPair('transfer_receiver_id', 'business-bob'));
+    expect(room.sends.last,
+        containsPair('transfer_receiver_matrix_id', '@bob:test'));
+    await adapter.sendRedPacketReference('packet-1', '恭喜发财',
+        mode: 'EXCLUSIVE',
+        recipientId: 'business-bob',
+        recipientMatrixId: '@bob:test');
+    expect(room.sends.last, containsPair('packet_id', 'packet-1'));
+    expect(room.sends.last, containsPair('red_packet_mode', 'EXCLUSIVE'));
+    expect(
+        room.sends.last, containsPair('red_packet_recipient_id', 'business-bob'));
+    expect(room.sends.last,
+        containsPair('red_packet_recipient_matrix_id', '@bob:test'));
+    // 旧客户端/旧消息路径：无收款对象时不得写入空字段。
+    await adapter.sendTransferReference('transfer-2', '1.00', null);
+    expect(room.sends.last.containsKey('transfer_receiver_id'), isFalse);
+    await adapter.sendRedPacketReference('packet-2', '恭喜发财');
+    expect(room.sends.last.containsKey('red_packet_mode'), isFalse);
+    adapter.dispose();
+  });
+
+  test('incoming finance reference events project the counterparty identifier',
+      () async {
+    final room = RetryRoom(client: OutgoingRetryClient());
+    final timeline = RetryTimeline();
+    timeline.events.add(Event(
+      room: room,
+      eventId: 'transfer-event',
+      senderId: '@peer:test',
+      type: EventTypes.Message,
+      originServerTs: DateTime.utc(2026, 9, 17),
+      content: {
+        'msgtype': changliaoTransferMessageType,
+        'body': '[畅聊点钻转账]',
+        'transfer_id': 'transfer-9',
+        'transfer_amount': '8.88',
+        'transfer_receiver_id': 'business-bob',
+        'transfer_receiver_matrix_id': '@bob:test',
+      },
+    ));
+    timeline.events.add(Event(
+      room: room,
+      eventId: 'red-packet-event',
+      senderId: '@peer:test',
+      type: EventTypes.Message,
+      originServerTs: DateTime.utc(2026, 9, 17, 1),
+      content: {
+        'msgtype': changliaoRedPacketMessageType,
+        'body': '[畅聊点钻红包]',
+        'packet_id': 'packet-9',
+        'greeting': '恭喜发财',
+        'red_packet_mode': 'EXCLUSIVE',
+        'red_packet_recipient_id': 'business-bob',
+        'red_packet_recipient_matrix_id': '@bob:test',
+      },
+    ));
+    final adapter = await openAdapter(room, timeline);
+    final transfer =
+        adapter.snapshot().singleWhere((m) => m.id == 'transfer-event');
+    expect(transfer.transferReceiverId, 'business-bob');
+    expect(transfer.transferReceiverMatrixId, '@bob:test');
+    final packet =
+        adapter.snapshot().singleWhere((m) => m.id == 'red-packet-event');
+    expect(packet.redPacketMode, 'EXCLUSIVE');
+    expect(packet.redPacketRecipientId, 'business-bob');
+    expect(packet.redPacketRecipientMatrixId, '@bob:test');
+    adapter.dispose();
+  });
 }

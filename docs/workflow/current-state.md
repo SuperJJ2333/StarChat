@@ -1,5 +1,46 @@
 # 移动交付恢复索引
 
+## 2026-09-17 群聊转账/专属红包第三方展示 + 红包总额可见性 + 好友资料昵称（Debug 0.3.92/2124 已装，业务 API 已部署，待用户真机验收）
+
+用户报障三项，均已按 TDD 修复：① 群聊里非收款人/非指定成员看转账与专属红包时，业务 API 本就返回
+404/403，而客户端把它当加载失败 →「加载状态失败，请重试」/「无权查看该状态」+ 间歇性绿色「重试」
+（15s 轮询）。修复：新增 `FinanceCardState.restricted`（403/404 只读、不轮询、不显示重试），
+转账卡片显示金额 +「转给xx」、专属红包显示「给xxx的专属红包」，xx 只由**查看者本机**联系人解析
+（备注 → 昵称 → 房间显示名）；发送时在 E2EE 房间消息里追加收款对象**账号标识**
+（`transfer_receiver_id/_matrix_id`、`red_packet_mode/_recipient_id/_recipient_matrix_id`），
+不写入任何人的备注。② 领取详情页对未领取用户显示「null 点钻」：客户端 `redPacketVisibleTotal`
+隐藏空值；服务端 `RedPacketService.detail` 新增 `total_visible`（发起方 / COMPLETED / EXPIRED /
+已过期未结算）并**已部署生产**。③ 好友资料页「昵称：」行改显示昵称（备注仅作标题）。
+Flutter 全量 **2712 通过 / 0 失败**、`flutter analyze` 无问题；`pytest tests/business_api`
+**1812 通过 / 58 跳过**；四项变异探针均按预期转红。
+2026-09-17 00:35:11 +08 Mi 6 保留数据覆盖安装 **0.3.92-debug/2124**（此前 2123），
+拉回 `base.apk` SHA256 `8ff43006…98c52d` 与固定证书 `75b31c66…ba61fff` 一致，firstInstallTime 未变。
+源码提交 `35090fd0`（基线 `5d43ce34`，未 push）。
+生产 API 2026-09-17 00:34:14 +08 切换为 `starchat-business-api:redpacket-total-20260917`
+（基于在线镜像单文件叠加，健康 200 / 未登录 401 / alembic head 0067 未变 / 61 键环境与 3 个挂载一致）。
+**Android 仅真机测试包，未做正式发布**，未构建 iOS。进入
+[任务记录](tasks/2026-09-17-redpacket-transfer-profile-fixes.md)、
+[根因与验证](../verification/2026-09-17-redpacket-transfer-profile.md)或
+[2124 交付记录](../verification/2026-09-17-redpacket-profile-2124-mi6.md)。
+注意：旧消息（2124 之前发送）不含收款对象标识，只能显示中性文案；生产切换必须用上一版释放目录的
+`frozen-api.json` + 覆盖文件，**不可**直接用 `/opt/starchat/docker-compose.yml`（其服务源码树已过期，
+会丢 30 个 `BUSINESS_WALLET_*` 环境键与 2 个只读挂载）。
+
+## 2026-09-16 四个聊天缺陷修复 + Mi 6 Debug 0.3.92/2123（已安装，待用户真机验收）
+
+用户报障四项，均已按 TDD 修复：① 朋友圈评论选图卡死（`ImagePickerPage` 出栈 3 字段记录，
+而 `moment_comment_composer`/`scan_qr_page` 用 2 字段泛型 push → 运行时 `TypeError`，路由无法
+出栈，相册页卡住且编辑器锁死）；② 群聊转账出现非群成员（`room_page` 未传群成员，弹层回退到
+通讯录）；③ 专属红包选指定成员报「无法确认红包账号」（未注入 `resolveBusinessUser`/
+`avatarMedia`，成员投影缺业务身份）；④ 私聊转账收款人应锁定为对方。Flutter 全量 2698 通过 /
+0 失败，`flutter analyze` 无问题。2026-09-16 23:29:10 +08 Mi 6 保留数据覆盖安装
+**0.3.92-debug/2123**（此前 2122），拉回 `base.apk` SHA256 `5e499e8c…66abad` 与固定证书
+`75b31c66…ba61fff` 核对一致，firstInstallTime 未变。该包按用户选择同时包含另一任务的登录/
+会话改动（`20d4673a`）。**仅真机测试包，未做正式发布**，未构建 iOS。
+进入[任务记录](tasks/2026-09-16-four-chat-bugfix.md)、
+[修复验证](../verification/2026-09-16-four-chat-bugfix.md)或
+[2123 交付记录](../verification/2026-09-16-four-bugfix-2123-mi6.md)。
+
 ## 2026-09-16 iOS build 2121 登录 L04/L07：device 轮换与 session 生命周期修复（本地完成，未构建/未发布）
 
 主工作树基线 `8ef5cbac`：根因是 `MatrixLocalBinding.deviceId` 被当作身份锚点——服务端单设备策略
@@ -91,3 +132,4 @@ Astra亲审、显式gpt-5.6-terra执行完成。工作分支`codex/offline-recov
 
 ## 2026-09-13 账单/转账与历史整合 Debug2104（已安装，待用户验收）
 Astra亲审、明确gpt-5.6-terra执行完成，本地分支codex/finance-history-2103-20260913源码e314d4f0整合main e2870554和既有H2。指定HTML账单/转账样式、按需日期检索与双向历史拖动保护已实现；同步阶段数字诊断已加入，但50秒接收延迟未定因。Mi6于03:21:25+08保留数据安装0.3.87-debug/2104，03:22:13拉回SHA260370f6…39b8bc9及固定证书一致。全Flutter2602通过/29旧钱包失败、mobile70通过、UI契约28/364通过、全分析无问题；frontend161/11旧失败，verify缺.env。未push/生产部署，用户自行真机测试。见[任务记录](tasks/2026-09-13-finance-history-2103.md)、[完整交付报告](../verification/2026-09-13-finance-history-2103.md)和[计划](../superpowers/plans/2026-09-13-finance-history-2103.md)。
+

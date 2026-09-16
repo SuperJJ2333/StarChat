@@ -309,6 +309,48 @@ void main() {
     expect(find.text('暂无领取记录'), findsOneWidget);
   });
 
+  test('total is only rendered when the server exposes it', () {
+    expect(redPacketVisibleTotal({'total': '88.00'}), '88.00');
+    expect(redPacketVisibleTotal({'total': null}), isNull);
+    expect(redPacketVisibleTotal({'total': ''}), isNull);
+    expect(redPacketVisibleTotal(const {}), isNull);
+    expect(redPacketVisibleTotal(null), isNull);
+  });
+
+  testWidgets(
+      'in-progress packet hides the total for a member who did not send it '
+      '(no 空点钻 row)', (tester) async {
+    final claims = (_detail['claims']! as List).cast<Object>().toList();
+    await _pumpPage(
+        tester,
+        FakeGateway(detail: {
+          ..._detail,
+          'sender_id': 'u-sender9',
+          'total': null,
+          'status': 'OPEN',
+          'claimed_count': 1,
+          'claims': [claims.first],
+        }, contacts: _contacts));
+
+    expect(find.byKey(const Key('red-packet-claim-detail-total')),
+        findsNothing);
+    expect(find.textContaining('null'), findsNothing);
+    expect(find.textContaining('共 '), findsNothing);
+    // 领取记录仍然可见（金额来自各自领取记录）。
+    expect(find.byKey(const Key('red-packet-claim-records')), findsOneWidget);
+    expect(find.text('30.00点钻'), findsOneWidget);
+  });
+
+  testWidgets(
+      'completed packet shows the total once the server exposes it',
+      (tester) async {
+    await _pumpPage(tester, FakeGateway(detail: _detail, contacts: _contacts));
+
+    expect(find.byKey(const Key('red-packet-claim-detail-total')),
+        findsOneWidget);
+    expect(find.text('88.00 点钻'), findsOneWidget);
+  });
+
   testWidgets(
       'payload profile fills names for non-contact claimers, '
       'remark still wins for contacts', (tester) async {

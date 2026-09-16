@@ -52,14 +52,21 @@ final class FinanceCardState {
       this.loading = false,
       this.error,
       this.updatedAt,
-      this.ended = false});
+      this.ended = false,
+      this.restricted = false});
   final Map<String, dynamic>? detail;
   final String? viewerId;
   final String? error;
   final bool loading;
   final bool ended;
+
+  /// 业务明细对该查看者不可见（403/404）：例如群聊里别人发的转账、
+  /// 或指定给他人的专属红包。这不是加载失败——卡片按会话消息里的
+  /// 公开信息只读呈现，永不显示错误/重试，也不再轮询。
+  final bool restricted;
   final DateTime? updatedAt;
   bool get terminal {
+    if (restricted) return true;
     final status = detail?['status'];
     if (status == 'COMPLETED' ||
         status == 'EXPIRED' ||
@@ -82,6 +89,7 @@ final class FinanceCardState {
           String? error,
           DateTime? updatedAt,
           bool? ended,
+          bool? restricted,
           bool keepError = false,
           bool clearDetail = false}) =>
       FinanceCardState(
@@ -91,6 +99,7 @@ final class FinanceCardState {
         error: keepError ? this.error : error,
         updatedAt: updatedAt ?? this.updatedAt,
         ended: ended ?? this.ended,
+        restricted: restricted ?? this.restricted,
       );
 }
 
@@ -246,7 +255,11 @@ final class FinanceCardStore {
   }
 
   void _ensureRequest(_Entry entry, {required bool force}) {
-    if (!_live() || entry.notifier.value.ended) return;
+    if (!_live() ||
+        entry.notifier.value.ended ||
+        entry.notifier.value.restricted) {
+      return;
+    }
     if (entry.inFlight || entry.queued) return;
     final stale = entry.notifier.value.updatedAt == null ||
         _now().difference(entry.notifier.value.updatedAt!) >= refreshPeriod;
@@ -310,11 +323,10 @@ final class FinanceCardStore {
           updatedAt: _now());
     } catch (error) {
       if (_live() && generation == entry.generation) {
-        entry.notifier.value =
-            error is BusinessApiException && error.statusCode == 403
-                ? FinanceCardState(error: '无权查看该状态', updatedAt: _now())
-                : entry.notifier.value
-                    .copyWith(loading: false, error: '加载状态失败，请重试');
+        entry.notifier.value = _viewRestricted(error)
+            ? FinanceCardState(restricted: true, updatedAt: _now())
+            : entry.notifier.value
+                .copyWith(loading: false, error: '加载状态失败，请重试');
       }
     } finally {
       _active--;
@@ -425,3 +437,9 @@ final class _Entry {
   Timer? timer;
   Completer<void>? settled;
 }
+
+/// 业务明细对该查看者不可见（403 无权限 / 404 不可见）：按只读卡片处理，
+/// 而不是加载失败（不显示错误、不提供重试、不轮询）。
+bool _viewRestricted(Object error) =>
+    error is BusinessApiException &&
+    (error.statusCode == 403 || error.statusCode == 404);

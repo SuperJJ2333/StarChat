@@ -125,6 +125,7 @@ import '../../ui/chat/room_image_gallery.dart';
 import '../contacts/contact_actions.dart';
 import '../finance/finance_card_store.dart';
 import '../finance/finance_message_entry.dart';
+import '../finance/finance_message_presentation.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
 /// The local account must be present in that snapshot; callers must not infer
@@ -2201,6 +2202,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       references: TimelineRedPacketReferenceGateway(timeline),
       roomId: isGroup ? roomInfo.id : null,
       recipientId: isGroup ? null : peer!.userId,
+      recipientMatrixId: isGroup ? null : peer!.matrixUserId,
       joinedMemberCount: groupMemberCount,
       refreshJoinedMemberCount: isGroup
           ? () async {
@@ -2275,6 +2277,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           peerId: hasPeer ? peer!.userId : null,
           peerName: hasPeer ? peer!.displayName : null,
           peerAvatarUrl: hasPeer ? peer!.avatarUrl : null,
+          peerMatrixUserId: hasPeer ? peer!.matrixUserId : null,
           balanceSource: BusinessChatTransferBalanceSource(widget.api),
           groupMembers: isGroup ? groupMembers : null,
           resolveBusinessUser: isGroup ? widget.api.lookupUserByMatrixId : null,
@@ -3090,6 +3093,22 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     check();
   }
 
+  /// 群聊里转账收款人 / 专属红包指定成员的**本机**展示名。
+  ///
+  /// 优先级：当前账号的联系人备注 → 该联系人昵称 → 会话内 Matrix 显示名。
+  /// 备注是隐私，只从本人本机联系人投影读取；消息内容只携带账号标识，
+  /// 绝不写入或读取他人备注。
+  String? _financeCounterpartyName(String? matrixUserId) {
+    final id = matrixUserId?.trim() ?? '';
+    if (id.isEmpty) return null;
+    final contact = contactsByMatrixId[id];
+    return counterpartyDisplayName(
+      remark: contact?.remark,
+      nickname: contact?.nickname,
+      roomDisplayName: _member(id).displayName,
+    );
+  }
+
   Widget _messageContent(RoomMessageViewModel message) =>
       switch (message.kind) {
         // R7 修复：图片气泡改用 ContainImageBubble——按解码实际宽高
@@ -3152,6 +3171,10 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
+                identityCache: _identityCache,
+                redPacketMode: message.redPacketMode,
+                restrictedRecipientName:
+                    _financeCounterpartyName(message.redPacketRecipientMatrixId),
               ),
         RoomMessageKind.transfer => message.transferId == null
             ? WeChatTransferCard(
@@ -3173,6 +3196,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 isOwn: message.isOwn,
                 senderName: _senderDisplayName(message),
                 senderAvatar: _avatar(message),
+                identityCache: _identityCache,
+                restrictedRecipientName: _financeCounterpartyName(
+                    message.transferReceiverMatrixId),
               ),
         RoomMessageKind.system => Text(
             message.text,
