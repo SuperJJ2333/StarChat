@@ -6,13 +6,14 @@
   范围 `apps/mobile_flutter`；只做代码 + 测试 + 本地验证，**不拉 PR、不真机测试（用户执行）**，
   禁止向业务 API 发送明文/密钥/解密媒体，不削弱 E2EE/RBAC/审计。
 - 关联计划/ADR：无新 ADR（不改 E2EE/账本/鉴权边界）；本任务记录 + `docs/verification/2026-09-17-chat-history-search-flash-screen-security.md`。
-- 当前状态：**验证**（本地实现与验证完成；未构建、未真机、未部署）。
+- 当前状态：**待真机验收**（本地实现与验证完成；2026-09-17 05:46:47 +08 已构建 0.3.92-debug/2126
+  并保留数据覆盖安装 Mi 6；未做正式发布、未部署）。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`，
-  分支 `main`，基线 commit `08f1fc3d`（本任务改动尚未提交）。文件所有权：`apps/mobile_flutter/lib/features/matrix/*`、
+  分支 `main`，基线 commit `08f1fc3d`，本任务提交 `6d1dcdac`（未 push）。文件所有权：`apps/mobile_flutter/lib/features/matrix/*`、
   `lib/features/search/*`、`lib/ui/chat/*`、`android/.../MainActivity.kt`、`ios/Runner/AppDelegate.swift` 及对应测试。
-- 最后更新时间（含时区）：2026-09-17（Asia/Shanghai）。
-- 下一条具体操作、必要输入、阻断的验收 ID：用户真机验收（A/B/C/E 的交互手感与 iOS 录屏/截图时序）；
-  若需交付包，按 `docs/runbooks/android-apk-rebuild.md` 构建 debug APK。
+- 最后更新时间（含时区）：2026-09-17 05:50（Asia/Shanghai）。
+- 下一条具体操作、必要输入、阻断的验收 ID：用户按 2126 交付记录第 4 节真机验收
+  （A 日期、B 搜索、C/D 闪照、E 屏幕捕获）；若发现问题，附截图/录屏与操作步骤。
 
 ## 验收台账
 
@@ -38,8 +39,8 @@
 
 | 平台/服务 | 实际版本/build/镜像 | 来源 commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android | 未构建（沿用已安装 0.3.92-debug/2125） | `08f1fc3d` + 未提交改动 | — | — | 无 |
-| iOS | 未构建 | 同上 | — | — | 无 |
+| Android（Mi 6 真机测试包） | **0.3.92-debug / 2126**，已保留数据覆盖安装（此前 2125） | `6d1dcdac` | `com.liuhetong.mobile`，固定证书 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.92-debug-2126/ChatFlow-0.3.92-debug-2126-arm64-rebuilt.apk`，SHA256 `7ca01bb1c035355c0ad94b331d3b6e21f302fa7cf211307997a0d26df4ee4942`（设备回读一致） | 2026-09-17 05:46:47 +08；[2126 交付记录](../../verification/2026-09-17-chat-history-search-flash-2126-mi6.md) |
+| iOS | 未构建（无签名/设备条件） | 同上 | — | — | 无 |
 | 业务 API | 未改动 | — | — | — | 无 |
 
 测试记录：命令与退出码、通过数见 `docs/verification/2026-09-17-chat-history-search-flash-screen-security.md` 第 5 节；
@@ -65,9 +66,10 @@
 - 已确认根因/已排除假设：见验证记录第 1 节（A1–E4）。已排除：日历问题不是 SDK `getEventByTimestamp` 本身失效，
   而是客户端把“本地是否已加载”当成“当天是否有消息”；闪照泄漏不是 UI 隐藏不足，而是数据集与能力判据缺失。
 - 待办及验收失败项：真机（Android 截图/录屏/最近任务、iOS 录屏与截图时序、翻月与日期跳转手感）。
-- 已发布与仅候选的区别：本任务**没有任何发布或候选包**；生产 API/DB 未改动。
-- 生产备份位置、恢复操作、漂移检查、可重试阶段：不适用（无生产变更）。代码回退 = 撤销本任务未提交改动
-  （新增文件删除 + 修改文件 `git checkout`）。
+- 已发布与仅候选的区别：**无正式发布**。Android debug 真机测试包 0.3.92-debug/2126 已安装 Mi 6
+  （用户要求的测试包）；生产 API/DB 与正式更新通道未改动。
+- 生产备份位置、恢复操作、漂移检查、可重试阶段：不适用（无生产变更）。代码回退 = 撤销 `6d1dcdac`；
+  设备回退 = 重新安装 2125 交付包（`android-0.3.92-debug-2125/…-rebuilt.apk`，同签名可覆盖）。
 - 运行中 CI/命令/自己创建的隧道（无凭据）：无。
 - 下次恢复先检查的事实：`git status` 中本任务改动是否已提交；全量测试数（`flutter-full-stage3-final.txt` 末行）；
   用户真机反馈（尤其 iOS 录屏阻断与 Android 最近任务预览）。

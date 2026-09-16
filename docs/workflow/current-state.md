@@ -25,10 +25,15 @@ Dart `ScreenCaptureProtection`（租约幂等、平台异常静默降级）；iO
 闪照查看器：捕获中禁止 reveal（长按不消耗次数）、捕获开始/系统截图/退后台立即销毁且不回前台恢复、
 动态水印、销毁态文案；**明确不声称** iOS 能阻止截图/录屏，也不对抗 root/越狱/第二台相机拍屏。
 `flutter analyze lib test` 无问题；全量 `flutter test` **2826 通过 / 0 失败（退出码 0）**，
-日志 `artifacts/2026-09-17/flutter-full-stage3-final.txt`（阶段二 2740）。**未构建 APK/IPA、未真机、未部署**，
-真机验收（Android 截图/录屏/最近任务、iOS 录屏与截图时序、翻月与跳转手感）由用户执行。进入
-[任务记录](tasks/2026-09-17-chat-history-search-flash-screen-security.md)或
-[根因/验证/剩余风险](../verification/2026-09-17-chat-history-search-flash-screen-security.md)。
+日志 `artifacts/2026-09-17/flutter-full-stage3-final.txt`（阶段二 2740）。
+2026-09-17 05:46:47 +08 按用户要求构建 **0.3.92-debug/2126** 并保留数据覆盖安装 Mi 6（此前 2125），
+按固定流程（源码 ARM64 debug → Apktool 2.12.1 重建 → zipalign `-P 16 -f 4` → 固定身份签名）交付，
+拉回设备 `base.apk` SHA256 `7ca01bb1…ee4942` 等于候选包、证书 `75b31c66…ba61fff` 一致、
+firstInstallTime 未变（2026-09-11 00:42:05）；重建验证 manifest 语义一致、类数 27316/27316、
+资产/类差异 0。**未构建 iOS、未做正式发布、未部署服务端**，真机功能由用户验收。进入
+[任务记录](tasks/2026-09-17-chat-history-search-flash-screen-security.md)、
+[根因/验证/剩余风险](../verification/2026-09-17-chat-history-search-flash-screen-security.md)或
+[2126 交付记录](../verification/2026-09-17-chat-history-search-flash-2126-mi6.md)。
 
 ## 2026-09-17 第二阶段：房间导航统一（RoomNavigationCoordinator）+ 通话身份修复（本地完成，未构建/未部署）
 
