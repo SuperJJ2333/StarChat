@@ -1,6 +1,6 @@
 # 移动交付恢复索引
 
-## 2026-09-17 好友资料「发消息」统一入口（通讯录收敛到 AppHome，本地完成，未构建/未部署）
+## 2026-09-17 好友资料「发消息」统一入口 + Mi 6 Debug 0.3.92/2125（已安装，待用户真机验收）
 
 用户报「多个好友资料入口上层实现不统一」：朋友圈/群聊走 `AppHome._openMessage`，通讯录在
 `_ContactsTabPageState._openMessage` 里另有一份（直接用入口快照的 `matrixUserId`、自建
@@ -12,11 +12,15 @@
 `DirectMessageOpenGate` 阻止同一好友叠加多个 RoomPage）。`DirectChatController`、
 `CoordinatedDirectChatGateway`、`_openManagedRoom` 的行为未改动。
 `flutter analyze` 无问题；全量 `flutter test` **2721 通过 / 0 失败**；3 个变异探针按预期转红。
-**未构建 APK/IPA、未安装真机、未部署服务端**（用户明确本次不需要真机测试）。
+2026-09-17 02:11:13 +08 按用户要求构建 **0.3.92-debug/2125** 并保留数据覆盖安装 Mi 6
+（此前 2124），拉回 `base.apk` SHA256 `9fb1302d…6452c8e` 与固定证书 `75b31c66…ba61fff`
+核对一致，firstInstallTime 未变；重建验证清单语义一致、资产/类差异 0。源码提交 `e0fa42c0`（未 push）。
+**仅真机测试包，未做正式发布**，未构建 iOS，服务端未改动（2124 的红包总额 API 已于 00:34 部署）。
 遗留：消息列表直接打开的 RoomPage 不经 AppHome，从该会话进资料再发消息仍可能叠加同一房间的
 第二个 RoomPage；通话入口仍用入口快照的 matrixUserId（均见验证记录第 5 节）。
-进入[任务记录](tasks/2026-09-17-unified-direct-message-entry.md)或
-[验证记录](../verification/2026-09-17-unified-direct-message-entry.md)。
+进入[任务记录](tasks/2026-09-17-unified-direct-message-entry.md)、
+[验证记录](../verification/2026-09-17-unified-direct-message-entry.md)或
+[2125 交付记录](../verification/2026-09-17-unified-entry-2125-mi6.md)。
 
 ## 2026-09-17 群聊转账/专属红包第三方展示 + 红包总额可见性 + 好友资料昵称（Debug 0.3.92/2124 已装，业务 API 已部署，待用户真机验收）
 

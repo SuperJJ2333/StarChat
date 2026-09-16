@@ -13,8 +13,9 @@
   Matrix/群聊/朋友圈架构；必须保留 DirectChatController、CoordinatedDirectChatGateway、
   权威 ContactDetails 机制、RoomLease 生命周期与好友身份缓存机制。
 - 关联计划/ADR：无独立计划或 ADR（入口收敛 + 身份解析审计，未触碰受保护变更）。
-  验证记录 [2026-09-17-unified-direct-message-entry](../../verification/2026-09-17-unified-direct-message-entry.md)。
-- 当前状态：实现与本地验证完成；**未构建、未安装、未部署**（用户自行处理）
+  验证记录 [2026-09-17-unified-direct-message-entry](../../verification/2026-09-17-unified-direct-message-entry.md)；
+  2125 交付记录 [2026-09-17-unified-entry-2125-mi6](../../verification/2026-09-17-unified-entry-2125-mi6.md)。
+- 当前状态：实现与本地验证完成；已构建 **0.3.92-debug/2125** 并保留数据覆盖安装 Mi 6；**待用户真机验收**
 - 负责人、工作树、文件所有权、源码commit：主工作树 `D:\pythonProject\outsource\StarChat`
   （分支 main，基线 `21cb52b5`）。拥有：
   `apps/mobile_flutter/lib/app_home.dart`、
@@ -36,8 +37,9 @@
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android / iOS | **未构建**（用户明确不需要真机测试） | 工作树改动 | — | — | — |
-| 服务端 | 未改动 | — | — | — | — |
+| Android Debug（仅 Mi 6 真机） | 0.3.92-debug / 2125 | `e0fa42c0`（含 2124 的三项聊天修复） | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.92-debug-2125/ChatFlow-0.3.92-debug-2125-arm64-rebuilt.apk`，SHA256 `9fb1302d…6452c8e`（源码中间包 `5cb79c84…afcc11`） | 2026-09-17 02:11:13 +08 覆盖安装成功，firstInstallTime 未变；**未做正式发布** |
+| iOS | 未构建 | — | — | — | 未发布 |
+| 服务端 | 未改动（2124 的红包总额 API 已于 2026-09-17 00:34 +08 部署） | — | — | — | — |
 
 测试记录：
 
@@ -54,7 +56,12 @@
   ① `resolveFriendContact` 去掉 userId 主键分支 → 2 个身份用例失败；
   ② 通讯录不再透传统一入口（`onMessage: null`）→ 接线/透传用例失败；
   ③ 去掉单飞闸门 → 接线测试失败。
-- 未执行项：未构建 APK/IPA、未安装真机、未部署服务端（用户要求本次不做）。
+- 2125 重建验证：清单语义一致、原生/Flutter 资产差异 0、smali 类差异 0（27313/27313）、
+  ZIP 条目 948/951；`zipalign -c -P 16 4`、`aapt`（2125 / 0.3.92-debug / debuggable / arm64-v8a）、
+  `apksigner verify`（固定证书）通过。日志 `artifacts/2026-09-17/{build-2125.log,verify-2125.log,install-2125.log}`。
+  门禁复用依据：本轮源码 `e0fa42c0` 已跑过 analyze 与全量测试，构建脚本冻结的
+  `source-input-sha256-before/after.json` 一致，故未重复整套门禁。
+- 未执行项：未构建 iOS；未做正式发布；未部署服务端（用户要求本次不做）。
 
 ## 阶段计时
 
@@ -87,8 +94,9 @@
      AppHome 调用点同步去掉。
   5. `_refreshMissingFriendIdentity` 原样搬到 `direct_chat_entry.dart` 并改名
      `ensureCurrentFriendIdentity`（矩阵索引契约不变，仍服务于通话/通知/接受好友三条路径）。
-- 待办及验收失败项：A1–A4 待用户真机验收。
-- 已发布与仅候选的区别：本任务**没有任何构建或发布**，仅源码与测试改动。
+- 待办及验收失败项：A1–A4 待用户真机验收（2125 已安装 Mi 6）。
+- 已发布与仅候选的区别：Android 2125 为**真机 debug 测试包**，未做正式发布；服务端本任务未改动
+  （2124 的红包总额可见性 API 已于 2026-09-17 00:34 +08 部署）。
 - 生产备份位置、恢复操作、漂移检查、可重试阶段：不适用（未触碰生产）。
 - 运行中CI/命令/自己创建的隧道（无凭据）：无。
 - 下次恢复先检查的事实：`ContactsTabPage` 是否仍只透传 `widget.onMessage`；
