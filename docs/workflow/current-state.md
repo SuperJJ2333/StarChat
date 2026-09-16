@@ -1,5 +1,23 @@
 # 移动交付恢复索引
 
+## 2026-09-17 好友资料「发消息」统一入口（通讯录收敛到 AppHome，本地完成，未构建/未部署）
+
+用户报「多个好友资料入口上层实现不统一」：朋友圈/群聊走 `AppHome._openMessage`，通讯录在
+`_ContactsTabPageState._openMessage` 里另有一份（直接用入口快照的 `matrixUserId`、自建
+`openRoomLease` + `RoomPage` + `setOnRevoked`）。本次删除该重复实现：`ContactsTabPage` 新增
+`required ContactAction onMessage` 由 AppHome 注入，`ContactsPage`/`ContactProfilePage` 保持
+纯 UI + action 转发；新增 `features/matrix/direct_chat_entry.dart` 作为**唯一**身份解析与打开
+去重（`resolveFriendContact` 以业务 userId 为主键，修好「Matrix ID 已更新的旧快照被误判已不是
+好友」；`ensureCurrentFriendIdentity` 保留原矩阵索引契约给通话/通知/接受好友路径；
+`DirectMessageOpenGate` 阻止同一好友叠加多个 RoomPage）。`DirectChatController`、
+`CoordinatedDirectChatGateway`、`_openManagedRoom` 的行为未改动。
+`flutter analyze` 无问题；全量 `flutter test` **2721 通过 / 0 失败**；3 个变异探针按预期转红。
+**未构建 APK/IPA、未安装真机、未部署服务端**（用户明确本次不需要真机测试）。
+遗留：消息列表直接打开的 RoomPage 不经 AppHome，从该会话进资料再发消息仍可能叠加同一房间的
+第二个 RoomPage；通话入口仍用入口快照的 matrixUserId（均见验证记录第 5 节）。
+进入[任务记录](tasks/2026-09-17-unified-direct-message-entry.md)或
+[验证记录](../verification/2026-09-17-unified-direct-message-entry.md)。
+
 ## 2026-09-17 群聊转账/专属红包第三方展示 + 红包总额可见性 + 好友资料昵称（Debug 0.3.92/2124 已装，业务 API 已部署，待用户真机验收）
 
 用户报障三项，均已按 TDD 修复：① 群聊里非收款人/非指定成员看转账与专属红包时，业务 API 本就返回

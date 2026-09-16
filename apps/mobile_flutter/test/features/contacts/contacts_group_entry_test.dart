@@ -33,6 +33,7 @@ void main() {
             api: api,
             matrix: matrix,
             directChats: direct,
+            onMessage: (_) async {},
             onVoice: (_) async {},
             onVideo: (_) async {},
             onGroupChat: () => created++,

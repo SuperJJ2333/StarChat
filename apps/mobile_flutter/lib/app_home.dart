@@ -38,6 +38,7 @@ import 'features/moments/moments_unread_controller.dart';
 import 'features/matrix/matrix_e2ee_client.dart';
 import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
+import 'features/matrix/direct_chat_entry.dart';
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/moments/moment_preview_cache.dart';
 import 'features/ledger/ledger_pages.dart';
@@ -198,6 +199,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 且后续 invite 扫描无法识别）；最后做加密+双人校验。
   Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId, String peer) =>
       widget.matrix.openCanonicalDirectRoom(roomId, matrixUserId: peer);
+
+  /// 同一好友「发消息」的单飞闸门：阻止重复 push 同一个 RoomPage。
+  final DirectMessageOpenGate _directMessageGate = DirectMessageOpenGate();
 
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
   /// （UI 展示/点击接听）共享同一时间线。
@@ -913,7 +917,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     Map request,
   ) async {
     final cache = await _identityCache();
-    await _refreshMissingFriendIdentity(cache, matrixUserId);
+    await ensureCurrentFriendIdentity(cache, matrixUserId);
     final reference = await directChats.open(matrixUserId);
     await widget.matrix.sendFriendAccepted(
         reference.roomId, matrixUserId, friendDisplayName,
@@ -1344,7 +1348,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
     try {
       final cache = await _identityCache();
-      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
+      await ensureCurrentFriendIdentity(cache, contact.matrixUserId);
       if (!mounted) return;
       final reference = await directChats.open(contact.matrixUserId);
       if (!mounted) return;
@@ -1403,39 +1407,34 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
-  /// “发消息”统一入口：不信任任何入口传入的 contact 快照（新好友的
-  /// 本地缓存可能缺 matrix 绑定），一律按业务 userId 从好友目录解析
-  /// 权威联系人——双源合并（业务 friends 权威 + Matrix 房间成员实时态），
-  /// 保证 matrixUserId 有效后再打开加密私聊。
+  /// “发消息”统一入口（唯一实现）：不信任任何入口传入的 contact 快照
+  /// （新好友的本地缓存可能缺 matrix 绑定，Matrix ID 也可能已更新），
+  /// 一律按业务 userId 从好友目录解析权威联系人——双源合并（业务 friends
+  /// 权威 + Matrix 房间成员实时态），保证 matrixUserId 有效后再打开加密
+  /// 私聊；RoomLease/RoomPage 统一交给 [_openManagedRoom]。
   Future<void> _openMessage(ContactDetails contact) async {
+    final openingKey = directMessageOpenKey(contact);
+    // 同一好友只允许一个打开流程：DirectChatController 已合并并发的房间
+    // 打开请求，但每个调用方仍会各自 push RoomPage——这里阻止重复 route。
+    if (!_directMessageGate.claim(openingKey)) return;
     try {
       final cache = await _identityCache();
-      await _refreshMissingFriendIdentity(cache, contact.matrixUserId);
-      // 双源合并：本地缓存（业务权威快照，含备注/标签）优先；
-      // 缺失或 matrixUserId 为空时，用 Matrix 房间成员态补齐。
-      var authoritative = cache.contactDetailsByUserId(contact.userId);
-      if (authoritative == null ||
-          authoritative.matrixUserId.trim().isEmpty) {
-        // 本地目录暂无该 userId 的有效条目：用入口传入的 matrixUserId
-        // （群聊/朋友圈入口从房间实时态来，必然有效）做目录回填。
-        if (contact.matrixUserId.trim().isNotEmpty) {
-          await cache.upsertContactDetails(contact);
-          authoritative = cache.contactDetailsByUserId(contact.userId);
-        }
-      }
-      final matrixUserId = (authoritative ?? contact).matrixUserId.trim();
-      if (matrixUserId.isEmpty) {
-        throw StateError('The contact is no longer a current friend');
-      }
-      final reference = await directChats.open(matrixUserId);
+      final authoritative = await resolveFriendContact(cache, contact);
+      final reference =
+          await directChats.open(authoritative.matrixUserId.trim());
       await _openManagedRoom(reference.roomId,
-          roomName: authoritative?.displayName ?? contact.displayName,
-          initialContact: authoritative ?? contact,
+          roomName: authoritative.displayName,
+          initialContact: authoritative,
           cache: cache);
     } catch (error) {
+      // 先释放闸门再弹窗：弹窗“重试”会同步回调本方法。
+      _directMessageGate.release(openingKey);
       if (!mounted) return;
       await showDirectChatFailureDialog(context, error,
           onRetry: () => _openMessage(contact));
+      return;
+    } finally {
+      _directMessageGate.release(openingKey);
     }
   }
 
@@ -1869,6 +1868,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                           pendingFriendRequests: pendingFriendRequests,
                           onFriendRequests: _openFriendRequests,
                           directChats: directChats,
+                          // 通讯录好友资料「发消息」使用与朋友圈/群聊同一个
+                          // 统一入口（唯一实现，见 _openMessage）。
+                          onMessage: _openMessage,
                           onVoice: (contact) =>
                               _openCall(contact, CallMediaType.audio),
                           onVideo: (contact) =>
@@ -1878,7 +1880,6 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                           onAppearance: () => showThemePickerSheet(
                               context, widget.themeController),
                           onGroupAddressList: _openGroupAddressList,
-                          reminderService: reminderService,
                           identityCache: _chatIdentityCache,
                         ),
                   2 => DiscoveryPage(
@@ -1953,32 +1954,16 @@ final class _HomeWarmupPane extends StatelessWidget {
       );
 }
 
-// Existing contacts use the hydrated snapshot immediately. A newly accepted
-// contact must be resolved through the business API before room lookup, so the
-// canonical directory and RoomPage share the same current identity projection.
-Future<void> _refreshMissingFriendIdentity(
-    ProfileRepository cache, String matrixUserId) async {
-  await cache.hydrate();
-  if (cache.contactsByMatrixId.containsKey(matrixUserId)) return;
-  if (cache.profile == null) await cache.preload();
-  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
-    try {
-      await cache.refreshContactsQuietly(minInterval: Duration.zero);
-    } catch (_) {
-      // 断网时静默：本地已有该好友映射即可继续打开会话。
-    }
-  }
-  if (!cache.contactsByMatrixId.containsKey(matrixUserId)) {
-    throw StateError('The contact is no longer a current friend');
-  }
-}
-
+/// 通讯录 Tab：已 hydrate 的快照立即渲染；「发消息」等好友动作全部使用
+/// AppHome 注入的统一实现（权威身份解析见 features/matrix/direct_chat_entry.dart），
+/// 因此本页不持有 canonical 房间查找 / RoomLease / RoomPage 逻辑。
 final class ContactsTabPage extends StatefulWidget {
   const ContactsTabPage({
     super.key,
     required this.api,
     required this.matrix,
     required this.directChats,
+    required this.onMessage,
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
@@ -1987,12 +1972,15 @@ final class ContactsTabPage extends StatefulWidget {
     this.onGroupAddressList,
     this.onFriendRequests,
     required this.pendingFriendRequests,
-    this.reminderService,
     this.identityCache,
   });
   final BusinessApiClient api;
   final MatrixSdkE2eeClient matrix;
   final DirectChatController directChats;
+
+  /// 好友资料「发消息」的统一入口（AppHome 注入）：通讯录不再自己实现
+  /// canonical 房间查找、RoomLease 管理与 RoomPage 推送。
+  final ContactAction onMessage;
   final ContactAction onVoice;
   final ContactAction onVideo;
   final VoidCallback onGroupChat;
@@ -2002,7 +1990,6 @@ final class ContactsTabPage extends StatefulWidget {
   final VoidCallback? onGroupAddressList;
   final VoidCallback? onFriendRequests;
   final ValueNotifier<int> pendingFriendRequests;
-  final MessageReminderService? reminderService;
   final ProfileRepository? identityCache;
 
   @override
@@ -2010,52 +1997,6 @@ final class ContactsTabPage extends StatefulWidget {
 }
 
 final class _ContactsTabPageState extends State<ContactsTabPage> {
-  Future<void> _openMessage(ContactDetails contact) async {
-    try {
-      final identityCache =
-          widget.identityCache ?? ProfileRepository(widget.api);
-      await _refreshMissingFriendIdentity(identityCache, contact.matrixUserId);
-      final reference = await widget.directChats.open(contact.matrixUserId);
-      final lease = await widget.matrix.openRoomLease(reference.roomId);
-      if (!mounted) {
-        await lease.cancel();
-        return;
-      }
-      final navigator = Navigator.of(context, rootNavigator: true);
-      late final Route<void> route;
-      route = CupertinoPageRoute<void>(
-        builder: (_) => RoomPage(
-          api: widget.api,
-          roomLease: lease,
-          roomName: contact.displayName,
-          initialContact: contact,
-          onCreateGroup: widget.onGroupChat,
-          onMessage: _openMessage,
-          onVoice: widget.onVoice,
-          onVideo: widget.onVideo,
-          reminderService: widget.reminderService,
-          initialIdentityCache: identityCache,
-        ),
-      );
-      lease.setOnRevoked(() async {
-        if (route.isActive) {
-          navigator.popUntil((candidate) => identical(candidate, route));
-          navigator.removeRoute(route);
-        }
-        await route.popped;
-      });
-      try {
-        await navigator.push(route);
-      } finally {
-        await lease.cancel();
-      }
-    } catch (error) {
-      if (!mounted) return;
-      await showDirectChatFailureDialog(context, error,
-          onRetry: () => _openMessage(contact));
-    }
-  }
-
   @override
   Widget build(BuildContext context) => ContactsPage(
         api: widget.api,
@@ -2064,7 +2005,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
         directChats: widget.directChats,
         onFriendRequests: widget.onFriendRequests,
         identityCache: widget.identityCache,
-        onMessage: _openMessage,
+        onMessage: widget.onMessage,
         onVoice: widget.onVoice,
         onVideo: widget.onVideo,
         onGroupChat: widget.onGroupChat,
