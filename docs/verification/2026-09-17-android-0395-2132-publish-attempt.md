@@ -133,3 +133,32 @@ pwsh -NoProfile -File scripts/starchat-server.ps1 -Action Command `
 [0.3.95/2132 发布记录](2026-09-17-android-0395-2132-release.md)；本任务**未重复构建**，而是
 对产物做了独立复核（第 6.1 节：哈希/清单身份/对齐/签名全部本机复算一致）。
 重复构建同一 commit 会产出不同 SHA 的等价包，反而使已记录的发布基线失效，故按工作流复用该产物。
+
+## 9. 一键续做脚本（本轮新增，已自测其「零写入」安全属性）
+
+为把恢复 SSH 后的执行压缩成单条命令，新增
+`artifacts/2026-09-17/release-2132/publish-all-2132.ps1`，顺序为：
+本地产物 SHA 门 → **SSH 可达性门禁（不可达即中止，绝不做任何写入）** → 分块上传 →
+上传并执行 `publish-apk.sh`（合并 SHA 门 + `install -m 0644` + `latest-arm64.apk` 原子切换）→
+设置备份（容器 `/tmp` → 宿主机 `0600`）→ `inspect` → `apply`（断言 `PUBLISH_PASS` 与 `audit_count: 5`）→
+带真实 token 的 HTTP 投影（断言 `0.3.95/2132`）→ 服务器侧公网检查（新包 200/206 + MIME、`latest` 指向新包、
+旧包 2129 仍 200、未授权 401、健康 200、公网整包 SHA）→ 工作站侧经跳板 SOCKS 隧道做 Range 与**整包 SHA** 比对
+→ 输出 `PUBLISH_ALL_RESULT=PASS`。
+
+自测（本轮实测）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 语法解析 | `Parser::ParseFile` → **parse_errors=0** |
+| 自测运行 | 退出码 **1**；输出 `artifact_sha256=35CA0962…` → `==> production SSH reachability gate` → `production SSH unreachable: aborting before any server write (no chunks uploaded, no settings written)` |
+| 安全性结论 | **门禁在写入之前生效**：自测期间未上传分块、未安装文件、未切换链接、未写设置/审计（脚本在 SSH 门禁处 `throw`，后续步骤未执行） |
+
+## 10. 第二轮复探（仍不可达）
+
+| 路由 | 结果 |
+| --- | --- |
+| `ssh jumper`（8.163.93.151:22）× 4（间隔 30s） | 1×`Connection closed` + 2×`banner exchange` 超时 + 1×`Connection closed` |
+| `ssh target-B`（8.163.93.151:60022，本轮首次尝试的备用路由） | `Connection closed by 8.163.93.151 port 60022` |
+| 公网 HTTPS 对照 | `health/live` **200**（服务健在） |
+
+即跳板机**两个端口**的 SSH 均不可用，且症状为「TCP 可连、无 banner」；非本机问题。
