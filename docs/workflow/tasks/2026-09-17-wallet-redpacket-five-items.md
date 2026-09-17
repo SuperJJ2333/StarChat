@@ -10,7 +10,7 @@
 - 关联计划/ADR：[计划](../../superpowers/plans/2026-09-17-wallet-redpacket-five-items.md)、
   [ADR-0073](../../adr/0073-red-packet-fee.md)（已批准）、
   [UI demo](../../../frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html)。
-- 当前状态：实现与本地门禁完成（commit 见下）；**未构建、未真机、未部署**；
+- 当前状态：实现与本地门禁完成（**候选 commit `c69e55c2`**，`verify.ps1` 全绿）；**未构建、未真机、未部署**；
   红包手续费按用户要求**必须等新客户端先行**后再发布 API。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`（`main`）。
   拥有：`apps/mobile_flutter/lib/features/wallet/{manual_wallet_page,wallet_page}.dart`、
@@ -52,8 +52,18 @@
   `walletDepositPayoutRedesign20260917` 修订块（flutter 文件 / HTML demo 路径与 demo id / 状态 / token 映射 /
   行为 / 红包手续费边界 / 验证摘要）与 `tokenParity` 条目 `WeChatColors.warning = --color-warning`；
   两处硬编码 `Color(0xFFFA9D3B)` 改为复用既有 `WeChatColors.warning`，demo 同步用 `--color-warning`（未新造 token）。
-- 仓库合并门禁 `pwsh -NoProfile -File scripts/verify.ps1`：见
+- 仓库合并门禁 `pwsh -NoProfile -File scripts/verify.ps1`（commit `c69e55c2`）：**`Verification: PASS`（退出码 0）**——
+  Repository/Deployment policy、TemplateTools、Infra render 143、Getui bridge 28、Matrix Bot 9、
+  **Business API and Worker 1933 通过 / 58 跳过 / 0 失败**、Flutter boundary 70、UI contract、API import、
+  AST parse 219、Alembic 单 head、OpenAPI、Compose render 全部通过；日志
   `docs/verification/artifacts/2026-09-17/verify-wallet-redpacket-five-items.txt`。
+- 独立审查（两个独立上下文的子代理，只读）：领域审查 **APPROVE-WITH-RESERVATIONS**（7/7 PASS，提出 D1–D4 与若干缺测试），
+  质量安全审查 **APPROVE-WITH-RESERVATIONS**（发现审阅 commit 不含测试修复、PIN 弹窗红包不显示手续费、
+  服务端余额不足文案未含手续费、缺隐私断言）。处理见验证记录第 6 节，全部落入 commit `c69e55c2`：
+  修复 5 个门禁失败断言、服务端文案含合计、新增 API 余额边界/隐私/审计 Outbox/worker 手续费退款用例、
+  客户端手续费实现收敛为 `chatPaymentFee`（BigInt）一处并在 PIN 弹窗对红包同样显示。
+- 未执行（发布前置，本次不部署）：生产形态 Postgres 上演练迁移 `upgrade`/`downgrade` 与回填、
+  Postgres 同键并发创建用例、客户端不确定结果复用同一幂等键的改造（既有行为）、确认 R3 全额退手续费的商业意图。
 - 后端定向：`pytest tests/business_api/{redpacket,ledger,transfer} tests/business_api/test_migrations.py
   tests/business_api/test_wallet_release_baseline.py -q` → **71 通过 / 0 失败**。
 - 未执行：未构建 APK/IPA；未部署；未真机。

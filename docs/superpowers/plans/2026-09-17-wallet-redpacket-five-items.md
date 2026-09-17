@@ -10,7 +10,7 @@
 | 2 | 进入钱包闪一下「功能状态暂不可用」 | `refresh()` 不再清零已知能力；新增 `capabilitiesUnavailable`，仅当「从未拿到过能力且加载失败」时告警；加载中与刷新中沿用上次已知值（按钮也不再闪灰） | **完成** |
 | 3 | 刷新按钮放顶部导航栏右侧 | 钱包根页面改为自持导航栏（`WalletPage` 不再 `embedded`），刷新进 `trailing`；AppHome 两处钱包入口去掉重复的 `CupertinoPageScaffold`+导航栏（四个钱包页面行为一致） | **完成** |
 | 4 | 红包手续费 0.5%、最低 0.01、过期未领连同手续费退回 | ADR-0073（提案）+ 迁移 `0068_red_packet_fee`（expand-migrate-contract）+ `red_packet_fee()` 与转账同构 + 创建/退款分录 + 客户端展示与余额校验 | **待 ADR 批准** |
-| 5 | 充值/提现页面美化（先 HTML demo） | `frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html`（8 帧：首页/充值 3 态/提现 4 态），token 与 `tokens.css`、`WeChatColors` 对齐 | **待用户评审 demo** |
+| 5 | 充值/提现页面美化（先 HTML demo） | `frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html`（8 帧：首页/充值 3 态/提现 4 态），token 与 `tokens.css`、`WeChatColors` 对齐 | **完成**（demo 已获用户通过；Flutter 落地 `stepIndicator`/`statusHero`/`rowsCard`；注册表 `walletDepositPayoutRedesign20260917` + `tokenParity` 增补 `WeChatColors.warning = --color-warning`） |
 
 ## 第 4 项实施步骤（批准后）
 
