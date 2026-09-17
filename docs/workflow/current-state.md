@@ -1,5 +1,27 @@
 # 移动交付恢复索引
 
+## 2026-09-17 CI 并发测试失败修复：Matrix 测试存储目录按进程隔离（`0a9e46a3`）
+
+用户报告 `android-ci.yml`（L91-94）Flutter 测试步骤 `3018 通过 / 1 失败`，失败为
+`synthetic credential write failure`，`Causing statement: INSERT OR REPLACE INTO box_client (k, v)`。
+根因确认：`test/features/matrix/matrix_client_factory_test.dart` 的 `MatrixTestPaths` 返回**仓库内同一个
+固定绝对路径**（`…/conversation-state-main/matrix-cache-tests`），而它被
+`matrix_client_factory_test.dart` 与 `conversation_optimistic_state_test.dart` 两个套件共用；
+`flutter test` 默认并发跑测试文件（每文件独立进程），于是两个进程同时打开并写同一个 SQLCipher 库，
+`box_client.token` 写入撞车 → **非确定性的单例失败**。
+排查结论：并非「目录不存在」（实测删掉该目录后 SDK 会自建并全部通过），也**不是**头像/Matrix 用例的
+stderr 诊断输出；全套件仅这一处是**跨进程共享的固定路径**（其余同类 fake 都在 `setUp` 里用
+`createTemp`+`tearDown` 或临时子目录隔离，例如 `media_cache_clear_test`、`video_playback_extension_test`）。
+修复：目录改为**进程私有**（`Directory.systemTemp.createTempSync('starchat-matrix-tests-$pid-')`），
+**进程内保持一致**（多处测试专门验证跨 factory/client 实例持久化，故不能每用例换目录）。
+新增两条回归测试：目录必须含 `pid` 且**不在仓库目录内**、同进程内两次调用必须相同；
+变异探针：把实现复原为旧的共享路径 → 新测试立即转红（`contains '14532'` 失败）。
+另验证修复后**不再重建仓库内 `matrix-cache-tests` 目录**（测试写入只落系统临时目录）。
+**未采用** `flutter test --concurrency=1`：那只是掩盖共享数据库竞态，非修复（用户亦如此要求）。
+门禁：`flutter analyze` 无问题、定向 80 通过、全量 **3021 通过 / 0 失败**；已 push（`0a9e46a3`）。
+**限制**：本仓库为私有仓库，本工作流无法读取 CI 结论（GitHub API 403 需鉴权），
+「CI 转绿」需在下一次 CI 运行后由 CI 证据确认。
+
 ## 2026-09-17 Android 0.3.95/2132 更新弹窗（**已上线**；先被 SSH 阻断，恢复后一键续做完成）
 
 用户要求「推送 Android 版更新弹窗」，确认候选 = `82b24ba7`（含闪照 route-exit fail-open 修复、
