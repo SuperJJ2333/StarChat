@@ -11,7 +11,8 @@
   [ADR-0073](../../adr/0073-red-packet-fee.md)（已批准）、
   [UI demo](../../../frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html)。
 - 当前状态：实现与门禁完成（`c69e55c2`，`verify.ps1` 全绿）；已构建并安装 0.3.93-debug/2128 到 Mi 6；**红包手续费与迁移 0068 已于 2026-09-17 15:53 +08 部署生产**（用户明确指令，覆盖"新客户端先行"）；
-  红包手续费按用户要求**必须等新客户端先行**后再发布 API。
+  含手续费展示的正式客户端 **0.3.94/2129 已于同日发布上线**，「新客户端先行」限制解除（见
+  [2129 发布记录](../../verification/2026-09-17-clear-history-order-android-2129-release.md)）。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`（`main`）。
   拥有：`apps/mobile_flutter/lib/features/wallet/{manual_wallet_page,wallet_page}.dart`、
   `apps/mobile_flutter/lib/app_home.dart`（钱包入口）、
@@ -20,9 +21,10 @@
   `services/business-api/app/api/redpacket.py`、
   `services/business-api/migrations/versions/0068_red_packet_fee.py`、
   对应测试与 `frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html`、文档。
-- 最后更新时间（含时区）：2026-09-17 16:0x +08（Asia/Hong_Kong）
-- 下一条具体操作、必要输入、阻断的验收 ID：① 用户在真机验收 A1–A3、A5；② 第 4 项需先发新客户端
-  （含手续费展示）后再部署 API 迁移 0068 与手续费逻辑——**在此之前不得部署该 API 改动**。
+- 最后更新时间（含时区）：2026-09-17 16:3x +08（Asia/Hong_Kong）
+- 下一条具体操作、必要输入、阻断的验收 ID：① 用户在真机验收 A1–A3、A5；② 第 4 项的
+  「新客户端先行」已满足：API 手续费与迁移 0068 于 15:53 +08 部署、含手续费展示的 0.3.94/2129 于同日发布；
+  剩余为真机确认红包手续费展示与实扣合计。
 
 ## 验收台账
 
@@ -31,7 +33,7 @@
 | A1 | 被他人登记的钱包地址提示更换且可删除重填；「更改绑定」按钮 + 30 天限制可见 | 终局失败集合 → `discardBindingDraft()`；地址框只在拿到服务端 `id` 后锁定；统一「重新填写钱包地址」；首页带文字按钮 + `next_rebind_at`；冷却期先解释再禁用 | `wallet_binding_recovery_test`（4 项，实现前红：`enabled==false`/无「更改绑定」文案）；钱包套件 75 通过 | 未构建 | 待用户真机 |
 | A2 | 进入钱包不再闪「功能状态暂不可用」；真正失败才提示 | 刷新期间保留已知能力；新增 `capabilitiesUnavailable` 仅「从未可知且失败」为真 | `wallet_page_ux_test`（3 项：加载中不提示/失败提示保持/已知后刷新不回退，实现前红） | 未构建 | 待用户真机 |
 | A3 | 刷新按钮在顶部导航栏右侧（钱包四个页面） | `WalletPage` 非嵌入 + 自持导航栏 `trailing`；AppHome 去掉重复 scaffold | `wallet_page_ux_test`（导航栏断言 + AppHome 源码断言，实现前红） | 未构建 | 待用户真机 |
-| A4 | 红包手续费 0.5%（最低 0.01）、与转账一致、未领完时手续费随未领取部分退回 | ADR-0073：`red_packet_fee()` + 创建/退款分录 + `RedPacket.fee` 持久化 + 迁移 0068 + 客户端展示与余额校验 | `test_red_packet_fee.py`（7 项，实现前红）、更新 `test_supply_invariant.py`；后端定向 71 通过；客户端 `chat_red_packet_sheet_test` 62 通过 | **未部署**（按用户要求新客户端先行） | 待新客户端 + 真机 |
+| A4 | 红包手续费 0.5%（最低 0.01）、与转账一致、未领完时手续费随未领取部分退回 | ADR-0073：`red_packet_fee()` + 创建/退款分录 + `RedPacket.fee` 持久化 + 迁移 0068 + 客户端展示与余额校验 | `test_red_packet_fee.py`（7 项，实现前红）、更新 `test_supply_invariant.py`；后端定向 71 通过；客户端 `chat_red_packet_sheet_test` 62 通过 | **已部署**：迁移 0068 + API/worker → `redpacket-fee-20260917`（2026-09-17 15:53 +08）；含手续费展示的客户端随 **0.3.94/2129** 发布 | 待真机确认展示与实扣合计 |
 | A5 | 充值/提现按 demo 美化 | `stepIndicator`/`statusHero`/`rowsCard`；既有 Key 全部保留 | demo 已获用户通过；`wallet_page_ux_test`（2 项结构断言）；钱包套件 75 通过 | 未构建 | 真机观感待验收 |
 
 ## 版本与证据
@@ -39,8 +41,8 @@
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
 | Android debug（Mi 6 真机） | **0.3.93-debug / 2128** | `d3274506` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.93-debug-2128/ChatFlow-0.3.93-debug-2128-arm64-rebuilt.apk`，SHA256 `F2C0851F…40F13D3`（源包 `8AA8DBFB…9583E6`） | 2026-09-17 15:06:06 +08 保留数据覆盖安装成功（此前 2126），设备回读 `base.apk` SHA256 与证书同交付候选一致；`firstInstallTime` 2026-09-11 00:42:05 未变 |
-| Android 正式版 | 未发布（线上仍 0.3.93/2127，本任务前已上线） | — | — | — | — |
-| 业务 API | **未部署**（迁移 0068 与手续费逻辑仅在仓库） | `c69e55c2` | — | — | — |
+| Android 正式版 | **0.3.94 / 2129**（含本任务的手续费展示与实扣合计） | `c73c12fb` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `/opt/starchat/frontend/downloads/ChatFlow-0.3.94-build2129-arm64.apk`，SHA256 `B3B70C66…CABB4BF92`（79,408,158 字节） | 2026-09-17 发布上线（`latest-arm64.apk` 已切换，更新弹窗已推送） |
+| 业务 API | **已部署**：`starchat-business-api:redpacket-fee-20260917`（digest `sha256:48948fb7…`）+ worker `starchat-business-worker:redpacket-fee-20260917`；DB head `0068_red_packet_fee` | `c69e55c2` | — | 迁移 0068（expand-only）；备份 `824cc984…`（0600） | 2026-09-17 15:53 +08 切换，健康 200 / 未授权 401，无 traceback |
 | 前端静态 | 仅新增 demo 文件，未部署 | — | — | `frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html` | — |
 
 测试记录：

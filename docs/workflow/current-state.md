@@ -1,5 +1,30 @@
 # 移动交付恢复索引
 
+## 2026-09-17 「清空聊天记录」会话位置修复 + Android 0.3.94/2129 发布 + GitHub 推送（**已上线并推送**）
+
+用户三项：①清空聊天记录后会话不再掉到消息列表末尾；②推送 Android 最新版更新弹窗；③推送到 GitHub。
+①根因：排序锚点取 `room.lastEvent?.originServerTs ?? epoch0`，清空本机历史后事件被 `isEventHidden` 隐藏
+→ `lastEvent` 为 null → 锚点落到 1970-01-01 → 掉到末尾。修复：新增顶层
+`conversationSortAnchor(room)`（`lastEvent?.originServerTs ?? lastActivityAt ?? epoch0`），
+`MatrixConversationRoomSnapshot` 新增可选 `lastActivityAt`（由 `_snapshotRoom` 从事件时间戳填充，与隐藏解耦），
+`_snapshotRoom` 排序锚点改用它；变异探针（忽略 `lastActivityAt` → 实得 1970-01-01）转红后复原。
+定向回归 8 通过 / 0 失败，`flutter analyze` 无问题，commit `175b3e6e`。
+②候选冻结 `c73c12fb`（`0.3.94+2129`，全量 `flutter test` **2852 通过 / 0 失败**），按固定流程构建
+（ARM64 release + 三项 HTTPS dart-define → Apktool 2.12.1 → zipalign 36.0.0 `-P 16 -f 4` → 固定身份 `75b31c66…`），
+aapt 身份 2129/0.3.94/arm64，v2+v3 签名，zipalign `Verification successful`，语义核对 25345/25345 类、
+338 项原生资产零变化、`manifest.diff` 0 字节；SHA256
+**`B3B70C665E524CE95807EC0D80CA7BF0F211B242176285ED2D8F67CCABB4BF92`**（79,408,158 字节）。
+16MiB 分块上传 + 服务端合并 SHA 门 + `install -m 0644` 不可变文件，`latest-arm64.apk` 原子切换至 2129，
+2127 保留（回退）。更新弹窗 trace `android-release-0.3.94-2129-20260917`（5 条审计，min `3` 沿用，iOS 行未改），
+并以**真实会话 token 的 HTTP GET** 验证 `/app-updates/latest?platform=android`：未授权 401、带 token 200 且
+`0.3.94/2129`；服务器+工作站双侧公网 200/206 + MIME，**公网整包 SHA256 与本地构建包一致**。
+③`git push origin main` → `5d43ce34..c73c12fb`，`origin/main...main` = `0 0`。
+**注意（本次踩到的假阳性）**：`www.liuhetong888.com` 对未知路径回落 SPA（`200 text/html`），
+对 `www` 探测 `/api/...` 或 `/health/...` 不能当作 API 存活证据；客户端实际用 non-www
+`https://liuhetong888.com`，健康路径为 `/api/v1/health/{live,ready}`。进入
+[任务记录](tasks/2026-09-17-clear-history-order-android-2129-release.md)或
+[发布与验证记录](../verification/2026-09-17-clear-history-order-android-2129-release.md)。
+
 ## 2026-09-17 生产部署：红包手续费 0.5% + 迁移 0068_red_packet_fee（**已上线**）
 
 用户指令「直接部署迁移 0068 与扣费」（覆盖此前"新客户端先行"次序）。按 admin 流程：候选镜像基于在线镜像最小覆盖
@@ -30,7 +55,9 @@
 持久化 + 迁移 `0068_red_packet_fee`（expand-only）；创建响应与「仅发起方可见」的 detail 暴露 `fee`；客户端展示
 手续费与实扣合计并按 `total+fee` 校验余额。门禁：后端定向 **71 通过**、Flutter 钱包 **75 通过**、红包客户端
 **62 通过**、全量 `flutter test` **2848 通过 / 0 失败**、`flutter analyze` 无问题、UI 契约 `PASS`。
-**未部署且按用户选择「新客户端先行」：包含本改动的新客户端发布前不得部署 API 手续费与迁移 0068。** 进入
+**后续进展（更新本条的过时状态）**：用户当日改令「直接部署迁移 0068 与扣费」，API 手续费与迁移 0068
+已于 2026-09-17 15:53 +08 上线（见本文件顶部部署条目）；含手续费展示的正式客户端 **0.3.94/2129 同日发布**，
+该「新客户端先行」限制随之解除。进入
 [任务记录](tasks/2026-09-17-wallet-redpacket-five-items.md)、
 [验证记录与领域/质量安全自审](../verification/2026-09-17-wallet-redpacket-five-items.md)或
 [ADR-0073](../adr/0073-red-packet-fee.md)。
