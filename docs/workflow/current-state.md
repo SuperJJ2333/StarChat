@@ -1,5 +1,25 @@
 # 移动交付恢复索引
 
+## 2026-09-17 第二阶段补丁：DirectMessageOpenGate 生命周期边界（本地完成，未构建/未真机/未部署）
+
+真机复现「Room A → 再进入好友资料 → 再点发消息 → 完全没反应」。根因：`_openMessage` 把整个打开流程
+（含 `await Navigator.push(RoomPage)`，该 Future 只在页面关闭后完成）都放在 `DirectMessageOpenGate` 内，
+于是 Room A 打开期间同一好友的第二次请求在上游被 `claim()` 静默丢弃，根本到不了
+`RoomNavigationCoordinator` 的 `popUntil`（两个组件重复管理「页面是否打开」）。修复：新增
+`DirectMessageTarget{roomId, authoritativeContact}`，闸门锁定范围缩到「权威身份解析 + canonical
+roomId」，`_openManagedRoom` 移到闸门之外；`DirectMessageOpenGate` 由 `claim/release`（已有在途则
+no-op）改为 `run(key, operation)` **single-flight**（已有在途返回同一个 Future，成功/失败都释放）。
+`RoomNavigationCoordinator`、`DirectChatController`、`CoordinatedDirectChatGateway`、canonical 仲裁、
+`MatrixRoomLease`、E2EE 均 0 改动。新增集成回归
+`test/features/matrix/direct_message_open_lifecycle_test.dart`（6 例，穿过真实 onMessage → 闸门 →
+resolveFriendContact → 控制器/网关 → 协调器 → RoomPage/租约，只替换传输与缓存）；修复前 Test 2/3/6
+转红（第二次请求被吞、资料页未被 pop），修复后全绿。变异探针：① `_openManagedRoom` 放回闸门内 →
+Test 2/3/6 转红；② 闸门吞掉重复 flight → single-flight 单元用例与并发 Test 4 转红（均已复原）。
+`flutter analyze` 无问题；定向 162 通过 / 0 失败；全量 `flutter test` **2835 通过 / 0 失败（退出码 0）**
+（本任务前 2826）。**未构建 APK/IPA、未安装真机、未部署**（用户明确本次不需要）。进入
+[任务记录](tasks/2026-09-17-direct-message-gate-lifecycle.md)或
+[根因/验证/剩余风险](../verification/2026-09-17-direct-message-gate-lifecycle.md)。
+
 ## 2026-09-17 第三阶段：聊天历史日期查询、全局搜索、闪照隐私与屏幕捕获安全（本地完成，未构建/未真机）
 
 五项修复（A–E），全部 TDD 落地：

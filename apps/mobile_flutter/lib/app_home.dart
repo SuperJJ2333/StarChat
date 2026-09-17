@@ -212,7 +212,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<DirectChatRoom> _openCanonicalDirectRoom(String roomId, String peer) =>
       widget.matrix.openCanonicalDirectRoom(roomId, matrixUserId: peer);
 
-  /// 同一好友「发消息」的单飞闸门：阻止重复 push 同一个 RoomPage。
+  /// 同一好友「发消息」的单飞闸门：只锁「权威身份 + canonical roomId」解析，
+  /// RoomPage/租约/复用由 [RoomNavigationCoordinator] 按 roomId 负责
+  /// （见 `features/matrix/direct_chat_entry.dart` 的生命周期说明）。
   final DirectMessageOpenGate _directMessageGate = DirectMessageOpenGate();
 
   /// 通话关键路径诊断：backend（invite/answer/ICE）与 controller
@@ -1428,28 +1430,47 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 一律按业务 userId 从好友目录解析权威联系人——双源合并（业务 friends
   /// 权威 + Matrix 房间成员实时态），保证 matrixUserId 有效后再打开加密
   /// 私聊；RoomLease/RoomPage 统一交给 [_openManagedRoom]。
+  ///
+  /// 生命周期边界（真机 BUG 修复）：[DirectMessageOpenGate] 只锁
+  /// [_resolveDirectMessageTarget]（身份解析 + canonical roomId），拿到 roomId
+  /// 即释放；**`_openManagedRoom` 必须在闸门之外**——它 await 到 RoomPage 关闭
+  /// 才完成，若置于闸门内，Room A 打开期间同一好友的第二次「发消息」会被吞掉，
+  /// 到不了 `RoomNavigationCoordinator` 的 popUntil。
   Future<void> _openMessage(ContactDetails contact) async {
-    final openingKey = directMessageOpenKey(contact);
-    // 同一好友只允许一个打开流程：DirectChatController 已合并并发的房间
-    // 打开请求，但每个调用方仍会各自 push RoomPage——这里阻止重复 route。
-    if (!_directMessageGate.claim(openingKey)) return;
     try {
-      final cache = await _identityCache();
-      final authoritative = await resolveFriendContact(cache, contact);
-      final reference =
-          await directChats.open(authoritative.matrixUserId.trim());
-      await _openManagedRoom(reference.roomId,
-          roomName: authoritative.displayName, initialContact: authoritative);
+      final target = await _directMessageGate.run(
+        directMessageOpenKey(contact),
+        () => _resolveDirectMessageTarget(contact),
+      );
+      if (!mounted) return;
+      // 闸门已在此释放：下面 await 的是页面生命周期，不是闸门生命周期。
+      // 已打开 → popUntil 回原房间；在打开 → 复用；未打开 → push。
+      await _openManagedRoom(target.roomId,
+          roomName: target.contact.displayName,
+          initialContact: target.contact);
     } catch (error) {
-      // 先释放闸门再弹窗：弹窗“重试”会同步回调本方法。
-      _directMessageGate.release(openingKey);
+      // 失败时闸门已自动释放（见 DirectMessageOpenGate.run），弹窗「重试」
+      // 可以重新进入本方法。
       if (!mounted) return;
       await showDirectChatFailureDialog(context, error,
           onRetry: () => _openMessage(contact));
-      return;
-    } finally {
-      _directMessageGate.release(openingKey);
     }
+  }
+
+  /// 闸门内的全部工作：权威身份解析 → canonical 私聊房间。
+  ///
+  /// 只做数据解析，绝不 push 页面、不取租约、不持有 Navigator/Route。
+  Future<DirectMessageTarget> _resolveDirectMessageTarget(
+      ContactDetails contact) async {
+    final cache = await _identityCache();
+    final authoritative = await resolveFriendContact(cache, contact);
+    final matrixUserId = authoritative.matrixUserId.trim();
+    if (matrixUserId.isEmpty) {
+      throw StateError('The contact is no longer a current friend');
+    }
+    final reference = await directChats.open(matrixUserId);
+    return DirectMessageTarget(
+        roomId: reference.roomId, contact: authoritative);
   }
 
   /// BUG4：通讯录 → 群聊 → 群聊通讯录列表（已 join + saved=true）。

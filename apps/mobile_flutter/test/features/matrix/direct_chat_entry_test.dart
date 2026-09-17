@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_entry.dart';
@@ -6,6 +8,15 @@ import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 
 const _self = ProfileData(
     username: 'self', nickname: 'self', maskedEmail: '', fallbackSeed: 'self');
+
+const _bob = ContactDetails(
+    userId: 'bob', username: 'bob', matrixUserId: '@bob:test', nickname: 'Bob');
+
+const _alice = ContactDetails(
+    userId: 'alice',
+    username: 'alice',
+    matrixUserId: '@alice:test',
+    nickname: 'Alice');
 
 ContactSummary _friend({
   String userId = 'bob',
@@ -204,20 +215,92 @@ void main() {
     expect(loads, 2, reason: '未知 Matrix ID 会刷新一次目录后仍判失败');
   });
 
-  test('同一好友的打开闸门去重，身份未知与不同好友互不影响', () {
+  test('同一好友的闸门 single-flight：复用同一个 Future 与目标，解析完成即释放', () async {
     final gate = DirectMessageOpenGate();
-    expect(gate.claim('bob'), isTrue);
-    expect(gate.claim('bob'), isFalse, reason: '连续快速点击只放行一次');
-    expect(gate.claim('alice'), isTrue, reason: '不同好友各自独立');
-    expect(gate.claim(''), isTrue, reason: '身份未知不参与去重，由解析给出失败提示');
+    final held = Completer<ContactDetails>();
+    var resolutions = 0;
+
+    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+          resolutions++;
+          final contact = await held.future;
+          return DirectMessageTarget(roomId: '!a:test', contact: contact);
+        });
+
+    final first = resolve();
+    final second = resolve();
+    expect(identical(first, second), isTrue,
+        reason: '第二次点击必须复用同一个 flight（返回同一个 Future），而不是被静默丢弃');
+    expect(gate.isOpen('bob'), isTrue, reason: '身份解析在途时闸门持有');
+
+    held.complete(_bob);
+    final first2 = await first;
+    final second2 = await second;
+    expect(resolutions, 1, reason: '并发两次只解析一次身份');
+    expect(identical(first2, second2), isTrue,
+        reason: '两个调用拿到同一个 DirectMessageTarget');
+    expect(first2.roomId, '!a:test');
+    expect(gate.isOpen('bob'), isFalse, reason: 'canonical roomId 解析完成即释放');
+  });
+
+  test('房间页面仍打开时闸门已释放：同一好友可再次进入解析', () async {
+    final gate = DirectMessageOpenGate();
+    var resolutions = 0;
+
+    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+          resolutions++;
+          return DirectMessageTarget(roomId: '!a:test', contact: _bob);
+        });
+
+    await resolve();
+    expect(gate.isOpen('bob'), isFalse,
+        reason: '闸门锁定范围只到 canonical roomId，绝不等 RoomPage 关闭');
+
+    // 模拟「Room A 已打开 → 再次进入好友资料 → 再点发消息」。
+    final second = await resolve();
+    expect(resolutions, 2, reason: '第二次请求必须真的重新进入解析');
+    expect(second.roomId, '!a:test');
+  });
+
+  test('解析失败同样释放闸门，弹窗「重试」可以重新进入', () async {
+    final gate = DirectMessageOpenGate();
+    var attempts = 0;
+
+    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+          attempts++;
+          if (attempts == 1) throw StateError('direct chat open failed');
+          return DirectMessageTarget(roomId: '!a:test', contact: _bob);
+        });
+
+    await expectLater(resolve(), throwsStateError);
+    expect(gate.isOpen('bob'), isFalse, reason: '失败必须先释放闸门');
+
+    final target = await resolve();
+    expect(target.roomId, '!a:test', reason: '重试可重新进入');
+    expect(attempts, 2);
+  });
+
+  test('不同好友各自独立，空键不参与去重', () async {
+    final gate = DirectMessageOpenGate();
+    final heldBob = Completer<DirectMessageTarget>();
+    final bob = gate.run('bob', () => heldBob.future);
     expect(gate.isOpen('bob'), isTrue);
 
-    gate.release('bob');
-    expect(gate.isOpen('bob'), isFalse);
-    expect(gate.claim('bob'), isTrue, reason: '房间关闭/流程结束后可再次打开');
-    gate.release('bob');
-    gate.release('alice');
+    final alice = await gate.run(
+        'alice', () async => DirectMessageTarget(roomId: '!b:test', contact: _alice));
+    expect(alice.roomId, '!b:test', reason: '不同好友不受同一好友的 flight 影响');
     expect(gate.isOpen('alice'), isFalse);
+
+    var emptyKeyRuns = 0;
+    final emptyKey = await gate.run('', () async {
+      emptyKeyRuns++;
+      return DirectMessageTarget(roomId: '!c:test', contact: _bob);
+    });
+    expect(emptyKeyRuns, 1, reason: '身份未知不参与去重，由解析给出失败提示');
+    expect(emptyKey.roomId, '!c:test');
+
+    heldBob.complete(DirectMessageTarget(roomId: '!a:test', contact: _bob));
+    expect((await bob).roomId, '!a:test');
+    expect(gate.isOpen('bob'), isFalse);
   });
 
   test('打开键优先业务 userId，缺失时退回 Matrix ID', () {

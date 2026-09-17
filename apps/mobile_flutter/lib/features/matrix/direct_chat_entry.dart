@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../contacts/contact_models.dart';
 import 'direct_chat_controller.dart';
 import 'profile_repository.dart';
@@ -111,24 +113,66 @@ Future<({ContactDetails contact, String roomId})> resolveCallTarget({
   return (contact: authoritative, roomId: room.roomId);
 }
 
-/// 同一好友「发消息」的单飞闸门。
+/// 「发消息」在闸门内解析出的目标：权威联系人 + canonical 房间号。
 ///
-/// `DirectChatController` 已按 `matrixUserId` 合并并发的房间打开请求，但每个
-/// 调用方随后仍会各自 push 一个 RoomPage；同一好友连续快速点击会产生多个
-/// route。此闸门从打开请求开始一直持有到 RoomPage 关闭（`push` 完成）或流程
-/// 失败为止，保证一个好友同时只有一个打开流程。
+/// 只承载数据：**不放** BuildContext / Navigator / Route / RoomLease。
+/// RoomPage 的 push、租约、复用与 popUntil 全部属于 AppHome 的
+/// `RoomNavigationCoordinator`（按 roomId 负责），不属于本对象。
+final class DirectMessageTarget {
+  const DirectMessageTarget({required this.roomId, required this.contact});
+
+  /// canonical 私聊房间号（由 `DirectChatController` + 网关仲裁得到）。
+  final String roomId;
+
+  /// 目录中的权威联系人（含补齐/更新后的 `matrixUserId`）。
+  final ContactDetails contact;
+}
+
+/// 同一好友「发消息」的**身份解析 + canonical 房间获取**单飞闸门。
+///
+/// 锁定范围**只覆盖** [DirectMessageTarget] 的解析过程：
+/// `业务 userId → resolveFriendContact → directChats.open → canonical roomId`。
+/// 拿到 roomId 即释放；失败同样立即释放，以便弹窗「重试」可以重新进入。
+///
+/// 绝不把 `Navigator.push(RoomPage)` 纳入锁定范围：`await push` 只在页面**关闭**
+/// 后才完成，一旦纳入，Room A 打开期间同一好友的第二次「发消息」会被静默吞掉，
+/// 根本到不了 `RoomNavigationCoordinator` 的 `popUntil`（真机 BUG：Room A 内再次
+/// 「发消息」完全没反应）。
+///
+/// 并发语义为 single-flight：同一好友的在途请求复用同一个 Future 与同一个
+/// [DirectMessageTarget]，不重复解析身份、不重复查询 canonical 房间，也不再
+/// 丢弃第二次请求。房间页面级的去重由 `RoomNavigationCoordinator` 按 roomId 负责，
+/// 两者分工不重叠。
 final class DirectMessageOpenGate {
-  final _openings = <String>{};
+  final _flights = <String, Future<DirectMessageTarget>>{};
 
-  /// 认领该键；已有打开流程在途时返回 false（调用方直接返回）。
+  /// 认领该键并发起 [operation]；同键在途时返回**同一个** Future。
   /// 空键（身份未知）不参与去重，交由身份解析给出失败提示。
-  bool claim(String key) => key.isEmpty || _openings.add(key);
+  Future<DirectMessageTarget> run(
+    String key,
+    Future<DirectMessageTarget> Function() operation,
+  ) {
+    if (key.isEmpty) return operation();
+    final existing = _flights[key];
+    if (existing != null) return existing;
 
-  void release(String key) {
-    if (key.isNotEmpty) _openings.remove(key);
+    // 先登记 flight 再启动解析：operation 在第一个 await 之前可能是同步的，
+    // 必须先占位才能被同一帧内的第二次点击合并。
+    final completer = Completer<DirectMessageTarget>();
+    final pending = completer.future;
+    _flights[key] = pending;
+    unawaited(Future<DirectMessageTarget>.sync(operation).then((target) {
+      if (identical(_flights[key], pending)) _flights.remove(key);
+      if (!completer.isCompleted) completer.complete(target);
+    }, onError: (Object error, StackTrace stackTrace) {
+      if (identical(_flights[key], pending)) _flights.remove(key);
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    }));
+    return pending;
   }
 
-  bool isOpen(String key) => key.isNotEmpty && _openings.contains(key);
+  /// 该好友是否仍在解析中（在途 flight 未释放）。页面打开**不算**在途。
+  bool isOpen(String key) => key.isNotEmpty && _flights.containsKey(key);
 }
 
 /// 本地目录中的当前好友：业务 `userId` 优先，Matrix ID 兜底（群成员/朋友圈

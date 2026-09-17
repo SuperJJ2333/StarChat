@@ -102,3 +102,13 @@
 - 下次恢复先检查的事实：`ContactsTabPage` 是否仍只透传 `widget.onMessage`；
   `direct_chat_entry.dart` 是否仍是「发消息」唯一身份解析；
   `DirectChatController._openings` / `CoordinatedDirectChatGateway` 是否未被动过。
+
+## 后续修复（2026-09-17，本任务的行为已被修正）
+
+本任务 A3 引入的 `DirectMessageOpenGate` 把「好友是否正在打开」一直持有到 RoomPage 关闭
+（`await Navigator.push` 只在页面关闭后完成），导致 Room A 打开期间再次「好友资料 → 发消息」
+被闸门静默吞掉、无任何反应。该边界已修正：闸门只锁「身份解析 + canonical roomId」，
+页面打开交给 `RoomNavigationCoordinator`，并发语义改为 single-flight。
+见[任务记录](2026-09-17-direct-message-gate-lifecycle.md)与
+[根因/验证](../verification/2026-09-17-direct-message-gate-lifecycle.md)。
+本任务 A1/A2/A4 的行为与结论不受影响。

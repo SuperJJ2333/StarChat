@@ -56,9 +56,24 @@ void main() {
     final root = source.split('final class ContactsTabPage')[0];
     expect(root, contains('Future<void> _openMessage(ContactDetails contact)'));
     expect(root, contains('resolveFriendContact(cache, contact)'));
-    expect(
-        root, contains('directChats.open(authoritative.matrixUserId.trim())'));
-    expect(root, contains('_directMessageGate.claim(openingKey)'));
+    expect(root, contains('directChats.open(matrixUserId)'));
+
+    // 生命周期边界：闸门只包住「身份解析 + canonical roomId」，RoomPage/租约
+    // （_openManagedRoom）必须在闸门之外，否则 Room A 打开期间再次「发消息」
+    // 会被闸门吞掉（真机 BUG）。
+    final openMessage = root.substring(
+      root.indexOf('Future<void> _openMessage(ContactDetails contact)'),
+      root.indexOf('Future<DirectMessageTarget> _resolveDirectMessageTarget'),
+    );
+    expect(openMessage, contains('() => _resolveDirectMessageTarget(contact)'),
+        reason: 'DirectMessageOpenGate 只能持有身份 + canonical 房间解析');
+    expect(openMessage, contains('await _openManagedRoom(target.roomId'),
+        reason: '_openManagedRoom 必须在闸门之外');
+    expect(openMessage.indexOf('_directMessageGate.run('),
+        lessThan(openMessage.indexOf('await _openManagedRoom(')),
+        reason: '先解析出 DirectMessageTarget，再打开房间页面');
+    expect(openMessage, isNot(contains('directChats.open')),
+        reason: 'canonical 房间解析只在闸门内完成');
 
     // 通讯录只是入口：不得再自建 RoomLease / RoomPage / direct chat 查找。
     final contactsTab = source
