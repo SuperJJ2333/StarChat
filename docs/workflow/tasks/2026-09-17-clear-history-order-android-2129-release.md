@@ -56,8 +56,12 @@
   `verify_rebuild.py` 语义核对（类数 25345/25345、原生/资产 338 项零变化、`manifest.diff` 0 字节）。
 - 发布后验证：真实 HTTP 投影（401 未授权 / 200 带 token）、服务器+工作站双侧公网 200/206 + MIME、
   公网整包 SHA256 与本地一致、`/api/v1/health/{live,ready}` 200。
-- 未执行：iOS 构建；2129 真机安装与弹窗实弹；`scripts/verify.ps1` 全仓门禁（本次改动为客户端缺陷修复 + 版本号 +
-  发行操作，未触碰服务端/迁移；如需可在下次服务端改动时合并执行）。
+- 全仓门禁 `pwsh -NoProfile -File scripts/verify.ps1`（HEAD `ebd56b36`，退出码 0）：**`Verification: PASS`**——
+  Repository/Deployment policy、TemplateTools、Infra render 143、Getui bridge 28、Matrix Bot 9、
+  **Business API and Worker 1933 通过 / 58 跳过 / 0 失败**、Flutter boundary 70、
+  UI contract PASS（30 组件 / 369 页面）、Business API import、AST parse 219、Alembic、OpenAPI、Compose render
+  全部通过；日志 `artifacts/2026-09-17/release-2129/verify-full-repo-2129.txt`。
+- 未执行：iOS 构建；2129 真机安装与弹窗实弹（均由用户验收）。
 
 ## 阶段计时
 

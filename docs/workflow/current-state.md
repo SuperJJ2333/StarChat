@@ -19,6 +19,8 @@ aapt 身份 2129/0.3.94/arm64，v2+v3 签名，zipalign `Verification successful
 并以**真实会话 token 的 HTTP GET** 验证 `/app-updates/latest?platform=android`：未授权 401、带 token 200 且
 `0.3.94/2129`；服务器+工作站双侧公网 200/206 + MIME，**公网整包 SHA256 与本地构建包一致**。
 ③`git push origin main` → `5d43ce34..c73c12fb`，`origin/main...main` = `0 0`。
+全仓门禁 `scripts/verify.ps1` 于 `ebd56b36` **`Verification: PASS`**（Business API/Worker 1933 通过 / 58 跳过、
+Flutter boundary 70、UI contract、AST parse 219、Alembic/OpenAPI/Compose render 全通过）。
 **注意（本次踩到的假阳性）**：`www.liuhetong888.com` 对未知路径回落 SPA（`200 text/html`），
 对 `www` 探测 `/api/...` 或 `/health/...` 不能当作 API 存活证据；客户端实际用 non-www
 `https://liuhetong888.com`，健康路径为 `/api/v1/health/{live,ready}`。进入

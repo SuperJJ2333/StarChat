@@ -35,6 +35,7 @@
 | --- | --- |
 | 定向回归 `local_history_clear_test.dart` + `conversation_preferences_test.dart` | **8 通过 / 0 失败（退出码 0）**，日志 `artifacts/2026-09-17/release-2129/clear-history-order-regression.txt` |
 | `flutter analyze` | `No issues found!` |
+| 全仓门禁 `scripts/verify.ps1`（HEAD `ebd56b36`） | **`Verification: PASS`（退出码 0）**：Business API and Worker 1933 通过 / 58 跳过、Flutter boundary 70、UI contract PASS（30 组件 / 369 页面）、AST parse 219、Alembic / OpenAPI / Compose render 全通过；日志 `artifacts/2026-09-17/release-2129/verify-full-repo-2129.txt` |
 | 源码 commit | `175b3e6e`（`fix(chat): keep the conversation in place after 清空聊天记录`） |
 
 ## 2. 第 2 项：Android 0.3.94/2129 发布
