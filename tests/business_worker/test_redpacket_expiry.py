@@ -32,6 +32,16 @@ def test_expiry_task_refunds_due_packets_only():
     with factory() as session:
         assert session.get(type(due), due.id).status == "EXPIRED"
         assert session.get(type(future), future.id).status == "OPEN"
-    assert ledger.balance("sender") == Decimal("4.00")
+    # ADR-0073：worker 过期退款必须把未领取本金 + 该红包手续费一并退回，
+    # 且只退一次；仍然 OPEN 的那个红包其手续费留在 PLATFORM_FEE。
+    assert due.fee == Decimal("0.01") and future.fee == Decimal("0.01")
+    assert ledger.balance("sender") == Decimal("3.99")
+    assert ledger.balance("PLATFORM_FEE") == Decimal("0.01")
+    assert ledger.balance(f"PLATFORM_REDPACKET_ESCROW:{due.id}") == Decimal("0.00")
+    assert ledger.balance(f"PLATFORM_REDPACKET_ESCROW:{future.id}") == Decimal("1.00")
+    # 再跑一次不得重复退款（终态幂等）。
+    assert RedPacketExpiryTask(factory, packets).run_batch(now=now, limit=10) == 0
+    assert ledger.balance("sender") == Decimal("3.99")
+    assert ledger.balance("PLATFORM_FEE") == Decimal("0.01")
     engine.dispose()
 

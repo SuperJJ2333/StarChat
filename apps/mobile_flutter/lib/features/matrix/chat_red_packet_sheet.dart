@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import '../../core/amount_rules.dart';
@@ -7,6 +6,7 @@ import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
+import 'chat_payment_flow.dart';
 import 'chat_red_packet_controller.dart';
 import 'group_member_picker.dart';
 import 'matrix_e2ee_client.dart' show MatrixRoomMemberSnapshot;
@@ -162,11 +162,11 @@ final class _State extends State<ChatRedPacketSheet> {
     }
   }
 
-  /// ADR-0073：与服务端 `red_packet_fee` 同规则（0.5%，最低 0.01 点钻，
-  /// 两位四舍五入）。仅用于界面提示与提交前校验。
-  static double _fee(double value) {
-    final rounded = (value * 0.005 * 100).roundToDouble() / 100;
-    return math.max(0.01, rounded);
+  /// ADR-0073：手续费规则与转账**同一实现**（[chatPaymentFeeOrNull]，BigInt
+  /// 无浮点），这里只做展示与提交前校验；服务端仍是权威。
+  static double? _fee(String raw) {
+    final text = chatPaymentFeeOrNull(raw);
+    return text == null ? null : double.tryParse(text);
   }
 
   Future<void> _send() async {
@@ -197,9 +197,13 @@ final class _State extends State<ChatRedPacketSheet> {
       await _alert('请选择专属红包接收人');
       return;
     }
-    // ADR-0073：发起方承担 0.5% 手续费（最低 0.01 点钻），与服务端
-    // red_packet_fee 同规则；这里只作提交前提示，服务端仍是权威。
-    final fee = _fee(amount);
+    // ADR-0073：发起方承担 0.5% 手续费（最低 0.01 点钻），与转账同一实现；
+    // 这里只作提交前提示，服务端仍是权威。
+    final fee = _fee(total.text.trim());
+    if (fee == null) {
+      await _alert('请输入有效的红包金额');
+      return;
+    }
     if (balance != null && amount + fee > balance!) {
       await _alert(
           '红包创建失败，账户余额不足（含 0.5% 手续费 ${fee.toStringAsFixed(2)} 点钻，需合计 ${(amount + fee).toStringAsFixed(2)} 点钻）',
@@ -506,15 +510,17 @@ final class _State extends State<ChatRedPacketSheet> {
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: total,
               builder: (context, value, child) {
+                // ADR-0073：手续费与实扣合计都来自同一个与转账共享的
+                // 手续费实现（BigInt，无浮点估算）。
+                final feeText = chatPaymentFeeOrNull(value.text);
                 final parsed = double.tryParse(value.text.trim());
-                // ADR-0073：发起方承担手续费，展示权威规则的预估实扣合计。
                 final String hint;
-                if (parsed == null) {
+                if (feeText == null || parsed == null) {
                   hint = '收取 0.5% 手续费，最低 0.01 点钻，由发红包方承担';
                 } else {
-                  final fee = _fee(parsed);
-                  hint = '手续费 ${fee.toStringAsFixed(2)} 点钻（0.5%，最低 0.01）'
-                      ' · 实扣合计 ${(parsed + fee).toStringAsFixed(2)} 点钻';
+                  final sum = parsed + double.parse(feeText);
+                  hint = '手续费 $feeText 点钻（0.5%，最低 0.01）'
+                      ' · 实扣合计 ${sum.toStringAsFixed(2)} 点钻';
                 }
                 return Padding(
                   padding: const EdgeInsets.only(top: 4),

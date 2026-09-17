@@ -154,6 +154,47 @@ async def test_red_packet_total_visible_to_sender_and_after_completion_or_expiry
 
 
 @pytest.mark.asyncio
+async def test_red_packet_fee_is_visible_only_to_the_sender(context):
+    """ADR-0073：手续费是发起方的成本，其他成员拿不到该字段。"""
+    app, factory, settings, _gateway = context
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "fee-privacy"}, json={"mode": "EQUAL", "total": "2.00", "share_count": 2, "room_id": "!room:test"})
+        assert created.status_code == 201, created.text
+        assert created.json()["fee"] == "0.01"
+        packet_id = created.json()["id"]
+        sender_view = await client.get(f"/api/v1/red-packets/{packet_id}", headers=bearer(settings, "sender"))
+        assert sender_view.status_code == 200
+        assert sender_view.json()["fee"] == "0.01"
+        member_view = await client.get(f"/api/v1/red-packets/{packet_id}", headers=bearer(settings, "alice"))
+        assert member_view.status_code == 200
+        assert member_view.json()["fee"] is None
+
+
+@pytest.mark.asyncio
+async def test_red_packet_balance_check_includes_the_fee(context):
+    """ADR-0073：余额校验必须按 total + 手续费——「本金刚好够」也要拒绝。"""
+    app, factory, settings, _gateway = context
+    ledger = LedgerService(factory)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # 余额 10.00，total=10.00 时手续费 0.05 → 需要 10.05，必须拒绝且无副作用。
+        rejected = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "fee-boundary-reject"}, json={"mode": "EQUAL", "total": "10.00", "share_count": 1, "room_id": "!room:test"})
+        assert rejected.status_code == 422, rejected.text
+        assert rejected.json()["error"]["code"] == "RED_PACKET_BALANCE_INSUFFICIENT"
+        # ADR-0073 §5：服务端错误也必须说明含手续费后的实扣合计。
+        message = rejected.json()["error"]["message"]
+        assert "0.05" in message and "10.05" in message, message
+        assert ledger.balance("sender") == Decimal("10.00")
+        assert ledger.balance("PLATFORM_FEE") == Decimal("0.00")
+        # total=9.95 + 手续费 0.05 = 10.00 恰好够 → 必须成功，并如实扣掉合计。
+        accepted = await client.post("/api/v1/red-packets", headers={**bearer(settings, "sender"), "Idempotency-Key": "fee-boundary-accept"}, json={"mode": "EQUAL", "total": "9.95", "share_count": 1, "room_id": "!room:test"})
+        assert accepted.status_code == 201, accepted.text
+        assert accepted.json()["fee"] == "0.05"
+        assert accepted.json()["total"] == "9.95"
+        assert ledger.balance("sender") == Decimal("0.00")
+        assert ledger.balance("PLATFORM_FEE") == Decimal("0.05")
+
+
+@pytest.mark.asyncio
 async def test_group_create_rejects_count_over_authoritative_members_before_debit(context):
     app, factory, settings, _gateway = context
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

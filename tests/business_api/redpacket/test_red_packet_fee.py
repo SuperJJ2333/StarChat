@@ -185,3 +185,44 @@ def test_expire_without_claims_refunds_full_amount_and_fee(services):
     )
     assert ledger.balance("sender") == Decimal("1000.00")
     assert ledger.balance("PLATFORM_FEE") == Decimal("0.00")
+
+
+def test_create_fee_transaction_carries_audit_and_outbox(services):
+    """手续费走既有记账管道：每笔创建都有审计与事务性 Outbox（ADR-0073）。"""
+    from app.core.outbox import OutboxEvent
+    from app.modules.audit.models import AuditEvent
+    from app.modules.ledger.models import LedgerTransaction
+
+    service, _ledger, factory = services
+    packet = service.create_equal(
+        sender_id="sender",
+        total=Decimal("10.00"),
+        share_count=2,
+        room_id="!room:test",
+        idempotency_key="rp-fee-trace",
+        expires_at=_expires(),
+    )
+    with factory() as session:
+        transaction = session.scalar(
+            select(LedgerTransaction).where(
+                LedgerTransaction.scope == "redpacket.create"
+            )
+        )
+        assert transaction is not None
+        assert transaction.reason_code == "RED_PACKET_CREATE"
+        assert transaction.actor_id == "sender"
+        audits = session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.subject_id == transaction.id,
+                AuditEvent.action == "ledger.post",
+            )
+        ).all()
+        outbox = session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.aggregate_id == transaction.id,
+                OutboxEvent.event_type == "ledger.posted",
+            )
+        ).all()
+    assert len(audits) == 1 and audits[0].actor_id == "sender"
+    assert len(outbox) == 1
+    assert packet.fee == Decimal("0.05")

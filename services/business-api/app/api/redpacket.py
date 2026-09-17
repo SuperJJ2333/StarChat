@@ -11,7 +11,7 @@ from app.modules.identity.rbac import Permission, RbacService
 from app.modules.identity.tokens import TokenService
 from app.modules.identity.payment_pin import PaymentPinService
 from app.modules.ledger.service import LedgerService, money
-from app.modules.redpacket.service import RedPacketService
+from app.modules.redpacket.service import RedPacketService, red_packet_fee
 from app.modules.settings.service import RED_PACKET_MAX_TOTAL_KEY, SettingService
 
 class StrictModel(BaseModel):
@@ -78,7 +78,18 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
             packet = service.create_equal(**kwargs) if body.mode == "EQUAL" else service.create_random(**kwargs) if body.mode == "RANDOM" else service.create_exclusive(**kwargs)
         except ValueError as error:
             if str(error) == "insufficient balance":
-                raise AppError(code="RED_PACKET_BALANCE_INSUFFICIENT", message="红包创建失败，账户余额不足", status_code=422) from error
+                # ADR-0073 §5：余额不足必须说明含手续费后的实扣合计，而不是
+                # 只说"余额不足"（旧客户端按 total 校验，最容易撞在这里）。
+                total = money(body.total)
+                fee = red_packet_fee(total)
+                raise AppError(
+                    code="RED_PACKET_BALANCE_INSUFFICIENT",
+                    message=(
+                        f"红包创建失败，账户余额不足（含 0.5% 手续费 {fee} 点钻，"
+                        f"需合计 {money(total + fee)} 点钻）"
+                    ),
+                    status_code=422,
+                ) from error
             if str(error) == "RED_PACKET_LIMIT_EXCEEDED":
                 raise AppError(code="RED_PACKET_LIMIT_EXCEEDED", message=f"单个红包金额不能超过 {max_total} 点钻", status_code=422) from error
             if str(error) == "room membership required":

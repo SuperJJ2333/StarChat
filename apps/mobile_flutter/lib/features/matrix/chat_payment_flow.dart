@@ -50,11 +50,13 @@ Future<ChatPaymentIntent?> prepareChatPayment(
         if (!await current() || !context.mounted) return null;
         final transfer = action == 'chat_transfer.create';
         final amount = payload[transfer ? 'amount' : 'total'].toString();
+        final fee = chatPaymentFeeOrNull(amount);
         return showPaymentPinAuthorization(context,
             title: transfer ? '转账' : '发红包',
             recipient: recipient(payload),
             amount: '$amount 点钻',
-            fee: transfer ? '手续费 ${chatPaymentFee(amount)} 点钻' : null,
+            // ADR-0073：红包与转账同费率，两者都必须在授权弹窗里显示手续费。
+            fee: fee == null ? null : '手续费 $fee 点钻（0.5%，最低 0.01）',
             isScopeCurrent: current, onAuthorize: (pin) async {
           try {
             final result = await api.authorizePaymentPin(
@@ -84,4 +86,17 @@ String chatPaymentFee(String amount) {
   final rounded = (cents + BigInt.from(100)) ~/ BigInt.from(200);
   final fee = rounded < BigInt.one ? BigInt.one : rounded;
   return '${fee ~/ BigInt.from(100)}.${(fee % BigInt.from(100)).toString().padLeft(2, '0')}';
+}
+
+/// [chatPaymentFee] for inputs that are not yet a server-acceptable amount
+/// (empty, non-numeric or more than two decimals) returns null instead of
+/// throwing, so callers can render an "estimate pending" state.
+String? chatPaymentFeeOrNull(String amount) {
+  final value = amount.trim();
+  if (!RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(value)) return null;
+  try {
+    return chatPaymentFee(value);
+  } catch (_) {
+    return null;
+  }
 }

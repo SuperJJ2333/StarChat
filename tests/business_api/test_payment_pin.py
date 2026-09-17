@@ -162,7 +162,9 @@ def test_redpacket_enforces_pin(setup):
     first = packets.create_equal(**args, payment_claims=claims, payment_authorization=ticket)
     second = packets.create_equal(**args, payment_claims=claims, payment_authorization=ticket)
     assert first.id == second.id
-    assert ledger.balance('user') == Decimal('9')
+    # ADR-0073：红包与转账一样由发起方承担 0.5% 手续费（最低 0.01）；
+    # 1.00 的红包实际扣 1.01，且重放不得二次扣费。
+    assert ledger.balance('user') == Decimal('8.99')
 
 
 def test_insufficient_balance_rolls_back_ticket_and_can_retry(setup):

@@ -92,7 +92,8 @@ def test_real_create_api_pin_gate_bound_authorization_and_retry(setup, path, pay
     second = client.post(path, headers=headers, json={**payload, 'payment_authorization': ticket})
     assert second.status_code == 201, second.text
     assert first.json()['id'] == second.json()['id']
-    assert ledger.balance('user') == Decimal('98.99' if action == 'chat_transfer.create' else '99')
+    # ADR-0073：红包与转账同口径——1.00 + 0.01 手续费 = 1.01，重放只扣一次。
+    assert ledger.balance('user') == Decimal('98.99')
     other_client, other_headers = build()
     replay = other_client.post(path, headers=other_headers, json={**payload, 'payment_authorization': ticket})
     assert replay.status_code == 403
