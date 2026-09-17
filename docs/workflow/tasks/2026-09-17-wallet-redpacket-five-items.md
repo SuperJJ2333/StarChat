@@ -10,7 +10,7 @@
 - 关联计划/ADR：[计划](../../superpowers/plans/2026-09-17-wallet-redpacket-five-items.md)、
   [ADR-0073](../../adr/0073-red-packet-fee.md)（已批准）、
   [UI demo](../../../frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html)。
-- 当前状态：实现与本地门禁完成（**候选 commit `c69e55c2`**，`verify.ps1` 全绿）；**未构建、未真机、未部署**；
+- 当前状态：实现与本地门禁完成（**候选 commit `c69e55c2`**，`verify.ps1` 全绿）；**已构建并安装 0.3.93-debug/2128 到 Mi 6（保留数据）**；未部署服务端；
   红包手续费按用户要求**必须等新客户端先行**后再发布 API。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`（`main`）。
   拥有：`apps/mobile_flutter/lib/features/wallet/{manual_wallet_page,wallet_page}.dart`、
@@ -38,8 +38,9 @@
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android | 未构建（本次未要求） | 工作树 commit | — | — | — |
-| 业务 API | **未部署**（迁移 0068 与手续费逻辑仅在仓库） | 工作树 commit | — | — | — |
+| Android debug（Mi 6 真机） | **0.3.93-debug / 2128** | `d3274506` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.93-debug-2128/ChatFlow-0.3.93-debug-2128-arm64-rebuilt.apk`，SHA256 `F2C0851F…40F13D3`（源包 `8AA8DBFB…9583E6`） | 2026-09-17 15:06:06 +08 保留数据覆盖安装成功（此前 2126），设备回读 `base.apk` SHA256 与证书同交付候选一致；`firstInstallTime` 2026-09-11 00:42:05 未变 |
+| Android 正式版 | 未发布（线上仍 0.3.93/2127，本任务前已上线） | — | — | — | — |
+| 业务 API | **未部署**（迁移 0068 与手续费逻辑仅在仓库） | `c69e55c2` | — | — | — |
 | 前端静态 | 仅新增 demo 文件，未部署 | — | — | `frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html` | — |
 
 测试记录：
@@ -96,3 +97,4 @@
 - 下次恢复先检查的事实：`_terminalBindingFailures` 是否仍覆盖服务端终局错误码；`capabilitiesUnavailable`
   是否仍是唯一提示条件；`WalletPage` 是否仍非嵌入且 AppHome 未重新包 scaffold；
   `red_packet_fee` 是否仍与 `transfer_fee` 同构且退款含手续费；迁移 head 是否为 `0068_red_packet_fee`。
+

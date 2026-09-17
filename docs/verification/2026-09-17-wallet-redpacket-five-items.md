@@ -165,7 +165,7 @@ tests/business_api/test_payment_pin_api.py tests/business_worker/test_redpacket_
 - 未部署服务端（红包手续费必须等新客户端先行）。
 - 第 5 项 Flutter 观感未在真机核对（用户按 demo 通过）。
 
-## 9. Mi 6 debug 包（0.3.93-debug/2128）：已构建并验证，**安装被设备离线阻断**
+## 9. Mi 6 debug 包（0.3.93-debug/2128）：已构建、已安装、已回读验证
 
 用户要求把本轮改动推送到 Mi 6 debug 通道。按 `chat-history-search-flash-2126-build.ps1` 同源流程构建
 `0.3.93-debug/2128`（versionCode 2128 > 已装 2126，且与线上正式版 2127 区分）：
@@ -176,19 +176,18 @@ tests/business_api/test_payment_pin_api.py tests/business_worker/test_redpacket_
 | 源包（Flutter debug ARM64） | `ChatFlow-0.3.93-debug-2128-arm64-source.apk`，SHA256 `8AA8DBFB0E953D298A811B0FD1A719F4CEB2BEE8C8DC64FFAB0197F3CE9583E6` |
 | 交付包（Apktool 2.12.1 重建 + zipalign `-P 16 -f 4` + 固定证书签名） | `ChatFlow-0.3.93-debug-2128-arm64-rebuilt.apk`，SHA256 `F2C0851F5091F62B6648BA4B769DFCC3AC8C166DDBE2A1871E8A7334140F13D3` |
 | 重建语义核对 | 类数 27316/27316、原生/Flutter 资产 336 项零变化、`manifest_semantics_identical=true`、`manifest-semantics.diff` 0 字节 |
-| 身份与签名 | aapt badging 断言 `com.liuhetong.mobile` versionCode 2128 / versionName `0.3.93-debug` / arm64-v8a / `application-debuggable`；apksigner 证书 = 固定身份 `75b31c66…`；zipalign `-c -P 16 4` 通过 |
-| 证据目录 | `docs/verification/artifacts/2026-09-17/android-0.3.93-debug-2128/`（脚本、构建日志、双端清单、输入哈希、重建报告） |
+| 身份与签名 | aapt badging：`com.liuhetong.mobile` versionCode 2128 / versionName `0.3.93-debug` / arm64-v8a / `application-debuggable`；apksigner 证书 = 固定身份 `75b31c66…`；zipalign `-c -P 16 4` 通过 |
+| **真机安装** | `adb install -r`（保留数据覆盖安装）→ **Success**；设备侧 `versionCode=2128` / `versionName=0.3.93-debug` / `primaryCpuAbi=arm64-v8a`；**`firstInstallTime=2026-09-11 00:42:05` 未变**（数据保留），`lastUpdateTime=2026-09-17 15:06:06` |
+| **回读验证** | 从设备拉回 `base.apk`（144,642,347 字节）：SHA256 `f2c0851f…f13d3` **等于**交付候选；证书 `75b31c66…ba61fff` **等于**固定身份 |
+| 证据目录 | `docs/verification/artifacts/2026-09-17/android-0.3.93-debug-2128/`（构建脚本、构建/安装/回读日志、双端清单、输入哈希、重建报告） |
 
-**安装未完成（外部阻断）**：Mi 6（`cbd0156b`，MI 6 / Android 9）在构建期间由 `device` 变为 `offline`，
-随后反复在 `device`/`offline`/`not found` 间抖动。已尝试 `adb kill-server`+`start-server`、`reconnect offline|device`、
-`get-state` 恢复后立即安装、`install -r`（streamed）、`install -r --no-streaming`、`wait-for-device`；
-最好一次已进入 `Performing Streamed Install` 但传输中掉线。设备侧未安装任何新版本：安装前后均为
-`2126 / 0.3.92-debug`，`firstInstallTime` 2026-09-11 00:42:05 未变。
+过程记录（如实）：构建期间设备曾由 `device` 抖动为 `offline`，前 5 次安装尝试因掉线失败
+（`kill-server`/`reconnect`/streamed/`--no-streaming`/`wait-for-device` 均已尝试）；设备恢复后
+一次 `adb install -r` 成功。恢复手段与日志见同目录 `install-*.log`、`readback-2128.log`。
 
-恢复所需（用户侧一步）：解锁手机并保持屏幕常亮（MIUI 锁屏会挂起 ADB），必要时在开发者选项重新确认
-「USB 调试 / 通过 USB 安装」授权；随后执行
-`pwsh -NoProfile -File docs/verification/artifacts/2026-09-17/android-0.3.93-debug-2128/build-debug-2128.ps1 -Mode Install`
-再 `-Mode Pull`（回读设备 `base.apk` 校验 SHA256 与固定证书）。
+**真机待用户验收**：①绑定页被拒地址可删除并提示更换、「更改绑定」按钮与 30 天提示；②进入钱包不再闪
+「功能状态暂不可用」；③四个钱包页面导航栏右侧刷新；④红包手续费展示（发红包面板与 PIN 授权弹窗的
+「手续费 + 实扣合计」——注意服务端扣费**尚未部署**，当前真机红包仍免费）；⑤充值/提现新视觉。
 
 ## 10. 客户端不确定结果的幂等键只在内存（既有行为）
 
