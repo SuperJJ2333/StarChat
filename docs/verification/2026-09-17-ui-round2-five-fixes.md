@@ -131,6 +131,14 @@ Flutter ARM64 debug 源包 → Apktool 2.12.1 解码/重建 → zipalign 36.0.0 
 | **数据保留** | `firstInstallTime=2026-09-11 00:42:05` **未变**（未卸载、未清数据）；`lastUpdateTime=2026-09-17 19:34:46` |
 | 设备回读 | 拉回 `/data/app/.../base.apk`：SHA256 `c420ac9c…f672fe` **与交付候选完全一致**，证书 `75b31c66…ba61fff` 一致 |
 
+**交付包与提交的一致性核对（重要）**：构建脚本记录了构建前后的逐文件 SHA256 清单
+（`source-input-sha256-{before,after}.json`）。构建完成后工作树中出现了**另一条工作流**的未提交改动
+（`call_*`、`room_history_day_index*`、`screen_capture_protection.dart`、`global_search_index.dart`、
+`flash_photo.dart` 等，以及新增 `call_audio_route_coordinator.dart` 与其测试）——**均非本任务改动**。
+已用构建期清单核对：这些文件在构建时的 SHA256 **与 `HEAD`(`8c97fbf2`) 完全一致**、与当前工作树内容**不同**，
+即改动发生在构建之后。因此本次交付的 2130 包**只包含 commit `8c97fbf2`**，不含上述他方改动。
+本任务未 `add`/`commit`/`revert` 任何他方文件。
+
 ## 6. GitHub 推送
 
 - 首次 `git push origin main` **失败**：`schannel: failed to receive handshake, SSL/TLS connection failed`
