@@ -1,5 +1,26 @@
 # 移动交付恢复索引
 
+## 2026-09-17 Android 0.3.93/2127 发布 + 更新弹窗（**已上线**，真机待用户验收）
+
+用户要求「推送 Android 新版本更新弹窗」，确认参数：0.3.93 + 2127、不强制更新、允许本地 commit。
+候选源码 commit **`d30bd051`**（未 push）：`pubspec`/`app_config` 升到 `0.3.93+2127`，含
+DirectMessageOpenGate 生命周期修复与 2121→2127 的累积修复；冻结候选全量 `flutter test`
+**2835 通过 / 0 失败**、`flutter analyze` 无问题。APK 按固定流程（ARM64 release + 三项 HTTPS
+dart-define → Apktool 2.12.1 → zipalign 36.0.0 `-P 16 -f 4` → 固定证书 `75b31c66…`）构建，
+aapt 身份 2127/0.3.93/arm64，v2+v3 签名，语义核对 25345/25345 类、338 项原生资产零变化、
+清单语义一致；SHA256 **`E1C34A03F42BFE83A3F7E3F67E60010D8CB1754D9F708B727F0DB4AE903BD40F`**
+（79,408,158 字节）。16MiB 分块上传 + 服务端合并 SHA 门 + `install -m 0644` 不可变版本文件，
+`latest-arm64.apk` 原子切换 2127；更新弹窗发布 trace `android-release-0.3.93-2127-20260917`
+（5 条审计，min_supported_build 沿用 3，iOS 行未改）。
+**期间发现并修复第二个生产缺陷**：线上 `app_update.py` 只对 iOS 打 `platform` 标记，而
+0.3.81/2085 起客户端强制校验 `platform`，因此**现网 Android 更新弹窗一直是关死的**；
+已按 admin 流程用在线镜像单文件覆盖修复（`starchat-business-api:app-update-platform-20260917`，
+digest `16522404…`，演练先锁定导入路径防 ADR-0071 假绿），切换后 61/61 env、3 mounts、
+`127.0.0.1:8082` 不变、healthy、日志无 error。公网服务器+工作站双侧 200/206 + MIME 通过，
+公网整包下载 SHA 与本地一致，2121 保留为回退路径。进入
+[任务记录](tasks/2026-09-17-android-0393-2127-release.md)或
+[发布与验证记录](../verification/2026-09-17-android-0393-2127-release.md)。
+
 ## 2026-09-17 第二阶段补丁：DirectMessageOpenGate 生命周期边界（本地完成，未构建/未真机/未部署）
 
 真机复现「Room A → 再进入好友资料 → 再点发消息 → 完全没反应」。根因：`_openMessage` 把整个打开流程
