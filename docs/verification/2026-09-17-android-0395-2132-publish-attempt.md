@@ -1,11 +1,12 @@
-# 0.3.95 / 2132 更新弹窗发布：本次尝试与阻断证据（**未执行任何生产写入**）
+# 0.3.95 / 2132 更新弹窗发布记录（**已上线**；含先前的 SSH 阻断与恢复后一键续做）
 
 - 日期：2026-09-17（Asia/Hong_Kong）
 - 用户指令：「请你推送 Android 版的更新弹窗」。
-- 结论：**无法执行**。生产 SSH（跳板机与目标机两条路径）均无 banner 应答，
-  而本发布必须先经 SSH 上传不可变 APK，才允许发布弹窗设置。
+- **最终结果：已发布完成**——APK 不可变文件已安装、`latest-arm64.apk` 已原子切换、更新弹窗已发布（5 条审计）、
+  服务器与工作站双侧公网验证通过。详见第 11 节。过程中先经历了一段**生产 SSH 全面不可达**的阻断（第 2、10 节），
+  恢复后用第 9 节的一键脚本完成发布。
 - 前置事实：另一条工作流已完成 **本地构建 + 全部门禁 + GitHub 推送**，并已写好三个发布脚本；
-  其记录见 [0.3.95/2132 发布记录](2026-09-17-android-0395-2132-release.md)。本次只做**独立复核与探测**，未做写入。
+  其记录见 [0.3.95/2132 发布记录](2026-09-17-android-0395-2132-release.md)。
 
 ## 1. 独立复核（本次实测）
 
@@ -162,3 +163,77 @@ pwsh -NoProfile -File scripts/starchat-server.ps1 -Action Command `
 | 公网 HTTPS 对照 | `health/live` **200**（服务健在） |
 
 即跳板机**两个端口**的 SSH 均不可用，且症状为「TCP 可连、无 banner」；非本机问题。
+
+## 11. 发布执行（SSH 恢复后，2026-09-17）
+
+第 3 轮探测时跳板机恢复（`ssh jumper` → `exit=0`）。按流程**先重读生产基线**再写入：
+`latest-arm64.apk -> ChatFlow-0.3.94-build2129-arm64.apk`（阻断期间无人发布）、业务容器 healthy（up 7h、未重启）。
+
+### 11.1 执行方式与两次修复
+
+用第 9 节的一键脚本执行，过程中修掉脚本自身的两个缺陷（均为**我的脚本**问题，非产物/服务端问题）：
+
+| # | 现象 | 根因 | 处理 |
+| --- | --- | --- | --- |
+| 1 | 第 4 步「设置备份」`docker cp` 报 `Could not find the file /tmp/android-release-2132-before.json` | 脚本把备份排在 `inspect` **之前**，而该文件由 `inspect` 在容器内生成 | 调整顺序为 `inspect` → 备份出容器 → `apply` |
+| 2 | 服务器侧公网校验首条 curl 报 `URL rejected: No host part in the URL` | 远端脚本用了 `\$B`：PowerShell 中反斜杠**不能**转义 `$`，变量被本机插值成空 | 远端脚本改为**单引号 here-string**（不做本机插值），并在远端声明 `NAME/PREV` |
+
+第 1 次失败发生在**设置写入之前**，故当时状态为「APK 已上线、弹窗未发」的安全半完成态；
+修正后重跑，脚本对已安装的同名不可变文件与已指向的符号链接具备幂等性。
+
+### 11.2 执行结果（逐步 PASS）
+
+| 步骤 | 结果 |
+| --- | --- |
+| 本地产物 SHA 门 | `artifact_sha256=35CA0962…374633` |
+| SSH 可达性门禁 | `ssh_gate=PASS` |
+| 16MiB 分块上传（逐块大小核对） | `upload=PASS` |
+| 服务端合并 + SHA 门 + `install -m 0644` + 符号链接原子切换 | `install=PASS`；`merged_sha=35CA0962…`、`SHA gate passed`；文件 `ChatFlow-0.3.95-build2132-arm64.apk`（79,801,374）；`latest-arm64.apk -> ChatFlow-0.3.95-build2132-arm64.apk`；旧包 `ChatFlow-0.3.94-build2129-arm64.apk` **原位保留** |
+| 设置 preflight + 备份 | `inspect` 报出 before `0.3.94/2129`；备份 `$rel/backup/settings-before-2132.json`（0600，sha256 `71fa1068…93ec28`） |
+| 更新弹窗 apply | **`settings_publish=PASS`**；`"result": "PUBLISH_PASS"`、**`"audit_count": 5`**、`min_supported_build` 仍为 **3**（未强制更新）、`app_ios_*` 投影仍为 `0.3.92/2120`（未改动） |
+| 真实 HTTP 投影（带会话 token） | **`live_projection=PASS`**；`platform=android`、`configured=true`、`latest_version=0.3.95`、`latest_build=2132`、`apk_url` 与发布值一致 |
+
+### 11.3 双侧公网验证
+
+服务器侧（`publish-all-public-server.log`）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 新包 `ChatFlow-0.3.95-build2132-arm64.apk` | 200 / `application/octet-stream` / 79,801,374；Range **206** / 1024 |
+| `latest-arm64.apk` | 200（同字节数）+ 206 |
+| 旧包 2129（回退路径） | 200 / 79,408,158 |
+| 未授权 `app-updates/latest?platform=android` | **401** |
+| `health/live` | 200 |
+| **公网整包 SHA256（服务器）** | `35ca0962…374633`，与交付候选**一致** |
+
+工作站侧（经跳板 SOCKS，TLS 校验保留，`publish-all-public-workstation.log`）：
+
+| 检查 | 结果 |
+| --- | --- |
+| 新包 Range | 206 / `application/octet-stream` |
+| `latest-arm64.apk` Range | 206 |
+| 旧包 2129 | 200 / 79,408,158 |
+| **公网整包 SHA256（工作站）** | `35CA0962E9DDB3655474B2BCC5182DFCEB52D57549020C8680FC2E4BE3374633`，与交付候选一致（79,801,374 字节） |
+
+### 11.4 发布后线上状态
+
+| 项 | 值 |
+| --- | --- |
+| Android 正式版 | **0.3.95 / 2132** |
+| `latest-arm64.apk` | → `ChatFlow-0.3.95-build2132-arm64.apk` |
+| Android 更新弹窗 | `0.3.95` / `2132`，`min_supported_build` **3**（可关闭，不强制） |
+| iOS 更新行 | `0.3.92` / `2120`（未改动） |
+| 回退包 | `ChatFlow-0.3.94-build2129-arm64.apk` 原位保留 |
+
+### 11.5 回退
+
+1. 弹窗：`publish_settings_2132.py rollback`（恢复 `0.3.94/2129`，写 `<trace>-rollback` 审计）。
+2. APK 别名：`ln -sfn ChatFlow-0.3.94-build2129-arm64.apk latest-arm64.apk`。
+3. 本次未改容器镜像、未迁移数据库，无镜像/迁移回退项。
+
+### 11.6 需要用户留意的一点（更新文案覆盖范围）
+
+弹窗文案（由并发工作流撰写、随 2132 候选一并冻结）描述的是**闪照安全 / 通话音频路由 / 搜索优化**三项；
+本次构建同时**包含**红包弹窗行为修复（`ad12f92c`）与五项 UI 改动（`8c97fbf2`，第 8 节已证），
+但**未在文案中逐条点名**。若希望用户看到红包/钱包相关说明，可用一条新的
+`SettingService` 更新改写 `app_update_notes`（同一 trace 规则，写 5 条审计），需要时我可以补做。

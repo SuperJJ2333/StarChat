@@ -1,6 +1,6 @@
 # 移动交付恢复索引
 
-## 2026-09-17 Android 0.3.95/2132 更新弹窗（**APK 已构建+验证+推送；服务端发布被 SSH 阻断**）
+## 2026-09-17 Android 0.3.95/2132 更新弹窗（**已上线**；先被 SSH 阻断，恢复后一键续做完成）
 
 用户要求「推送 Android 版更新弹窗」，确认候选 = `82b24ba7`（含闪照 route-exit fail-open 修复、
 tombstone 生命周期接线、真实外设音频路由、TURN 措辞与搜索回填边界，以及 `ad12f92c` 红包弹窗恢复）、
@@ -12,12 +12,17 @@ APK 按固定流程（ARM64 release + 三项 HTTPS dart-define → Apktool 2.12.
 语义核对 **25346/25346 类**、**338 项原生资产零变化**、`manifest.diff` 0 字节；SHA256
 **`35CA0962E9DDB3655474B2BCC5182DFCEB52D57549020C8680FC2E4BE3374633`**（79,801,374 字节）。
 GitHub：`b8a7040c..9fa2c963`，`origin/main...main` = `0 0`。
-**未完成（阻断）**：跳板机与直连生产均 **SSH banner 不返回**（TCP 端口 True 但
-`banner_bytes=0`；本机公网 200，无本地代理/残留进程问题），因此分块上传、不可变安装、
-`latest-arm64.apk` 原子切换、更新弹窗设置发布（trace `android-release-0.3.95-2132-20260917`，
-5 条审计）**全部未执行**，线上仍是 0.3.94/2129。脚本已就绪（`upload-apk.ps1`、`publish-apk.sh`、
-`publish_settings_2132.py`），SSH 恢复后按记录第 4 节继续。进入
-[发布与验证记录](../verification/2026-09-17-android-0395-2132-release.md)。
+**阻塞已解除并完成发布**：跳板机 SSH 于第 3 轮恢复（`ssh jumper` exit=0）；先重读生产基线
+（`latest-arm64.apk -> …2129`，容器 healthy、未重启），再执行
+`release-2132/publish-all-2132.ps1`：分块上传 → 服务端合并 SHA 门 → `install -m 0644`
+不可变文件 `ChatFlow-0.3.95-build2132-arm64.apk` → `latest-arm64.apk` 原子切换 → 弹窗
+`inspect/apply`（**5 条审计**、`min_supported_build` 仍 **3**、iOS 行未改）→ 带 token 的真实 HTTP
+投影 **`0.3.95/2132`** → 双侧公网验证（新包 200/206 + MIME、`latest` 指向新包、旧包 2129 仍 200、
+未授权 401、**公网整包 SHA 与候选一致**，服务器与工作站双侧）。回退：
+`publish_settings_2132.py rollback` + `ln -sfn ChatFlow-0.3.94-build2129-arm64.apk latest-arm64.apk`。
+注意：更新文案（并发工作流撰写）只写闪照/通话/搜索，未逐条点名红包与钱包改动（需要可补发一条 notes 更新）。
+进入[发布记录（含阻断、脚本修复与执行全程）](../verification/2026-09-17-android-0395-2132-publish-attempt.md)
+或[构建与门禁记录](../verification/2026-09-17-android-0395-2132-release.md)。
 
 ## 2026-09-17 第二轮五项 UI/交互（红包整页 / 邀请码 / 钱包复制位置 / 充值页 / 提现按钮）（本地完成，**未构建/未部署**）
 
