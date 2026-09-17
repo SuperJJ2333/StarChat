@@ -10,7 +10,7 @@
 - 关联计划/ADR：[计划](../../superpowers/plans/2026-09-17-wallet-redpacket-five-items.md)、
   [ADR-0073](../../adr/0073-red-packet-fee.md)（已批准）、
   [UI demo](../../../frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html)。
-- 当前状态：实现与本地门禁完成（**候选 commit `c69e55c2`**，`verify.ps1` 全绿）；**已构建并安装 0.3.93-debug/2128 到 Mi 6（保留数据）**；未部署服务端；
+- 当前状态：实现与门禁完成（`c69e55c2`，`verify.ps1` 全绿）；已构建并安装 0.3.93-debug/2128 到 Mi 6；**红包手续费与迁移 0068 已于 2026-09-17 15:53 +08 部署生产**（用户明确指令，覆盖"新客户端先行"）；
   红包手续费按用户要求**必须等新客户端先行**后再发布 API。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`（`main`）。
   拥有：`apps/mobile_flutter/lib/features/wallet/{manual_wallet_page,wallet_page}.dart`、
@@ -63,7 +63,7 @@
   服务端余额不足文案未含手续费、缺隐私断言）。处理见验证记录第 6 节，全部落入 commit `c69e55c2`：
   修复 5 个门禁失败断言、服务端文案含合计、新增 API 余额边界/隐私/审计 Outbox/worker 手续费退款用例、
   客户端手续费实现收敛为 `chatPaymentFee`（BigInt）一处并在 PIN 弹窗对红包同样显示。
-- 未执行（发布前置，本次不部署）：生产形态 Postgres 上演练迁移 `upgrade`/`downgrade` 与回填、
+- 已在生产执行：迁移 0068（先迁移后切码）、API+worker 候选切换、双侧验证（见 [部署记录](../../verification/2026-09-17-redpacket-fee-production-deployment.md)）。仍待办：
   Postgres 同键并发创建用例、客户端不确定结果复用同一幂等键的改造（既有行为）、确认 R3 全额退手续费的商业意图。
 - 后端定向：`pytest tests/business_api/{redpacket,ledger,transfer} tests/business_api/test_migrations.py
   tests/business_api/test_wallet_release_baseline.py -q` → **71 通过 / 0 失败**。
@@ -97,4 +97,5 @@
 - 下次恢复先检查的事实：`_terminalBindingFailures` 是否仍覆盖服务端终局错误码；`capabilitiesUnavailable`
   是否仍是唯一提示条件；`WalletPage` 是否仍非嵌入且 AppHome 未重新包 scaffold；
   `red_packet_fee` 是否仍与 `transfer_fee` 同构且退款含手续费；迁移 head 是否为 `0068_red_packet_fee`。
+
 

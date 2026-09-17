@@ -42,4 +42,25 @@
 同样进入 PLATFORM_FEE 且逐笔可追溯」，同时修正原先把拼写错误的科目名 `PLATFORM_RED_PACKET:` 断言为 0 的空断言）。
 后端定向 71 通过；Flutter 钱包套件 75 通过、红包客户端 62 通过、全量 2848 通过 / 0 失败；`flutter analyze` 无问题；
 `verify_ui_contract.py` PASS。领域与质量/安全审查见
-[验证记录](../verification/2026-09-17-wallet-redpacket-five-items.md)（由执行代理按检查表自审，未由独立审查人签署）。
+[验证记录](../verification/2026-09-17-wallet-redpacket-five-items.md)（由独立子代理执行，非自审，双方结论均为
+APPROVE-WITH-RESERVATIONS；所提问题已全部处理，见该记录第 6 节）。
+
+## 生产部署（2026-09-17 15:53 +08，用户明确指令「直接部署迁移 0068 与扣费」）
+
+用户指令覆盖了此前"新客户端先行"的次序选择。按 `admin-production-workflow.md` 执行并留证：
+
+- 候选镜像基于**在线镜像**最小覆盖：API `sha256:16522404…` → `starchat-business-api:redpacket-fee-20260917`
+  （`sha256:48948fb7…`，覆盖 redpacket service/models、api/redpacket.py 的 `/opt` 与 site-packages 两份 + 0068 迁移文件）；
+  Worker `sha256:b5bd6973…` → `starchat-business-worker:redpacket-fee-20260917`（`sha256:f9d03982…`）。
+  Worker 的 `service.py` 与仓库 HEAD 存在 +81/−9 的**无关历史差异**，因此按 ADR-0071 r2 教训做**外科合并**
+  （+14/−2，仅 `_refund` 手续费退款与 `skip_coverage` 对齐），未整文件覆盖。
+- 隔离演练（一次性 PG16）：迁移链 0001→0068 成功；`REHEARSAL_OK`（列 `numeric(20,2) NOT NULL DEFAULT 0.00`、
+  创建扣 total+fee 并计入 `PLATFORM_FEE`、过期各退一次、`fee=0.00` 历史红包只退本金、账本全平衡）；
+  `downgrade 0067` 后列消失。
+- 备份：业务库 `pg_dump -Fc`（`backup/business-db-pre-0068-20260917T075309Z.dump`，sha256 `824cc984…`，0600）+ 前态快照。
+- **先迁移后切码**：迁移（expand-only）完成后旧代码仍健康（health 200/401 正常），再切换两个容器。
+- 切换后：env 61/65 与挂载/端口不变、部署文件与 payload 逐一相同、真实运行时导入含手续费逻辑、
+  live head `0068_red_packet_fee`、52 行历史红包 `fee=0.00`、健康与未授权 401 全部通过、无关容器未变、无 traceback。
+- 兼容性（已如实告知并接受）：线上 ≤0.3.93/2127 客户端不展示手续费且按 `total` 校验余额，
+  余额处于 `[total, total+fee)` 时会收到带合计说明的 422；历史红包不受影响。
+- 完整部署记录与回退步骤：[2026-09-17-redpacket-fee-production-deployment](../verification/2026-09-17-redpacket-fee-production-deployment.md)。

@@ -1,5 +1,20 @@
 # 移动交付恢复索引
 
+## 2026-09-17 生产部署：红包手续费 0.5% + 迁移 0068_red_packet_fee（**已上线**）
+
+用户指令「直接部署迁移 0068 与扣费」（覆盖此前"新客户端先行"次序）。按 admin 流程：候选镜像基于在线镜像最小覆盖
+（API `16522404…` → `starchat-business-api:redpacket-fee-20260917` = `48948fb7…`；worker `b5bd6973…` →
+`starchat-business-worker:redpacket-fee-20260917` = `f9d03982…`；worker 的 `service.py` 与其仓库 HEAD 有 +81/−9
+无关历史差异，按 ADR-0071 r2 教训**外科合并 +14/−2**，只加 `_refund` 手续费退款与 `skip_coverage`）→
+一次性 PG16 演练（0001→0068 全链、`REHEARSAL_OK`、`downgrade 0067` 列消失）→ `pg_dump -Fc` 备份
+（`824cc984…`，0600）→ **先迁移后切码**（迁移 expand-only，旧代码在迁移后仍健康）→ 切换 API 与 worker。
+切换后验证：env 61/65、挂载与 `127.0.0.1:8082` 不变，部署文件与 payload 逐一相同，真实运行时导入含
+`red_packet_fee`/`fee_refund`，live head `0068_red_packet_fee`，52 行历史红包 `fee=0.00`（退款口径不变），
+服务器+工作站双侧健康 200 / 未授权 401 通过，仅两个业务容器重建、无 traceback。
+**兼容性（已告知并接受）**：线上 ≤0.3.93/2127 客户端不展示手续费且按 `total` 校余额，余额处于 `[total,total+fee)`
+时会收到带合计说明的 422；建议尽快把含手续费展示的客户端作为正式版发布（2128 debug 已在 Mi 6）。进入
+[部署记录](../verification/2026-09-17-redpacket-fee-production-deployment.md)或 [ADR-0073](../adr/0073-red-packet-fee.md)。
+
 ## 2026-09-17 钱包绑定/刷新/告警修复 + 红包手续费 ADR-0073 + 充值提现美化（本地完成，**未部署/未真机**）
 
 用户报五项：①绑定页输入已被他人登记的钱包地址后**无法删除且一直提示**（根因：`registerAddress()` 先持久化登记草稿，
