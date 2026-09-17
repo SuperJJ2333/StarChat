@@ -72,3 +72,42 @@ pwsh -NoProfile -File scripts/starchat-server.ps1 -Action Command `
 - 未上传任何分块、未安装不可变文件、未切换 `latest-arm64.apk`、未写入任何设置/审计。
 - 未发布更新弹窗；线上仍是 0.3.94 / 2129。
 - 未安装 2132 正式包到任何设备（真机验收按约定由用户执行）。
+
+## 6. 阻断期间完成的离线预检（不依赖 SSH，已实测）
+
+为让 SSH 恢复后一次成功，本次在等待期间把「待发布的产物」与「待执行的脚本」都独立验了一遍。
+
+### 6.1 交付包的发布就绪性（本机独立复算，非引用他人结论）
+
+| 检查 | 命令 | 结果 |
+| --- | --- | --- |
+| 内容哈希 | `Get-FileHash -Algorithm SHA256` | `35CA0962E9DDB3655474B2BCC5182DFCEB52D57549020C8680FC2E4BE3374633`（79,801,374 字节）——与发布记录一致 |
+| 清单身份 | `aapt dump badging` | `com.liuhetong.mobile` versionCode **2132** / versionName **0.3.95** / minSdk 24 / targetSdk 36 / native-code **arm64-v8a**（非 debuggable） |
+| 对齐 | `zipalign -c -P 16 4` | **exit 0** |
+| 签名 | `apksigner verify --verbose --print-certs` | v2 ✓ v3 ✓，`Signer #1 certificate SHA-256: 75b31c66…ba61fff`（固定身份） |
+| 上传脚本输入 | `release-2132/android/final.apk` | **存在**，SHA/大小与基线一致（脚本内置 `localHash -ne $baseline` 守卫） |
+
+### 6.2 三个发布脚本的预检（逐项核对，未运行）
+
+| 脚本 | 关键值 | 判定 |
+| --- | --- | --- |
+| `upload-apk.ps1` | `baseline=35CA0962…`、`remoteDir=/opt/starchat/releases/android-0395-2132-20260917/apk-chunks`、16MiB 分块 + 逐块远端大小核对 | 与已验产物一致，可用 |
+| `publish-apk.sh` | `BASELINE=35CA0962…`、`NAME=ChatFlow-0.3.95-build2132-arm64.apk`、`PREV=ChatFlow-0.3.94-build2129-arm64.apk`、合并后 SHA 门 → `install -m 0644` → `ln -sfn`+`mv -T` 原子切换、并打印切换前 `latest-arm64.apk` 指向 | 与 2129 那次已验证的发布形态同构，可用 |
+| `publish_settings_2132.py` | `TARGET_BUILD=2132`、`TARGET_VERSION=0.3.95`、`APK_URL=…/ChatFlow-0.3.95-build2132-arm64.apk`、`min_supported_build` 取线上现值（不提高）、断言 `app_ios_*` 零改动 + 该 trace 恰好 5 条审计 + `platform=android` 投影回显、`len(NOTES)<=255` | 满足「不强制更新、iOS 行不动、5 条审计」要求，可用 |
+
+### 6.3 本轮 SSH 复探（全部失败，症状不变）
+
+| 时间窗 | 尝试 | 结果 |
+| --- | --- | --- |
+| 本轮开始 | `ssh jumper` ×1 | `Connection closed by 8.163.93.151 port 22` |
+| 冷却后 | `ssh jumper` ×4（间隔 45s） | 1×`banner exchange` 超时 + 3×`Connection closed` |
+| 再冷却后 | `ssh jumper` ×5（间隔 60s） | 2×`banner exchange` 超时 + 3×`Connection closed` |
+
+同窗口公网 HTTPS 仍正常：`health/live` 200、2129 包与 `latest-arm64.apk` 均 206。
+即**持续为服务器侧 SSH 无应答**，与本机网络、代理、产物均无关。
+
+## 7. 结论（本轮）
+
+产物已就绪且经独立验证，脚本已就绪且经预检；**唯一缺口是生产 SSH**。
+在服务器/跳板侧恢复 SSH 之前，本目标无法推进到 ③④⑤，且**不会**以任何形式的抢跑写入生产
+（包括先发弹窗指向未上传的 APK）。恢复后按第 4 节三步执行即可完成。
