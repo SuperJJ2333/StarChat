@@ -2,9 +2,10 @@
 
 ## 2026-09-17 第二轮五项 UI/交互（红包整页 / 邀请码 / 钱包复制位置 / 充值页 / 提现按钮）（本地完成，**未构建/未部署**）
 
-用户五项：①点红包封面改为**整页红包页**（与微信一致：未领取显示「開」，领取后金额 +「看看大家的手气」进领取详情；
-已领取/已过期直接进领取详情；交互歧义已向用户确认，用户选整页方案）——新增 `RedPacketClaimPage`，
-`FinanceMessageEntry` 按可领取性路由，删除旧居中弹窗 `red_packet_claim_dialog.dart`；
+用户五项：①点红包封面**保持原本的居中磨砂弹窗**（用户复盘否决了初版的「整页红包页」，已整体回退），
+重点改为**领取成功后响开启音并直接进入「领取详情」页**——`RedPacketClaimDialog._claim()` 成功后
+`play(redpacketOpen)` → `onClaimed` → `_openClaimRecords()`（关弹窗 + push 详情），
+`FinanceMessageEntry` 路由恢复原状；
 ②邀请码页删除「复制邀请链接」磁贴（保留复制邀请码）；③钱包卡片的地址复制 icon 原挂在「当前点钻余额」行，
 现移入地址同一 `Row`；④充值页删除「点钻与 USDT 兑换」卡片（组件已无入口，连同其组件级测试一并删除，
 服务端接口与 `conversionEnabled` 能力位保留）；⑤提现页「取消提现申请」改为**红色填充**（新增 token
@@ -16,9 +17,11 @@
 UI 交付按 `ui-demo-delivery`：registry 新增 `secondary-button` 组件 + tokenParity `--color-danger` ↔ `dangerFill`，
 demo 更新 `frontend/src/screens/wallet-binding.js`（地址旁复制按钮、红色取消按钮）与
 `frontend/src/styles/primitives.css`；**Figma 已退役**，仅更新 HTML demo。
-随后按固定流程构建 **debug 0.3.94-debug/2130**（源包 `C8E158A4…`，交付包 SHA256 `C420AC9C…F672FE`）
-并保留数据覆盖安装到 Mi 6（`firstInstallTime` 未变，设备回读 `base.apk` SHA 与固定证书
-`75b31c66…ba61fff` 一致），源码 commit `8c97fbf2` 已推送 `origin/main`。
+随后按固定流程构建 **debug 0.3.94-debug/2131**（源码 commit `ad12f92c`，**从干净冻结工作树构建**，
+交付包 SHA256 `9B4C40D5…D1AFA3`）并保留数据覆盖安装到 Mi 6（`firstInstallTime` 未变，设备回读 `base.apk` SHA
+与固定证书 `75b31c66…ba61fff` 一致）。**注意**：交付时主工作树存在另一条工作流的 41 项未提交改动
+（call/search/voip/flash_photo 等，非本任务），故用 `git worktree add --detach` 隔离构建，避免把它方半成品打进包；
+他方改动全程未被触碰。未推送（`ad12f92c` 及本文档提交待在用户指示后 push）。
 **注意**：本机 git 走 `http.proxy=127.0.0.1:7897` + `http.sslBackend=schannel` 时 push 会报
 `schannel: failed to receive handshake`（只读 `ls-remote` 正常）；用
 `git -c http.sslBackend=openssl push origin main` 可成功（未持久化改配置）。

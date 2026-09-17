@@ -20,24 +20,25 @@
   `frontend/src/{catalog/contracts.js,components/actions.js,components/register.js,screens/wallet-binding.js,styles/primitives.css}`、
   `packages/ui-contracts/changliao-component-registry.json` 及对应测试。
 - 最后更新时间（含时区）：2026-09-17 18:0x +08（Asia/Hong_Kong）
-- 下一条具体操作、必要输入、阻断的验收 ID：用户指示是否构建 debug/正式包到 Mi 6 验收 A1–A5；
-  无阻断项。
+- 下一条具体操作、必要输入、阻断的验收 ID：用户在 Mi 6（已装 **0.3.94-debug/2131**）验收 A1–A5，重点是
+  A1「点封面弹居中磨砂弹窗 → 点開 → 响开启音 → 直接进领取详情」；无阻断项。
 
 ## 验收台账
 
 | ID | 场景及预期 | 实现 | 测试及证据 | 发布 | 真机反馈/缺口 |
 | --- | --- | --- | --- | --- | --- |
-| A1 | 点击红包封面**整页**进入红包页（未领取「開」；领取后金额 +「看看大家的手气」；已领取/已过期直接进领取详情） | 新增 `RedPacketClaimPage`；`FinanceMessageEntry` 按可领取性路由；删除旧居中弹窗 | 红：`red-packet-claim-page` 未找到、`RedPacketClaimDetailPage` 未找到；绿：页面测试 14 例 + entry 测试；全量 2852 通过 | 未构建 | 待用户真机 |
-| A2 | 邀请码页不再有「复制邀请链接」 | 删除 `invite-copy-link` 磁贴，保留复制邀请码 | 红：`Found 1 widget with key invite-copy-link`；绿：`invite_code_page_test` 断言两者皆无 | 未构建 | 待用户真机 |
-| A3 | 钱包卡片复制 icon 紧贴钱包地址（不再挂在余额行） | 地址与复制按钮同一 `Row`，余额行只留文本 | 红：复制按钮与地址纵向差 67px（在余额行）；绿：同一行 + 位于地址右侧 + 不在余额行 | 未构建 | 待用户真机 |
-| A4 | 充值页不再有「点钻与 USDT 兑换」卡片 | 充值区只渲染 `card(depositFields())`；删除无入口的组件与其组件级测试 | 红：找到「点钻与 USDT 兑换」；绿：文案/组件均不存在 | 未构建 | 待用户真机 |
-| A5 | 「取消提现申请」红色背景（设计规范 `--color-danger` #FA5151）；无背景色动作按钮有边框 | 新增 `WeChatSecondaryButton(tone: neutral|danger)` + `WeChatColors.dangerFill`；`button()` 无 key 分支、全部提现、取消提现申请分别套用 | 红：三个用例 `Bad state: No element`；绿：断言填充色=#FA5151、白字、边框存在 | 未构建 | 待用户真机 |
+| A1 | 点红包封面弹**居中磨砂弹窗**（非全屏页）；点「開」领取 → **响开启音 → 直接进入「领取详情」页** | 回退到原 `RedPacketClaimDialog`（`8c97fbf2^` 恢复）；`_claim()` 成功后 `play(redpacketOpen)` → `onClaimed` → `_openClaimRecords()`（关弹窗 + push 详情）；`FinanceMessageEntry` 路由恢复原状 | 红→绿：目标用例改为「领取后播放开启音并直接进入领取详情」（`NotificationFeedback.install` 探针断言 `[SoundType.redpacketOpen]`）；redpacket+finance **87 通过**、扩展集 **165 通过**；`flutter analyze` 无问题 | **debug 2131 已装 Mi 6** | 待用户真机 |
+| A2 | 邀请码页不再有「复制邀请链接」 | 删除 `invite-copy-link` 磁贴，保留复制邀请码 | 红：`Found 1 widget with key invite-copy-link`；绿：`invite_code_page_test` 断言两者皆无 | debug 2131 已装 | 待用户真机 |
+| A3 | 钱包卡片复制 icon 紧贴钱包地址（不再挂在余额行） | 地址与复制按钮同一 `Row`，余额行只留文本 | 红：复制按钮与地址纵向差 67px（在余额行）；绿：同一行 + 位于地址右侧 + 不在余额行 | debug 2131 已装 | 待用户真机 |
+| A4 | 充值页不再有「点钻与 USDT 兑换」卡片 | 充值区只渲染 `card(depositFields())`；删除无入口的组件与其组件级测试 | 红：找到「点钻与 USDT 兑换」；绿：文案/组件均不存在 | debug 2131 已装 | 待用户真机 |
+| A5 | 「取消提现申请」红色背景（设计规范 `--color-danger` #FA5151）；无背景色动作按钮有边框 | 新增 `WeChatSecondaryButton(tone: neutral|danger)` + `WeChatColors.dangerFill`；`button()` 无 key 分支、全部提现、取消提现申请分别套用 | 红：三个用例 `Bad state: No element`；绿：断言填充色=#FA5151、白字、边框存在 | debug 2131 已装 | 待用户真机 |
 
 ## 版本与证据
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android debug（Mi 6 真机） | **0.3.94-debug / 2130** | `8c97fbf2` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.94-debug-2130/ChatFlow-0.3.94-debug-2130-arm64-rebuilt.apk`，SHA256 `C420AC9C…F672FE`（源包 `C8E158A4…5ED5D09`） | 2026-09-17 19:34:46 +08 覆盖安装 **Success**，`firstInstallTime` 2026-09-11 00:42:05 未变（数据保留）；设备回读 `base.apk` SHA256 与证书同候选一致 |
+| Android debug（Mi 6 真机） | **0.3.94-debug / 2131** | `ad12f92c`（冻结源码工作树，`git status` 干净） | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.94-debug-2131/ChatFlow-0.3.94-debug-2131-arm64-rebuilt.apk`，SHA256 `9B4C40D5…D1AFA3`（源包 `CC6F57A8…5611D9`） | 2026-09-17 19:57:26 +08 覆盖安装 **Success**，`firstInstallTime` 2026-09-11 00:42:05 未变（数据保留）；设备回读 `base.apk` SHA256 与证书同候选一致 |
+| Android debug（作废） | 0.3.94-debug / 2130 | `8c97fbf2` | 同上 | `artifacts/2026-09-17/android-0.3.94-debug-2130/…-rebuilt.apk`，SHA256 `C420AC9C…F672FE` | 曾安装于 Mi 6，对应**已被用户否决**的整页红包页实现；由 2131 覆盖 |
 | Android 正式版 | 未构建（线上仍 0.3.94/2129，本任务前已上线） | — | — | — | — |
 | iOS | 未构建 | — | — | — | — |
 | 业务 API / worker | 未改动 | — | — | — | — |
@@ -66,9 +67,11 @@
   `tests/mobile/test_ui_component_registry.py` 的硬编码期望 `PASS (30 components, 369 screens)`
   已随新增注册组件更新为 31。
 - 未执行：正式版构建（2129 已在线）、服务端部署、数据库迁移。
-- 真机交付：`-Mode BuildVerify` → `-Mode Install` → `-Mode Pull` 三条命令退出码 0；
-  语义核对类数 27316/27316、原生与 Flutter 资产 336 项零变化、`manifest-semantics.diff` 0 字节；
-  设备回读 `base.apk` SHA256 `c420ac9c…f672fe` 与交付候选一致、证书为固定身份。
+- 真机交付（2131，回退后的正确实现）：`-Mode BuildVerify` → `-Mode Install` → `-Mode Pull` 三条命令退出码 0；
+  **从干净冻结源码工作树构建**（`git worktree add --detach .worktrees/debug-2131 ad12f92c`，脚本 `-SourceRoot` 切换），
+  该工作树 `git status --porcelain` 为 0 字节；语义核对类数 27316/27316、原生与 Flutter 资产 336 项零变化；
+  设备回读 `base.apk` SHA256 `9b4c40d5…d1afa3` 与交付候选一致、证书为固定身份；
+  `firstInstallTime` 未变。临时工作树已用 `\\?\` 前缀删除并 `git worktree prune`；主工作树他方改动未触碰。
 - 推送：`git -c http.sslBackend=openssl push origin main` → `6bc5fcb8..8c97fbf2`（退出码 0）；
   默认 schannel 后端在同一代理下报 `failed to receive handshake`（只读 `ls-remote` 正常），
   未持久化修改 git 配置。

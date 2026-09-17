@@ -10,22 +10,29 @@
 
 ## 1. 各改动与红绿证据
 
-### ① 红包封面 → 整页红包页（与微信一致）
+### ① 红包封面 → 居中磨砂弹窗；**领取后响音效并直接进入「领取详情」**（已按用户复盘更正）
 
-- 新增 `lib/features/redpacket/red_packet_claim_page.dart`：`RedPacketClaimPage` 整页（全屏红包渐变 + 导航栏返回键），
-  未领取显示「開」，领取后显示金额**并同时**保留「看看大家的手气 >」入口（进入 `RedPacketClaimDetailPage`）。
-- `lib/features/finance/finance_message_entry.dart`：可领取（`status == 'OPEN'` 且 `viewer_claim == null` 且非自己发的私聊红包）
-  → **push 整页红包页**；已领取 / 已领完 / 已过期 / 已撤回 / 自己发的私聊红包 → 直接 push 领取详情页。
-- 删除已无入口的 `red_packet_claim_dialog.dart`（原居中弹窗）与其测试；领取逻辑（controller、领取音、`onClaimed`）
-  原样迁移，避免行为漂移。
+**第一次实现方向错误并已回退**：初版按「整页红包页」实现（新增 `red_packet_claim_page.dart`，删除居中弹窗）。
+用户 2026-09-17 复盘指出该方向错误，明确要求：**回退到原本的居中弹窗样式（背景依旧是磨砂玻璃，不要全屏红包页）**，
+重点在于**领取红包之后响起领取音效、并直接进入「领取详情」页**。
+
+回退与最终实现（commit `ad12f92c`）：
+
+- 自 `8c97fbf2^` 恢复 `lib/features/redpacket/red_packet_claim_dialog.dart`（居中卡片 + `BackdropFilter` 磨砂背景 +
+  点空白/X 关闭），删除 `red_packet_claim_page.dart` 与其测试。
+- `lib/features/finance/finance_message_entry.dart` 路由**恢复原状**：`viewer_claim != null` 或自己发的私聊红包
+  → 直接进领取详情；否则 → 弹出居中弹窗。
+- **行为变更点（用户要求）**：`RedPacketClaimDialog._claim()` 领取成功后依次执行
+  ①`NotificationFeedback.shared.play(SoundType.redpacketOpen)` 播放开启音 →
+  ②触发 `onClaimed`（聊天卡片失效刷新）→ ③`_openClaimRecords()`：**关闭弹窗并直接 push「领取详情」页**。
+  即领取后不再停留在弹窗展示金额，而是响音效后立刻进入领取详情。
 
 | 检查 | 结果 |
 | --- | --- |
-| 红 | `unclaimed red packet opens the full-page claim screen` → `Found 0 widgets with key [<'red-packet-claim-page'>]`；`finished red packet without a claim opens the detail page` → `Found 0 widgets with type "RedPacketClaimDetailPage"`；`claim write invalidates…` 失败 |
-| 绿 | `test/features/redpacket/red_packet_claim_page_test.dart`（14 例）+ `test/features/finance/finance_message_entry_test.dart` 全通过 |
-
-实现中一次返工：初版把金额与「看看大家的手气」写成 `else if`，领取后入口消失，与微信不一致；
-改为并列 `if` 后 `claim write invalidates…` 通过（该用例同时断言两者可见）。
+| 红（首次实现，方向错误） | `red-packet-claim-page` 未找到等 9 项失败；该实现已整体回退 |
+| 绿（回退后） | `test/features/redpacket` + `test/features/finance` **87 通过 / 0 失败**；扩展到 redpacket+finance+wallet+邀请码 **165 通过 / 0 失败**；日志 `artifacts/2026-09-17/redpacket-dialog-restore-focused{,2}.txt` |
+| 音效断言 | 新增用例「领取后播放开启音并直接进入领取详情」：用 `NotificationFeedback.install` 注入探针，断言 `played == [SoundType.redpacketOpen]`、弹窗已关闭、`RedPacketClaimDetailPage` 已打开 |
+| 其余用例调整 | 「claimed amount…refresh failure」改为断言「刷新失败仍触发回调并进入领取详情」；「session invalidation…」改为在**未领取**状态下验证会话结束清空入口（原断言依赖「领取后仍停留在弹窗」，与新的领取后跳转冲突） |
 
 ### ② 邀请码页删除「复制邀请链接」
 
@@ -109,35 +116,37 @@
 另首次全量运行因我在测试进行中删除了 `wallet_conversion_test.dart` 而报该文件 `Failed to load`，
 重跑后消失。
 
-## 5. 真机交付（debug 0.3.94-debug/2130，Mi 6 覆盖安装，数据保留）
+## 5. 真机交付（debug 0.3.94-debug/2131，Mi 6 覆盖安装，数据保留）
 
 按 [android-apk-rebuild.md](../../runbooks/android-apk-rebuild.md) 固定流程（**debug** 变体）：
 Flutter ARM64 debug 源包 → Apktool 2.12.1 解码/重建 → zipalign 36.0.0 `-P 16 -f 4` →
 固定身份 `75b31c66…ba61fff` 签名 → 语义/对齐/清单/签名核对。脚本
-`artifacts/2026-09-17/android-0.3.94-debug-2130/build-debug-2130.ps1`（`-Mode BuildVerify|Install|Pull`，三条命令退出码均 0）。
+`artifacts/2026-09-17/android-0.3.94-debug-2131/build-debug-2131.ps1`（`-Mode BuildVerify|Install|Pull`，三条命令退出码均 0）。
 
-版本号取 **2130**：沿用上一轮「正式版 +1」的约定（正式版 0.3.94/2129，此前 debug 为 0.3.93-debug/2128），
-既高于设备已装的 2128，也不与正式版 2129 同号。
+版本号取 **2131**：延续「上一版 +1」的约定（本轮先出 2130，回退重做为 2131），高于设备已装的 2130 与正式版 2129。
+
+**构建源为「干净冻结源码」而非当前工作树**（重要）：交付时主工作树中存在**另一条工作流**的 41 项未提交改动/新增文件
+（`call_*`、`room_history_day_index*`、`screen_capture_protection.dart`、`global_search_*`、`flash_photo.dart`、
+`third_party/matrix/**` 等，**均非本任务**，且仍在变化）。为避免把未评审的半成品打进交付包，本次用
+`git worktree add --detach .worktrees/debug-2131 ad12f92c` 建立**冻结源码工作树**并在其中构建，
+脚本新增 `-SourceRoot` 参数只切换源码根、工具仍取主仓库路径。
 
 | 项 | 值 |
 | --- | --- |
-| 源码 commit | `8c97fbf2745b110d9bb119b630cf1ae6cdbf967e` |
-| 源包 SHA256 | `C8E158A4685BB9F410E5D80ACE5FF8CCD8772C3065200F4C3982EB5EF5ED5D09`（150,824,845 字节） |
-| 重建交付包 SHA256 | `C420AC9C63FC4BFDCF8FE9A22AD47FF89D28FF0D7241116F76342E72C8F672FE`（144,625,963 字节） |
-| 重建语义核对 | 源/最终类数 27316/27316、`changed_smali_classes=[]`、原生与 Flutter 资产 336 项零变化、`manifest_semantics_identical=true`、`manifest-semantics.diff` **0 字节** |
-| 清单身份 | `com.liuhetong.mobile` versionCode **2130** / versionName **0.3.94-debug** / `application-debuggable` / native-code `arm64-v8a` |
+| 源码 commit（冻结） | `ad12f92c3bc4c0c90c8e97211c8acb793eb84b8a` |
+| 冻结源码工作树状态 | `git status --porcelain` **0 字节（干净）**，记录于 `source-worktree-status.txt` |
+| 源包 SHA256 | `CC6F57A80810A62667EB6F226D3AD218A1AEC7B2A4403E9740FB5BDC015611D9` |
+| 重建交付包 SHA256 | `9B4C40D5A569DDA5FE2F05CCFD460BFD4A9E860D0B4DB60BECB3965485D1AFA3`（144,642,347 字节） |
+| 重建语义核对 | 源/最终类数 27316/27316、`changed_smali_classes=[]`、原生与 Flutter 资产 336 项零变化、`manifest_semantics_identical=true` |
+| 清单身份 | `com.liuhetong.mobile` versionCode **2131** / versionName **0.3.94-debug** / `application-debuggable` / native-code `arm64-v8a` |
 | zipalign / 签名 | `-c -P 16 4` 通过；apksigner v2+v3，证书 `75b31c66…ba61fff` |
-| 安装 | `adb -s cbd0156b install -r` → **Success**；versionCode 2130、`flags=[DEBUGGABLE …]` |
-| **数据保留** | `firstInstallTime=2026-09-11 00:42:05` **未变**（未卸载、未清数据）；`lastUpdateTime=2026-09-17 19:34:46` |
-| 设备回读 | 拉回 `/data/app/.../base.apk`：SHA256 `c420ac9c…f672fe` **与交付候选完全一致**，证书 `75b31c66…ba61fff` 一致 |
+| 安装 | `adb -s cbd0156b install -r` → **Success** |
+| **数据保留** | `firstInstallTime=2026-09-11 00:42:05` **未变**（未卸载、未清数据）；`lastUpdateTime=2026-09-17 19:57:26` |
+| 设备回读 | 拉回 `/data/app/.../base.apk`：SHA256 `9b4c40d5…d1afa3` **与交付候选完全一致**，证书 `75b31c66…ba61fff` 一致 |
+| 临时资源清理 | 构建后 `git worktree remove` 因 Windows 长路径失败 → 用 `\\?\` 前缀删除目录并 `git worktree prune`；主工作树他方改动**未被触碰**（仍 41 项） |
 
-**交付包与提交的一致性核对（重要）**：构建脚本记录了构建前后的逐文件 SHA256 清单
-（`source-input-sha256-{before,after}.json`）。构建完成后工作树中出现了**另一条工作流**的未提交改动
-（`call_*`、`room_history_day_index*`、`screen_capture_protection.dart`、`global_search_index.dart`、
-`flash_photo.dart` 等，以及新增 `call_audio_route_coordinator.dart` 与其测试）——**均非本任务改动**。
-已用构建期清单核对：这些文件在构建时的 SHA256 **与 `HEAD`(`8c97fbf2`) 完全一致**、与当前工作树内容**不同**，
-即改动发生在构建之后。因此本次交付的 2130 包**只包含 commit `8c97fbf2`**，不含上述他方改动。
-本任务未 `add`/`commit`/`revert` 任何他方文件。
+> 说明：上一版 **2130** 也是同一轮内构建并安装过的包，但它对应的是**已被用户否决的整页红包页实现**；
+> 2131 为回退后的正确实现，设备当前运行的即 2131。
 
 ## 6. GitHub 推送
 
