@@ -162,5 +162,49 @@ tests/business_api/test_payment_pin_api.py tests/business_worker/test_redpacket_
 
 ## 8. 未执行项
 
-- 未构建 APK/IPA、未部署服务端（红包手续费必须等新客户端先行；本任务只到本地实现与门禁）。
-- 未真机验证（第 1–3、5 项的真机观感/手感待用户验收）。
+- 未部署服务端（红包手续费必须等新客户端先行）。
+- 第 5 项 Flutter 观感未在真机核对（用户按 demo 通过）。
+
+## 9. Mi 6 debug 包（0.3.93-debug/2128）：已构建并验证，**安装被设备离线阻断**
+
+用户要求把本轮改动推送到 Mi 6 debug 通道。按 `chat-history-search-flash-2126-build.ps1` 同源流程构建
+`0.3.93-debug/2128`（versionCode 2128 > 已装 2126，且与线上正式版 2127 区分）：
+
+| 项 | 值 |
+| --- | --- |
+| 源码 | commit `d3274506`；`pubspec.lock` 构建前后哈希一致 |
+| 源包（Flutter debug ARM64） | `ChatFlow-0.3.93-debug-2128-arm64-source.apk`，SHA256 `8AA8DBFB0E953D298A811B0FD1A719F4CEB2BEE8C8DC64FFAB0197F3CE9583E6` |
+| 交付包（Apktool 2.12.1 重建 + zipalign `-P 16 -f 4` + 固定证书签名） | `ChatFlow-0.3.93-debug-2128-arm64-rebuilt.apk`，SHA256 `F2C0851F5091F62B6648BA4B769DFCC3AC8C166DDBE2A1871E8A7334140F13D3` |
+| 重建语义核对 | 类数 27316/27316、原生/Flutter 资产 336 项零变化、`manifest_semantics_identical=true`、`manifest-semantics.diff` 0 字节 |
+| 身份与签名 | aapt badging 断言 `com.liuhetong.mobile` versionCode 2128 / versionName `0.3.93-debug` / arm64-v8a / `application-debuggable`；apksigner 证书 = 固定身份 `75b31c66…`；zipalign `-c -P 16 4` 通过 |
+| 证据目录 | `docs/verification/artifacts/2026-09-17/android-0.3.93-debug-2128/`（脚本、构建日志、双端清单、输入哈希、重建报告） |
+
+**安装未完成（外部阻断）**：Mi 6（`cbd0156b`，MI 6 / Android 9）在构建期间由 `device` 变为 `offline`，
+随后反复在 `device`/`offline`/`not found` 间抖动。已尝试 `adb kill-server`+`start-server`、`reconnect offline|device`、
+`get-state` 恢复后立即安装、`install -r`（streamed）、`install -r --no-streaming`、`wait-for-device`；
+最好一次已进入 `Performing Streamed Install` 但传输中掉线。设备侧未安装任何新版本：安装前后均为
+`2126 / 0.3.92-debug`，`firstInstallTime` 2026-09-11 00:42:05 未变。
+
+恢复所需（用户侧一步）：解锁手机并保持屏幕常亮（MIUI 锁屏会挂起 ADB），必要时在开发者选项重新确认
+「USB 调试 / 通过 USB 安装」授权；随后执行
+`pwsh -NoProfile -File docs/verification/artifacts/2026-09-17/android-0.3.93-debug-2128/build-debug-2128.ps1 -Mode Install`
+再 `-Mode Pull`（回读设备 `base.apk` 校验 SHA256 与固定证书）。
+
+## 10. 客户端不确定结果的幂等键只在内存（既有行为）
+
+`ChatPaymentIntent`（`core/chat_payment_intent.dart`）按「动作 + 规范化载荷指纹」在**内存**中保存幂等键与 PIN 授权
+（源码注释即写明 `Nothing is persisted`）：
+
+- 同一页面内重试同一笔（同指纹）→ 复用同一 `key` 与 `proof`：服务端按 `(scope, idempotency_key)` 命中既有
+  交易/红包并原样返回 → **不会二次扣款**（设计如此）。
+- 改动金额/备注/收款人 → 指纹变化 → 新键 → 属于一笔**新的**支付（正确）。
+- **缺口**：当「请求已到达服务端并提交成功、但响应丢失」（超时/断连/进程被杀/被系统回收）后，客户端把状态置为
+  失败（红包 `chat_red_packet_controller.dart:122-126`、转账 `chat_transfer_controller.dart:73`，且 `packetId == null`）；
+  若此时**关闭面板重进或重启 App**，内存键已丢失 → 重试生成**新键**，服务端无法识别为同一次重试 →
+  **会产生第二个红包/转账并再次扣款**（红包还会再收一次 0.5% 手续费）。
+- 影响面：`chat_transfer.create` 与 `red_packet.create`。资金不会凭空消失——第二个红包未领完会过期退款、
+  转账未接受会过期退款——但需用户/客服补救（撤回或收款方退回）。钱包侧（充值/提现/绑定）不受影响，
+  它们用 `ManualOperationStore` **持久化**了操作与幂等键。
+- 去缺口方案（后续事项，本次未实施）：① 像钱包一样持久化「动作 + 指纹 + key + 时间」（不含 PIN/签名），
+  重进时提供「继续上次申请 / 查询结果」；② 服务端加短窗口「同发送人 + 同载荷」去重；③ 不确定结果时先查询
+  「我最近的转账/红包」完成对账再允许重发。
