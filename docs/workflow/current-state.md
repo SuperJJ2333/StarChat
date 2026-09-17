@@ -1,5 +1,24 @@
 # 移动交付恢复索引
 
+## 2026-09-17 Android 0.3.95/2132 更新弹窗（**APK 已构建+验证+推送；服务端发布被 SSH 阻断**）
+
+用户要求「推送 Android 版更新弹窗」，确认候选 = `82b24ba7`（含闪照 route-exit fail-open 修复、
+tombstone 生命周期接线、真实外设音频路由、TURN 措辞与搜索回填边界，以及 `ad12f92c` 红包弹窗恢复）、
+版本 = **0.3.95 + 2132**、**不强制更新**（`min_supported_build` 沿用线上值）、发布后 push GitHub。
+候选 commit **`9fa2c963`**（pubspec/app_config 递增；构建前后工作树 0 项改动）。门禁：`flutter analyze`
+无问题、全量 `flutter test --timeout 120s` **3019 通过 / 0 失败**、`test_app_build_contract.py` 2 通过。
+APK 按固定流程（ARM64 release + 三项 HTTPS dart-define → Apktool 2.12.1 → zipalign 36.0.0 `-P 16 -f 4`
+→ 固定身份 `75b31c66…ba61fff`）构建：aapt 身份 2132/0.3.95/arm64，v2+v3 签名，zipalign 通过，
+语义核对 **25346/25346 类**、**338 项原生资产零变化**、`manifest.diff` 0 字节；SHA256
+**`35CA0962E9DDB3655474B2BCC5182DFCEB52D57549020C8680FC2E4BE3374633`**（79,801,374 字节）。
+GitHub：`b8a7040c..9fa2c963`，`origin/main...main` = `0 0`。
+**未完成（阻断）**：跳板机与直连生产均 **SSH banner 不返回**（TCP 端口 True 但
+`banner_bytes=0`；本机公网 200，无本地代理/残留进程问题），因此分块上传、不可变安装、
+`latest-arm64.apk` 原子切换、更新弹窗设置发布（trace `android-release-0.3.95-2132-20260917`，
+5 条审计）**全部未执行**，线上仍是 0.3.94/2129。脚本已就绪（`upload-apk.ps1`、`publish-apk.sh`、
+`publish_settings_2132.py`），SSH 恢复后按记录第 4 节继续。进入
+[发布与验证记录](../verification/2026-09-17-android-0395-2132-release.md)。
+
 ## 2026-09-17 第二轮五项 UI/交互（红包整页 / 邀请码 / 钱包复制位置 / 充值页 / 提现按钮）（本地完成，**未构建/未部署**）
 
 用户五项：①点红包封面**保持原本的居中磨砂弹窗**（用户复盘否决了初版的「整页红包页」，已整体回退），
