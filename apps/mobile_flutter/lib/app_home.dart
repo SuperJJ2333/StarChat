@@ -2177,13 +2177,7 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
                       context, widget.api, widget.identityCache)))),
       onWallet: () => Navigator.push(
           context,
-          CupertinoPageRoute(
-              builder: (_) => CupertinoPageScaffold(
-                  navigationBar: CupertinoNavigationBar(
-                      automaticBackgroundVisibility: false,
-                      enableBackgroundFilterBlur: false,
-                      middle: Text('钱包')),
-                  child: WalletPage(api: widget.api)))),
+          CupertinoPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
       onInvite: () => Navigator.push(
           context,
@@ -2247,13 +2241,7 @@ final class ProfilePage extends StatelessWidget {
                 onTap: () => Navigator.push(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => CupertinoPageScaffold(
-                      navigationBar: CupertinoNavigationBar(
-                          automaticBackgroundVisibility: false,
-                          enableBackgroundFilterBlur: false,
-                          middle: Text('钱包')),
-                      child: WalletPage(api: api),
-                    ),
+                    builder: (_) => WalletPage(api: api),
                   ),
                 ),
               ),

@@ -78,6 +78,8 @@ final class WalletPage extends StatelessWidget {
     if (client == null) {
       return const Center(child: Text('钱包暂不可用，请重新登录'));
     }
-    return ManualWalletPage(client: client, embedded: true);
+    // 非嵌入：钱包页自己提供导航栏，刷新按钮落在导航栏右侧（用户要求），
+    // 避免 AppHome 再套一层导航栏造成重复标题/按钮。
+    return ManualWalletPage(client: client);
   }
 }

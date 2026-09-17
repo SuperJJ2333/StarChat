@@ -49,6 +49,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   bool busy = false, ready = false;
   bool depositEnabled = false, payoutEnabled = false, executionEnabled = false;
   bool capabilitiesKnown = false;
+
+  /// 只有在「从未拿到过能力配置且确实加载失败」时才为真：加载中或刷新中
+  /// 一律沿用上一次已知状态，避免每次进入钱包都闪一下「功能状态暂不可用」。
+  bool capabilitiesUnavailable = false;
   bool addressOnly = false;
   bool bindingFresh = false;
   String? walletScope;
@@ -57,6 +61,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   bool conversionEnabled = false;
   String? pointsAvailable;
   String? pointsError;
+
+  /// 距离上次改绑未满 30 天：服务端会拒绝，界面必须先讲清楚而不是让用户撞错。
+  bool get rebindCoolingDown {
+    final next = binding?.nextRebindAt;
+    return next != null && widget.clock().isBefore(next);
+  }
+
   bool get activeBinding =>
       ready &&
       capabilitiesKnown &&
@@ -75,6 +86,19 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   Future<void>? balanceLoad;
   bool showBindingDetails = false;
   bool showOrderDetails = false;
+
+  /// 终局失败：用同一份草稿重试永远不会成功，必须立刻释放输入框。
+  static const _terminalBindingFailures = {
+    'WALLET_ADDRESS_OWNED',
+    'WALLET_ADDRESS_INVALID',
+    'WALLET_ALREADY_BOUND',
+    'WALLET_REBIND_TOO_SOON',
+    'WALLET_BINDING_PENDING',
+    'WALLET_WITHDRAWAL_IN_PROGRESS',
+    'WALLET_ACCOUNT_RESTRICTED',
+    'WALLET_ADDRESS_REGISTRATION_DISABLED',
+    'WALLET_BINDING_VERSION_CONFLICT',
+  };
   String get bindingTimeLeft {
     final seconds = challenge!.expiresAt.difference(widget.clock()).inSeconds;
     if (seconds <= 0) return '验证请求已过期，请刷新状态后重新获取';
@@ -135,12 +159,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   Future<void> refresh() async {
-    depositEnabled =
-        payoutEnabled = executionEnabled = pointsPayoutEnabled = false;
     await ensureCurrentScope();
-    capabilitiesKnown = false;
     bindingFresh = false;
-    conversionEnabled = false;
     depositOp = await store.read('deposit');
     quoteOp = await store.read('quote');
     payoutOp = await store.read('payout');
@@ -154,6 +174,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     }
     if (quoteOp == null && payoutOp == null) quote = null;
     if (payoutOp == null) payout = null;
+    // 能力配置：保留上一次的已知值直到新值到达。之前每次刷新都先清空，
+    // 于是「功能状态暂不可用」在每次进入/刷新时都会闪一下再消失。
     try {
       final config = await widget.client.walletConfig();
       depositEnabled = config['funding_enabled'] == true;
@@ -163,9 +185,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       pointsPayoutEnabled =
           config['caibi_payout_enabled'] == true && conversionEnabled;
       capabilitiesKnown = true;
+      capabilitiesUnavailable = false;
       addressOnly = config['user_auth_mode'] == 'address_only';
     } catch (_) {
-      // Status recovery remains available when activation configuration fails.
+      // 已经知道过能力时静默沿用（失败会在具体操作上报错）；只有当状态
+      // 从未可知时才把「功能状态暂不可用」呈现给用户。
+      capabilitiesUnavailable = !capabilitiesKnown;
     }
     binding = await api.bindingStatus();
     bindingFresh = true;
@@ -318,8 +343,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     } catch (error) {
       messageIsWarning = true;
       const explanations = {
-        'WALLET_ADDRESS_INVALID': '地址格式不正确，请填写有效的 TRON 地址并检查是否复制完整。',
-        'WALLET_ADDRESS_OWNED': '该地址已被其他账号登记，请核对地址或联系管理员。',
+        'WALLET_ADDRESS_INVALID':
+            '地址格式不正确，请填写有效的 TRON 地址并检查是否复制完整。',
+        'WALLET_ADDRESS_OWNED': '该地址已被其他账号登记，请更换一个属于你的钱包地址。',
         'WALLET_REBIND_TOO_SOON': '距离上次修改未满 30 天，请查看下次可修改时间。',
         'WALLET_BINDING_PENDING': '地址正在同步，请稍后刷新状态。',
         'WALLET_WITHDRAWAL_IN_PROGRESS': '还有未完成的提现，请处理完成后再修改地址。',
@@ -405,16 +431,37 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       'version': binding!.version,
       'method': 'address_only'
     });
-    final result = await api.registerAddress(
-        address: bindingOp!['address'] as String,
-        expectedVersion: bindingOp!['version'] as int,
-        idempotencyKey: bindingOp!['key'] as String);
+    final ManualBindingConfirmation result;
+    try {
+      result = await api.registerAddress(
+          address: bindingOp!['address'] as String,
+          expectedVersion: bindingOp!['version'] as int,
+          idempotencyKey: bindingOp!['key'] as String);
+    } catch (error) {
+      // 终局校验失败（地址已被他人登记、格式错误、未满 30 天、有待处理提现…）：
+      // 这份草稿重试多少次都不会成功，继续保留会把地址输入框永久锁死
+      // （真机 BUG：被拒地址删不掉、一直提示「已被其他账号登记」）。
+      // 网络/超时等不确定失败仍保留草稿，以便用同一幂等键安全重试。
+      if (error is BusinessApiException &&
+          _terminalBindingFailures.contains(error.code)) {
+        await discardBindingDraft();
+      }
+      rethrow;
+    }
     bindingOp = {...bindingOp!, 'id': result.id};
     await store.save('binding', bindingOp!);
     await refresh();
     message = binding?.status == ManualBindingState.active
         ? '钱包地址已保存'
         : '地址已登记，正在同步链上起始位置，请稍后刷新。';
+  }
+
+  /// 丢弃尚未产生服务端结果的登记草稿，把地址输入框还给用户。
+  Future<void> discardBindingDraft() async {
+    await store.clear('binding');
+    bindingOp = null;
+    challenge = null;
+    if (mounted) setState(() {});
   }
 
   Future<void> createDeposit() async {
@@ -815,11 +862,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                           fontSize: 18, fontWeight: FontWeight.w600))),
               Semantics(
                   label: binding?.status == ManualBindingState.active
-                      ? '更换钱包地址'
+                      ? '更改绑定'
                       : '绑定钱包地址',
                   child: CupertinoButton(
                       key: const Key('manual-wallet-rebind'),
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
                       onPressed: busy ||
                               !ready ||
                               !bindingFresh ||
@@ -827,7 +875,22 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                               binding?.bindingEnabled != true
                           ? null
                           : () => openSection(ManualWalletSection.binding),
-                      child: const Icon(CupertinoIcons.pencil, size: 22))),
+                      child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.pencil,
+                                size: 16,
+                                color: WeChatColors.brandPrimary),
+                            const SizedBox(width: 4),
+                            Text(
+                                binding?.status == ManualBindingState.active
+                                    ? '更改绑定'
+                                    : '绑定钱包',
+                                style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: WeChatColors.brandPrimary)),
+                          ]))),
             ]),
             const SizedBox(height: 16),
             Text(binding?.maskedAddress ?? '请先绑定你的钱包地址',
@@ -938,7 +1001,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                 Align(
                     alignment: Alignment.centerRight, child: refreshControl()),
               if (widget.section == ManualWalletSection.overview) overview(),
-              if (!capabilitiesKnown) warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
+              if (capabilitiesUnavailable)
+                warningBox('功能状态暂不可用，请刷新；已有订单仍可查询。'),
               if (widget.section == ManualWalletSection.binding) ...[
                 if (!addressOnly)
                   CupertinoButton(
@@ -978,7 +1042,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     if (widget.embedded) return content;
     return WeChatPageScaffold.navigation(
         navigationBar: CupertinoNavigationBar(
-            middle: Text(pageTitle), trailing: refreshControl()),
+            automaticBackgroundVisibility: false,
+            enableBackgroundFilterBlur: false,
+            middle: Text(pageTitle),
+            trailing: refreshControl()),
         child: content);
   }
 
@@ -989,7 +1056,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         Row(children: [
           Expanded(
               child: field('manual-binding-address', address, '粘贴你的 TRON 地址',
-                  enabled: bindingOp == null)),
+                  // 只有服务端已经受理（拿到了 id）才锁定地址；被拒的草稿必须可改。
+                  enabled: bindingOp?['id'] == null)),
           ValueListenableBuilder<TextEditingValue>(
               valueListenable: address,
               builder: (_, value, child) =>
@@ -997,17 +1065,16 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         ]),
         const Text('仅填本人地址 · 每 30 天可修改一次',
             style: TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
+        if (rebindCoolingDown)
+          warningBox(
+              '距离上次修改未满 30 天，下次可修改时间：${shortDate(binding!.nextRebindAt!)}'),
         button(bindingOp == null ? '保存钱包地址' : '继续原地址登记', registerAddress,
             key: 'manual-register-address',
-            enabled: capabilitiesKnown && binding?.bindingEnabled == true),
-        if (bindingOp != null &&
-            bindingOp!['method'] != 'address_only' &&
-            bindingOp!['id'] == null)
-          button('重新填写钱包地址', () async {
-            await store.clear('binding');
-            bindingOp = null;
-            challenge = null;
-          }),
+            enabled: capabilitiesKnown &&
+                binding?.bindingEnabled == true &&
+                !rebindCoolingDown),
+        if (bindingOp?['id'] == null && bindingOp != null)
+          button('重新填写钱包地址', discardBindingDraft),
       ];
 
   List<Widget> bindingFields() => [
@@ -1016,17 +1083,17 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         const SizedBox(height: 8),
         const Text('用于识别你的充值，并作为提现收款地址。每 30 天最多改绑一次。'),
         field('manual-binding-address', address, '私人 TRON 钱包地址',
-            enabled: bindingOp == null),
+            enabled: bindingOp?['id'] == null),
         if (bindingOp?['id'] != null)
           const Text('绑定结果尚未确认。先刷新状态；重试时粘贴与首次提交完全相同的签名。'),
+        if (rebindCoolingDown)
+          warningBox(
+              '距离上次修改未满 30 天，下次可修改时间：${shortDate(binding!.nextRebindAt!)}'),
         button(bindingOp == null ? '开始验证钱包归属' : '恢复本次验证', createChallenge,
-            enabled: binding?.bindingEnabled == true, key: 'manual-challenge'),
+            enabled: binding?.bindingEnabled == true && !rebindCoolingDown,
+            key: 'manual-challenge'),
         if (bindingOp != null && bindingOp?['id'] == null)
-          button('重新填写钱包地址', () async {
-            await store.clear('binding');
-            bindingOp = null;
-            challenge = null;
-          }),
+          button('重新填写钱包地址', discardBindingDraft),
         if (challenge != null) ...[
           const SizedBox(height: 12),
           const Text('2 · 验证钱包归属',

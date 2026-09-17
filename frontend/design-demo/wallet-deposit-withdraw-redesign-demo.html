@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=375">
+<title>畅聊 ChatFlow — 充值 / 提现页面美化 Demo（待评审）</title>
+<style>
+:root{
+  /* 与 Flutter / tokens.css 对齐的语义色 */
+  --brand:#07C160; --brand-dark:#06AD56; --brand-soft:rgba(7,193,96,.08);
+  --bg:#EDEDED; --card:#FFFFFF; --line:#E5E5E5;
+  --text:#191919; --text-2:#888888; --text-3:#B2B2B2;
+  --red:#FA5151; --red-soft:rgba(250,81,81,.08); --orange:#FA9D3B;
+  --radius-card:12px; --radius-btn:8px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue',sans-serif;background:#F2F2F2;padding:28px 24px 56px}
+.page-head{max-width:1240px;margin:0 auto 22px}
+.page-head h1{font-size:20px;color:#191919;margin-bottom:8px}
+.page-head p{font-size:13px;color:#666;line-height:1.7}
+.page-head code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:12px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:#666}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:14px;height:14px;border-radius:4px;border:1px solid rgba(0,0,0,.06)}
+.grid{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.frame{width:375px}
+.caption{font-size:12px;color:#666;margin-top:10px;line-height:1.6}
+.caption b{color:#191919}
+.phone{width:375px;background:var(--bg);border-radius:24px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.16)}
+.navbar{height:44px;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;color:var(--text);border-bottom:.5px solid var(--line);position:relative}
+.navbar .back{position:absolute;left:12px;font-size:15px;color:var(--text);display:flex;align-items:center;gap:2px}
+.navbar .trailing{position:absolute;right:12px;display:flex;align-items:center;gap:14px;color:var(--text)}
+.navbar .trailing svg{display:block}
+.screen{min-height:660px;padding:16px 16px 28px}
+
+/* 卡片 */
+.card{background:var(--card);border-radius:var(--radius-card);padding:16px;margin-bottom:12px}
+.card.tight{padding:14px 16px}
+.card-head{font-size:13px;color:var(--text-2);margin-bottom:10px}
+
+/* 资产卡（钱包首页） */
+.asset-top{display:flex;align-items:center;gap:12px}
+.asset-icon{width:34px;height:34px;border-radius:50%;background:var(--brand-soft);display:flex;align-items:center;justify-content:center;color:var(--brand);font-size:18px}
+.asset-title{font-size:18px;font-weight:600;color:var(--text)}
+.asset-top .spacer{flex:1}
+.balance{font-size:34px;font-weight:700;color:var(--text);letter-spacing:.5px;margin:14px 0 2px}
+.balance .unit{font-size:15px;font-weight:500;color:var(--text-2);margin-left:4px}
+.addr-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:14px;color:var(--text)}
+.addr-row .mono{font-variant-numeric:tabular-nums;letter-spacing:.3px}
+.copy{width:18px;height:18px;border:1px solid var(--text-3);border-radius:4px;color:var(--text-2);display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex:none}
+.meta{font-size:12px;color:var(--text-3);margin-top:8px;line-height:1.5}
+.divider{height:.5px;background:var(--line);margin:14px 0}
+.bind-line{display:flex;align-items:center;gap:10px;margin-top:12px}
+.bind-line .txt{flex:1;font-size:13px;color:var(--text-2);line-height:1.5}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px}
+.pill.ok{color:var(--brand);background:var(--brand-soft)}
+.pill.warn{color:var(--orange);background:rgba(250,157,59,.12)}
+.pill.bad{color:var(--red);background:var(--red-soft)}
+.pill.grey{color:var(--text-2);background:#F2F2F2}
+
+/* 按钮 */
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;height:46px;border-radius:var(--radius-btn);font-size:16px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:opacity .12s}
+.btn.block{width:100%}
+.btn.primary{background:var(--brand);color:#fff}
+.btn.ghost{background:#fff;color:var(--text);border-color:var(--line)}
+.btn.text{background:transparent;color:var(--brand);height:auto;padding:8px 0;font-size:14px}
+.btn.danger{background:#fff;color:var(--red);border-color:rgba(250,81,81,.35)}
+.btn.sm{height:32px;font-size:13px;padding:0 14px;border-radius:6px;width:auto;display:inline-flex}
+.btn[disabled],.btn.disabled{opacity:.45;pointer-events:none}
+.action-row{display:flex;gap:12px;margin-top:4px}
+.action-row .btn{flex:1}
+.tile{display:flex;align-items:center;justify-content:center;gap:8px;height:64px;border-radius:var(--radius-card);background:var(--brand);color:#fff;font-size:17px;font-weight:600}
+.tile.secondary{background:#fff;color:var(--text);border:1px solid var(--line)}
+.tile.off{background:#E6E6E6;color:var(--text-3)}
+
+/* 输入 */
+.field{margin-top:6px}
+.field .label{font-size:13px;color:var(--text-2)}
+.input{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#F7F7F7;border:1px solid var(--line);border-radius:var(--radius-btn);padding:12px 14px;margin-top:8px}
+.input .value{font-size:20px;font-weight:600;color:var(--text)}
+.input .value.placeholder{font-size:15px;font-weight:400;color:var(--text-3)}
+.input .suffix{font-size:14px;color:var(--text-2)}
+.input.focus{border-color:var(--brand);background:#fff;box-shadow:0 0 0 3px var(--brand-soft)}
+.input.err{border-color:rgba(250,81,81,.5);background:#fff}
+.input .code{font-size:18px;letter-spacing:6px;color:var(--text)}
+.hint{font-size:12px;color:var(--text-3);margin-top:8px;line-height:1.6}
+.err-text{font-size:12px;color:var(--red);margin-top:8px;line-height:1.6}
+
+/* 详情行 */
+.rows{background:var(--card);border-radius:var(--radius-card);overflow:hidden;margin-bottom:12px}
+.rows .cell{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;font-size:15px}
+.rows .cell + .cell{border-top:.5px solid var(--line)}
+.rows .cell .k{color:var(--text-2);font-size:14px;flex:none}
+.rows .cell .v{color:var(--text);text-align:right;word-break:break-all;font-variant-numeric:tabular-nums}
+.rows .cell .v.copyable{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.rows .cell .v .fee{color:var(--brand);font-weight:600}
+.rows .cell .v .em{font-size:17px;font-weight:600}
+
+/* 警示 / 提示条 */
+.warn{display:flex;gap:8px;align-items:flex-start;background:var(--red-soft);border:1px solid rgba(250,81,81,.25);border-radius:var(--radius-btn);padding:12px;margin-bottom:12px}
+.warn .ic{color:var(--red);flex:none;margin-top:1px}
+.warn .txt{font-size:13px;line-height:1.5;color:var(--red)}
+.warn.info{background:var(--brand-soft);border-color:rgba(7,193,96,.22)}
+.warn.info .ic,.warn.info .txt{color:var(--brand-dark)}
+.warn.neutral{background:#F7F7F7;border-color:var(--line)}
+.warn.neutral .ic,.warn.neutral .txt{color:var(--text-2)}
+
+/* 状态大标题（充值待转账 / 提现状态） */
+.status-hero{background:var(--card);border-radius:var(--radius-card);padding:20px 16px;text-align:center;margin-bottom:12px}
+.status-hero .ic{width:52px;height:52px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:26px;background:var(--brand-soft);color:var(--brand)}
+.status-hero .amount{font-size:32px;font-weight:700;color:var(--text)}
+.status-hero .amount .unit{font-size:14px;font-weight:500;color:var(--text-2);margin-left:4px}
+.status-hero .sub{font-size:13px;color:var(--text-2);margin-top:6px}
+.countdown{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--orange);background:rgba(250,157,59,.12);border-radius:999px;padding:3px 10px;font-variant-numeric:tabular-nums}
+.status-hero.pending .ic{background:rgba(250,157,59,.12);color:var(--orange)}
+.status-hero.done .ic{background:var(--brand-soft);color:var(--brand)}
+.status-hero.unknown .ic{background:#F2F2F2;color:var(--text-2)}
+
+/* 二维码 */
+.qr{width:176px;height:176px;margin:14px auto 0;border-radius:10px;background:
+  repeating-conic-gradient(#191919 0 25%, #fff 0 50%) 50%/16px 16px;
+  border:8px solid #fff;box-shadow:0 0 0 1px var(--line)}
+.qr-wrap{text-align:center}
+.qr-note{font-size:12px;color:var(--text-3);margin-top:8px}
+
+/* 分段/步骤 */
+.steps{display:flex;align-items:center;gap:6px;margin-bottom:12px}
+.steps .dot{width:22px;height:22px;border-radius:50%;background:#E6E6E6;color:#9A9A9A;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.steps .dot.on{background:var(--brand);color:#fff}
+.steps .bar{flex:1;height:2px;background:#E6E6E6;border-radius:2px}
+.steps .bar.on{background:var(--brand)}
+.steps .name{font-size:11px;color:var(--text-2)}
+.seg{display:flex;background:#F2F2F2;border-radius:8px;padding:3px;margin-bottom:12px}
+.seg div{flex:1;text-align:center;font-size:13px;padding:7px 0;border-radius:6px;color:var(--text-2)}
+.seg div.on{background:#fff;color:var(--text);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>畅聊 ChatFlow · 充值 / 提现页面美化 Demo（待你评审）</h1>
+  <p>
+    这是 <b>UI 评审稿</b>，不是已实现页面。风格沿用微信式卡片 + 品牌绿，token 与
+    <code>frontend/src/styles/tokens.css</code> / Flutter <code>WeChatColors</code> 对齐；
+    字段与状态严格对应现有真实流程（充值 = TRON TRC20 收款地址 + 有效期；提现 = 报价 + 身份验证器验证码 + 管理员人工付款）。
+    导航栏右侧新增「刷新」、钱包首页新增「更改绑定」按钮，供你同时评审第 1、3 项改动的观感。
+  </p>
+  <div class="legend">
+    <span><i class="swatch" style="background:#07C160"></i>品牌绿 --brand #07C160</span>
+    <span><i class="swatch" style="background:#FA5151"></i>警示红 --red #FA5151</span>
+    <span><i class="swatch" style="background:#FA9D3B"></i>等待橙 --orange #FA9D3B</span>
+    <span><i class="swatch" style="background:#EDEDED"></i>页面底 --bg #EDEDED</span>
+    <span>卡片圆角 12 · 按钮圆角 8</span>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- ============ 1. 钱包首页（含更改绑定 + 导航栏刷新） ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span>钱包</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="card">
+          <div class="asset-top">
+            <span class="asset-icon">¥</span>
+            <span class="asset-title">USDT · TRC20</span>
+            <span class="spacer"></span>
+            <span class="pill ok">已绑定</span>
+          </div>
+          <div class="balance">1,250.00<span class="unit">USDT</span></div>
+          <div class="addr-row">
+            <span class="mono">TQ5d…9fK2</span>
+            <span class="copy">复制</span>
+          </div>
+          <div class="meta">绑定钱包地址 · 仅支持 TRON 网络（TRC20）</div>
+          <div class="divider"></div>
+          <div class="bind-line">
+            <span class="txt">下次可改绑：<b style="color:#191919">2026-10-15 14:30</b><br>（地址每 30 天最多修改一次）</span>
+            <span class="btn ghost sm">更改绑定</span>
+          </div>
+        </div>
+
+        <div class="action-row" style="margin-bottom:12px">
+          <div class="tile">充值</div>
+          <div class="tile secondary">提现</div>
+        </div>
+
+        <div class="card tight" style="text-align:center">
+          <div class="meta" style="margin:0">仅支持 TRON 网络 · 1 点钻 = 1 USDT · 充提手续费 0</div>
+        </div>
+        <div class="action-row">
+          <div class="btn ghost">交易记录</div>
+          <div class="btn ghost">使用帮助</div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>① 钱包首页</b>：刷新移到导航栏右侧；绑定区新增显式「更改绑定」按钮，并直接展示 30 天限制的下次可改时间（原来只有一个铅笔图标，且无文字说明）。</div>
+  </div>
+
+  <!-- ============ 2. 充值：填写金额 ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>充值</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="steps">
+          <span class="dot on">1</span><span class="name">填写金额</span>
+          <span class="bar"></span>
+          <span class="dot">2</span><span class="name">转账</span>
+          <span class="bar"></span>
+          <span class="dot">3</span><span class="name">到账</span>
+        </div>
+
+        <div class="card">
+          <div class="field">
+            <div class="label">充值金额</div>
+            <div class="input focus">
+              <span class="value">100.00</span>
+              <span class="suffix">USDT</span>
+            </div>
+            <div class="hint">最低 10 USDT · 仅支持 TRC20 网络</div>
+          </div>
+        </div>
+
+        <div class="rows">
+          <div class="cell"><span class="k">到账金额</span><span class="v"><span class="em">100.00</span> USDT</span></div>
+          <div class="cell"><span class="k">手续费</span><span class="v"><span class="fee">0.00</span> USDT</span></div>
+          <div class="cell"><span class="k">到账网络</span><span class="v">TRON（TRC20）</span></div>
+        </div>
+
+        <div class="btn primary block">下一步</div>
+        <div class="hint">下一步会生成专属收款地址与有效期，请在有效期内完成转账。</div>
+      </div>
+    </div>
+    <div class="caption"><b>② 充值 · 填写金额</b>：大号金额输入 + 明确的到账/手续费明细（充值 0 手续费），底部说明消除「转多少算多少」的不确定感。</div>
+  </div>
+
+  <!-- ============ 3. 充值：待转账（地址 + 二维码 + 倒计时） ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>充值</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="status-hero pending">
+          <div class="ic">↓</div>
+          <div class="amount">100.00<span class="unit">USDT</span></div>
+          <div class="sub">待转账 · 请向下方地址转入</div>
+          <div class="countdown">剩余 28:41</div>
+        </div>
+
+        <div class="warn info">
+          <span class="ic">i</span>
+          <span class="txt">仅向本页地址转账，金额与网络必须一致；超时后请勿转账，回到本页重新申请。</span>
+        </div>
+
+        <div class="qr-wrap">
+          <div class="qr"></div>
+          <div class="qr-note">使用钱包 App 扫码，或复制下方地址</div>
+        </div>
+
+        <div class="rows" style="margin-top:14px">
+          <div class="cell"><span class="k">收款地址</span><span class="v copyable"><span class="mono">TQ5dK…9fK2</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">转出钱包</span><span class="v copyable"><span class="mono">TW9aB…3xQ7</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">有效期至</span><span class="v">2026-09-17 15:42</span></div>
+        </div>
+
+        <div class="btn primary block">我已完成转账，刷新状态</div>
+        <div class="btn text" style="width:100%;justify-content:center">遇到问题？查看帮助</div>
+      </div>
+    </div>
+    <div class="caption"><b>③ 充值 · 待转账</b>：把「金额 + 倒计时 + 二维码 + 收款地址 + 转出钱包」集中在一屏，复制按钮紧跟地址；超时风险用品牌色提示条说明，而不是等出错才告知。</div>
+  </div>
+
+  <!-- ============ 4. 充值：已过期 ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>充值</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="status-hero">
+          <div class="ic" style="background:var(--red-soft);color:var(--red)">!</div>
+          <div class="amount" style="color:#B2B2B2">100.00<span class="unit">USDT</span></div>
+          <div class="sub">本次充值申请已过期</div>
+        </div>
+        <div class="warn">
+          <span class="ic">!</span>
+          <span class="txt">该申请已过期，<b>请勿再向原地址转账</b>；如已转账请联系客服核对。</span>
+        </div>
+        <div class="rows">
+          <div class="cell"><span class="k">原收款地址</span><span class="v copyable"><span class="mono">TQ5dK…9fK2</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">过期时间</span><span class="v">2026-09-17 15:42</span></div>
+        </div>
+        <div class="btn primary block">再次充值</div>
+      </div>
+    </div>
+    <div class="caption"><b>④ 充值 · 已过期</b>：过期用红色警示 + 明确「请勿转账」，并保留原地址供核对；主操作只留「再次充值」，避免误转。</div>
+  </div>
+
+  <!-- ============ 5. 提现：填写金额 ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>提现</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="steps">
+          <span class="dot on">1</span><span class="name">填写金额</span>
+          <span class="bar"></span>
+          <span class="dot">2</span><span class="name">确认报价</span>
+          <span class="bar"></span>
+          <span class="dot">3</span><span class="name">到账</span>
+        </div>
+
+        <div class="card">
+          <div class="asset-top">
+            <span class="asset-icon">◈</span>
+            <span class="asset-title" style="font-size:15px">当前点钻余额</span>
+            <span class="spacer"></span>
+            <span class="pill grey">可提现</span>
+          </div>
+          <div class="balance" style="font-size:30px">1,250.00<span class="unit">点钻</span></div>
+          <div class="meta">1 点钻 = 1 USDT · 最低提现 10 USDT</div>
+        </div>
+
+        <div class="card">
+          <div class="field">
+            <div class="label">提现金额</div>
+            <div class="input focus">
+              <span class="value">500.00</span>
+              <span class="suffix">点钻</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+              <span class="hint" style="margin:0">可提现 1,250.00 点钻</span>
+              <span class="btn ghost sm">全部提现</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rows">
+          <div class="cell"><span class="k">收款地址</span><span class="v copyable"><span class="mono">TQ5dK…9fK2</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">到账方式</span><span class="v">管理员人工付款（TRC20）</span></div>
+        </div>
+
+        <div class="btn primary block">下一步</div>
+      </div>
+    </div>
+    <div class="caption"><b>⑤ 提现 · 填写金额</b>：余额与可提现同屏，「全部提现」贴着输入框；收款地址提前展示，减少最后一步的意外。</div>
+  </div>
+
+  <!-- ============ 6. 提现：确认报价 ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>提现</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="status-hero">
+          <div class="ic">↑</div>
+          <div class="amount">500.00<span class="unit">USDT</span></div>
+          <div class="sub">确认后由管理员人工付款</div>
+          <div class="countdown">报价剩余 04:58</div>
+        </div>
+
+        <div class="rows">
+          <div class="cell"><span class="k">收款地址</span><span class="v copyable"><span class="mono">TQ5dK…9fK2</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">扣除点钻</span><span class="v"><span class="em">500.00</span></span></div>
+          <div class="cell"><span class="k">提现 USDT</span><span class="v">500.00</span></div>
+          <div class="cell"><span class="k">服务费</span><span class="v"><span class="fee">0.00</span> USDT</span></div>
+          <div class="cell"><span class="k">到账 USDT</span><span class="v"><span class="em">500.00</span></span></div>
+        </div>
+
+        <div class="card">
+          <div class="field">
+            <div class="label">身份验证器验证码</div>
+            <div class="input"><span class="code">• • • • • •</span></div>
+            <div class="hint">打开身份验证器，输入当前六位动态码</div>
+          </div>
+        </div>
+
+        <div class="warn neutral">
+          <span class="ic">i</span>
+          <span class="txt">人工付款通常在 24 小时内完成；提交后可在「交易记录」查看状态，请勿重复提交。</span>
+        </div>
+
+        <div class="btn primary block">确认提现</div>
+      </div>
+    </div>
+    <div class="caption"><b>⑥ 提现 · 确认报价</b>：金额层级 + 明细（扣除/到账/服务费）一目了然；验证码单独卡片，与说明文案分区，避免误触提交。</div>
+  </div>
+
+  <!-- ============ 7. 提现：订单状态 ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>提现</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="status-hero done">
+          <div class="ic">✓</div>
+          <div class="amount">500.00<span class="unit">USDT</span></div>
+          <div class="sub">已结算 · 请在钱包内确认到账</div>
+        </div>
+
+        <div class="rows">
+          <div class="cell"><span class="k">订单号</span><span class="v copyable"><span class="mono">WO-20260917-0031</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">状态</span><span class="v"><span class="pill ok">已完成</span></span></div>
+          <div class="cell"><span class="k">到账 USDT</span><span class="v">500.00</span></div>
+          <div class="cell"><span class="k">链上交易</span><span class="v copyable"><span class="mono">9f2c…41ab</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">完成时间</span><span class="v">2026-09-17 14:20</span></div>
+        </div>
+
+        <div class="btn primary block">开始新的提现</div>
+        <div class="btn ghost block" style="margin-top:10px">查看交易记录</div>
+      </div>
+    </div>
+    <div class="caption"><b>⑦ 提现 · 已结算</b>：状态用颜色徽标 + 结果金额做主语；订单号/链上交易号可一键复制，主操作只留「开始新的提现」。</div>
+  </div>
+
+  <!-- ============ 8. 提现：待核验（异常态） ============ -->
+  <div class="frame">
+    <div class="phone">
+      <div class="navbar">
+        <span class="back">‹ 返回</span>
+        <span>提现</span>
+        <span class="trailing">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>
+        </span>
+      </div>
+      <div class="screen">
+        <div class="status-hero unknown">
+          <div class="ic">?</div>
+          <div class="amount">500.00<span class="unit">USDT</span></div>
+          <div class="sub">付款结果待核验，资金继续冻结</div>
+        </div>
+
+        <div class="warn">
+          <span class="ic">!</span>
+          <span class="txt">付款结果尚未确认，<b>请勿重复申请</b>；平台正在核对链上结果，完成后会自动更新。</span>
+        </div>
+
+        <div class="rows">
+          <div class="cell"><span class="k">订单号</span><span class="v copyable"><span class="mono">WO-20260917-0032</span><span class="copy">复制</span></span></div>
+          <div class="cell"><span class="k">冻结点钻</span><span class="v">500.00</span></div>
+          <div class="cell"><span class="k">提交时间</span><span class="v">2026-09-17 14:35</span></div>
+        </div>
+
+        <div class="btn primary block">刷新状态</div>
+        <div class="btn text" style="width:100%;justify-content:center">联系客服核对</div>
+      </div>
+    </div>
+    <div class="caption"><b>⑧ 提现 · 待核验（异常态）</b>：不确定性必须显式表达（冻结中 / 勿重复提交），只提供「刷新」与「联系客服」，不给会造成重复扣款的按钮。</div>
+  </div>
+
+</div>
+</body>
+</html>
