@@ -109,8 +109,42 @@
 另首次全量运行因我在测试进行中删除了 `wallet_conversion_test.dart` 而报该文件 `Failed to load`，
 重跑后消失。
 
-## 5. 未执行 / 待用户确认
+## 5. 真机交付（debug 0.3.94-debug/2130，Mi 6 覆盖安装，数据保留）
 
-- **未构建 APK/IPA、未安装真机、未部署**（用户本次只要求改代码；真机验收待用户指示）。
-- 未改任何服务端代码、未迁移数据库、未改更新弹窗设置。
+按 [android-apk-rebuild.md](../../runbooks/android-apk-rebuild.md) 固定流程（**debug** 变体）：
+Flutter ARM64 debug 源包 → Apktool 2.12.1 解码/重建 → zipalign 36.0.0 `-P 16 -f 4` →
+固定身份 `75b31c66…ba61fff` 签名 → 语义/对齐/清单/签名核对。脚本
+`artifacts/2026-09-17/android-0.3.94-debug-2130/build-debug-2130.ps1`（`-Mode BuildVerify|Install|Pull`，三条命令退出码均 0）。
+
+版本号取 **2130**：沿用上一轮「正式版 +1」的约定（正式版 0.3.94/2129，此前 debug 为 0.3.93-debug/2128），
+既高于设备已装的 2128，也不与正式版 2129 同号。
+
+| 项 | 值 |
+| --- | --- |
+| 源码 commit | `8c97fbf2745b110d9bb119b630cf1ae6cdbf967e` |
+| 源包 SHA256 | `C8E158A4685BB9F410E5D80ACE5FF8CCD8772C3065200F4C3982EB5EF5ED5D09`（150,824,845 字节） |
+| 重建交付包 SHA256 | `C420AC9C63FC4BFDCF8FE9A22AD47FF89D28FF0D7241116F76342E72C8F672FE`（144,625,963 字节） |
+| 重建语义核对 | 源/最终类数 27316/27316、`changed_smali_classes=[]`、原生与 Flutter 资产 336 项零变化、`manifest_semantics_identical=true`、`manifest-semantics.diff` **0 字节** |
+| 清单身份 | `com.liuhetong.mobile` versionCode **2130** / versionName **0.3.94-debug** / `application-debuggable` / native-code `arm64-v8a` |
+| zipalign / 签名 | `-c -P 16 4` 通过；apksigner v2+v3，证书 `75b31c66…ba61fff` |
+| 安装 | `adb -s cbd0156b install -r` → **Success**；versionCode 2130、`flags=[DEBUGGABLE …]` |
+| **数据保留** | `firstInstallTime=2026-09-11 00:42:05` **未变**（未卸载、未清数据）；`lastUpdateTime=2026-09-17 19:34:46` |
+| 设备回读 | 拉回 `/data/app/.../base.apk`：SHA256 `c420ac9c…f672fe` **与交付候选完全一致**，证书 `75b31c66…ba61fff` 一致 |
+
+## 6. GitHub 推送
+
+- 首次 `git push origin main` **失败**：`schannel: failed to receive handshake, SSL/TLS connection failed`
+  （本机 git 配置 `http.sslBackend=schannel` 且 `http(s).proxy=http://127.0.0.1:7897`；
+  同一时刻只读的 `git ls-remote` 正常，说明代理链路本身可用，问题出在 schannel 的推送握手）。
+- 用一次性覆盖（**未改持久配置**）成功：
+  `git -c http.sslBackend=openssl push origin main` → **`6bc5fcb8..8c97fbf2 main -> main`**（退出码 0）。
+- 推送后 `git rev-list --left-right --count origin/main...main` = `0  0`，
+  `origin/main == main == 8c97fbf2745b110d9bb119b630cf1ae6cdbf967e`。
+- 后续如再次遇到同一 schannel 报错，可重复该覆盖命令，或由用户决定是否把 `http.sslBackend=openssl`
+  写入仓库/全局配置（本任务未擅自持久化）。
+
+## 7. 未执行 / 待用户确认
+
+- **未部署任何服务端变更**（本轮无服务端改动）；未改更新弹窗设置；未构建正式版包（2129 已在线）。
+- 真机功能验收（A1–A5）由用户在 Mi 6 上执行。
 - 删除「复制邀请链接」与「点钻与 USDT 兑换」卡片后，相关服务端契约字段/接口保持不变（仅去 UI 入口）。

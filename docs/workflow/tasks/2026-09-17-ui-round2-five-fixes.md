@@ -9,7 +9,7 @@
   不动 Figma（已退役）；不提高最低支持版本；本次**未构建、未部署**。
 - 关联计划/ADR：无新 ADR（均为 UI/交互改动，未触及受保护变更）；遵循
   [移动交付流程](../../runbooks/mobile-delivery-workflow.md) 与 `ui-demo-delivery` 技能。
-- 当前状态：**代码与门禁完成，待真机验收**。
+- 当前状态：**完成**（代码 + 门禁 + 真机 debug 包已覆盖安装并回读核对 + 已推送 `origin/main`）；功能验收待用户。
 - 负责人、工作树、文件所有权、源码 commit：主工作树 `D:\pythonProject\outsource\StarChat`（`main`）。
   拥有：`apps/mobile_flutter/lib/features/redpacket/{red_packet_claim_page,red_packet_claim_dialog(删)}.dart`、
   `apps/mobile_flutter/lib/features/finance/finance_message_entry.dart`、
@@ -37,10 +37,12 @@
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| Android | **未构建**（本轮仅源码改动） | 见提交 | — | — | — |
+| Android debug（Mi 6 真机） | **0.3.94-debug / 2130** | `8c97fbf2` | `com.liuhetong.mobile`，固定身份 `75b31c66…ba61fff` | `artifacts/2026-09-17/android-0.3.94-debug-2130/ChatFlow-0.3.94-debug-2130-arm64-rebuilt.apk`，SHA256 `C420AC9C…F672FE`（源包 `C8E158A4…5ED5D09`） | 2026-09-17 19:34:46 +08 覆盖安装 **Success**，`firstInstallTime` 2026-09-11 00:42:05 未变（数据保留）；设备回读 `base.apk` SHA256 与证书同候选一致 |
+| Android 正式版 | 未构建（线上仍 0.3.94/2129，本任务前已上线） | — | — | — | — |
 | iOS | 未构建 | — | — | — | — |
 | 业务 API / worker | 未改动 | — | — | — | — |
-| 前端静态 | 仅改 demo 源码（未部署） | 见提交 | — | `frontend/src/screens/wallet-binding.js` 等 | — |
+| 前端静态 | 仅改 demo 源码（未部署） | `8c97fbf2` | — | `frontend/src/screens/wallet-binding.js` 等 | — |
+| GitHub | `origin/main` = `8c97fbf2745b110d9bb119b630cf1ae6cdbf967e` | — | — | `https://github.com/SuperJJ2333/StarChat.git` | 推送 `6bc5fcb8..8c97fbf2`（需 `-c http.sslBackend=openssl`，见验证记录第 6 节） |
 
 测试记录：
 
@@ -63,7 +65,13 @@
   `artifacts/2026-09-17/ui-round2-verify2.txt`。首次运行为 1 failed / 69 passed：
   `tests/mobile/test_ui_component_registry.py` 的硬编码期望 `PASS (30 components, 369 screens)`
   已随新增注册组件更新为 31。
-- 未执行：APK/IPA 构建、真机安装、服务端部署、迁移。
+- 未执行：正式版构建（2129 已在线）、服务端部署、数据库迁移。
+- 真机交付：`-Mode BuildVerify` → `-Mode Install` → `-Mode Pull` 三条命令退出码 0；
+  语义核对类数 27316/27316、原生与 Flutter 资产 336 项零变化、`manifest-semantics.diff` 0 字节；
+  设备回读 `base.apk` SHA256 `c420ac9c…f672fe` 与交付候选一致、证书为固定身份。
+- 推送：`git -c http.sslBackend=openssl push origin main` → `6bc5fcb8..8c97fbf2`（退出码 0）；
+  默认 schannel 后端在同一代理下报 `failed to receive handshake`（只读 `ls-remote` 正常），
+  未持久化修改 git 配置。
 
 ## 阶段计时
 

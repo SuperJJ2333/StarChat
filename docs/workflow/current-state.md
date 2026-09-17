@@ -16,6 +16,12 @@
 UI 交付按 `ui-demo-delivery`：registry 新增 `secondary-button` 组件 + tokenParity `--color-danger` ↔ `dangerFill`，
 demo 更新 `frontend/src/screens/wallet-binding.js`（地址旁复制按钮、红色取消按钮）与
 `frontend/src/styles/primitives.css`；**Figma 已退役**，仅更新 HTML demo。
+随后按固定流程构建 **debug 0.3.94-debug/2130**（源包 `C8E158A4…`，交付包 SHA256 `C420AC9C…F672FE`）
+并保留数据覆盖安装到 Mi 6（`firstInstallTime` 未变，设备回读 `base.apk` SHA 与固定证书
+`75b31c66…ba61fff` 一致），源码 commit `8c97fbf2` 已推送 `origin/main`。
+**注意**：本机 git 走 `http.proxy=127.0.0.1:7897` + `http.sslBackend=schannel` 时 push 会报
+`schannel: failed to receive handshake`（只读 `ls-remote` 正常）；用
+`git -c http.sslBackend=openssl push origin main` 可成功（未持久化改配置）。
 进入[任务记录](tasks/2026-09-17-ui-round2-five-fixes.md)或
 [验证记录](../verification/2026-09-17-ui-round2-five-fixes.md)。
 
