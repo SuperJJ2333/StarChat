@@ -145,6 +145,16 @@ String _canonicalValue(Object? value) {
   return jsonEncode(normalize(value));
 }
 
+/// 「消息」页排序锚点（与 [orderConversations] 配套）。
+///
+/// 优先用可见的最后事件时间；当最后一条事件被「清空聊天记录」隐藏时，退回到
+/// 清空前的最后活动时间（快照里的 `lastActivityAt`）。这样清空历史只隐藏正文，
+/// 该会话在列表里的位置保持不变，而不会因为缺少可见事件被排到末尾。
+DateTime conversationSortAnchor(MatrixConversationRoomSnapshot room) =>
+    room.lastEvent?.originServerTs ??
+    room.lastActivityAt ??
+    DateTime.fromMillisecondsSinceEpoch(0);
+
 final class _RoomSnapshot {
   const _RoomSnapshot({
     required this.id,
@@ -513,8 +523,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       subtitle: _conversationSubtitle(room),
       timeLabel: _roomTime(room),
       lastBody: room.lastEvent?.body ?? '',
-      lastActivity: room.lastEvent?.originServerTs ??
-          DateTime.fromMillisecondsSinceEpoch(0),
+      lastActivity: conversationSortAnchor(room),
       avatar: peer.uri,
       avatarSeed: peer.seed,
       avatarProfileUrl: peer.profileUrl,

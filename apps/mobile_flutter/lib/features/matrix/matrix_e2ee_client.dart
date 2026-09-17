@@ -495,6 +495,7 @@ final class MatrixConversationRoomSnapshot {
     required bool notificationsEnabled,
     String name = '',
     bool isJoined = true,
+    DateTime? lastActivityAt,
   }) : this._trusted(
             id: id,
             displayName: displayName,
@@ -507,7 +508,8 @@ final class MatrixConversationRoomSnapshot {
             notificationCount: notificationCount,
             notificationsEnabled: notificationsEnabled,
             name: name,
-            isJoined: isJoined);
+            isJoined: isJoined,
+            lastActivityAt: lastActivityAt);
 
   const MatrixConversationRoomSnapshot._trusted({
     required this.id,
@@ -522,6 +524,7 @@ final class MatrixConversationRoomSnapshot {
     required this.notificationsEnabled,
     required this.name,
     required this.isJoined,
+    this.lastActivityAt,
   });
   final String id;
   final String displayName;
@@ -535,6 +538,11 @@ final class MatrixConversationRoomSnapshot {
   final bool notificationsEnabled;
   final bool isJoined;
   final String name;
+
+  /// 「消息」页排序锚点：可见的最后事件时间；当最后一条事件被「清空聊天记录」
+  /// 隐藏时沿用**清空前**的最后活动时间，使该会话在列表中原地不动，而不是
+  /// 因为缺少可见事件被排到末尾（用户报的位置变化）。
+  final DateTime? lastActivityAt;
 }
 
 @immutable
@@ -943,6 +951,9 @@ final class MatrixConversationCapability {
       notificationCount: historyCleared ? 0 : room.notificationCount,
       notificationsEnabled: room.pushRuleState == PushRuleState.notify,
       isJoined: room.membership == Membership.join,
+      // 排序锚点用「可见事件时间，否则清空前的最后事件时间」：清空聊天记录只
+      // 隐藏本机历史，不得改变该会话在消息列表里的位置。
+      lastActivityAt: event?.originServerTs ?? originalEvent?.originServerTs,
     );
   }
 }

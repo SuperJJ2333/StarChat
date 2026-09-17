@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
+import 'package:liuhetong_mobile/features/matrix/matrix_home_page.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -93,5 +95,52 @@ void main() {
     expect(snapshot.preference.hidden, isFalse);
     expect(snapshot.lastEvent!.eventId, 'm2', reason: '新消息必须重新可见');
     expect(snapshot.notificationCount, 1, reason: '新消息的未读必须恢复');
+  });
+
+  test('清空聊天记录后该会话在消息列表中的位置不变（不掉到末尾）', () async {
+    final client = SnapshotClient();
+    final newest = LocalClearRoom(id: '!newest:test', client: client);
+    final older = LocalClearRoom(id: '!older:test', client: client);
+    final newestEvent = _message(newest, 'n1', DateTime.utc(2026, 9, 3));
+    final olderEvent = _message(older, 'o1', DateTime.utc(2026, 9, 2));
+    newest.snapshotEvent = newestEvent;
+    older.snapshotEvent = olderEvent;
+    client.snapshotRooms.addAll([older, newest]);
+    final matrix =
+        MatrixSdkE2eeClient(client, homeserver: Uri.parse('https://test'));
+
+    // 与「消息」页完全相同的排序链路：快照 → 排序锚点 → orderConversations。
+    List<String> order(Iterable<MatrixConversationRoomSnapshot> rooms) => [
+          for (final item in orderConversations([
+            for (final room in rooms)
+              ConversationProjection(
+                roomId: room.id,
+                isGroup: !room.isDirect,
+                lastActivity: conversationSortAnchor(room),
+                preference: room.preference,
+              ),
+          ]))
+            item.roomId,
+        ];
+
+    final before = (await matrix.conversations.snapshot()).rooms;
+    expect(order(before), ['!newest:test', '!older:test']);
+
+    await matrix.conversations.clearLocalHistory(
+      newest.id,
+      messageIds: const ['n1'],
+      cutoff: newestEvent.originServerTs,
+    );
+
+    final after = (await matrix.conversations.snapshot()).rooms;
+    expect(after.singleWhere((room) => room.id == newest.id).lastEvent, isNull,
+        reason: '被清空的本地历史不可见');
+    expect(
+        conversationSortAnchor(
+            after.singleWhere((room) => room.id == newest.id)),
+        newestEvent.originServerTs,
+        reason: '排序锚点必须保留清空前的最后活动时间');
+    expect(order(after), ['!newest:test', '!older:test'],
+        reason: '清空聊天记录不得把该会话排到消息列表末尾');
   });
 }
