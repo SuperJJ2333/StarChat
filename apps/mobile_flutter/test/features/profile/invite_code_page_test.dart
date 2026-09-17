@@ -110,9 +110,9 @@ void main() {
     expect(clipboardText, 'AB2CD3FG');
     expect(find.byKey(const Key('invite-toast')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('invite-copy-link')));
-    await tester.pump();
-    expect(clipboardText, 'https://invite.example.test/register?code=AB2CD3FG');
+    // 「复制邀请链接」已按用户要求删除，只保留复制邀请码。
+    expect(find.byKey(const Key('invite-copy-link')), findsNothing);
+    expect(find.text('复制邀请链接'), findsNothing);
     controller.dispose();
   });
 }

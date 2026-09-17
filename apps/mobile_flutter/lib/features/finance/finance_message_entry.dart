@@ -2,7 +2,8 @@ import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
 import '../redpacket/red_packet_claim_detail_page.dart';
-import '../redpacket/red_packet_claim_dialog.dart';
+import '../redpacket/red_packet_claim_page.dart';
+import '../redpacket/red_packet_controller.dart';
 import '../transfer/chat_transfer_detail_sheet.dart';
 import '../matrix/profile_repository.dart';
 import 'finance_card_store.dart';
@@ -101,26 +102,31 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
         final ownPrivatePacket = detail.containsKey('room_id') &&
             detail['room_id'] == null &&
             detail['sender_id']?.toString() == state.viewerId;
-        if (detail['viewer_claim'] != null || ownPrivatePacket) {
-          if (!mounted) return;
-          if (!live()) return;
+        final status = effectiveRedPacketStatus(detail);
+        // 与微信一致：点封面**整页**进入红包页（未领取显示「開」）；
+        // 已领取 / 已领完 / 已过期 / 已撤回 / 自己发的私聊红包直接进领取详情。
+        final claimable = status == 'OPEN' &&
+            detail['viewer_claim'] == null &&
+            !ownPrivatePacket;
+        if (!mounted) return;
+        if (!live()) return;
+        if (claimable) {
+          await Navigator.of(context).push<void>(CupertinoPageRoute<void>(
+            builder: (_) => RedPacketClaimPage(
+              api: api,
+              packetId: id,
+              senderName: senderName,
+              greeting: greeting,
+              senderAvatar: senderAvatar,
+              onClaimed: () {
+                if (live()) store.invalidate(key);
+              },
+            ),
+          ));
+        } else {
           await Navigator.of(context).push<void>(CupertinoPageRoute<void>(
             builder: (_) => RedPacketClaimDetailPage(api: api, packetId: id),
           ));
-        } else {
-          if (!mounted) return;
-          if (!live()) return;
-          await showRedPacketClaimDialog(
-            context,
-            api: api,
-            packetId: id,
-            senderName: senderName,
-            greeting: greeting,
-            senderAvatar: senderAvatar,
-            onClaimed: () {
-              if (live()) store.invalidate(key);
-            },
-          );
         }
       } else {
         final viewerId = state.viewerId;

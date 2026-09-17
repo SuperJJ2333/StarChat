@@ -1,5 +1,24 @@
 # 移动交付恢复索引
 
+## 2026-09-17 第二轮五项 UI/交互（红包整页 / 邀请码 / 钱包复制位置 / 充值页 / 提现按钮）（本地完成，**未构建/未部署**）
+
+用户五项：①点红包封面改为**整页红包页**（与微信一致：未领取显示「開」，领取后金额 +「看看大家的手气」进领取详情；
+已领取/已过期直接进领取详情；交互歧义已向用户确认，用户选整页方案）——新增 `RedPacketClaimPage`，
+`FinanceMessageEntry` 按可领取性路由，删除旧居中弹窗 `red_packet_claim_dialog.dart`；
+②邀请码页删除「复制邀请链接」磁贴（保留复制邀请码）；③钱包卡片的地址复制 icon 原挂在「当前点钻余额」行，
+现移入地址同一 `Row`；④充值页删除「点钻与 USDT 兑换」卡片（组件已无入口，连同其组件级测试一并删除，
+服务端接口与 `conversionEnabled` 能力位保留）；⑤提现页「取消提现申请」改为**红色填充**（新增 token
+`WeChatColors.dangerFill = 0xFFFA5151`，取值即设计规范 `--color-danger` #fa5151），
+无背景色的动作按钮（「全部提现」「开始新的提现」「重新填写金额」等）统一改为带边框的
+新注册组件 `WeChatSecondaryButton`（tone neutral|danger）。门禁：红 9 失败（各自原因均符合预期）→ 定向
+**172 通过**、`flutter analyze` 无问题、全量 `flutter test` **2852 通过 / 0 失败**、
+`verify_ui_contract.py` **PASS（31 components, 369 screens）**、frontend `npm test` **209 通过**。
+UI 交付按 `ui-demo-delivery`：registry 新增 `secondary-button` 组件 + tokenParity `--color-danger` ↔ `dangerFill`，
+demo 更新 `frontend/src/screens/wallet-binding.js`（地址旁复制按钮、红色取消按钮）与
+`frontend/src/styles/primitives.css`；**Figma 已退役**，仅更新 HTML demo。
+进入[任务记录](tasks/2026-09-17-ui-round2-five-fixes.md)或
+[验证记录](../verification/2026-09-17-ui-round2-five-fixes.md)。
+
 ## 2026-09-17 「清空聊天记录」会话位置修复 + Android 0.3.94/2129 发布 + GitHub 推送（**已上线并推送**）
 
 用户三项：①清空聊天记录后会话不再掉到消息列表末尾；②推送 Android 最新版更新弹窗；③推送到 GitHub。

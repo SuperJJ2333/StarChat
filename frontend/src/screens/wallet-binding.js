@@ -16,9 +16,16 @@ function cents(value) {
   const [whole, fraction = ""] = value.split(".");
   return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0"));
 }
-function action(label, handler, { disabled = false, secondary = false } = {}) {
-  const node = element("button", `c-wallet-demo__button${secondary ? " c-wallet-demo__button--secondary" : ""}`, label);
+function action(label, handler, { disabled = false, secondary = false, danger = false } = {}) {
+  // 注册组件 app-secondary-button 的根类也参与渲染：neutral=无背景+边框，danger=危险色填充。
+  const tone = danger
+    ? " c-secondary-button c-secondary-button--danger c-wallet-demo__button--danger"
+    : secondary
+      ? " c-secondary-button c-secondary-button--neutral c-wallet-demo__button--secondary"
+      : "";
+  const node = element("button", `c-wallet-demo__button${tone}`, label);
   node.type = "button"; node.disabled = disabled;
+  if (tone) node.replaceChildren(element("span", "c-secondary-button__label", label));
   node.addEventListener("click", handler);
   return node;
 }
@@ -63,8 +70,17 @@ export function walletBindingDemo(definition) {
       change.setAttribute("aria-label", bound ? "更改绑定钱包" : "绑定钱包");
       change.append(icon("edit"));
       heading.append(change);
-      card.append(heading, element("p", "", bound ? "已绑定私人钱包" : "尚未绑定私人钱包"),
-        element("p", "c-wallet-demo__address", bound ? fixtures.finance.walletAddress : "绑定后可充值和提现"));
+      // 复制 icon 紧贴钱包地址本体（与 Flutter 一致：不再挂在余额行）。
+      const addressRow = element("div", "c-wallet-demo__address-row");
+      addressRow.append(element("span", "c-wallet-demo__address", bound ? fixtures.finance.walletAddress : "绑定后可充值和提现"));
+      if (bound) {
+        const copy = action("", () => { note = "地址已复制（演示）"; feedback(); }, { secondary: true });
+        copy.classList.add("c-wallet-demo__address-copy");
+        copy.setAttribute("aria-label", "复制钱包地址");
+        copy.append(icon("copy"));
+        addressRow.append(copy);
+      }
+      card.append(heading, element("p", "", bound ? "已绑定私人钱包" : "尚未绑定私人钱包"), addressRow);
       if (!ready) card.append(element("p", "c-wallet-demo__error", "钱包暂不可用，请稍后重试"));
       body.append(card);
       const shortcuts = element("div", "c-wallet-demo__shortcuts");
@@ -123,6 +139,11 @@ export function walletBindingDemo(definition) {
       if (definition.state === "unknown-result") body.append(action("查询原订单", () => {
         note = "演示订单结果仍未知；不会新建订单或重复付款"; feedback();
       }, { secondary: true }));
+      // 订单处理中时展示危险动作：红色填充的「取消提现申请」。
+      if (["reviewing", "direct-execution", "provider-processing", "broadcast"].includes(definition.state))
+        body.append(action("取消提现申请", () => {
+          note = "演示：已取消提现申请，资金退回点钻余额"; feedback();
+        }, { danger: true }));
     } else if (page === "pin") {
       body.append(element("section", "c-wallet-demo__pin-summary"));
       const summary = body.lastElementChild;

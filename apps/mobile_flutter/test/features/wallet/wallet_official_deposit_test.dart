@@ -122,6 +122,9 @@ void main() {
           (await expected.toImageData(180))!.buffer.asUint8List());
     });
     await tester.ensureVisible(find.byKey(const Key('manual-official-copy')));
+    // ensureVisible 只排队滚动；不 pump 的话点击用的是上一帧的位置，
+    // 内容变短后（充值页移除兑换卡片）会点空。
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('manual-official-copy')));
     await tester.pumpAndSettle();
     expect(copied, syntheticAddress());

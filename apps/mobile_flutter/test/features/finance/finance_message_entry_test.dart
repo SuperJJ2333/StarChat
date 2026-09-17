@@ -11,7 +11,6 @@ import 'package:liuhetong_mobile/features/finance/finance_card_store.dart';
 import 'package:liuhetong_mobile/features/finance/finance_message_entry.dart';
 import 'package:liuhetong_mobile/features/ledger/ledger_pages.dart';
 import 'package:liuhetong_mobile/features/redpacket/red_packet_claim_detail_page.dart';
-import 'package:liuhetong_mobile/features/redpacket/red_packet_claim_dialog.dart';
 import 'package:liuhetong_mobile/features/transfer/chat_transfer_detail_sheet.dart';
 
 void main() {
@@ -83,7 +82,17 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('red-packet-claim-open-button')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('red-packet-claim-close')));
+
+    // 领取后停留在整页红包页，展示金额与「看看大家的手气」入口。
+    expect(find.byKey(const Key('red-packet-claim-result')), findsOneWidget);
+    expect(find.textContaining('8.88'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('red-packet-claim-luck-entry')));
+    await tester.pumpAndSettle();
+    expect(find.byType(RedPacketClaimDetailPage), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
     await tester.pumpAndSettle();
 
     expect(claimPosts, 1);
@@ -120,7 +129,8 @@ void main() {
     expect(claims, 0);
     expect(tester.takeException(), isNull);
   });
-  testWidgets('unclaimed red packet opens the claim dialog', (tester) async {
+  testWidgets('unclaimed red packet opens the full-page claim screen',
+      (tester) async {
     final api = await _api((request) async {
       if (request.url.path == '/api/v1/red-packets/packet-1') {
         return _json(_packet(roomId: 'room-1'));
@@ -140,9 +150,38 @@ void main() {
     await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
     await tester.pumpAndSettle();
 
-    expect(find.byType(RedPacketClaimDialog), findsOneWidget);
-    expect(find.byKey(const Key('red-packet-claim-dialog')), findsOneWidget);
+    // 与微信一致：点封面整页进入红包页（不再是居中弹窗）。
+    expect(find.byKey(const Key('red-packet-claim-page')), findsOneWidget);
+    expect(find.byKey(const Key('red-packet-claim-open-button')),
+        findsOneWidget);
     expect(find.byType(RedPacketClaimDetailPage), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('finished red packet without a claim opens the detail page',
+      (tester) async {
+    final api = await _api((request) async {
+      if (request.url.path == '/api/v1/red-packets/packet-1') {
+        return _json({..._packet(roomId: 'room-1'), 'status': 'COMPLETED'});
+      }
+      if (request.url.path == '/api/v1/friends') return _json({'items': []});
+      return http.Response('not found', 404);
+    });
+    final store = FinanceCardStore(BusinessFinanceCardGateway(api));
+    addTearDown(store.dispose);
+
+    await _pumpEntry(tester,
+        store: store,
+        api: api,
+        kind: FinanceCardKind.redPacket,
+        id: 'packet-1');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('wechat-red-packet-card')));
+    await tester.pumpAndSettle();
+
+    // 已领完且本人未领取：没有「開」这一步，直接进领取详情（与微信一致）。
+    expect(find.byType(RedPacketClaimDetailPage), findsOneWidget);
+    expect(find.byKey(const Key('red-packet-claim-page')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

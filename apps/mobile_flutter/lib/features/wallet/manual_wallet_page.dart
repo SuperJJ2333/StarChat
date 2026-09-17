@@ -5,12 +5,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_secondary_button.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'manual_mfa_page.dart';
 import 'manual_operation_store.dart';
 import 'manual_wallet_api.dart';
 import 'wallet_payment_flow.dart';
-import 'wallet_conversion_card.dart';
 
 enum ManualWalletSection { overview, binding, deposit, payout }
 
@@ -678,18 +678,26 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
   }
 
   Widget button(String text, Future<void> Function() action,
-          {String? key, bool enabled = true}) =>
-      Padding(
+      {String? key, bool enabled = true}) {
+    final onPressed = busy || !ready || !enabled ? null : () => run(action);
+    // 没有背景色的动作按钮必须有边框：否则用户难以分辨按钮与普通文本。
+    if (key == null) {
+      return Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
-          child: CupertinoButton(
-              color: key == null ? null : WeChatColors.brandPrimary,
-              borderRadius: BorderRadius.circular(8),
-              onPressed: busy || !ready || !enabled ? null : () => run(action),
-              key: key == null ? null : Key(key),
-              child: Text(text,
-                  style: key != null && !busy && ready && enabled
-                      ? const TextStyle(color: CupertinoColors.white)
-                      : null)));
+          child: WeChatSecondaryButton(label: text, onPressed: onPressed));
+    }
+    return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: CupertinoButton(
+            color: WeChatColors.brandPrimary,
+            borderRadius: BorderRadius.circular(8),
+            onPressed: onPressed,
+            key: Key(key),
+            child: Text(text,
+                style: onPressed != null
+                    ? const TextStyle(color: CupertinoColors.white)
+                    : null)));
+  }
   Widget field(String name, TextEditingController controller, String hint,
           {bool secret = false, bool enabled = true}) =>
       Padding(
@@ -1024,11 +1032,17 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                           ]))),
             ]),
             const SizedBox(height: 16),
-            Text(binding?.maskedAddress ?? '请先绑定你的钱包地址',
-                key: const Key('manual-wallet-bound-address'),
-                style: TextStyle(
-                    fontSize: 16,
-                    color: WeChatColors.resolveTextPrimary(context))),
+            Row(children: [
+              Expanded(
+                  child: Text(binding?.maskedAddress ?? '请先绑定你的钱包地址',
+                      key: const Key('manual-wallet-bound-address'),
+                      style: TextStyle(
+                          fontSize: 16,
+                          color: WeChatColors.resolveTextPrimary(context)))),
+              // 复制 icon 紧贴钱包地址本体（此前误放在「当前点钻余额」行）。
+              if (binding?.address != null)
+                copyIcon(binding!.address!, 'manual-current-copy'),
+            ]),
             const SizedBox(height: 8),
             Text(
                 switch (binding?.status) {
@@ -1045,13 +1059,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                       fontSize: 12, color: WeChatColors.textSecondary)),
             ],
             const SizedBox(height: 16),
-            Row(children: [
-              Expanded(
-                  child: Text('当前点钻余额：${pointsAvailable ?? '—'}',
-                      style: const TextStyle(fontSize: 14))),
-              if (binding?.address != null)
-                copyIcon(binding!.address!, 'manual-current-copy'),
-            ]),
+            Text('当前点钻余额：${pointsAvailable ?? '—'}',
+                style: const TextStyle(fontSize: 14)),
           ]),
         ),
         Row(children: [
@@ -1148,15 +1157,8 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   warningBox('绑定暂不可用，请联系管理员'),
                 card(addressOnly ? registrationFields() : bindingFields()),
               ],
-              if (widget.section == ManualWalletSection.deposit) ...[
+              if (widget.section == ManualWalletSection.deposit)
                 card(depositFields()),
-                WalletConversionCard(
-                    api: widget.client,
-                    enabled: conversionEnabled,
-                    onCompleted: () {
-                      if (mounted) unawaited(run(loadPointsBalance));
-                    }),
-              ],
               if (widget.section == ManualWalletSection.payout)
                 card(payoutFields()),
               if (busy) const CupertinoActivityIndicator(),
@@ -1362,8 +1364,9 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           Expanded(
               child: field('manual-payout-amount', amount, '输入点钻金额',
                   enabled: quoteOp == null && payoutOp == null)),
-          CupertinoButton(
+          WeChatSecondaryButton(
               key: const Key('manual-payout-all'),
+              label: '全部提现',
               onPressed: busy ||
                       !ready ||
                       !activeBinding ||
@@ -1374,8 +1377,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                       quoteOp != null ||
                       payoutOp != null
                   ? null
-                  : () => run(fillAll),
-              child: const Text('全部提现')),
+                  : () => run(fillAll)),
         ]),
         if (quoteOp != null && (quoteOp!['funding_asset'] ?? 'USDT') != 'CAIBI')
           warningBox('这是此前保存的 USDT 提现申请，将按原资金来源恢复。'),
@@ -1476,8 +1478,13 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
           if (payout!.status == ManualPayoutState.unknown)
             warningBox('付款结果待核验，资金继续冻结，请勿重复申请。'),
           if (payout!.status == ManualPayoutState.requested)
-            CupertinoButton(
-                onPressed: busy ? null : cancel, child: const Text('取消提现申请')),
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: WeChatSecondaryButton(
+                    key: const Key('manual-payout-cancel'),
+                    label: '取消提现申请',
+                    tone: WeChatButtonTone.danger,
+                    onPressed: busy ? null : cancel)),
           if ({ManualPayoutState.settled, ManualPayoutState.cancelled}
               .contains(payout!.status))
             button('开始新的提现', () async {

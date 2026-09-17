@@ -7,7 +7,7 @@ from verify_ui_contract import verify
 
 
 def test_flutter_html_component_registry_has_no_drift():
-    assert verify() == ["UI contract drift: PASS (30 components, 369 screens)"]
+    assert verify() == ["UI contract drift: PASS (31 components, 369 screens)"]
 
 
 def test_ui_contract_is_html_demo_only_without_figma_ledger():

@@ -66,6 +66,7 @@ body {
 app-navigation-bar,
 app-tab-bar,
 app-action-button,
+app-secondary-button,
 app-composer,
 app-list-tile,
 app-identity-header,
@@ -1074,7 +1075,37 @@ app-transfer-card {
   background: var(--color-brand-primary); color: var(--color-on-accent);
   font: inherit;
 }
-.c-wallet-demo__button--secondary { background: var(--color-surface-elevated); color: var(--color-text-primary); }
+/* 无图标的文本动作按钮：neutral 无背景色必须有边框；danger 用 --color-danger 填充。 */
+.c-secondary-button {
+  min-height: var(--size-touch); padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-card); cursor: pointer; font: inherit;
+  background: transparent; color: var(--color-text-primary);
+  border: 1px solid var(--color-divider);
+}
+.c-secondary-button--neutral { background: transparent; }
+.c-secondary-button--danger {
+  background: var(--color-danger); color: var(--color-on-accent);
+  border: 1px solid var(--color-danger);
+}
+.c-secondary-button:disabled {
+  color: var(--color-text-tertiary); cursor: not-allowed;
+  opacity: var(--opacity-muted);
+}
+.c-secondary-button:focus-visible { outline: 2px solid var(--color-social-link); outline-offset: 2px; }
+.c-wallet-demo__button--secondary {
+  background: var(--color-surface-elevated); color: var(--color-text-primary);
+  border: 1px solid var(--color-divider);
+}
+/* 危险动作（取消提现申请）：填充设计规范的危险色 token + 反色文字。 */
+.c-wallet-demo__button--danger {
+  background: var(--color-danger); color: var(--color-on-accent);
+  border: 1px solid var(--color-danger);
+}
+.c-wallet-demo__address-row { display: flex; align-items: center; gap: var(--space-sm); }
+.c-wallet-demo__address-copy {
+  width: var(--size-touch); min-height: var(--size-touch); padding: var(--space-sm);
+  background: transparent; color: inherit; border: 0;
+}
 .c-wallet-demo__button:disabled {
   color: var(--color-text-tertiary); background: var(--color-divider);
   opacity: var(--opacity-muted); cursor: not-allowed;

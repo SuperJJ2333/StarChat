@@ -1,7 +1,7 @@
 import { AppImageEditor, AppRoomImageGallery } from "./image-editor.js";
 import { AppAnchoredActionMenu } from "./anchored-menu.js";
 import { componentContracts } from "../catalog/contracts.js";
-import { AppActionButton, AppComposer } from "./actions.js";
+import { AppActionButton, AppComposer, AppSecondaryButton } from "./actions.js";
 import { AppAttachmentTile, AppMessageBubble, AppTimestamp, AppUnreadBadge, AppVoiceBubble } from "./chat.js";
 import { AppNavigationBar, AppStatusBar, AppTabBar } from "./chrome.js";
 import { AppActionSheet, AppDialog, AppEmptyState, AppNetworkCapsule, AppNudgeNotice, AppStatusChip, AppToast } from "./feedback.js";
@@ -19,6 +19,7 @@ const implementations = new Map([
   ["app-navigation-bar", AppNavigationBar],
   ["app-tab-bar", AppTabBar],
   ["app-action-button", AppActionButton],
+  ["app-secondary-button", AppSecondaryButton],
   ["app-composer", AppComposer],
   ["app-emoji-input-decoration", AppEmojiInputDecoration],
   ["app-message-selection-session", AppMessageSelectionSession],

@@ -22,6 +22,9 @@ abstract final class WeChatColors {
   static const darkDivider = Color(0xFF2C2C2C);
   static const controlBorder = divider;
   static const danger = CupertinoColors.systemRed;
+  /// 设计规范 `--color-danger`（#fa5151）：危险动作的**填充**背景色。
+  /// 与用于文字/图标的 [danger]（Cupertino systemRed）区分。
+  static const dangerFill = Color(0xFFFA5151);
   static const errorSurface = Color(0xFFFFF1F0);
   static const errorBorder = Color(0xFFFFCCC7);
   static const warning = Color(0xFFFA9D3B);

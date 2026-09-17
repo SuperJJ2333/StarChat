@@ -14,8 +14,9 @@ import 'invite_controller.dart';
 
 /// 邀请码页（“我”→ 邀请码）：
 /// - 展示当前用户的固定个人注册邀请码（统一邀请码体系，不轮换）；
-/// - 分享：复制邀请码 / 复制邀请链接 / 保存分享图片 / 跳转微信 / 跳转 QQ；
+/// - 分享：复制邀请码 / 保存分享图片 / 跳转微信 / 跳转 QQ；
 ///   未安装对应应用时回退为“已复制邀请码”，可直接粘贴发送；
+///   （「复制邀请链接」已按用户要求移除：只保留复制邀请码。）
 /// - 好友注册时在唯一「邀请码」字段填写此码，消耗即建立邀请关系。
 final class InviteCodePage extends StatefulWidget {
   const InviteCodePage({super.key, required this.controller});
@@ -188,12 +189,6 @@ final class _InviteCodePageState extends State<InviteCodePage> {
                   icon: CupertinoIcons.doc_on_doc,
                   label: '复制邀请码',
                   onTap: () => _copy('邀请码', invite.code),
-                ),
-                _actionTile(
-                  key: const Key('invite-copy-link'),
-                  icon: CupertinoIcons.link,
-                  label: '复制邀请链接',
-                  onTap: () => _copy('邀请链接', invite.shareUrl),
                 ),
                 _actionTile(
                   key: const Key('invite-save-image'),

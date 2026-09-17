@@ -227,6 +227,36 @@
       ]
     },
     {
+      "id": "secondary-button",
+      "flutter": {
+        "name": "WeChatSecondaryButton",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_secondary_button.dart",
+        "props": [
+          "label",
+          "onPressed",
+          "tone"
+        ],
+        "variants": {
+          "tone": [
+            "neutral",
+            "danger"
+          ]
+        },
+        "states": [
+          "default",
+          "disabled"
+        ]
+      },
+      "html": {
+        "tag": "app-secondary-button"
+      },
+      "tokens": [
+        "controlBorder",
+        "brandPrimary",
+        "dangerFill"
+      ]
+    },
+    {
       "id": "page-scaffold",
       "flutter": {
         "name": "WeChatPageScaffold",
@@ -1109,6 +1139,11 @@
       "category": "status",
       "html": "--color-warning: #fa9d3b",
       "flutter": "static const warning = Color(0xFFFA9D3B);"
+    },
+    {
+      "category": "colors",
+      "html": "--color-danger: #fa5151",
+      "flutter": "static const dangerFill = Color(0xFFFA5151);"
     }
   ],
   "brand": {

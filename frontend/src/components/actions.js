@@ -18,6 +18,18 @@ export class AppActionButton extends StrictElement {
   }
 }
 
+/// 无图标的文本动作按钮：neutral 无背景色 → 必须有边框；danger 使用危险色填充。
+export class AppSecondaryButton extends StrictElement {
+  render() {
+    const tone = this.attr("tone", "neutral");
+    const label = this.attr("label", "继续");
+    const root = button(`c-secondary-button c-secondary-button--${tone}`, label, this.attr("action"));
+    root.disabled = this.boolAttr("disabled");
+    root.append(element("span", "c-secondary-button__label", label));
+    return root;
+  }
+}
+
 export class AppComposer extends StrictElement {
   render() {
     const mode = this.attr("mode", "text");
