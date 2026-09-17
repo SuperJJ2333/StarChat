@@ -1,5 +1,25 @@
 # 移动交付恢复索引
 
+## 2026-09-17 钱包绑定/刷新/告警修复 + 红包手续费 ADR-0073 + 充值提现美化（本地完成，**未部署/未真机**）
+
+用户报五项：①绑定页输入已被他人登记的钱包地址后**无法删除且一直提示**（根因：`registerAddress()` 先持久化登记草稿，
+终局失败后从不清理，而地址框启用条件是 `bindingOp == null` → 被拒地址永久锁死；「重新填写」只对签名方式显示）；
+②每次进钱包闪一下「功能状态暂不可用」（根因：`refresh()` 每次先清零能力状态，成功才置 true）；
+③刷新按钮应进顶部导航栏右侧；④红包加手续费；⑤充值/提现美化（先 demo）。修复：终局失败集合 → 清草稿 + 释放输入框 +
+文案改为「请更换一个属于你的钱包地址」，地址框只在拿到服务端 `id` 后锁定，「更改绑定」按钮带文字并展示 30 天限制
+（冷却期先解释再禁用）；`capabilitiesUnavailable` 仅「从未可知且失败」为真、刷新期间沿用上次已知能力；`WalletPage`
+改为非嵌入自持导航栏（`trailing: refreshControl()`），AppHome 去掉重复 scaffold；充值/提现按已通过的
+`frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html` 落地 `stepIndicator`/`statusHero`/`rowsCard`。
+**红包手续费（受保护变更，ADR-0073 已批准）**：0.5%、最低 0.01 点钻、与转账同构，创建
+`{sender: -(total+fee), escrow: total, PLATFORM_FEE: fee}`，未领完退款时手续费随未领取本金退回；`RedPacket.fee`
+持久化 + 迁移 `0068_red_packet_fee`（expand-only）；创建响应与「仅发起方可见」的 detail 暴露 `fee`；客户端展示
+手续费与实扣合计并按 `total+fee` 校验余额。门禁：后端定向 **71 通过**、Flutter 钱包 **75 通过**、红包客户端
+**62 通过**、全量 `flutter test` **2848 通过 / 0 失败**、`flutter analyze` 无问题、UI 契约 `PASS`。
+**未部署且按用户选择「新客户端先行」：包含本改动的新客户端发布前不得部署 API 手续费与迁移 0068。** 进入
+[任务记录](tasks/2026-09-17-wallet-redpacket-five-items.md)、
+[验证记录与领域/质量安全自审](../verification/2026-09-17-wallet-redpacket-five-items.md)或
+[ADR-0073](../adr/0073-red-packet-fee.md)。
+
 ## 2026-09-17 Android 0.3.93/2127 发布 + 更新弹窗（**已上线**，真机待用户验收）
 
 用户要求「推送 Android 新版本更新弹窗」，确认参数：0.3.93 + 2127、不强制更新、允许本地 commit。

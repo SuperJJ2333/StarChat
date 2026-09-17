@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +12,11 @@ class RedPacket(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     sender_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     total: Mapped[Decimal] = mapped_column(Numeric(20,2), nullable=False)
+    # ADR-0073：创建时向发送方收取的手续费（0.5%，最低 0.01），随单据持久化，
+    # 使退款/对账不必按当前费率重算。历史红包为 0.00（当时免费）。
+    fee: Mapped[Decimal] = mapped_column(
+        Numeric(20,2), nullable=False, server_default=text("0.00"), default=Decimal("0.00")
+    )
     share_count: Mapped[int]
     mode: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)

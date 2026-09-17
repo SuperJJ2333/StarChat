@@ -195,9 +195,12 @@ void main() {
     await tap(tester, find.byKey(const Key('manual-quote-create')));
     expect(find.text('target'), findsOneWidget);
     expect(find.byKey(const Key('manual-target-copy')), findsOneWidget);
-    expect(find.text('扣除点钻：10.00'), findsOneWidget);
-    expect(find.text('服务费 USDT：0.000000'), findsOneWidget);
-    expect(find.text('总冻结 USDT：10.000000'), findsNothing);
+    // 报价明细改为键值分组卡片：标签与数值分列显示（design-demo 对齐）。
+    expect(find.text('扣除点钻'), findsOneWidget);
+    expect(find.text('10.00'), findsWidgets);
+    expect(find.text('服务费 USDT'), findsOneWidget);
+    expect(find.text('0.000000'), findsWidgets);
+    expect(find.text('总冻结 USDT'), findsNothing);
     expect(find.byKey(const Key('wallet-withdraw-address')), findsNothing);
   });
 
@@ -227,7 +230,8 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys().map(prefs.getString).join(),
         isNot(contains('authorization')));
-    expect(find.text('状态：requested'), findsOneWidget);
+    expect(find.text('状态'), findsWidgets);
+    expect(find.text('requested'), findsWidgets);
   });
 
   testWidgets('deposit unknown response retains exact decimal across restart',
@@ -258,6 +262,7 @@ void main() {
     expect(posts[0].headers['Idempotency-Key'],
         posts[1].headers['Idempotency-Key']);
     expect(jsonDecode(posts[1].body)['amount'], '10.000001');
-    expect(find.text('金额 USDT：10.000001'), findsOneWidget);
+    expect(find.text('金额 USDT'), findsOneWidget);
+    expect(find.text('10.000001'), findsWidgets);
   });
 }

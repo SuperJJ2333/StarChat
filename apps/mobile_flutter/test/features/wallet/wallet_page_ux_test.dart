@@ -137,6 +137,50 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('充值页面按 design-demo 呈现步骤与状态主卡', (tester) async {
+    final api = await flow.client((request) async {
+      if (request.method == 'POST') return flow.json(fixtures.intent);
+      if (request.url.path.endsWith('/wallet/binding')) {
+        return flow.json(fixtures.binding);
+      }
+      return flow.json({});
+    });
+    await tester
+        .pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpAndSettle();
+
+    // 充值：填写金额步骤 + 手续费/到账网络明细分组。
+    await flow.openDeposit(tester);
+    expect(find.text('填写金额'), findsOneWidget);
+    expect(find.text('转账'), findsOneWidget);
+    expect(find.text('到账'), findsOneWidget);
+    expect(find.text('到账网络'), findsOneWidget);
+    expect(find.text('TRON（TRC20）'), findsWidgets);
+
+    // 生成充值申请后进入「待转账」状态主卡。
+    await tester.enterText(
+        find.byKey(const Key('manual-deposit-amount')), '10');
+    await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));
+    expect(find.byKey(const Key('manual-deposit-hero')), findsOneWidget);
+  });
+
+  testWidgets('提现页面按 design-demo 呈现三步指示器', (tester) async {
+    final api = await flow.client((request) async =>
+        flow.json(request.url.path.endsWith('/wallet/binding')
+            ? fixtures.binding
+            : {}));
+    await tester.pumpWidget(CupertinoApp(
+        home: ManualWalletPage(
+            client: api, section: ManualWalletSection.payout)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('填写金额'), findsOneWidget);
+    expect(find.text('确认报价'), findsOneWidget);
+    expect(find.text('到账'), findsOneWidget);
+    expect(find.byKey(const Key('manual-payout-points-balance')),
+        findsOneWidget);
+  });
+
   test('AppHome 的钱包入口不再自建导航栏（避免与钱包页导航栏重复）', () {
     final source = File('lib/app_home.dart').readAsStringSync();
     final walletScaffold = RegExp(

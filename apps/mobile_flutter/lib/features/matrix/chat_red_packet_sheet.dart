@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import '../../core/amount_rules.dart';
@@ -161,6 +162,13 @@ final class _State extends State<ChatRedPacketSheet> {
     }
   }
 
+  /// ADR-0073：与服务端 `red_packet_fee` 同规则（0.5%，最低 0.01 点钻，
+  /// 两位四舍五入）。仅用于界面提示与提交前校验。
+  static double _fee(double value) {
+    final rounded = (value * 0.005 * 100).roundToDouble() / 100;
+    return math.max(0.01, rounded);
+  }
+
   Future<void> _send() async {
     if (resolvingRecipient) return;
     final amountError = AmountRules.validate(total.text.trim());
@@ -189,8 +197,12 @@ final class _State extends State<ChatRedPacketSheet> {
       await _alert('请选择专属红包接收人');
       return;
     }
-    if (balance != null && amount > balance!) {
-      await _alert('红包创建失败，账户余额不足',
+    // ADR-0073：发起方承担 0.5% 手续费（最低 0.01 点钻），与服务端
+    // red_packet_fee 同规则；这里只作提交前提示，服务端仍是权威。
+    final fee = _fee(amount);
+    if (balance != null && amount + fee > balance!) {
+      await _alert(
+          '红包创建失败，账户余额不足（含 0.5% 手续费 ${fee.toStringAsFixed(2)} 点钻，需合计 ${(amount + fee).toStringAsFixed(2)} 点钻）',
           key: const Key('chat-red-packet-insufficient-dialog'));
       return;
     }
@@ -491,6 +503,31 @@ final class _State extends State<ChatRedPacketSheet> {
                   Text('正在确认收款账号'),
                 ]),
               ),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: total,
+              builder: (context, value, child) {
+                final parsed = double.tryParse(value.text.trim());
+                // ADR-0073：发起方承担手续费，展示权威规则的预估实扣合计。
+                final String hint;
+                if (parsed == null) {
+                  hint = '收取 0.5% 手续费，最低 0.01 点钻，由发红包方承担';
+                } else {
+                  final fee = _fee(parsed);
+                  hint = '手续费 ${fee.toStringAsFixed(2)} 点钻（0.5%，最低 0.01）'
+                      ' · 实扣合计 ${(parsed + fee).toStringAsFixed(2)} 点钻';
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    hint,
+                    key: const Key('chat-red-packet-fee-hint'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: WeChatColors.textSecondary, fontSize: 12),
+                  ),
+                );
+              },
+            ),
             Text(
               '单个红包金额不可超过 ${maxTotal.toStringAsFixed(2)} 点钻',
               key: const Key('chat-red-packet-limit-hint'),

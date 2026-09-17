@@ -102,7 +102,8 @@ void main() {
     await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
     await tester.pumpAndSettle();
     await flow.tap(tester, find.text('查看已有提现申请'));
-    expect(find.text('状态：claimed'), findsOneWidget);
+    expect(find.text('状态'), findsWidgets);
+    expect(find.text('claimed'), findsWidgets);
     expect(find.text('取消提现申请'), findsNothing);
     expect(find.byKey(const Key('manual-payout-confirm')), findsNothing);
   });

@@ -86,7 +86,8 @@ def create_redpacket_router(settings: Settings, session_factory, *, avatar_stora
             if str(error) == "share count exceeds room members":
                 raise AppError(code="RED_PACKET_SHARE_COUNT_EXCEEDS_MEMBERS", message="红包个数不能超过当前群成员数", status_code=422) from error
             raise
-        return {"id": packet.id, "mode": packet.mode, "asset": "CAIBI", "total": str(packet.total), "share_count": packet.share_count, "expires_at": packet.expires_at}
+        # ADR-0073：返回权威手续费，客户端据此展示"实扣合计"而非自行估算。
+        return {"id": packet.id, "mode": packet.mode, "asset": "CAIBI", "total": str(packet.total), "fee": str(packet.fee), "share_count": packet.share_count, "expires_at": packet.expires_at}
 
     @router.get("/limits")
     def limits(user_id: str = Depends(actor)):

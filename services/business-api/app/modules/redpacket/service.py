@@ -7,10 +7,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.modules.ledger.service import LedgerService, money
+from app.modules.ledger.service import CENT, LedgerService, money
 from app.modules.redpacket.models import RedPacket, RedPacketShare
 from app.modules.redpacket.claims import RedPacketClaim
 from app.modules.identity.payment_pin import PaymentPinService
+
+# ADR-0073：红包手续费与转账同费率、同取整、同下限（0.5%，最低 0.01 点钻）。
+RED_PACKET_FEE_RATE = Decimal("0.005")
+
+
+def red_packet_fee(total: Decimal) -> Decimal:
+    return max(CENT, money(total * RED_PACKET_FEE_RATE))
+
 
 class RedPacketService:
     def __init__(self, session_factory, ledger: LedgerService, *, max_total: Decimal | str = "20000.00", profiles=None, room_membership=None, payment_pin=None):
@@ -80,6 +88,11 @@ class RedPacketService:
                 # 红包总额：发起方或红包已终结（领完/过期）时可见，
                 # 其余情况为 null，前端不得渲染金额。
                 "total": str(packet.total) if total_visible else None,
+                # ADR-0073：手续费是发起方的成本，只对发起方可见（其他成员
+                # 既不需要也不应看到发起方实付金额）。
+                "fee": str(packet.fee or Decimal("0.00"))
+                if packet.sender_id == user_id
+                else None,
                 "share_count": packet.share_count,
                 "claimed_count": len(claims), "status": packet.status, "expires_at": packet.expires_at,
                 "room_id": packet.room_id, "server_time": server_time.isoformat(),
@@ -147,6 +160,9 @@ class RedPacketService:
         now = datetime.now(timezone.utc)
         packet_id = str(uuid4())
         escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
+        # ADR-0073：发起方承担手续费，与转账同构（本金入托管、手续费进
+        # 官方 PLATFORM_FEE 科目），分录整体平衡且每笔可追溯。
+        fee = red_packet_fee(total)
         # F01：幂等检查、账本扣款/入托管、业务单据在同一事务提交——
         # 记账后、单据插入前崩溃即整体回滚，不再留下"钱进了托管但没有
         # 红包"的中间态。并发同键：账本与单据唯一约束互证，败者回滚后
@@ -163,8 +179,8 @@ class RedPacketService:
                 return existing
             if room_id:
                 self._authorize_group_creation(room_id, sender_id, len(amounts))
-            self.ledger.post(entries={sender_id: -total, escrow: total}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)
-            packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
+            self.ledger.post(entries={sender_id: -(total + fee), escrow: total, "PLATFORM_FEE": fee}, actor_id=sender_id, reason_code="RED_PACKET_CREATE", idempotency_key=idempotency_key, scope="redpacket.create", session=session)
+            packet = RedPacket(id=packet_id, sender_id=sender_id, total=total, fee=fee, share_count=len(amounts), mode=mode, status="OPEN", room_id=room_id, recipient_id=recipient_id, idempotency_key=idempotency_key, expires_at=expires_at, created_at=now)
             packet.shares = [RedPacketShare(id=str(uuid4()), ordinal=i, amount=money(amount)) for i, amount in enumerate(amounts)]
             session.add(packet)
             session.flush()
@@ -217,11 +233,22 @@ class RedPacketService:
                 raise ValueError("red packet has not expired")
             unclaimed = session.scalars(select(RedPacketShare).where(RedPacketShare.packet_id == packet_id, RedPacketShare.claimed_by.is_(None))).all()
             refund = money(sum((share.amount for share in unclaimed), Decimal("0.00")))
-            if refund:
+            # ADR-0073：红包终结且仍有未领取份额时，未领取本金与该红包手续费
+            # 一并退回发送方（与转账到期退款一致）；全部领完（COMPLETED）不退款，
+            # 手续费留在 PLATFORM_FEE。
+            fee_refund = money(packet.fee or Decimal("0.00"))
+            if refund or fee_refund:
                 escrow = f"PLATFORM_REDPACKET_ESCROW:{packet_id}"
+                entries: dict[str, Decimal] = {}
+                if refund:
+                    entries[escrow] = -refund
+                    entries[packet.sender_id] = refund
+                if fee_refund:
+                    entries["PLATFORM_FEE"] = -fee_refund
+                    entries[packet.sender_id] = entries.get(packet.sender_id, Decimal("0.00")) + fee_refund
                 # F01：退款分录与终态变更同一事务（session 注入，不再
                 # 各自独立提交）。
-                self.ledger.post(entries={escrow: -refund, packet.sender_id: refund}, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session, skip_coverage=True)
+                self.ledger.post(entries=entries, actor_id=actor_id, reason_code=reason_code, idempotency_key=idempotency_key, scope="redpacket.refund", session=session, skip_coverage=True)
             packet.status = final_status
             session.flush()
             return packet

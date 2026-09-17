@@ -208,13 +208,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('红包创建失败，账户余额不足'),
+      find.textContaining('红包创建失败，账户余额不足'),
       findsOneWidget,
       reason: '余额不足时必须弹出指定提示文案',
     );
+    expect(find.textContaining('需合计 5.03 点钻'), findsOneWidget,
+        reason: 'ADR-0073：余额不足必须说明含手续费后的实扣合计');
     expect(
       find.byKey(const Key('chat-red-packet-insufficient-dialog')),
       findsOneWidget,
+    );
+    expect(business.creates, 0);
+  });
+
+  testWidgets('fee hint shows 0.5% with the 0.01 floor and the deduction',
+      (tester) async {
+    final controller = ChatRedPacketController(
+      business: FakeRedPacketBusiness(),
+      references: FakeRedPacketReference(),
+      recipientId: 'user-bob',
+    );
+    await _pump(
+      tester,
+      controller: controller,
+      support: FakeSupport(100.00, 20000),
+    );
+
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '10.00');
+    await tester.pump();
+    expect(find.textContaining('手续费 0.05 点钻'), findsOneWidget);
+    expect(find.textContaining('实扣合计 10.05 点钻'), findsOneWidget);
+
+    // 极小金额必须显示最低 0.01，而不是 0.00。
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '1.00');
+    await tester.pump();
+    expect(find.textContaining('手续费 0.01 点钻'), findsOneWidget);
+    expect(find.textContaining('实扣合计 1.01 点钻'), findsOneWidget);
+  });
+
+  testWidgets('balance check includes the fee so the server cannot reject it',
+      (tester) async {
+    final business = FakeRedPacketBusiness();
+    final controller = ChatRedPacketController(
+      business: business,
+      references: FakeRedPacketReference(),
+      recipientId: 'user-bob',
+    );
+    // 余额刚好等于红包本金，但不足以支付手续费。
+    await _pump(
+      tester,
+      controller: controller,
+      support: FakeSupport(5.00, 20000),
+    );
+
+    await tester.enterText(
+        find.byKey(const Key('chat-red-packet-total')), '5.00');
+    await tester.tap(find.byKey(const Key('chat-red-packet-send')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('chat-red-packet-insufficient-dialog')),
+      findsOneWidget,
+      reason: '本金 + 手续费超过余额时必须本地拦截',
     );
     expect(business.creates, 0);
   });

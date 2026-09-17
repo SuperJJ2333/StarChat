@@ -5,7 +5,8 @@
 - 全系统所有科目余额之和恒等于累计发行量（测试中为 1000.00）；
 - 手续费进入官方平台科目 PLATFORM_FEE 且金额可追溯（每笔交易携带
   reason_code、审计事件与 Outbox 事件）；
-- 红包链路不产生手续费科目变动。
+- 红包与转账的手续费口径一致（ADR-0073）：发起方承担、逐笔可追溯，
+  红包未领完退款时手续费一并退回。
 """
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -19,8 +20,8 @@ from app.core.database import Base, create_session_factory
 from app.core.outbox import OutboxEvent
 from app.modules.audit.models import AuditEvent
 from app.modules.ledger.models import LedgerEntry, LedgerTransaction
-from app.modules.ledger.service import LedgerService
-from app.modules.redpacket.service import RedPacketService
+from app.modules.ledger.service import LedgerService, money
+from app.modules.redpacket.service import RedPacketService, red_packet_fee
 from app.modules.transfer.service import ChatTransferService, transfer_fee
 
 ISSUED_TOTAL = Decimal("1000.00")
@@ -93,11 +94,13 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
     assert circulating_total(factory) == ISSUED_TOTAL
     assert platform_balance(factory, "PLATFORM_CLEARING") == -ISSUED_TOTAL
 
-    # 红包：alice 发 10.00 拼手气红包（无手续费），bravo 领取一份。
+    # 红包：alice 发 10.00 拼手气红包（手续费 0.05，ADR-0073），bravo 领取一份。
     from app.modules.redpacket.membership import StaticRoomMembershipAuthority
     _membership = StaticRoomMembershipAuthority()
     _membership.set_members("!room:test", {"alice", "bravo"})
     packets = RedPacketService(factory, ledger, max_total=Decimal("20000.00"), room_membership=_membership)
+    rp_fee = red_packet_fee(Decimal("10.00"))
+    assert rp_fee == Decimal("0.05")
     packet = packets.create_random(
         sender_id="alice",
         total=Decimal("10.00"),
@@ -106,6 +109,7 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
         idempotency_key="rp-1",
         expires_at=now + timedelta(hours=24),
     )
+    assert packet.fee == rp_fee
     assert circulating_total(factory) == ISSUED_TOTAL
     assert platform_balance(factory, "PLATFORM_CLEARING") == -ISSUED_TOTAL
     share = packets.claim(packet.id, user_id="bravo", idempotency_key="claim-1")
@@ -130,9 +134,21 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
     assert circulating_total(factory) == ISSUED_TOTAL
     assert platform_balance(factory, "PLATFORM_CLEARING") == -ISSUED_TOTAL
 
-    # 可追溯：手续费恰好累计在官方 PLATFORM_FEE 科目。
-    assert ledger.balance("PLATFORM_FEE") == fee
-    # 红包无手续费：红包相关分录不触碰 PLATFORM_FEE。
+    # 可追溯：红包与转账手续费恰好累计在官方 PLATFORM_FEE 科目。
+    assert ledger.balance("PLATFORM_FEE") == rp_fee + fee
+    # 逐笔可追溯：红包创建那一笔恰好把 rp_fee 记进 PLATFORM_FEE。
+    with factory() as session:
+        create_tx = session.scalar(
+            select(LedgerTransaction).where(LedgerTransaction.scope == "redpacket.create")
+        )
+        assert create_tx is not None
+        packet_fee_entry = session.scalar(
+            select(LedgerEntry.amount).where(
+                LedgerEntry.transaction_id == create_tx.id,
+                LedgerEntry.account_id == "PLATFORM_FEE",
+            )
+        )
+    assert packet_fee_entry == rp_fee
     with factory() as session:
         fee_reasons = session.scalars(
             select(LedgerTransaction.reason_code).where(
@@ -140,8 +156,9 @@ def test_supply_stays_constant_through_red_packets_and_transfers(context):
             )
         ).all()
     assert fee_reasons
-    # 托管已清零：红包托管与转账托管科目余额为 0。
-    assert ledger.balance(f"PLATFORM_RED_PACKET:{packet.id}") == Decimal("0.00")
+    # 托管口径：红包托管仍持有未领取的那一份；转账已接受故托管清零。
+    unclaimed = money(packet.total - share.amount)
+    assert ledger.balance(f"PLATFORM_REDPACKET_ESCROW:{packet.id}") == unclaimed
     assert ledger.balance(f"PLATFORM_TRANSFER_ESCROW:{transfer.id}") == Decimal("0.00")
 
     posts = assert_every_transaction_balanced(factory)
