@@ -29,24 +29,38 @@ final class GlobalSearchMessageRecord {
 /// 设计边界（必须如实告知）：
 /// - 只索引「本机已解密的、用户可见的」消息；未解密/被锁定的加密正文永不进入；
 /// - 生命周期与账号会话一致（内存）；不建立服务端明文索引；
-/// - 数据来源是用户在本会话内打开过的房间时间线（RoomPage 投影），
-///   因此它是「本机已知历史」的搜索，而不是「云端全量历史」的搜索。
+/// - 数据来源是 (a) 本机加密 Matrix 库的历史回填 +
+///   (b) 用户打开过的房间时间线（RoomPage 投影）；
+///   因此它是「本机已有历史」的搜索，既不是「云端全量历史」也不是
+///   「本次进程内打开过的房间」的搜索。
+///
+/// [maxRecordsPerRoom] 是**内存安全阀**，不是产品语义上限：它必须远高于
+/// 旧实现硬编码的 4000，否则本机已有历史会被永久截断而不可检索。
+/// 需要「更早的历史」时用 [search] 的 [limit]/[offset] 分页，而不是加索引上限。
 final class GlobalSearchIndex {
-  GlobalSearchIndex({this.maxRooms = 200, this.maxRecordsPerRoom = 4000});
+  GlobalSearchIndex({this.maxRooms = 200, this.maxRecordsPerRoom = 40000});
 
   final int maxRooms;
+
+  /// 单房间内存安全阀（默认 40000；旧的 4000 会把本机历史永久截断）。
   final int maxRecordsPerRoom;
   final Map<String, _IndexedRoom> _rooms = <String, _IndexedRoom>{};
   int _accountEpoch = 0;
 
   /// 当前账号代次（账号切换时索引必须清空，不得跨账号泄漏）。
-  @visibleForTesting
+  ///
+  /// 生产代码（[LocalMessageSearchRepository]）用它丢弃切换账号后迟到的回填结果。
   int get accountEpoch => _accountEpoch;
 
   @visibleForTesting
   int get indexedRoomCount => _rooms.length;
 
-  /// 记录一个房间的本地投影（覆盖式，保留最近 [maxRecordsPerRoom] 条）。
+  /// 记录一个房间的本地投影。
+  ///
+  /// [replace] = true（默认）：用 [messages] 覆盖该房间的既有记录；
+  /// [replace] = false：与既有记录**合并**（按 eventId 去重，新时间优先），
+  /// 用于「回填本机历史 + 后续增量同步」的场景，避免新的一页把更早的历史挤掉。
+  /// 无论哪种模式，都只保留最近 [maxRecordsPerRoom] 条（内存安全阀）。
   void recordRoom({
     required String roomId,
     required String roomName,
@@ -54,13 +68,14 @@ final class GlobalSearchIndex {
     required Iterable<GlobalSearchMessageRecord> messages,
     String? roomAvatarSeed,
     String? roomAvatarUrl,
+    bool replace = true,
   }) {
     if (roomId.isEmpty) return;
-    final records = messages
-        .where((record) =>
-            record.eventId.isNotEmpty && record.body.trim().isNotEmpty)
-        .toList()
-      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final incoming = _normalize(messages);
+    final existing = replace
+        ? const <GlobalSearchMessageRecord>[]
+        : _rooms[roomId]?.records ?? const <GlobalSearchMessageRecord>[];
+    final records = _dedupe([...existing, ...incoming]);
     _rooms.remove(roomId); // 保持 LRU 顺序
     _rooms[roomId] = _IndexedRoom(
       roomId: roomId,
@@ -77,8 +92,31 @@ final class GlobalSearchIndex {
     }
   }
 
+  static List<GlobalSearchMessageRecord> _normalize(
+          Iterable<GlobalSearchMessageRecord> messages) =>
+      messages
+          .where((record) =>
+              record.eventId.isNotEmpty && record.body.trim().isNotEmpty)
+          .toList()
+        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+  /// 按 eventId 去重（保持新→旧顺序）。
+  static List<GlobalSearchMessageRecord> _dedupe(
+      List<GlobalSearchMessageRecord> records) {
+    final seen = <String>{};
+    final unique = <GlobalSearchMessageRecord>[];
+    for (final record in records) {
+      if (seen.add(record.eventId)) unique.add(record);
+    }
+    unique.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return unique;
+  }
+
   /// 按关键词检索（连续子串、英文忽略大小写、中文按字），最近优先。
-  List<GlobalSearchMessageHit> search(String query, {int limit = 200}) {
+  ///
+  /// [limit] 单次结果上限；[offset] 用于分页取更早的命中（越界返回空）。
+  List<GlobalSearchMessageHit> search(String query,
+      {int limit = 200, int offset = 0}) {
     final needle = query.trim().toLowerCase();
     if (needle.isEmpty) return const [];
     final hits = <GlobalSearchMessageHit>[];
@@ -101,7 +139,10 @@ final class GlobalSearchIndex {
       }
     }
     hits.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    return hits.length > limit ? hits.sublist(0, limit) : hits;
+    final start = offset < 0 ? 0 : offset;
+    if (start >= hits.length) return const [];
+    final end = start + (limit < 0 ? 0 : limit);
+    return hits.sublist(start, end > hits.length ? hits.length : end);
   }
 
   /// 账号切换/登出：清空本地索引。

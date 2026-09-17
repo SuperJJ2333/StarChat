@@ -86,7 +86,7 @@ void main() {
     await backend.dispose();
   });
   test(
-      'failed wake claim ends the old call instead of retrying a tombstoned call',
+      'wakeup service failure does not block an active encrypted call answer',
       () async {
     final client = OfflineClient();
     final wakeup = CallWakeupClient(
@@ -102,9 +102,22 @@ void main() {
         Room(id: '!test:example.test', client: client),
         'failed-claim');
     await backend.debugAttachCall(call);
-    await expectLater(backend.accept(), throwsStateError);
-    expect(call.answerCalls, 0);
-    expect(call.rejectCalls, 1);
+    // Task G：wakeup API 只是尽力而为的旁路，绝不是 WebRTC 媒体建立的前置
+    // 条件。`unavailable`(503) 不得阻断用户对已校验 Matrix 会话的明确接听；
+    // 只有显式 `alreadyEnded`（tombstone）才允许结束该通话。
+    //
+    // The answer itself is deliberately left pending (DeferredCall): that is
+    // exactly the "local media setup still running" window in which the old
+    // implementation rejected the call. Assert the answer was started and no
+    // rejection happened, then resolve the pending answer for cleanup.
+    unawaited(backend.accept());
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(call.answerCalls, 1,
+        reason: 'wakeup 服务不可用不得阻断已校验会话的接听');
+    expect(call.rejectCalls, 0,
+        reason: '用户明确接听后不得因辅助服务失败而静默拒接');
+    call.answerPending.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     await backend.dispose();
   });
   test('late subscription observes connected snapshot only once', () async {

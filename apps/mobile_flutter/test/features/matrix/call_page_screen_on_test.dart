@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'call_backend_test_defaults.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/call_page.dart';
 import 'package:liuhetong_mobile/ui/chat/wechat_video_message.dart';
@@ -16,7 +18,7 @@ final class _AllowedPermissions implements CallPermissionGateway {
   Future<bool> request({required bool video}) async => true;
 }
 
-final class _CallBackend implements CallBackend {
+final class _CallBackend with CallBackendTestDefaults {
   final _events = StreamController<CallBackendEvent>.broadcast();
 
   @override

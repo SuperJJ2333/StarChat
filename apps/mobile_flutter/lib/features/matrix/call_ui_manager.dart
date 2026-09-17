@@ -343,16 +343,21 @@ final class CallUiManager {
     final state = controller.state;
     final callerId = state.matrixUserId;
     final callerName = _callerDisplayName(callerId);
+    // Task L：来电页必须与主叫页使用同一套身份呈现（名称 + 头像 + 授权头）。
+    // 此前只传 displayName/fallbackSeed，来电头像因此始终缺失。
+    final identity = state.identity;
     _incomingRoute = CupertinoPageRoute<void>(
       fullscreenDialog: true,
       builder: (_) => FutureBuilder<String>(
         future:
             callerId == null ? null : displayNameResolver?.resolve(callerId),
-        initialData: callerName,
+        initialData: identity?.displayName ?? callerName,
         builder: (_, snapshot) => CallPage(
           controller: controller,
-          displayName: snapshot.data ?? callerName,
-          fallbackSeed: callerId ?? 'incoming-call',
+          displayName: snapshot.data ?? identity?.displayName ?? callerName,
+          fallbackSeed: identity?.fallbackSeed ?? callerId ?? 'incoming-call',
+          avatarUrl: identity?.avatarUrl,
+          avatarHeaders: identity?.avatarHeaders,
           incoming: !_outgoingSession,
           onMinimize: minimizeCall,
           mediaBackend: _mediaBackend,

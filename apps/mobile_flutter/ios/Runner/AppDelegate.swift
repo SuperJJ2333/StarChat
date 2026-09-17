@@ -218,10 +218,20 @@ import CallKit
     // iOS 无 FLAG_SECURE 等价能力：acquire/release 为显式 no-op（保持 Dart
     // 侧统一契约），绝不伪装成截图保护。
     let security = FlutterMethodChannel(name: "chatflow/screen_security", binaryMessenger: messenger)
-    security.setMethodCallHandler { call, result in
+    security.setMethodCallHandler { [weak self] call, result in
       switch call.method {
       case "acquireSecure", "releaseSecure", "releaseAllSecure", "reassertSecure":
         result(0) // 明确：iOS 不支持通用截图阻止
+      case "getCurrentCaptureState":
+        // 同步快照：查看器打开时不必等第一次 EventChannel 事件
+        // （设备在查看器打开前就已在录屏时，那段空窗是 fail-open 的）。
+        guard let self = self else {
+          result(FlutterError(code: "SCREEN_SECURITY_UNAVAILABLE",
+                              message: "screen security channel unavailable",
+                              details: nil))
+          return
+        }
+        result(["supported": true, "active": self.currentCaptureActive()])
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -262,14 +272,18 @@ import CallKit
   }
 
   /// 现代系统优先 scene capture state；否则回退 UIScreen.isCaptured。
-  private func publishCaptureState() {
+  private func currentCaptureActive() -> Bool {
     var active = UIScreen.main.isCaptured
     if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
       if #available(iOS 17.0, *) {
         active = scene.traitCollection.sceneCaptureState != .inactive
       }
     }
-    screenCaptureSink?(["type": "captureState", "active": active])
+    return active
+  }
+
+  private func publishCaptureState() {
+    screenCaptureSink?(["type": "captureState", "active": currentCaptureActive()])
   }
 }
 

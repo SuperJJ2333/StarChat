@@ -63,6 +63,7 @@ import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
+import '../search/local_message_search_repository.dart';
 
 const _maxFileSendBytes = 100 * 1024 * 1024;
 const _maxOutgoingVideoPosterBytes = 512 * 1024;
@@ -238,6 +239,22 @@ abstract interface class MatrixAppHomeCapability {
   ManagedMatrixNotificationEventSource createNotificationEventSource(
       {UserDisplayNameResolver? displayNameResolver});
   UnreadSnapshotSource createUnreadSnapshotSource();
+
+  /// Task B：本机已有历史的只读搜索来源。
+  ///
+  /// 只读取**本机 SQLCipher 加密库中已经存在且已解密**的事件，绝不触发
+  /// `/messages` 分页或任何网络请求；返回的是用户可见文本正文（闪照/媒体
+  /// 永不进入）。
+  LocalHistorySearchSource createLocalHistorySearchSource();
+
+  /// 本机加密库中某房间的最近事件（只读、无网络分页）。
+  Future<List<Event>> readLocalRoomEvents(String roomId, {required int limit});
+
+  /// 本机会话已知的房间 id（仅本地状态，无网络）。
+  List<String> localSearchRoomIds({int? maxRooms});
+
+  /// 某 Matrix 用户的头像 `mxc://`（只读本地 SDK 状态，无网络）。
+  Uri? matrixAvatarUriFor(String matrixUserId);
   Future<MatrixMessageReminderBackend> openMessageReminderBackend();
 }
 
@@ -324,6 +341,57 @@ final class _SdkAppHomeCapability implements MatrixAppHomeCapability {
   UnreadSnapshotSource createUnreadSnapshotSource() {
     _ensureActive();
     return _ManagedUnreadSource(this);
+  }
+
+  @override
+  LocalHistorySearchSource createLocalHistorySearchSource() {
+    _ensureActive();
+    return MatrixLocalHistorySearchSource(owner: this);
+  }
+
+  @override
+  Future<List<Event>> readLocalRoomEvents(String roomId,
+      {required int limit}) async {
+    _ensureActive();
+    if (limit <= 0) return const [];
+    final room = _client.getRoomById(roomId);
+    if (room == null) return const [];
+    final database = _client.database;
+    if (database == null) return const [];
+    // Local, read-only: reads events already stored in the SQLCipher DB.
+    // Never paginates and never performs a network request.
+    return database.getEventList(room, limit: limit);
+  }
+
+  @override
+  List<String> localSearchRoomIds({int? maxRooms}) {
+    _ensureActive();
+    final rooms =
+        _client.rooms.where((room) => room.membership == Membership.join);
+    return [
+      for (final room in maxRooms == null ? rooms : rooms.take(maxRooms))
+        room.id,
+    ];
+  }
+
+  @override
+  Uri? matrixAvatarUriFor(String matrixUserId) {
+    _ensureActive();
+    if (matrixUserId.isEmpty) return null;
+    try {
+      for (final room in _client.rooms) {
+        final members = room.getParticipants([Membership.join]);
+        if (!members.any((member) => member.id == matrixUserId)) continue;
+        // 只读本地 SDK 状态（unsafeGetUserFromMemoryOrFallback 不会发网络请求）。
+        final avatar =
+            room.unsafeGetUserFromMemoryOrFallback(matrixUserId).avatarUrl;
+        if (avatar != null) return avatar;
+      }
+      return null;
+    } catch (_) {
+      // 未同步到该用户资料：回退到首字头像，绝不影响通话建立。
+      return null;
+    }
   }
 
   @override
@@ -2706,6 +2774,9 @@ final class _SdkRoomTimelineCapability
       index.recordRoomCreatedAt(_lease.roomId, createdAt);
     }
     // 本机连续分页得到的时间窗是“已覆盖”区间：区间内无事件即可判定为空。
+    // 每次加载只**追加**一段区间（相邻/重叠自动合并），区间之间的空档保持
+    // unknown —— 旧的单跨度 coveredFrom/coveredTo 会把两次加载之间的空档
+    // 谎报成“无消息”。
     if (oldest != null && newest != null) {
       index.recordCoverage(_lease.roomId, from: oldest, to: newest);
     }
@@ -6236,4 +6307,80 @@ final class MatrixSdkE2eeClient
           matrixUserIds: matrixUserIds,
         );
       });
+}
+/// Task B：把本机 Matrix 加密库投影成只读搜索来源。
+///
+/// 安全与边界：
+/// - **零网络**：只经 [MatrixSdkE2eeClient.readLocalRoomEvents] 读取本机
+///   SQLCipher 加密库中的事件，绝不触发 `/messages` 分页或任何 HTTP 请求；
+/// - 只索引**已解密且用户可见的文本**事件（`m.message` / `m.text`）；
+/// - 闪照、图片/视频/音频/文件等媒体事件与未解密事件永不进入索引；
+/// - 明文只停留在内存索引中，落盘内容仍是 SQLCipher 加密库本身。
+final class MatrixLocalHistorySearchSource implements LocalHistorySearchSource {
+  MatrixLocalHistorySearchSource({required this.owner});
+
+  final MatrixAppHomeCapability owner;
+
+  /// 单次回填最多覆盖的房间数（有界，不下钻整段云端历史）。
+  static const _maxRooms = 200;
+
+  @override
+  Future<List<String>> localRoomIds() async =>
+      owner.localSearchRoomIds(maxRooms: _maxRooms);
+
+  @override
+  Future<List<LocalSearchMessage>> readRecentMessages({
+    required String roomId,
+    required int limit,
+  }) async {
+    if (roomId.isEmpty || limit <= 0) return const [];
+    List<Event> events;
+    try {
+      events = await owner.readLocalRoomEvents(roomId, limit: limit);
+    } catch (_) {
+      return const []; // 本地库不可用：如实返回空，绝不回退到网络分页。
+    }
+    final messages = <LocalSearchMessage>[];
+    for (final event in events) {
+      final message = projectLocalSearchEvent(event);
+      if (message != null) messages.add(message);
+    }
+    return messages;
+  }
+}
+
+/// 把一条本机事件投影成搜索记录（纯函数，便于单测）。
+///
+/// 只接受已解密的用户可见**文本**消息；媒体、闪照、撤回、未解密一律返回 null。
+@visibleForTesting
+LocalSearchMessage? projectLocalSearchEvent(Event event,
+    {String? localUserId}) {
+  if (event.type != EventTypes.Message) return null;
+  final messageType = event.messageType;
+  if (messageType != MessageTypes.Text && messageType != 'm.notice') {
+    return null;
+  }
+  final body = event.plaintextBody;
+  if (body.trim().isEmpty) return null;
+  // 媒体占位正文（[图片]/[视频]/裸 mime/data URI）永不进入索引；
+  // 闪照事件同样被占位正文与仓储层双重拦截。
+  if (!LocalMessageSearchRepository.isIndexableText(body)) return null;
+  final room = event.room;
+  final senderId = event.senderId;
+  final resolvedName = senderId == localUserId
+      ? '我'
+      : room.unsafeGetUserFromMemoryOrFallback(senderId).displayName;
+  final senderName = (resolvedName ?? '').trim();
+  return LocalSearchMessage(
+    eventId: event.eventId,
+    senderId: senderId,
+    senderName: senderName.isEmpty ? senderId : senderName,
+    timestamp: event.originServerTs,
+    body: body,
+    roomId: room.id,
+    roomName: room.getLocalizedDisplayname(),
+    isGroup: !room.isDirectChat,
+    senderIsSelf: senderId == localUserId,
+    roomAvatarSeed: room.id,
+  );
 }

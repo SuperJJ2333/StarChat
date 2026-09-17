@@ -1,0 +1,336 @@
+import 'package:flutter/foundation.dart';
+
+import 'global_search_index.dart';
+import 'global_search_models.dart';
+
+/// 单房间默认回填上限（本机读取条数，**不是**网络分页）。
+///
+/// 必须显著高于旧实现的 4000，否则本机已有的更早历史会被静默丢弃。
+const int kLocalSearchDefaultPerRoomLimit = 8000;
+
+/// 一条**已经在本机解密完成、且用户可见**的本地聊天记录。
+///
+/// 只承载文本正文与展示用 metadata：没有图片/视频/音频字节，没有 room key，
+/// 没有会话密钥，也没有任何附件句柄。阅后即焚消息必须带
+/// [isFlashPhoto] = true（仓库层会在入库前丢弃）。
+@immutable
+final class LocalSearchMessage {
+  const LocalSearchMessage({
+    required this.eventId,
+    required this.senderId,
+    required this.senderName,
+    required this.timestamp,
+    required this.body,
+    required this.roomId,
+    required this.roomName,
+    this.senderIsSelf = false,
+    this.isFlashPhoto = false,
+    this.isGroup = false,
+    this.roomAvatarSeed,
+    this.roomAvatarUrl,
+  });
+
+  final String eventId;
+  final String senderId;
+  final String senderName;
+  final DateTime timestamp;
+
+  /// 已解密、用户可见的**纯文本**正文（仅本机内存参与匹配，绝不上传）。
+  final String body;
+  final String roomId;
+  final String roomName;
+  final bool senderIsSelf;
+
+  /// 阅后即焚（闪照）：内容不可检索，仓库层在入库前过滤。
+  final bool isFlashPhoto;
+  final bool isGroup;
+  final String? roomAvatarSeed;
+  final String? roomAvatarUrl;
+}
+
+/// 本机历史（device-local）只读视图。
+///
+/// 实现约定（**硬性**）：
+/// - 只读本机已经存在的数据，通常是 Matrix SDK 的 SQLCipher 加密本地库；
+/// - **绝不发起任何网络请求**：不得调用 `/messages` 之类的 Matrix 分页接口，
+///   不得访问 Business API，不得上传查询词或正文；
+/// - 只返回**已经解密完成**的事件；未解密/被锁定的加密正文必须跳过；
+/// - 阅后即焚消息必须置 [LocalSearchMessage.isFlashPhoto]，并只填纯文本正文。
+///
+/// 生产适配器（由上层注入，本仓库不在此任务内直连数据库）示例：
+/// ```dart
+/// // 仅本机读取，无网络：
+/// final events = await client.database.getEventList(room, start: 0, limit: limit);
+/// // 过滤掉未解密/加密事件后，用 room.getEventById(...) 补齐 metadata；
+/// // msgtype == m.image / m.video / m.audio / m.file 一律不进入索引。
+/// ```
+abstract interface class LocalHistorySearchSource {
+  /// 本机库中该房间最近的本地事件（新→旧，最多 [limit] 条，越界不算失败）。
+  Future<List<LocalSearchMessage>> readRecentMessages(
+      {required String roomId, required int limit});
+
+  /// 本机库中已经存在的房间 id（不联网枚举）。
+  Future<List<String>> localRoomIds();
+}
+
+/// 假数据/测试友好的内存实现：不触网、不落盘。
+///
+/// 生产环境请注入真实的 [LocalHistorySearchSource]（读取本机加密 Matrix 库）。
+final class InMemoryLocalHistorySource implements LocalHistorySearchSource {
+  InMemoryLocalHistorySource(
+      [Iterable<LocalSearchMessage> messages = const []]) {
+    for (final message in messages) {
+      _rooms
+          .putIfAbsent(message.roomId, () => <LocalSearchMessage>[])
+          .add(message);
+    }
+    for (final list in _rooms.values) {
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    }
+  }
+
+  final Map<String, List<LocalSearchMessage>> _rooms =
+      <String, List<LocalSearchMessage>>{};
+
+  @override
+  Future<List<String>> localRoomIds() async => _rooms.keys.toList();
+
+  @override
+  Future<List<LocalSearchMessage>> readRecentMessages(
+      {required String roomId, required int limit}) async {
+    final all = _rooms[roomId] ?? const <LocalSearchMessage>[];
+    return all.length > limit ? all.sublist(0, limit) : List.of(all);
+  }
+}
+
+/// 未注入真实数据源时的安全默认：本机库「读不到」任何内容。
+///
+/// 保留它以让页面在父级完成注入之前依旧可用（只搜索本进程增量投影），
+/// 且永远不会因为缺少适配器而触网或抛错。
+final class UnavailableLocalHistorySource implements LocalHistorySearchSource {
+  const UnavailableLocalHistorySource();
+
+  @override
+  Future<List<String>> localRoomIds() async => const [];
+
+  @override
+  Future<List<LocalSearchMessage>> readRecentMessages(
+          {required String roomId, required int limit}) async =>
+      const [];
+}
+
+/// 账号维度的**本机聊天记录搜索仓库**。
+///
+/// 产品语义：搜索「本机已经存在、已经解密、用户可见」的聊天记录，
+/// 而不是服务端全量历史，也不是「本次进程内打开过的房间」。
+///
+/// 安全与隐私边界（全部为硬约束）：
+/// - **零网络**：本类不 import 任何网络库，只通过注入的
+///   [LocalHistorySearchSource] 读取本机数据；查询词与明文永不出设备。
+/// - **不新增明文落盘存储**：本机索引只存在于内存。它由**已经加密**的
+///   Matrix 本地库（SQLCipher）重建，因此没有任何新的明文数据库/
+///   SharedPreferences 键值；进程重启后从同一加密库重新回填即可。
+///   （这是本任务采用的正确回退方案：不做新的明文缓存。）
+/// - **闪照不索引**：`isFlashPhoto` 与媒体占位正文在入库前被过滤，
+///   仓库持有的状态里不存在任何图片/媒体正文。
+/// - **账号隔离**：重新 [attachAccount] 会清空索引并推进
+///   [accountEpoch]，迟到的旧账号回填结果会被代次校验丢弃。
+final class LocalMessageSearchRepository extends ChangeNotifier {
+  LocalMessageSearchRepository({
+    LocalHistorySearchSource? source,
+    GlobalSearchIndex? index,
+    this.maxRooms = 200,
+    this.defaultPerRoomLimit = kLocalSearchDefaultPerRoomLimit,
+  })  : source = source ?? const UnavailableLocalHistorySource(),
+        index = index ?? GlobalSearchIndex.shared;
+
+  /// 默认共享实例：使用 [GlobalSearchIndex.shared]，与 RoomPage 现有投影同源。
+  ///
+  /// 上层需要在启动后注入真实数据源（`LocalMessageSearchRepository.shared
+  /// .source = ...`），登录/切号时 `attachAccount`，同步完成后
+  /// `backfillLocalHistory()`，登出时 `clear()`。
+  static LocalMessageSearchRepository shared = LocalMessageSearchRepository();
+
+  final GlobalSearchIndex index;
+  final int maxRooms;
+  final int defaultPerRoomLimit;
+
+  /// 本机只读历史源。账号切换时应替换为对应账号的本地库视图。
+  LocalHistorySearchSource source;
+
+  String? _accountKey;
+  bool _backfilled = false;
+  Future<int>? _inFlight;
+
+  /// 当前绑定的账号 key（通常是 Matrix userId）；未登录时为 null。
+  String? get accountKey => _accountKey;
+  bool get isAttached => _accountKey != null;
+
+  /// 账号代次：切换/登出即推进；用于丢弃迟到的旧账号结果。
+  int get accountEpoch => index.accountEpoch;
+
+  /// 绑定账号：**完全重置**内存索引并推进代次，杜绝跨账号泄漏。
+  ///
+  /// 无 I/O，可在登录/切号/登出的同步路径里直接调用。重复绑定同一账号
+  /// 不会清空已经回填的索引（幂等）。
+  void attachAccount(String accountKey) {
+    if (accountKey.isEmpty) {
+      clear();
+      return;
+    }
+    if (_accountKey == accountKey) return;
+    _accountKey = accountKey;
+    _backfilled = false;
+    _inFlight = null;
+    index.clear();
+    notifyListeners();
+  }
+
+  /// 从**本机加密库**回填历史索引；返回本次索引的记录条数。
+  ///
+  /// - 只调用注入的 [source]（本机读取），不产生任何网络请求；
+  /// - [perRoomLimit] 限制每个房间从本机库读取的条数（默认
+  ///   [defaultPerRoomLimit]，远高于旧的 4000 截断）；
+  /// - [maxRooms] 限制本次回填的房间数（默认 [maxRooms]）；
+  /// - 必须已 [attachAccount]；未绑定账号时返回 0 且不索引任何内容；
+  /// - 若回填期间账号发生切换，迟到的结果会被丢弃（代次校验）。
+  Future<int> backfillLocalHistory({int? perRoomLimit, int? maxRooms}) async {
+    final account = _accountKey;
+    if (account == null) return 0;
+    final inFlight = _inFlight;
+    if (inFlight != null) return inFlight;
+    final future = _backfill(
+      account: account,
+      epoch: index.accountEpoch,
+      limit: perRoomLimit ?? defaultPerRoomLimit,
+      roomLimit: maxRooms ?? this.maxRooms,
+    );
+    _inFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_inFlight, future)) _inFlight = null;
+    }
+  }
+
+  Future<int> _backfill({
+    required String account,
+    required int epoch,
+    required int limit,
+    required int roomLimit,
+  }) async {
+    bool sameAccount() => epoch == index.accountEpoch && account == _accountKey;
+
+    final roomIds = await source.localRoomIds();
+    if (!sameAccount()) return 0;
+    var indexed = 0;
+    var roomsRead = 0;
+    for (final roomId in roomIds) {
+      if (roomId.isEmpty) continue;
+      if (roomsRead >= roomLimit) break;
+      roomsRead++;
+      final messages =
+          await source.readRecentMessages(roomId: roomId, limit: limit);
+      if (!sameAccount()) return indexed; // 账号已切换：丢弃迟到结果
+      indexed += _ingest(messages, replace: false);
+    }
+    if (!sameAccount()) return indexed;
+    _backfilled = true;
+    notifyListeners();
+    return indexed;
+  }
+
+  /// 幂等回填：每个账号最多执行一次（页面打开/首次搜索时调用即可）。
+  Future<int> ensureBackfilled({int? perRoomLimit, int? maxRooms}) async {
+    if (_accountKey == null || _backfilled) return 0;
+    return backfillLocalHistory(perRoomLimit: perRoomLimit, maxRooms: maxRooms);
+  }
+
+  /// 增量投影（live sync / RoomPage 时间线）：与既有历史**合并**，不重读本机库。
+  ///
+  /// [replace] = true 时用同一房间的这批消息覆盖该房间已有记录（例如
+  /// RoomPage 投影「整条时间线」的场景）；默认合并以保留更早的本机历史。
+  int recordRoomMessages(Iterable<LocalSearchMessage> messages,
+      {bool replace = false}) {
+    final indexed = _ingest(messages, replace: replace);
+    if (indexed > 0) notifyListeners();
+    return indexed;
+  }
+
+  /// 账号维度的检索：完全走内存索引，有界且无 I/O。
+  List<GlobalSearchMessageHit> search(String query, {int limit = 200}) =>
+      index.search(query, limit: limit);
+
+  /// 登出/切号：清空并解绑。
+  void clear() {
+    _accountKey = null;
+    _backfilled = false;
+    _inFlight = null;
+    index.clear();
+    notifyListeners();
+  }
+
+  int _ingest(Iterable<LocalSearchMessage> messages, {required bool replace}) {
+    final byRoom = <String, List<LocalSearchMessage>>{};
+    final roomOrder = <String>[];
+    for (final message in messages) {
+      if (!isIndexableMessage(message)) continue;
+      final bucket = byRoom.putIfAbsent(message.roomId, () {
+        roomOrder.add(message.roomId);
+        return <LocalSearchMessage>[];
+      });
+      bucket.add(message);
+    }
+    var indexed = 0;
+    for (final roomId in roomOrder) {
+      final bucket = byRoom[roomId]!;
+      final first = bucket.first;
+      index.recordRoom(
+        roomId: roomId,
+        roomName: first.roomName,
+        isGroup: first.isGroup,
+        roomAvatarSeed: first.roomAvatarSeed,
+        roomAvatarUrl: first.roomAvatarUrl,
+        replace: replace,
+        messages: [
+          for (final message in bucket)
+            GlobalSearchMessageRecord(
+              eventId: message.eventId,
+              senderId: message.senderId,
+              senderName: message.senderName,
+              timestamp: message.timestamp,
+              body: message.body,
+              senderIsSelf: message.senderIsSelf,
+            ),
+        ],
+      );
+      indexed += bucket.length;
+    }
+    return indexed;
+  }
+
+  /// 该条本地消息是否允许进入索引：文本、非闪照、非媒体占位。
+  static bool isIndexableMessage(LocalSearchMessage message) =>
+      message.roomId.isNotEmpty &&
+      message.eventId.isNotEmpty &&
+      !message.isFlashPhoto &&
+      isIndexableText(message.body);
+
+  /// 正文是否为可索引的**纯文本**（排除媒体占位正文/裸 mime/data URI）。
+  static bool isIndexableText(String body) {
+    final text = body.trim();
+    if (text.isEmpty) return false;
+    if (_mediaPlaceholder.hasMatch(text)) return false;
+    if (_rawMediaBody.hasMatch(text)) return false;
+    return true;
+  }
+
+  /// 用户可见的媒体占位正文（微信/畅聊风格），整条正文完全等于占位符时才算媒体。
+  static final RegExp _mediaPlaceholder =
+      RegExp(r'^\[(图片|视频|语音|文件|动画表情|表情|位置|名片|链接|音乐|闪照|语音通话|视频通话|通话)\]$');
+
+  /// 裸 mime / data URI 正文（`image/png`、`video/mp4`、`data:image/...;base64,...`）。
+  static final RegExp _rawMediaBody = RegExp(
+      r'^(data:)?(image|video|audio)/[A-Za-z0-9.+-]*(;base64,[A-Za-z0-9+/=]*)?$',
+      caseSensitive: false);
+}

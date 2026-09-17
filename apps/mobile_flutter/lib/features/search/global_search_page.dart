@@ -17,16 +17,19 @@ import '../matrix/profile_repository.dart';
 import 'global_search_controller.dart';
 import 'global_search_index.dart';
 import 'global_search_models.dart';
+import 'local_message_search_repository.dart';
 import '../matrix/chat_search_query_controller.dart'
     show buildHighlightSnippet, formatSearchResultTime;
 
 /// 全局搜索（device-side，typed results）：
 /// - 联系人：本机身份缓存投影（备注/昵称优先）；
 /// - 群聊：仅 `!isDirect`，可点击进入会话语义由调用方注入的 openRoom 承担；
-/// - 聊天记录：真正的本地历史搜索（[GlobalSearchIndex]，已解密正文），
+/// - 聊天记录：真正的本地历史搜索（[LocalMessageSearchRepository] 的账号维度
+///   本机索引，已解密正文；未注入仓库时退回 [GlobalSearchIndex.shared]），
 ///   按会话聚合；单条命中直接打开并定位，多条进入会话内结果页。
 ///
-/// 安全：查询词与明文都不离开设备；页面不调用任何 Business API。
+/// 安全：查询词与明文都不离开设备；页面不调用任何 Business API，
+/// 本机历史回填只读设备上已加密的 Matrix 本地库。
 final class GlobalSearchPage extends StatefulWidget {
   const GlobalSearchPage({
     super.key,
@@ -37,6 +40,7 @@ final class GlobalSearchPage extends StatefulWidget {
     this.contactsLoader,
     this.roomsLoader,
     this.index,
+    this.repository,
     this.onOpenRoom,
     this.debounce = const Duration(milliseconds: 250),
     this.sectionLimit = 3,
@@ -55,6 +59,10 @@ final class GlobalSearchPage extends StatefulWidget {
   /// 本地已解密聊天记录索引（默认会话级单例）。
   final GlobalSearchIndex? index;
 
+  /// 账号维度的本机历史搜索仓库（默认 [LocalMessageSearchRepository.shared]；
+  /// 显式传入 [index] 时不再使用共享仓库，保持既有调用方语义）。
+  final LocalMessageSearchRepository? repository;
+
   /// 打开房间（含 anchor 定位）。由持有房间生命周期的一方注入
   /// （MatrixHomePage → RoomLease/RoomPage 统一导航）；为空时不展示
   /// 群聊/聊天记录分组（避免在搜索页复制一套不完整的开会话实现）。
@@ -72,19 +80,30 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   late final GlobalSearchController controller;
   Future<List<ContactSummary>>? contacts;
 
+  /// 显式注入 index（既有测试/调用方）时不接管仓库；否则默认共享仓库。
+  LocalMessageSearchRepository? get _repository =>
+      widget.repository ??
+      (widget.index == null ? LocalMessageSearchRepository.shared : null);
+
   @override
   void initState() {
     super.initState();
     widget.identityCache?.addListener(_identityChanged);
     contacts = _loadContactSummaries();
     widget.identityCache?.refreshContactsQuietly();
+    final repository = _repository;
     controller = GlobalSearchController(
       loadContacts: _loadContacts,
       loadRooms: _loadRooms,
-      index: widget.index ?? GlobalSearchIndex.shared,
+      index: widget.index ?? repository?.index ?? GlobalSearchIndex.shared,
+      repository: repository,
       debounce: widget.debounce,
       sectionLimit: widget.sectionLimit,
     )..addListener(_changed);
+    // 打开搜索页即触发一次**有界的本机库回填**（零网络、每账号一次）。
+    if (repository != null && repository.isAttached) {
+      unawaited(repository.ensureBackfilled());
+    }
   }
 
   void _changed() {
@@ -161,10 +180,10 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
           isDirect: room.isDirect,
           memberCount: room.members.isEmpty ? null : room.members.length,
           avatarSeed: room.id,
-          matchedText:
-              room.lastEvent?.decryptionState == MessageDecryptionState.decrypted
-                  ? room.lastEvent!.text
-                  : null,
+          matchedText: room.lastEvent?.decryptionState ==
+                  MessageDecryptionState.decrypted
+              ? room.lastEvent!.text
+              : null,
         ),
     ];
   }
@@ -183,8 +202,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
         builder: (_) => GlobalSearchConversationRecordsPage(
           conversation: conversation,
           query: controller.query,
-          onOpenHit: (hit) =>
-              _openRoom(hit.room, anchorEventId: hit.eventId),
+          onOpenHit: (hit) => _openRoom(hit.room, anchorEventId: hit.eventId),
         ),
       ),
     );
@@ -220,8 +238,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
     // 空查询：页面保持干净（不显示任何分组与结果）。
     if (controller.isBlank) return const SizedBox.shrink();
     if (controller.loading && !controller.hasResults) {
-      return const Center(
-          child: CupertinoActivityIndicator(radius: 12));
+      return const Center(child: CupertinoActivityIndicator(radius: 12));
     }
     if (controller.error != null && !controller.hasResults) {
       return _Hint(
@@ -235,8 +252,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
       );
     }
     if (!controller.hasResults) {
-      return const _Hint(
-          key: Key('global-search-empty'), text: '无搜索结果');
+      return const _Hint(key: Key('global-search-empty'), text: '无搜索结果');
     }
     final contacts = controller.visibleContacts;
     final rooms = controller.visibleRooms;
@@ -483,9 +499,7 @@ final class _ConversationRow extends StatelessWidget {
       title: Text(conversation.roomName,
           maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        conversation.isSingleHit
-            ? hit.body
-            : '${conversation.total}条相关聊天记录',
+        conversation.isSingleHit ? hit.body : '${conversation.total}条相关聊天记录',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -509,8 +523,8 @@ final class _MessageHitRow extends StatelessWidget {
           nickname: hit.senderName,
           fallbackSeed: hit.senderId,
         ),
-        title: Text(hit.senderName,
-            maxLines: 1, overflow: TextOverflow.ellipsis),
+        title:
+            Text(hit.senderName, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

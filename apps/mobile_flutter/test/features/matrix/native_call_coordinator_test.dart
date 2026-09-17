@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+
+import 'call_backend_test_defaults.dart';
 import 'package:liuhetong_mobile/core/notification/sound_type.dart';
 import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
@@ -27,7 +29,7 @@ final class _NoopDriver implements CallAlertDriver {
   Future<void> vibrate() async {}
 }
 
-final class FakeBackend implements CallBackend {
+final class FakeBackend with CallBackendTestDefaults {
   final events = StreamController<CallBackendEvent>.broadcast();
   int accepts = 0;
   int rejects = 0;

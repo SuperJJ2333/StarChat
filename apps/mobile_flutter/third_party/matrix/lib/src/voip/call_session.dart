@@ -18,7 +18,6 @@
 
 import 'dart:async';
 import 'dart:core';
-import 'dart:math';
 
 import 'package:collection/collection.dart';
 import 'package:webrtc_interface/webrtc_interface.dart';
@@ -27,8 +26,19 @@ import 'package:matrix/matrix.dart';
 import 'package:matrix/src/utils/cached_stream_controller.dart';
 import 'package:matrix/src/voip/models/call_options.dart';
 import 'package:matrix/src/voip/models/voip_id.dart';
+import 'package:matrix/src/voip/utils/candidate_send_queue.dart';
 import 'package:matrix/src/voip/utils/stream_helper.dart';
 import 'package:matrix/src/voip/utils/user_media_constraints.dart';
+
+/// Bounded ICE-restart budget shared between the `failed` and
+/// `disconnected`-after-grace recovery paths.
+class _IceRestartBudget {
+  int used = 0;
+
+  bool get canRestart => used < CallTimeouts.maxIceRestarts;
+
+  void reset() => used = 0;
+}
 
 /// Parses incoming matrix events to the apropriate webrtc layer underneath using
 /// a `WebRTCDelegate`. This class is also responsible for sending any outgoing
@@ -57,7 +67,11 @@ class CallSession {
   RTCPeerConnection? pc;
 
   final _remoteCandidates = <RTCIceCandidate>[];
-  final _localCandidates = <RTCIceCandidate>[];
+
+  /// ChatFlow: batches the local candidates for *this* call only. The queue owns
+  /// the pending flush timer, so `cleanUp()`/`kEnded` can cancel it and a timer
+  /// created for a replaced call can never send candidates for the new one.
+  CandidateSendQueue? _candidateQueue;
 
   AssertedIdentity? get remoteAssertedIdentity => _remoteAssertedIdentity;
   AssertedIdentity? _remoteAssertedIdentity;
@@ -75,8 +89,6 @@ class CallSession {
   bool _remoteOnHold = false;
 
   bool _answeredByUs = false;
-
-  bool _speakerOn = false;
 
   bool _makingOffer = false;
 
@@ -104,7 +116,6 @@ class CallSession {
   CallErrorCode? hangupReason;
   CallSession? _successor;
   int _toDeviceSeq = 0;
-  int _candidateSendTries = 0;
   bool get isGroupCall => groupCallId != null;
   bool _missedCall = true;
 
@@ -197,6 +208,32 @@ class CallSession {
 
   Timer? _inviteTimer;
   Timer? _ringingTimer;
+  Timer? _iceRecoveryTimer;
+
+  /// Bounded ICE recovery (Task O): `disconnected` waits out
+  /// [CallTimeouts.iceDisconnectedGrace] to let WebRTC heal on its own;
+  /// `failed` restarts immediately. At most
+  /// [CallTimeouts.maxIceRestarts] restarts are allowed before the call is
+  /// ended — a permanently broken connection is never kept alive indefinitely.
+  Future<void> _recoverIce(_IceRestartBudget budget,
+      {required String reason}) async {
+    if (callHasEnded || pc == null) return;
+    _cancelIceRecovery();
+    if (!budget.canRestart) {
+      Logs().w('[VOIP] ICE still unusable after ${budget.used} restarts '
+          '($reason) — ending call');
+      await hangup(reason: CallErrorCode.iceFailed);
+      return;
+    }
+    budget.used++;
+    Logs().d('[VOIP] ICE restart #${budget.used} due to $reason');
+    await restartIce();
+  }
+
+  void _cancelIceRecovery() {
+    _iceRecoveryTimer?.cancel();
+    _iceRecoveryTimer = null;
+  }
 
   // outgoing call
   Future<void> initOutboundCall(CallType type) async {
@@ -609,11 +646,13 @@ class CallSession {
     }
 
     if (purpose == SDPStreamMetadataPurpose.Usermedia) {
-      _speakerOn = type == CallType.kVideo;
-      if (!voip.delegate.isWeb && stream.getAudioTracks().isNotEmpty) {
-        final audioTrack = stream.getAudioTracks()[0];
-        audioTrack.enableSpeakerphone(_speakerOn);
-      }
+      // ChatFlow (Task I): output routing (speaker/earpiece/bluetooth) is owned
+      // exclusively by the application-level CallAudioRouteCoordinator. The SDK
+      // must not derive speaker state from the call type here: when it did, it
+      // fought the app's own setSpeaker() call for the same route and caused
+      // route thrash (echo / speaker flip-flop). This class only owns the
+      // MediaStream / RTCPeerConnection.
+      voip.audioRouteSink?.onLocalUserMediaStreamAdded(type);
     }
 
     fireCallEvent(CallStateChange.kFeedsChanged);
@@ -711,6 +750,11 @@ class CallSession {
 
   void setCallState(CallState newState) {
     _state = newState;
+    if (newState == CallState.kEnded) {
+      // Any pending candidate timer belongs to a call that is over: it must not
+      // fire after the call ended (or after a replacement call took over).
+      _candidateQueue?.cancelAndDispose();
+    }
     onCallStateChanged.add(newState);
     fireCallEvent(CallStateChange.kState);
   }
@@ -790,9 +834,31 @@ class CallSession {
     }
   }
 
+  /// Applies the local audio-track mute state.
+  ///
+  /// ChatFlow (Task M): the local track is the authoritative, user-visible state
+  /// and must flip immediately. Publishing the changed SDP stream metadata is a
+  /// separate Matrix signalling round trip, so it is pushed **off** the awaited
+  /// path: a slow or failing metadata push must never leave the mute button
+  /// showing a stale state. A local track failure still throws.
   Future<void> setMicrophoneMuted(bool muted) async {
     localUserMediaStream?.setAudioMuted(muted);
-    await updateMuteStatus();
+    _setTracksEnabled(
+        localUserMediaStream?.stream?.getAudioTracks() ?? [], !muted);
+    unawaited(_publishMuteMetadata());
+  }
+
+  Future<void> _publishMuteMetadata() async {
+    try {
+      await sendSDPStreamMetadataChanged(
+        room,
+        callId,
+        localPartyId,
+        _getLocalSDPStreamMetadata(),
+      );
+    } catch (e) {
+      Logs().w('[VOIP] publishing mute metadata failed: $e');
+    }
   }
 
   Future<void> setRemoteOnHold(bool onHold) async {
@@ -906,6 +972,9 @@ class CallSession {
 
       _inviteOrAnswerSent = true;
       _answeredByUs = true;
+      // The peer can use our candidates from now on: flush the first batch
+      // inside the short settle window instead of the old 2000 ms wait.
+      _candidateQueue?.onInviteOrAnswerSent();
     }
   }
 
@@ -971,6 +1040,8 @@ class CallSession {
 
     _ringingTimer?.cancel();
     _ringingTimer = null;
+
+    _cancelIceRecovery();
 
     try {
       await voip.delegate.stopRingtone();
@@ -1073,6 +1144,11 @@ class CallSession {
       }
       _inviteOrAnswerSent = true;
 
+      // The peer can use our candidates from now on: flush the first batch
+      // (including candidates gathered while the invite was being prepared)
+      // inside the short settle window instead of the old 2000 ms wait.
+      _candidateQueue?.onInviteOrAnswerSent();
+
       if (!isGroupCall) {
         Logs().d('[glare] set callid because new invite sent');
         voip.incomingCallRoomId[room.id] = callId;
@@ -1120,7 +1196,22 @@ class CallSession {
   }
 
   Future<void> _preparePeerConnection() async {
-    int iceRestartedCount = 0;
+    final iceRestarts = _IceRestartBudget();
+
+    // A peer connection, and therefore a candidate queue, belongs to exactly one
+    // call session. Closing the previous queue invalidates its timers so a
+    // replaced call can never emit `m.call.candidates` for this one.
+    _candidateQueue?.cancelAndDispose();
+    final candidateQueue = CandidateSendQueue(
+      send: _sendCandidateBatch,
+      onSendAbandoned: (tries) {
+        Logs().d(
+            'Failed to send candidates on attempt $tries Giving up on this call.');
+        unawaited(hangup(reason: CallErrorCode.iceTimeout));
+      },
+    );
+    _candidateQueue = candidateQueue;
+    if (_inviteOrAnswerSent) candidateQueue.onInviteOrAnswerSent();
 
     try {
       pc = await _createPeerConnection();
@@ -1128,57 +1219,61 @@ class CallSession {
 
       pc!.onIceCandidate = (RTCIceCandidate candidate) async {
         if (callHasEnded) return;
-        _localCandidates.add(candidate);
-
-        if (state == CallState.kRinging || !_inviteOrAnswerSent) return;
-
-        // MSC2746 recommends these values (can be quite long when calling because the
-        // callee will need a while to answer the call)
-        final delay = direction == CallDirection.kIncoming ? 500 : 2000;
-        if (_candidateSendTries == 0) {
-          Timer(Duration(milliseconds: delay), () {
-            unawaited(_sendCandidateQueue());
-          });
-        }
+        // Candidates are collected even before the invite/answer went out; the
+        // queue decides when the first batch may actually be published.
+        candidateQueue.add(candidate);
       };
 
       pc!.onIceGatheringState = (RTCIceGatheringState state) async {
         Logs().v('[VOIP] IceGatheringState => ${state.toString()}');
         if (state == RTCIceGatheringState.RTCIceGatheringStateGathering) {
-          Timer(Duration(seconds: 3), () async {
-            if (!_iceGatheringFinished) {
-              _iceGatheringFinished = true;
-              await _sendCandidateQueue();
-            }
-          });
+          candidateQueue.onGatheringStarted();
         }
         if (state == RTCIceGatheringState.RTCIceGatheringStateComplete) {
           if (!_iceGatheringFinished) {
+            await candidateQueue.onGatheringComplete();
             _iceGatheringFinished = true;
-            await _sendCandidateQueue();
           }
         }
       };
       pc!.onIceConnectionState = (RTCIceConnectionState state) async {
         Logs().v('[VOIP] RTCIceConnectionState => ${state.toString()}');
         if (state == RTCIceConnectionState.RTCIceConnectionStateConnected) {
-          _localCandidates.clear();
+          candidateQueue.clear();
           _remoteCandidates.clear();
-          iceRestartedCount = 0;
+          iceRestarts.reset();
+          _cancelIceRecovery();
           setCallState(CallState.kConnected);
           // fix any state/race issues we had with sdp packets and cloned streams
           await updateMuteStatus();
           _missedCall = false;
-        } else if ({
-          RTCIceConnectionState.RTCIceConnectionStateFailed,
-          RTCIceConnectionState.RTCIceConnectionStateDisconnected
-        }.contains(state)) {
-          if (iceRestartedCount < 3) {
-            await restartIce();
-            iceRestartedCount++;
-          } else {
-            await hangup(reason: CallErrorCode.iceFailed);
-          }
+        } else if (state ==
+            RTCIceConnectionState.RTCIceConnectionStateFailed) {
+          // Hard failure: restart immediately, do not spend the grace window.
+          await _recoverIce(iceRestarts, reason: 'failed');
+        } else if (state ==
+            RTCIceConnectionState.RTCIceConnectionStateDisconnected) {
+          // Mobile networks flap (Wi-Fi -> LTE) for a few hundred milliseconds.
+          // Treat `disconnected` as recoverable first: WebRTC is allowed to
+          // heal on its own, and only a bounded grace window may escalate to
+          // an ICE restart. A 300ms Wi-Fi blip must never read as
+          // "network interrupted, call ended".
+          _cancelIceRecovery();
+          _iceRecoveryTimer = Timer(CallTimeouts.iceDisconnectedGrace, () async {
+            _iceRecoveryTimer = null;
+            if (callHasEnded || pc == null) return;
+            final current = pc!.iceConnectionState;
+            if (current ==
+                RTCIceConnectionState.RTCIceConnectionStateConnected) {
+              return; // healed by itself
+            }
+            if (current !=
+                    RTCIceConnectionState.RTCIceConnectionStateDisconnected &&
+                current != RTCIceConnectionState.RTCIceConnectionStateFailed) {
+              return;
+            }
+            await _recoverIce(iceRestarts, reason: 'disconnected-grace');
+          });
         }
       };
     } catch (e) {
@@ -1192,6 +1287,9 @@ class CallSession {
   }
 
   Future<void> cleanUp() async {
+    _cancelIceRecovery();
+    // A pending candidate flush must never outlive the peer connection.
+    _candidateQueue?.cancelAndDispose();
     try {
       for (final stream in _streams) {
         await stream.dispose();
@@ -1258,7 +1356,7 @@ class CallSession {
     Logs().v('[VOIP] iceRestart.');
     // Needs restart ice on session.pc and renegotiation.
     _iceGatheringFinished = false;
-    _localCandidates.clear();
+    _candidateQueue?.clear();
     await pc!.restartIce();
   }
 
@@ -1344,43 +1442,20 @@ class CallSession {
     await wpstream.dispose();
   }
 
-  Future<void> _sendCandidateQueue() async {
+  /// Publishes one coalesced `m.call.candidates` event.
+  ///
+  /// Trickle ICE is still not supported (MSC2746), so [CandidateSendQueue] does
+  /// the batching, the retry backoff and the `iceTimeout` give-up; this method
+  /// only maps a candidate batch onto the existing event contract.
+  Future<void> _sendCandidateBatch(List<RTCIceCandidate> candidates) async {
     if (callHasEnded) return;
-    /*
-    Currently, trickle-ice is not supported, so it will take a
-    long time to wait to collect all the canidates, set the
-    timeout for collection canidates to speed up the connection.
-    */
-    final candidatesQueue = _localCandidates;
-    try {
-      if (candidatesQueue.isNotEmpty) {
-        final candidates = <Map<String, dynamic>>[];
-        for (final element in candidatesQueue) {
-          candidates.add(element.toMap());
-        }
-        _localCandidates.clear();
-        final res = await sendCallCandidates(
-            opts.room, callId, localPartyId, candidates);
-        Logs().v('[VOIP] sendCallCandidates res => $res');
-      }
-    } catch (e) {
-      Logs().v('[VOIP] sendCallCandidates e => ${e.toString()}');
-      _candidateSendTries++;
-      _localCandidates.clear();
-      _localCandidates.addAll(candidatesQueue);
-
-      if (_candidateSendTries > 5) {
-        Logs().d(
-            'Failed to send candidates on attempt $_candidateSendTries Giving up on this call.');
-        await hangup(reason: CallErrorCode.iceTimeout);
-        return;
-      }
-
-      final delay = 500 * pow(2, _candidateSendTries);
-      Timer(Duration(milliseconds: delay as int), () {
-        unawaited(_sendCandidateQueue());
-      });
+    final payload = <Map<String, dynamic>>[];
+    for (final element in candidates) {
+      payload.add(element.toMap());
     }
+    final res =
+        await sendCallCandidates(opts.room, callId, localPartyId, payload);
+    Logs().v('[VOIP] sendCallCandidates res => $res');
   }
 
   void fireCallEvent(CallStateChange event) {

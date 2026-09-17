@@ -30,6 +30,7 @@ final class CallPage extends StatefulWidget {
     required this.displayName,
     required this.fallbackSeed,
     this.avatarUrl,
+    this.avatarHeaders,
     this.incoming = false,
     this.mediaBackend,
     this.autoCloseOnEnd = false,
@@ -40,6 +41,9 @@ final class CallPage extends StatefulWidget {
   final String displayName;
   final String fallbackSeed;
   final String? avatarUrl;
+
+  /// 头像请求授权头（Matrix 认证媒体必需）。业务头像为空 map。
+  final Map<String, String>? avatarHeaders;
   final bool incoming;
   final MatrixCallBackend? mediaBackend;
 
@@ -308,6 +312,8 @@ final class _CallPageState extends State<CallPage> {
         nickname: widget.displayName,
         fallbackSeed: widget.fallbackSeed,
         avatarUrl: widget.avatarUrl,
+        avatarHeaders: widget.avatarHeaders,
+        diagnosticSource: 'call-page',
         size: WeChatDimensions.callControl * 1.6,
       ),
     ];

@@ -8,6 +8,7 @@ import 'package:liuhetong_mobile/features/contacts/contact_models.dart';
 import 'package:liuhetong_mobile/features/search/global_search_index.dart';
 import 'package:liuhetong_mobile/features/search/global_search_models.dart';
 import 'package:liuhetong_mobile/features/search/global_search_page.dart';
+import 'package:liuhetong_mobile/features/search/local_message_search_repository.dart';
 
 GlobalSearchMessageRecord _record(String id, String body,
         {String senderName = '张三', DateTime? at}) =>
@@ -51,7 +52,8 @@ const _rooms = [
 
 final class _Nav {
   final opened = <({String roomId, String? anchorEventId})>[];
-  Future<void> open(GlobalSearchRoomResult room, {String? anchorEventId}) async {
+  Future<void> open(GlobalSearchRoomResult room,
+      {String? anchorEventId}) async {
     opened.add((roomId: room.roomId, anchorEventId: anchorEventId));
   }
 }
@@ -72,7 +74,8 @@ Future<BusinessApiClient> _api({List<Uri>? requests}) async {
 
 Widget _page({
   required BusinessApiClient api,
-  required GlobalSearchIndex index,
+  GlobalSearchIndex? index,
+  LocalMessageSearchRepository? repository,
   _Nav? nav,
   List<GlobalSearchRoomResult> rooms = _rooms,
   List<ContactSummary> contacts = _contacts,
@@ -82,11 +85,33 @@ Widget _page({
       home: GlobalSearchPage(
         api: api,
         index: index,
+        repository: repository,
         debounce: debounce,
         contactsLoader: () async => contacts,
         roomsLoader: () async => rooms,
         onOpenRoom: nav?.open,
       ),
+    );
+
+/// 账号维度的本机历史仓库（fake 本机加密库；零网络）。
+LocalMessageSearchRepository _repository(
+    {List<LocalSearchMessage> messages = const []}) {
+  final repository = LocalMessageSearchRepository(
+    source: InMemoryLocalHistorySource(messages),
+    index: GlobalSearchIndex(),
+  );
+  return repository..attachAccount('@alice:test');
+}
+
+LocalSearchMessage _localMessage(String id, String body) => LocalSearchMessage(
+      eventId: id,
+      senderId: '@peer:test',
+      senderName: '张三',
+      timestamp: DateTime.utc(2026, 9, 15, 10),
+      body: body,
+      roomId: '!group:test',
+      roomName: '数智经济中心',
+      isGroup: true,
     );
 
 Future<void> _search(WidgetTester tester, String query) async {
@@ -100,14 +125,14 @@ void main() {
   testWidgets('blank query keeps the page clean (no sections, no results)',
       (tester) async {
     final api = await _api();
-    await tester.pumpWidget(_page(api: api, index: _index([_record(r'$a', '项目文件')])));
+    await tester
+        .pumpWidget(_page(api: api, index: _index([_record(r'$a', '项目文件')])));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('global-search-section-联系人')), findsNothing);
     expect(find.byKey(const Key('global-search-section-群聊')), findsNothing);
     expect(find.byKey(const Key('global-search-section-聊天记录')), findsNothing);
-    expect(find.text('无搜索结果'), findsNothing,
-        reason: '空查询既不显示结果也不显示“无结果”');
+    expect(find.text('无搜索结果'), findsNothing, reason: '空查询既不显示结果也不显示“无结果”');
   });
 
   testWidgets('keyword shows 联系人/群聊/聊天记录 with typed rows', (tester) async {
@@ -136,8 +161,7 @@ void main() {
     expect(find.byKey(const Key('global-search-contact-u1')), findsOneWidget);
     expect(find.byKey(const Key('global-search-room-!group:test')),
         findsOneWidget);
-    expect(
-        find.byKey(const Key('global-search-conversation-!group:test')),
+    expect(find.byKey(const Key('global-search-conversation-!group:test')),
         findsOneWidget);
     // direct room 不得进入群聊分组，也不得有可点击的群聊行。
     expect(find.byKey(const Key('global-search-room-!dm:test')), findsNothing,
@@ -168,12 +192,11 @@ void main() {
     ));
     await _search(tester, '项目');
 
-    await tester.tap(
-        find.byKey(const Key('global-search-conversation-!group:test')));
+    await tester
+        .tap(find.byKey(const Key('global-search-conversation-!group:test')));
     await tester.pump();
     expect(nav.opened.single.roomId, '!group:test');
-    expect(nav.opened.single.anchorEventId, r'$only',
-        reason: '单条命中直接定位该事件');
+    expect(nav.opened.single.anchorEventId, r'$only', reason: '单条命中直接定位该事件');
   });
 
   testWidgets(
@@ -185,15 +208,17 @@ void main() {
       api: api,
       nav: nav,
       index: _index([
-        _record(r'$1', '项目文件1', senderName: '张三', at: DateTime.utc(2026, 9, 15, 9)),
-        _record(r'$2', '项目文件2', senderName: '李四', at: DateTime.utc(2026, 9, 15, 11)),
+        _record(r'$1', '项目文件1',
+            senderName: '张三', at: DateTime.utc(2026, 9, 15, 9)),
+        _record(r'$2', '项目文件2',
+            senderName: '李四', at: DateTime.utc(2026, 9, 15, 11)),
       ]),
     ));
     await _search(tester, '项目');
 
     expect(find.text('2条相关聊天记录'), findsOneWidget);
-    await tester.tap(
-        find.byKey(const Key('global-search-conversation-!group:test')));
+    await tester
+        .tap(find.byKey(const Key('global-search-conversation-!group:test')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byKey(const Key('global-search-conversation-records')),
@@ -218,8 +243,8 @@ void main() {
       ]),
     ));
     await _search(tester, '项目');
-    await tester.tap(
-        find.byKey(const Key('global-search-conversation-!group:test')));
+    await tester
+        .tap(find.byKey(const Key('global-search-conversation-!group:test')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -227,7 +252,8 @@ void main() {
       final span = text.textSpan;
       return span is TextSpan &&
           span.children?.any((child) =>
-                  child is TextSpan && child.style?.fontWeight == FontWeight.w600) ==
+                  child is TextSpan &&
+                  child.style?.fontWeight == FontWeight.w600) ==
               true;
     });
     expect(rich, isNotEmpty, reason: '命中片段必须高亮关键词');
@@ -244,8 +270,7 @@ void main() {
         reason: '未解密正文不得进入搜索结果');
 
     await _search(tester, 'visible-body');
-    expect(
-        find.byKey(const Key('global-search-conversation-!group:test')),
+    expect(find.byKey(const Key('global-search-conversation-!group:test')),
         findsOneWidget);
   });
 
@@ -258,8 +283,7 @@ void main() {
     ));
     requests.clear();
     await _search(tester, '项目文件');
-    expect(requests, isEmpty,
-        reason: '查询词与明文都不得离开设备（禁止服务端明文索引）');
+    expect(requests, isEmpty, reason: '查询词与明文都不得离开设备（禁止服务端明文索引）');
   });
 
   testWidgets('matrix unavailable degrades without crashing', (tester) async {
@@ -277,8 +301,7 @@ void main() {
     expect(find.byKey(const Key('global-search-error')), findsOneWidget);
   });
 
-  testWidgets(
-      'without an injected room navigator only contacts are offered',
+  testWidgets('without an injected room navigator only contacts are offered',
       (tester) async {
     final api = await _api();
     await tester.pumpWidget(_page(
@@ -327,6 +350,76 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
     expect(roomsLoaded, 1, reason: '只在防抖结束后查询一次');
+  });
+
+  testWidgets('repository-backed page searches the account-scoped local index',
+      (tester) async {
+    final api = await _api(requests: []);
+    final nav = _Nav();
+    final repository =
+        _repository(messages: [_localMessage(r'$local', '项目本地历史')]);
+    await repository.backfillLocalHistory();
+
+    await tester.pumpWidget(_page(api: api, nav: nav, repository: repository));
+    await _search(tester, '项目');
+
+    expect(find.byKey(const Key('global-search-conversation-!group:test')),
+        findsOneWidget);
+    await tester
+        .tap(find.byKey(const Key('global-search-conversation-!group:test')));
+    await tester.pump();
+    expect(nav.opened.single.anchorEventId, r'$local');
+  });
+
+  testWidgets('opening the page backfills the attached local repository',
+      (tester) async {
+    final api = await _api();
+    final nav = _Nav();
+    // 未显式回填：页面打开时应做一次有界的本机库回填。
+    final repository =
+        _repository(messages: [_localMessage(r'$local', '项目本地历史')]);
+
+    await tester.pumpWidget(_page(api: api, nav: nav, repository: repository));
+    await tester.pumpAndSettle();
+    await _search(tester, '项目');
+
+    expect(find.byKey(const Key('global-search-conversation-!group:test')),
+        findsOneWidget,
+        reason: '打开搜索页后本机历史必须可检索');
+  });
+
+  testWidgets('repository hits never expose flash photos or media payloads',
+      (tester) async {
+    final api = await _api();
+    final nav = _Nav();
+    final repository = _repository(messages: [
+      LocalSearchMessage(
+        eventId: r'$flash',
+        senderId: '@peer:test',
+        senderName: '张三',
+        timestamp: DateTime.utc(2026, 9, 15, 10),
+        body: '项目闪照',
+        roomId: '!group:test',
+        roomName: '数智经济中心',
+        isGroup: true,
+        isFlashPhoto: true,
+      ),
+      _localMessage(r'$text', '项目文件已发送'),
+      _localMessage(r'$text2', '项目文件已收到'),
+    ]);
+    await repository.backfillLocalHistory();
+
+    await tester.pumpWidget(_page(api: api, nav: nav, repository: repository));
+    await _search(tester, '项目');
+    await tester
+        .tap(find.byKey(const Key('global-search-conversation-!group:test')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('global-search-hit-\$text')), findsOneWidget);
+    expect(find.byKey(const Key('global-search-hit-\$text2')), findsOneWidget);
+    expect(find.byKey(const Key('global-search-hit-\$flash')), findsNothing,
+        reason: '闪照必须在入库前被过滤，绝不能出现在结果页');
   });
 }
 

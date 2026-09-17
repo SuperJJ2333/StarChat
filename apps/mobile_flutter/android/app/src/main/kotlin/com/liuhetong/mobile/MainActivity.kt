@@ -295,6 +295,13 @@ class MainActivity : FlutterActivity() {
                         applySecureFlag()
                         result.success(0)
                     }
+                    // 捕获状态同步快照（Dart 侧 acquire 后立即调用，避免等待
+                    // EventChannel 首帧）。Android 由 FLAG_SECURE 从源头阻断，
+                    // 不存在“已在录屏”的上报语义：supported=false 表示平台不提供
+                    // 该能力，Dart 侧在安全窗口已确认时按 inactive 处理。
+                    "getCurrentCaptureState" -> result.success(
+                        mapOf("supported" to false, "active" to false)
+                    )
                     else -> result.notImplemented()
                 }
             }

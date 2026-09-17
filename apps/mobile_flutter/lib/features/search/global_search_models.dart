@@ -155,8 +155,8 @@ List<GlobalSearchConversationHit> aggregateConversationHits(
         roomId: roomId,
         roomName: grouped[roomId]!.first.roomName,
         isGroup: grouped[roomId]!.first.isGroup,
-        hits: List.unmodifiable(
-            grouped[roomId]!..sort((a, b) => b.timestamp.compareTo(a.timestamp))),
+        hits: List.unmodifiable(grouped[roomId]!
+          ..sort((a, b) => b.timestamp.compareTo(a.timestamp))),
         roomAvatarSeed: grouped[roomId]!.first.roomAvatarSeed,
         roomAvatarUrl: grouped[roomId]!.first.roomAvatarUrl,
       ),

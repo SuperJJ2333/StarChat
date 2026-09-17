@@ -56,6 +56,9 @@ import 'features/matrix/group_chat_page.dart';
 import 'features/matrix/server_auto_join_group_gateway.dart';
 import 'features/matrix/call_alerts.dart';
 import 'features/matrix/call_controller.dart';
+import 'features/search/local_message_search_repository.dart';
+import 'features/matrix/call_audio_route_coordinator.dart';
+import 'features/matrix/call_identity_resolver.dart';
 import 'features/matrix/call_diagnostics.dart';
 import 'features/matrix/call_permissions.dart';
 import 'features/settings/notification/background_call_permission_prompt.dart';
@@ -224,11 +227,25 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   late MatrixCallBackend callBackend;
   late final ForegroundSoundService notificationSounds =
       ForegroundSoundService();
+
+  /// 唯一音频路由所有者（Task I）：所有 speaker/earpiece 决策只经此组件。
+  late final CallAudioRouteCoordinator callAudioRoute =
+      CallAudioRouteCoordinator(apply: callBackend.setSpeaker);
+
+  /// 通话对方身份统一解析（Task L）：名称 + 头像 + 授权头一次算出。
+  late final CallIdentityResolver callIdentity = CallIdentityResolver(
+    displayNameResolver: _sharedDisplayNameResolver,
+    avatarMedia: widget.matrix,
+    contactFor: _contactSummaryFor,
+    matrixProfileFor: _matrixAvatarUriFor,
+  );
+
   CallController _createCallController() => CallController(
         backend: callBackend,
         // 系统权限 API（permission_handler）——不再用 getUserMedia 探测流。
         permissions: const SystemCallPermissionGateway(),
         diagnostics: callDiagnostics,
+        audioRoute: callAudioRoute,
         // SE 来电铃声（PRD §9/§10）：语音/视频各自循环铃声，
         // 受"语音/视频通话通知"设置开关约束。
         alerts: CallAlerts(
@@ -358,6 +375,35 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       await (_chatIdentityCacheLoad ??= _createIdentityCache());
     },
   );
+
+  /// 最近一次已知的好友快照（同步读取，供通话/通知的即时路径使用）。
+  List<ContactSummary>? _contactSnapshot;
+
+  Future<void> _primeContactSnapshot() async {
+    try {
+      final cache = await (_chatIdentityCacheLoad ??= _createIdentityCache());
+      if (!mounted) return;
+      _contactSnapshot = List<ContactSummary>.from(cache.contacts);
+    } catch (_) {
+      // 好友资料不可用时逐级回退，不影响通话建立。
+    }
+  }
+
+  ContactSummary? _contactSummaryFor(String matrixUserId) {
+    for (final contact in _contactSnapshot ?? const <ContactSummary>[]) {
+      if (contact.matrixUserId == matrixUserId) return contact;
+    }
+    // 回退到解析器自身的好友源（可能已完成加载）。
+    final resolver = _sharedDisplayNameResolver;
+    if (resolver is ContactBackedUserDisplayNameResolver) {
+      return resolver.contactFor(matrixUserId);
+    }
+    return null;
+  }
+
+  /// Matrix 头像 `mxc://` 回退（只读本地 SDK 状态，无网络）。
+  Uri? _matrixAvatarUriFor(String matrixUserId) =>
+      _matrixHomeCapability?.matrixAvatarUriFor(matrixUserId);
   MatrixMessageReminderBackend? reminderBackend;
   MatrixManagedResource? matrixResources;
   MatrixAppHomeCapability? _matrixHomeCapability;
@@ -399,6 +445,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       });
       unawaited(_runStartup((_) => nativeCalls.restorePendingState()));
     }
+    // Task B：登录会话就绪后从**本机加密库**做一次有界回填，让「聊天记录
+    // 搜索」覆盖本机已有历史（含从未打开过的房间），而不是只覆盖本次运行
+    // 打开过的房间。零网络、有界、可取消。
+    unawaited(_backfillLocalSearchHistory(generation));
     // 通话 UI 归 CallUiManager（唯一监听呈现者）；业务钩子经
     // onPhaseChanged 回调进来（消息提醒抑制/通话摘要）。
     _nativePushBridge = NativePushBridge(
@@ -1087,6 +1137,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
             Uri.parse(AppConfig.businessApiBaseUrl).resolve('/ios-call/'));
         callBackend = capability.createCallBackend(
             diagnostics: callDiagnostics, wakeup: callWakeup);
+        // Task L：主叫/被叫共用同一套身份解析（名称 + 头像 + 授权头）。
+        callBackend.identityResolver = (matrixUserId,
+                {String? matrixDisplayName}) =>
+            callIdentity.resolve(matrixUserId,
+                matrixDisplayName: matrixDisplayName);
+        // Task G：wakeup 的显式 tombstone 只允许结束**完全匹配**的当前通话。
+        callWakeup.onExplicitlyEnded = callBackend.endActiveCallIfMatching;
+        // Task B：本机历史搜索数据源（只读本机加密库，零网络）。
+        LocalMessageSearchRepository.shared.source =
+            capability.createLocalHistorySearchSource();
+        LocalMessageSearchRepository.shared
+            .attachAccount(widget.matrix.userId ?? '');
+        unawaited(_primeContactSnapshot());
         calls = _createCallController();
         final watchdogTarget = capability.createSyncWatchdogTarget();
         syncWatchdog = widget.syncWatchdogFactory?.call(watchdogTarget) ??
@@ -1288,6 +1351,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         },
         onDismissNativeLayer: _dismissNativeCallLayer,
       );
+
+  /// Task B：有界本机历史回填（只读本机加密库；绝不下载云端历史）。
+  Future<void> _backfillLocalSearchHistory(int generation) async {
+    if (!_currentStartup(generation)) return;
+    try {
+      await LocalMessageSearchRepository.shared.backfillLocalHistory();
+    } catch (_) {
+      // 回填失败不影响任何其它功能：搜索退化为「已打开房间 + 增量同步」。
+    }
+  }
 
   void _dismissNativeCallLayer() {
     unawaited(_nativeCallChannel?.invokeMethod('dismiss'));
@@ -1704,6 +1777,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       _nativeCallControl?.setMethodCallHandler(null);
     }
     callWakeup.close();
+    // Task B：登出/资源关闭即清空本机搜索索引（账号命名空间隔离）。
+    LocalMessageSearchRepository.shared.clear();
     await stop(() async {
       await callUi.detach();
     });

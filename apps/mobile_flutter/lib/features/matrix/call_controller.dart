@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'call_alerts.dart';
+import 'call_audio_route_coordinator.dart';
 import 'call_diagnostics.dart';
 import '../../core/notification/sound_type.dart';
 
@@ -42,32 +43,141 @@ enum CallPhase {
 
 enum CallBackendEventKind { incoming, connected, ended, networkInterrupted }
 
+/// 通话对方身份的统一呈现模型（Task L）。
+///
+/// 名称与头像**必须**来自同一套解析，避免「名称用好友备注、头像却用 Matrix
+/// ID」这类不一致。`avatarUrl` + `avatarHeaders` 由
+/// [MatrixAvatarUrlResolver] 生成（含授权头）；**禁止**把 `mxc://` 直接当
+/// 普通 HTTP URL，也禁止把头像 URL 放进推送 payload。
+@immutable
+final class CallIdentity {
+  const CallIdentity({
+    required this.matrixUserId,
+    required this.displayName,
+    required this.fallbackSeed,
+    this.avatarUrl,
+    this.avatarHeaders = const {},
+    this.avatarIsMatrixMedia = false,
+  });
+
+  final String matrixUserId;
+  final String displayName;
+
+  /// 首字回退种子（avatar 未就绪时立即显示，不留空白圆圈）。
+  final String fallbackSeed;
+
+  /// 已解析、可直接请求的头像 URL（业务头像或 Matrix 缩略图 URL）。
+  final String? avatarUrl;
+
+  /// 请求 [avatarUrl] 所需的授权头（Matrix 认证媒体）。
+  final Map<String, String> avatarHeaders;
+
+  /// [avatarUrl] 是否来自 Matrix 媒体（`mxc://` 解析后的缩略图 URL）。
+  final bool avatarIsMatrixMedia;
+
+  CallIdentity copyWith({
+    String? displayName,
+    String? avatarUrl,
+    Map<String, String>? avatarHeaders,
+    bool? avatarIsMatrixMedia,
+  }) =>
+      CallIdentity(
+        matrixUserId: matrixUserId,
+        displayName: displayName ?? this.displayName,
+        fallbackSeed: fallbackSeed,
+        avatarUrl: avatarUrl ?? this.avatarUrl,
+        avatarHeaders: avatarHeaders ?? this.avatarHeaders,
+        avatarIsMatrixMedia: avatarIsMatrixMedia ?? this.avatarIsMatrixMedia,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is CallIdentity &&
+      other.matrixUserId == matrixUserId &&
+      other.displayName == displayName &&
+      other.fallbackSeed == fallbackSeed &&
+      other.avatarUrl == avatarUrl &&
+      other.avatarIsMatrixMedia == avatarIsMatrixMedia &&
+      mapEquals(other.avatarHeaders, avatarHeaders);
+
+  @override
+  int get hashCode => Object.hash(
+      matrixUserId,
+      displayName,
+      fallbackSeed,
+      avatarUrl,
+      avatarIsMatrixMedia,
+      Object.hashAllUnordered(avatarHeaders.entries));
+}
+
+/// 已通过安全验证的拨出目标（Task F）。
+///
+/// 由 [CallBackend.verifyStartTarget] 产出、[CallBackend.startVerified] 消费；
+/// 只承载 opaque 通话元数据，不含任何媒体或明文。
+@immutable
+final class VerifiedCallTarget {
+  const VerifiedCallTarget({
+    required this.roomId,
+    required this.remoteUserId,
+    this.localUserId,
+    this.verifiedAt,
+  });
+
+  final String roomId;
+
+  /// 已与房间成员集合核对过的远端 Matrix 用户。
+  final String remoteUserId;
+
+  /// 验证时的本地用户（账号切换后可用于判定目标过期）。
+  final String? localUserId;
+
+  /// 验证时刻（诊断/过期判定用）。
+  final DateTime? verifiedAt;
+
+  /// 目标仍属于当前账号。
+  bool matchesAccount(String? currentUserId) =>
+      localUserId == null ||
+      currentUserId == null ||
+      localUserId == currentUserId;
+
+  @override
+  String toString() => 'VerifiedCallTarget(roomId=$roomId, '
+      'remoteUserId=$remoteUserId)';
+}
+
 final class CallBackendEvent {
   const CallBackendEvent.connected()
       : kind = CallBackendEventKind.connected,
         roomId = null,
         matrixUserId = null,
-        type = null;
+        type = null,
+        identity = null;
   const CallBackendEvent.ended()
       : kind = CallBackendEventKind.ended,
         roomId = null,
         matrixUserId = null,
-        type = null;
+        type = null,
+        identity = null;
   const CallBackendEvent.networkInterrupted()
       : kind = CallBackendEventKind.networkInterrupted,
         roomId = null,
         matrixUserId = null,
-        type = null;
+        type = null,
+        identity = null;
   const CallBackendEvent.incoming({
     required this.roomId,
     required this.matrixUserId,
     required this.type,
+    this.identity,
   }) : kind = CallBackendEventKind.incoming;
 
   final CallBackendEventKind kind;
   final String? roomId;
   final String? matrixUserId;
   final CallMediaType? type;
+
+  /// 来电对方的统一身份呈现（可选：解析失败时页面回退到同步名称）。
+  final CallIdentity? identity;
 }
 
 abstract interface class CallPermissionGateway {
@@ -77,6 +187,23 @@ abstract interface class CallPermissionGateway {
 abstract interface class CallBackend {
   Stream<CallBackendEvent> get callEvents;
   Future<bool> isEncryptedDirectRoom(String roomId, String matrixUserId);
+
+  /// 拨出前的**唯一**一次安全验证（Task F）。
+  ///
+  /// 返回 null 表示该目标不是「已加入 + 已加密 + 恰好两名成员 + 本地用户
+  /// 在成员内 + 远端与预期 Matrix 用户一致」的可信双人加密房间。
+  ///
+  /// 验证结果通过 [VerifiedCallTarget] 传递给 [startVerified]，使同一次
+  /// `start` 路径不再重复调用 `room.requestParticipants()`。
+  Future<VerifiedCallTarget?> verifyStartTarget(
+      String roomId, String matrixUserId);
+
+  /// 使用已通过安全验证的 [VerifiedCallTarget] 发起呼叫。
+  ///
+  /// 实现方**不得**在此再次请求 participants——验证已在
+  /// [verifyStartTarget] 完成。
+  Future<void> startVerified(VerifiedCallTarget target, CallMediaType type);
+
   Future<void> start(String roomId, String matrixUserId, CallMediaType type);
   Future<void> accept();
   Future<void> reject();
@@ -99,6 +226,7 @@ final class CallViewState {
     this.speaker = false,
     this.message,
     this.connectedAt,
+    this.identity,
   });
   final CallPhase phase;
   final CallMediaType? type;
@@ -111,12 +239,16 @@ final class CallViewState {
   /// 接通时刻：页面据此实时展示通话时长。
   final DateTime? connectedAt;
 
+  /// 对方统一身份呈现（名称 + 头像 + 授权头）；null 时页面自行回退。
+  final CallIdentity? identity;
+
   CallViewState copyWith({
     CallPhase? phase,
     bool? muted,
     bool? speaker,
     String? message,
     DateTime? connectedAt,
+    CallIdentity? identity,
     bool clearConnectedAt = false,
     bool clearMessage = false,
   }) =>
@@ -130,6 +262,7 @@ final class CallViewState {
         message: clearMessage ? null : (message ?? this.message),
         connectedAt:
             clearConnectedAt ? null : (connectedAt ?? this.connectedAt),
+        identity: identity ?? this.identity,
       );
 }
 
@@ -140,12 +273,15 @@ final class CallController extends ChangeNotifier {
     CallAlerts? alerts,
     CallSoundCues? soundCues,
     CallDiagnostics? diagnostics,
+    CallAudioRouteCoordinator? audioRoute,
     this.ringTimeout = callRingTimeout,
     this.connectTimeout = callConnectTimeout,
     DateTime Function()? now,
   })  : alerts = alerts ?? CallAlerts(),
         soundCues = soundCues ?? const NotificationSystemCallSoundCues(),
         diagnostics = diagnostics ?? CallDiagnostics(),
+        audioRoute =
+            audioRoute ?? CallAudioRouteCoordinator(apply: backend.setSpeaker),
         _now = now ?? DateTime.now {
     _events = backend.callEvents.listen(_handleEvent);
   }
@@ -165,6 +301,9 @@ final class CallController extends ChangeNotifier {
 
   /// 关键路径耗时诊断（与 backend 共享同一实例/时间线）。
   final CallDiagnostics diagnostics;
+
+  /// **唯一**音频路由所有者（Task I）：任何 speaker/earpiece 决策只经此组件。
+  final CallAudioRouteCoordinator audioRoute;
 
   /// 主叫等待超时：到点未接通自动挂断并提示。
   final Duration ringTimeout;
@@ -192,15 +331,21 @@ final class CallController extends ChangeNotifier {
     final generation = ++_callGeneration;
     _ringTimeoutTimer?.cancel();
     _connectTimeoutTimer?.cancel();
+    audioRoute.reset();
+    _muteDesired = false;
+    _muteOperation = null;
     _set(CallViewState(
       CallPhase.requestingPermission,
       roomId: roomId,
       matrixUserId: matrixUserId,
       type: type,
     ));
-    final safeRoom = await backend.isEncryptedDirectRoom(roomId, matrixUserId);
+    diagnostics.mark(CallDiagStage.outgoingStart);
+    // Task F：唯一一次安全验证，结果直接交给 startVerified 复用。
+    final target = await backend.verifyStartTarget(roomId, matrixUserId);
     if (!_isCurrent(generation)) return;
-    if (!safeRoom) {
+    diagnostics.mark(CallDiagStage.securityValidated);
+    if (target == null) {
       _set(
           state.copyWith(phase: CallPhase.failed, message: '只能在已验证的加密双人会话中通话'));
       throw StateError('Call room is not an encrypted direct room');
@@ -214,12 +359,13 @@ final class CallController extends ChangeNotifier {
       return;
     }
     try {
-      // Android WebRTC defaults to speaker-first and retains the prior route.
-      // Apply the UI choice before capture/answer; false still permits headsets.
-      await backend.setSpeaker(state.speaker);
+      // 唯一路由所有者：媒体建立前先清场（上一通遗留的免提/视频默认）。
+      await audioRoute.applyPreMediaRoute(type);
       if (!_isCurrent(generation)) return;
-      await backend.start(roomId, matrixUserId, type);
+      diagnostics.mark(CallDiagStage.mediaAcquireStarted);
+      await backend.startVerified(target, type);
       if (!_isCurrent(generation) || state.phase == CallPhase.connected) return;
+      diagnostics.mark(CallDiagStage.mediaAcquireReady);
       _incomingRinging = false; // 主叫：等待音。
       _set(state.copyWith(phase: CallPhase.ringing));
       _armRingTimeout();
@@ -270,6 +416,8 @@ final class CallController extends ChangeNotifier {
     diagnostics.mark(CallDiagStage.answerTapped);
     _set(state.copyWith(
         phase: CallPhase.requestingPermission, clearMessage: true));
+    // 注意：接听**不是**新通话，绝不能重置路由偏好——用户在响铃期间点过
+    // 「免提」必须保留到接通之后（Task I：用户选择优先于自动策略）。
     try {
       final allowed =
           await permissions.request(video: type == CallMediaType.video);
@@ -281,14 +429,21 @@ final class CallController extends ChangeNotifier {
                 type == CallMediaType.video ? '请授权麦克风和摄像头后接听' : '请授权麦克风后接听'));
         return;
       }
+      diagnostics.mark(CallDiagStage.permissionGranted);
       _incomingRinging = false;
       _set(state.copyWith(phase: CallPhase.connecting));
       // The answer itself can stall while preparing media or sending signaling.
       _armConnectTimeout();
-      await backend.setSpeaker(state.speaker);
+      // 唯一路由所有者：接听前先清场。路由失败不得阻断已授权的接听。
+      try {
+        await audioRoute.applyPreMediaRoute(type);
+      } catch (_) {
+        // 音频路由异常不影响接听本身（回音/路由问题单独诊断）。
+      }
       if (!_isCurrent(generation) || state.phase != CallPhase.connecting) {
         return;
       }
+      diagnostics.mark(CallDiagStage.answerStarted);
       await backend.accept();
       if (!_isCurrent(generation)) return;
       diagnostics.mark(CallDiagStage.answerSent);
@@ -352,16 +507,86 @@ final class CallController extends ChangeNotifier {
     unawaited(_safeHangup());
   }
 
-  Future<void> toggleMute() async {
-    final muted = !state.muted;
-    await backend.setMuted(muted);
-    _set(state.copyWith(muted: muted));
+  /// 用户期望的静音状态（串行化意图，独立于已落地的媒体状态）。
+  ///
+  /// **始终**反映用户最后一次意图；媒体是否真的翻转由后端诚实报告。
+  bool _muteDesired = false;
+  bool get muted => state.muted;
+
+  /// 静音串行化：本地 track 先行，UI 立即反映真实媒体状态。
+  ///
+  /// Task M 修复的竞态：快速双击时两次 `toggleMute` 会读到同一个旧
+  /// `state.muted`（false/false → 都下发 true）。这里改为**同步**翻转
+  /// 期望值并串行执行，最终媒体状态必然收敛到用户最后一次意图。
+  Future<void> toggleMute() {
+    // 同步翻转意图：并发调用不会读到同一个旧值。
+    _muteDesired = !_muteDesired;
+    return _muteOperation ??= _runMuteOperations();
+  }
+
+  /// 设定静音（幂等；与 [CallViewState.muted] 一致的真实 audio track 状态）。
+  ///
+  /// 已经处于目标状态时直接返回：重复的相同意图（CallKit 重放、UI 重建）
+  /// 不会再次下发平台调用。
+  Future<void> setMuted(bool value) {
+    if (state.muted == value && _muteDesired == value) {
+      return Future<void>.value();
+    }
+    _muteDesired = value;
+    return _muteOperation ??= _runMuteOperations();
+  }
+
+  Future<void>? _muteOperation;
+
+  Future<void> _runMuteOperations() async {
+    try {
+      var lastApplied = state.muted;
+      while (!_disposed) {
+        final desired = _muteDesired;
+        final generation = _callGeneration;
+        try {
+          await backend.setMuted(desired);
+        } catch (_) {
+          // 本地 track 操作失败：UI 必须回滚，不得永久骗人。
+          if (_disposed || !_isCurrent(generation)) return;
+          _set(state.copyWith(muted: !desired));
+          return;
+        }
+        if (_disposed || !_isCurrent(generation)) return;
+        _set(state.copyWith(muted: desired));
+        if (_muteDesired == desired) return; // 已收敛到最新意图
+        if (desired == lastApplied) {
+          // 后端未真正改变媒体状态：继续重试只会死循环。
+          // 保持真实媒体状态（不欺骗 UI），并留诊断。
+          assert(() {
+            debugPrint('[chatflow/calldiag] mute backend did not change state '
+                'for desired=$desired');
+            return true;
+          }());
+          return;
+        }
+        lastApplied = desired;
+      }
+    } finally {
+      _muteOperation = null;
+    }
   }
 
   Future<void> toggleSpeaker() async {
-    final speaker = !state.speaker;
-    await backend.setSpeaker(speaker);
+    final type = state.type ?? CallMediaType.audio;
+    final speaker = !audioRoute.speaker;
     _set(state.copyWith(speaker: speaker));
+    try {
+      // markUserPreference: 这是用户的**明确选择**，此后自动策略
+      // （接通默认、媒体流重建、ICE restart）一律不得覆盖。
+      await audioRoute.setSpeaker(speaker,
+          type: type, markUserPreference: true);
+      if (_disposed) return;
+      _set(state.copyWith(speaker: audioRoute.speaker));
+    } catch (_) {
+      if (_disposed) return;
+      _set(state.copyWith(speaker: audioRoute.speaker));
+    }
   }
 
   Future<void> switchCamera() => backend.switchCamera();
@@ -372,12 +597,15 @@ final class CallController extends ChangeNotifier {
       case CallBackendEventKind.incoming:
         _callGeneration++;
         _incomingRinging = true;
+        _muteDesired = false; // 新通话：静音意图以新会话的真实状态为起点
+        _muteOperation = null;
         diagnostics.mark(CallDiagStage.incomingUiShown);
         _set(CallViewState(
           CallPhase.ringing,
           roomId: event.roomId,
           matrixUserId: event.matrixUserId,
           type: event.type,
+          identity: event.identity,
         ));
       case CallBackendEventKind.connected:
         if (state.phase == CallPhase.ended ||
@@ -392,21 +620,20 @@ final class CallController extends ChangeNotifier {
         alerts.stop();
         _ringTimeoutTimer?.cancel();
         _connectTimeoutTimer?.cancel();
-        final isVideo = state.type == CallMediaType.video;
+        final type = state.type ?? CallMediaType.audio;
         // UI connection must not depend on a platform audio-route Future.
         _set(state.copyWith(
           phase: CallPhase.connected,
           connectedAt: _now(),
         ));
-        if (isVideo && !state.speaker) {
-          try {
-            await backend.setSpeaker(true);
-            if (_isCurrent(generation)) {
-              _set(state.copyWith(speaker: true));
-            }
-          } catch (_) {
-            // 免提切换失败不影响接通。
+        // 唯一路由所有者按产品语义应用默认；用户显式选择优先。
+        try {
+          await audioRoute.preferForConnected(type);
+          if (_isCurrent(generation)) {
+            _set(state.copyWith(speaker: audioRoute.speaker));
           }
+        } catch (_) {
+          // 免提切换失败不影响接通。
         }
       case CallBackendEventKind.ended:
         // Cleanup of a failed call must keep its explanation and retry action.

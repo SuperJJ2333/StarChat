@@ -130,19 +130,64 @@ final class CallWakeupClient {
     return CallAnswerDisposition.unavailable;
   }
 
-  Future<void> answerAndConnect(
-      {required String roomId,
-      required String callId,
-      required bool Function() isCurrent,
-      required Future<void> Function() connect}) async {
-    final claim = await answer(roomId: roomId, callId: callId);
+  /// 被叫接听（Task G）——wakeup HTTP **不再**是 WebRTC media setup 的同步前置。
+  ///
+  /// 架构原则：Matrix active [CallSession] 才是媒体通话事实源；本 API 只负责
+  /// PushKit/push 唤醒与跨进程 tombstone 协调。
+  ///
+  /// 流程：
+  /// 1. 先确认 [isCurrent]（当前 active Matrix CallSession 与 native action
+  ///    的 roomId/callId/generation 完全一致）——
+  /// 2. **立即**开始 `connect()`（本地 media + createAnswer + Matrix answer）；
+  /// 3. 与此同时 best-effort 并行上报 `/calls/answer`。
+  ///
+  /// HTTP 返回策略：
+  /// - `accepted` / `noWakeRecord`：正常；
+  /// - `unavailable`（服务不可用 / 网络超时）：**不阻断**已经验证的
+  ///   Matrix 会话接听，只记录诊断；
+  /// - `alreadyEnded`（显式 tombstone）：仅当返回时仍是同一个 call 时
+  ///   才结束该通话，绝不影响后来新的通话。
+  Future<void> answerAndConnect({
+    required String roomId,
+    required String callId,
+    required bool Function() isCurrent,
+    required Future<void> Function() connect,
+  }) async {
     if (!isCurrent()) return;
-    if (claim != CallAnswerDisposition.accepted &&
-        claim != CallAnswerDisposition.noWakeRecord) {
-      throw StateError('Call answer could not be verified');
-    }
+    // Best-effort side channel: never awaited on the media critical path.
+    unawaited(_reportAnswerSideChannel(
+      roomId: roomId,
+      callId: callId,
+    ));
+    // Media answer starts immediately, without waiting for any HTTP round trip.
     await connect();
   }
+
+  Future<void> _reportAnswerSideChannel({
+    required String roomId,
+    required String callId,
+  }) async {
+    CallAnswerDisposition claim;
+    try {
+      claim = await answer(roomId: roomId, callId: callId);
+    } catch (_) {
+      return; // A failed side channel must never disturb the live call.
+    }
+    if (claim != CallAnswerDisposition.alreadyEnded) return;
+    // Explicit tombstone for exactly this call: end it, but only while the
+    // same Matrix call session (roomId + callId + generation) is still current.
+    try {
+      await onExplicitlyEnded?.call(roomId: roomId, callId: callId);
+    } catch (_) {
+      // Ending is best effort; a failure must not surface into the answer path.
+    }
+  }
+
+  /// 显式 tombstone（`alreadyEnded`）时结束**完全匹配**的当前通话。
+  ///
+  /// 由组合根注入（生产：结束匹配的 active Matrix CallSession）。
+  Future<void> Function({required String roomId, required String callId})?
+      onExplicitlyEnded;
 
   Future<bool> end({required String roomId, required String callId}) async {
     await _invites['$roomId\u0000$callId'];

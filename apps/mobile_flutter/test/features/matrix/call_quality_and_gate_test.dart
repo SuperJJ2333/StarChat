@@ -111,10 +111,129 @@ void main() {
       expect(sample!.availableOutgoingBitrateBps, isNull);
       expect(sample.concealmentEvents, isNull);
       expect(sample.codecs, isEmpty);
+      // Task J 新增字段同样缺省安全（绝不伪造）。
+      expect(sample.localCandidateProtocol, isNull);
+      expect(sample.remoteCandidateProtocol, isNull);
+      expect(sample.relayProtocol, isNull);
+      expect(sample.jitterBufferEmittedCount, isNull);
+      expect(sample.averageJitterBufferDelayMs, isNull);
+      expect(sample.echoReturnLoss, isNull);
+      expect(sample.echoReturnLossEnhancement, isNull);
+      expect(sample.candidateProtocolText, '-');
     });
 
-    test('F 扩展：summary 汇编包含编解码与带宽结论', () async {
+    test('Task J：jitter buffer 平均延迟 / candidate 协议 / relayProtocol / AEC',
+        () {
+      final sample = parseCallQualityReports([
+        report('pair-1', 'candidate-pair', {
+          'state': 'succeeded',
+          'nominated': 'true',
+          'localCandidateId': 'L1',
+          'remoteCandidateId': 'R1',
+          'currentRoundTripTime': '0.210',
+          'relayProtocol': 'udp',
+        }),
+        report('L1', 'local-candidate', {
+          'candidateType': 'relay',
+          'protocol': 'udp',
+        }),
+        report('R1', 'remote-candidate', {
+          'candidateType': 'srflx',
+          'protocol': 'tcp',
+        }),
+        report('inbound-audio', 'inbound-rtp', {
+          'kind': 'audio',
+          'jitter': '0.030',
+          'packetsReceived': '900',
+          'packetsLost': '100',
+          'jitterBufferDelay': '2.0',
+          'jitterBufferEmittedCount': '400',
+          'echoReturnLoss': '12.5',
+          'echoReturnLossEnhancement': '21.0',
+        }),
+      ]);
+      expect(sample!.localCandidateProtocol, 'udp');
+      expect(sample.remoteCandidateProtocol, 'tcp');
+      expect(sample.relayProtocol, 'udp');
+      expect(sample.jitterBufferEmittedCount, 400);
+      // 2.0s / 400 samples = 5ms 平均 jitter buffer 延迟。
+      expect(sample.averageJitterBufferDelayMs, closeTo(5.0, 0.001));
+      expect(sample.echoReturnLoss, closeTo(12.5, 0.001));
+      expect(sample.echoReturnLossEnhancement, closeTo(21.0, 0.001));
+      expect(sample.candidateProtocolText, 'local=udp,remote=tcp,relay=udp');
+    });
+
+    test('Task J：jitterBufferDelay 无 emittedCount 时不伪造平均值', () {
+      final sample = parseCallQualityReports([
+        report('pair-1', 'candidate-pair', {
+          'state': 'succeeded',
+          'nominated': 'true',
+          'localCandidateId': 'L1',
+          'remoteCandidateId': 'R1',
+        }),
+        report('L1', 'local-candidate', {'candidateType': 'host'}),
+        report('R1', 'remote-candidate', {'candidateType': 'host'}),
+        report('inbound-1', 'inbound-rtp', {
+          'jitterBufferDelay': '1.5',
+          'jitterBufferEmittedCount': '0',
+        }),
+      ]);
+      expect(sample!.averageJitterBufferDelayMs, isNull);
+    });
+
+    test('Task J：诊断日志不含 IP / TURN 凭据 / SDP / candidate 原文', () async {
       final monitor = CallQualityMonitor(
+        getStats: () async => [
+          StatsReport('p', 'candidate-pair', 0, {
+            'state': 'succeeded',
+            'nominated': 'true',
+            'localCandidateId': 'L',
+            'remoteCandidateId': 'R',
+            'currentRoundTripTime': '0.030',
+            'usernameFragment': 'turn-user-secret',
+          }),
+          StatsReport('L', 'local-candidate', 0, {
+            'candidateType': 'relay',
+            'protocol': 'udp',
+            'address': '203.0.113.7',
+            'relatedAddress': '198.51.100.4',
+            'url': 'turn:turn.example.test:3478?transport=udp',
+          }),
+          StatsReport('R', 'remote-candidate', 0, {
+            'candidateType': 'relay',
+            'protocol': 'udp',
+            'address': '203.0.113.99',
+          }),
+          StatsReport('i', 'inbound-rtp', 0, {
+            'jitter': '0.004',
+            'packetsReceived': '100',
+            'packetsLost': '0',
+          }),
+        ],
+        interval: const Duration(milliseconds: 5),
+      );
+      monitor.start();
+      final deadline = DateTime.now().add(const Duration(seconds: 2));
+      while (monitor.samples.isEmpty && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await monitor.stop();
+      final text = monitor.summary() ?? '';
+      expect(text, contains('protocol='));
+      for (final forbidden in [
+        '203.0.113',
+        '198.51.100',
+        'turn-user-secret',
+        'turn.example.test',
+        'a=candidate',
+        'v=0',
+      ]) {
+        expect(text, isNot(contains(forbidden)),
+            reason: '诊断日志不得泄露地址/凭据/SDP/candidate 原文');
+      }
+    });
+
+    test('F 扩展：summary 汇编包含编解码与带宽结论', () async {      final monitor = CallQualityMonitor(
         getStats: () async => [
           StatsReport('p', 'candidate-pair', 0, {
             'state': 'succeeded',

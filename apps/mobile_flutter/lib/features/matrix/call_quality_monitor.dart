@@ -4,6 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:webrtc_interface/webrtc_interface.dart';
 
 /// 一次 getStats 抽样（脱敏：仅网络/传输统计，不含媒体内容）。
+///
+/// 隐私边界（Task J）：只允许承载 RTT / jitter / jitter buffer / 丢包 /
+/// 码率 / relay-direct / candidate 协议 / codec / concealment / AEC 指标。
+/// **禁止**出现 IP 地址、TURN 用户名或凭据、SDP、ICE candidate 原文、
+/// 消息明文或任何媒体内容。本类只保存解析后的数值与枚举字符串。
 final class CallQualitySample {
   const CallQualitySample({
     this.localCandidateType,
@@ -16,6 +21,13 @@ final class CallQualitySample {
     this.availableOutgoingBitrateBps,
     this.concealmentEvents,
     this.codecs = const [],
+    this.localCandidateProtocol,
+    this.remoteCandidateProtocol,
+    this.relayProtocol,
+    this.jitterBufferDelaySeconds,
+    this.jitterBufferEmittedCount,
+    this.echoReturnLoss,
+    this.echoReturnLossEnhancement,
   });
 
   /// host=本机网卡；srflx/prflx=STUN 打洞；relay=TURN 中继。
@@ -42,6 +54,42 @@ final class CallQualitySample {
 
   /// 收流编解码器（如 audio/opus、video/VP8），按 inbound-rtp 去重。
   final List<String> codecs;
+
+  /// candidate 传输协议（udp/tcp）。平台不支持时为 null（不伪造）。
+  final String? localCandidateProtocol;
+  final String? remoteCandidateProtocol;
+
+  /// TURN 中继传输协议（如 udp/tcp/tls），Stats 提供时才记录。
+  final String? relayProtocol;
+
+  /// jitter buffer 累计延迟与累计发射采样数（平台提供时才记录）。
+  ///
+  /// 二者相除即 [averageJitterBufferDelayMs]；缺失时整体为 null，
+  /// 绝不猜测一个数值。
+  final double? jitterBufferDelaySeconds;
+  final int? jitterBufferEmittedCount;
+
+  /// 回声返回损耗（dB，平台支持时才提供；用于 AEC 诊断）。
+  final double? echoReturnLoss;
+  final double? echoReturnLossEnhancement;
+
+  /// 平均 jitter buffer 延迟（ms）。缺任一字段时为 null。
+  double? get averageJitterBufferDelayMs {
+    final delay = jitterBufferDelaySeconds;
+    final emitted = jitterBufferEmittedCount;
+    if (delay == null || emitted == null || emitted <= 0) return null;
+    return delay * 1000 / emitted;
+  }
+
+  /// 是否为窄带/低质量候选协议（诊断提示，不用于结束通话）。
+  String get candidateProtocolText {
+    final parts = <String>[
+      if (localCandidateProtocol != null) 'local=$localCandidateProtocol',
+      if (remoteCandidateProtocol != null) 'remote=$remoteCandidateProtocol',
+      if (relayProtocol != null) 'relay=$relayProtocol',
+    ];
+    return parts.isEmpty ? '-' : parts.join(',');
+  }
 }
 
 /// 解析 getStats 报告（纯函数，测试注入 fake StatsReport）。
@@ -77,10 +125,33 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     return byId[candidateId]?.values['candidateType']?.toString();
   }
 
+  /// candidate 传输协议（udp/tcp）。缺失返回 null。
+  String? candidateProtocol(Object? candidateId) {
+    if (candidateId is! String) return null;
+    final values = byId[candidateId]?.values;
+    if (values == null) return null;
+    final protocol = values['protocol']?.toString();
+    if (protocol != null && protocol.isNotEmpty) return protocol;
+    return null;
+  }
+
+  /// TURN 中继协议（candidate 上的 `relayProtocol`；平台不提供时为 null）。
+  String? candidateRelayProtocol(Object? candidateId) {
+    if (candidateId is! String) return null;
+    final value = byId[candidateId]?.values['relayProtocol']?.toString();
+    return value == null || value.isEmpty ? null : value;
+  }
+
   double? secondsToMs(Object? value) {
     if (value == null) return null;
     final parsed = double.tryParse(value.toString());
     return parsed == null ? null : parsed * 1000;
+  }
+
+  double? asDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
   }
 
   int? asInt(Object? value) => int.tryParse(value?.toString() ?? '');
@@ -90,6 +161,10 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
   int? packetsReceived;
   int? packetsLost;
   int? concealmentEvents;
+  double? jitterBufferDelaySeconds;
+  int? jitterBufferEmittedCount;
+  double? echoReturnLoss;
+  double? echoReturnLossEnhancement;
   final codecs = <String>[];
   for (final report in reports) {
     if (report.type != 'inbound-rtp') continue;
@@ -102,14 +177,34 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     if (concealNow != null) {
       concealmentEvents = (concealmentEvents ?? 0) + concealNow;
     }
+    // 累计计数器：跨报告取较大值（不跨类型误加）。
+    final bufferDelay = asDouble(report.values['jitterBufferDelay']);
+    if (bufferDelay != null) {
+      jitterBufferDelaySeconds = (jitterBufferDelaySeconds ?? 0) + bufferDelay;
+    }
+    final emitted = asInt(report.values['jitterBufferEmittedCount']);
+    if (emitted != null) {
+      jitterBufferEmittedCount = (jitterBufferEmittedCount ?? 0) + emitted;
+    }
+    // AEC/回声指标：平台不提供时为 null（不伪造）。
+    echoReturnLoss ??= asDouble(report.values['echoReturnLoss']);
+    echoReturnLossEnhancement ??=
+        asDouble(report.values['echoReturnLossEnhancement']);
     final codecId = report.values['codecId'];
     if (codecId is String) {
       final mimeType = byId[codecId]?.values['mimeType']?.toString();
-      if (mimeType != null && mimeType.isNotEmpty && !codecs.contains(mimeType)) {
+      if (mimeType != null &&
+          mimeType.isNotEmpty &&
+          !codecs.contains(mimeType)) {
         codecs.add(mimeType);
       }
     }
   }
+
+  // relayProtocol 可能出现在 candidate-pair 或选中 candidate 上。
+  String? relayProtocol = pair.values['relayProtocol']?.toString();
+  relayProtocol ??= candidateRelayProtocol(pair.values['localCandidateId']);
+  relayProtocol ??= candidateRelayProtocol(pair.values['remoteCandidateId']);
 
   return CallQualitySample(
     localCandidateType: candidateType(pair.values['localCandidateId']),
@@ -119,10 +214,17 @@ CallQualitySample? parseCallQualityReports(List<StatsReport> reports) {
     packetsReceived: packetsReceived,
     packetsLost: packetsLost,
     iceState: pair.values['state']?.toString(),
-    availableOutgoingBitrateBps:
-        asInt(pair.values['availableOutgoingBitrate']),
+    availableOutgoingBitrateBps: asInt(pair.values['availableOutgoingBitrate']),
     concealmentEvents: concealmentEvents,
     codecs: codecs,
+    localCandidateProtocol: candidateProtocol(pair.values['localCandidateId']),
+    remoteCandidateProtocol:
+        candidateProtocol(pair.values['remoteCandidateId']),
+    relayProtocol: relayProtocol,
+    jitterBufferDelaySeconds: jitterBufferDelaySeconds,
+    jitterBufferEmittedCount: jitterBufferEmittedCount,
+    echoReturnLoss: echoReturnLoss,
+    echoReturnLossEnhancement: echoReturnLossEnhancement,
   );
 }
 
@@ -213,12 +315,36 @@ final class CallQualityMonitor {
         .map((s) => s.codecs)
         .lastWhere((c) => c.isNotEmpty, orElse: () => const [])
         .join('/');
+    // jitter buffer 平均延迟：取最后一个有值的抽样（累计量不可跨抽样累加）。
+    final jitterBuffer = samples
+        .map((s) => s.averageJitterBufferDelayMs)
+        .lastWhere((value) => value != null, orElse: () => null);
+    // AEC/回声指标：平台提供时取最后一个非空值。
+    final erl = samples
+        .map((s) => s.echoReturnLoss)
+        .lastWhere((value) => value != null, orElse: () => null);
+    final erle = samples
+        .map((s) => s.echoReturnLossEnhancement)
+        .lastWhere((value) => value != null, orElse: () => null);
+    final protocols = samples
+        .map((s) => s.candidateProtocolText)
+        .lastWhere((value) => value != '-', orElse: () => '-');
+    final pathText = samples.any((s) => s.usesTurn)
+        ? 'relay'
+        : (samples.any((s) =>
+                s.localCandidateType != null || s.remoteCandidateType != null)
+            ? 'direct'
+            : '-');
     String fmt(double? value) => value == null ? '-' : value.toStringAsFixed(1);
     return '[chatflow/callquality] summary samples=${samples.length} '
         'turn=${turnUsed ? 'used' : 'not-used'} '
+        'path=$pathText '
         'codec=${codecText.isEmpty ? '-' : codecText} '
+        'protocol=$protocols '
         'availOut=${fmt(availOutKbps)}kbps '
         'conceal=$concealPeak '
+        'jitterBuffer=${fmt(jitterBuffer)}ms '
+        'erl=${fmt(erl)}dB erle=${fmt(erle)}dB '
         'rttAvg=${fmt(rtts.isEmpty ? null : rtts.reduce((a, b) => a + b) / rtts.length)}ms '
         'jitterMax=${fmt(jitters.isEmpty ? null : jitters.reduce((a, b) => a > b ? a : b))}ms '
         'lost=$lost/${received + lost}'

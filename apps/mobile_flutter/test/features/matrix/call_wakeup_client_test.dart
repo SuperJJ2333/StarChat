@@ -6,14 +6,17 @@ import 'package:http/testing.dart';
 import 'package:liuhetong_mobile/features/matrix/call_wakeup_client.dart';
 
 void main() {
-  test('ended call cannot connect after delayed successful claim', () async {
+  test('Task G: a slow claim never delays the local media answer', () async {
     final claim = Completer<http.Response>();
     var current = true;
     var connected = 0;
     final client = CallWakeupClient(
       baseUrl: Uri.parse('https://example.test/ios-call/'),
       accessToken: () => 'session',
-      httpClient: MockClient((_) => claim.future),
+      httpClient: MockClient((request) async {
+        if (request.url.path.endsWith('/calls/answer')) return claim.future;
+        return http.Response('{}', 200);
+      }),
     );
     final pending = client.answerAndConnect(
         roomId: '!r:h',
@@ -22,13 +25,19 @@ void main() {
         connect: () async {
           connected++;
         });
+    // The media answer runs immediately; the HTTP round trip is still open.
+    await pending.timeout(const Duration(seconds: 2));
+    expect(connected, 1,
+        reason: 'wakeup HTTP 不是 media answer 的前置依赖（Task G）');
+    expect(claim.isCompleted, isFalse);
     current = false;
     claim.complete(http.Response('{}', 200));
-    await pending;
-    expect(connected, 0);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(connected, 1,
+        reason: '迟到的 HTTP 回包不得再次触发本地 answer');
   });
   test(
-      'failed claim never calls media answer, explicit legacy missing record may',
+      'Task G: an unavailable wakeup service never blocks an active Matrix answer',
       () async {
     var status = 503;
     var answered = 0;
@@ -36,16 +45,18 @@ void main() {
         baseUrl: Uri.parse('https://example.test/ios-call/'),
         accessToken: () => 'session',
         httpClient: MockClient((_) async => http.Response('{}', status)));
-    await expectLater(
-        client.answerAndConnect(
-            roomId: '!r:h',
-            callId: 'c',
-            isCurrent: () => true,
-            connect: () async {
-              answered++;
-            }),
-        throwsStateError);
-    expect(answered, 0);
+    // 503 = the helper service cannot answer, NOT a tombstone. The user already
+    // tapped answer on this verified session, so media setup must proceed.
+    await client.answerAndConnect(
+        roomId: '!r:h',
+        callId: 'c',
+        isCurrent: () => true,
+        connect: () async {
+          answered++;
+        });
+    expect(answered, 1, reason: 'unavailable 不得阻断已校验会话的接听');
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    // A legacy client with no wake record at all also answers normally.
     status = 404;
     await client.answerAndConnect(
         roomId: '!r:h',
@@ -54,7 +65,7 @@ void main() {
         connect: () async {
           answered++;
         });
-    expect(answered, 1);
+    expect(answered, 2);
   });
   test('old client retains its original credential when session getter changes',
       () async {

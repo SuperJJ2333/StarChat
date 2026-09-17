@@ -146,6 +146,9 @@ final class _UserAvatarState extends State<UserAvatar> {
         width: widget.size,
         height: widget.size,
         child: provider == null
+            // No avatar URL at all: nothing is pending, so show the stable
+            // initials immediately (Task L: the call waiting screen must never
+            // render an empty circle).
             ? _fallback()
             : Image(
                 key: ValueKey((widget.fallbackSeed, _imageEpoch)),
@@ -181,9 +184,12 @@ final class _UserAvatarState extends State<UserAvatar> {
                       ],
                     );
                   }
-                  // Nothing cached yet: transparent placeholder until the
-                  // custom avatar decodes (fallback only appears on error),
-                  // so users never see a default-avatar flash.
+                  // A network avatar is pending and nothing is retained yet.
+                  // Keep the placeholder transparent: the test-enforced
+                  // product rule is that a *pending* remote avatar must never
+                  // flash a default/initial avatar first. Call sites that must
+                  // never show an empty circle (the call screen) resolve an
+                  // identity up front, so they do not land here.
                   return const SizedBox.expand();
                 },
                 errorBuilder: (_, error, stackTrace) {

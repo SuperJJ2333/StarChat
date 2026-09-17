@@ -115,3 +115,29 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
 - Regression: `test/features/matrix/sdk_history_fragment_test.dart` holds a
   real backward HTTP request, confirms a concurrent forward call emits no
   second request, then confirms the explicit retry succeeds after release.
+
+2026-09-17 ICE candidate flush latency:
+
+- New `lib/src/voip/utils/candidate_send_queue.dart` owns the local candidate
+  batching for one `CallSession`; `lib/src/voip/call_session.dart` hands
+  `pc.onIceCandidate` to it and wires the invite/answer, gathering-complete and
+  teardown transitions. MSC2746 has no trickle ICE, so candidates are still
+  coalesced into `m.call.candidates` events, but the first batch after
+  `m.call.invite` / `m.call.answer` now leaves after
+  `CallTimeouts.firstCandidateFlush` (150 ms) instead of the previous
+  unconditional 2000 ms (outgoing) / 500 ms (incoming) wait, which sat on the
+  `answerSent -> iceConnected` critical path. Later batches use
+  `CallTimeouts.candidateBatchWindow`; `iceGatheringState == complete` flushes
+  immediately and cancels the (previously uncancellable) 3 s gathering
+  fallback. The `500 ms * 2^tries` retry backoff and the
+  `tries > 5 -> hangup(iceTimeout)` bound are unchanged, and a failed batch no
+  longer loses its candidates. Pending timers are cancelled in `cleanUp()`,
+  on `kEnded`, and when a peer connection is prepared for a replacement call.
+  SDP/answer/negotiate payloads are unchanged.
+- Regression: `test/features/matrix/call_candidate_flush_test.dart` drives the
+  real `CallSession` signalling path with `fake_async` and faked transport/peer
+  edges (first-batch latency, coalescing, pre-invite queueing, gathering
+  complete, ended/replaced call, `iceTimeout` give-up) plus the extracted
+  `CandidateSendQueue` unit (backoff, give-up bound, dispose, cross-call
+  generation, and a negative control proving the assertion detects the old
+  2000 ms delay).

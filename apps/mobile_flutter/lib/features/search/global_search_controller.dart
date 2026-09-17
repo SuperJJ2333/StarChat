@@ -4,27 +4,35 @@ import 'package:flutter/foundation.dart';
 
 import 'global_search_index.dart';
 import 'global_search_models.dart';
+import 'local_message_search_repository.dart';
 
 /// 全局搜索查询生命周期（Task B）：
 /// 200~300ms 防抖、query generation、取消、stale 结果抑制、章节限量
 /// （首页每节最多 [sectionLimit] 条 + 「更多…」入口）。
 ///
 /// 安全边界：联系人来自本机身份缓存投影，房间来自本机会话快照，
-/// 聊天记录来自 [GlobalSearchIndex]（本机已解密内容）。控制器**不发起任何
-/// Business API 请求**，因此查询词与明文都不出设备。
+/// 聊天记录来自 [GlobalSearchIndex]（本机已解密内容；有 [repository] 时
+/// 走该账号维度的本机历史索引）。控制器**不发起任何请求**，
+/// 因此查询词与明文都不出设备。
 final class GlobalSearchController extends ChangeNotifier {
   GlobalSearchController({
     required this.loadContacts,
     required this.loadRooms,
     required this.index,
+    this.repository,
     this.debounce = const Duration(milliseconds: 250),
     this.sectionLimit = 3,
     this.hitLimit = 200,
-  });
+  }) {
+    repository?.addListener(_onLocalHistoryChanged);
+  }
 
   final Future<List<GlobalSearchContactResult>> Function() loadContacts;
   final Future<List<GlobalSearchRoomResult>> Function() loadRooms;
   final GlobalSearchIndex index;
+
+  /// 账号维度的本机历史仓库；提供时聊天记录检索走它（账号隔离 + 本机库回填）。
+  final LocalMessageSearchRepository? repository;
   final Duration debounce;
   final int sectionLimit;
   final int hitLimit;
@@ -37,6 +45,15 @@ final class GlobalSearchController extends ChangeNotifier {
   int _epoch = 0;
   Timer? _timer;
   bool _disposed = false;
+
+  /// 本机历史索引被回填/增量更新时，用当前查询重新出结果。
+  void _onLocalHistoryChanged() {
+    if (_disposed || isBlank) return;
+    unawaited(refresh());
+  }
+
+  /// 聊天记录是否来自账号维度的本机历史仓库（否则是本会话共享索引）。
+  bool get searchesLocalHistoryRepository => repository != null;
 
   /// 空查询：页面保持干净（不显示任何结果）。
   bool get isBlank => _query.trim().isEmpty;
@@ -97,7 +114,10 @@ final class GlobalSearchController extends ChangeNotifier {
       final rooms = await loadRooms();
       if (epoch != _epoch || _disposed) return;
       final needle = _query.trim().toLowerCase();
-      final hits = index.search(needle, limit: hitLimit);
+      final activeRepository = repository;
+      final hits = activeRepository == null
+          ? index.search(needle, limit: hitLimit)
+          : activeRepository.search(needle, limit: hitLimit);
       results = GlobalSearchResults(
         contacts: [
           for (final contact in contacts)
@@ -133,6 +153,7 @@ final class GlobalSearchController extends ChangeNotifier {
     _disposed = true;
     _timer?.cancel();
     _timer = null;
+    repository?.removeListener(_onLocalHistoryChanged);
     super.dispose();
   }
 }

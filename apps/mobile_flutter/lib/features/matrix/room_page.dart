@@ -128,7 +128,7 @@ import '../finance/finance_message_entry.dart';
 import '../finance/finance_message_presentation.dart';
 import 'media_message_access_policy.dart';
 import 'room_media_gallery_projection.dart';
-import '../search/global_search_index.dart';
+import '../search/local_message_search_repository.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
 /// The local account must be present in that snapshot; callers must not infer
@@ -4100,29 +4100,31 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   /// 把本机已解密、用户可见的消息投影进全局搜索索引（device-side only：
   /// 不落盘、不上传；闪照/撤回/空白正文永不进入）。
+  ///
+  /// Task B：写入账号维度的 [LocalMessageSearchRepository]（默认**合并**，
+  /// 不再按房间覆盖式截断），因此回填来的更早历史不会被当前时间线丢掉。
   void _recordGlobalSearchIndex() {
     final timeline = controller;
     if (timeline == null) return;
-    GlobalSearchIndex.shared.recordRoom(
-      roomId: roomInfo.id,
-      roomName: roomInfo.name,
-      isGroup: isGroup,
-      roomAvatarSeed: roomInfo.id,
-      messages: [
-        for (final message in timeline.allMessages)
-          if (!message.isRecalled &&
-              !message.isFlashPhoto &&
-              message.text.trim().isNotEmpty)
-            GlobalSearchMessageRecord(
-              eventId: message.id,
-              senderId: message.senderId,
-              senderName: _senderDisplayName(message),
-              timestamp: message.timestamp,
-              body: message.text,
-              senderIsSelf: message.isOwn,
-            ),
-      ],
-    );
+    LocalMessageSearchRepository.shared.recordRoomMessages([
+      for (final message in timeline.allMessages)
+        if (!message.isRecalled &&
+            !message.isFlashPhoto &&
+            message.text.trim().isNotEmpty)
+          LocalSearchMessage(
+            eventId: message.id,
+            senderId: message.senderId,
+            senderName: _senderDisplayName(message),
+            timestamp: message.timestamp,
+            body: message.text,
+            roomId: roomInfo.id,
+            roomName: roomInfo.name,
+            isGroup: isGroup,
+            senderIsSelf: message.isOwn,
+            roomAvatarSeed: roomInfo.id,
+            isFlashPhoto: message.isFlashPhoto,
+          ),
+    ]);
   }
 
   @override

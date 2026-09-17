@@ -11,6 +11,7 @@ import 'package:matrix/src/utils/cached_stream_controller.dart';
 import 'package:matrix/src/utils/crypto/crypto.dart';
 import 'package:matrix/src/voip/models/call_membership.dart';
 import 'package:matrix/src/voip/models/call_options.dart';
+import 'package:matrix/src/voip/models/audio_route_sink.dart';
 import 'package:matrix/src/voip/models/voip_id.dart';
 import 'package:matrix/src/voip/utils/stream_helper.dart';
 
@@ -48,6 +49,10 @@ class VoIP {
   final WebRTCDelegate delegate;
   final StreamController<GroupCallSession> onIncomingGroupCall =
       StreamController();
+
+  /// ChatFlow (Task I): optional hook so the application can own audio output
+  /// routing. `CallSession` never re-derives speaker state from the call type.
+  AudioRouteSink? audioRouteSink;
 
   CallParticipant? get localParticipant => client.isLogged()
       ? CallParticipant(

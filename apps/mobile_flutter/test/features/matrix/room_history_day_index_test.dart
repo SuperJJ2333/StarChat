@@ -19,10 +19,11 @@ void main() {
       expect(m.contains(DateTime(2026, 9, 30, 23, 59)), isTrue);
       expect(m.contains(DateTime(2026, 10, 1)), isFalse);
       expect(const CalendarMonth(2026, 2).daysInMonth, 28);
-      expect(const CalendarMonth(2024, 2).daysInMonth, 29,
-          reason: '闰年不得算错');
-      expect(CalendarMonth.of(DateTime(2026, 9, 17)), const CalendarMonth(2026, 9));
-      expect(const CalendarMonth(2026, 9).compareTo(const CalendarMonth(2026, 8)),
+      expect(const CalendarMonth(2024, 2).daysInMonth, 29, reason: '闰年不得算错');
+      expect(CalendarMonth.of(DateTime(2026, 9, 17)),
+          const CalendarMonth(2026, 9));
+      expect(
+          const CalendarMonth(2026, 9).compareTo(const CalendarMonth(2026, 8)),
           1);
     });
   });

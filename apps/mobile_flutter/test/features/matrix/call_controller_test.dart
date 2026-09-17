@@ -6,6 +6,8 @@ import 'package:liuhetong_mobile/features/matrix/call_alerts.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/call_diagnostics.dart';
 
+import 'call_backend_test_defaults.dart';
+
 final class FakeCallPermissions implements CallPermissionGateway {
   bool allowed = true;
   int requests = 0;
@@ -54,7 +56,7 @@ final class _NoopDriver implements CallAlertDriver {
   Future<void> vibrate() async {}
 }
 
-base class FakeCallBackend implements CallBackend {
+base class FakeCallBackend with CallBackendTestDefaults implements CallBackend {
   final events = StreamController<CallBackendEvent>.broadcast();
   bool safeRoom = true;
   bool activeSession = true;
@@ -71,6 +73,10 @@ base class FakeCallBackend implements CallBackend {
   Stream<CallBackendEvent> get callEvents => events.stream;
   @override
   bool get hasActiveSession => activeSession;
+
+  /// Task F：拨出验证的单一来源必须与 [safeRoom] 一致。
+  @override
+  bool get fakeSafeRoom => safeRoom;
   @override
   Future<bool> isEncryptedDirectRoom(
           String roomId, String matrixUserId) async =>

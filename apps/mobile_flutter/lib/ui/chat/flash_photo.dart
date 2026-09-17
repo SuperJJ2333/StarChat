@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/matrix/screen_capture_protection.dart';
@@ -18,11 +18,20 @@ import '../../features/matrix/screen_capture_protection.dart';
 /// 原图仅通过端到端加密事件传输；本组件不提供保存/转发入口。
 /// 明确边界：无法阻止另一台设备拍摄屏幕、root/越狱或系统级 hook。
 
-/// 阅后即焚标记（按账号 + 事件 ID 持久化；上限防无限增长）。
+/// 阅后即焚标记（按账号 + 事件 ID 持久化）。
+///
+/// **安全不变量**：标记一经写入**绝不因容量原因淘汰**。闪照一旦在本设备销毁，
+/// 只要该消息事件仍存在于本地，就永远不能再被 reveal。旧实现有
+/// `_maxEntries = 500` 的“最早一条淘汰”，超过 500 条后最早那批已销毁的闪照会
+/// 重新变成「未查看」并可被再次打开——这对阅后即焚是不可接受的 fail-open。
+///
+/// 存储治理只跟随**真实生命周期**（不是计数）：
+/// - [dropForEventIds]：消息被永久删除 / 房间本地历史被清空时，按事件 ID 移除；
+/// - [clear] / [clearAccount]：账号登出 / 账号数据重置时清空。
+/// 仅存事件 ID（不透明元数据），不含任何明文或媒体；按账号隔离（key 前缀）。
 final class FlashPhotoViewedStore {
   FlashPhotoViewedStore._(this._prefs, this._key);
 
-  static const _maxEntries = 500;
   static const _prefix = 'flash-viewed';
 
   final SharedPreferences _prefs;
@@ -30,22 +39,58 @@ final class FlashPhotoViewedStore {
   final Set<String> _viewed = <String>{};
   final _listeners = <VoidCallback>{};
 
+  /// 持久化 key（`flash-viewed:<accountKey>`），登出清理路径复用。
+  static String keyFor(String accountKey) => '$_prefix:$accountKey';
+
   static Future<FlashPhotoViewedStore> load(String accountKey) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = '$_prefix:$accountKey';
+    final key = keyFor(accountKey);
     final store = FlashPhotoViewedStore._(prefs, key);
     store._viewed.addAll(prefs.getStringList(key) ?? const <String>[]);
     return store;
   }
 
+  /// 账号登出/账号数据重置：不必先加载实例即可清空该账号的全部标记。
+  static Future<void> clearAccount(String accountKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(keyFor(accountKey));
+  }
+
   bool isViewed(String eventId) => _viewed.contains(eventId);
+
+  /// 已记录标记数（仅测试观察，用于证明不存在容量淘汰）。
+  @visibleForTesting
+  int get debugCount => _viewed.length;
 
   void markViewed(String eventId) {
     if (!_viewed.add(eventId)) return;
-    if (_viewed.length > _maxEntries) {
-      _viewed.remove(_viewed.first);
+    _persist();
+  }
+
+  /// 真实生命周期清理：消息被永久删除 / 房间本地历史被清空时调用。
+  ///
+  /// **不得**用于容量控制（那正是本 store 被移除的 fail-open 行为）。
+  void dropForEventIds(Iterable<String> eventIds) {
+    var changed = false;
+    for (final eventId in eventIds) {
+      if (_viewed.remove(eventId)) changed = true;
     }
+    if (changed) _persist();
+  }
+
+  /// 账号登出/重置：清空本账号全部标记（持久层一并移除）。
+  Future<void> clear() async {
+    if (_viewed.isNotEmpty) _viewed.clear();
+    await _prefs.remove(_key);
+    _notify();
+  }
+
+  void _persist() {
     _prefs.setStringList(_key, _viewed.toList(growable: false));
+    _notify();
+  }
+
+  void _notify() {
     for (final listener in _listeners.toList(growable: false)) {
       listener();
     }
@@ -272,13 +317,39 @@ final class FlashWatermark extends StatelessWidget {
   }
 }
 
+/// 查看器内部状态的只读观察面（供测试断言；不暴露字节内容）。
+abstract interface class FlashViewerDebugState {
+  /// 是否仍持有原图字节引用——销毁之后必须为 `false`。
+  bool get debugHasOriginalBytes;
+  bool get debugRevealed;
+  bool get debugDestroyed;
+
+  /// 异步代际计数：destroy/dispose 递增，过期结果必须被丢弃。
+  int get debugGeneration;
+
+  /// 销毁次数与首次销毁原因（证明“唯一销毁路径 + 恰好一次”）。
+  int get debugDestroyCount;
+  String? get debugDestroyReason;
+}
+
+/// 显式安全事件入口：宿主/安全模块可主动要求销毁当前闪照。
+///
+/// 与截图、录屏/镜像等信号**完全等价**：走同一条唯一销毁路径，不会二次回调。
+abstract interface class FlashViewerSecuritySink {
+  void reportSecurityEvent();
+}
+
 /// 闪照查看页：马赛克 → 长按 3 秒原图（带水印）→ 销毁。
 ///
 /// 安全行为：
 /// - 进入即申请安全窗口租约（Android FLAG_SECURE 在用户长按之前就已开启）；
+///   申请是异步的，因此 reveal 还要求 [ScreenCaptureProtection.readiness]
+///   为 `ready`——就绪之前长按无效（不会出现“先显示、后开启安全窗口”的空窗）；
 /// - iOS 录屏/镜像进行中：禁止 reveal，长按无效并提示；
-/// - reveal 期间检测到开始录屏/镜像、系统截图（事后信号）或应用退到后台：
-///   立即隐藏原图、取消倒计时、标记已查看并销毁，且不可恢复。
+/// - 捕获状态 `unknown`（快照调用失败且未收到事件）同样 fail closed；
+/// - 所有销毁入口（倒计时到期、提前松手、长按取消、截图、开始录屏/镜像、
+///   退到后台、显式安全事件、原图加载失败）统一走 [_destroyFlash]，它必须
+///   释放原图字节引用（见 [FlashPhotoViewerPageState.debugHasOriginalBytes]）。
 final class FlashPhotoViewerPage extends StatefulWidget {
   const FlashPhotoViewerPage(
       {super.key,
@@ -295,76 +366,148 @@ final class FlashPhotoViewerPage extends StatefulWidget {
   final ScreenCaptureProtection? protection;
 
   @override
-  State<FlashPhotoViewerPage> createState() => _FlashPhotoViewerPageState();
+  FlashPhotoViewerPageState createState() => FlashPhotoViewerPageState();
 }
 
-final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
-    with WidgetsBindingObserver {
+final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
+    with WidgetsBindingObserver
+    implements FlashViewerDebugState, FlashViewerSecuritySink {
   Uint8List? _bytes;
   bool _revealed = false;
   bool _destroyed = false;
   Duration _remaining = FlashPhotoViewerPage.viewDuration;
   Timer? _countdown;
-  ScreenCaptureProtection get _protection =>
-      widget.protection ?? ScreenCaptureProtection.instance;
   ScreenCaptureLease? _lease;
   StreamSubscription<void>? _screenshotSubscription;
   int _watermarkPhase = 0;
+
+  /// 异步代际：destroy/dispose 时递增。在途的 `loadOriginal()` / 租约申请
+  /// 返回后若代际已变（或已卸载/已销毁），结果**立即丢弃**，绝不 setState。
+  int _generation = 0;
+  int _destroyCount = 0;
+  String? _destroyReason;
+
+  ScreenCaptureProtection get _protection =>
+      widget.protection ?? ScreenCaptureProtection.instance;
+
+  ScreenProtectionReadiness get _protectionReadiness =>
+      _protection.readiness.value;
+  ScreenCaptureState get _captureState => _protection.captureState.value;
+
+  /// reveal 的**唯一**前置条件：安全窗口 `ready` + 捕获状态**已知**且未在
+  /// 录屏/镜像 + 未销毁 + 原图已就绪。`initializing`/`failed`/`unknown`
+  /// 一律 fail closed。
+  bool get _canReveal =>
+      !_destroyed &&
+      _bytes != null &&
+      _protectionReadiness == ScreenProtectionReadiness.ready &&
+      _captureState == ScreenCaptureState.inactive;
+
+  @override
+  @visibleForTesting
+  bool get debugHasOriginalBytes => _bytes != null;
+
+  @override
+  @visibleForTesting
+  bool get debugRevealed => _revealed;
+
+  @override
+  @visibleForTesting
+  bool get debugDestroyed => _destroyed;
+
+  @override
+  @visibleForTesting
+  int get debugGeneration => _generation;
+
+  @override
+  @visibleForTesting
+  int get debugDestroyCount => _destroyCount;
+
+  @override
+  @visibleForTesting
+  String? get debugDestroyReason => _destroyReason;
+
+  /// 显式安全事件（宿主/安全模块上报）：与截图/录屏信号等价，
+  /// 走唯一销毁路径，最多触发一次 `onDestroyed`。
+  @override
+  void reportSecurityEvent() => _destroyFlash(reason: 'security-event');
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // 必须在任何 reveal 之前就把安全窗口打开（不等长按）。
-    _acquireLease();
-    _protection.captureActive.addListener(_captureChanged);
+    // 必须在任何 reveal 之前就把安全窗口打开（不等长按）。readiness 未
+    // `ready` 之前 _canReveal 为 false，长按不会 reveal。
+    unawaited(_acquireLease());
+    _protection.readiness.addListener(_protectionChanged);
+    _protection.captureState.addListener(_protectionChanged);
     _screenshotSubscription = _protection.screenshots.listen((_) {
-      _destroyForCapture();
+      // iOS：userDidTakeScreenshot 在截屏完成之后到达——事后销毁。
+      _destroyFlash(reason: 'screenshot');
     });
-    _load();
+    unawaited(_load());
   }
 
   Future<void> _acquireLease() async {
-    try {
-      final lease = await _protection.acquire();
-      if (!mounted) {
-        await lease.release();
-        return;
-      }
-      _lease = lease;
-    } catch (_) {
-      // 平台不支持时不阻断查看流程（Android 无 Google Play 服务等场景）。
-    }
-  }
-
-  void _captureChanged() {
-    if (!mounted) return;
-    if (_protection.captureActive.value) {
-      _destroyForCapture();
+    final generation = _generation;
+    // acquire() 自身不抛：平台失败会体现在 readiness == failed（fail closed）。
+    final lease = await _protection.acquire();
+    // 过期/已销毁的租约立即释放，绝不挂到一个已失效的查看器上。
+    if (!mounted || _generation != generation || _destroyed) {
+      await lease.release();
       return;
     }
-    // 录屏/镜像结束：刷新提示与长按可用性（若已销毁则不可恢复）。
+    _lease = lease;
+    if (mounted) setState(() {});
+  }
+
+  void _protectionChanged() {
+    if (!mounted) return;
+    // 只有「已经 reveal」才会因为捕获状态变化而销毁：未 reveal 时正在录屏
+    // 只是禁止 reveal（长按无效 + 明确提示），录屏结束后仍可正常查看，
+    // 不得把闪照误标记为已销毁。
+    if (_revealed && !_canReveal) {
+      _destroyFlash(
+          reason: _captureState == ScreenCaptureState.active
+              ? 'capture-active'
+              : 'protection-not-ready');
+      return;
+    }
+    // 录屏结束 / 就绪完成：刷新提示与长按可用性（已销毁则不可恢复）。
     setState(() {});
   }
 
-  /// 录屏/镜像开始、系统截图（事后）、退到后台：立即销毁，绝不等倒计时。
-  void _destroyForCapture() {
-    if (!mounted || _destroyed) return;
+  /// **唯一**销毁路径。所有触发点都必须调用它：
+  /// 3 秒倒计时到期、提前松手（`onLongPressEnd`）、`onLongPressCancel`、
+  /// 截图信号、开始录屏/镜像、退到后台/失去焦点、显式安全事件、
+  /// 原图加载失败（`notify: false`，用户没看到就不算“已查看”）。
+  ///
+  /// 保证：
+  /// - 取消倒计时并把 `_countdown` 置空；
+  /// - `_revealed = false`、`_destroyed = true`；
+  /// - `_bytes = null`（释放原图引用；Dart 不保证物理清零）；
+  /// - 递增异步代际（在途结果作废）；
+  /// - `widget.onDestroyed` **最多调用一次**（重复触发直接返回）。
+  void _destroyFlash({required String reason, bool notify = true}) {
+    if (_destroyed) return;
     _countdown?.cancel();
     _countdown = null;
-    setState(() {
-      _revealed = false;
-      _destroyed = true;
-      _bytes = null; // 释放 original 引用（Dart 不保证物理清零）。
-    });
-    widget.onDestroyed?.call();
+    _generation++;
+    _destroyed = true;
+    _revealed = false;
+    _bytes = null;
+    _destroyCount++;
+    _destroyReason ??= reason;
+    if (!mounted) return;
+    setState(() {});
+    if (notify) widget.onDestroyed?.call();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 安全优先：reveal 状态下切后台/失去焦点立即销毁，回前台不自动恢复。
     if (state != AppLifecycleState.resumed) {
-      if (_revealed) _destroyForCapture();
+      if (_revealed) _destroyFlash(reason: 'background');
       return;
     }
     // 回前台：Activity/场景重建可能丢过 FLAG_SECURE，重申安全窗口。
@@ -372,18 +515,20 @@ final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
   }
 
   Future<void> _load() async {
+    final generation = _generation;
     try {
       final bytes = await widget.loadOriginal();
-      if (!mounted || _destroyed) return;
+      // 过期结果（代际已变 / 已销毁 / 已卸载）：立即丢弃引用，绝不 setState。
+      if (!mounted || _destroyed || _generation != generation) return;
       setState(() => _bytes = bytes);
     } catch (_) {
-      if (mounted) setState(() => _destroyed = true);
+      if (!mounted || _destroyed || _generation != generation) return;
+      _destroyFlash(reason: 'load-error', notify: false);
     }
   }
 
   void _startReveal() {
-    if (_destroyed || _revealed || _bytes == null) return;
-    if (_protection.captureActive.value) return; // 录屏中禁止 reveal
+    if (_revealed || !_canReveal) return;
     setState(() {
       _revealed = true;
       _remaining = FlashPhotoViewerPage.viewDuration;
@@ -394,38 +539,47 @@ final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
     const tick = Duration(milliseconds: 100);
     _countdown = Timer.periodic(tick, (timer) {
       elapsedMs += tick.inMilliseconds;
-      if (!mounted) return;
-      setState(() => _remaining = FlashPhotoViewerPage.viewDuration -
-          Duration(milliseconds: elapsedMs));
-      if (elapsedMs >= FlashPhotoViewerPage.viewDuration.inMilliseconds) {
-        _stopReveal();
+      if (!mounted || _destroyed || !_revealed) return;
+      final remaining =
+          FlashPhotoViewerPage.viewDuration - Duration(milliseconds: elapsedMs);
+      if (remaining <= Duration.zero) {
+        _destroyFlash(reason: 'timeout');
+        return;
       }
+      setState(() => _remaining = remaining);
     });
-  }
-
-  void _stopReveal() {
-    _countdown?.cancel();
-    _countdown = null;
-    if (!mounted) return;
-    final wasRevealed = _revealed || _destroyed == false;
-    setState(() {
-      _revealed = false;
-      _destroyed = true;
-    });
-    if (wasRevealed) widget.onDestroyed?.call();
   }
 
   @override
   void dispose() {
+    // 在途 load/lease 结果一律作废，并释放原图引用。
+    _generation++;
+    _bytes = null;
+    _revealed = false;
+    _destroyed = true;
+    _countdown?.cancel();
+    _countdown = null;
     WidgetsBinding.instance.removeObserver(this);
-    _protection.captureActive.removeListener(_captureChanged);
+    _protection.readiness.removeListener(_protectionChanged);
+    _protection.captureState.removeListener(_protectionChanged);
     _screenshotSubscription?.cancel();
     _screenshotSubscription = null;
-    _countdown?.cancel();
-    unawaited(_lease?.release());
+    final lease = _lease;
     _lease = null;
+    if (lease != null) unawaited(lease.release());
     super.dispose();
   }
+
+  /// 当前提示文案：不可 reveal 时给出**明确原因**（fail closed 不静默）。
+  String get _hintText => flashViewerHintText(
+        destroyed: _destroyed,
+        captureActive: _captureState == ScreenCaptureState.active,
+        protectionUnavailable:
+            _protectionReadiness == ScreenProtectionReadiness.failed,
+        protectionInitializing:
+            _protectionReadiness == ScreenProtectionReadiness.initializing,
+        captureUnknown: _captureState == ScreenCaptureState.unknown,
+      );
 
   @override
   Widget build(BuildContext context) => CupertinoPageScaffold(
@@ -437,16 +591,13 @@ final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => Navigator.pop(context),
-                // 录屏/镜像进行中或已销毁：长按无效（不 reveal）。
-                onLongPressStart: (_destroyed ||
-                        _protection.captureActive.value)
-                    ? null
-                    : (_) => _startReveal(),
+                // 保护未就绪 / 捕获状态未知 / 正在录屏 / 已销毁：长按无效。
+                onLongPressStart: _canReveal ? (_) => _startReveal() : null,
                 onLongPressEnd: (_) {
-                  if (_revealed) _stopReveal();
+                  if (_revealed) _destroyFlash(reason: 'release');
                 },
                 onLongPressCancel: () {
-                  if (_revealed) _stopReveal();
+                  if (_revealed) _destroyFlash(reason: 'cancel');
                 },
                 child: _destroyed
                     ? Center(
@@ -515,19 +666,17 @@ final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
                 bottom: 48,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0x661B1B1D),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Text(
-                      flashViewerHintText(
-                          destroyed: _destroyed,
-                          captureActive: _protection.captureActive.value),
-                      key: Key(_protection.captureActive.value
-                          ? 'flash-capture-blocked'
-                          : 'flash-hold-hint'),
+                      _hintText,
+                      key: Key(_canReveal
+                          ? 'flash-hold-hint'
+                          : 'flash-capture-blocked'),
                       style: const TextStyle(
                           fontSize: 12, color: CupertinoColors.systemGrey5),
                     ),
@@ -539,11 +688,25 @@ final class _FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
       );
 }
 
-/// 闪照查看页提示文案（可单测）：
-/// 正在录屏/镜像 → 明确不可查看；否则长按提示（3 秒）。
-String flashViewerHintText(
-    {required bool destroyed, required bool captureActive}) {
+/// 闪照查看页提示文案（可单测）。
+///
+/// 优先级：已销毁 → 安全保护不可用 → 安全保护启用中 → 正在录屏/镜像 →
+/// 捕获状态未知 → 长按提示（3 秒）。
+/// [protectionUnavailable]、[protectionInitializing]、[captureUnknown]
+/// 都表示「不可 reveal」，必须有明确文案，绝不静默继续显示原图。
+String flashViewerHintText({
+  required bool destroyed,
+  required bool captureActive,
+  bool protectionUnavailable = false,
+  bool protectionInitializing = false,
+  bool captureUnknown = false,
+}) {
   if (destroyed) return '闪照已销毁';
+  // Android：安全窗口（FLAG_SECURE）无法启用 → 明确告知能力不可用。
+  if (protectionUnavailable) return '当前设备无法启用闪照安全保护';
+  if (protectionInitializing) return '正在启用闪照安全保护，请稍候';
   if (captureActive) return '正在录屏或共享屏幕，无法查看闪照';
+  // unknown ≠ inactive：必须 fail closed。
+  if (captureUnknown) return '无法确认屏幕安全状态，暂不可查看';
   return '长按屏幕可查看 ${FlashPhotoViewerPage.viewDuration.inSeconds} 秒';
 }

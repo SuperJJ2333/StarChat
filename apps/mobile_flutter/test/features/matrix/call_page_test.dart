@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'call_backend_test_defaults.dart';
 import 'package:liuhetong_mobile/features/matrix/call_controller.dart';
 import 'package:liuhetong_mobile/features/matrix/call_page.dart';
 import 'package:liuhetong_mobile/ui/foundation/changliao_icons.dart';
@@ -11,7 +13,7 @@ final class _AllowedPermissions implements CallPermissionGateway {
   Future<bool> request({required bool video}) async => true;
 }
 
-final class _FakeCallBackend implements CallBackend {
+final class _FakeCallBackend with CallBackendTestDefaults {
   final events = StreamController<CallBackendEvent>.broadcast();
   int accepts = 0;
   int rejects = 0;
