@@ -64,6 +64,7 @@ import 'message_interaction_service.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
 import '../search/local_message_search_repository.dart';
+import '../../ui/chat/flash_photo.dart' show FlashPhotoViewedStore;
 
 const _maxFileSendBytes = 100 * 1024 * 1024;
 const _maxOutgoingVideoPosterBytes = 512 * 1024;
@@ -5541,6 +5542,10 @@ final class MatrixSdkE2eeClient
 
   String? _localPreferenceAccountIdToClear;
 
+  /// 闪照 tombstone 的账号 key 与 `RoomPage` 保持同源（`matrix:<userId>`）。
+  static String _flashViewedAccountKey(String matrixUserId) =>
+      'matrix:$matrixUserId';
+
   /// Destructively removes this device's Matrix session and encrypted store.
   /// Only a separately confirmed local-clear flow may call it.
   @override
@@ -5583,6 +5588,12 @@ final class MatrixSdkE2eeClient
       _clearFailed = true;
       if (_localPreferenceAccountIdToClear != null) {
         await MediaCache.clearAccount(_localPreferenceAccountIdToClear!);
+        // 本地加密库被整体删除 = 闪照消息本身不再存在于设备上。
+        // 这是 tombstone 唯一的账号级真实清理点：清空后重新登录不会因为
+        // 旧的「已查看」标记而误锁一条全新的闪照。
+        // 注意：普通登出（suspend）明确保留加密库，**不得**走这条路径。
+        await FlashPhotoViewedStore.clearAccount(
+            _flashViewedAccountKey(_localPreferenceAccountIdToClear!));
       }
       await clearLocalConversationPreferences(
           _localPreferenceAccountIdToClear, target);

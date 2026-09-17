@@ -8,6 +8,15 @@ import 'global_search_models.dart';
 /// 必须显著高于旧实现的 4000，否则本机已有的更早历史会被静默丢弃。
 const int kLocalSearchDefaultPerRoomLimit = 8000;
 
+/// 每处理多少个房间让出一次事件循环（资源边界，防止长同步段卡 UI）。
+const int kLocalSearchBatchRooms = 8;
+
+/// 单次回填默认允许索引的总记录数（内存/时间安全阀）。
+///
+/// 这不是产品语义上限：被它截断时 [LocalMessageSearchRepository
+/// .isBackfillComplete] 保持 false，后续调用会继续推进。
+const int kLocalSearchDefaultTotalRecordBudget = 200000;
+
 /// 一条**已经在本机解密完成、且用户可见**的本地聊天记录。
 ///
 /// 只承载文本正文与展示用 metadata：没有图片/视频/音频字节，没有 room key，
@@ -141,6 +150,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     GlobalSearchIndex? index,
     this.maxRooms = 200,
     this.defaultPerRoomLimit = kLocalSearchDefaultPerRoomLimit,
+    this.batchRooms = kLocalSearchBatchRooms,
+    this.defaultTotalRecordBudget = kLocalSearchDefaultTotalRecordBudget,
   })  : source = source ?? const UnavailableLocalHistorySource(),
         index = index ?? GlobalSearchIndex.shared;
 
@@ -155,16 +166,29 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   final int maxRooms;
   final int defaultPerRoomLimit;
 
+  /// 每处理多少个房间让出一次事件循环（避免长同步段卡住首屏/发送/通话）。
+  final int batchRooms;
+
+  /// 单次回填允许索引的总记录数（内存/时间安全阀；不是产品语义上限）。
+  final int defaultTotalRecordBudget;
+
   /// 本机只读历史源。账号切换时应替换为对应账号的本地库视图。
   LocalHistorySearchSource source;
 
   String? _accountKey;
-  bool _backfilled = false;
+  bool _backfillComplete = false;
+  bool _cancelRequested = false;
   Future<int>? _inFlight;
 
   /// 当前绑定的账号 key（通常是 Matrix userId）；未登录时为 null。
   String? get accountKey => _accountKey;
   bool get isAttached => _accountKey != null;
+
+  /// 是否已经**完整**扫过本机已有历史。
+  ///
+  /// 只有完整扫完才为 true；被房间上限/记录预算/取消/账号切换截断时为
+  /// false，因此后续 [ensureBackfilled] 仍会继续推进（历史不会被永久截断）。
+  bool get isBackfillComplete => _backfillComplete;
 
   /// 账号代次：切换/登出即推进；用于丢弃迟到的旧账号结果。
   int get accountEpoch => index.accountEpoch;
@@ -180,7 +204,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     }
     if (_accountKey == accountKey) return;
     _accountKey = accountKey;
-    _backfilled = false;
+    _backfillComplete = false;
+    _cancelRequested = false;
     _inFlight = null;
     index.clear();
     notifyListeners();
@@ -188,13 +213,20 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
 
   /// 从**本机加密库**回填历史索引；返回本次索引的记录条数。
   ///
+  /// 资源边界（本轮收口：绝不能阻塞 AppHome 首屏 / 登录 / 打开聊天 / 发消息 /
+  /// 通话等关键路径）：
   /// - 只调用注入的 [source]（本机读取），不产生任何网络请求；
-  /// - [perRoomLimit] 限制每个房间从本机库读取的条数（默认
-  ///   [defaultPerRoomLimit]，远高于旧的 4000 截断）；
-  /// - [maxRooms] 限制本次回填的房间数（默认 [maxRooms]）；
-  /// - 必须已 [attachAccount]；未绑定账号时返回 0 且不索引任何内容；
-  /// - 若回填期间账号发生切换，迟到的结果会被丢弃（代次校验）。
-  Future<int> backfillLocalHistory({int? perRoomLimit, int? maxRooms}) async {
+  /// - [perRoomLimit] 限制每个房间从本机库读取的条数；
+  /// - [maxRooms] 限制本次回填的房间数；
+  /// - [totalRecordBudget] 限制**本次**索引的总记录数（安全阀）；
+  /// - 每 [batchRooms] 个房间主动 `yield` 一次事件循环，避免长同步段卡住 UI；
+  /// - 被预算/取消/账号切换截断时**不**标记为已完成回填（[isBackfillComplete]
+  ///   保持 false），后续调用可以继续推进，历史不会被永久截断。
+  Future<int> backfillLocalHistory({
+    int? perRoomLimit,
+    int? maxRooms,
+    int? totalRecordBudget,
+  }) async {
     final account = _accountKey;
     if (account == null) return 0;
     final inFlight = _inFlight;
@@ -204,6 +236,7 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
       epoch: index.accountEpoch,
       limit: perRoomLimit ?? defaultPerRoomLimit,
       roomLimit: maxRooms ?? this.maxRooms,
+      budget: totalRecordBudget ?? defaultTotalRecordBudget,
     );
     _inFlight = future;
     try {
@@ -218,32 +251,66 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
     required int epoch,
     required int limit,
     required int roomLimit,
+    required int budget,
   }) async {
-    bool sameAccount() => epoch == index.accountEpoch && account == _accountKey;
+    bool sameAccount() =>
+        epoch == index.accountEpoch &&
+        account == _accountKey &&
+        !_cancelRequested;
 
     final roomIds = await source.localRoomIds();
     if (!sameAccount()) return 0;
+    // 本次回填开始的取消代次：只有取消发生在开始之后就放弃。
+    _cancelRequested = false;
     var indexed = 0;
     var roomsRead = 0;
+    var completed = true;
     for (final roomId in roomIds) {
       if (roomId.isEmpty) continue;
-      if (roomsRead >= roomLimit) break;
+      if (_cancelRequested || !sameAccount()) return indexed;
+      if (roomsRead >= roomLimit) {
+        completed = false; // 房间上限截断：还有房间未扫
+        break;
+      }
+      if (indexed >= budget) {
+        completed = false;
+        break;
+      }
       roomsRead++;
       final messages =
           await source.readRecentMessages(roomId: roomId, limit: limit);
-      if (!sameAccount()) return indexed; // 账号已切换：丢弃迟到结果
+      if (!sameAccount()) return indexed; // 账号已切换/已取消：丢弃迟到结果
       indexed += _ingest(messages, replace: false);
+      // 批次之间让出事件循环：本机库读取与正文投影可能很重，
+      // 长时间霸占会让首屏/发送/通话掉帧。
+      if (roomsRead % batchRooms == 0) await _yieldToEventLoop();
     }
     if (!sameAccount()) return indexed;
-    _backfilled = true;
+    // 只有真的扫完整个范围才认为「回填完成」——否则后续 ensureBackfilled
+    // 仍会继续推进，历史不会被永久截断。
+    if (completed) _backfillComplete = true;
     notifyListeners();
     return indexed;
   }
 
-  /// 幂等回填：每个账号最多执行一次（页面打开/首次搜索时调用即可）。
+  Future<void> _yieldToEventLoop() => Future<void>.delayed(Duration.zero);
+
+  /// 幂等回填：完成前可重复调用（每次推进一批）。
   Future<int> ensureBackfilled({int? perRoomLimit, int? maxRooms}) async {
-    if (_accountKey == null || _backfilled) return 0;
+    if (_accountKey == null || _backfillComplete) return 0;
     return backfillLocalHistory(perRoomLimit: perRoomLimit, maxRooms: maxRooms);
+  }
+
+  /// 显式取消当前回填（账号切换/登出/资源紧张时调用）。
+  ///
+  /// 语义：放弃**在途**回填并允许下次重新开始。已经索引的内容**保留**
+  /// （它仍然来自本机加密库，没有安全影响）；如需彻底清空请用 [clear]。
+  /// 在途结果由代次校验丢弃。
+  void cancelBackfill() {
+    _backfillComplete = false;
+    _inFlight = null;
+    _cancelRequested = true;
+    notifyListeners();
   }
 
   /// 增量投影（live sync / RoomPage 时间线）：与既有历史**合并**，不重读本机库。
@@ -264,7 +331,8 @@ final class LocalMessageSearchRepository extends ChangeNotifier {
   /// 登出/切号：清空并解绑。
   void clear() {
     _accountKey = null;
-    _backfilled = false;
+    _backfillComplete = false;
+    _cancelRequested = false;
     _inFlight = null;
     index.clear();
     notifyListeners();

@@ -34,6 +34,41 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /// 当前可用于**通信**的音频输出设备类型名（只读快照）。
+    ///
+    /// 返回类型名而非设备对象：Dart 侧只需要「有没有外设」，且绝不能拿到
+    /// 蓝牙名称或硬件地址。
+    /// - API 31+：`availableCommunicationDevices` 是通信路由的权威来源；
+    /// - 更低版本：回退到 `getDevices(GET_DEVICES_OUTPUTS)`（无法过滤
+    ///   communication 标记，但设备类型仍然准确，足够判断外设存在性）。
+    private fun communicationAudioDeviceTypes(): List<String> {
+        val audioManager = getSystemService(android.media.AudioManager::class.java)
+            ?: return emptyList()
+        val devices = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.availableCommunicationDevices
+        } else {
+            audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).toList()
+        }
+        val types = mutableListOf<String>()
+        for (device in devices) {
+            val name = when (device.type) {
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bluetooth"
+                android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bluetooth-a2dp"
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired-headset"
+                android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired-headphones"
+                android.media.AudioDeviceInfo.TYPE_USB_DEVICE -> "usb"
+                android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> "usb-headset"
+                android.media.AudioDeviceInfo.TYPE_BLE_HEADSET -> "bluetooth-ble"
+                android.media.AudioDeviceInfo.TYPE_HEARING_AID -> "hearing-aid"
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+                else -> "other"
+            }
+            if (!types.contains(name)) types.add(name)
+        }
+        return types
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // 原生推送桥。
@@ -315,8 +350,28 @@ class MainActivity : FlutterActivity() {
 
                 override fun onCancel(arguments: Any?) {}
             })
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/keepalive")
+        // 只读的音频路由观察通道（外设：蓝牙 / 有线耳机 / USB）。
+        // 边界：这里**只上报**当前是否存在外部通信音频设备；speaker/earpiece
+        // 策略的唯一 owner 是 Dart 侧 CallAudioRouteCoordinator，平台侧的通信
+        // 设备切换仍由 flutter_webrtc 的 AudioSwitch 负责，此处绝不另建一套
+        // setCommunicationDevice 状态机与它对抗。
+        // 隐私：只返回设备**类型名**，绝不返回蓝牙名称/硬件地址。
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/audio_route")
             .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "currentAudioRoute" -> {
+                        try {
+                            result.success(mapOf("devices" to communicationAudioDeviceTypes()))
+                        } catch (_: Exception) {
+                            // 通道可用但查询失败：上报不可识别载荷，Dart 侧保持
+                            // 上一次已知状态（绝不猜成「无外设」而抢路由）。
+                            result.success(null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "chatflow/keepalive")            .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "acquireWakeLocks" -> {
                         try {

@@ -79,10 +79,13 @@ final class CallAudioRouteCoordinator {
   /// （自动策略用），true 表示这次是用户选择，此后自动策略不再覆盖。
   /// 应用失败时抛出并保留旧的应用状态（由调用方回滚 UI）。
   Future<void> setSpeaker(bool value,
-      {CallMediaType? type, bool? markUserPreference}) async {
+      {CallMediaType? type,
+      bool? markUserPreference,
+      bool force = false}) async {
     if (type != null) _type = type;
     _speaker = value;
     _userPreference = markUserPreference ?? _userPreference;
+    if (force) _appliedSpeaker = null;
     await _apply(policy: value);
   }
 
@@ -97,21 +100,35 @@ final class CallAudioRouteCoordinator {
     // 策略不变：SDK 不再拥有路由，重建后不需要重新决策。
   }
 
-  /// 外部音频设备连接状态变化（蓝牙/有线耳机）。
+  /// 外部音频设备连接状态变化（蓝牙 / 有线耳机 / USB）。
   ///
-  /// 外部设备在场时语音不下发扬声器覆盖；设备断开后回到策略默认。
+  /// 由**只读**的平台观察者（`PlatformAudioRouteObserver`）驱动；本协调器
+  /// 仍然是唯一的 route authority。
+  ///
+  /// 语义：
+  /// - 有外设时自动策略**绝不**下发 `speaker=true`（不抢当前外设）；视频通话
+  ///   必须**显式**下发 `speaker=false` 把路由交还给系统；
+  /// - 外设拔出后回到策略默认（视频=扬声器、语音=听筒）；
+  /// - 用户显式选择（手动免提/听筒）优先于自动策略，插拔都不覆盖它。
   Future<void> setExternalRouteActive(bool active) async {
     if (_externalRouteActive == active) return;
     _externalRouteActive = active;
-    if (active) return;
-    if (_userPreference) {
-      await _apply(policy: _speaker);
-    }
+    // 外设变化会改变「自动默认」的结果，因此必须重新下发一次，
+    // 即使算出来的布尔值与上一次相同（平台侧需要一次显式交还）。
+    await _applyPolicy(force: true);
   }
 
   /// 用户未显式选择时才允许自动默认覆盖。
-  Future<void> _applyPolicy() =>
-      setSpeaker(_userPreference ? _speaker : _defaultSpeaker(_type));
+  ///
+  /// [force] 用于「策略输入变了但结果值可能相同」的场景（外设插拔）：强制
+  /// 重新下发，绕过「同值不重复调用」的缓存。
+  Future<void> _applyPolicy({bool force = false}) async {
+    if (force) _appliedSpeaker = null;
+    await setSpeaker(
+      _userPreference ? _speaker : _defaultSpeaker(_type),
+      force: force,
+    );
+  }
 
   /// 自动默认：视频免提、语音听筒。
   ///
@@ -126,8 +143,13 @@ final class CallAudioRouteCoordinator {
     await apply(policy);
     _appliedSpeaker = policy;
     assert(() {
-      debugPrint('[chatflow/audio-route] applied speaker=$policy '
-          'userPreference=$_userPreference external=$_externalRouteActive');
+      debugPrint(
+          '[chatflow/audio-route] platform=${defaultTargetPlatform.name} '
+          'requestedRoute=${policy ? 'speaker' : 'earpiece-or-external'} '
+          'appliedRoute=${policy ? 'speaker' : 'non-speaker'} '
+          'externalDevicePresent=$_externalRouteActive '
+          'userPreference=$_userPreference '
+          'reason=${_userPreference ? 'user-override' : 'auto-policy'}');
       return true;
     }());
   }

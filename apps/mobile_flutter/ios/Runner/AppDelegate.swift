@@ -38,6 +38,7 @@ import CallKit
     iosCalls.attach(messenger: messenger)
     secureSession.attach(messenger: messenger)
     configureScreenCaptureChannels(messenger: messenger)
+    configureAudioRouteChannel(messenger: messenger)
 
     FlutterMethodChannel(name: "chatflow/voice_audio_session", binaryMessenger: messenger)
       .setMethodCallHandler { [weak self] call, result in
@@ -213,6 +214,51 @@ import CallKit
   private var screenSecurityChannel: FlutterMethodChannel?
   private var screenCaptureSink: FlutterEventSink?
   private var captureObserversRegistered = false
+
+  /// 只读的音频路由观察通道（外设：蓝牙 / 有线耳机 / USB / AirPlay）。
+  ///
+  /// 边界：这里**只上报**当前是否存在外部音频输出设备，绝不调用
+  /// `overrideOutputAudioPort(.speaker)` 去抢 AirPods / 蓝牙路由——
+  /// 真实路由由 CallKit 与 AVAudioSession 负责，speaker/earpiece 策略的
+  /// 唯一 owner 是 Dart 侧 CallAudioRouteCoordinator。
+  /// 隐私：只返回端口**类型名**，不返回设备名称。
+  private var audioRouteChannel: FlutterMethodChannel?
+
+  private func configureAudioRouteChannel(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "chatflow/audio_route", binaryMessenger: messenger)
+    channel.setMethodCallHandler { call, result in
+      switch call.method {
+      case "currentAudioRoute":
+        result(["devices": self.currentAudioOutputPortTypes()])
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    audioRouteChannel = channel
+  }
+
+  /// 当前音频输出端口类型名（只读快照）。
+  private func currentAudioOutputPortTypes() -> [String] {
+    let session = AVAudioSession.sharedInstance()
+    var types: [String] = []
+    for output in session.currentRoute.outputs {
+      let name: String
+      switch output.portType {
+      case .bluetoothA2DP: name = "bluetooth-a2dp"
+      case .bluetoothLE: name = "bluetooth-ble"
+      case .bluetoothHFP: name = "bluetooth-sco"
+      case .headsetMic, .headphones: name = "wired-headphones"
+      case .usbAudio: name = "usb"
+      case .carAudio: name = "car"
+      case .airPlay: name = "airplay"
+      case .builtInSpeaker: name = "speaker"
+      case .builtInReceiver: name = "earpiece"
+      default: name = "other"
+      }
+      if !types.contains(name) { types.append(name) }
+    }
+    return types
+  }
 
   private func configureScreenCaptureChannels(messenger: FlutterBinaryMessenger) {
     // iOS 无 FLAG_SECURE 等价能力：acquire/release 为显式 no-op（保持 Dart

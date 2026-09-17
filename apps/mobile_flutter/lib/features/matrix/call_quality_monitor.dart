@@ -336,9 +336,20 @@ final class CallQualityMonitor {
             ? 'direct'
             : '-');
     String fmt(double? value) => value == null ? '-' : value.toStringAsFixed(1);
+    // 路径解读提示（只陈述**已观测事实**，不下质量结论、不据此结束通话）：
+    // `turn=not-used` 只表示「本通话未走中继」，不等于「网络差」——P2P 直连的
+    // 延迟通常更低。真正的风险是「需要中继却没有」（严格 NAT/CGNAT 可能完全
+    // 连不通）与「中继区域过远」；后者需结合 path + rtt 判断，且多区域 TURN
+    // 属于服务端基础设施。绝不用 turn 状态或 RTT 阈值直接结束通话。
+    final pathNote = switch (pathText) {
+      'relay' => 'pathNote=relayed-check-relay-region-against-rtt',
+      'direct' => 'pathNote=p2p-direct-no-relay-observed',
+      _ => 'pathNote=unknown',
+    };
     return '[chatflow/callquality] summary samples=${samples.length} '
         'turn=${turnUsed ? 'used' : 'not-used'} '
         'path=$pathText '
+        '$pathNote '
         'codec=${codecText.isEmpty ? '-' : codecText} '
         'protocol=$protocols '
         'availOut=${fmt(availOutKbps)}kbps '

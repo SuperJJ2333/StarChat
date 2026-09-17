@@ -58,6 +58,7 @@ import 'features/matrix/call_alerts.dart';
 import 'features/matrix/call_controller.dart';
 import 'features/search/local_message_search_repository.dart';
 import 'features/matrix/call_audio_route_coordinator.dart';
+import 'features/matrix/platform_audio_route_observer.dart';
 import 'features/matrix/call_identity_resolver.dart';
 import 'features/matrix/call_diagnostics.dart';
 import 'features/matrix/call_permissions.dart';
@@ -1225,12 +1226,27 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   /// 通话状态变化的业务钩子（UI 呈现全部在 CallUiManager）：
   /// 消息提醒抑制 + 主叫通话摘要。
+  /// 只读平台音频路由观察者（外设：蓝牙 / 有线耳机 / USB）。
+  ///
+  /// **不是**第二个 route owner：它只把平台真实的外设状态喂给
+  /// [callAudioRoute]；路由决策与下发仍由协调器独占。
+  PlatformAudioRouteObserver? _audioRouteObserver;
+
   void _onCallPhaseChangedForBusiness(CallPhase previous, CallPhase next) {
     final active = next == CallPhase.ringing ||
         next == CallPhase.requestingPermission ||
         next == CallPhase.connecting ||
         next == CallPhase.connected;
     notificationAppState.setCallActive(active);
+    // 只有通话期间才需要观察外设变化：插入/拔出耳机、蓝牙 SCO 连接都发生在
+    // 通话中，而已接通后的自动策略必须立刻让位给外设。
+    final observer = _audioRouteObserver ??=
+        PlatformAudioRouteObserver(route: callAudioRoute);
+    if (active) {
+      observer.start();
+    } else {
+      observer.stop();
+    }
     if (active) {
       unawaited(
           NotificationSystemHandle.coordinator?.cancelPushWakeNotification());
@@ -1777,6 +1793,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       _nativeCallControl?.setMethodCallHandler(null);
     }
     callWakeup.close();
+    // 平台路由观察者随通话资源一并停止（不持有 Timer 残留）。
+    _audioRouteObserver?.dispose();
+    _audioRouteObserver = null;
     // Task B：登出/资源关闭即清空本机搜索索引（账号命名空间隔离）。
     LocalMessageSearchRepository.shared.clear();
     await stop(() async {

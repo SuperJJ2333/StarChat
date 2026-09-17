@@ -2763,6 +2763,13 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     });
   }
 
+  /// 清空聊天记录（**软隐藏语义**）。
+  ///
+  /// 只写本机历史清除截止时间（cutoff）：Matrix 本地库里的事件**仍然存在**，
+  /// 重新同步后可能再次出现。因此这里**绝不能**清理闪照 tombstone——否则
+  /// 旧闪照会重新变成「未查看」并可再次打开（fail-open）。
+  /// tombstone 的真实清理点是本地加密库被整体删除（
+  /// `MatrixSdkE2eeClient.clearLocalChatData`）。
   Future<void> _clearLocalHistory() async {
     final store = hiddenEvents;
     if (store == null) return;
@@ -2935,7 +2942,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             () => controller!.loadAttachment(message.id),
           ),
           onDestroyed: () {
-            store.markViewed(message.id);
+            // 带上房间维度：将来「某房间本地历史被永久清除」时可以只清该房间。
+            store.markViewed(message.id, roomId: roomInfo.id);
             if (mounted) setState(() {});
           },
         ),

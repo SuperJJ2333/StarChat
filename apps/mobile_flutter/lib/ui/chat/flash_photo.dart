@@ -18,7 +18,7 @@ import '../../features/matrix/screen_capture_protection.dart';
 /// 原图仅通过端到端加密事件传输；本组件不提供保存/转发入口。
 /// 明确边界：无法阻止另一台设备拍摄屏幕、root/越狱或系统级 hook。
 
-/// 阅后即焚标记（按账号 + 事件 ID 持久化）。
+/// 阅后即焚标记（按账号 + 房间 + 事件 ID 持久化）。
 ///
 /// **安全不变量**：标记一经写入**绝不因容量原因淘汰**。闪照一旦在本设备销毁，
 /// 只要该消息事件仍存在于本地，就永远不能再被 reveal。旧实现有
@@ -26,13 +26,21 @@ import '../../features/matrix/screen_capture_protection.dart';
 /// 重新变成「未查看」并可被再次打开——这对阅后即焚是不可接受的 fail-open。
 ///
 /// 存储治理只跟随**真实生命周期**（不是计数）：
-/// - [dropForEventIds]：消息被永久删除 / 房间本地历史被清空时，按事件 ID 移除；
-/// - [clear] / [clearAccount]：账号登出 / 账号数据重置时清空。
-/// 仅存事件 ID（不透明元数据），不含任何明文或媒体；按账号隔离（key 前缀）。
+/// - [dropForEventIds]：单条消息在本地被**永久删除**时，按事件 ID 移除；
+/// - [clearRoom]：某房间的本地历史被**永久**清除时，只移除该房间的标记；
+/// - [clear] / [clearAccount]：该账号本地加密库被整体删除时清空。
+///
+/// **反向不变量**（同样必须遵守）：以下情况**不得**清理标记，否则旧事件重新
+/// 同步后会重新变成「未查看」并可再次打开（fail-open）：
+/// - 软隐藏 / 撤回展示 / `clearLocalHistory` 的 cutoff 语义（事件仍在本地库）；
+/// - 普通登出（[MatrixTokenLoginGateway.suspend] 明确保留加密库与本地历史）。
 final class FlashPhotoViewedStore {
   FlashPhotoViewedStore._(this._prefs, this._key);
 
   static const _prefix = 'flash-viewed';
+
+  /// 房间维度与事件 ID 的分隔符（U+0000 不会出现在 Matrix roomId/eventId 中）。
+  static const _roomSeparator = '\u0000';
 
   final SharedPreferences _prefs;
   final String _key;
@@ -56,26 +64,67 @@ final class FlashPhotoViewedStore {
     await prefs.remove(keyFor(accountKey));
   }
 
-  bool isViewed(String eventId) => _viewed.contains(eventId);
+  /// 是否已销毁。
+  ///
+  /// 同时匹配「房间维度」与「旧格式（仅 eventId）」两种条目，因此升级前写入
+  /// 的标记不会因为格式变化而失效（那会造成历史闪照复活）。
+  bool isViewed(String eventId) {
+    if (_viewed.contains(eventId)) return true;
+    final suffix = '$_roomSeparator$eventId';
+    for (final entry in _viewed) {
+      if (entry.endsWith(suffix)) return true;
+    }
+    return false;
+  }
 
   /// 已记录标记数（仅测试观察，用于证明不存在容量淘汰）。
   @visibleForTesting
   int get debugCount => _viewed.length;
 
-  void markViewed(String eventId) {
-    if (!_viewed.add(eventId)) return;
+  /// 记录已销毁。
+  ///
+  /// 传入 [roomId] 时会连同房间维度一起存储，使「某房间本地历史被永久清除」
+  /// 可以只清理该房间（[clearRoom]）而不误删其他房间。
+  void markViewed(String eventId, {String? roomId}) {
+    final key = roomId == null || roomId.isEmpty
+        ? eventId
+        : '$roomId$_roomSeparator$eventId';
+    if (!_viewed.add(key)) return;
     _persist();
   }
 
-  /// 真实生命周期清理：消息被永久删除 / 房间本地历史被清空时调用。
+  /// 真实生命周期清理：单条消息在本地被**永久删除**时调用。
   ///
-  /// **不得**用于容量控制（那正是本 store 被移除的 fail-open 行为）。
+  /// **不得**用于容量控制（那正是本 store 被移除的 fail-open 行为），也不得
+  /// 用于软隐藏/撤回（事件仍会重新同步）。
   void dropForEventIds(Iterable<String> eventIds) {
     var changed = false;
     for (final eventId in eventIds) {
-      if (_viewed.remove(eventId)) changed = true;
+      final suffix = '$_roomSeparator$eventId';
+      final toRemove = _viewed
+          .where((entry) => entry == eventId || entry.endsWith(suffix))
+          .toList(growable: false);
+      for (final entry in toRemove) {
+        if (_viewed.remove(entry)) changed = true;
+      }
     }
     if (changed) _persist();
+  }
+
+  /// 真实生命周期清理：某房间的本地历史被**永久**清除时调用。
+  ///
+  /// 只移除该房间的标记；**其他房间不受影响**。软隐藏（cutoff）语义下不得
+  /// 调用——事件仍在本地库，会重新同步。
+  Future<void> clearRoom(String roomId) async {
+    if (roomId.isEmpty) return;
+    final prefix = '$roomId$_roomSeparator';
+    final toRemove =
+        _viewed.where((entry) => entry.startsWith(prefix)).toList(growable: false);
+    if (toRemove.isEmpty) return;
+    for (final entry in toRemove) {
+      _viewed.remove(entry);
+    }
+    _persist();
   }
 
   /// 账号登出/重置：清空本账号全部标记（持久层一并移除）。
@@ -350,6 +399,17 @@ abstract interface class FlashViewerSecuritySink {
 /// - 所有销毁入口（倒计时到期、提前松手、长按取消、截图、开始录屏/镜像、
 ///   退到后台、显式安全事件、原图加载失败）统一走 [_destroyFlash]，它必须
 ///   释放原图字节引用（见 [FlashPhotoViewerPageState.debugHasOriginalBytes]）。
+///
+/// **退出也必须收口**（本页最容易被绕过的 fail-open 点）：
+/// 只要原图**真正进入过 reveal 状态**（[_hasEverRevealed]），那么之后任何
+/// 退出路径——3 秒超时、松手、长按取消、截图、录屏、退到后台、系统返回、
+/// `Navigator.pop`、`removeRoute`、route replacement、widget `dispose`——
+/// 都必须收敛为「已销毁」并持久化 tombstone。
+/// [dispose] 是**最后一道保险**：它不能 `setState`，因此把「UI 状态收敛」
+/// 与「持久化销毁回调」拆开（[_markDestroyed] + 一次 [FlashPhotoViewerPage.onDestroyed]）。
+///
+/// 反向不变量：**从未 reveal** 的查看器退出时**不得**标记已查看——普通关闭
+/// （点 X / 系统返回）不消耗查看机会。
 final class FlashPhotoViewerPage extends StatefulWidget {
   const FlashPhotoViewerPage(
       {super.key,
@@ -380,6 +440,16 @@ final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
   ScreenCaptureLease? _lease;
   StreamSubscription<void>? _screenshotSubscription;
   int _watermarkPhase = 0;
+
+  /// 本次查看器是否**真正显示过原图**（至少一帧）。
+  ///
+  /// 这是安全契约的判定基准：不能只看 `_revealed`——退出路径上 `_revealed`
+  /// 可能已经被清掉，但用户其实已经看到了原图，此时退出仍必须按「已查看」
+  /// 处理。反之，从未 reveal 就关闭**不消耗**查看机会。
+  bool _hasEverRevealed = false;
+
+  /// `widget.onDestroyed` 是否已经派发（**恰好一次**的守卫）。
+  bool _destroyNotificationSent = false;
 
   /// 异步代际：destroy/dispose 时递增。在途的 `loadOriginal()` / 租约申请
   /// 返回后若代际已变（或已卸载/已销毁），结果**立即丢弃**，绝不 setState。
@@ -480,15 +550,35 @@ final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
   /// **唯一**销毁路径。所有触发点都必须调用它：
   /// 3 秒倒计时到期、提前松手（`onLongPressEnd`）、`onLongPressCancel`、
   /// 截图信号、开始录屏/镜像、退到后台/失去焦点、显式安全事件、
-  /// 原图加载失败（`notify: false`，用户没看到就不算“已查看”）。
+  /// 原图加载失败（`notify: false`，用户没看到就不算“已查看”），
+  /// 以及 [dispose] 的最后保险。
   ///
-  /// 保证：
+  /// 保证（由 [_markDestroyed] + 本方法共同实现）：
   /// - 取消倒计时并把 `_countdown` 置空；
   /// - `_revealed = false`、`_destroyed = true`；
   /// - `_bytes = null`（释放原图引用；Dart 不保证物理清零）；
   /// - 递增异步代际（在途结果作废）；
   /// - `widget.onDestroyed` **最多调用一次**（重复触发直接返回）。
+  ///
+  /// [notify] 为 false 时只做状态收敛，不派发持久化回调（用于「用户从未看到
+  /// 原图」的路径：加载失败、以及从未 reveal 的普通退出）。
   void _destroyFlash({required String reason, bool notify = true}) {
+    if (_destroyed) return;
+    _markDestroyed(reason);
+    if (!mounted) {
+      // 已经不在树上（dispose 期间）：不能 setState，但持久化仍必须完成。
+      // 只有在本次确实 reveal 过时才允许 notify——否则普通退出会误标记。
+      if (notify && _hasEverRevealed) _notifyDestroyed();
+      return;
+    }
+    setState(() {});
+    if (notify) _notifyDestroyed();
+  }
+
+  /// 状态收敛（可在 `dispose` 中安全调用：**不** `setState`、**不** 回调）。
+  ///
+  /// 幂等：只有真实发生销毁时才递增 [_destroyCount] 并记录首个原因。
+  void _markDestroyed(String reason) {
     if (_destroyed) return;
     _countdown?.cancel();
     _countdown = null;
@@ -498,9 +588,13 @@ final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
     _bytes = null;
     _destroyCount++;
     _destroyReason ??= reason;
-    if (!mounted) return;
-    setState(() {});
-    if (notify) widget.onDestroyed?.call();
+  }
+
+  /// 持久化销毁回调，**恰好一次**。
+  void _notifyDestroyed() {
+    if (_destroyNotificationSent) return;
+    _destroyNotificationSent = true;
+    widget.onDestroyed?.call();
   }
 
   @override
@@ -531,6 +625,9 @@ final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
     if (_revealed || !_canReveal) return;
     setState(() {
       _revealed = true;
+      // 一旦真正进入 reveal 状态，本次查看即**不可撤销**：此后任何退出路径
+      // 都会被判定为「已查看」。这一标记必须在首帧原图渲染之前就置位。
+      _hasEverRevealed = true;
       _remaining = FlashPhotoViewerPage.viewDuration;
       _watermarkPhase = (_watermarkPhase + 1) % 3;
     });
@@ -552,13 +649,25 @@ final class FlashPhotoViewerPageState extends State<FlashPhotoViewerPage>
 
   @override
   void dispose() {
+    // —— 最后一道安全保险 ——
+    // 只要原图真正显示过一帧，退出就是「已查看」：必须收敛到 destroyed 并
+    // 持久化 tombstone。这里**不能** setState，因此只做状态收敛 + 一次回调。
+    // 从未 reveal 时只收敛状态、不 notify（普通关闭不消耗查看机会）。
+    if (_hasEverRevealed && !_destroyed) {
+      _markDestroyed('route-exit');
+    }
+    if (_hasEverRevealed) _notifyDestroyed();
     // 在途 load/lease 结果一律作废，并释放原图引用。
-    _generation++;
-    _bytes = null;
-    _revealed = false;
-    _destroyed = true;
-    _countdown?.cancel();
-    _countdown = null;
+    // 用 [_markDestroyed] 的幂等语义：从未 reveal 的正常关闭**不得**被算成
+    // 「销毁一次」（否则会污染销毁计数与原因诊断）。
+    if (!_destroyed) {
+      _generation++;
+      _countdown?.cancel();
+      _countdown = null;
+      _bytes = null;
+      _revealed = false;
+      _destroyed = true;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _protection.readiness.removeListener(_protectionChanged);
     _protection.captureState.removeListener(_protectionChanged);
