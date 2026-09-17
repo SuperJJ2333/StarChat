@@ -470,15 +470,27 @@ Future<MatrixClientContinuityMetadata> testContinuityMetadata(
 ///   个库 → `INSERT OR REPLACE INTO box_client (k, v)` 撞车，表现为 CI 上
 ///   「synthetic credential write failure」这种**非确定性的单例失败**。
 ///
-/// 因此用 `pid` 派生进程唯一目录（放在系统临时目录下，不落进仓库）。
+/// 因此用 `pid` 派生进程唯一目录（放在系统临时目录下，不落进仓库）——
+/// 目录名即 `chatflow-matrix-tests-<pid>-<random>`：
+/// `flutter test` 的**不同进程**必然得到不同的 `pid`，因此不可能共享同一份 SQLite；
+/// 而**同一进程**内只有一个该目录，所有 client 实例继续共享它。
 final Directory _matrixTestDirectory =
-    Directory.systemTemp.createTempSync('starchat-matrix-tests-$pid-');
+    Directory.systemTemp.createTempSync('chatflow-matrix-tests-$pid-');
 
 class MatrixTestPaths extends PathProviderPlatform {
   @override
   Future<String?> getApplicationDocumentsPath() async =>
       _matrixTestDirectory.path;
 }
+
+/// 目录名去掉 pid 段后的部分：用于断言「跨进程差异**只**来自 pid」。
+///
+/// 若两个进程的 base 相同而 pid 不同，就证明隔离确实由 pid 提供
+/// （而不是靠随机名碰巧不同）。
+String matrixTestDirectoryBaseFor(String directoryPath) => directoryPath
+    .split(Platform.pathSeparator)
+    .last
+    .replaceFirst(RegExp(r'-\d+-[0-9a-f]+$'), '');
 
 void main() {
   setUp(() => PathProviderPlatform.instance = MatrixTestPaths());
@@ -492,12 +504,30 @@ void main() {
       // 进程唯一：并发跑测试文件时的第二个进程必须拿到不同目录，
       // 否则两个进程会同时打开并写同一个 SQLCipher 库（box_client 撞车）。
       expect(path, contains('$pid'), reason: '目录必须按进程隔离，否则并发测试会共享同一个数据库');
+      expect(path, contains('chatflow-matrix-tests-'),
+          reason: '目录名需可辨识，便于 CI 排查残留');
       // 不落进仓库（避免把测试库写进源码树 / 让并发进程复用它）。
       final repoRoot = Directory.current.parent.parent.absolute.path;
       expect(File(path!).absolute.path.startsWith(repoRoot), isFalse,
           reason: '测试数据库不得落在仓库目录内');
       expect(Directory(path).existsSync(), isTrue,
           reason: '目录必须在返回前就存在（SDK 不会创建多级父目录）');
+    });
+
+    test('跨进程隔离只由 pid 决定（同 base + 不同 pid = 不同目录）', () async {
+      final path =
+          (await PathProviderPlatform.instance.getApplicationDocumentsPath())!;
+      final base = matrixTestDirectoryBaseFor(path);
+      // 两个并发 flutter test 进程会算出**同一个 base**、**同一个父目录**，
+      // 旧实现因此退化成同一个路径。现在 pid 参与命名，二者必然不同。
+      final sibling = '$base-${pid + 1}-deadbeef';
+      expect(sibling,
+          isNot(equals(File(path).path.split(Platform.pathSeparator).last)),
+          reason: '不同 pid 必须映射到不同目录，这正是竞态的根因');
+      expect(base, isNotEmpty);
+      // 目录名里必须真的含有本进程 pid。
+      expect(File(path).path.split(Platform.pathSeparator).last,
+          contains('-$pid-'));
     });
 
     test('同一进程内保持一致（跨实例持久化测试依赖）', () async {
