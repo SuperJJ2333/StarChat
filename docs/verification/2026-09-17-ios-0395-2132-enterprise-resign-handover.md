@@ -63,10 +63,19 @@
    `itms-services://` 安装页可用、未授权接口仍 401。
 6. 记录到验证/任务台账并提交推送。
 
-## 4. 本机取件状态（如实记录）
+## 4. 本机取件与核验结果（已完成）
 
-- 我尝试在本机直接下载该 CI 产物以先行校验：GitHub 在本机经本地代理（`127.0.0.1:7897`）链路出现
-  **间歇性 TLS 失败**（`schannel: failed to receive handshake`），大文件下载会中途截断；
-  已改为「**每个分片重新解析签名 URL + 断点续传 + 40 分钟容错**」的后台取件（脚本
-  `artifacts/2026-09-17/ios-2132/fetch_ios_artifact.ps1`），成功后按第 1 节摘要校验。
-- 该取件**只影响我这边的预校验**，不影响用户按第 1 节链接直接下载并把 IPA 交给签名方。
+本机（Windows，无 Xcode）不能构建 iOS，但已把 CI 产物取回并**独立核验**：
+
+| 步骤 | 结果 |
+| --- | --- |
+| 产物下载 | `ChatFlow-iOS-signed`（artifact 10502073950）→ zip **59,797,494 字节**，SHA256 `4489966bc8e98f0219057cf694e1e98031ae4b7cd82ed1b5a56e12831b52edd9`，**与 GitHub 给出的 artifact digest 完全一致**（取件脚本：分片 Range + 每片重解析短时效签名 URL + 断点续传，日志 `artifacts/2026-09-17/ios-2132/fetch.log`） |
+| zip 内容 | 仅一个条目 `liuhetong_mobile.ipa` |
+| **IPA 交付件** | **`ChatFlow-0.3.95-2132-signed-candidate.ipa`**，**60,174,796 字节**，**SHA256 `436C654B87DF1C40C9BDA5E0169DD695219905115A3C24740327E9BE9DA4D810`** |
+| Info.plist 核对 | `CFBundleIdentifier=com.liuhetong.liuhetongMobile`、`CFBundleShortVersionString=0.3.95`、`CFBundleVersion=2132`、`MinimumOSVersion=16.0`、`UIDeviceFamily=[1,2]`、`UIBackgroundModes=[remote-notification, audio, voip]`、麦克风/相机用途说明齐全、`CFBundleDisplayName=畅聊 ChatFlow` |
+| 签名材料 | `embedded.mobileprovision` 与 `_CodeSignature/CodeResources` 均存在（已签名）；17 个 framework；`SQLCipher.framework` 与 `App.framework/flutter_assets` 齐全 |
+| **可重签性** | Mach-O `Runner` 的 **`cryptid = 0`（非 App Store DRM 加密）→ 可被企业证书重签**，这正是企业签名方所需的前提 |
+| 核验脚本 | `artifacts/2026-09-17/ios-2132/inspect_ios_ipa.py`（本地解析 zip/plist/Mach-O，不依赖 macOS 工具） |
+
+> 注：iOS 侧 `CFBundleVersion` 使用 pubspec 的构建号原值（**2132**），不做 Android 的 ABI 偏移归一化；
+> 线上企业版为 0.3.92/2120，因此 2132 可正常提示更新。
