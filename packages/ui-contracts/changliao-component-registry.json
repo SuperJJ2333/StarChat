@@ -1104,6 +1104,11 @@
       "category": "radius",
       "html": "--radius-red-packet: 10px",
       "flutter": "static const redPacket = 10.0;"
+    },
+    {
+      "category": "status",
+      "html": "--color-warning: #fa9d3b",
+      "flutter": "static const warning = Color(0xFFFA9D3B);"
     }
   ],
   "brand": {
@@ -1441,5 +1446,60 @@
     "states": ["viewer-claimed", "claiming", "unknown-result", "group-random-completed", "receiver-accepted", "loading", "empty", "error", "filtered", "paged", "detail"],
     "ledger": "Fixture-only HTML interaction uses server-side-filter-shaped type, date and keyword controls; amount strings and immutable example transaction IDs are never Number-coerced.",
     "tokens": ["WeChatColors.warning = --color-warning", "WeChatColors.redPacketMuted = --color-red-packet-muted", "WeChatRadius.redPacket = --radius-red-packet", "existing spacing/typography tokens"]
+  },
+  "walletDepositPayoutRedesign20260917": {
+    "date": "2026-09-17",
+    "status": "Implemented locally; no Figma step (retired). HTML design demo reviewed and approved by the user before the Flutter change.",
+    "flutter": [
+      "lib/features/wallet/manual_wallet_page.dart",
+      "lib/features/wallet/wallet_page.dart",
+      "lib/features/matrix/chat_red_packet_sheet.dart"
+    ],
+    "html": [
+      "frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html"
+    ],
+    "demo": [
+      "wallet-overview-change-binding",
+      "wallet-deposit-amount",
+      "wallet-deposit-pending-transfer",
+      "wallet-deposit-expired",
+      "wallet-payout-amount",
+      "wallet-payout-quote",
+      "wallet-payout-settled",
+      "wallet-payout-unknown"
+    ],
+    "states": [
+      "navigation-refresh",
+      "capabilities-loading",
+      "capabilities-unavailable",
+      "binding-change-entry",
+      "binding-rebind-cooldown",
+      "binding-address-rejected-editable",
+      "binding-address-discard",
+      "deposit-step-indicator",
+      "deposit-fee-and-network-rows",
+      "deposit-status-hero",
+      "deposit-countdown",
+      "deposit-expired-callout",
+      "deposit-qr-and-copy-rows",
+      "payout-step-indicator",
+      "payout-quote-rows",
+      "payout-status-hero",
+      "payout-unknown-frozen",
+      "extreme-amount-scale-down",
+      "red-packet-fee-hint",
+      "red-packet-insufficient-with-fee"
+    ],
+    "tokens": [
+      "WeChatColors.brandPrimary = --color-brand-primary",
+      "WeChatColors.warning = --color-warning",
+      "WeChatColors.elevatedSurface = --color-surface-elevated",
+      "WeChatColors.divider = --color-divider",
+      "WeChatColors.textSecondary = --color-text-secondary",
+      "existing spacing/radius/typography tokens"
+    ],
+    "behavior": "Terminal binding-validation failures discard the persisted registration draft and release the address field; uncertain (network/timeout) failures keep the draft and its idempotency key. Capability state is retained while refreshing and only reported unavailable when it was never learned. Wallet pages own their navigation bar so the refresh control sits in the trailing slot.",
+    "redPacketFee": "ADR-0073: 0.5% sender fee (min 0.01) shown as an estimate with the actual deduction; the server remains authoritative and the API change must not be deployed before a client that displays the fee.",
+    "verification": "flutter analyze clean; wallet suite 75 pass; red-packet client 62 pass; full flutter test 2848 pass; verify_ui_contract PASS (30 components, 369 screens); backend fee/ledger/transfer/migration suites 71 pass."
   }
 }

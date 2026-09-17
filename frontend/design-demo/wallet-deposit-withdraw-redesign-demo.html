@@ -10,7 +10,7 @@
   --brand:#07C160; --brand-dark:#06AD56; --brand-soft:rgba(7,193,96,.08);
   --bg:#EDEDED; --card:#FFFFFF; --line:#E5E5E5;
   --text:#191919; --text-2:#888888; --text-3:#B2B2B2;
-  --red:#FA5151; --red-soft:rgba(250,81,81,.08); --orange:#FA9D3B;
+  --red:#FA5151; --red-soft:rgba(250,81,81,.08); --color-warning:#FA9D3B;
   --radius-card:12px; --radius-btn:8px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
@@ -54,7 +54,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
 .bind-line .txt{flex:1;font-size:13px;color:var(--text-2);line-height:1.5}
 .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:999px}
 .pill.ok{color:var(--brand);background:var(--brand-soft)}
-.pill.warn{color:var(--orange);background:rgba(250,157,59,.12)}
+.pill.warn{color:var(--color-warning);background:rgba(250,157,59,.12)}
 .pill.bad{color:var(--red);background:var(--red-soft)}
 .pill.grey{color:var(--text-2);background:#F2F2F2}
 
@@ -111,8 +111,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
 .status-hero .amount{font-size:32px;font-weight:700;color:var(--text)}
 .status-hero .amount .unit{font-size:14px;font-weight:500;color:var(--text-2);margin-left:4px}
 .status-hero .sub{font-size:13px;color:var(--text-2);margin-top:6px}
-.countdown{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--orange);background:rgba(250,157,59,.12);border-radius:999px;padding:3px 10px;font-variant-numeric:tabular-nums}
-.status-hero.pending .ic{background:rgba(250,157,59,.12);color:var(--orange)}
+.countdown{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--color-warning);background:rgba(250,157,59,.12);border-radius:999px;padding:3px 10px;font-variant-numeric:tabular-nums}
+.status-hero.pending .ic{background:rgba(250,157,59,.12);color:var(--color-warning)}
 .status-hero.done .ic{background:var(--brand-soft);color:var(--brand)}
 .status-hero.unknown .ic{background:#F2F2F2;color:var(--text-2)}
 
@@ -147,7 +147,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Helvetica Neue'
   <div class="legend">
     <span><i class="swatch" style="background:#07C160"></i>品牌绿 --brand #07C160</span>
     <span><i class="swatch" style="background:#FA5151"></i>警示红 --red #FA5151</span>
-    <span><i class="swatch" style="background:#FA9D3B"></i>等待橙 --orange #FA9D3B</span>
+    <span><i class="swatch" style="background:#FA9D3B"></i>等待橙 --color-warning #FA9D3B</span>
     <span><i class="swatch" style="background:#EDEDED"></i>页面底 --bg #EDEDED</span>
     <span>卡片圆角 12 · 按钮圆角 8</span>
   </div>

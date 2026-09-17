@@ -868,12 +868,12 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                      color: const Color(0xFFFA9D3B).withValues(alpha: 0.12),
+                      color: WeChatColors.warning.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999)),
                   child: Text(countdown,
                       style: const TextStyle(
                           fontSize: 12,
-                          color: Color(0xFFFA9D3B),
+                          color: WeChatColors.warning,
                           fontFeatures: [FontFeature.tabularFigures()]))),
             ],
           ]));
@@ -1461,7 +1461,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
               },
               tone: switch (payout!.status) {
                 ManualPayoutState.settled => WeChatColors.brandPrimary,
-                ManualPayoutState.unknown => const Color(0xFFFA9D3B),
+                ManualPayoutState.unknown => WeChatColors.warning,
                 _ => WeChatColors.brandPrimary,
               }),
           rowsCard([

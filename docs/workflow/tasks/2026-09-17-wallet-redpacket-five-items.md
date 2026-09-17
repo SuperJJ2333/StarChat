@@ -46,11 +46,17 @@
 
 - `flutter test`（全量）：退出码 0，**2848 通过 / 0 失败**（本任务前 2835），
   日志 `docs/verification/artifacts/2026-09-17/flutter-full-wallet-redpacket-five-items.txt`。
-- `flutter analyze`：`No issues found!`；`python scripts/verify_ui_contract.py`：`PASS (30 components, 369 screens)`。
+- `flutter analyze`：`No issues found!`；`python scripts/verify_ui_contract.py`：`PASS (30 components, 369 screens)`；
+  `py -3.12 scripts/export_openapi.py --check`：`OpenAPI contract: PASS`（红包创建路由无 response_model，无 spec 漂移）。
+- UI 交付契约：注册表 `packages/ui-contracts/changliao-component-registry.json` 新增
+  `walletDepositPayoutRedesign20260917` 修订块（flutter 文件 / HTML demo 路径与 demo id / 状态 / token 映射 /
+  行为 / 红包手续费边界 / 验证摘要）与 `tokenParity` 条目 `WeChatColors.warning = --color-warning`；
+  两处硬编码 `Color(0xFFFA9D3B)` 改为复用既有 `WeChatColors.warning`，demo 同步用 `--color-warning`（未新造 token）。
+- 仓库合并门禁 `pwsh -NoProfile -File scripts/verify.ps1`：见
+  `docs/verification/artifacts/2026-09-17/verify-wallet-redpacket-five-items.txt`。
 - 后端定向：`pytest tests/business_api/{redpacket,ledger,transfer} tests/business_api/test_migrations.py
   tests/business_api/test_wallet_release_baseline.py -q` → **71 通过 / 0 失败**。
-- 未执行：后端全量 `pytest tests/business_api`（上次基线 1812 通过 / 58 跳过；本次改动集中在
-  redpacket/ledger 投影与迁移 head 断言，已按受影响面覆盖）；未构建 APK/IPA；未部署；未真机。
+- 未执行：未构建 APK/IPA；未部署；未真机。
 - 变异/红绿：三类 UI 用例与红包手续费用例均先红后绿（见验证记录第 2 节）。
 
 ## 阶段计时

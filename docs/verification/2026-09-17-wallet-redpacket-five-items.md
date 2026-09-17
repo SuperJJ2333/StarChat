@@ -54,7 +54,15 @@
 | `flutter test test/features/matrix/chat_red_packet_sheet_test.dart` 等红包客户端用例 | **62 通过 / 0 失败** |
 | `flutter analyze`（全量） | 退出码 0，`No issues found!` |
 | `python scripts/verify_ui_contract.py` | `PASS (30 components, 369 screens)` |
-| `flutter test`（全量） | 见任务记录（日志 `artifacts/2026-09-17/flutter-full-wallet-redpacket-five-items.txt`） |
+| `py -3.12 scripts/export_openapi.py --check` | `OpenAPI contract: PASS`（红包创建路由未声明 response_model，spec 无漂移） |
+| `flutter test`（全量） | **2848 通过 / 0 失败**，日志 `artifacts/2026-09-17/flutter-full-wallet-redpacket-five-items.txt` |
+| `pwsh -NoProfile -File scripts/verify.ps1`（仓库合并门禁） | 见任务记录与 `artifacts/2026-09-17/verify-wallet-redpacket-five-items.txt` |
+
+UI 交付契约（`ui-demo-delivery` 技能第 2/5 步）：注册表新增 `walletDepositPayoutRedesign20260917` 修订块
+（flutter 文件、HTML demo 路径与 8 个 demo id、20 个状态、token 映射、行为说明、红包手续费边界与验证摘要），
+并新增 `tokenParity` 条目 `WeChatColors.warning = --color-warning`；实现侧把原先两处硬编码
+`Color(0xFFFA9D3B)` 改为复用既有 `WeChatColors.warning`，demo 同步改用 `--color-warning`（不新造 token）。
+`Figma 已退役：本次变更仅更新 HTML demo（frontend/design-demo/wallet-deposit-withdraw-redesign-demo.html）`。
 
 红/绿证据：绑定死锁、能力闪烁、导航栏刷新三类用例在实现前均按预期转红（`enabled == false`、警告闪现、`manual-refresh` 不在导航栏、`更改绑定` 文案缺失）；红包手续费用例在实现前因 `red_packet_fee` 不存在而收集失败（红）。
 
