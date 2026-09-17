@@ -344,7 +344,8 @@ class LogoutTrackingClient extends Client {
   }) async {
     loggedIn = true;
     matrixUserId ??= '@alice:matrix.test';
-    matrixDeviceId = rotatedDeviceId ?? matrixDeviceId ?? deviceId ?? 'DEVICE-A';
+    matrixDeviceId =
+        rotatedDeviceId ?? matrixDeviceId ?? deviceId ?? 'DEVICE-A';
     return LoginResponse(
       accessToken: 'test-access-token',
       deviceId: matrixDeviceId!,
@@ -457,15 +458,57 @@ Future<MatrixClientContinuityMetadata> testContinuityMetadata(
   );
 }
 
+/// 测试用 Matrix 本地存储目录。
+///
+/// **必须是「进程内共享、跨进程唯一」**：
+/// - 进程内共享：同一进程里多个 factory/client 实例要看到彼此写入的数据
+///   （有测试专门验证跨实例持久化），因此**不能**每个测试用例换目录；
+/// - 跨进程唯一：`flutter test` 默认并发跑多个测试文件，每个文件是独立进程。
+///   此前这里返回仓库内**同一个固定绝对路径**，而
+///   `matrix_client_factory_test.dart` 与 `conversation_optimistic_state_test.dart`
+///   都会经它创建 Matrix 客户端并写 SQLCipher 库，于是两个进程同时打开并写同一
+///   个库 → `INSERT OR REPLACE INTO box_client (k, v)` 撞车，表现为 CI 上
+///   「synthetic credential write failure」这种**非确定性的单例失败**。
+///
+/// 因此用 `pid` 派生进程唯一目录（放在系统临时目录下，不落进仓库）。
+final Directory _matrixTestDirectory =
+    Directory.systemTemp.createTempSync('starchat-matrix-tests-$pid-');
+
 class MatrixTestPaths extends PathProviderPlatform {
   @override
   Future<String?> getApplicationDocumentsPath() async =>
-      '${Directory.current.parent.parent.path}/docs/verification/artifacts/2026-09-10/conversation-state-main/matrix-cache-tests';
+      _matrixTestDirectory.path;
 }
 
 void main() {
   setUp(() => PathProviderPlatform.instance = MatrixTestPaths());
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  group('Matrix 测试存储目录隔离（CI 并发回归）', () {
+    test('文档目录是进程私有且位于仓库之外', () async {
+      final path =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      expect(path, isNotNull);
+      // 进程唯一：并发跑测试文件时的第二个进程必须拿到不同目录，
+      // 否则两个进程会同时打开并写同一个 SQLCipher 库（box_client 撞车）。
+      expect(path, contains('$pid'), reason: '目录必须按进程隔离，否则并发测试会共享同一个数据库');
+      // 不落进仓库（避免把测试库写进源码树 / 让并发进程复用它）。
+      final repoRoot = Directory.current.parent.parent.absolute.path;
+      expect(File(path!).absolute.path.startsWith(repoRoot), isFalse,
+          reason: '测试数据库不得落在仓库目录内');
+      expect(Directory(path).existsSync(), isTrue,
+          reason: '目录必须在返回前就存在（SDK 不会创建多级父目录）');
+    });
+
+    test('同一进程内保持一致（跨实例持久化测试依赖）', () async {
+      final first =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      final second =
+          await PathProviderPlatform.instance.getApplicationDocumentsPath();
+      expect(second, first, reason: '同一进程内目录必须稳定，否则跨 client 持久化测试会失效');
+    });
+  });
+
   test('normal sync cannot adopt a fresh client after explicit clear',
       () async {
     final fresh = LogoutTrackingClient('fresh');
