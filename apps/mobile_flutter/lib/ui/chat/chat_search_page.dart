@@ -8,6 +8,7 @@ import '../../features/matrix/chat_search_query_controller.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
 import '../components/user_avatar.dart';
+import '../components/wechat_gradient_divider.dart';
 import '../motion/motion_page_route.dart';
 
 /// The result of an explicit date query. An incomplete bounded scan must not
@@ -501,16 +502,15 @@ final class _ResultRow extends StatelessWidget {
       key: Key('chat-search-result-${message.eventId}'),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: dark ? WeChatColors.darkSurface : WeChatColors.lightSurface,
-          border: Border(
-            bottom: BorderSide(
-                width: .5,
-                color: dark ? WeChatColors.darkDivider : WeChatColors.divider),
-          ),
         ),
-        child: Row(children: [
+        // 需求 §19：行底分隔线统一由共享渐隐分割线承担。
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(children: [
           avatar ??
               Container(
                 width: 38,
@@ -577,7 +577,17 @@ final class _ResultRow extends StatelessWidget {
               child: Icon(CupertinoIcons.photo,
                   size: 40, color: WeChatColors.textTertiary),
             ),
-        ]),
+                ]),
+              ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: WeChatGradientDivider(
+                  key: Key('chat-search-result-row-divider')),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -655,42 +665,53 @@ final class _MemberPickerPageState extends State<MemberPickerPage> {
                               key: Key('member-picker-${member.userId}'),
                               onTap: () => Navigator.of(context).pop(member),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: dark
                                       ? WeChatColors.darkSurface
                                       : WeChatColors.lightSurface,
-                                  border: Border(
-                                    bottom: BorderSide(
-                                        width: .5,
-                                        color: dark
-                                            ? WeChatColors.darkDivider
-                                            : WeChatColors.divider),
-                                  ),
                                 ),
-                                child: Row(children: [
-                                  widget.avatarBuilder?.call(context, member) ??
-                                      UserAvatar(
-                                        nickname: member.displayName,
-                                        fallbackSeed: member.userId,
-                                        diagnosticSource:
-                                            'search-member-picker',
-                                        size: 36,
-                                      ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(member.displayName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 15)),
-                                  ),
-                                  if (member.hasLeftGroup)
-                                    const Text('已离群',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: WeChatColors.textTertiary)),
-                                ]),
+                                // 需求 §19：行底分隔线统一由共享渐隐分割线承担。
+                                child: Stack(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 10),
+                                      child: Row(children: [
+                                        widget.avatarBuilder
+                                                ?.call(context, member) ??
+                                            UserAvatar(
+                                              nickname: member.displayName,
+                                              fallbackSeed: member.userId,
+                                              diagnosticSource:
+                                                  'search-member-picker',
+                                              size: 36,
+                                            ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(member.displayName,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 15)),
+                                        ),
+                                        if (member.hasLeftGroup)
+                                          const Text('已离群',
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: WeChatColors
+                                                      .textTertiary)),
+                                      ]),
+                                    ),
+                                    const Positioned(
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 0,
+                                      child: WeChatGradientDivider(
+                                          key: Key(
+                                              'chat-search-member-row-divider')),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                         ],
@@ -1203,40 +1224,47 @@ final class ChatCategoryPage extends StatelessWidget {
     return GestureDetector(
       key: Key(key),
       onTap: () => onOpen(message),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          border: Border(
-              bottom: BorderSide(
-                  width: .5,
-                  color: WeChatColors.resolve(context, WeChatColors.divider))),
-        ),
-        child: Row(children: [
-          Icon(icon, size: 36, color: WeChatColors.brandPrimary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 15, fontWeight: FontWeight.w500)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 12, color: WeChatColors.textSecondary)),
-              ],
-            ),
+      // 需求 §19：行底分隔线统一由共享渐隐分割线承担（原来是自拼的
+      // 0.5px 实心 Border(bottom:)）。
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(children: [
+              Icon(icon, size: 36, color: WeChatColors.brandPrimary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 12, color: WeChatColors.textSecondary)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(trailing,
+                  style: const TextStyle(
+                      fontSize: 12, color: WeChatColors.textTertiary)),
+            ]),
           ),
-          const SizedBox(width: 8),
-          Text(trailing,
-              style: const TextStyle(
-                  fontSize: 12, color: WeChatColors.textTertiary)),
-        ]),
+          const Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: WeChatGradientDivider(
+                key: Key('chat-search-category-row-divider')),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/business_api_client.dart';
 import '../../ui/components/modern_action_button.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -284,6 +285,7 @@ final class _ChatTransferDetailSheetState
       ),
     ];
     return Container(
+        key: const Key('chat-transfer-receipt-detail-card'),
         margin: const EdgeInsets.fromLTRB(
             WeChatSpacing.md, 10, WeChatSpacing.md, 0),
         decoration: BoxDecoration(
@@ -298,43 +300,50 @@ final class _ChatTransferDetailSheetState
                 key: const Key('chat-transfer-detail-copy-bill'),
                 padding: EdgeInsets.zero,
                 onPressed: () => _copyBillId(billId),
-                child: Container(
-                    decoration: const BoxDecoration(
-                        border: Border(
-                            top: BorderSide(color: WeChatColors.divider))),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: WeChatSpacing.lg,
-                        vertical: WeChatSpacing.md),
-                    child: Row(children: [
-                      const SizedBox(
-                          width: 88,
-                          child: Text('账单ID',
-                              style: TextStyle(
-                                  color: WeChatColors.textSecondary))),
-                      Expanded(child: Text(billId, textAlign: TextAlign.right)),
-                      const SizedBox(width: WeChatSpacing.xs),
-                      const Icon(CupertinoIcons.doc_on_doc,
-                          size: 16, color: WeChatColors.textSecondary),
-                    ]))),
+                child: Column(children: [
+                  // 需求 §19：卡片内部相邻区块之间的水平线统一使用共享渐隐
+                  // 分割线。原实现直接使用未解析的 `WeChatColors.divider`
+                  // （浅色 #D9D9D9），在深色卡片上会画出浅灰线；共享组件在
+                  // build 时按主题解析为 `darkDivider`（#2C2C2C）。
+                  const WeChatGradientDivider(
+                      key: Key('chat-transfer-detail-copy-bill-divider')),
+                  Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: WeChatSpacing.lg,
+                          vertical: WeChatSpacing.md),
+                      child: Row(children: [
+                        const SizedBox(
+                            width: 88,
+                            child: Text('账单ID',
+                                style: TextStyle(
+                                    color: WeChatColors.textSecondary))),
+                        Expanded(child: Text(billId, textAlign: TextAlign.right)),
+                        const SizedBox(width: WeChatSpacing.xs),
+                        const Icon(CupertinoIcons.doc_on_doc,
+                            size: 16, color: WeChatColors.textSecondary),
+                      ])),
+                ])),
         ]));
   }
 
-  Widget _row(String label, String value, {bool showDivider = false}) =>
-      Container(
-        decoration: showDivider
-            ? const BoxDecoration(
-                border: Border(top: BorderSide(color: WeChatColors.divider)))
-            : null,
-        padding: const EdgeInsets.symmetric(
-            horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SizedBox(
-            width: 88,
-            child: Text(label,
-                style: const TextStyle(color: WeChatColors.textSecondary)),
+  Widget _row(String label, String value, {bool showDivider = false}) => Column(
+        children: [
+          if (showDivider)
+            const WeChatGradientDivider(
+                key: Key('chat-transfer-detail-row-divider')),
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(
+                width: 88,
+                child: Text(label,
+                    style: const TextStyle(color: WeChatColors.textSecondary)),
+              ),
+              Expanded(child: Text(value, textAlign: TextAlign.right)),
+            ]),
           ),
-          Expanded(child: Text(value, textAlign: TextAlign.right)),
-        ]),
+        ],
       );
 
   Widget _plainAction(

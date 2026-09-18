@@ -454,7 +454,17 @@
         "WeChatMomentReactions",
         "MomentVisibilityPage",
         "ManualWalletPage deposit/payout rows",
-        "CaibiPage ledger rows"
+        "CaibiPage ledger rows",
+        "ProfileExperiencePage menu rows",
+        "NotificationSettingsPage sections and WeChatSettingsRow",
+        "ChatTransferDetailSheet receipt rows",
+        "ChatSearchPage result rows",
+        "ChatSearchPage category rows",
+        "MemberPickerPage member rows",
+        "ConversationNotificationModeTile rows",
+        "ChatForwardPickerPage section separator",
+        "GlobalSearchConversationRecordsPage hit rows",
+        "RedPacketClaimDetailPage claim records"
       ]
     },
     {

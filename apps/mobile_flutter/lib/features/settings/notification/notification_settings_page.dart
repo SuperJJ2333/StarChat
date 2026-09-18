@@ -9,6 +9,7 @@ import '../../../core/notification/notification_coordinator.dart';
 import '../../../core/notification/notification_diagnostics.dart';
 import '../../../core/notification/notification_preferences.dart';
 import '../../../core/notification/system_notification_presenter.dart';
+import '../../../ui/components/wechat_gradient_divider.dart';
 import '../../../ui/components/wechat_scaffold.dart';
 import '../../../ui/foundation/wechat_tokens.dart';
 import 'notification_diagnostics_page.dart';
@@ -320,18 +321,18 @@ final class _NotificationSettingsPageState
           ),
         ),
         Container(
-          decoration: BoxDecoration(
-            color: WeChatColors.elevatedSurface(context),
-            border: Border(
-              top: BorderSide(
-                  color:
-                      dark ? WeChatColors.darkDivider : WeChatColors.divider),
-              bottom: BorderSide(
-                  color:
-                      dark ? WeChatColors.darkDivider : WeChatColors.divider),
-            ),
-          ),
-          child: Column(children: children),
+          key: Key('notification-section-$title'),
+          color: WeChatColors.elevatedSurface(context),
+          // 需求 §19：分区卡片与上下相邻区块之间的水平线统一使用共享渐隐
+          // 分割线，不再自拼实心上下边框；上下各 1px 的占位与原边框一致，
+          // 分区高度不变。
+          child: Column(children: [
+            WeChatGradientDivider(
+                key: Key('notification-settings-divider-top-$title')),
+            ...children,
+            WeChatGradientDivider(
+                key: Key('notification-settings-divider-bottom-$title')),
+          ]),
         ),
         const SizedBox(height: 8),
       ],
@@ -382,24 +383,23 @@ final class WeChatSettingsRow extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
-    return Column(
-      children: [
-        CupertinoListTile(
-          title: Text(label),
-          trailing: trailing,
-          onTap: onTap,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        ),
-        Container(
-          height: 1,
-          margin: const EdgeInsets.only(left: 16),
-          color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) =>
+      Column(
+        children: [
+          CupertinoListTile(
+            title: Text(label),
+            trailing: trailing,
+            onTap: onTap,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          ),
+          // 需求 §19：设置行分隔线改用共享渐隐分割线，原有 16dp 左缩进由
+          // 组件的 indent 承担（行高不因画线改变）。
+          const WeChatGradientDivider(
+            key: Key('settings-row-divider'),
+            indent: WeChatSpacing.lg,
+          ),
+        ],
+      );
 }
 
 /// 一天内的时分选择器（00:00 - 23:59）。

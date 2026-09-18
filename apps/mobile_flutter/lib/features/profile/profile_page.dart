@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_nav_title.dart';
@@ -290,34 +291,44 @@ final class _ProfileMenuTile extends StatelessWidget {
       onPressed: onTap,
       child: Container(
         height: 57,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: dark ? WeChatColors.darkElevated : WeChatColors.lightElevated,
-          border: Border(
-            bottom: BorderSide(
-              width: .5,
-              color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
-            ),
-          ),
         ),
-        child: Row(
+        // 需求 §19：行底分隔线统一由共享渐隐分割线承担（不再自拼
+        // `Border(bottom:)` 实心实现）。Stack 让行高仍由外层 57dp 决定，
+        // 线固定在行底、不额外占高，深浅色在 build 时解析。
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            SizedBox(
-              width: 40,
-              child: Icon(icon, size: 21, color: foreground),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 16, color: foreground),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 40,
+                    child: Icon(icon, size: 21, color: foreground),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(fontSize: 16, color: foreground),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    CupertinoIcons.chevron_right,
+                    size: 12,
+                    color: WeChatColors.textSecondary,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            const Icon(
-              CupertinoIcons.chevron_right,
-              size: 12,
-              color: WeChatColors.textSecondary,
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: WeChatGradientDivider(key: Key('profile-menu-divider')),
             ),
           ],
         ),

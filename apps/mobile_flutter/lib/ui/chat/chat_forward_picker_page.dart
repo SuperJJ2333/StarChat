@@ -2,6 +2,7 @@ import '../../features/matrix/video_transcode.dart'
     show GroupVideoTooLargeException;
 import 'package:flutter/cupertino.dart';
 
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 
 /// “选择聊天”转发候选：由宿主预组装（头像/标题已按备注优先解析）。
@@ -184,10 +185,12 @@ final class _ChatForwardPickerPageState extends State<ChatForwardPickerPage> {
                     ),
                   ),
                 ],
-                Container(
-                  height: .5,
-                  color: WeChatColors.resolve(context, WeChatColors.divider),
-                  margin: const EdgeInsets.only(top: 8),
+                // 需求 §19：分区之间的水平线改用共享渐隐分割线（原来是自拼的
+                // 0.5px 实心 ColoredBox），保留原有 8dp 上方间距。
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: WeChatGradientDivider(
+                      key: Key('forward-picker-section-divider')),
                 ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 10, 16, 4),

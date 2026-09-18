@@ -8,6 +8,7 @@ import '../matrix/conversation_presentation.dart';
 import '../matrix/decryption_state_controller.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../../ui/components/user_avatar.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -448,10 +449,12 @@ final class GlobalSearchConversationRecordsPage extends StatelessWidget {
           child: ListView.separated(
             key: const Key('global-search-conversation-records'),
             itemCount: conversation.hits.length,
-            separatorBuilder: (_, __) => Container(
-              height: .5,
-              margin: const EdgeInsets.only(left: 62),
-              color: WeChatColors.divider,
+            // 需求 §19：命中行分隔线改用共享渐隐分割线，保留 62dp 左缩进；
+            // 原实现直接使用未解析的 WeChatColors.divider，深色下是浅灰线。
+            // 分隔线不挂 Key：sliver 下多个分隔线互为兄弟，测试按列表 Key
+            // 取子级共享组件。
+            separatorBuilder: (_, __) => const WeChatGradientDivider(
+              indent: 62,
             ),
             itemBuilder: (context, index) => _MessageHitRow(
               hit: conversation.hits[index],

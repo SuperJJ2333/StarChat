@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
+import '../components/wechat_gradient_divider.dart';
 import '../components/wechat_list_tile.dart';
 import '../foundation/wechat_tokens.dart';
 
@@ -132,7 +133,6 @@ final class ConversationNotificationModeTile extends StatelessWidget {
     bool isLast = false,
   }) {
     final selected = _mode == mode;
-    final dark = CupertinoTheme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         WeChatListTile(
@@ -146,10 +146,11 @@ final class ConversationNotificationModeTile extends StatelessWidget {
           onTap: () => onChanged(mode),
         ),
         if (!isLast)
-          Container(
-            height: 1,
-            margin: const EdgeInsets.only(left: 16),
-            color: dark ? WeChatColors.darkDivider : WeChatColors.divider,
+          // 需求 §19：行间分隔线改用共享渐隐分割线，原有 16dp 左缩进由
+          // 组件的 indent 承担（行高不因画线改变）。
+          const WeChatGradientDivider(
+            key: Key('notification-mode-row-divider'),
+            indent: WeChatSpacing.lg,
           ),
       ],
     );

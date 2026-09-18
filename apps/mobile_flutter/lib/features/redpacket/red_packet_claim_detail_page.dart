@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../ui/components/user_avatar.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
@@ -425,11 +426,11 @@ final class _RedPacketClaimDetailPageState
           _recordsHeader(),
           for (var i = 0; i < records.length; i++) ...[
             if (i > 0)
-              Container(
-                height: .5,
-                margin: const EdgeInsets.only(left: 62),
-                color: WeChatColors.resolve(context, WeChatColors.divider),
-              ),
+              // 需求 §19：领取明细行之间的分隔线改用共享渐隐分割线，保留
+              // 原有 62dp 左缩进（由组件的 indent 承担）。这里不再给分割线
+              // 单独挂 Key：同一 Column 下多个分隔线互为兄弟，重复 Key 会
+              // 直接抛 Duplicate keys。测试按父级 Key 取子级组件。
+              const WeChatGradientDivider(indent: 62),
             _recordRow(records[i], isBest: i == bestIndex),
           ],
         ],
