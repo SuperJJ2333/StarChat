@@ -38,6 +38,7 @@ from app.modules.media.domain import (
     new_blob_id,
     owner_scope_key,
 )
+from app.core.errors import AppError
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import MediaBlob
 from app.modules.media.repository import utcnow
@@ -85,6 +86,27 @@ class _Stats:
     errors: list[str] = field(default_factory=list)
 
 
+def _resolve_root(backend: object, explicit: str | None) -> Path:
+    """Locate the object directory this reconciler scans.
+
+    Reconcile is the one media component that must read the directory itself: a file without
+    a row has no other way to be discovered. ``LocalBlobBackend`` exposes its root publicly,
+    while the avatar store the platform is deployed against keeps the same directory behind a
+    private ``_root``, so both spellings are accepted instead of assuming one backend class.
+    """
+    if explicit:
+        return Path(explicit).resolve()
+    for attribute in ("root", "_root"):
+        candidate = getattr(backend, attribute, None)
+        if candidate:
+            return Path(candidate).resolve()
+    raise AppError(
+        code="MEDIA_RECONCILE_ROOT_UNKNOWN",
+        message="媒体存储根目录未配置",
+        status_code=500,
+    )
+
+
 class MediaReconciler:
     def __init__(
         self,
@@ -97,8 +119,7 @@ class MediaReconciler:
         self._session_factory = session_factory
         self._backend = backend
         self._now = now_factory
-        # ``LocalBlobBackend`` exposes its root; the ports are the backend themselves.
-        self._root = Path(root).resolve() if root else Path(getattr(backend, "root")).resolve()
+        self._root = _resolve_root(backend, root)
 
     # ------------------------------------------------------------------ #
     # Entry point
@@ -119,7 +140,7 @@ class MediaReconciler:
         known_keys: set[str] = set()
         for blob in blobs:
             known_keys.add(blob.storage_key)
-            if not self._backend.exists(blob.storage_key):
+            if not self._exists(blob.storage_key):
                 stats.missing.append(blob.blob_id)
                 if not dry_run:
                     self._invalidate(blob.blob_id, now=now)
@@ -155,6 +176,30 @@ class MediaReconciler:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+    def _exists(self, key: str) -> bool:
+        probe = getattr(self._backend, "exists", None)
+        if callable(probe):
+            return bool(probe(key))
+        # A backend that predates the media platform exposes no existence probe; for a
+        # filesystem-backed store the object directory is the source of truth.
+        return self._path(key).is_file()
+
+    def _path(self, key: str) -> Path:
+        if not key or key.startswith("/") or ".." in Path(key).parts:
+            raise AppError(
+                code="MEDIA_STORAGE_KEY_INVALID",
+                message="媒体存储引用无效",
+                status_code=500,
+            )
+        candidate = (self._root / key).resolve()
+        if candidate == self._root or self._root not in candidate.parents:
+            raise AppError(
+                code="MEDIA_STORAGE_KEY_INVALID",
+                message="媒体存储引用无效",
+                status_code=500,
+            )
+        return candidate
+
     def _platform_files(self, *, limit: int) -> list[str]:
         found: list[str] = []
         for prefix in PLATFORM_KEY_PREFIXES:
@@ -190,7 +235,7 @@ class MediaReconciler:
 
     def _rebuild(self, key: str, *, now: datetime) -> bool:
         try:
-            path = self._root / key
+            path = self._path(key)
             content = path.read_bytes()
         except OSError:
             return False

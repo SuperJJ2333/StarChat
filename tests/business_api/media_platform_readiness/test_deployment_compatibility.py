@@ -10,6 +10,7 @@ fails to start, because `app.main` imports the bridge).
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -72,3 +73,77 @@ def test_bridge_uses_the_module_validator_when_present() -> None:
         MomentsMediaBridge._validate(
             mime="image/gif", content=b"GIF89a" + b"\x00" * 64, purpose="MOMENT_IMAGE"
         )
+
+
+def test_avatar_backend_shape_is_still_the_deployed_one(platform) -> None:
+    """Guard the premise of the two reconciler tests below.
+
+    The deployed avatar store exposes ``put``/``get``/``delete``/``signed_read_url`` and keeps
+    its directory behind a private ``_root``. It has no public ``root`` and no ``exists``. If
+    that ever changes, the compatibility fallbacks below stop being exercised and this fails
+    loudly instead of quietly passing.
+    """
+
+    backend = platform.storage
+    assert not hasattr(backend, "root")
+    assert not hasattr(backend, "exists")
+    assert backend._root == Path(platform.root).resolve()
+
+
+def test_reconciler_accepts_the_deployed_avatar_backend(platform) -> None:
+    """Reconcile must work with the backend the API actually deploys against.
+
+    The compatibility probe injected the production ``LocalPrivateObjectStorage`` into
+    ``MediaReconciler`` and got ``AttributeError: no attribute 'root'``; that backend also has
+    no ``exists`` probe. Reconcile is the one component that reads the object directory itself,
+    so it resolves the directory from either spelling and falls back to the filesystem for
+    existence.
+    """
+
+    from app.modules.media.reconcile import MediaReconciler
+
+    platform.ingest(content=b"deployed-backend-shape" * 64)
+
+    reconciler = MediaReconciler(platform.factory, backend=platform.storage)
+    report = reconciler.run(dry_run=True)
+    assert report.scanned_blobs == 1
+    assert report.missing_files == ()
+    assert report.invalidated == 0
+
+    # Missing file without a row-level probe must still be detected through the directory.
+    files = _platform_files(platform.root)
+    assert len(files) == 1
+    Path(files[0]).unlink()
+    after = reconciler.run(dry_run=False)
+    assert after.missing_files and after.invalidated == 1
+    assert after.errors == ()
+
+
+def test_reconciler_refuses_a_backend_without_a_known_directory() -> None:
+    """No directory at all is a configuration error, not a silent no-op."""
+
+    from app.core.errors import AppError
+    from app.modules.media.reconcile import MediaReconciler
+
+    class _Opaque:
+        def put(self, key: str, content: bytes) -> None: ...
+
+        def get(self, key: str) -> bytes:
+            return b""
+
+        def delete(self, key: str) -> None: ...
+
+    with pytest.raises(AppError) as caught:
+        MediaReconciler(lambda: None, backend=_Opaque())
+    assert caught.value.code == "MEDIA_RECONCILE_ROOT_UNKNOWN"
+
+
+def _platform_files(root: str) -> list[str]:
+    found: list[str] = []
+    for prefix in ("media/", "moments/media/"):
+        base = Path(root) / prefix
+        if base.is_dir():
+            found.extend(
+                str(path) for path in sorted(base.rglob("*")) if path.is_file()
+            )
+    return found

@@ -222,7 +222,13 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         collector=MediaGarbageCollector(session_factory, backend=backend, policy=policy),
         grants=grants,
         audience=AudienceRegistry(verifiers=(MomentsAudienceVerifier(session_factory),)),
-        reconciler=MediaReconciler(session_factory, backend=backend),
+        reconciler=MediaReconciler(
+            session_factory,
+            backend=backend,
+            # Reconcile scans the private object directory itself, so it is told where that
+            # directory is instead of introspecting the backend it was handed.
+            root=settings.avatar_storage_root,
+        ),
         codec=MediaSignedUrlCodec(
             # Prefer a dedicated media secret; fall back to the avatar signing secret so an
             # existing deployment works without a new mandatory secret. Rotating either
