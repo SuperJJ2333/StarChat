@@ -17,6 +17,7 @@ from app.modules.wallet.runtime import create_manual_wallet_runtime
 from app.api.friendship import create_friendship_router
 from app.api.moments import create_moments_router
 from app.api.media import create_media_router
+from app.api.media_platform import create_media_platform_router
 from app.api.profile import create_profile_router
 from app.api.groups import create_group_router
 from app.api.admin import create_admin_router
@@ -127,8 +128,68 @@ def create_app(
         prefix="/api/v1",
     )
     app.include_router(create_group_router(settings, session_factory, matrix_gateway=matrix_gateway), prefix="/api/v1")
+    app.include_router(
+        create_media_platform_router(
+            settings,
+            session_factory,
+            service=_build_media_platform_service(settings, session_factory, avatar_storage),
+        ),
+        prefix="/api/v1",
+    )
     app.include_router(create_admin_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
     return app
+
+
+def _build_media_platform_service(settings: Settings, session_factory, storage):
+    """Assemble the Media Platform (Phase 4).
+
+    The platform writes into the same private object directory the business API already
+    owns; it is a new key namespace, not a second storage system and not a second cache.
+    """
+
+    from app.modules.media.authorization import OwnerOnlyAuthorizer
+    from app.modules.media.gateway import (
+        BusinessMediaGateway,
+        MatrixMediaGateway,
+        MediaGatewayRegistry,
+    )
+    from app.modules.media.policy import MediaPlatformPolicy, MediaTtlPolicy
+    from app.modules.media.repository import MediaRepository
+    from app.modules.media.service import MediaPlatformService
+    from app.modules.media.storage import LocalBlobBackend
+    from app.modules.media.upload_engine import MediaUploadEngine
+    from app.modules.media.variants import VariantResolver
+
+    policy = MediaPlatformPolicy(
+        ttl=MediaTtlPolicy(
+            private_seconds=settings.media_ttl_private_seconds,
+            audience_seconds=settings.media_ttl_audience_seconds,
+            public_seconds=settings.media_ttl_public_seconds,
+        ),
+        orphan_grace_seconds=settings.media_orphan_grace_seconds,
+        e2ee_retention_floor_seconds=settings.media_e2ee_retention_floor_seconds,
+    )
+    backend = LocalBlobBackend(root=settings.avatar_storage_root)
+    repository = MediaRepository(
+        session_factory, backend=backend, dedup_policy=policy.dedup
+    )
+    resolver = VariantResolver(repository)
+    registry = MediaGatewayRegistry(
+        matrix=MatrixMediaGateway(),
+        business=BusinessMediaGateway(
+            repository=repository,
+            resolver=resolver,
+            authorizer=OwnerOnlyAuthorizer(ttl_policy=policy.ttl),
+            policy=policy,
+        ),
+    )
+    return MediaPlatformService(
+        repository=repository,
+        resolver=resolver,
+        registry=registry,
+        upload_engine=MediaUploadEngine(session_factory, policy=policy),
+        policy=policy,
+    )
 
 
 def create_default_app() -> FastAPI:

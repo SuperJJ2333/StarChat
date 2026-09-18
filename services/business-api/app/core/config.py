@@ -165,6 +165,16 @@ class Settings(BaseSettings):
     personal_invite_max_uses: int = 20
     personal_invite_expiry_days: int = 365
     media_max_upload_bytes: int = 10 * 1024 * 1024
+    # Media Platform (Media Engine Phase 4). All optional: the platform degrades to the
+    # frozen policy defaults and maintenance endpoints stay closed in production unless a
+    # token is configured.
+    media_url_signing_secret: str | None = None
+    media_maintenance_token: str | None = None
+    media_ttl_private_seconds: int = 60
+    media_ttl_audience_seconds: int = 600
+    media_ttl_public_seconds: int = 86400
+    media_orphan_grace_seconds: int = 7 * 24 * 3600
+    media_e2ee_retention_floor_seconds: int = 30 * 24 * 3600
 
     @field_validator("matrix_login_token_expires_in", mode="before")
     @classmethod
