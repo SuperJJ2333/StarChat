@@ -255,6 +255,41 @@ inflight=[none]`.
 4. This evidence is from an instrumented build. Product-level confirmation was then taken on the
    un-instrumented build (see §6f).
 
+## 6f. Device verification on the un-instrumented product build
+
+Build `android-0.3.96-debug-2134-anr-fix/final.apk`, SHA-256
+`5c3a3beaf98d24c9bf0dae165fc85183c520fe46a07c7bedd9dec22f37337772`, 145,051,947 B, versionCode 2134 /
+0.3.96, debuggable, signer `75b31c66…61fff`. The probe is not merely disabled but absent: `main.dart` was
+restored to stock, `lib/debug/stall_probe.dart` was removed from the tree, and a search of the shipped
+`assets/flutter_assets/kernel_blob.bin` returns no match for `StallProbe`, `microflood`, `STALL_DETECTED`
+or `stall_probe`. Installed with `adb install -r`; `firstInstallTime` stayed `2026-09-11 00:42:05`; no
+uninstall, no data clear.
+
+**A — touch nothing for 150 s** (`anr-forensics/anr-fix-run1.log`): `ANR in com.liuhetong.mobile` count =
+**0**; `dumpsys activity processes | grep -i anr` empty; the app stayed alive and focused
+(`mCurrentFocus=…com.liuhetong.mobile/.MainActivity`) with the same pid (`30583`) for the whole run.
+
+**B — 12 interactions, each photographed and hash-compared against the previous screen**: tap 「测试群」,
+back, tap 「测试」, back, scroll, 通讯录, 我, 发现, 消息, 32 s idle inside a conversation, back to the list —
+**every step `ok` (no ANR dialog, focus unchanged) and every step changed the screen**, so the app was
+genuinely responding and rendering rather than silently ignoring input. Final ANR count still 0, pid
+unchanged. `fix-verify-noprobe/B10-room-idle-32s.png` shows the conversation fully rendered (date
+separator, join system message, timestamps, emoji message with avatar, composer), and it stayed
+responsive through the 32 s idle.
+
+**Measurement limitation stated plainly:** `dumpsys gfxinfo` is not usable for Flutter on this device —
+it reports `Total frames rendered: 1` because Flutter renders through its own Skia surface instead of
+hwui, so hwui frame counters are meaningless here. Rendering evidence therefore comes from per-step
+screenshot change plus the instrumented build's frame counters (§6e: 884 → 2,532), not from `gfxinfo`.
+
+**Historical record, not a new failure:** `dumpsys activity lastanr` still lists an ANR from 07:03:48
+(`Wait queue head age: 59394.3ms`) produced while the *unfixed* builds were being tested. It predates
+this install (`lastUpdateTime 07:43:49`) and the current session has zero ANRs and no process restart.
+
+**Scope of this evidence:** this device and this account, over the listed paths (list, four tabs,
+scrolling, entering and leaving several conversations, 32 s idle inside a conversation, ~6 minutes
+total). Weak-network, background-upload, wallet and moments paths were not re-exercised here.
+
 ## 7. Instrumented diagnostic build
 
 
