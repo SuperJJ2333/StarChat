@@ -10,12 +10,14 @@ keeps the request path in the frozen order:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from app.core.errors import AppError
 from app.modules.media.authorization import Authorizer, OwnerOnlyAuthorizer
 from app.modules.media.domain import (
     DigestKind,
     EnvelopeMode,
+    GcMode,
     MediaKind,
     Permission,
     VariantKind,
@@ -35,6 +37,7 @@ from app.modules.media.policy import (
     NetworkHint,
     VariantPreference,
 )
+from app.modules.media.references import MediaReferenceService, ReferenceView
 from app.modules.media.repository import (
     IngestRequest,
     IngestResult,
@@ -42,6 +45,9 @@ from app.modules.media.repository import (
 )
 from app.modules.media.upload_engine import MediaUploadEngine, UploadSessionView
 from app.modules.media.variants import VariantCandidate, VariantResolver
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.modules.media.lifecycle import GcReport, MediaGarbageCollector
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +70,8 @@ class MediaPlatformService:
         upload_engine: MediaUploadEngine,
         policy: MediaPlatformPolicy | None = None,
         authorizer: Authorizer | None = None,
+        references: "MediaReferenceService | None" = None,
+        collector: "MediaGarbageCollector | None" = None,
     ) -> None:
         self._repository = repository
         self._resolver = resolver
@@ -71,6 +79,8 @@ class MediaPlatformService:
         self._uploads = upload_engine
         self._policy = policy or MediaPlatformPolicy()
         self._authorizer = authorizer or OwnerOnlyAuthorizer(ttl_policy=self._policy.ttl)
+        self._references = references
+        self._collector = collector
 
     # ------------------------------------------------------------------ #
     # Ingest (Write New)
@@ -204,6 +214,47 @@ class MediaPlatformService:
 
     def commit_upload(self, **kwargs) -> UploadSessionView:
         return self._uploads.commit(**kwargs)
+
+    # ------------------------------------------------------------------ #
+    # References (Phase 4.3) and lifecycle (Phase 4.6)
+    # ------------------------------------------------------------------ #
+    @property
+    def references(self) -> "MediaReferenceService":
+        if self._references is None:  # pragma: no cover - wiring guard
+            raise AppError(
+                code="MEDIA_REFERENCES_UNAVAILABLE",
+                message="媒体引用服务不可用",
+                status_code=503,
+            )
+        return self._references
+
+    def attach_reference(self, **kwargs) -> "ReferenceView":
+        return self.references.attach(**kwargs)
+
+    def release_reference(self, **kwargs) -> "ReferenceView":
+        return self.references.release(**kwargs)
+
+    def references_for(self, media_id: str, *, include_released: bool = False):
+        return self.references.list_for_media(media_id, include_released=include_released)
+
+    def run_garbage_collection(self, *, mode: GcMode = GcMode.DRY_RUN, owner_id: str | None = None, limit: int = 200) -> "GcReport":
+        if self._collector is None:  # pragma: no cover - wiring guard
+            raise AppError(
+                code="MEDIA_GC_UNAVAILABLE",
+                message="媒体回收服务不可用",
+                status_code=503,
+            )
+        return self._collector.run(mode=mode, owner_id=owner_id, limit=limit)
+
+    def pin(self, media_id: str, *, seconds: int) -> None:
+        from app.modules.media.lifecycle import pin_object
+
+        pin_object(self._repository.session_factory, media_id=media_id, seconds=seconds)
+
+    def unpin(self, media_id: str) -> None:
+        from app.modules.media.lifecycle import unpin_object
+
+        unpin_object(self._repository.session_factory, media_id=media_id)
 
     # ------------------------------------------------------------------ #
     # Diagnostics

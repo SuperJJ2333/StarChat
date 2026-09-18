@@ -153,7 +153,9 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         MatrixMediaGateway,
         MediaGatewayRegistry,
     )
+    from app.modules.media.lifecycle import MediaGarbageCollector
     from app.modules.media.policy import MediaPlatformPolicy, MediaTtlPolicy
+    from app.modules.media.references import MediaReferenceService
     from app.modules.media.repository import MediaRepository
     from app.modules.media.service import MediaPlatformService
     from app.modules.media.storage import LocalBlobBackend
@@ -189,6 +191,8 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         registry=registry,
         upload_engine=MediaUploadEngine(session_factory, policy=policy),
         policy=policy,
+        references=MediaReferenceService(session_factory),
+        collector=MediaGarbageCollector(session_factory, backend=backend, policy=policy),
     )
 
 

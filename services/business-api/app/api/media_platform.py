@@ -18,13 +18,18 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings
 from app.core.errors import AppError
 from app.modules.media.domain import (
+    BusinessType,
     DigestKind,
     EnvelopeMode,
+    GcMode,
     MediaKind,
+    ReferenceKind,
+    ReleaseReason,
     VariantKind,
     VisibilityTier,
 )
@@ -43,6 +48,19 @@ def _media_kind(value: str) -> MediaKind:
             message="媒体类型不合法",
             status_code=422,
         ) from None
+
+
+class ReferenceAttachRequest(BaseModel):
+    """Attach payload. Strict: an unknown field is a client bug, not something to ignore."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    business_type: str = Field(min_length=3, max_length=32)
+    business_id: str = Field(min_length=1, max_length=160)
+    variant_kind: str | None = Field(default=None, max_length=24)
+    room_ref: str | None = Field(default=None, max_length=160)
+    permission_scope: str = Field(default=VisibilityTier.PRIVATE.value, max_length=16)
+    ref_kind: str = Field(default=ReferenceKind.OBSERVED.value, max_length=16)
 
 
 def create_media_platform_router(
@@ -288,6 +306,114 @@ def create_media_platform_router(
         )
 
     # ------------------------------------------------------------------ #
+    # References and lifecycle (Phase 4.3 / 4.6)
+    # ------------------------------------------------------------------ #
+    @router.post("/media/platform/objects/{media_id}/references", status_code=201)
+    async def attach_reference(
+        media_id: str,
+        body: "ReferenceAttachRequest",
+        claims: dict = Depends(current_claims),
+    ) -> dict:
+        try:
+            business_type = BusinessType(body.business_type)
+            permission_scope = VisibilityTier(body.permission_scope)
+            ref_kind = ReferenceKind(body.ref_kind)
+        except ValueError:
+            raise AppError(
+                code="MEDIA_REFERENCE_INVALID",
+                message="业务引用不合法",
+                status_code=422,
+            ) from None
+        view = service.attach_reference(
+            media_id=media_id,
+            actor_id=claims["sub"],
+            business_type=business_type,
+            business_id=body.business_id,
+            variant_kind=body.variant_kind,
+            room_ref=body.room_ref,
+            permission_scope=permission_scope,
+            ref_kind=ref_kind,
+        )
+        return _reference_payload(view)
+
+    @router.get("/media/platform/objects/{media_id}/references")
+    async def list_references(
+        media_id: str,
+        claims: dict = Depends(current_claims),
+        include_released: Annotated[bool, Query()] = False,
+    ) -> dict:
+        views = service.references_for(media_id, include_released=include_released)
+        return {"items": [_reference_payload(view) for view in views]}
+
+    @router.delete("/media/platform/references/{reference_id}")
+    async def release_reference(
+        reference_id: str,
+        claims: dict = Depends(current_claims),
+        reason: Annotated[str, Query(max_length=32)] = ReleaseReason.USER_DELETE.value,
+    ) -> dict:
+        try:
+            parsed_reason = ReleaseReason(reason)
+        except ValueError:
+            raise AppError(
+                code="MEDIA_REFERENCE_INVALID",
+                message="释放原因不合法",
+                status_code=422,
+            ) from None
+        view = service.release_reference(
+            reference_id=reference_id, actor_id=claims["sub"], reason=parsed_reason
+        )
+        return _reference_payload(view)
+
+    @router.post("/media/platform/objects/{media_id}/pin")
+    async def pin_object(
+        media_id: str,
+        claims: dict = Depends(current_claims),
+        seconds: Annotated[int, Query(gt=0, le=86400)] = 3600,
+    ) -> dict:
+        # Pinning is an owner action: the metadata read below denies non-owners.
+        _may_pin(service, media_id, claims["sub"])
+        service.pin(media_id, seconds=seconds)
+        return {"media_id": media_id, "pinned_seconds": seconds}
+
+    @router.post("/media/platform/gc")
+    async def run_gc(
+        mode: Annotated[str, Query(max_length=12)] = GcMode.DRY_RUN.value,
+        owner_id: Annotated[str | None, Query(max_length=36)] = None,
+        limit: Annotated[int, Query(gt=0, le=1000)] = 200,
+        _: None = Depends(require_maintenance),
+    ) -> dict:
+        try:
+            parsed_mode = GcMode(mode)
+        except ValueError:
+            raise AppError(
+                code="MEDIA_GC_MODE_INVALID",
+                message="回收模式不合法",
+                status_code=422,
+            ) from None
+        report = service.run_garbage_collection(
+            mode=parsed_mode, owner_id=owner_id, limit=limit
+        )
+        return {
+            "run_id": report.run_id,
+            "mode": report.mode,
+            "dry_run": report.dry_run,
+            "scope": report.scope,
+            "scanned": report.scanned,
+            "candidates": report.candidates,
+            "collected": report.collected,
+            "bytes_reclaimed": report.bytes_reclaimed,
+            "skipped": report.skipped,
+            "decisions": [
+                {
+                    "media_id": decision.media_id,
+                    "action": decision.action,
+                    "reason": decision.reason,
+                }
+                for decision in report.decisions
+            ],
+        }
+
+    # ------------------------------------------------------------------ #
     # Diagnostics (maintenance gated)
     # ------------------------------------------------------------------ #
     @router.get("/media/platform/metrics")
@@ -295,6 +421,30 @@ def create_media_platform_router(
         return media_platform_metrics.snapshot()
 
     return router
+
+
+def _may_pin(service, media_id: str, subject_id: str) -> bool:
+    """Pinning is an owner action; a non-owner is rejected by the metadata read."""
+
+    service.object_metadata(media_id, subject_id=subject_id)
+    return True
+
+
+def _reference_payload(view) -> dict:
+    return {
+        "reference_id": view.reference_id,
+        "media_id": view.media_id,
+        "business_type": view.business_type,
+        "business_id": view.business_id,
+        "variant_kind": view.variant_kind,
+        "room_ref": view.room_ref,
+        "permission_scope": view.permission_scope,
+        "ref_kind": view.ref_kind,
+        "state": view.state,
+        "created_at": view.created_at,
+        "released_at": view.released_at,
+        "release_reason": view.release_reason,
+    }
 
 
 def _upload_payload(view) -> dict:

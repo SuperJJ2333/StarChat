@@ -119,6 +119,14 @@ class MediaRepository:
         self._dedup = dedup_policy or MediaDedupPolicy()
         self._now = now_factory
 
+    @property
+    def session_factory(self):
+        return self._session_factory
+
+    @property
+    def backend(self) -> BlobBackend:
+        return self._backend
+
     # ------------------------------------------------------------------ #
     # Ingest
     # ------------------------------------------------------------------ #
