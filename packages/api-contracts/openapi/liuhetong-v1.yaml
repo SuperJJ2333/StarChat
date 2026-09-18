@@ -19744,6 +19744,88 @@
         ]
       }
     },
+    "/api/v1/media/platform/reconcile": {
+      "post": {
+        "description": "Storage/metadata reconciliation (readiness fix).\n\nDefaults to ``dry_run``: reporting is safe at any time, and enforcement is an explicit\nmaintenance action. It never touches a file whose row is valid.",
+        "operationId": "reconcile_storage_api_v1_media_platform_reconcile_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Media-Maintenance-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Media-Maintenance-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reconcile Storage Api V1 Media Platform Reconcile Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Application error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Validation error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal error"
+          }
+        },
+        "summary": "Reconcile Storage",
+        "tags": [
+          "media-platform"
+        ]
+      }
+    },
     "/api/v1/media/platform/references/{reference_id}": {
       "delete": {
         "operationId": "release_reference_api_v1_media_platform_references__reference_id__delete",
