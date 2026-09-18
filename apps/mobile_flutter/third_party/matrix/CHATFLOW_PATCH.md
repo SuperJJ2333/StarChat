@@ -141,3 +141,33 @@ This patch does not change Megolm rotation, room encryption or avatar uploads.
   `CandidateSendQueue` unit (backoff, give-up bound, dispose, cross-call
   generation, and a negative control proving the assertion detects the old
   2000 ms delay).
+
+2026-09-19 stale-send self-heal re-entrancy (Mi 6 ANR):
+
+- `lib/src/event.dart` no longer re-enters `Client.handleSync` every time a stale
+  `sending` event is reconstructed. The previous self-heal fired on *every*
+  construction of an event whose status is `sending` and whose age exceeds
+  `Client.sendTimelineEventTimeout`, and sync handling itself reconstructs events
+  while it persists them (`MatrixSdkDatabase.storeEventUpdate` builds the previous
+  row as an `Event` at `matrix_sdk_database.dart:1063`). One row left in
+  `sending` therefore pumped `Client.handleSync` without bound, entirely locally:
+  device instrumentation measured ~1,380 stream deliveries/s and ~21,000
+  callbacks/s sustained for 90+ s on the Dart UI isolate, the 1 s timer queue
+  stopped firing entirely, no frame was produced, and input dispatch died (the
+  ANR "畅聊 ChatFlow没有响应", reproduced on 0.3.95/2133 debug, 0.3.96/2134 debug and
+  0.3.96/2134 release). The self-heal is now claimed at most once per
+  `<roomId>\u0000<eventId>` per timeout window (`Event._claimStaleSendHeal`,
+  bounded to 512 entries). Behaviour is otherwise unchanged: the same event is
+  still re-injected, still marked `EventStatus.error`, and still persisted
+  through the same sync path - it simply cannot do so repeatedly from inside its
+  own reconstruction. Matrix request payloads, E2EE, key handling and the
+  remaining event-processing paths are untouched.
+- Regression: `test/features/matrix/sdk_stale_send_selfheal_test.dart` drives the
+  real vendored `MatrixSdkDatabase` on an in-memory sqflite database, seeds one
+  stale `sending` event, reconstructs `Event`s the way the persistence path does,
+  and asserts that `Client.onSyncStatus` - which `Client._handleRooms` writes once
+  per processed room - observes at most one sync run. RED evidence: with the guard
+  bypassed the same test never completes (it was killed at the 600 s cap) because
+  the reconstruction storm starves the event loop, which is the production
+  failure itself; with the guard it passes in under a second. Device-level
+  verification is recorded in `docs/verification/2026-09-19-mi6-anr-forensics.md`.

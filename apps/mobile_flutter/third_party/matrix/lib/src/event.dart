@@ -58,6 +58,33 @@ class Event extends MatrixEvent {
 
   static const EventStatus defaultStatus = EventStatus.synced;
 
+  /// ChatFlow patch 2026-09-19 — see `third_party/matrix/CHATFLOW_PATCH.md`.
+  ///
+  /// Last self-heal timestamp per `<roomId>\u0000<eventId>` for stale `sending`
+  /// events, bounded to [_staleSendHealCapacity] entries. Constructing an [Event]
+  /// used to re-enter `Client.handleSync` every single time a stale `sending`
+  /// event was reconstructed, and `Client.handleSync` reconstructs events while
+  /// it persists them, so one stale row pumped sync processing without bound on
+  /// the Dart UI isolate: the timer queue stopped running and the app became
+  /// unresponsive (Mi 6 ANR, 2026-09-19). The self-heal now happens at most once
+  /// per event per timeout window, which is all it ever needed.
+  static final Map<String, int> _staleSendHealAt = <String, int>{};
+  static const int _staleSendHealCapacity = 512;
+
+  static bool _claimStaleSendHeal(String key, int windowMs) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final previous = _staleSendHealAt[key];
+    if (previous != null && now - previous < windowMs) return false;
+    if (_staleSendHealAt.length >= _staleSendHealCapacity) {
+      _staleSendHealAt.removeWhere((_, at) => now - at >= windowMs);
+      if (_staleSendHealAt.length >= _staleSendHealCapacity) {
+        _staleSendHealAt.remove(_staleSendHealAt.keys.first);
+      }
+    }
+    _staleSendHealAt[key] = now;
+    return true;
+  }
+
   /// Optional. The event that redacted this event, if any. Otherwise null.
   Event? get redactedBecause {
     final redacted_because = unsigned?['redacted_because'];
@@ -123,7 +150,9 @@ class Event extends MatrixEvent {
           originServerTs.millisecondsSinceEpoch;
 
       final room = this.room;
-      if (age > room.client.sendTimelineEventTimeout.inMilliseconds) {
+      final healWindow = room.client.sendTimelineEventTimeout.inMilliseconds;
+      if (age > healWindow &&
+          _claimStaleSendHeal('${room.id}\u0000$eventId', healWindow)) {
         // Update this event in database and open timelines
         final json = toJson();
         json['unsigned'] ??= <String, dynamic>{};
