@@ -17,8 +17,30 @@ def test_android_ci_workflow_exists_and_pins_flutter():
     # 三个 job 齐备
     for job in ("backend:", "flutter:", "android-debug-build:"):
         assert job in ci, f"缺少 job：{job}"
-    # 全量测试必须存在（不得被降级为 analyze-only）
-    assert "run: flutter test" in ci
+    # 全量测试必须存在（不得被降级为 analyze-only）。
+    #
+    # 这里刻意**不**断言 `run: flutter test` 这种「单行 run」写法：全量测试步骤
+    # 还需要捕获完整日志并在失败时汇总真正的失败用例（CI 日志里满是故意失败/
+    # 通过用例的诊断输出，不加汇总无法定位失败测试），因此它必然是多行 shell
+    # 块。断言改为「确实执行了 flutter test」，并同时锁住那两项诊断保障，
+    # 避免有人以「简化写法」为由把它们删掉。
+    assert "flutter test" in ci, "全量 flutter test 必须存在于门禁中"
+    assert "flutter analyze" in ci, "analyze 步骤不得被测试步骤吞掉"
+    # 诊断保障：完整日志落盘 + 失败清单汇总（缺一即视为弱化）。
+    # 断言落在**提取逻辑**上而不是某条文案 echo 上：否则只改文案也能骗过守卫。
+    assert "full-suite.log" in ci, "必须捕获全量测试完整日志"
+    assert "Failing tests:" in ci, "失败时必须汇总真正的失败用例"
+    assert "sed -n '/^Failing tests:/,$p'" in ci, "必须从日志中提取失败用例清单"
+    # `flutter test` 必须是可执行行，不能被注释掉或塞进注释里
+    executable_test_lines = [
+        line.strip()
+        for line in ci.splitlines()
+        if "flutter test" in line and not line.strip().startswith("#")
+    ]
+    assert executable_test_lines, "flutter test 不得被注释掉"
+    assert any(
+        line == "flutter test 2>&1 | tee \"$log\"" for line in executable_test_lines
+    ), f"全量测试必须实际执行：{executable_test_lines}"
 
 
 def test_android_ci_backend_job_runs_all_python_suites():
