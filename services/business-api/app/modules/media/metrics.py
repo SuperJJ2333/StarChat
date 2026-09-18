@@ -63,6 +63,9 @@ class MediaPlatformMetrics:
             "moments_bridge_attached": 0,
             "reconcile_rebuilt": 0,
             "reconcile_invalidated": 0,
+            "ingest_digest_slot_race_reused": 0,
+            "reference_attach_race_reused": 0,
+            "grant_issue_race_reused": 0,
             "upload_session_created": 0,
             "upload_session_aborted": 0,
         }

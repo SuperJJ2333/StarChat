@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.modules.media.domain import (
@@ -39,6 +40,21 @@ from app.modules.media.domain import (
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import MediaObject, MediaReference
 from app.modules.media.repository import utcnow
+
+
+#: Markers of the ``uq_media_references_active`` partial unique index. PostgreSQL names the
+#: constraint and SQLite names the columns, so both spellings are recognised.
+ACTIVE_REFERENCE_CONFLICT_MARKERS = (
+    "uq_media_references_active",
+    "media_references.media_id",
+)
+
+
+def is_active_reference_conflict(error: BaseException) -> bool:
+    """True when the database refused a second *active* reference for one business object."""
+
+    text = str(getattr(error, "orig", error))
+    return any(marker in text for marker in ACTIVE_REFERENCE_CONFLICT_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +118,80 @@ class MediaReferenceService:
                 message="业务引用不合法",
                 status_code=422,
             )
+        try:
+            return self._attach(
+                media_id=media_id,
+                actor_id=actor_id,
+                business_type=business_type,
+                business_id=business_id,
+                variant_kind=variant_kind,
+                room_ref=room_ref,
+                permission_scope=permission_scope,
+                ref_kind=ref_kind,
+            )
+        except IntegrityError as error:
+            if not is_active_reference_conflict(error):
+                raise
+            # Two requests attached the same business object at the same time and the other
+            # one won the partial unique index. That is the same outcome this call wanted,
+            # so return the winner's row instead of failing the request.
+            winner = self._active_reference(
+                media_id=media_id,
+                business_type=business_type,
+                business_id=business_id,
+            )
+            if winner is None:
+                raise
+            media_platform_metrics.increment("reference_attach_race_reused")
+            return winner
+
+    def _active_reference(
+        self,
+        *,
+        media_id: str,
+        business_type: BusinessType,
+        business_id: str,
+    ) -> ReferenceView | None:
+        with self._session_factory() as session:
+            row = self._find_active_reference(
+                session,
+                media_id=media_id,
+                business_type=business_type,
+                business_id=business_id,
+            )
+            if row is None:
+                return None
+            return ReferenceView.of(row)
+
+    @staticmethod
+    def _find_active_reference(
+        session,
+        *,
+        media_id: str,
+        business_type: BusinessType,
+        business_id: str,
+    ) -> MediaReference | None:
+        return session.scalars(
+            select(MediaReference).where(
+                MediaReference.media_id == media_id,
+                MediaReference.business_type == business_type.value,
+                MediaReference.business_id == business_id,
+                MediaReference.state == ReferenceState.ACTIVE.value,
+            )
+        ).first()
+
+    def _attach(
+        self,
+        *,
+        media_id: str,
+        actor_id: str,
+        business_type: BusinessType,
+        business_id: str,
+        variant_kind: str | None,
+        room_ref: str | None,
+        permission_scope: VisibilityTier,
+        ref_kind: ReferenceKind,
+    ) -> ReferenceView:
         now = self._now()
         with self._session_factory.begin() as session:
             media = session.get(MediaObject, media_id)
@@ -113,14 +203,12 @@ class MediaReferenceService:
                 )
             self._assert_may_reference(media=media, actor_id=actor_id)
 
-            existing = session.scalars(
-                select(MediaReference).where(
-                    MediaReference.media_id == media_id,
-                    MediaReference.business_type == business_type.value,
-                    MediaReference.business_id == business_id,
-                    MediaReference.state == ReferenceState.ACTIVE.value,
-                )
-            ).first()
+            existing = self._find_active_reference(
+                session,
+                media_id=media_id,
+                business_type=business_type,
+                business_id=business_id,
+            )
             if existing is not None:
                 existing.variant_kind = variant_kind or existing.variant_kind
                 existing.room_ref = room_ref or existing.room_ref

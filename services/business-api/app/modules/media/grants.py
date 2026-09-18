@@ -16,6 +16,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.modules.media.domain import (
@@ -29,6 +30,21 @@ from app.modules.media.domain import (
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import MediaAccessGrant, MediaObject
 from app.modules.media.repository import utcnow
+
+
+#: Markers of the ``uq_media_access_grants_subject`` partial unique index. PostgreSQL names the
+#: constraint and SQLite names the columns, so both spellings are recognised.
+ACTIVE_GRANT_CONFLICT_MARKERS = (
+    "uq_media_access_grants_subject",
+    "media_access_grants.media_id",
+)
+
+
+def is_active_grant_conflict(error: BaseException) -> bool:
+    """True when the database refused a second *active* grant for the same subject."""
+
+    text = str(getattr(error, "orig", error))
+    return any(marker in text for marker in ACTIVE_GRANT_CONFLICT_MARKERS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +105,87 @@ class MediaGrantService:
         max_uses: int | None = None,
         derived_from: dict[str, Any] | None = None,
     ) -> GrantView:
+        try:
+            return self._issue(
+                media_id=media_id,
+                actor_id=actor_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                permission=permission,
+                variant_scope=variant_scope,
+                ttl_seconds=ttl_seconds,
+                single_use=single_use,
+                max_uses=max_uses,
+                derived_from=derived_from,
+            )
+        except IntegrityError as error:
+            if not is_active_grant_conflict(error):
+                raise
+            # Another request issued the same active grant first. One active grant per
+            # (media, subject, permission) is the frozen rule, so converge on the winner
+            # instead of failing the authorization request.
+            winner = self._active_grant(
+                media_id=media_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                permission=permission,
+            )
+            if winner is None:
+                raise
+            media_platform_metrics.increment("grant_issue_race_reused")
+            return winner
+
+    def _active_grant(
+        self,
+        *,
+        media_id: str,
+        subject_type: SubjectType,
+        subject_id: str,
+        permission: Permission,
+    ) -> GrantView | None:
+        with self._session_factory() as session:
+            row = self._find_active_grant(
+                session,
+                media_id=media_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                permission=permission,
+            )
+            return GrantView.of(row) if row is not None else None
+
+    @staticmethod
+    def _find_active_grant(
+        session,
+        *,
+        media_id: str,
+        subject_type: SubjectType,
+        subject_id: str,
+        permission: Permission,
+    ) -> MediaAccessGrant | None:
+        return session.scalars(
+            select(MediaAccessGrant).where(
+                MediaAccessGrant.media_id == media_id,
+                MediaAccessGrant.subject_type == subject_type.value,
+                MediaAccessGrant.subject_id == subject_id,
+                MediaAccessGrant.permission == permission.value,
+                MediaAccessGrant.revoked_at.is_(None),
+            )
+        ).first()
+
+    def _issue(
+        self,
+        *,
+        media_id: str,
+        actor_id: str,
+        subject_type: SubjectType,
+        subject_id: str,
+        permission: Permission,
+        variant_scope: list[str] | None,
+        ttl_seconds: int,
+        single_use: bool,
+        max_uses: int | None,
+        derived_from: dict[str, Any] | None,
+    ) -> GrantView:
         scope = variant_scope or ["*"]
         for kind in scope:
             if kind != "*":
@@ -109,15 +206,13 @@ class MediaGrantService:
                 )
             self._assert_may_manage(media=media, actor_id=actor_id)
 
-            existing = session.scalars(
-                select(MediaAccessGrant).where(
-                    MediaAccessGrant.media_id == media_id,
-                    MediaAccessGrant.subject_type == subject_type.value,
-                    MediaAccessGrant.subject_id == subject_id,
-                    MediaAccessGrant.permission == permission.value,
-                    MediaAccessGrant.revoked_at.is_(None),
-                )
-            ).first()
+            existing = self._find_active_grant(
+                session,
+                media_id=media_id,
+                subject_type=subject_type,
+                subject_id=subject_id,
+                permission=permission,
+            )
             if existing is not None:
                 existing.variant_scope = scope
                 existing.expires_at = now + timedelta(seconds=max(1, ttl_seconds))

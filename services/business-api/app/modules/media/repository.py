@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
 from app.modules.media.domain import (
@@ -60,6 +61,23 @@ from app.modules.media.storage import (
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+#: Markers of the ADR-002 digest-slot partial unique indexes. PostgreSQL names the constraint
+#: and SQLite names the columns, so both spellings are recognised.
+DIGEST_SLOT_CONFLICT_MARKERS = (
+    "uq_media_objects_digest_slot",
+    "uq_media_blobs_digest_slot",
+    "media_objects.owner_scope",
+    "media_blobs.owner_scope",
+)
+
+
+def is_digest_slot_conflict(error: BaseException) -> bool:
+    """True when the database refused a second row for the same reusable digest slot."""
+
+    text = str(getattr(error, "orig", error))
+    return any(marker in text for marker in DIGEST_SLOT_CONFLICT_MARKERS)
 
 
 def as_utc(value: datetime | None) -> datetime | None:
@@ -133,6 +151,62 @@ class MediaRepository:
     # Ingest
     # ------------------------------------------------------------------ #
     def ingest(self, request: IngestRequest) -> IngestResult:
+        """Ingest bytes, converging with a concurrent ingest of the same reusable digest.
+
+        Two requests carrying the same ``dedup_eligible`` bytes race for one digest slot
+        (``uq_media_objects_digest_slot``). The loser's transaction is rolled back with an
+        ``IntegrityError``; the upload must not fail, because ADR-002 says those bytes *are*
+        one object. The loser discards the file it wrote, then returns the winner's object.
+        """
+
+        written: list[str] = []
+        try:
+            return self._ingest(request, written=written)
+        except IntegrityError as error:
+            if not is_digest_slot_conflict(error):
+                raise
+            for key in written:
+                # The rolled-back transaction has no row for these bytes; leaving the file
+                # would create an orphan the reconciler would later re-index as a duplicate.
+                self._backend.delete(key)
+            recovered = self._reuse_digest_slot_winner(request)
+            if recovered is None:
+                raise
+            media_platform_metrics.increment("ingest_digest_slot_race_reused")
+            return recovered
+
+    def _reuse_digest_slot_winner(self, request: IngestRequest) -> IngestResult | None:
+        digest = self._authoritative_digest(request)
+        domain = self._domain_for(digest.kind)
+        scope_key = owner_scope_key(domain, request.owner_id)
+        with self._session_factory() as session:
+            winner = self._find_blob(
+                session,
+                domain=domain,
+                scope_key=scope_key,
+                digest=digest,
+                envelope_version=request.envelope_version,
+            )
+            if winner is None or winner.object_id is None:
+                return None
+            media = session.get(MediaObject, winner.object_id)
+            if media is None or media.status == MediaStatus.DELETED.value:
+                return None
+            variant = self._primary_variant(session, media.media_id)
+            if variant is None:
+                return None
+            return IngestResult(
+                media_id=media.media_id,
+                blob_id=winner.blob_id,
+                variant_id=variant.variant_id,
+                digest_kind=digest.kind,
+                digest_value=digest.value,
+                size=winner.size,
+                reused_object=True,
+                reused_blob=True,
+            )
+
+    def _ingest(self, request: IngestRequest, *, written: list[str]) -> IngestResult:
         if not request.content:
             raise AppError(
                 code="MEDIA_CONTENT_REQUIRED",
@@ -216,6 +290,7 @@ class MediaRepository:
                     scope_key=scope_key,
                     eligible=cross_user_eligible,
                     now=now,
+                    written=written,
                 )
                 reused_blob = False
             else:
@@ -467,6 +542,7 @@ class MediaRepository:
         scope_key: str,
         eligible: bool,
         now: datetime,
+        written: list[str] | None = None,
     ) -> MediaBlob:
         blob_id = new_blob_id()
         key = storage_key_for(
@@ -484,6 +560,9 @@ class MediaRepository:
                 status_code=500,
             )
         self._backend.put(key, request.content)
+        if written is not None:
+            # Recorded so a digest-slot race can unlink bytes whose row never committed.
+            written.append(key)
         media_platform_metrics.increment("blob_written")
         blob = MediaBlob(
             blob_id=blob_id,
