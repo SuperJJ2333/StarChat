@@ -8,6 +8,14 @@ import 'package:matrix/matrix.dart';
 import 'package:matrix/src/utils/client_init_exception.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+/// 进程级唯一的测试存储目录。
+///
+/// 本套件**故意**在数据库上注册触发器，让 `box_client.token` 的写入失败，
+/// 以验证「凭据写失败必须保留 store」。为了确保这份带触发器的库绝不与任何
+/// 其他测试共享，目录放在系统临时目录下并按 PID 命名（不落进仓库）。
+final Directory _retentionTestRoot =
+    Directory.systemTemp.createTempSync('chatflow-token-retention-$pid-');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(sqfliteFfiInit);
@@ -21,11 +29,12 @@ void main() {
   for (final preserve in [true, false]) {
     for (final softLogout in [false, true]) {
       test('invalid token preserve=$preserve softLogout=$softLogout', () async {
-        final root = Directory(
-            '../../docs/verification/artifacts/2026-09-10/chat-reliability-2084/accounts/sdk');
-        await root.create(recursive: true);
-        final temp = await root.createTemp('token-');
+        final temp = await _retentionTestRoot.createTemp('token-');
         final path = '${temp.absolute.path}/matrix.sqlite';
+        // 失败时的取证信息：这条库是带触发器的，任何"串味"都能从这里看出。
+        // ignore: avoid_print
+        print('[token-retention-probe] preserve=$preserve softLogout=$softLogout '
+            'db=${temp.absolute.path} pid=$pid');
         final sqlite = await databaseFactoryFfi.openDatabase(path);
         final database = MatrixSdkDatabase(path,
             database: sqlite, sqfliteFactory: databaseFactoryFfi);

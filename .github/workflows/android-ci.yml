@@ -92,7 +92,44 @@ jobs:
         run: flutter analyze
 
       - name: Test (full suite)
-        run: flutter test
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/flutter-test"
+          log="$RUNNER_TEMP/flutter-test/full-suite.log"
+          # `flutter test` prints diagnostic chatter from tests that *expect*
+          # failures (the token-retention probe deliberately raises a box_client
+          # write error) and from passing tests, so grepping for "ERROR" cannot
+          # identify the real failure. Capture the full log, then surface the
+          # exact failing test(s) so the next failure is diagnosed from evidence.
+          set +e
+          flutter test 2>&1 | tee "$log"
+          # Capture the pipeline status immediately; `fi`/`{`/`}` would clobber
+          # a later `$?`.
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "Full Flutter suite passed" > "$RUNNER_TEMP/flutter-test/result.txt"
+            exit 0
+          fi
+
+          failing=$(sed -n '/^Failing tests:/,$p' "$log" | head -40)
+          {
+            echo "### Flutter full-suite failure"
+            echo '```'
+            echo "$failing"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Flutter failing tests::$(echo "$failing" | tr '\n' ' ' | head -c 900)"
+          exit "$status"
+
+      - name: Preserve Flutter test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-log
+          path: ${{ runner.temp }}/flutter-test/
+          retention-days: 14
 
   android-debug-build:
     name: Android debug build (no signing required)

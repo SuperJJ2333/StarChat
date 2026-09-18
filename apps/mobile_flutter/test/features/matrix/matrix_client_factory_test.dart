@@ -637,6 +637,14 @@ void main() {
     });
   });
 
+  // 说明（重要，避免后续重复投入）：
+  // 曾在此加过「用真实磁盘 SQLite 并发 create」的测试来覆盖 box_client 写入。
+  // 变异探针（移除 `_DatabaseInitLocks`）证明该测试**照样通过**：正常
+  // SQLite/SQLCipher 路径下，两次并发初始化并不会真的互相破坏写入。
+  // 也就是说 CI 的 `code 1811` 不是这条路径产生的，保留这个测试只会制造
+  // 「已覆盖」的错觉，故删除。真正能确定性验证串行的仍是上面用注入 opener
+  // 观测重叠度的那两条（它们对锁敏感）。
+
   test('normal sync cannot adopt a fresh client after explicit clear',
       () async {
     final fresh = LogoutTrackingClient('fresh');
