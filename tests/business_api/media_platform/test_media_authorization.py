@@ -170,58 +170,132 @@ async def test_private_token_works_for_owner_and_not_for_a_forwarder(auth_env) -
 # --------------------------------------------------------------------------- #
 # Test 4 — audience
 # --------------------------------------------------------------------------- #
+def _seed_moments_audience(factory) -> tuple[str, str]:
+    """Author user-a, friend user-b (the audience), non-friend user-c."""
+
+    from uuid import uuid4
+
+    from app.modules.friendship.models import Friendship
+    from app.modules.moments.models import Moment
+
+    now = datetime.now(timezone.utc)
+    moment_id = str(uuid4())
+    with factory.begin() as session:
+        session.add(
+            Friendship(
+                id=str(uuid4()),
+                user_low_id="user-a",
+                user_high_id="user-b",
+                created_at=now,
+            )
+        )
+        session.add(
+            Moment(
+                id=moment_id,
+                author_id="user-a",
+                text="audience source",
+                visibility="PUBLIC",
+                image_urls=[],
+                include_user_ids=[],
+                exclude_user_ids=[],
+                include_tag_ids=[],
+                exclude_tag_ids=[],
+                location=None,
+                link_url=None,
+                status="PUBLISHED",
+                idempotency_key=f"audience-{moment_id}",
+                created_at=now,
+                deleted_at=None,
+            )
+        )
+    return moment_id, f"moment:{moment_id}"
+
+
 @pytest.mark.asyncio
-async def test_audience_token_is_shareable_inside_the_audience(auth_env) -> None:
+async def test_audience_token_is_reverified_per_member(auth_env) -> None:
+    """Readiness hardening: audience delivery re-checks live membership.
+
+    Phase 4 let any holder of an audience URL read it (the ADR-003 trade-off). The readiness
+    audit showed that also admitted non-members and anonymous callers, so delivery now
+    re-verifies the audience source on every request: a member reads, others do not.
+    """
+
+    app, factory, backend, headers, _ = auth_env
+    _, audience_ref = _seed_moments_audience(factory)
+    media_id = _seed(factory, backend, visibility=VisibilityTier.AUDIENCE)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://media.local") as client:
+        minted = await _mint(
+            client, headers["user-a"], media_id, tier="audience", audience=audience_ref
+        )
+        assert minted.status_code == 200, minted.text
+        payload = minted.json()
+        assert payload["tier"] == "audience"
+        assert payload["binding"]["subject"] is None
+        assert payload["binding"]["audience"] == audience_ref
+        url = payload["url"]
+
+        member = await client.get(url, headers=headers["user-b"])
+        assert member.status_code == 200
+        assert member.content == b"signed" * 700
+
+        # Losing the membership stops the very same URL.
+        from sqlalchemy import delete
+
+        from app.modules.friendship.models import Friendship
+
+        with factory.begin() as session:
+            session.execute(delete(Friendship))
+        after_membership_loss = await client.get(url, headers=headers["user-b"])
+        assert after_membership_loss.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unverifiable_audience_is_refused_at_mint(auth_env) -> None:
+    """A room audience cannot be re-checked by the platform, so no token is issued."""
+
     app, factory, backend, headers, _ = auth_env
     media_id = _seed(factory, backend, visibility=VisibilityTier.AUDIENCE)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://media.local") as client:
         minted = await _mint(
             client, headers["user-a"], media_id, tier="audience", audience="room:!room:test"
         )
-        assert minted.status_code == 200, minted.text
-        payload = minted.json()
-        assert payload["tier"] == "audience"
-        assert payload["binding"]["subject"] is None
-        assert payload["binding"]["audience"] == "room:!room:test"
-        url = payload["url"]
-
-        # A different user holding the audience URL can read it: the frozen trade-off.
-        member = await client.get(url, headers=headers["user-b"])
-        assert member.status_code == 200
-        assert member.content == b"signed" * 700
+    assert minted.status_code == 422
+    assert minted.json()["error"]["code"] == "MEDIA_AUDIENCE_UNVERIFIABLE"
 
 
 @pytest.mark.asyncio
 async def test_revoking_a_grant_kills_forwarded_audience_urls(auth_env) -> None:
     app, factory, backend, headers, _ = auth_env
+    _, audience_ref = _seed_moments_audience(factory)
     media_id = _seed(factory, backend, visibility=VisibilityTier.AUDIENCE)
     grants = MediaGrantService(factory)
     grant = grants.issue(
         media_id=media_id,
         actor_id="user-a",
-        subject_type=SubjectType.ROOM,
-        subject_id="!room:test",
+        subject_type=SubjectType.AUDIENCE,
+        subject_id=audience_ref,
         permission=Permission.READ,
         ttl_seconds=600,
+        derived_from={"rule": "moment_visibility", "ref": audience_ref},
     )
     codec = MediaSignedUrlCodec(secret=MEDIA_SECRET)
     token, _ = codec.mint(
         media_id=media_id,
         variant_kind=VariantKind.ORIGINAL,
-        subject="!room:test",
+        subject=audience_ref,
         tier=VisibilityTier.AUDIENCE,
         ttl_seconds=600,
-        aud_scope="room:!room:test",
+        aud_scope=audience_ref,
         grant_id=grant.grant_id,
         grant_version=grant.grant_version,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://media.local") as client:
-        before = await client.get(f"/api/v1/media/platform/content/{token}")
+        before = await client.get(f"/api/v1/media/platform/content/{token}", headers=headers["user-b"])
         assert before.status_code == 200
 
         grants.revoke(grant_id=grant.grant_id, actor_id="user-a", reason="revoked")
 
-        after = await client.get(f"/api/v1/media/platform/content/{token}")
+        after = await client.get(f"/api/v1/media/platform/content/{token}", headers=headers["user-b"])
         assert after.status_code == 404
 
 
