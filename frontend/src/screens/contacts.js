@@ -1,5 +1,5 @@
 import { fixtures } from "../catalog/fixtures.js";
-import { element } from "../components/base.js";
+import { button, element } from "../components/base.js";
 import { component, createDeviceScreen, navigation, pageRoot, tabBar } from "./shared.js";
 
 function contactRow(contact, trailing = "") {
@@ -99,9 +99,48 @@ function friendSettings(definition) {
   return root;
 }
 
+function verifyAction(label, action) {
+  const node = button("c-verify-action", label, action);
+  node.append(element("span", "c-verify-action__label", label));
+  return node;
+}
+
+/** 「通过朋友验证」页：头像 / 昵称 / 打招呼 + 通过验证 / 拒绝 / 打开聊天。 */
+function friendRequestReview(definition) {
+  const root = pageRoot(definition);
+  root.append(navigation("通过朋友验证", { leading: "返回" }));
+  const content = element("div", "p-contacts-verify__content");
+  const contact = fixtures.contacts[0];
+  const header = element("div", "c-verify-header");
+  header.append(
+    component("app-avatar", { name: contact.name, size: "detail" }),
+    element("h2", "c-verify-header__name", contact.name),
+    element("p", "c-verify-header__username", `畅聊号：${contact.username}`)
+  );
+  const greeting = element("section", "c-verify-greeting");
+  greeting.append(
+    element("h3", "c-verify-greeting__title", "打招呼"),
+    element("p", "c-verify-greeting__text", contact.subtitle)
+  );
+  content.append(header, greeting);
+  if (definition.state === "pending") {
+    const reject = verifyAction("拒绝", "friend-request:reject");
+    reject.dataset.tone = "danger";
+    content.append(verifyAction("通过验证", "friend-request:accept"), reject);
+  } else {
+    const added = definition.state === "added";
+    const status = element("p", "c-verify-status", added ? "已添加" : "已拒绝");
+    status.dataset.state = definition.state;
+    content.append(status);
+    if (added) content.append(verifyAction("打开聊天", "friend-request:open-chat"));
+  }
+  root.append(content);
+  return root;
+}
+
 export function renderScreen(definition) {
   let root;
-  if (definition.module === "contacts") root = definition.page === "index" ? contactIndex(definition) : contactCollection(definition);
+  if (definition.module === "contacts") root = definition.page === "index" ? contactIndex(definition) : definition.page === "verify" ? friendRequestReview(definition) : contactCollection(definition);
   else if (definition.page === "profile") root = friendProfile(definition);
   else if (definition.page === "message") {
     root = pageRoot(definition, [navigation("打开加密会话", { leading: "返回" }), element("div", "p-feedback-center")]);

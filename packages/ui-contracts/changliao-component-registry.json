@@ -162,12 +162,22 @@
   "tokenMappings": {
     "colors": [
       "brandPrimary",
+      "brandTint",
       "chatNavigationBackground",
       "chatPageBackground",
       "tabRootPageBackground",
       "controlBorder",
       "errorSurface",
       "errorBorder"
+    ],
+    "dividers": [
+      "hairline",
+      "edgeStartStop",
+      "coreStart",
+      "coreEnd",
+      "edgeEndStop",
+      "edgeAlpha",
+      "centerAlpha"
     ],
     "typography": [
       "display",
@@ -380,11 +390,16 @@
           "fallbackSeed",
           "avatarUrl",
           "onTap",
-          "trailing"
+          "trailing",
+          "showDivider"
         ],
-        "variants": {},
+        "variants": {
+          "background": ["surfaceElevated-light", "surfaceElevated-dark"],
+          "divider": ["gradient", "none"]
+        },
         "states": [
           "default",
+          "pressed",
           "disabled"
         ]
       },
@@ -394,7 +409,42 @@
       "tokens": [
         "contactTileHeight",
         "contactAvatar",
-        "contactDividerIndent"
+        "contactDividerIndent",
+        "dividerHairline",
+        "dividerCenterAlpha",
+        "dividerEdgeAlpha",
+        "dividerCoreStart",
+        "dividerCoreEnd"
+      ]
+    },
+    {
+      "id": "gradient-divider",
+      "flutter": {
+        "name": "WeChatGradientDivider",
+        "file": "apps/mobile_flutter/lib/ui/components/wechat_gradient_divider.dart",
+        "props": [
+          "height",
+          "indent",
+          "endIndent"
+        ],
+        "variants": {
+          "theme": ["light", "dark"],
+          "width": ["full-bleed", "indented"]
+        },
+        "states": [
+          "default"
+        ]
+      },
+      "html": {
+        "tag": "app-gradient-divider"
+      },
+      "tokens": [
+        "dividerHairline",
+        "dividerCenterAlpha",
+        "dividerEdgeAlpha",
+        "dividerCoreStart",
+        "dividerCoreEnd",
+        "divider"
       ]
     },
     {
@@ -1098,6 +1148,31 @@
       "flutter": "static const divider = Color(0xFFD9D9D9);"
     },
     {
+      "category": "dividers",
+      "html": "--divider-fade-alpha: 0.5",
+      "flutter": "static const centerAlpha = 0.5;"
+    },
+    {
+      "category": "dividers",
+      "html": "--divider-fade-edge-alpha: 0",
+      "flutter": "static const edgeAlpha = 0.0;"
+    },
+    {
+      "category": "dividers",
+      "html": "--divider-fade-core-start: 18%",
+      "flutter": "static const coreStart = 0.18;"
+    },
+    {
+      "category": "dividers",
+      "html": "--divider-fade-core-end: 82%",
+      "flutter": "static const coreEnd = 0.82;"
+    },
+    {
+      "category": "colors",
+      "html": "--color-brand-tint: rgb(7 193 96 / 12%)",
+      "flutter": "static const brandTint = Color(0x1F07C160);"
+    },
+    {
       "category": "colors",
       "html": "--color-red-packet-muted: #f2b7a8",
       "flutter": "static const redPacketMuted = Color(0xFFF2B7A8);"
@@ -1373,7 +1448,7 @@
     }
   },
   "screens": {
-    "expectedCount": 369
+    "expectedCount": 372
   },
   "adminCompletion20260910": {
     "html": [
@@ -1538,5 +1613,33 @@
     "behavior": "Terminal binding-validation failures discard the persisted registration draft and release the address field; uncertain (network/timeout) failures keep the draft and its idempotency key. Capability state is retained while refreshing and only reported unavailable when it was never learned. Wallet pages own their navigation bar so the refresh control sits in the trailing slot.",
     "redPacketFee": "ADR-0073: 0.5% sender fee (min 0.01) shown as an estimate with the actual deduction; the server remains authoritative and the API change must not be deployed before a client that displays the fee.",
     "verification": "flutter analyze clean; wallet suite 75 pass; red-packet client 62 pass; full flutter test 2848 pass; verify_ui_contract PASS (30 components, 369 screens); backend fee/ledger/transfer/migration suites 71 pass."
+  },
+  "contactsUiReview20260918": {
+    "date": "2026-09-18",
+    "scope": "flutter-mobile-contacts-surfaces-and-html-demo-only; no business logic, network, permission or Matrix protocol change",
+    "visualSourceOfRecord": "frontend/index.html HTML design demo (screens contacts-index-*, contacts-friends-*, contacts-verify-*)",
+    "requirements": {
+      "friendListSurface": "WeChatContactTile paints WeChatColors.elevatedSurface (#FFFFFF / #232323) and a shared bottom gradient divider; row height stays contactTileHeight so the A-Z index offsets are unchanged.",
+      "entryAlignment": "WeChatListTile no longer uses CupertinoListTile (its content Column used MainAxisAlignment.spaceBetween and a 28dp leading box): leading and title/subtitle now share one vertical centre, with leadingSize=contactAvatar and leadingToTitle=md so entry rows share the 68dp text grid with friend rows.",
+      "requestRowAlignment": "FriendRequestsPage request rows use the same layout, so nickname and greeting stay centred on the 40dp avatar instead of hugging the top and bottom edges.",
+      "reviewPageActions": "FriendRequestReviewPage brand-fills both 通过验证 and 打开聊天 with WeChatColors.brandPrimary; 已添加 renders as a WeChatColors.brandTint pill with brandPrimary semibold text."
+    },
+    "newComponents": [
+      "gradient-divider"
+    ],
+    "newScreens": [
+      "contacts-verify-pending",
+      "contacts-verify-added",
+      "contacts-verify-rejected"
+    ],
+    "tokens": [
+      "WeChatDividerTokens.hairline = --divider-fade (1px)",
+      "WeChatDividerTokens.centerAlpha = --divider-fade-alpha (50%, lower than the solid divider)",
+      "WeChatDividerTokens.edgeAlpha = --divider-fade-edge-alpha (0, fades to transparent at both ends)",
+      "WeChatDividerTokens.coreStart = --divider-fade-core-start (18%)",
+      "WeChatDividerTokens.coreEnd = --divider-fade-core-end (82%)",
+      "WeChatColors.brandTint = --color-brand-tint"
+    ],
+    "verification": "flutter analyze clean; focused red→green recorded in docs/verification/2026-09-18-ui-review.md; verify_ui_contract PASS (32 components, 372 screens); frontend npm test 214 pass."
   }
 }

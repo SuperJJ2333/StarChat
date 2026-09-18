@@ -32,6 +32,8 @@ final class FriendRequestReviewPage extends StatelessWidget {
 
   bool get _pending => request['status']?.toString() == 'PENDING';
 
+  bool get _accepted => request['status']?.toString() == 'ACCEPTED';
+
   String get _statusLabel => switch (request['status']?.toString()) {
         'ACCEPTED' => '已添加',
         'REJECTED' => '已拒绝',
@@ -125,7 +127,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   alignment: Alignment.center,
                   color: WeChatColors.brandPrimary,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(WeChatRadius.dialog),
                   onPressed: busy ? null : () => onAccept(),
                   child: busy
                       ? const CupertinoActivityIndicator(
@@ -144,18 +146,52 @@ final class FriendRequestReviewPage extends StatelessWidget {
               ),
             ] else
               Center(
-                child: Text(
-                  _statusLabel,
+                child: Container(
                   key: const Key('friend-request-status'),
-                  style: const TextStyle(
-                      fontSize: 15, color: WeChatColors.textSecondary),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.sm),
+                  decoration: BoxDecoration(
+                    // 「已添加」使用品牌色淡底 + 品牌色粗体文字，比灰色状态行
+                    // 更醒目；其余状态保持中性淡底，避免把已拒绝/已过期
+                    // 误读成成功。
+                    color: _accepted
+                        ? WeChatColors.brandTint
+                        : CupertinoColors.tertiarySystemFill
+                            .resolveFrom(context),
+                    borderRadius: BorderRadius.circular(WeChatRadius.control),
+                  ),
+                  child: Text(
+                    _statusLabel,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight:
+                          _accepted ? FontWeight.w600 : FontWeight.w400,
+                      color: _accepted
+                          ? WeChatColors.brandPrimary
+                          : WeChatColors.resolve(
+                              context, WeChatColors.textSecondary),
+                    ),
+                  ),
                 ),
               ),
             if (request['status'] == 'ACCEPTED' && onOpenAccepted != null)
-              CupertinoButton(
-                key: const Key('friend-request-open-chat'),
-                onPressed: busy ? null : onOpenAccepted,
-                child: const Text('打开聊天'),
+              SizedBox(
+                height: 48,
+                child: CupertinoButton(
+                  key: const Key('friend-request-open-chat'),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  alignment: Alignment.center,
+                  color: WeChatColors.brandPrimary,
+                  borderRadius: BorderRadius.circular(WeChatRadius.dialog),
+                  onPressed: busy ? null : onOpenAccepted,
+                  child: busy
+                      ? const CupertinoActivityIndicator(
+                          color: CupertinoColors.white)
+                      : const Text('打开聊天',
+                          style: TextStyle(
+                              fontSize: 16, color: CupertinoColors.white)),
+                ),
               ),
           ],
         ),

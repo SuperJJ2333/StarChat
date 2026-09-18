@@ -126,6 +126,7 @@ register("calls", "result", [["busy", "通话 / 对方忙线"], ["no-answer", "�
 register("contacts", "index", [["default", "通讯录 / 默认"], ["grouped", "通讯录 / 拼音分组"], ["overlay", "通讯录 / 字母索引浮层"]], { height: 1040 });
 register("contacts", "friends", [["default", "新的朋友 / 列表"], ["empty", "新的朋友 / 空"], ["loading-failed", "新的朋友 / 加载失败"]]);
 register("contacts", "request", [["pending", "好友申请 / 待处理"], ["accepting", "好友申请 / 接受中"], ["rejected", "好友申请 / 已拒绝"], ["added", "好友申请 / 已添加"], ["failed", "好友申请 / 操作失败"]]);
+register("contacts", "verify", [["pending", "通过朋友验证 / 待处理"], ["added", "通过朋友验证 / 已添加"], ["rejected", "通过朋友验证 / 已拒绝"]]);
 register("contacts", "groups", [["default", "群聊 / 列表"], ["empty", "群聊 / 空"]]);
 register("contacts", "tags", [["default", "标签 / 列表"], ["empty", "标签 / 空"]]);
 register("contacts", "official", [["default", "公众号与官方客服 / 列表"], ["empty", "公众号与官方客服 / 空"]]);

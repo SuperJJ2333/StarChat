@@ -4,6 +4,7 @@ import 'package:liuhetong_mobile/features/matrix/conversation_preferences.dart';
 import 'package:liuhetong_mobile/features/matrix/direct_chat_info_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_user_avatar.dart';
 import 'package:liuhetong_mobile/features/matrix/avatar_url_resolver.dart';
+import 'package:liuhetong_mobile/ui/components/wechat_list_tile.dart';
 
 final class _FakeAvatarMedia implements AvatarMediaCapability {
   @override
@@ -62,8 +63,9 @@ void main() {
       ),
     ));
     final label = find.text('清空聊天记录');
-    final row =
-        find.ancestor(of: label, matching: find.byType(CupertinoListTile));
+    // 行容器由共享的 WeChatListTile 提供（2026-09-18 起不再委托
+    // CupertinoListTile：后者的 spaceBetween 内容列会把文案顶到行边）。
+    final row = find.ancestor(of: label, matching: find.byType(WeChatListTile));
     expect(row, findsOneWidget);
     expect(
         (tester.getCenter(label).dx - tester.getCenter(row).dx).abs(),

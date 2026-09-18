@@ -360,6 +360,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                       SizedBox(
                         height: WeChatDimensions.contactTileHeight,
                         child: WeChatListTile(
+                          leadingSize: WeChatDimensions.contactAvatar,
+                          leadingToTitle: WeChatSpacing.md,
+                          showDivider: true,
                           leading: const Icon(CupertinoIcons.person_add_solid),
                           title: const Text('新的朋友'),
                           trailing: ValueListenableBuilder<int>(
@@ -406,6 +409,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                         height: WeChatDimensions.contactTileHeight,
                         child: WeChatListTile(
                           key: const Key('contacts-group-address-entry'),
+                          leadingSize: WeChatDimensions.contactAvatar,
+                          leadingToTitle: WeChatSpacing.md,
+                          showDivider: true,
                           leading: const Icon(CupertinoIcons.person_3_fill),
                           title: const Text('群聊'),
                           onTap:
@@ -415,6 +421,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                       SizedBox(
                         height: WeChatDimensions.contactTileHeight,
                         child: WeChatListTile(
+                          leadingSize: WeChatDimensions.contactAvatar,
+                          leadingToTitle: WeChatSpacing.md,
+                          showDivider: true,
                           leading: const Icon(CupertinoIcons.tag_fill),
                           title: const Text('标签'),
                           onTap: () => Navigator.push(
@@ -431,17 +440,23 @@ final class _ContactsPageState extends State<ContactsPage> {
                         _ContactSectionHeader(
                           label: label == '★' ? '星标好友' : label,
                         ),
-                        for (final contact in grouped[label]!)
+                        for (var i = 0;
+                            i < (grouped[label]?.length ?? 0);
+                            i++)
                           WeChatContactTile(
-                            nickname: contact.displayName,
+                            nickname: grouped[label]![i].displayName,
                             fallbackSeed: widget.identityCache
-                                    ?.resolveIdentity(userId: contact.userId)
+                                    ?.resolveIdentity(
+                                        userId: grouped[label]![i].userId)
                                     .cacheKey ??
-                                contact.username,
-                            avatarUrl: contact.avatarUrl,
+                                grouped[label]![i].username,
+                            avatarUrl: grouped[label]![i].avatarUrl,
                             supportIdentities: _support,
-                            userId: contact.userId,
-                            matrixUserId: contact.matrixUserId,
+                            userId: grouped[label]![i].userId,
+                            matrixUserId: grouped[label]![i].matrixUserId,
+                            // 好友之间画共享渐隐分割线；分组最后一位不画，
+                            // 由分组标题承担分隔。
+                            showDivider: i < grouped[label]!.length - 1,
                             onTap: () async {
                               final changed = await Navigator.of(context,
                                       rootNavigator: true)
@@ -451,7 +466,8 @@ final class _ContactsPageState extends State<ContactsPage> {
                                     identityCache: widget.identityCache,
                                     supportIdentities: _support,
                                     api: widget.api,
-                                    initialContact: contact.toDetails(),
+                                    initialContact:
+                                        grouped[label]![i].toDetails(),
                                     onMessage: widget.onMessage,
                                     onVoice: widget.onVoice,
                                     onVideo: widget.onVideo,
@@ -1867,12 +1883,15 @@ final class _FriendRequestTile extends StatelessWidget {
       _ => '已处理'
     };
     return SizedBox(
-      height: 68,
-      // 打招呼消息在行内垂直居中（此前 CupertinoListTile 在固定高度
-      // 容器里把两行内容推向底部，观感不佳）。
-      child: Center(
-        child: WeChatListTile(
-          onTap: onTap,
+      height: _friendRequestTileHeight,
+      // 昵称与打招呼内容作为一个整体与头像垂直居中对齐：昵称不再贴行顶、
+      // 打招呼内容不再贴行底（此前 CupertinoListTile 的 spaceBetween 把它们
+      // 分别顶到上下两边）。头像保持 40dp 设计尺寸。
+      child: WeChatListTile(
+        onTap: onTap,
+        showDivider: true,
+        leadingSize: WeChatDimensions.contactAvatar,
+        leadingToTitle: WeChatSpacing.md,
         leading: UserAvatar(
             nickname: request['nickname']?.toString() ??
                 request['username']?.toString() ??
@@ -1899,11 +1918,14 @@ final class _FriendRequestTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 4),
-              const CupertinoListTileChevron(),
-            ],
-          ),
+            const CupertinoListTileChevron(),
+          ],
         ),
       ),
     );
   }
 }
+
+/// 「新的朋友」请求行高度：两行文案 + 头像的舒适行高（与演示稿
+/// `frontend/src/screens/contacts.js` 的请求行一致）。
+const _friendRequestTileHeight = 68.0;

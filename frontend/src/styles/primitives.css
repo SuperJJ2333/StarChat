@@ -413,8 +413,16 @@ app-transfer-card {
   align-items: center;
   min-height: var(--size-row);
   padding: var(--space-sm) var(--space-lg);
-  border-bottom: var(--size-hairline) solid var(--color-divider);
-  background: var(--color-surface-elevated);
+  background-color: var(--color-surface-elevated);
+  /* 共享渐隐分割线：与朋友圈分割线同几何，但不透明度更低、两端渐隐到透明。 */
+  background-image: var(--divider-fade);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% var(--size-hairline);
+}
+
+.c-contact-row__body {
+  min-width: 0;
 }
 
 .c-contact-row__name {
@@ -443,6 +451,87 @@ app-transfer-card {
   color: var(--color-on-accent);
   font-size: var(--type-display-size);
   transform: translate(-50%, -50%);
+}
+
+/* 「通过朋友验证」页：与 Flutter FriendRequestReviewPage 对齐。
+   操作按钮使用品牌填充色；「已添加」用品牌淡底 + 品牌色粗体文字。 */
+.p-contacts-verify__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-xl) var(--space-lg) var(--space-xl);
+  background: var(--color-page-background);
+}
+
+.c-verify-header {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-xs);
+}
+
+.c-verify-header__name {
+  font-size: var(--type-title-2-size);
+  font-weight: var(--type-title-2-weight);
+  line-height: var(--type-title-2-line);
+}
+
+.c-verify-header__username {
+  color: var(--color-text-secondary);
+  font-size: var(--type-subhead-size);
+  line-height: var(--type-subhead-line);
+}
+
+.c-verify-greeting {
+  padding: var(--space-lg);
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface-elevated);
+}
+
+.c-verify-greeting__title {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.c-verify-greeting__text {
+  margin-top: var(--space-xs);
+  font-size: var(--type-callout-size);
+  line-height: var(--type-callout-line);
+}
+
+.c-verify-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: var(--size-action-primary);
+  border-radius: var(--radius-dialog);
+  background: var(--color-brand-primary);
+  color: var(--color-on-accent);
+  font-size: var(--type-callout-size);
+}
+
+.c-verify-action[data-tone="danger"] {
+  min-height: var(--size-action-secondary);
+  background: transparent;
+  color: var(--color-danger);
+}
+
+.c-verify-status {
+  justify-self: center;
+  align-self: center;
+  padding: var(--space-xs) var(--space-lg);
+  border-radius: var(--radius-control);
+  background: var(--color-brand-tint);
+  color: var(--color-brand-primary);
+  font-size: var(--type-subhead-size);
+  font-weight: var(--type-title-2-weight);
+}
+
+.c-verify-status[data-state="rejected"] {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-weight: var(--type-body-weight);
 }
 
 .c-search-field {

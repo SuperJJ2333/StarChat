@@ -10,6 +10,7 @@ import { AppAvatar, AppContactIndex, AppContactTagFriendPicker, AppContactTagMan
 import { AppMomentCoverViewer, AppMomentGrid, AppMomentReactions, AppMomentTile, AppMomentsFeedV2, AppVisibilityIcon } from "./moments.js";
 import { AppEmojiInputDecoration, AppMessageSelectionSession } from "./selection.js";
 import { AppOfficialName } from "./official-name.js";
+import { AppDivider } from "./divider.js";
 
 const implementations = new Map([
   ["app-image-editor", AppImageEditor],
@@ -24,6 +25,7 @@ const implementations = new Map([
   ["app-emoji-input-decoration", AppEmojiInputDecoration],
   ["app-message-selection-session", AppMessageSelectionSession],
   ["app-list-tile", AppListTile],
+  ["app-gradient-divider", AppDivider],
   ["app-avatar", AppAvatar],
   ["app-identity-header", AppIdentityHeader],
   ["app-official-name", AppOfficialName],

@@ -130,6 +130,17 @@
   --motion-message: 160ms;
   --motion-reduced: 100ms;
   --shadow-overlay: 0 4px 16px rgb(0 0 0 / 12%);
+  /* 共享渐隐分割线（app-divider / .c-gradient-divider）：
+     几何与朋友圈分割线一致（1px、整行宽、divider token 取色），
+     但中部不透明度更低且两端渐隐到透明。与 Flutter
+     WeChatDividerTokens 的 alpha/stops 逐项对应。 */
+  --divider-fade-alpha: 0.5;
+  --divider-fade-edge-alpha: 0;
+  --divider-fade-core-start: 18%;
+  --divider-fade-core-end: 82%;
+  /* 品牌色淡底（≈12% alpha）：已完成/已添加状态徽标填充。
+     与 Flutter `WeChatColors.brandTint`（0x1F07C160）一致。 */
+  --color-brand-tint: rgb(7 193 96 / 12%);
   --z-content: 1;
   --z-navigation: 10;
   --z-overlay: 100;
@@ -237,8 +248,26 @@
   --moment-reaction-name: var(--color-social-link);
   --moment-reaction-muted: #666666;
   --moment-reaction-divider: var(--color-divider);
+  /* 列表单元底部渐隐分割线（浅色 #d9d9d9，两端 alpha 0）。 */
+  --divider-fade: linear-gradient(
+    90deg,
+    rgb(217 217 217 / var(--divider-fade-edge-alpha)) 0%,
+    rgb(217 217 217 / var(--divider-fade-alpha)) var(--divider-fade-core-start),
+    rgb(217 217 217 / var(--divider-fade-alpha)) var(--divider-fade-core-end),
+    rgb(217 217 217 / var(--divider-fade-edge-alpha)) 100%
+  );
  }
- .ui-screen[data-theme="dark"] { --moment-reaction-muted: #999999; }
+ .ui-screen[data-theme="dark"] {
+  --moment-reaction-muted: #999999;
+  /* 深色列表单元底部渐隐分割线（#2c2c2c，同样的 alpha 与 stops）。 */
+  --divider-fade: linear-gradient(
+    90deg,
+    rgb(44 44 44 / var(--divider-fade-edge-alpha)) 0%,
+    rgb(44 44 44 / var(--divider-fade-alpha)) var(--divider-fade-core-start),
+    rgb(44 44 44 / var(--divider-fade-alpha)) var(--divider-fade-core-end),
+    rgb(44 44 44 / var(--divider-fade-edge-alpha)) 100%
+  );
+ }
 
 :root{--wallet-accent:#0066cc;--wallet-canvas:#f5f5f7;--wallet-paper:#fff;--wallet-ink:#1d1d1f;--wallet-secondary:#63636a;--wallet-line:#e5e5ea;--wallet-on-accent:#fff;--wallet-shadow:0 2px 8px #00000003;--wallet-alert-border:#d5b46a;--wallet-alert-surface:#fff8e8;--wallet-alert-ink:#5d451d;--wallet-unknown-ink:#865900;--wallet-unknown-surface:#fff5dc} html[data-theme=dark]{--wallet-canvas:#161618;--wallet-paper:#222225;--wallet-ink:#f5f5f7;--wallet-secondary:#acacb5;--wallet-line:#39393f;--wallet-accent:#0a84ff}
 

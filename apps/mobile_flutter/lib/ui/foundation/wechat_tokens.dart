@@ -21,6 +21,9 @@ abstract final class WeChatColors {
   static const divider = Color(0xFFD9D9D9);
   static const darkDivider = Color(0xFF2C2C2C);
   static const controlBorder = divider;
+  /// 品牌色淡底（约 12% alpha）：已完成/已添加等状态徽标的填充。
+  /// 半透明品牌色在浅色与深色底上都能保持正文对比度，因此不随主题改成实色。
+  static const brandTint = Color(0x1F07C160);
   static const danger = CupertinoColors.systemRed;
   /// 设计规范 `--color-danger`（#fa5151）：危险动作的**填充**背景色。
   /// 与用于文字/图标的 [danger]（Cupertino systemRed）区分。
@@ -100,6 +103,34 @@ abstract final class WeChatColors {
       CupertinoTheme.brightnessOf(context) == Brightness.dark
           ? darkTextPrimary
           : lightTextPrimary;
+}
+
+/// 共享渐隐分割线（`WeChatGradientDivider`）的几何与不透明度契约。
+///
+/// 与朋友圈列表分割线同几何：1 物理像素、整行宽、色源为 `divider` token。
+/// 区别只有不透明度：整体低于实心分割线（中部 [centerAlpha] < 1.0），
+/// 并且两端渐隐到完全透明，避免白底列表单元被硬线切断。
+abstract final class WeChatDividerTokens {
+  /// 分割线高度（1 逻辑像素，与朋友圈分割线一致）。
+  static const hairline = 1.0;
+
+  /// 渐变端点（左端）。
+  static const edgeStartStop = 0.0;
+
+  /// 中部实色区间起点：0 → 0.18 由透明渐入。
+  static const coreStart = 0.18;
+
+  /// 中部实色区间终点：0.82 → 1 再渐出到透明。
+  static const coreEnd = 0.82;
+
+  /// 渐变端点（右端）。
+  static const edgeEndStop = 1.0;
+
+  /// 两端不透明度：完全透明（渐隐）。
+  static const edgeAlpha = 0.0;
+
+  /// 中部不透明度：低于实心分割线的 1.0。
+  static const centerAlpha = 0.5;
 }
 
 abstract final class WeChatSpacing {

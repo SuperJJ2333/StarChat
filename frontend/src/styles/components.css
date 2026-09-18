@@ -208,8 +208,21 @@
   gap: var(--space-md);
   min-height: var(--size-row);
   padding: var(--space-sm) var(--space-lg);
-  border-bottom: var(--size-hairline) solid var(--color-divider);
-  background: var(--color-surface-elevated);
+  background-color: var(--color-surface-elevated);
+  background-image: var(--divider-fade);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% var(--size-hairline);
+}
+
+/* 共享渐隐分割线：与 Flutter WeChatGradientDivider 同一几何与不透明度
+   （1px、整行宽、divider token 取色、两端渐隐到透明）。列表单元把它画在
+   行内底部，因此不额外占用行高。 */
+.c-gradient-divider {
+  display: block;
+  width: 100%;
+  height: var(--size-hairline);
+  background-image: var(--divider-fade);
 }
 
 .c-list-tile[data-disabled="true"] {
