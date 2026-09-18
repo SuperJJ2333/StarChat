@@ -1,5 +1,11 @@
 # ChatFlow（StarChat 仓库）源码审计修复执行 Prompt
 
+**Status: Historical audit requirements.** 27 项执行计划记载于 2026-09-05 完成，结果及限制以原报告为准；此次整理未重新执行审计，也不将历史指令作为新的执行授权。
+
+[执行计划](plans/chatflow-audit-remediation.md) · [结果与剩余限制](reports/chatflow-audit-remediation-result.md) · [统一计划导航](plans/README.md)。财务、账号隔离与 E2EE 审计链永久保留。
+
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
 你是负责 ChatFlow APP 的资深 Flutter / Android / Python 后端工程师。本次任务是根据下列审计发现，在现有项目中完成实际修复、必要的自动化验证和交付记录。
 
 请把本文件作为一项完整的开发任务执行，不要只输出分析、修复建议、伪代码或待办清单。

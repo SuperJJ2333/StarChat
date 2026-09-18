@@ -1,5 +1,11 @@
 # ChatFlow 审计修复结果（27 项逐项）
 
+**Status: Historical verification report — 2026-09-05.** 原有通过、跳过、风险与剩余限制全部保留；本次目录整理不新增验收结论。财务与 E2EE 审计证据永久保留。
+
+[审计需求](../ChatFlow_Codex_审计修复Prompt.md) · [执行计划](../plans/chatflow-audit-remediation.md) · [文档导航](../README.md)。
+
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
 **日期：** 2026-09-05　**执行范围：** `docs/ChatFlow_Codex_审计修复Prompt.md` 全部 27 项
 **工作区：** 提交 `e7bd02e` 之上的本地改动（未 pull/reset/push/部署）
 **验证环境：** pytest（.venv，Python 3.12）+ 隔离 PostgreSQL 18（initdb 临时集群 `127.0.0.1:55432`，绝不指向生产）；Flutter 3.44.9（analyze + test）；Android Gradle（compileStandardDebugKotlin）

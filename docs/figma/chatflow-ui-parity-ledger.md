@@ -1,5 +1,9 @@
 # ChatFlow UI parity ledger
 
+**Status: Historical / frozen in place — 2026-09-10.** See [Figma evidence index](README.md) and the [current Flutter–HTML workflow](../ui-development-html-demo-workflow.md).
+
+This records the actual 2026-08-25 delivery limitations. Remote updates remain blocked as recorded below; retiring Figma does not establish synchronization or completion.
+
 ## 2026-08-25 — 朋友圈发表与可见范围
 
 | Surface | Approved visual decision | Flutter delivery | Tests | Figma status |

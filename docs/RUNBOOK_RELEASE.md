@@ -1,5 +1,20 @@
 # 发布流水线 Runbook（CI/CD + 一键发布脚本）
 
+**Status: Current release entry; historical CI procedures below.**
+
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
+## 当前发布入口（2026-09-10）
+
+1. Android 源码构建、仅 ARM64、常规 APK 重建、固定用户已验证签名与工件门禁：[Android APK 固定打包流程](runbooks/android-apk-rebuild.md)。源码包只是中间产物。
+2. Android / iOS 最终工件上传、不可变文件名、下载页与更新弹窗、回滚：[移动应用发布部署](runbooks/app-release-deployment.md)。
+3. iOS TestFlight/模拟器职责及 Android 源码构建示例：[mobile-release](runbooks/mobile-release.md)；生产跳板与验收：[admin-production-workflow](runbooks/admin-production-workflow.md)。
+4. 配置渲染与漂移另见[生产配置 Runbook](RUNBOOK_PRODUCTION_CONFIG.md)；完整主题见[Runbooks 索引](runbooks/README.md)。
+
+## 历史 CI 与发布脚本说明（保留正文）
+
+下文旧“主发布路径”、多 ABI/APK×3、`--split-per-abi`、旧版本/证书/Secrets 和网络说明是当时记录，不代表现行推荐命令。`scripts/build_mobile_public_domain.ps1` 本次核对仍含 `--split-per-abi`；不能据此替代 ARM64 固定流程。CI 与旧脚本只有完成当前架构、三个 HTTPS 构建参数、重建、固定签名、版本和哈希门禁后，才可用于相应发布环节。旧示例不得直接运行来绕过这些要求；本次未修改或验证旧 CI 脚本。保留以下 CI 特有机制供维护参考。
+
 > **2026-09-05 用户确认的新要求：** Android 最终交付前必须执行[APK 重建与签名流程](runbooks/android-apk-rebuild.md)。下文历史 CI/发布命令尚不能替代该步骤；直接 Flutter/Gradle 产物只是中间包。使用用户已测试通过的固定证书，发布前检查安装兼容性及最终包哈希。
 
 ## 5. 主发布路径（CI 构建 + 服务器下行拉取）

@@ -1,5 +1,9 @@
 # UI Development and HTML Demo Workflow
 
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
+**Current.** [文档导航](README.md) · [退役流程](ui-development-figma-workflow.md)。
+
 **Status:** Approved — 2026-09-10. Supersedes `docs/ui-development-figma-workflow.md` (retired): UI changes no longer require Figma synchronization; the HTML design demo is the required visual deliverable.
 **Scope:** Flutter mobile UI, the HTML design demo under `frontend/`, the component registry, and user-visible product/content names.
 
@@ -26,7 +30,8 @@ The UI-contract verifier rejects:
 ## Naming rules
 
 - Public product name: **畅聊 ChatFlow**; compact in-product name: **畅聊**; account label: **畅聊号**.
-- Public CAIBI asset name: **点钻**; red-packet label: **畅聊点钻红包**.
+- Public CAIBI asset name: **彩币**, following the governing AGENTS.md. Red-packet text must follow the approved product wording; this workflow does not introduce a separate naming decision.
+- Terminology reconciliation (2026-09-10): this workflow previously required **点钻 / 畅聊点钻红包**. That historical wording conflicts with the governing AGENTS.md. This documentation correction removes that requirement only; it does not change product UI, balances, API identifiers, ledger rules, or rewrite historical CONTEXT/approval records.
 - `CAIBI` remains internal only: schema, API `asset`, ledger/events, migrations and code identifiers. OpenAPI titles, health `service`, Docker defaults and TOTP issuer require a separate API/operations compatibility review.
 - New widgets use `WeChat` purpose-prefixed PascalCase names; HTML custom elements use `app-kebab-case`.
 

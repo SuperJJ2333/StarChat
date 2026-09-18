@@ -1,5 +1,9 @@
 # UI Development and Figma-Assisted Change Workflow
 
+**Status: Retired — 2026-09-10.** Superseded by [UI Development and HTML Demo Workflow](ui-development-html-demo-workflow.md).
+
+以下正文完整保留 2026-08-23 的历史批准记录；其中 Approved、Figma 同步门禁及资产命名均不再作为现行执行要求。Figma 资料在[历史索引](figma/README.md)冻结，历史 blocked 状态不变。
+
 **Status:** Approved — 2026-08-23
 **Scope:** Flutter mobile UI, HTML design demo, Figma export ledger, and user-visible product/content names.
 

@@ -1,5 +1,11 @@
 # ChatFlow 审计修复计划（27 项）
 
+**Status: Historical / completed as recorded on 2026-09-05.** 保留当时验收结果与限制，不代表当前代码或生产状态已重新验证。
+
+[需求与 27 项编号](../ChatFlow_Codex_审计修复Prompt.md) · [结果报告](../reports/chatflow-audit-remediation-result.md) · [统一计划导航](README.md)。
+
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
 ## Goal
 按 `docs/ChatFlow_Codex_审计修复Prompt.md` 完成 27 项审计发现的实际修复、自动化验证与交付记录；保留既有成果（图库视频/封面、通话、来电链路修复）；不 pull/reset、不 push、不部署。
 

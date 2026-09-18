@@ -1,5 +1,7 @@
 # ChatFlow 0.3.36 ARM64 普通源码构建
 
+> **Historical / 2026-09-10 归档更新：** [原 APK 与 source.zip](../archives/2026-09-10-docs-cleanup/samples/plain36/)已移入本地样本归档，移动前后 SHA256 一致。本文、签名/清单/构建日志继续原址保留；`src` 中独有源码保留，生成目录的无损归档和恢复见[本次清理记录](../2026-09-10-docs-cleanup-execution.md)。下文文件名及原实验结论保留，不代表当前正式交付流程。
+
 2026-09-05，用户授权重新打包：不反编译、不加壳、不添加构建防护。源码固定 b80049b3a062a07a02740bf553b026cdf5b2504b，导出副本独立构建；未纳入构建开始时未提交的 CallNotificationManager/call_ui_manager/matrix_call_adapter 等修改。
 
 - APK：ChatFlow-0.3.36-arm64-plain.apk

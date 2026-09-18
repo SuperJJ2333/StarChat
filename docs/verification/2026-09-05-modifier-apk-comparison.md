@@ -1,5 +1,7 @@
 # Android Modifier APK comparison
 
+> 2026-09-10 归档位置更新：用户原始样本已移至 [本地样本归档](archives/2026-09-10-docs-cleanup/samples/modifier-0.3.38/ChatFlow_2026年09月05日20点15分.apk)，移动前后 SHA256 与下文基线一致。下文原路径是当次接收位置，历史分析正文保留。
+
 User supplied: `docs/verification/ChatFlow_2026年09月05日20点15分.apk`.
 SHA256: `9b670805675b39d7a98a2e24b48fef3089c973b51707cead879dac124c34c326`.
 Read-only inspection; no installation, scanner upload, APK alteration or production changes.

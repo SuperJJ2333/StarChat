@@ -1,5 +1,11 @@
 # Mobile release runbook
 
+**Status: Current platform entry; iOS CI details retained pending runtime revalidation.**
+
+**owner:** 项目维护者；**last_verified:** 2026-09-10（文档状态与链接核对，不代表当前生产验收）。
+
+[Runbooks index](README.md) · [Final artifact deployment](app-release-deployment.md).
+
 Android delivery policy (user-confirmed 2026-09-05): follow [the mandatory APK rebuild/signing runbook](android-apk-rebuild.md) after the source build. Commands below create intermediate Android artifacts; they do not by themselves complete the final packaging process.
 
 Required GitHub Actions secrets: `IOS_CERTIFICATE_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROFILE_BASE64`, `IOS_PROVISIONING_PROFILE_NAME`, `APPLE_TEAM_ID`, `IOS_BUNDLE_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_KEY_ID`, `APPSTORE_PRIVATE_KEY`.
@@ -27,6 +33,10 @@ pwsh -File scripts/bump_version.ps1 -Version 0.3.91+2118
 人工绕过，该测试也会在 CI 拦下不一致。
 
 ## Public-domain Android build
+
+Run in `apps/mobile_flutter/` using PowerShell 7 after the repository UTF-8 session setup. This source-build example follows the current ARM64 policy; preserve all three HTTPS definitions. The [2084 release evidence](../verification/2026-09-10-mobile-0380-2084-release.md) records these exact definitions. After source build, follow [APK rebuild/signing](android-apk-rebuild.md), then [deployment](app-release-deployment.md).
+
+Historical command (retained for traceability, retired): `flutter build apk --release --split-per-abi --flavor standard` with only Business API and Matrix definitions. It omitted Getui and used split ABI versioning; do not use it for the current release sequence.
 
 The `liuhetong888.com` release must be built only after the public gateway,
 certificate, Business API health endpoint, Matrix versions endpoint, and
