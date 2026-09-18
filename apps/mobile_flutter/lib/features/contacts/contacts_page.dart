@@ -1645,12 +1645,17 @@ final class FriendRequestsPage extends StatefulWidget {
   /// BUG 3：accept 成功后乐观插入好友（本地立即可见，禁止等待重启）。
   final ProfileRepository? identityCache;
 
-  /// BUG 3：accept 成功后建立私聊并发送好友接受系统消息
-  /// （matrixUserId, friendUserId, friendDisplayName）。
+  /// **测试专用**的旧私聊建立钩子（无「接受招呼 + 打开会话」编排）。
+  ///
+  /// 生产路径只走 [onEstablishDirectChatWithRequest]（组合根注入
+  /// `AppHome._establishDirectChatAndGreet`）；该回退仅用于单元测试注入，
+  /// 由架构守卫测试锁定"生产组合必须传 request 版本"。
+  @visibleForTesting
   final Future<void> Function(
           String matrixUserId, String friendUserId, String friendDisplayName)?
       onEstablishDirectChat;
 
+  /// 生产路径：接受好友后的完整编排（建私聊 + 发送接受系统消息 + 打开会话）。
   final Future<void> Function(String matrixUserId, String friendUserId,
       String friendDisplayName, Map request)? onEstablishDirectChatWithRequest;
 

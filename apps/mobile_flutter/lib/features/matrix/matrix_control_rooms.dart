@@ -1,8 +1,11 @@
 import 'package:matrix/matrix.dart';
 
+import 'control_room_registry.dart';
 import 'matrix_emoji_vault.dart';
 import 'matrix_message_reminder_backend.dart';
 import 'room_visibility_policy.dart';
+
+export 'control_room_registry.dart' show ControlRoomRegistry;
 
 /// 控制房间（账号级系统房间）身份的**唯一解析点**。
 ///
@@ -11,15 +14,17 @@ import 'room_visibility_policy.dart';
 /// 1. 判定与身份脱钩——改名即失效，同名即误判；
 /// 2. 只有消息列表用了它，全局搜索没有，于是控制房间能被搜索到并打开。
 ///
-/// 现在改为**只用事实**：房间号 + accountData 引用。
-/// 控制房间在创建时就写入 accountData（`com.changliao.emoji.vault` /
-/// `com.changliao.reminders.control` 的 `room_id`），这是它们的账号级身份，
-/// 与展示名无关、与语言无关、与改名无关。
+/// 现在改为**只用事实**：
+/// - roomId；
+/// - accountData 引用（`com.changliao.emoji.vault` /
+///   `com.changliao.reminders.control` 的 `room_id`）——账号级权威身份；
+/// - 本会话的创建登记（[ControlRoomRegistry]，补 accountData 可读前的窗口）。
 ///
 /// 解析结果交给 [RoomVisibilityPolicy]，由同一条规则同时服务于
 /// "列表是否展示"与"是否允许打开"。
 RoomVisibilityPolicy roomVisibilityFromAccountData(Client client) =>
     RoomVisibilityPolicy.forRoomIds([
+      ...ControlRoomRegistry.sessionRoomIds,
       client.accountData[emojiVaultAccountDataType]?.content['room_id']
           ?.toString(),
       client.accountData[messageReminderAccountDataType]?.content['room_id']

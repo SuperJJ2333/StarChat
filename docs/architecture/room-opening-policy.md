@@ -210,19 +210,34 @@ enum RoomOpenFailureKind {
 `RoomOpenFailure` 携带 `kind / roomId / source / cause`，并暴露：
 
 - `userMessage`：**唯一**允许展示的文案来源（不含房间内容、成员、消息）；
-- `isRetryable`：`offline` / `networkUnavailable` / `temporaryFailure` 可重试。
+- `isRetryable`：`offline` / `networkUnavailable` / `temporaryFailure` **以及 `notJoined`**
+  可重试。`notJoined` 最常见的成因是"刚入群，本地还没同步到"，几秒后重试通常即成功；
+  早期版本把它判为不可重试 + 对话框只有「知道了」，扫码入群后会变成死胡同。
 
 异常映射（`RoomOpeningPolicy.classify`）：`TimeoutException` → `networkUnavailable`；
 `SocketException` / `HttpException` → `offline`；`StateError('…unavailable')` → `roomNotFound`；
 其余 → `temporaryFailure`。**本地打开失败（例如租约取不到房间）同样被分类为可见失败**。
 
-### 5.2 禁止静默
+### 5.2 禁止静默 + 反馈契约
 
 - 通知/推送/横幅路径的 `catch (_) {}` 已删除（守卫测试断言该代码段不再包含它）；
 - 所有入口经 `AppHome._openManagedRoomRequest` → 失败统一进入
   `showRoomOpenFailureDialog`（`Key('room-open-failure')`，标题「无法打开会话」，正文 `userMessage`）；
+- **可重试**失败（`failure.isRetryable`）多给一个「重试」按钮，对话框返回 `true` 时
+  组合根用**同一个 `RoomOpenRequest`** 重跑（幂等：协调器去重 + 网关不会重复建房）；
+  不可重试失败只给「知道了」，不引导无意义重试；
+- 反馈是 **single-flight** 的（`_roomOpenFailureVisible`）：对话框存在期间的再次打开请求
+  直接忽略，用户连点或"推送 + 点击"同时到达不会叠出多层对话框；
 - 搜索/群聊通讯录/建群/好友通过等路径不再各自 `catch`，失败一律冒泡到同一反馈点；
 - 「通知已打开」埋点移到 `onRoomReady`：**只有真的进到房间才计数**，失败不会留下虚假统计。
+
+### 5.3 等待上限与可见进度
+
+| 项 | 改造前 | 现在 |
+| --- | --- | --- |
+| 等待上限 | 10s（通知）/ 12s（搜索） | **5s**（`_roomOpenWaitTimeout`，只在"本地没有该房间"时发生） |
+| 等待期间反馈 | 无（纯静默空等） | 根 Overlay 上的转圈（`Key('room-open-waiting')`，与消息列表同一做法，避免低端机上 modal 与 push 的同帧竞争） |
+| 超时结果 | `catch (_) {}` 静默放弃 | 可重试的 `temporaryFailure` + 「无法打开会话，请检查网络」+「重试」 |
 
 ---
 
@@ -232,7 +247,7 @@ enum RoomOpenFailureKind {
 
 | 事实 | 来源 |
 | --- | --- |
-| 控制房间 roomId | accountData `com.changliao.emoji.vault`.room_id、`com.changliao.reminders.control`.room_id |
+| 控制房间 roomId | ① accountData `com.changliao.emoji.vault`.room_id、`com.changliao.reminders.control`.room_id（账号级权威身份）；② **本会话创建登记** `ControlRoomRegistry`（补 accountData 可读前的窗口） |
 | 被判定房间 | 打开/展示时的 `roomId` |
 
 `RoomVisibilityPolicy.forRoomIds([...])` 是**纯值对象**：
@@ -251,6 +266,20 @@ enum RoomOpenFailureKind {
 `roomVisibilityFromAccountData(Client)` → `RoomVisibilityPolicy`，名字白名单已删除
 （守卫测试断言这四个文件的可执行代码里不再出现那两个展示名）。
 
+### 6.3 创建即登记（关闭 accountData 窗口）
+
+`ControlRoomRegistry`（`control_room_registry.dart`，只依赖 `foundation`，避免循环依赖）：
+
+| 时机 | 动作 |
+| --- | --- |
+| 新建表情仓库房间（`createEncryptedVaultRoom`） | `ControlRoomRegistry.register(roomId)` |
+| 复用或新建提醒同步房间（`MatrixMessageReminderBackend.open`） | `ControlRoomRegistry.register(...)`（accountData 缺失时也先登记） |
+| 登出 / 清空本地数据（`clearLocalChatData`） | `ControlRoomRegistry.clear()`（账号级资源不跨账号累积） |
+
+这样即便 `accountData` 尚未对本机可读（刚创建/刚登录/刚切换账号），该房间也**不会**
+出现在列表或搜索结果里，也**不会**被任何入口打开；判定依然只看身份（roomId /
+accountData / 会话登记），不看展示名，也不修改任何 Matrix 协议或房间状态。
+
 ---
 
 ## 7. Tests
@@ -266,6 +295,8 @@ enum RoomOpenFailureKind {
 | **5** | 离线：搜索历史消息打开成功 | `offlineFirst` + 本地命中 → 零等待且 **anchor 保留**；仅"本地已知未加入"才允许一次网络回退 |
 | **6** | 网络失败：显示错误，不能 silent | 每个失败分类都有非空且不含房间号的文案；widget 测试真实弹出统一对话框并显示「网络不可用，请稍后重试」；本地打开失败（`StateError('Matrix room is unavailable')`）也被分类为 `roomNotFound` |
 | **7** | 控制房间：搜索不可见 | 注入 `visibility` 后 widget 测试：控制房间不渲染、普通群聊可见且点击回调收到正确 roomId；另有 `matrix_control_rooms_test.dart` 的纯策略/反硬编码守卫 |
+| **8** | 架构债守卫（审计 B 组） | ① 控制房间身份只来自 roomId/accountData/会话登记，且创建方都登记、登出清理；② legacy 私聊创建面（`DirectChatService` / `CanonicalDirectChatGateway` / 客户端 `.openOrCreateDirectChat`）不得被生产代码调用；③ 好友通过生产接线必须传 `onEstablishDirectChatWithRequest`，旧回退标注 `@visibleForTesting`；④ `RoomPage` 不再维护 `StatisticsRoomScope`，改由打开流程 enter/leave；⑤ 失败反馈 single-flight + 可重试 + 等待上限 5s + 可见进度 |
+| **6 增补** | 重试语义 | `notJoined` 可重试；可重试失败弹出「重试」并回传 `true`；不可重试只有「知道了」 |
 
 ### 7.2 更新（架构变更导致的既有守卫）
 
@@ -273,20 +304,30 @@ enum RoomOpenFailureKind {
 | --- | --- |
 | `profile_message_route_wiring_test.dart` | 「AppHome 通过策略层 + 协调器」：断言 `RoomOpeningPolicy(` / `_roomOpening.open(` / `navigate: _roomNavigation.open` / `RoomOpenSource.groupCreated` |
 | `global_search_page_test.dart` | `onOpenRoom` 必填（`nav == null` → no-op）；原「无导航能力时不展示分组」改为「分组恒可用，能力不分叉」 |
-| `matrix_control_rooms_test.dart` | 从"名字白名单"改为"accountData/roomId 驱动" + 反硬编码守卫 |
+| `matrix_control_rooms_test.dart` | 从"名字白名单"改为"accountData/roomId 驱动" + 反硬编码守卫 + **创建即登记**守卫 |
+| `account_client_selection_test.dart` | 图库批处理用例的等待从"一个微任务轮次"改为**有界轮询**（见 §7.4） |
 | 8 个测试文件的 `ContactsPage` / `ContactsTabPage` / `DiscoveryPage` / `GlobalSearchPage` 构造点 | 注入 `onOpenRoom`（必填参数） |
+
+### 7.4 flake 根因与修复（`account_client_selection_test`）
+
+- **现象**：全量并行下偶发失败（"9 个延迟图库视频在一个准备预算内"）；隔离运行与重跑均通过。
+- **根因**：用例在 `enqueueVideoFiles` 之后只等**一个** `Future.delayed(Duration.zero)` 就断言
+  `started == [0]`；而 `_enqueueVideoFiles` 在第一个 `prepare` 之前还有真实文件 I/O
+  （`await video._waitForSourceMetadata()`）。并行负载下这一个事件循环轮次不足以完成 I/O，
+  `started` 仍为空 → 断言失败。**这是测试的时序假设问题，不是产品缺陷。**
+- **修复**：改为有界轮询 `_pumpUntil(...)`（默认 10s 上限、超时给出明确原因）。
+  断言语义**不变且更强**：仍是"同一时刻只允许一个 gallery handle 准备"，
+  且每次都等到下一个准备真正开始后再校验预算，而不是落在空窗里。
+- **为何不"重试掩盖"**：没有引入 retry/skip，只是把"时序假设"换成"有界等待不变量"。
 
 ### 7.3 实测结果
 
 | 范围 | 命令 | 结果 |
 | --- | --- | --- |
-| 静态分析（含测试） | `flutter analyze` | **No issues found!**（28.9s） |
-| 房间打开相关 11 个测试文件 | `flutter test test/features/matrix/room_opening_policy_test.dart test/features/matrix/matrix_control_rooms_test.dart test/features/matrix/profile_message_route_wiring_test.dart test/features/matrix/room_navigation_coordinator_test.dart test/features/matrix/matrix_home_room_delegation_test.dart test/features/matrix/direct_message_open_lifecycle_test.dart test/features/matrix/direct_chat_entry_test.dart test/features/search/global_search_page_test.dart test/features/contacts/contacts_group_entry_test.dart test/features/contacts/direct_message_identity_test.dart test/features/discovery/discovery_page_test.dart` | **77 passed / 0 failed** |
-| 全量测试（第一次） | `flutter test --timeout 120s` | 3160 passed / 1 failed：`account_client_selection_test.dart::owner atomically accepts nine deferred gallery videos within one preparation budget`（**与本次改动无关**：该测试与图库准备管线均未被改动；单独运行 **22 passed**，重跑全量 **All tests passed** ⇒ 判定为并行负载下的时序 flake） |
-| 全量测试（第二次，判定 flake） | `flutter test --timeout 120s` | **3161 passed / 0 failed**（exit 0） |
-
-> 记录方式说明：上述 flake 只在"全量并行"下出现、在隔离运行与重跑中均通过，且失败测试与被改文件无交集；
-> 本次未修改该测试或图库代码（审计原则：先记录证据，不顺手改无关代码）。
+| 静态分析（含测试） | `flutter analyze` | **No issues found!**（19.4s） |
+| 受影响套件（策略/控制房间/flake/作用域/协调器链） | `flutter test test/features/matrix/room_opening_policy_test.dart test/features/matrix/matrix_control_rooms_test.dart test/features/matrix/account_client_selection_test.dart test/statistics_tool_test.dart test/features/matrix/matrix_home_room_delegation_test.dart test/features/matrix/direct_message_open_lifecycle_test.dart test/features/matrix/room_navigation_coordinator_test.dart test/features/matrix/profile_message_route_wiring_test.dart` | **80 passed / 0 failed** |
+| 全量测试 | `flutter test --timeout 120s` | **3170 passed / 0 failed**（exit 0；较上轮 +9 条新测试） |
+| 仓库门禁 | `pwsh -NoProfile -File scripts/verify.ps1` | **`Verification: PASS`**（exit 0，含 `tests/mobile`、business-api/worker、Alembic、OpenAPI、Compose render） |
 
 ---
 
@@ -297,9 +338,10 @@ enum RoomOpenFailureKind {
 | `RoomNavigationCoordinator` | 行为逐字未变（去重/合并/`popUntil`/清理）；只新增了 `RoomOpenSource`/`RoomOpenMode` 与请求字段 |
 | `RoomPage` / `RoomLease` | 创建点仍为 1、租约所有者仍为 `_openManagedRoomRoute`，未改生命周期 |
 | `DirectChatController` / `CoordinatedDirectChatGateway` | 未改；「发消息」只是把打开阶段交给策略 |
-| Matrix / E2EE / Media Engine | 未改（新增的本地读取 API 只读本机 SDK store 与 accountData） |
-| 控制房间账号数据尚未同步的窗口 | 判定依赖 accountData 引用；若 accountData 缺该房间号（极短窗口/异常同步），该房间会短暂出现在列表中。这是"不用展示名"的**已记录取舍**（见审计 P2-1 的风险说明） |
+| Matrix / E2EE / Media Engine | 未改（新增的本地读取 API 只读本机 SDK store 与 accountData；控制房间登记不改任何房间状态或协议） |
+| 控制房间账号数据尚未同步的窗口 | **已由"创建即登记"覆盖**（§6.3）。仍未覆盖的极端情况：本机既没有 accountData 引用、也不是本进程创建的房间（例如另一台设备创建、本机 accountData 又被清空）——此时该房间会按普通群聊处理（这是"不用展示名"的已记录取舍） |
 | 通知「已打开」埋点 | 语义更严格：只有真正进入房间（`onRoomReady`）才计数 |
+| `StatisticsRoomScope` | 改由打开流程 enter/leave（`RoomPage` 不再维护）；作用域栈语义与既有单测不变 |
 
 ---
 
@@ -307,16 +349,27 @@ enum RoomOpenFailureKind {
 
 | 步骤 | 命令 | 结果 |
 | --- | --- | --- |
-| 1 | `flutter analyze`（`apps/mobile_flutter`） | **No issues found!**（28.9s，exit 0） |
-| 2 | 房间打开相关 11 个测试文件（见 §7.3 命令） | **77 passed / 0 failed**（exit 0） |
-| 3 | `flutter test --timeout 120s`（全量） | **3161 passed / 0 failed**（exit 0） |
+| 1 | `flutter analyze`（`apps/mobile_flutter`） | **No issues found!**（exit 0） |
+| 2 | 受影响套件（见 §7.3 命令） | **80 passed / 0 failed**（exit 0） |
+| 3 | `flutter test --timeout 120s`（全量） | **3170 passed / 0 failed**（exit 0） |
 | 4 | `pwsh -NoProfile -File tests/repository/Test-RepositoryPolicy.ps1` | `Repository policy: PASS` |
-| 5 | `pwsh -NoProfile -File scripts/verify.ps1`（仓库整体门禁） | **`Verification: PASS`（exit 0）** |
+| 5 | `pwsh -NoProfile -File scripts/verify.ps1`（仓库整体门禁） | **`Verification: PASS`**（exit 0） |
 
-第 5 步覆盖并全部通过：Repository policy、Deployment policy、Template unit tests、Render-only
+第 5 步覆盖：Repository policy、Deployment policy、Template unit tests、Render-only
 configuration smoke test、Infra render tests、`Alembic migrations: PASS`（链路含 `0069_media_platform`）、
 `OpenAPI contract: PASS`、business-api / business-worker、`tests/mobile`（Flutter 边界）、
 `Docker Compose render`。
+
+---
+
+## 9.1 仓库卫生与流程（同批处理）
+
+| # | 问题 | 处置 |
+| --- | --- | --- |
+| 1 | 仓库根目录存在 5 个被 git 跟踪的临时产物（`tmp_remote_*.py|plist`、`tmp_download_page.html`），违反 `AGENTS.md`「根目录不得存放临时/验证产物」 | `git mv` 到 `scripts/one-off/`（4 个运维脚本 + 说明 README）与 `docs/verification/artifacts/2026-09-18/landing-page-snapshot.html`；全仓无引用，模式扫描未发现真实密钥 |
+| 2 | `.gitattributes` 只有 `*.sh eol=lf`，Windows（`core.autocrlf=true`）下每次操作都刷 CRLF 警告，多 agent 并行易产生整文件 diff | 增加 `*.dart text eol=lf`、`*.md text eol=lf`；验证未触发任何批量重写（改动后 `git status` 仍只有本次编辑的文件） |
+| 3 | 上一轮审计报告的 P0-1（工作树 3 个编译错误）已过时 | 在审计报告 §9 与基线说明处标注"快照 + 已由并行批次解决"，避免被当成当前事实 |
+| 4 | 提交粒度：本次推送的 `b641fe15` 同时包含并行批次与策略层 | 记录在 `docs/workflow/current-state.md`：同文件承载两块改动，按文件拆分会产生编译不过的中间态；若必须拆分需按 hunk 重做且建议新开分支而非改写 `main` |
 
 ---
 

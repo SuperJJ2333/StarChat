@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:matrix/matrix.dart';
 
+import 'control_room_registry.dart';
 import 'message_reminder_service.dart';
 
 const messageReminderAccountDataType = 'com.changliao.reminders.control';
@@ -43,6 +44,12 @@ final class MatrixMessageReminderBackend
   }) async {
     final active = ensureActive ?? () {};
     active();
+    // 提醒同步房间是账号级控制房间：无论本次是新建还是复用，都登记为控制
+    // 房间（身份=房间号），保证它在 accountData 对本机可读之前的窗口内也
+    // 不会出现在会话列表/搜索结果里，也不会被打开。
+    ControlRoomRegistry.register(client
+        .accountData[messageReminderAccountDataType]?.content['room_id']
+        ?.toString());
     var roomId = client
         .accountData[messageReminderAccountDataType]?.content['room_id']
         ?.toString();
@@ -55,6 +62,7 @@ final class MatrixMessageReminderBackend
         visibility: Visibility.private,
         waitForSync: true,
       );
+      ControlRoomRegistry.register(roomId);
       final userId = client.userID;
       if (userId == null) throw StateError('Matrix client is not logged in');
       await client.setAccountData(

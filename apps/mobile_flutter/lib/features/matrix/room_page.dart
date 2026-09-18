@@ -86,7 +86,6 @@ import '../../features/emoji/fluent_emoji_catalog.dart';
 import '../../ui/chat/emoji_text.dart';
 import '../../ui/chat/contain_image_bubble.dart';
 import '../../ui/chat/super_emoji_message.dart';
-import '../statistics/statistics_room_scope.dart';
 import '../statistics/statistics_tool.dart';
 import 'media_cache.dart';
 import 'content_addressed_media.dart';
@@ -603,9 +602,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() => _flashViewed = store);
     }));
-    // 聊天工具：幂等注册「统计助手」并登记本会话到作用域栈
+    // 聊天工具：幂等注册「统计助手」。
+    // 「当前可见会话」作用域栈（StatisticsRoomScope）**不再由页面维护**：
+    // 它属于房间打开流程，由组合根在 register/release 时统一登记与释放
+    // （AppHome._openManagedRoomRoute），避免会话状态出现第二个真相源。
     ensureStatisticsToolRegistered();
-    StatisticsRoomScope.enter(roomInfo.id);
     unawaited(_trackMatrixOperation(_load()));
   }
 
@@ -4298,7 +4299,6 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     messageScrollController.removeListener(_onMessageScroll);
     ConversationReadState.shared().setRoomOpen(roomInfo.id, open: false);
     messageScrollController.dispose();
-    StatisticsRoomScope.leave(roomInfo.id);
     super.dispose();
     _disposed.complete();
   }

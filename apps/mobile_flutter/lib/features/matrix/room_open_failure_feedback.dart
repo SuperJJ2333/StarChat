@@ -12,12 +12,16 @@ import 'room_opening_policy.dart';
 ///
 /// 与策略层的关系：`RoomOpeningPolicy` 只负责"判定 + 分类"，不碰 UI；
 /// 本函数是策略结论到用户可见提示的唯一投影点。
-Future<void> showRoomOpenFailureDialog(
+///
+/// 返回值：用户是否选择了**重试**。只有 `failure.isRetryable` 时才会出现
+/// 「重试」按钮；不可重试的失败（会话不存在 / 无权限）只给「知道了」，
+/// 避免引导用户做无意义的重复尝试。
+Future<bool> showRoomOpenFailureDialog(
   BuildContext context,
   RoomOpenFailure failure,
-) {
-  if (!context.mounted) return Future<void>.value();
-  return showCupertinoDialog<void>(
+) async {
+  if (!context.mounted) return false;
+  final result = await showCupertinoDialog<bool>(
     context: context,
     builder: (dialogContext) => CupertinoAlertDialog(
       key: const Key('room-open-failure'),
@@ -25,10 +29,17 @@ Future<void> showRoomOpenFailureDialog(
       content: Text(failure.userMessage),
       actions: [
         CupertinoDialogAction(
-          onPressed: () => Navigator.pop(dialogContext),
+          onPressed: () => Navigator.pop(dialogContext, false),
           child: const Text('知道了'),
         ),
+        if (failure.isRetryable)
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('重试'),
+          ),
       ],
     ),
   );
+  return result == true;
 }

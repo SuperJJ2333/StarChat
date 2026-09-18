@@ -933,7 +933,12 @@ void main() {
     expect(jobs, hasLength(9));
     expect(
         matrix.outgoingWork.retainedSourceBytes, 20 * 1024 * 1024 + 512 * 1024);
-    await Future<void>.delayed(Duration.zero);
+    // 首次 prepare 之前存在真实文件 I/O（`_waitForSourceMetadata`），因此
+    // "一个微任务轮次后就已开始" 不是可靠假设（并行负载下会 flake）。
+    // 改为有界轮询等待"第一个准备确实已经开始"，断言语义不变（一次只允许
+    // 一个 gallery handle 准备）。
+    await _pumpUntil(() => started.isNotEmpty,
+        reason: '第一个 gallery 源的准备应在有界时间内开始');
     expect(started, [0],
         reason: 'Only one accepted gallery handle may prepare at a time.');
     for (var index = 0; index < preparation.length; index++) {
@@ -944,7 +949,14 @@ void main() {
         filename: 'gallery-$index.mp4',
         body: '[视频消息]',
       ));
-      await Future<void>.delayed(Duration.zero);
+      if (index + 1 < preparation.length) {
+        // 等到下一个准备真正开始，再断言预算（否则断言可能落在"还没开始"的
+        // 空窗里而失去意义）。
+        await _pumpUntil(() => started.length > index + 1,
+            reason: '第 ${index + 1} 个 gallery 源的准备应在有界时间内开始');
+      } else {
+        await Future<void>.delayed(Duration.zero);
+      }
       expect(matrix.outgoingWork.retainedSourceBytes,
           lessThanOrEqualTo(preparationBudget));
     }
@@ -1199,5 +1211,25 @@ final class _OutgoingMediaRoom extends _OutgoingTrackingRoom {
     sentTxids.add(txid);
     sentExtraContent.add(Map<String, dynamic>.from(extraContent ?? {}));
     return r'$media-event';
+  }
+}
+
+/// 有界轮询：每轮让出事件循环，直到 [condition] 成立或超时失败。
+///
+/// 这些用例断言的是"顺序 / 并发上限 / 预算"这类不变量，而不是"恰好一个微任务
+/// 之后的状态"。用固定的 `Duration.zero` 会在并行负载（CI 同机多测试进程）下
+/// flake —— 首次 prepare 之前存在真实文件 I/O（`_waitForSourceMetadata`）。
+/// 轮询保留了原有不变量，只去掉时序假设。
+Future<void> _pumpUntil(
+  bool Function() condition, {
+  required String reason,
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('等待超时（${timeout.inSeconds}s）：$reason');
+    }
+    await Future<void>.delayed(Duration.zero);
   }
 }

@@ -3090,6 +3090,9 @@ final class _SdkEmojiVaultBackend
           throw StateError(
               'Matrix did not create an encrypted emoji vault room');
         }
+        // 创建即登记：accountData 对本机可读之前的窗口内，房间也必须保持
+        // 不可见/不可打开（身份用房间号，不用展示名）。
+        ControlRoomRegistry.register(roomId);
         return roomId;
       });
 
@@ -5603,6 +5606,9 @@ final class MatrixSdkE2eeClient
     _decryptionCacheContinuity = null;
     _lastRecoveryKey = null;
     _revokeManagedResources();
+    // 账号级资源：控制房间登记不得跨账号累积（房间号全局唯一，泄漏本身
+    // 无害，但登出/清库是唯一正确的清理点）。
+    ControlRoomRegistry.clear();
     return _serializeLifecycle(() async {
       final target = _client ?? _pendingCloseClient;
       _localPreferenceAccountIdToClear ??=
@@ -5973,8 +5979,7 @@ final class MatrixSdkE2eeClient
     }
     try {
       await _attachManagedResources(resumed);
-      await _attachManagedSubscriptions(resumed);
-    } catch (error, stackTrace) {
+      await _attachManagedSubscriptions(resumed);    } catch (error, stackTrace) {
       await _detachManagedSubscriptions();
       await _detachManagedResources();
       await _rejectResumeClient(resumed);
@@ -6367,6 +6372,11 @@ final class MatrixSdkE2eeClient
       });
 
   @override
+  /// **LEGACY（生产禁用）**：无 canonical 仲裁的私聊创建便捷方法。
+  ///
+  /// 生产私聊创建只经 `DirectChatController` → `CoordinatedDirectChatGateway`
+  /// （`createDirectChatOnce` 持一次性建房授权）。本方法保留给兼容性测试；
+  /// 架构守卫测试断言 `lib/` 生产代码不调用它。
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) =>
       _withClient((active) async {
         return DirectChatService(MatrixDirectChatBackend(active))

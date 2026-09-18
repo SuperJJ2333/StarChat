@@ -318,10 +318,73 @@ void main() {
             RoomOpenFailureKind.roomNotFound)),
       );
     });
+
+    test('可重试分类覆盖"刚入群/刚同步"的场景，不留死胡同', () {
+      const notJoined = RoomOpenFailure(RoomOpenFailureKind.notJoined,
+          roomId: '!r:test', source: RoomOpenSource.scan);
+      expect(notJoined.isRetryable, isTrue,
+          reason: '刚入群时房间可能还没同步到本地，必须允许重试');
+      const missing = RoomOpenFailure(RoomOpenFailureKind.roomNotFound,
+          roomId: '!r:test', source: RoomOpenSource.search);
+      expect(missing.isRetryable, isFalse, reason: '会话不存在时不应引导重复尝试');
+      const denied = RoomOpenFailure(RoomOpenFailureKind.permissionDenied,
+          roomId: '!r:test', source: RoomOpenSource.search);
+      expect(denied.isRetryable, isFalse);
+    });
+
+    testWidgets('可重试失败给出「重试」按钮并回传 true（组合根据此重跑同一请求）',
+        (tester) async {
+      bool? retried;
+      await tester.pumpWidget(CupertinoApp(
+        home: Builder(
+          builder: (context) => CupertinoButton(
+            onPressed: () async {
+              retried = await showRoomOpenFailureDialog(
+                context,
+                const RoomOpenFailure(RoomOpenFailureKind.notJoined,
+                    roomId: '!room:test', source: RoomOpenSource.scan),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('尚未加入该会话，请稍后重试'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+      expect(retried, isTrue);
+    });
+
+    testWidgets('不可重试失败只给「知道了」', (tester) async {
+      bool? retried;
+      await tester.pumpWidget(CupertinoApp(
+        home: Builder(
+          builder: (context) => CupertinoButton(
+            onPressed: () async {
+              retried = await showRoomOpenFailureDialog(
+                context,
+                const RoomOpenFailure(RoomOpenFailureKind.roomNotFound,
+                    roomId: '!room:test', source: RoomOpenSource.search),
+              );
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text('重试'), findsNothing);
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      expect(retried, isFalse);
+    });
   });
 
-  group('Test 7: 控制房间在搜索中不可见', () {
-    testWidgets('控制房间不进搜索结果，普通群聊仍可打开', (tester) async {
+  group('Test 7: 控制房间在搜索中不可见', () {    testWidgets('控制房间不进搜索结果，普通群聊仍可打开', (tester) async {
       final store = SecureSessionStore(_MemoryStore());
       await store.saveSession(accessToken: 'a', refreshToken: 'r');
       final api = BusinessApiClient(
@@ -358,6 +421,109 @@ void main() {
       await tester.tap(find.text('项目群'));
       await tester.pumpAndSettle();
       expect(opened, ['!group:test']);
+    });
+  });
+
+  group('Test 8: 架构债守卫（审计 B 组）', () {
+    test('控制房间身份只来自 roomId/accountData/会话登记，且创建即登记', () {
+      final registry =
+          File('lib/features/matrix/control_room_registry.dart').readAsStringSync();
+      expect(registry, contains('class ControlRoomRegistry'));
+      expect(registry, contains('static void register('));
+      // 会话登记必须真正参与可见性判定（否则窗口期补不上）。
+      final resolver =
+          File('lib/features/matrix/matrix_control_rooms.dart').readAsStringSync();
+      expect(resolver, contains('ControlRoomRegistry.sessionRoomIds'));
+      // 两个控制房间的创建方都必须登记。
+      final vault = File('lib/features/matrix/matrix_e2ee_client.dart')
+          .readAsStringSync();
+      expect(vault, contains('ControlRoomRegistry.register(roomId)'));
+      final reminders = File(
+              'lib/features/matrix/matrix_message_reminder_backend.dart')
+          .readAsStringSync();
+      expect(reminders, contains('ControlRoomRegistry.register'));
+      // 登出/清库必须清理账号级登记。
+      expect(vault, contains('ControlRoomRegistry.clear()'));
+    });
+
+    test('休眠的 legacy 私聊创建面不得被生产代码调用', () {
+      final lib = Directory('lib');
+      // 只把**真正绕过仲裁的入口**当 legacy：
+      // - 构造旧服务/旧网关；
+      // - 客户端上那个无 canonical 仲裁的便捷方法（带点调用）。
+      // 注意 `openOrCreateDirectChat` 本身是 DirectChatGateway 的接口方法名，
+      // 三个网关都实现它，因此不作为 legacy 标记。
+      const legacyMarkers = <String>[
+        'DirectChatService(',
+        'CanonicalDirectChatGateway(',
+        '.openOrCreateDirectChat(',
+        'openOrCreateViaGateway(',
+      ];
+      const definitionSites = <String>[
+        'direct_chat_controller.dart',
+        'direct_chat_service.dart',
+        'matrix_e2ee_client.dart',
+      ];
+      final offenders = <String>[];
+      for (final entity in lib.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final path = entity.path.replaceAll(r'\', '/');
+        if (definitionSites.any(path.endsWith)) continue;
+        final code = _stripComments(entity.readAsStringSync());
+        for (final marker in legacyMarkers) {
+          if (code.contains(marker)) offenders.add('$path → $marker');
+        }
+      }
+      expect(offenders, isEmpty,
+          reason: 'legacy 私聊创建面只能存在于定义处，生产入口一律走 '
+              'DirectChatController + CoordinatedDirectChatGateway：$offenders');
+      // 生产组合根必须使用带跨设备仲裁的网关。
+      final appHome = _stripComments(File('lib/app_home.dart').readAsStringSync());
+      expect(appHome, contains('CoordinatedDirectChatGateway('));
+      expect(appHome, isNot(contains('DirectChatService(')));
+      expect(appHome, isNot(contains('CanonicalDirectChatGateway(')));
+    });
+
+    test('好友通过的生产接线必须走带请求上下文的编排（回退仅测试用）', () {
+      final appHome = _stripComments(File('lib/app_home.dart').readAsStringSync());
+      expect(appHome, contains('onEstablishDirectChatWithRequest:'));
+      expect(appHome, contains('_establishDirectChatAndGreet'));
+      final contacts = File('lib/features/contacts/contacts_page.dart')
+          .readAsStringSync();
+      // 旧回退必须标注为测试专用，避免被生产复用为"第二套建私聊实现"。
+      expect(contacts, contains('@visibleForTesting'));
+      expect(contacts, contains('onEstablishDirectChat ??'));
+    });
+
+    test('会话状态只有一个真相源：作用域栈由打开流程驱动，不由页面维护', () {
+      final roomPage =
+          _stripComments(File('lib/features/matrix/room_page.dart').readAsStringSync());
+      expect(roomPage, isNot(contains('StatisticsRoomScope.enter')),
+          reason: 'RoomPage 不得再自行维护会话作用域栈');
+      expect(roomPage, isNot(contains('StatisticsRoomScope.leave')));
+      final appHome =
+          _stripComments(File('lib/app_home.dart').readAsStringSync());
+      final route = appHome.substring(
+        appHome.indexOf('Future<void> _openManagedRoomRoute('),
+        appHome.indexOf('void _scanFromTab()'),
+      );
+      expect(route, contains('StatisticsRoomScope.enter(roomId)'));
+      expect(route, contains('StatisticsRoomScope.leave(roomId)'));
+    });
+
+    test('打开失败反馈是 single-flight、可重试、且等待有上限与可见进度', () {
+      final appHome =
+          _stripComments(File('lib/app_home.dart').readAsStringSync());
+      expect(appHome, contains('_roomOpenFailureVisible'));
+      expect(appHome, contains('if (_roomOpenFailureVisible) return;'));
+      expect(appHome, contains('if (retry && mounted)'));
+      // 等待上限从 12 秒收紧，并且等待期间有可见进度。
+      expect(appHome, contains('_roomOpenWaitTimeout = Duration(seconds: 5)'));
+      expect(appHome, contains('room-open-waiting'));
+      final feedback = File('lib/features/matrix/room_open_failure_feedback.dart')
+          .readAsStringSync();
+      expect(feedback, contains('failure.isRetryable'));
+      expect(feedback, contains("'重试'"));
     });
   });
 }

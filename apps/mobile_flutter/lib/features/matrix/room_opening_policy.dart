@@ -60,14 +60,18 @@ final class RoomOpenFailure implements Exception {
       };
 
   /// 是否值得让用户重试（"重试"按钮据此显示）。
+  ///
+  /// [RoomOpenFailureKind.notJoined] 也算可重试：它最常见的成因是"刚入群，
+  /// 本地还没同步到"，几秒后重试通常就成功。以前它不可重试 + 对话框只有
+  /// "知道了"，扫码入群后会变成死胡同（用户只能自己去列表里找）。
   bool get isRetryable => switch (kind) {
         RoomOpenFailureKind.offline ||
         RoomOpenFailureKind.networkUnavailable ||
-        RoomOpenFailureKind.temporaryFailure =>
+        RoomOpenFailureKind.temporaryFailure ||
+        RoomOpenFailureKind.notJoined =>
           true,
         RoomOpenFailureKind.permissionDenied ||
-        RoomOpenFailureKind.roomNotFound ||
-        RoomOpenFailureKind.notJoined =>
+        RoomOpenFailureKind.roomNotFound =>
           false,
       };
 

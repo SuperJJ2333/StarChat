@@ -448,8 +448,19 @@ DirectMessageOpenGate（peer 级单飞）
 ## 9. Architecture Risks
 
 > 本节只记录，**不修复**。格式：问题 / 位置 / 当前行为 / 风险 / 建议方案 / 影响范围。
+>
+> **后续状态（2026-09-18 更新）**：本节的 P0-1 与 P1-1…P2-5 已在
+> [Room Opening Policy Engine](room-opening-policy.md) 落地时逐条处置
+> （P0-1 由并行批次修复；P1-1/P1-2/P1-3 由策略层与必填 `onOpenRoom` 处理；
+> P2-1 由 `RoomVisibilityPolicy` + 创建登记处理；P2-5 由打开流程接管作用域栈）。
+> **本报告是当时快照**：其中的编译状态、行号与"未执行项"不代表当前 `main`。
 
 ### P0-1（构建完整性，非本架构设计缺陷）工作树无法编译
+
+> **已解决（快照保留）**：该 P0 在审计之后由并行的客户端批次修复
+> （`global_search_page.dart` 的 import 结构、`ledger_pages.dart` 的 `switch`），
+> 当前 `flutter analyze` = `No issues found!`，全量 `flutter test` 与
+> `scripts/verify.ps1` 均已通过。以下为审计基线的原始记录。
 
 - **问题**：审计基线（工作树）存在 3 个编译错误，"整仓可构建、可回归"不成立。
 - **位置**：

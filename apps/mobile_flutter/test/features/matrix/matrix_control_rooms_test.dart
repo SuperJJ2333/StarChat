@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/matrix/control_room_registry.dart';
 import 'package:liuhetong_mobile/features/matrix/room_visibility_policy.dart';
 
 /// 控制房间可见性：**只用身份事实**（roomId + accountData 引用）判定。
@@ -35,6 +36,27 @@ void main() {
     final policy = RoomVisibilityPolicy.forRoomIds(const [null, '', '   ']);
     expect(policy.controlRoomIds, isEmpty);
     expect(policy.isControlRoom(''), isFalse);
+  });
+
+  test('创建即登记：accountData 尚未可读的窗口内仍判定为控制房间', () {
+    ControlRoomRegistry.resetForTest();
+    addTearDown(ControlRoomRegistry.resetForTest);
+    expect(ControlRoomRegistry.sessionRoomIds, isEmpty);
+
+    ControlRoomRegistry.register('!fresh:test');
+    ControlRoomRegistry.register('   '); // 空值忽略
+    ControlRoomRegistry.register(null);
+    expect(ControlRoomRegistry.sessionRoomIds, {'!fresh:test'});
+    expect(
+      RoomVisibilityPolicy.forRoomIds(ControlRoomRegistry.sessionRoomIds)
+          .isOpenable('!fresh:test'),
+      isFalse,
+      reason: '刚创建的控制房间在 accountData 可读前也必须不可打开',
+    );
+
+    // 账号级资源：登出/清库必须清空，避免跨账号累积。
+    ControlRoomRegistry.clear();
+    expect(ControlRoomRegistry.sessionRoomIds, isEmpty);
   });
 
   test('判定来源里不得再出现硬编码展示名', () {

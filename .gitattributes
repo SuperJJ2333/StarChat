@@ -1,4 +1,11 @@
 *.sh text eol=lf
+
+# 源码与文档统一 LF：索引与工作树一致，避免 Windows(core.autocrlf=true) 下
+# 反复出现 "LF will be replaced by CRLF" 的噪声，以及多 agent 并行写入时
+# 产生整文件 diff（内容相同却因行尾不同而全量变更）。
+*.dart text eol=lf
+*.md text eol=lf
+
 # Preserve SDK provenance hashes.
 apps/mobile_flutter/third_party/matrix/** -text
 # Keep the published embedded statistics resource byte-identical on macOS/Windows.

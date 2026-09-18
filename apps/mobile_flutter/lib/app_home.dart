@@ -43,6 +43,7 @@ import 'features/matrix/direct_chat_entry.dart';
 import 'features/matrix/room_navigation_coordinator.dart';
 import 'features/matrix/room_opening_policy.dart';
 import 'features/matrix/room_open_failure_feedback.dart';
+import 'features/statistics/statistics_room_scope.dart';
 import 'features/search/global_search_models.dart';
 import 'features/search/global_search_page.dart' show GlobalSearchRoomOpenCallback;
 import 'features/matrix/coordinated_direct_chat.dart';
@@ -224,6 +225,15 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     probe: _MatrixRoomOpenProbe(widget.matrix),
     diagnostics: (diagnostic) => debugPrint('[room-open] ${diagnostic.line}'),
   );
+
+  /// 打开失败对话框的 single-flight 标志（防止叠层）。
+  bool _roomOpenFailureVisible = false;
+
+  /// "本地没有该房间"时的等待上限。
+  ///
+  /// 从 12 秒收紧到 5 秒：等待只在本地确实没有该房间时发生，且期间会有可见
+  /// 进度；过长的空等没有信息增量。超时后由策略给出可重试的失败提示。
+  static const Duration _roomOpenWaitTimeout = Duration(seconds: 5);
 
   NavigatorState? _rootNavigatorOrNull() =>
       mounted ? Navigator.of(context, rootNavigator: true) : null;
@@ -1638,7 +1648,13 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// + 失败分类）→ `RoomNavigationCoordinator`（去重/复用/页面+租约）。
   /// 失败一律以 [RoomOpenFailure] 抛出并由这里转成用户可见提示——
   /// **不再有任何 `catch (_) {}` 让打开失败静默消失**。
+  ///
+  /// 反馈是 **single-flight** 的：对话框存在期间不再弹第二个（用户连点失败
+  /// 入口、或推送与点击同时到达时不会叠出多层对话框）。
+  /// 可重试失败给「重试」按钮，选择后按**同一个请求**重跑（幂等，协调器与
+  /// 网关都保证不会重复建房）。
   Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
+    if (_roomOpenFailureVisible) return;
     try {
       await _roomOpening.open(
         request,
@@ -1647,28 +1663,56 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       );
     } on RoomOpenFailure catch (failure) {
       if (!mounted) return;
-      await _showRoomOpenFailure(failure);
+      _roomOpenFailureVisible = true;
+      var retry = false;
+      try {
+        retry = await showRoomOpenFailureDialog(context, failure);
+      } finally {
+        _roomOpenFailureVisible = false;
+      }
+      if (retry && mounted) {
+        await _openManagedRoomRequest(request);
+      }
     }
   }
 
   /// 有界网络等待：只有策略判定"本地没有这个房间"时才会被调用。
   ///
-  /// 返回 false（而不是抛错）表示"等待窗口内没等到"，由策略统一转成
-  /// 可重试的 [RoomOpenFailureKind.temporaryFailure] 并给出可见提示。
+  /// - 等待窗口 [_roomOpenWaitTimeout]：短于旧的 12 秒，避免"点了没反应"的
+  ///   长时间空等仍无解释；
+  /// - 等待期间显示**可见进度**（根 Overlay 上的转圈，与消息列表同一做法：
+  ///   不用 modal route，避免低端机上"modal→pop→push"同帧竞争吞掉 push）；
+  /// - 返回 false（而不是抛错）表示"窗口内没等到"，由策略统一转成可重试的
+  ///   [RoomOpenFailureKind.temporaryFailure] 并给出可见提示。
   Future<bool> _awaitLocalRoom(String roomId) async {
+    final overlay = mounted ? _insertRoomOpenWaitOverlay() : null;
     try {
-      await widget.matrix
-          .waitForRoom(roomId)
-          .timeout(const Duration(seconds: 12));
+      await widget.matrix.waitForRoom(roomId).timeout(_roomOpenWaitTimeout);
       return true;
     } catch (_) {
       return false;
+    } finally {
+      overlay?.remove();
     }
   }
 
-  /// 打开失败的**唯一**用户反馈点（文案来自 `RoomOpenFailure.userMessage`）。
-  Future<void> _showRoomOpenFailure(RoomOpenFailure failure) =>
-      showRoomOpenFailureDialog(context, failure);
+  /// 等待期间的可见进度（根 Overlay；页面退出/不可用时静默跳过）。
+  OverlayEntry? _insertRoomOpenWaitOverlay() {
+    if (!mounted) return null;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return null;
+    final entry = OverlayEntry(
+      builder: (_) => const Positioned.fill(
+        key: Key('room-open-waiting'),
+        child: ColoredBox(
+          color: Color(0x33000000),
+          child: Center(child: CupertinoActivityIndicator(radius: 16)),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    return entry;
+  }
 
   /// 通讯录 / 发现 Tab 的搜索入口：与消息 Tab 的搜索**同一条策略路径**
   /// （`source = search`，离线优先）。三处注入同一个回调，能力不再分叉。
@@ -1722,6 +1766,10 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               initialIdentityCache: identityCache,
             ));
     handle.register(route);
+    // 「当前可见会话」作用域（统计工具上下文）由**打开流程**登记与释放，
+    // 不再由 RoomPage 自己维护：会话状态只有一个真相源（本流程），
+    // 且即使页面因异常未挂载也不会留下脏栈。
+    StatisticsRoomScope.enter(roomId);
     lease.setOnRevoked(() async {
       if (route.isActive) {
         navigator.popUntil((candidate) => identical(candidate, route));
@@ -1732,6 +1780,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     try {
       await navigator.push(route);
     } finally {
+      StatisticsRoomScope.leave(roomId);
       handle.release(route);
       notifyClosed();
       await lease.cancel();

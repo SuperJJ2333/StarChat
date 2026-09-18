@@ -99,8 +99,12 @@ abstract interface class CanonicalDirectRoomDirectory {
   Future<String?> registerRoom(String peerUserId, String roomId);
 }
 
-/// Legacy directory adapter retained for compatibility tests. AppHome uses
-/// CoordinatedDirectChatGateway for cross-device creation arbitration.
+/// **LEGACY（生产禁用）**：只做"canonical 房间号查询 + 登记"的旧网关。
+///
+/// 生产用 `CoordinatedDirectChatGateway`（服务端 claim/publish 跨设备仲裁 +
+/// 一次性建房授权）；本类没有这些保护，被生产复用会退化成"第二个私聊创建
+/// 中心"。保留原因：compatibility 单元测试基线。
+/// 强制手段：架构守卫断言 `lib/` 生产代码不构造本类。
 final class CanonicalDirectChatGateway implements DirectChatGateway {
   CanonicalDirectChatGateway({
     required DirectChatGateway inner,
