@@ -15,6 +15,7 @@ production — fail closed rather than expose an unauthenticated collector.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
@@ -28,8 +29,10 @@ from app.modules.media.domain import (
     EnvelopeMode,
     GcMode,
     MediaKind,
+    Permission,
     ReferenceKind,
     ReleaseReason,
+    SubjectType,
     VariantKind,
     VisibilityTier,
 )
@@ -61,6 +64,27 @@ class ReferenceAttachRequest(BaseModel):
     room_ref: str | None = Field(default=None, max_length=160)
     permission_scope: str = Field(default=VisibilityTier.PRIVATE.value, max_length=16)
     ref_kind: str = Field(default=ReferenceKind.OBSERVED.value, max_length=16)
+
+
+class GrantIssueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_type: str = Field(default=SubjectType.USER.value, max_length=16)
+    subject_id: str = Field(min_length=1, max_length=160)
+    permission: str = Field(default=Permission.READ.value, max_length=24)
+    variant_scope: list[str] | None = Field(default=None, max_length=16)
+    ttl_seconds: int = Field(default=600, gt=0, le=86400)
+    single_use: bool = False
+    max_uses: int | None = Field(default=None, gt=0, le=1000)
+    derived_from: dict | None = None
+
+
+class SignedUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    variant_kind: str = Field(min_length=1, max_length=24)
+    tier: str | None = Field(default=None, max_length=16)
+    audience: str | None = Field(default=None, max_length=160)
 
 
 def create_media_platform_router(
@@ -414,6 +438,123 @@ def create_media_platform_router(
         }
 
     # ------------------------------------------------------------------ #
+    # Grants and signed URLs (Phase 4.4)
+    # ------------------------------------------------------------------ #
+    @router.post("/media/platform/objects/{media_id}/grants", status_code=201)
+    async def issue_grant(
+        media_id: str,
+        body: "GrantIssueRequest",
+        claims: dict = Depends(current_claims),
+    ) -> dict:
+        try:
+            subject_type = SubjectType(body.subject_type)
+            permission = Permission(body.permission)
+        except ValueError:
+            raise AppError(
+                code="MEDIA_GRANT_INVALID", message="授权参数不合法", status_code=422
+            ) from None
+        view = service.issue_grant(
+            media_id=media_id,
+            actor_id=claims["sub"],
+            subject_type=subject_type,
+            subject_id=body.subject_id,
+            permission=permission,
+            variant_scope=body.variant_scope,
+            ttl_seconds=body.ttl_seconds,
+            single_use=body.single_use,
+            max_uses=body.max_uses,
+            derived_from=body.derived_from,
+        )
+        return _grant_payload(view)
+
+    @router.get("/media/platform/objects/{media_id}/grants")
+    async def list_grants(
+        media_id: str,
+        claims: dict = Depends(current_claims),
+        include_revoked: Annotated[bool, Query()] = False,
+    ) -> dict:
+        # Reading the grant list is an owner action; reuse the metadata read to enforce it.
+        service.object_metadata(media_id, subject_id=claims["sub"])
+        views = service.grants_for(media_id, include_revoked=include_revoked)
+        return {"items": [_grant_payload(view) for view in views]}
+
+    @router.delete("/media/platform/grants/{grant_id}")
+    async def revoke_grant(
+        grant_id: str,
+        claims: dict = Depends(current_claims),
+        reason: Annotated[str, Query(max_length=60)] = "owner_revoked",
+    ) -> dict:
+        view = service.revoke_grant(
+            grant_id=grant_id, actor_id=claims["sub"], reason=reason
+        )
+        return _grant_payload(view)
+
+    @router.post("/media/platform/objects/{media_id}/signed-urls")
+    async def mint_signed_url(
+        media_id: str,
+        body: "SignedUrlRequest",
+        claims: dict = Depends(current_claims),
+    ) -> dict:
+        try:
+            variant_kind = VariantKind(body.variant_kind)
+            tier = VisibilityTier(body.tier) if body.tier else None
+        except ValueError:
+            raise AppError(
+                code="MEDIA_VARIANT_KIND_INVALID",
+                message="媒体演绎版不合法",
+                status_code=422,
+            ) from None
+        token, parsed = service.mint_signed_url(
+            media_id=media_id,
+            variant_kind=variant_kind,
+            actor_id=claims["sub"],
+            tier=tier,
+            aud_scope=body.audience,
+        )
+        # Note: the effective TTL is decided by the server; the response states it so a
+        # client can refresh before expiry instead of guessing.
+        ttl_seconds = int((parsed.expires_at - datetime.now(timezone.utc)).total_seconds())
+        return {
+            "url": f"/api/v1/media/platform/content/{token}",
+            "expires_at": parsed.expires_at.isoformat(),
+            "ttl_seconds": max(0, ttl_seconds),
+            "tier": parsed.tier.value,
+            "variant_kind": parsed.variant_kind.value,
+            "binding": {
+                "media_id": parsed.media_id,
+                "subject": parsed.subject if parsed.tier is VisibilityTier.PRIVATE else None,
+                "audience": parsed.aud_scope,
+                "single_use": parsed.single_use,
+            },
+        }
+
+    @router.get("/media/platform/content/{token}")
+    async def read_signed_content(
+        token: str,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        """Signed delivery.
+
+        No auth *dependency* here on purpose: an ``audience`` URL must work for a member who
+        was forwarded it (the frozen trade-off), while a ``private`` URL additionally
+        requires the caller identity, which is why the optional bearer token is parsed
+        manually instead of being required.
+        """
+
+        caller_id = _optional_subject(tokens, authorization)
+        content = service.read_via_signed_token(token, caller_id=caller_id)
+        return Response(
+            content=content.content,
+            media_type=content.mime,
+            headers={
+                "Cache-Control": "private, no-store",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": "inline",
+            },
+        )
+
+    # ------------------------------------------------------------------ #
     # Diagnostics (maintenance gated)
     # ------------------------------------------------------------------ #
     @router.get("/media/platform/metrics")
@@ -428,6 +569,41 @@ def _may_pin(service, media_id: str, subject_id: str) -> bool:
 
     service.object_metadata(media_id, subject_id=subject_id)
     return True
+
+
+def _optional_subject(tokens: TokenService, authorization: str | None) -> str | None:
+    """Best-effort caller identity for the signed-content endpoint.
+
+    A missing or malformed token is not an error here: ``private`` tokens reject on their
+    own (subject mismatch), and ``audience`` tokens are deliberately usable without one.
+    """
+
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    try:
+        return tokens.decode_access_token(authorization[7:])["sub"]
+    except Exception:
+        return None
+
+
+def _grant_payload(view) -> dict:
+    return {
+        "grant_id": view.grant_id,
+        "media_id": view.media_id,
+        "subject_type": view.subject_type,
+        "subject_id": view.subject_id,
+        "permission": view.permission,
+        "variant_scope": list(view.variant_scope),
+        "derived_from": view.derived_from,
+        "grant_version": view.grant_version,
+        "expires_at": view.expires_at,
+        "single_use": view.single_use,
+        "max_uses": view.max_uses,
+        "uses": view.uses,
+        "issued_by": view.issued_by,
+        "revoked_at": view.revoked_at,
+        "revoke_reason": view.revoke_reason,
+    }
 
 
 def _reference_payload(view) -> dict:

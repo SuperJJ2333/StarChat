@@ -20,6 +20,7 @@ from app.modules.media.domain import (
     GcMode,
     MediaKind,
     Permission,
+    SubjectType,
     VariantKind,
     VisibilityTier,
 )
@@ -47,7 +48,9 @@ from app.modules.media.upload_engine import MediaUploadEngine, UploadSessionView
 from app.modules.media.variants import VariantCandidate, VariantResolver
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.modules.media.grants import GrantView, MediaGrantService
     from app.modules.media.lifecycle import GcReport, MediaGarbageCollector
+    from app.modules.media.signed_urls import MediaSignedUrlCodec, SignedToken
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +75,8 @@ class MediaPlatformService:
         authorizer: Authorizer | None = None,
         references: "MediaReferenceService | None" = None,
         collector: "MediaGarbageCollector | None" = None,
+        grants: "MediaGrantService | None" = None,
+        codec: "MediaSignedUrlCodec | None" = None,
     ) -> None:
         self._repository = repository
         self._resolver = resolver
@@ -81,6 +86,8 @@ class MediaPlatformService:
         self._authorizer = authorizer or OwnerOnlyAuthorizer(ttl_policy=self._policy.ttl)
         self._references = references
         self._collector = collector
+        self._grants = grants
+        self._codec = codec or MediaSignedUrlCodec(secret=None)
 
     # ------------------------------------------------------------------ #
     # Ingest (Write New)
@@ -255,6 +262,131 @@ class MediaPlatformService:
         from app.modules.media.lifecycle import unpin_object
 
         unpin_object(self._repository.session_factory, media_id=media_id)
+
+    # ------------------------------------------------------------------ #
+    # Grants and signed URLs (Phase 4.4)
+    # ------------------------------------------------------------------ #
+    @property
+    def grants(self) -> "MediaGrantService":
+        if self._grants is None:  # pragma: no cover - wiring guard
+            raise AppError(
+                code="MEDIA_GRANTS_UNAVAILABLE",
+                message="媒体授权服务不可用",
+                status_code=503,
+            )
+        return self._grants
+
+    def issue_grant(self, **kwargs) -> "GrantView":
+        return self.grants.issue(**kwargs)
+
+    def revoke_grant(self, *, grant_id: str, actor_id: str, reason: str = "owner_revoked"):
+        return self.grants.revoke(grant_id=grant_id, actor_id=actor_id, reason=reason)
+
+    def grants_for(self, media_id: str, *, include_revoked: bool = False):
+        return self.grants.list_for_media(media_id, include_revoked=include_revoked)
+
+    def mint_signed_url(
+        self,
+        *,
+        media_id: str,
+        variant_kind: VariantKind,
+        actor_id: str,
+        tier: VisibilityTier | None = None,
+        aud_scope: str | None = None,
+    ) -> tuple[str, "SignedToken"]:
+        """Mint a URL whose lifetime the *server* decides from the object's tier.
+
+        The caller cannot pass a TTL: there is no such parameter on the API surface, which
+        is what makes the frozen "server decides TTL" rule hold by construction.
+        """
+
+        media = self._repository.get_object(media_id)
+        if media is None:
+            raise AppError(
+                code="MEDIA_OBJECT_NOT_FOUND", message="媒体不存在", status_code=404
+            )
+        effective_tier = tier or VisibilityTier(media.visibility_hint)
+        decision = self._registry.business.authorize(
+            media=media,
+            subject_id=actor_id,
+            permission=Permission.READ,
+            variant_kind=variant_kind,
+            visibility=effective_tier,
+        )
+        if not decision.allowed and not self._is_service_grant(media_id=media_id, actor_id=actor_id):
+            raise AppError(
+                code="MEDIA_ACCESS_DENIED", message="无权访问该媒体", status_code=403
+            )
+        if decision.variant_scope is not None and variant_kind not in decision.variant_scope:
+            raise AppError(
+                code="MEDIA_ACCESS_DENIED", message="无权访问该清晰度", status_code=403
+            )
+        ttl = decision.ttl_seconds or self._policy.ttl.ttl_seconds(
+            visibility=effective_tier, variant_kind=variant_kind
+        )
+        token, parsed = self._codec.mint(
+            media_id=media_id,
+            variant_kind=variant_kind,
+            subject=actor_id if effective_tier is VisibilityTier.PRIVATE else (aud_scope or actor_id),
+            tier=effective_tier,
+            ttl_seconds=ttl,
+            aud_scope=aud_scope,
+            grant_id=decision.grant_id,
+            grant_version=decision.grant_version,
+            single_use=decision.single_use,
+        )
+        return token, parsed
+
+    def read_via_signed_token(self, token: str, *, caller_id: str | None) -> VariantContent:
+        parsed = self._codec.verify(token, caller_id=caller_id)
+        media = self._repository.get_object(parsed.media_id)
+        if media is None:
+            raise AppError(
+                code="MEDIA_SIGNED_URL_INVALID",
+                message="媒体链接无效或已过期",
+                status_code=404,
+            )
+        # Revocation beats the TTL: a forwarded audience URL dies with its grant.
+        if parsed.grant_id is not None:
+            grant = self.grants.get(parsed.grant_id)
+            if grant is None or grant.revoked_at is not None:
+                raise AppError(
+                    code="MEDIA_SIGNED_URL_INVALID",
+                    message="媒体链接无效或已过期",
+                    status_code=404,
+                )
+            if parsed.grant_version is not None and grant.grant_version != parsed.grant_version:
+                raise AppError(
+                    code="MEDIA_SIGNED_URL_INVALID",
+                    message="媒体链接无效或已过期",
+                    status_code=404,
+                )
+        candidate = self._resolver.best(
+            parsed.media_id,
+            media_kind=MediaKind(media.kind),
+            prefer=VariantPreference.AUTO,
+            network=NetworkHint.UNKNOWN,
+            allowed_kinds=frozenset({parsed.variant_kind}),
+        )
+        if candidate is None:
+            raise AppError(
+                code="MEDIA_VARIANT_UNAVAILABLE",
+                message="媒体暂时不可用，请稍后重试",
+                status_code=409,
+                retry_after_seconds=2,
+            )
+        if parsed.grant_id is not None:
+            self.grants.consume(parsed.grant_id)
+        return self._load(candidate)
+
+    def _is_service_grant(self, *, media_id: str, actor_id: str) -> bool:
+        grant = self.grants.active_for_subject(
+            media_id=media_id,
+            subject_type=SubjectType.SERVICE,
+            subject_id=actor_id,
+            permission=Permission.READ,
+        )
+        return grant is not None
 
     # ------------------------------------------------------------------ #
     # Diagnostics

@@ -18,10 +18,36 @@ from app.modules.media.domain import (
     AuthorizationOutcome,
     DerivedRule,
     Permission,
+    SubjectType,
     VariantKind,
 )
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.policy import MediaTtlPolicy, VisibilityTier
+
+
+def _scope_of(grant) -> tuple[str, ...]:
+    return tuple(grant.variant_scope or ["*"])
+
+
+def _variant_scope(scope: tuple[str, ...]) -> tuple[VariantKind, ...] | None:
+    if "*" in scope:
+        return None
+    resolved: list[VariantKind] = []
+    for value in scope:
+        try:
+            resolved.append(VariantKind(value))
+        except ValueError:
+            continue
+    return tuple(resolved)
+
+
+def _remaining_seconds(grant) -> int:
+    from app.modules.media.repository import as_utc, utcnow
+
+    expires_at = as_utc(grant.expires_at)
+    if expires_at is None:  # pragma: no cover - expiry is NOT NULL
+        return 0
+    return max(1, int((expires_at - utcnow()).total_seconds()))
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +88,90 @@ class Authorizer(Protocol):
         variant_kind: VariantKind,
         visibility: VisibilityTier,
     ) -> AccessDecision: ...
+
+
+@dataclass(frozen=True, slots=True)
+class GrantAuthorizer:
+    """Phase 4.4 decision function: owner → explicit grant → deny (fail closed).
+
+    Audience reads are deliberately *not* decided here: an audience member reaches the
+    bytes through a signed URL minted from an audience grant, and that path re-checks the
+    grant's state and version. Deciding it here as well would mean guessing membership that
+    the platform does not own.
+    """
+
+    grants: object
+    ttl_policy: MediaTtlPolicy = field(default_factory=MediaTtlPolicy)
+
+    def authorize(
+        self,
+        *,
+        media,
+        subject_id: str,
+        permission: Permission,
+        variant_kind: VariantKind,
+        visibility: VisibilityTier,
+    ) -> AccessDecision:
+        with media_platform_metrics.timed("authorization_ms"):
+            return self._decide(
+                media=media,
+                subject_id=subject_id,
+                permission=permission,
+                variant_kind=variant_kind,
+                visibility=visibility,
+            )
+
+    def _decide(
+        self,
+        *,
+        media,
+        subject_id: str,
+        permission: Permission,
+        variant_kind: VariantKind,
+        visibility: VisibilityTier,
+    ) -> AccessDecision:
+        media_platform_metrics.increment("authorization")
+        ttl = self.ttl_policy.ttl_seconds(
+            visibility=visibility, variant_kind=variant_kind, permission=permission
+        )
+        if subject_id and subject_id == media.owner_id:
+            media_platform_metrics.increment("cache_hit")
+            return AccessDecision(
+                outcome=AuthorizationOutcome.ALLOWED,
+                rule=DerivedRule.OWNER,
+                ttl_seconds=ttl,
+                reason="owner",
+            )
+
+        grant = self.grants.active_for_subject(
+            media_id=media.media_id,
+            subject_type=SubjectType.USER,
+            subject_id=subject_id,
+            permission=permission,
+        )
+        if grant is not None:
+            scope = _scope_of(grant)
+            if variant_kind.value in scope or "*" in scope:
+                media_platform_metrics.increment("cache_hit")
+                return AccessDecision(
+                    outcome=AuthorizationOutcome.ALLOWED,
+                    rule=DerivedRule.GRANT,
+                    ttl_seconds=min(ttl, _remaining_seconds(grant)),
+                    reason="grant",
+                    variant_scope=_variant_scope(scope),
+                    grant_id=grant.grant_id,
+                    grant_version=grant.grant_version,
+                    single_use=grant.single_use,
+                )
+
+        media_platform_metrics.increment("authorization_denied")
+        media_platform_metrics.increment("cache_miss")
+        return AccessDecision(
+            outcome=AuthorizationOutcome.DENIED,
+            rule=DerivedRule.GRANT,
+            ttl_seconds=0,
+            reason="no_grant",
+        )
 
 
 @dataclass(frozen=True, slots=True)

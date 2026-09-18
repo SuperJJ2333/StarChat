@@ -147,17 +147,19 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
     owns; it is a new key namespace, not a second storage system and not a second cache.
     """
 
-    from app.modules.media.authorization import OwnerOnlyAuthorizer
+    from app.modules.media.authorization import GrantAuthorizer, OwnerOnlyAuthorizer
     from app.modules.media.gateway import (
         BusinessMediaGateway,
         MatrixMediaGateway,
         MediaGatewayRegistry,
     )
+    from app.modules.media.grants import MediaGrantService
     from app.modules.media.lifecycle import MediaGarbageCollector
     from app.modules.media.policy import MediaPlatformPolicy, MediaTtlPolicy
     from app.modules.media.references import MediaReferenceService
     from app.modules.media.repository import MediaRepository
     from app.modules.media.service import MediaPlatformService
+    from app.modules.media.signed_urls import MediaSignedUrlCodec
     from app.modules.media.storage import LocalBlobBackend
     from app.modules.media.upload_engine import MediaUploadEngine
     from app.modules.media.variants import VariantResolver
@@ -176,12 +178,21 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         session_factory, backend=backend, dedup_policy=policy.dedup
     )
     resolver = VariantResolver(repository)
+    grants = MediaGrantService(session_factory)
+    # Phase 4.4 decision function. Falls back to the narrow owner-only rule only when the
+    # grant service is not wired, which never happens in create_app but keeps the type
+    # honest for tests that build the gateway by hand.
+    authorizer = (
+        GrantAuthorizer(grants=grants, ttl_policy=policy.ttl)
+        if grants is not None
+        else OwnerOnlyAuthorizer(ttl_policy=policy.ttl)
+    )
     registry = MediaGatewayRegistry(
         matrix=MatrixMediaGateway(),
         business=BusinessMediaGateway(
             repository=repository,
             resolver=resolver,
-            authorizer=OwnerOnlyAuthorizer(ttl_policy=policy.ttl),
+            authorizer=authorizer,
             policy=policy,
         ),
     )
@@ -191,8 +202,17 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         registry=registry,
         upload_engine=MediaUploadEngine(session_factory, policy=policy),
         policy=policy,
+        authorizer=authorizer,
         references=MediaReferenceService(session_factory),
         collector=MediaGarbageCollector(session_factory, backend=backend, policy=policy),
+        grants=grants,
+        codec=MediaSignedUrlCodec(
+            # Prefer a dedicated media secret; fall back to the avatar signing secret so an
+            # existing deployment works without a new mandatory secret. Rotating either
+            # invalidates outstanding media URLs, which is the intended failure mode.
+            secret=settings.media_url_signing_secret
+            or settings.avatar_url_signing_secret,
+        ),
     )
 
 
