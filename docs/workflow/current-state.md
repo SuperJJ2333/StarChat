@@ -1,5 +1,37 @@
 # 移动交付恢复索引
 
+## 2026-09-17 Media Engine Phase 3.1 — Architecture Freeze（**只冻结，不编码**；文档完成）
+
+用户任务：**冻结架构边界**，为 Phase 4 Implementation 提供稳定架构依据；**本阶段只设计，不编码**
+（禁止修改 Matrix Server / 协议 / E2EE / Megolm·Olm / 媒体上传接口 / Moments API / Avatar API /
+数据库 schema / 客户端缓存代码 / Flutter 业务代码；禁止实现 Media Gateway / Media Object Server /
+Upload Engine / CDN / 远端去重）。
+**交付物**：[`docs/architecture/media-engine-phase3-freeze.md`](../architecture/media-engine-phase3-freeze.md)
+（9 节结构 + 冻结报告；6 条冻结记录 ADR-001…ADR-006，覆盖用户清单的 15 个决策 D-01…D-15）。
+**已冻结决策**：① **ADR-001 隔离**——第一阶段正式方案 = **隔离域模型**：明文域 = Option A（用户空间隔离，
+跨用户零共享字节），密文域 = 保留已上线的密文摘要跨用户复用（受限 Option B），**明确拒绝 Option C 全球去重**；
+「隔离（存哪）≠ 授权（谁能读）」被显式分离。② **ADR-002 Digest**——三种 `digest_kind`
+（`plaintext_digest` / `ciphertext_digest` / `transport_digest`）各自明确"谁算/可信度/谁能访问/用途"，
+**种类永不互相比较**，禁止 `plaintext hash == cipher hash`，客户端摘要永不作权威，不提供客户端存在性查询；
+去重边界 = 不做全球 dedup + 明文域只做用户空间 dedup + 密文域只做密文对象复用（确定性信封 + 门槛）。
+③ **ADR-003 Authorization**——读取流程五段（Client → Authorization → Media Resolver → Variant Resolver →
+Signed URL → Download）；Signed URL 至少绑定 `media_id + subject + expire + signature`；**TTL 服务端唯一决定**
+（写相对策略不写固定数字）；转发**分级**：`audience` 允许（含风险声明）、**`private` 禁止**（以
+"令牌 subject 必须与调用方身份一致"实现）。④ **ADR-004 Matrix 兼容与接入**——兼容 = **永不迁移字节 +
+惰性建索引 + 字节不双写 + 双读**；`MatrixMediaGateway` / `BusinessMediaGateway` 适配结构；
+**Moments = Phase 1 接入**；**Avatar 延期**（TTL/高刷新/CDN/权限与收益≈0）；**E2EE 视频变体只能由发送端生成**；
+CDN 链路 `Storage → Media Gateway → CDN → Client` 且 **CDN 不参与授权**。⑤ **ADR-005 Upload Engine**——
+**独立子系统**（UploadSession/Chunk/Resume/Checksum/Encrypt/Commit；E2EE 先加密再分片且保持 CTR 计数器连续）；
+1GB+ 能力全部属 Phase D，本阶段不实现。⑥ **ADR-006 删除与生命周期**——删除 = 解引用
+（Remove Reference → Check → Mark Orphan → GC）；状态集 `ACTIVE/ORPHAN/DELETING/DELETED`，
+`QUARANTINED`/`PINNED` 为正交属性；`SCANNING` **保留但必须有生产者 + 超时兜底 + 存量清理，E2EE 域不得引入**。
+另冻结：架构原则 P1–P10、安全不变量 I1–I10、性能约束 PF1–PF6、安全威胁模型七项（含对策与残余风险）、
+性能目标（缩略图缓存命中 <100ms、poster <50ms、千人群回源 ≤1 次/边缘节点、万人回源 ≤5%）、
+迁移 A→E 与逐阶段回退、**15 项 DEFERRED（Phase 4 不得实现）**、Phase 4 可实现 13 条 / 禁止 15 条。
+**门禁**：本阶段未改任何代码/配置/schema，故未运行 Flutter/仓库门禁；仅做结构、编号、覆盖度与禁用措辞自检
+（"设计完成" 0 命中）。最后代码门禁 = Phase 2 全量 3120 通过 + `scripts/verify.ps1` PASS。
+进入 [任务记录](tasks/2026-09-17-media-engine-phase3-1-freeze.md)。
+
 ## 2026-09-17 Media Engine Phase 3 — 服务端媒体对象基础设施（**只设计，不编码**；本地文档完成）
 
 用户任务：设计未来的**服务端媒体对象基础设施**（Chat / Moments / Avatar / File 共用的
