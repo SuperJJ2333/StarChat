@@ -1,6 +1,6 @@
 # 移动交付恢复索引
 
-## 2026-09-18 Android 0.3.96/2134 正式发布 + iOS 0.3.96/2134 企业签名交接（**Android 已上线；iOS 待用户签名回传**）
+## 2026-09-18 Android 0.3.96/2134 正式发布 + iOS 0.3.96/2134 企业签名分发（**双端均已上线；下载页改为“正式版”**）
 
 用户指令：推送**最新版本**的 Android 更新弹窗，并提供同源 iOS 更新包供企业签名后回传分发。
 用户选定：版本 **0.3.96 + 2134**、包含自 2132 之后 main 上的**全部客户端改动**、弹窗**不强制**。
@@ -37,6 +37,23 @@ digest `dac7cfac…3848`，有效期至 2026-10-02）；本机核验 IPA
 `0.3.96/2134`、iOS 16.0+、iPhone+iPad、后台模式三项齐全、`cryptid=0` 可重签。
 **下一步（待用户）**：企业签名后回传 IPA → 按交接记录第 4 节校验/上传/改 `manifest.plist`/更新 `app_ios_*`
 + 前端 iOS 标签（现为 `0.3.92（2120）`）。
+
+**iOS 已回传并分发上线（同日 15:36Z）**：用户企业签名包 **60,922,843 字节，
+SHA256 `60A09413D7604CB950354BCFF9EE7F40A96B2748EE01EEEDA50943700129A78F`**；
+`verify_resigned_ipa.py` → **`RESIGN_VERIFY: PASS`**（身份 `com.liuhetong.liuhetongMobile`/0.3.96/2134、
+iOS 16+、iPhone+iPad、后台模式三项、`cryptid=0`；无缺失条目、**非签名差异 0**；profile team `ZXB3TS7QD4` /
+`20260107buaawxworklocalNOTI` / `aps-environment=production`，与线上 2120 基线一致）。
+**如实记录**：企业签名服务向每个 IPA 注入 3 个固定文件（`Frameworks/AppRuntime/ATHelper.dylib`、
+`Frameworks/Partner/libutils.dylib`、`Runner.app/flag`），线上 2120 企业包同样存在，本轮未扩大注入面。
+分发：4 片上传（逐片尺寸核对）→ `publish-ios-ipa.sh` SHA 门 + 不可变安装
+`ChatFlow-0.3.96-2134-enterprise-60a09413.ipa` → `manifest.plist`（`bundle-version=2134`、
+`title=畅聊正式版`）→ `app_ios_*` 设置 `PUBLISH_PASS`（5 条审计 `ios-release-0.3.96-2134-20260918`，
+`min_supported_build` 仍 0、**Android 行零改动**）；公网整包 SHA 与回传包一致，旧包 2120 保留可回退。
+**下载页文案**：`frontend/download.html`/`home.html`/`src/admin-home.js` 中 **“测试版”→“正式版”**
+（徽标 `企业正式版`、按钮 `安装 iOS 正式版`、说明 `企业内部使用`），版本标签 → `0.3.96（2134）`，
+电脑端 IPA 直链指向新包，脚本加 `?v=2134` 破缓存；服务端原位保留 `.bak-20260918T153714Z`；
+`npm test` **209 passed**；公网页 `测试版` 出现 0 次。
+**剩余**：iOS/Android 真机验收由用户执行（iOS 覆盖安装勿卸载以保留聊天记录）。
 
 ## 2026-09-18 Room Opening Policy Engine（Single Room Opening Platform；**已 push**）
 

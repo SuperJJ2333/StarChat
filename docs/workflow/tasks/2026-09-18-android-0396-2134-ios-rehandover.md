@@ -11,17 +11,17 @@
   [0.3.95/2132 发布记录](../../verification/2026-09-17-android-0395-2132-release.md)、
   [iOS 2132 企业重签交接](../../verification/2026-09-17-ios-0395-2132-enterprise-resign-handover.md)。
 - 当前状态：**Android 0.3.96/2134 已上线**（APK + 更新弹窗 + 公网校验）；
-  **iOS 0.3.96/2134 候选 IPA 已从 CI 取回并核验，等待用户企业签名后回传分发**。
+  **iOS 0.3.96/2134 企业签名包已回传、校验通过并分发上线**（IPA + OTA 清单 + `app_ios_*` + 下载页文案“测试版→正式版”）。
 - 负责人、工作树、文件所有权、源码 commit：本地工作树 `D:\pythonProject\outsource\StarChat`，分支 `main`。
   候选冻结 **`71971746`**（含 `04cc1d80` Matrix 初始化串行化修复）；版本递增提交 `a4b53386`。
   本轮新增：`docs/verification/2026-09-18-android-0396-2134-release.md`、
-  `docs/verification/2026-09-18-ios-0396-2134-enterprise-resign-handover.md`、
-  `docs/verification/artifacts/2026-09-18/release-2134/**`、`docs/verification/artifacts/2026-09-18/ios-2134/**`、
-  以及 `tests/mobile/test_ios_simulator_ci.py` 的契约修正（修复被合并改动打红的 CI）。
+  `docs/verification/2026-09-18-ios-0396-2134-enterprise-resign-handover.md`（含分发结果）、
+  `docs/verification/artifacts/2026-09-18/{release-2134,ios-2134}/**`、
+  前端文案改动 `frontend/download.html`、`frontend/home.html`、`frontend/src/admin-home.js`、
+  `frontend/tests/home-ios-download.test.mjs`，以及 `tests/mobile/test_ios_simulator_ci.py` 的契约修正。
 - 最后更新时间（含时区）：2026-09-18（Asia/Hong_Kong）。
-- 下一条具体操作、必要输入、阻断的验收 ID：**等用户回传企业签名后的 IPA** → 校验（Bundle ID/版本/entitlements/SHA）
-  → 上传 `/opt/starchat/frontend/downloads/ios/` → 更新 `manifest.plist` → 更新 `app_ios_*` 设置（不动 Android 行）
-  → 公网校验。当前**无阻断项**（iOS 分发按约定由用户签名解锁）。
+- 下一条具体操作、必要输入、阻断的验收 ID：**iOS 真机验收**（安装 0.3.96/2134 企业包，覆盖安装勿卸载，
+  验证登录/L04/L07 消失、通话、推送、历史连续性）；Android 真机验收同样待用户执行。当前**无阻断项**。
 
 ## 验收台账
 
@@ -37,7 +37,10 @@
 | R8 | 更新弹窗发布且不强制、不动 iOS 行 | `publish_settings_2134.py` inspect → apply | `PUBLISH_PASS`；`audit_count=5`；`min_supported_build` 仍 3；`app_ios_*` 零改动；Android 投影 `0.3.96/2134` | 已上线 | — |
 | R9 | 公网可下载且鉴权边界不变 | 公网 HEAD/分段 + 未授权接口探测 | 别名 HEAD `200 octet-stream`；版本化 URL `206`；文件与别名 SHA 一致；`/app-updates/latest` 未授权 `401` | 已上线 | 未用真实用户 token 做授权端到端 |
 | R10 | iOS 候选包与 Android 同源、可重签 | CI `ios-0353.yml` run **35355808244** @ `04cc1d80`（与候选差异仅文档） | 见 iOS 交接记录（Info.plist/版本/cryptid/SHA） | **待签名** | 用户签名后回传 |
-| R11 | 真机验收 | 无（按分工由用户执行） | — | — | **未完成**（不阻塞发布） |
+| R11 | 回传签名包校验（不信任文件名） | `verify_resigned_ipa.py`（身份/签名/profile/cryptid/逐条目结构对比） | **`RESIGN_VERIFY: PASS`**：`com.liuhetong.liuhetongMobile`、0.3.96/2134、iOS16+、iPhone+iPad、后台模式齐全、`cryptid=0`、无缺失条目、非签名差异 0；注入 3 项与线上 2120 基线一致 | 已回传 | — |
+| R12 | iOS 分发上线 | 分块上传 → `publish-ios-ipa.sh`（SHA 门+不可变安装）→ `update_manifest_2134.py` → `publish_settings_ios_2134.py` | IPA `ChatFlow-0.3.96-2134-enterprise-60a09413.ipa`（60,922,843 字节，SHA256 `60A09413…9A78F`）；manifest `bundle-version=2134`、`title=畅聊正式版`；`PUBLISH_PASS`（5 条审计，Android 行零改动）；公网整包 SHA 与回传包一致 | **已上线** | — |
+| R13 | 下载页文案“测试版”→“正式版” | `frontend/download.html`、`frontend/src/admin-home.js`、`frontend/home.html` | 徽标 `企业正式版`、按钮 `安装 iOS 正式版`、版本标签 `0.3.96（2134）`、脚本加 `?v=2134`；`npm test` **209 passed**；公网页 `测试版` 出现 **0** 次 | **已上线** | — |
+| R14 | 真机验收 | 无（按分工由用户执行） | — | — | **未完成**（不阻塞发布） |
 
 ## 版本与证据
 
@@ -45,7 +48,8 @@
 | --- | --- | --- | --- | --- | --- |
 | Android 正式版 | `0.3.96 / 2134`（`com.liuhetong.mobile`，arm64-v8a） | `71971746` | 固定身份签名（`75b31c66…ba61fff`） | 服务器 `/opt/starchat/frontend/downloads/ChatFlow-0.3.96-build2134-arm64.apk`；本地产物 `docs/verification/artifacts/2026-09-18/release-2134/android/final.apk`；SHA256 `7628FBD095277E3369313AEE877B76F43C7741E07754AF9F587BAF16CD28626B` | 2026-09-18 14:41Z 切换；弹窗 trace `android-release-0.3.96-2134-20260918`（5 条审计） |
 | Android 回退包 | `0.3.95 / 2132` | `9fa2c963` | 同上 | `ChatFlow-0.3.95-build2132-arm64.apk`，SHA256 `35CA0962…4633` | 原位保留 |
-| iOS 候选（待企业签名） | `0.3.96 / 2134` | `04cc1d80` | CI `ChatFlow-iOS-signed`（占位签名，可重签） | `docs/verification/artifacts/2026-09-18/ios-2134/`（artifact id `10551264894`） | CI run `35355808244` success；artifact 有效期至 2026-10-02 |
+| iOS 企业版 | `0.3.96 / 2134`（`com.liuhetong.liuhetongMobile`，iOS 16+，iPhone/iPad） | `04cc1d80`（CI 候选） | 企业签名（team `ZXB3TS7QD4`，profile `20260107buaawxworklocalNOTI`，`aps-environment=production`） | 服务器 `/opt/starchat/frontend/downloads/ios/ChatFlow-0.3.96-2134-enterprise-60a09413.ipa`；本机回传副本 `docs/verification/artifacts/2026-09-18/ios-2134/ChatFlow-0.3.96-2134-signed-returned.ipa`；SHA256 `60A09413D7604CB950354BCFF9EE7F40A96B2748EE01EEEDA50943700129A78F` | 2026-09-18 15:36Z 清单切换；设置 trace `ios-release-0.3.96-2134-20260918`（5 条审计） |
+| iOS 回退包 | `0.3.92 / 2120` | `a14bf583` | 同一企业渠道 | `ChatFlow-0.3.92-2120-enterprise-e8e63a58.ipa`，SHA256 `e8e63a58…4fac` | 原位保留 |
 
 - 命令与退出码：
   - `flutter analyze` → No issues found（9.1s）
