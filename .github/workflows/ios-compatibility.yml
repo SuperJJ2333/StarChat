@@ -38,7 +38,29 @@ jobs:
           flutter --version >> "$RUNNER_TEMP/production-compile/toolchain.txt"
           flutter config --no-enable-swift-package-manager
           flutter pub get
-          flutter build ios --release --no-codesign 2>&1 | tee "$RUNNER_TEMP/production-compile/production-compile.log"
+
+          # CocoaPods downloads binary pods (notably OpenSSL-Universal) from
+          # GitHub release assets, which intermittently answer 504/502. A single
+          # attempt therefore fails for reasons unrelated to our code or Xcode,
+          # so retry the whole dependency-install + build operation with backoff.
+          # Each attempt keeps its own log; the artifact upload below uses
+          # `if: always()` so failed attempts stay available for diagnosis.
+          for attempt in 1 2 3; do
+            echo "iOS build attempt ${attempt}/3"
+            if flutter build ios --release --no-codesign 2>&1 \
+                | tee "$RUNNER_TEMP/production-compile/production-compile-attempt-${attempt}.log"; then
+              echo "iOS build succeeded on attempt ${attempt}/3"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              delay=$((attempt * 20))
+              echo "Build attempt ${attempt} failed; retrying in ${delay}s..."
+              sleep "$delay"
+            fi
+          done
+
+          echo "All iOS build attempts failed"
+          exit 1
       - name: Preserve full production compilation evidence
         if: always()
         uses: actions/upload-artifact@v4
