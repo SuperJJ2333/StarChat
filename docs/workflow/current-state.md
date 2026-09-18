@@ -1,5 +1,43 @@
 # 移动交付恢复索引
 
+## 2026-09-18 Android 0.3.96/2134 正式发布 + iOS 0.3.96/2134 企业签名交接（**Android 已上线；iOS 待用户签名回传**）
+
+用户指令：推送**最新版本**的 Android 更新弹窗，并提供同源 iOS 更新包供企业签名后回传分发。
+用户选定：版本 **0.3.96 + 2134**、包含自 2132 之后 main 上的**全部客户端改动**、弹窗**不强制**。
+**产物**：[Android 发布记录](../verification/2026-09-18-android-0396-2134-release.md)、
+[iOS 重签交接](../verification/2026-09-18-ios-0396-2134-enterprise-resign-handover.md)、
+[任务记录](tasks/2026-09-18-android-0396-2134-ios-rehandover.md)、
+`docs/verification/artifacts/2026-09-18/{release-2134,ios-2134}/**`。
+**候选冻结** `71971746`（含并发会话的 `04cc1d80` Matrix 初始化串行化修复）；版本递增提交 `a4b53386`
+（`scripts/bump_version.ps1`，pubspec + app_config 成对）。
+**Android 已发布**：`ChatFlow-0.3.96-build2134-arm64.apk`，79,997,982 字节，
+SHA256 `7628FBD095277E3369313AEE877B76F43C7741E07754AF9F587BAF16CD28626B`；
+aapt `versionCode=2134 / versionName=0.3.96 / arm64-v8a`；固定签名身份 `75b31c66…ba61fff`（v2+v3）；
+重建语义零漂移（类数 **25346/25346**、`changed_smali_classes: []`、原生资产 338 零变化、
+`manifest_semantics_identical: true`）。上传 5 片（逐片远端尺寸核对）→ 合并 SHA 门通过 →
+不可变安装 + `latest-arm64.apk` 原子切换；旧包 2132（`35ca0962…`）原位保留作回退。
+**更新弹窗已发布**（不强制）：`min_supported_build` 仍为 3，`app_ios_*` 零改动，
+trace `android-release-0.3.96-2134-20260918` 恰好 5 条审计；Android 投影 `0.3.96/2134`。
+公网：别名 HEAD 200 `application/octet-stream`、版本化 URL 206、文件与别名 SHA 一致、
+`/app-updates/latest` 未授权 401（**注意 apex 域 `liuhetong888.com`；`www` 会把未知路径交给前端 SPA**）。
+**门禁**（冻结候选）：`flutter analyze` 无问题；`flutter test --timeout 120s` **+3173 全通过**；
+`pytest tests/mobile` **70 passed**；CI `android-ci` run `35356378136` @ `71971746` **success**。
+**顺带修复 CI 回归**：并发会话改了 iOS 工作流（三次重试 + 每次独立日志）但未同步
+`tests/mobile/test_ios_simulator_ci.py` 的日志名契约，`android-ci` 在 `36955d78` 上被打红；
+已改为断言“每次尝试日志保留 + `if: always()` 上传整个 `production-compile/` 目录”，随后转绿。
+**构建期返工（已脚本化）**：Flutter 3.44.9 下 `flutter assemble` 会在 release 构建中把 dev 依赖
+`integration_test` 写回插件注册表，而 AGP 按设计不让 dev 依赖进入 release 编译类路径 →
+`javac` 报“程序包不存在”。处理：`strip_dev_plugin_registrant.py`（断言恰好一处并移除、移除后不再出现）+
+`flutter build apk --release --no-pub` 重建 + 反向断言 release 包内无该插件（与 2132 基线一致）。
+**iOS 候选（待签名）**：CI `ios-0353.yml` run `35355808244` @ `04cc1d80` success，
+artifact `ChatFlow-iOS-signed`（id `10551264894`，59,919,267 字节，
+digest `dac7cfac…3848`，有效期至 2026-10-02）；本机核验 IPA
+`docs/verification/artifacts/2026-09-18/ios-2134/ChatFlow-0.3.96-2134-signed-candidate.ipa`
+（60,296,979 字节，SHA256 `5BF564E0…E743`）：Bundle ID `com.liuhetong.liuhetongMobile`、
+`0.3.96/2134`、iOS 16.0+、iPhone+iPad、后台模式三项齐全、`cryptid=0` 可重签。
+**下一步（待用户）**：企业签名后回传 IPA → 按交接记录第 4 节校验/上传/改 `manifest.plist`/更新 `app_ios_*`
++ 前端 iOS 标签（现为 `0.3.92（2120）`）。
+
 ## 2026-09-18 Room Opening Policy Engine（Single Room Opening Platform；**已 push**）
 
 用户任务：把"打开前策略"从各入口收敛到统一的 `RoomOpeningPolicy`（`RoomNavigationCoordinator`
