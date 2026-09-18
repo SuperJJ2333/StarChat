@@ -294,20 +294,24 @@ void main() {
       ));
     }
 
-    testWidgets('waitingNetwork 显示小时钟 + 等待发送，绝不显示红色感叹号',
+    testWidgets('waitingNetwork 显示小时钟 + 等待网络，绝不显示红色感叹号',
         (tester) async {
       var retries = 0;
       await pumpBubble(
           tester, MessageDeliveryState.waitingNetwork, () => retries++);
 
-      expect(find.text('等待发送'), findsOneWidget);
+      // 状态词表（UI_DESIGN.md §7 消息）：waitingNetwork → 「等待网络」；
+      // 「等待发送」只属于 queued（本地排队待发），不得混用。
+      expect(find.text('等待网络'), findsOneWidget);
+      expect(find.text('等待发送'), findsNothing,
+          reason: 'waitingNetwork 不得显示成「等待发送」');
       expect(find.byIcon(CupertinoIcons.clock), findsOneWidget);
       expect(find.byIcon(CupertinoIcons.exclamationmark_circle_fill),
           findsNothing);
 
       await tester.tap(find.byKey(const Key('message-delivery-waiting')));
       await tester.pump();
-      expect(retries, 1, reason: '等待发送的气泡点击即立即重试');
+      expect(retries, 1, reason: '等待网络的气泡点击即立即重试');
     });
 
     testWidgets('failed 仍是红色感叹号且可重试', (tester) async {
@@ -317,6 +321,7 @@ void main() {
       expect(find.byIcon(CupertinoIcons.exclamationmark_circle_fill),
           findsOneWidget);
       expect(find.text('等待发送'), findsNothing);
+      expect(find.text('等待网络'), findsNothing);
       expect(find.byIcon(CupertinoIcons.clock), findsNothing);
 
       await tester.tap(find.byKey(const Key('message-delivery-failed')));

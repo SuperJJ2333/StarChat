@@ -107,11 +107,11 @@ abstract final class WeChatColors {
 
 /// 共享渐隐分割线（`WeChatGradientDivider`）的几何与不透明度契约。
 ///
-/// 与朋友圈列表分割线同几何：1 物理像素、整行宽、色源为 `divider` token。
-/// 区别只有不透明度：整体低于实心分割线（中部 [centerAlpha] < 1.0），
-/// 并且两端渐隐到完全透明，避免白底列表单元被硬线切断。
+/// 列表行之间、列表与卡片之间、卡片内部相邻区块之间的水平分隔线统一使用这套
+/// token（规范见 `UI_DESIGN.md` §19）：1 逻辑像素、整行宽（或按需缩进）、色源为
+/// `divider` token，两端 alpha 0、中段 alpha [centerAlpha] < 1.0。
 abstract final class WeChatDividerTokens {
-  /// 分割线高度（1 逻辑像素，与朋友圈分割线一致）。
+  /// 分割线高度（1 逻辑像素）。
   static const hairline = 1.0;
 
   /// 渐变端点（左端）。

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_list_tile.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
@@ -70,14 +71,12 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
                   child: Column(
                     children: [
                       _primaryRow('公开', 'PUBLIC', '所有朋友可看'),
-                      Padding(
-                        padding: EdgeInsets.only(left: 16),
-                        child: SizedBox(
-                          height: .5,
-                          child: ColoredBox(
-                              color: WeChatColors.resolve(
-                                  context, WeChatColors.divider)),
-                        ),
+                      // 需求 1（2026-09-19）：组内行分隔线统一使用共享渐隐
+                      // 分割线（同一组件/同一套 token），保留既有 16dp 左缩进；
+                      // 缩进由组件参数承担，不再自拼 0.5px 实心 ColoredBox。
+                      const WeChatGradientDivider(
+                        key: Key('visibility-divider-primary'),
+                        indent: WeChatSpacing.lg,
                       ),
                       _primaryRow('私密', 'SELF', '所有朋友不可看'),
                     ],
@@ -90,14 +89,10 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
                 child: Column(
                   children: [
                     _submenuRow('只给谁看', 'INCLUDE'),
-                    Padding(
-                      padding: EdgeInsets.only(left: 16),
-                      child: SizedBox(
-                        height: .5,
-                        child: ColoredBox(
-                            color: WeChatColors.resolve(
-                                context, WeChatColors.divider)),
-                      ),
+                    // 同上：组内行分隔线复用共享渐隐分割线，缩进 16dp。
+                    const WeChatGradientDivider(
+                      key: Key('visibility-divider-submenu'),
+                      indent: WeChatSpacing.lg,
                     ),
                     _submenuRow('不给谁看', 'EXCLUDE'),
                   ],

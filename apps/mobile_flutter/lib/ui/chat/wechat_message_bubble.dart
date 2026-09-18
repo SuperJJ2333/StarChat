@@ -6,6 +6,12 @@ enum MessageDirection { incoming, outgoing }
 
 /// 气泡右侧的发送状态标识。
 ///
+/// 用户可见文案统一词表（UI_DESIGN.md §7 消息，与 `OutboxStatus.label` 逐字一致）：
+/// [waitingNetwork] →「等待网络」（灰色小时钟 + 点击立即重试）；[failed] →
+/// 红色感叹号（**仅**服务端明确拒绝）；[sending] / [sent] 不显示多余标记；
+///「等待发送」保留给 outbox `queued`（本地排队待发）行，不得与 [waitingNetwork]
+/// 混用。
+///
 /// [waitingNetwork] 表示「因网络原因暂未发出，等网络恢复后自动重发」——
 /// 弱网/无网绝不显示成红色感叹号（那会让用户以为消息已经彻底失败）。
 enum MessageDeliveryState { sending, sent, waitingNetwork, failed }
@@ -87,7 +93,11 @@ final class WeChatMessageBubble extends StatelessWidget {
               ),
             )
           else if (state == MessageDeliveryState.waitingNetwork)
-            // 等待发送：小时钟 + 文案，绝不出现红色感叹号；点击立即重试。
+            // 等待网络：小时钟 + 文案，绝不出现红色感叹号；点击立即重试。
+            //
+            // 状态词表统一（UI_DESIGN.md §7 消息）：queued →「等待发送」、
+            // waitingNetwork →「等待网络」。网络原因未发出的消息必须显示
+            // 「等待网络」，不得再混用「等待发送」。
             CupertinoButton(
               key: const Key('message-delivery-waiting'),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -96,18 +106,20 @@ final class WeChatMessageBubble extends StatelessWidget {
               child: Semantics(
                 button: true,
                 label: '立即重试',
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       CupertinoIcons.clock,
                       size: 14,
                       color: WeChatColors.textSecondary,
                     ),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text(
-                      '等待发送',
-                      style: TextStyle(
+                      state == MessageDeliveryState.waitingNetwork
+                          ? '等待网络'
+                          : '等待发送',
+                      style: const TextStyle(
                         fontSize: 11,
                         color: WeChatColors.textSecondary,
                       ),

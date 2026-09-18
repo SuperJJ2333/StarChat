@@ -2,15 +2,18 @@ import 'package:flutter/cupertino.dart';
 
 import '../foundation/wechat_tokens.dart';
 
-/// 共享渐变分割线：列表单元之间的 1 逻辑像素分隔线。
+/// 共享渐变分割线：列表行之间、列表与卡片之间，以及卡片内部相邻区块之间的
+/// 水平 1 逻辑像素分隔线（规范见 `UI_DESIGN.md` §19）。
 ///
-/// 与朋友圈列表分割线保持全局统一（同高、同宽、同色源 `WeChatColors.divider`），
-/// 但整体不透明度更低，且两端通过 [LinearGradient] 渐隐到完全透明，
-/// 让白底 / 深色列表单元之间只保留极轻的分隔感。
+/// 全仓只有这一份实现（朋友圈时间线、朋友圈互动面板、朋友圈可见范围页、好友
+/// 列表、通讯录入口行、请求行等共用）：同高、同宽、同色源
+/// `WeChatColors.divider`，两端通过 [LinearGradient] 渐隐到完全透明，中段
+/// alpha 0.5，让列表单元之间只保留极轻的分隔感。
 ///
 /// 深浅色在 build 时由 [WeChatColors.resolve] 解析（浅色 `#D9D9D9`、
 /// 深色 `#2C2C2C`），组件内没有任何硬编码颜色。业务页面必须通过本组件画
-/// 列表分割线，不得自行拼 `Container` + `Border(bottom:)`。
+/// 列表/卡片分割线，不得自行拼 `Container` + `Border(bottom:)` 或
+/// `ColoredBox(height: 1)`。
 final class WeChatGradientDivider extends StatelessWidget {
   const WeChatGradientDivider({
     super.key,

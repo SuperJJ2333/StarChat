@@ -2,6 +2,7 @@
 
 **版本：** 1.2
 **生效日期：** 2026-08-20
+**最近修订：** 2026-09-19（新增 §19 列表与卡片分割线统一为渐隐分割线；§6、§11.2、§12.1、§12.2 同步；新增 §20 钱包充值/提现页 2026-09-18 修订）
 **适用范围：** Flutter Android/iOS 客户端
 **设计语言：** 微信式信息架构与交互，保留“畅聊”独立品牌
 
@@ -27,7 +28,7 @@
 | `textPrimary` | `#191919` | `#F5F5F5` | 标题、正文 |
 | `textSecondary` | `#888888` | `#B2B2B2` | 描述、时间戳 |
 | `textTertiary` | `#B2B2B2` | `#7A7A7A` | 占位、禁用文本 |
-| `divider` | `#D9D9D9` | `#2C2C2C` | 1 物理像素分隔线 |
+| `divider` | `#D9D9D9` | `#2C2C2C` | 渐隐分割线的色源（几何与透明度见 §19） |
 | `danger` | `#FA5151` | `#FA5151` | 错误、取消、未读标记 |
 | `warning` | `#FA9D3B` | `#FA9D3B` | 等待、红包 |
 | `bubbleOutgoing` | `#95EC69` | `#3A6B36` | 自己的消息气泡 |
@@ -108,7 +109,8 @@
 | `WeChatAppTheme` | 亮暗主题与语义 Token | brightness |
 | `WeChatPageScaffold` | 页面背景、导航、安全区 | title, actions, child |
 | `ModernActionButton` | 白底图文主/次/危险操作和加载态 | icon, label, kind, loading, onPressed |
-| `WeChatListTile` | 统一列表单元 | leading, title, subtitle, trailing |
+| `WeChatGradientDivider` | 列表与卡片统一的渐隐分割线（见 §19） | height, indent, endIndent |
+| `WeChatListTile` | 统一列表单元 | leading, title, subtitle, trailing, showDivider |
 | `WeChatMessageBubble` | 文本消息及发送状态 | direction, content, status |
 | `WeChatTimestamp` | 时间分组 | timestamp |
 | `WeChatUnreadBadge` | 未读计数 | count, muted |
@@ -128,6 +130,11 @@
 ### 消息
 
 - 自己的消息靠右并使用 `bubbleOutgoing`，对方消息靠左并使用 `bubbleIncoming`。
+- **发送状态文案只有五个词（2026-09-19 统一，禁止各页自造）**：`queued` 等待发送、`sending` 发送中、`waitingNetwork` 等待网络、`failed` 发送失败、`sent` 正常（正常态不显示任何标记）。
+  - 对应实现：Outbox 状态机 `lib/core/outbox/outbox_message.dart`（`OutboxStatus.label`，五个词逐字一致）；会话内气泡 `lib/ui/chat/wechat_message_bubble.dart`（`MessageDeliveryState`）。
+  - 气泡：`waitingNetwork` 显示灰色小时钟 +「等待网络」，点击立即重试，**绝不显示红色感叹号**；「等待发送」保留给本地排队待发（`queued`）的行，两者不得混用；`sending` / `sent` 按微信语义不显示多余标记。
+  - 红色感叹号**只**属于 `failed`（服务端明确拒绝：无权限、内容非法、房间不存在）；网络原因（弱网/无网）一律按 `waitingNetwork` 处理，网络恢复后自动重发。
+  - 未打开的会话页（pending conversation / outbox 列表）直接显示上述五词中的当前状态文案。
 - 发送中显示小型进度；失败显示红色重试图标；已发送不显示多余标记。
 - 连续 5 分钟内的消息不重复显示时间戳；跨日显示完整日期。
 - 未读标记最多显示 `99+`。
@@ -203,7 +210,7 @@
 
 | 组件 | 规格 |
 |---|---|
-| `WeChatContactTile` | 高 56dp，40dp 头像，昵称 16sp，底部分隔线左缩进 68dp |
+| `WeChatContactTile` | 高 56dp，40dp 头像，昵称 16sp，行底共享渐隐分割线（整行宽；组内最后一行的线由分组标题承担，见 §19） |
 | `WeChatContactIndex` | 右侧 A–Z 索引，触摸反馈显示 64dp 居中浮层 |
 | `WeChatFriendRequestTile` | 高 68dp，状态按钮 64×32dp，支持接受/拒绝/已添加 |
 | `WeChatContactTagChip` | 高 28dp，圆角 4dp，浅灰背景 |
@@ -217,16 +224,16 @@
 
 朋友圈入口位于“发现”Tab 首组第一行，使用 24dp 相机/图片图标。存在新内容时，右侧显示最近发布者 32dp 头像和红点。
 
-时间线顶部为 280dp 封面区：封面铺满、底部渐变遮罩、右下角显示 72dp 用户头像和白色昵称。列表背景使用 `surfaceElevated`，单条动态水平边距 12dp，左侧头像 42dp，正文区域与头像间距 10dp。
+时间线顶部为 280dp 封面区：封面铺满、底部渐变遮罩、右下角显示 72dp 用户头像和白色昵称。列表背景使用 `surfaceElevated`，单条动态水平边距 12dp，左侧头像 42dp，正文区域与头像间距 10dp。动态与动态之间使用共享渐隐分割线（§19），不再使用实心边框。
 
 ### 12.2 动态组件
 
 | 组件 | 规格 |
 |---|---|
-| `WeChatMomentTile` | 发布者、正文、媒体、位置、时间、操作菜单及互动区 |
+| `WeChatMomentTile` | 发布者、正文、媒体、位置、时间、操作菜单及互动区；行底共享渐隐分割线（§19） |
 | `WeChatMomentImageGrid` | 1 张限制 240×240dp；2–4 张双列；5–9 张三列；间距 4dp |
 | `WeChatMomentActionMenu` | 深色 `#4C4C4C` 面板，高 40dp，点赞/评论各 80dp |
-| `WeChatMomentReactions` | `#F7F7F7` 背景，点赞与评论区，圆角 4dp |
+| `WeChatMomentReactions` | `#F7F7F7` 背景，点赞与评论区，区块之间为共享渐隐分割线，圆角 4dp |
 | `WeChatMomentVisibilityIcon` | 12dp，表示公开、好友、部分可见、不给谁看、仅自己 |
 | `WeChatMomentComposer` | 正文、九宫格、位置、提醒谁看、可见范围 |
 | `WeChatMomentNotificationTile` | 48dp 头像、互动摘要、动态缩略图和时间 |
@@ -357,3 +364,91 @@ HTML设计参考对应 `app-anchored-action-menu`，Token前缀 `--anchored-menu
 长按底部消息图标使用系统 mediumImpact 触觉反馈，缩放1→0.8→1，时长300ms，减少动态效果时取消缩放。无论当前 Tab，均立即清除全局与会话未读显示；操作期间重复长按不创建并发清理，之后的新消息正常显示未读。
 
 退出登录保留原确认，随后显示本机记录处理弹窗。默认强调“保存”；“确认删除”必须显式点击，红色粗体；取消不执行退出或删除。弹窗先关闭再调用账户生命周期操作，保存不清理记录；删除调用账户级本地清理后退出。所有失败状态不能卡住操作或误报删除成功。
+
+## 19. 列表与卡片分割线（渐隐分割线，2026-09-19 生效）
+
+列表行之间、列表与卡片之间，以及卡片内部相邻区块之间的**水平分割线**统一使用同一个共享渐隐分割线，禁止第二套实现：
+
+- Flutter：`WeChatGradientDivider(height, indent, endIndent)`（`apps/mobile_flutter/lib/ui/components/wechat_gradient_divider.dart`）；
+- HTML 设计演示：`app-divider` 组件（`frontend/src/components/divider.js`，根 class `.c-gradient-divider`），或行容器上的 `--divider-fade` 背景（`.c-list-tile`、`.c-contact-row` 的既有写法）。
+
+几何与不透明度固定为：两端 alpha 0、中段 alpha 0.5、stops 0 / 0.18 / 0.82 / 1、色源 `divider` token、行高不因画线改变。
+
+| Flutter token | HTML token | 值 | 用途 |
+|---|---|---:|---|
+| `WeChatDividerTokens.hairline` | `--size-hairline` | 1.0（1px） | 分割线高度（1 逻辑像素） |
+| `WeChatDividerTokens.edgeStartStop` | `--divider-fade` 第 1 个色标 | 0.0（0%） | 左端点 |
+| `WeChatDividerTokens.coreStart` | `--divider-fade-core-start` | 0.18（18%） | 中段起点（0 → 18% 由透明渐入） |
+| `WeChatDividerTokens.coreEnd` | `--divider-fade-core-end` | 0.82（82%） | 中段终点（82% → 100% 再渐出到透明） |
+| `WeChatDividerTokens.edgeEndStop` | `--divider-fade` 第 4 个色标 | 1.0（100%） | 右端点 |
+| `WeChatDividerTokens.edgeAlpha` | `--divider-fade-edge-alpha` | 0.0 | 两端不透明度（完全透明） |
+| `WeChatDividerTokens.centerAlpha` | `--divider-fade-alpha` | 0.5 | 中段不透明度（低于实心分割线的 1.0） |
+| `WeChatColors.divider`（色源） | `--color-divider`（配合 `--divider-fade`） | `#D9D9D9` / `#2C2C2C` | 浅色 / 深色取色 |
+
+**硬性约束**
+
+1. 禁止新增第二套实心分割线实现：业务页面不得自行拼 `Container` + `Border(bottom:)`、`ColoredBox(height: 1)`，HTML 不得再写 `border-bottom: 1px solid var(--color-divider)` 来画列表/卡片分隔线；需要画线时改用上述共享组件。
+2. 深浅色均按主题解析：Flutter 在 build 时经 `WeChatColors.resolve(context, WeChatColors.divider)` 解析（浅色 `#D9D9D9`、深色 `#2C2C2C`），HTML 由 `.ui-screen` 与 `.ui-screen[data-theme="dark"]` 上的 `--divider-fade` 解析。禁止硬编码浅色值。
+3. 行高不因画线改变：分割线画在行内（Flutter 行内底部 `Positioned`/`Column` 尾项，HTML `background-position: bottom center` + `background-size: 100% var(--size-hairline)`），不额外占用行高；字母索引偏移等依赖行高的几何不得变化。
+4. 缩进只在确有设计缩进时使用 `indent` 参数（例如朋友圈可见范围页的 16dp），默认整行宽。
+5. 组件、token 与使用点必须同时出现在 `packages/ui-contracts/changliao-component-registry.json`（`gradient-divider`）与 HTML demo，Flutter 与 HTML 的 token 值逐项一致。
+
+**允许保留实心细线的例外（逐条理由）**
+
+| 位置 | 保留理由 |
+|---|---|
+| 导航栏 / TabBar 的上下细线（HTML `.c-navigation-bar`、`.c-tab-bar`；Flutter `CupertinoNavigationBar.border`） | 属于导航 chrome 的边缘线，不是列表或卡片的行分隔线；两端渐隐会让导航区与内容区失去边界 |
+| 弹窗内容与操作区之间的线及其竖线（HTML `.c-dialog__actions`、`.c-dialog__button--confirm`） | 弹窗为固定两列按钮，横线必须与中间竖线成对，渐隐会让竖线悬空 |
+| 输入类控件与按钮自身的描边（`Border.all`：`.c-form-field__input`、`.c-search-field__input`、`.c-action-button` 等） | 是控件轮廓而不是分隔线 |
+| 深色浮层菜单的行分隔线（Flutter `TopMoreMenuTokens.divider`，HTML `.c-anchored-menu__item` 的 `--anchored-menu-divider`） | 浮层自带深色专用 token（白色 24%）；共享分割线取 `divider` token（浅灰），在该深色表面上不可读 |
+| 管理后台表格与卡片（`frontend/src/styles/admin-*.css`、`gallery.css` 的 `--admin-border`） | 管理后台使用独立的 `--admin-*` token 体系与密集数据表格；表格横竖线必须成对，不属于移动端设计演示的组件体系 |
+| 图片编辑器底部控制条（HTML `.c-image-editor__sheet .c-image-editor__control`） | 工具条控件行（不是列表行），其上下边界是控件边缘 |
+
+
+---
+
+## 20. 钱包充值 / 提现页（2026-09-18 修订）
+
+本节是 `lib/features/wallet/manual_wallet_page.dart`（充值页 / 提现页）与
+`lib/features/caibi/caibi_page.dart`（点钻页进入态）的硬性规范；未在此登记的
+视觉一律沿用 §2 颜色、§5 间距、§6 共享组件与 §19 分割线约束，不新增 token。
+
+### 20.1 进入态：缓存优先 + 后台刷新（2026-09-18 用户报告「按钮闪烁 → 错误提示 → 数据恢复」）
+
+| 规则 | 说明 |
+|---|---|
+| 数据源 | 能力配置 + 点钻余额（钱包页）/ 余额 + 最近流水 + 本月汇总（点钻页）合并为一份快照，由 `lib/features/finance/wallet_entry_store.dart` 的 `WalletEntryStore` 持有（共享实例按 `钱包作用域#会话 epoch` 复用） |
+| 进入即渲染 | 有缓存时**先渲染缓存**（余额不得先变 `—` 再恢复），刷新在后台进行；不得因为刷新让整页进入 busy 禁用态 |
+| 只有一种失败可以弹错 | `WalletEntryState.fatalError`（从未成功过且没有任何数据可展示）。有缓存的刷新失败必须保留旧值，不得出现红色错误条/错误弹窗/禁用闪烁；`lastError` 只允许做弱提示 |
+| 生命周期 | 页面只 `view.addListener/removeListener`，**不得** dispose 共享 Store（持有者是会话级宿主） |
+| 作用域隔离 | 页面与点钻页必须使用不同 scope（点钻页为 `<钱包作用域>#caibi`），否则两页会共享同一份结构不同的快照；账号/会话变化时金融数据立即丢弃，绝不跨账号展示 |
+
+### 20.2 地址与订单码展示（压缩 + 左对齐 + 复制完整值）
+
+| 规则 | 说明 |
+|---|---|
+| 地址展示 | 一律 `compactWalletAddress`：首 8 位 + `…` + 末 6 位；长度不足时原样返回。禁止用 `TextOverflow.ellipsis` 硬截断地址 |
+| 对齐 | 地址行与 `detail()` 单元格同一水平内边距（`WeChatSpacing.lg`）：label 定宽 72dp 左对齐、值列左对齐、复制 icon 固定在行右端；因此不同长度的地址不会让 icon 错位 |
+| 复制语义 | 复制 icon 始终复制**完整**地址/订单码（展示值只用于看），复制后给可见反馈 |
+| 订单展示码 | 提现的订单校验码/订单号直接展示（不再折叠在「查看详情」按钮后），字号 `WeChatTypography.caption`，并带复制 icon；绑定版本等次要字段作为普通明细行 |
+
+### 20.3 表单、余额与步骤条
+
+| 规则 | 说明 |
+|---|---|
+| 表单间距 | 输入框与同一行的动作按钮（如「全部提现」）之间至少 `WeChatSpacing.md`（12dp），不得相贴 |
+| 余额层级 | 点钻余额 hero：标签 `WeChatTypography.subhead` + `textSecondary`；余额数字 `WeChatTypography.brand`（34）w700 + 主题主文本色；单位 `callout` + `textSecondary`；说明 `caption` + `textTertiary`。深色下必须解析为深色主题色；超长金额用 `FittedBox(scaleDown)`，不得溢出 |
+| 金额可改 | 确认提现之前金额输入框始终可编辑（不得设为只读/禁用）；修改后旧报价不得再展示或提交，必须按最终输入重新向服务端报价；「全部提现」与输入框联动一致 |
+| 步骤条 | 点「下一步」后步骤指示器**保留**：已完成步骤 = 品牌色 + 勾号，当前步骤 = 品牌色，未完成 = 表面色 + 次级文字；进度变化用 `AnimatedContainer` 过渡，时长取 `WeChatMotion.actionPressDuration`，系统「减少动态效果」开启时归零 |
+| 有效期 | 提现确认有效期只展示服务端权威 `expires_at`，本地过期校验使用同一个时间点；前端不得自行编造时长（现行 5 分钟是服务端策略 `wallet_manual_quote_ttl_seconds`，改成 24 小时属服务端改动） |
+| 状态唯一性 | 确认提现后同一笔只以「处理中」订单呈现一次：确认订单（报价卡）在同一笔已生成订单后不再渲染 |
+
+### 20.4 申请通知栏（顶部导航栏下方）
+
+| 规则 | 说明 |
+|---|---|
+| 位置 | 「查看已有充值申请 / 查看已有提现申请」统一放在钱包页**顶部导航栏下方的固定通知栏**（不随列表滚动，且不再散落在卡片下方） |
+| 交互 | 点击整条直达对应申请页（恢复同一申请，不做二次确认）；最右侧是「不再通知」图形 icon（`CupertinoIcons.bell_slash`） |
+| 忽略语义 | 忽略标记按**申请身份**持久化（`deposit:<申请 id>`、`payout:<报价 id/订单 quote_id>`），不是内存 bool：进程重启后仍有效，出现**新的一笔**申请（身份不同）时提醒重新出现；保存失败必须可见，不得假装成功 |
+| 视觉 | 品牌淡底 `WeChatColors.brandTint` + `WeChatRadius.bubble` 圆角，正文用主题主文本色、图标用 `brandPrimary`；深浅色都正确；窄屏下文字单行省略 |
+| 保存到本地 | 收款二维码的「保存到本地」是带图形 icon 的动作控件：申请相册写入权限（`ensureGallerySaveAccess`）→ 渲染白底静区 PNG → 写入系统相册；进行中显示 loading 且禁用，成功/失败都有可见文案，无权限必须给出可读原因（不得静默失败） |

@@ -174,7 +174,12 @@ final class FriendRequestReviewPage extends StatelessWidget {
                   ),
                 ),
               ),
-            if (request['status'] == 'ACCEPTED' && onOpenAccepted != null)
+            if (request['status'] == 'ACCEPTED' && onOpenAccepted != null) ...[
+              // 需求 2（2026-09-19）：「已添加」徽标与「打开聊天」按钮之间必须
+              // 留出明确的 md 网格间距（12dp），避免状态徽标贴着品牌填充按钮；
+              // 徽标样式与按钮规范（brandPrimary 填充 / 白字 16sp / 48dp 高 /
+              // 12dp 圆角 / busy 加载态）均不因此改变。
+              const SizedBox(height: WeChatSpacing.md),
               SizedBox(
                 height: 48,
                 child: CupertinoButton(
@@ -193,6 +198,7 @@ final class FriendRequestReviewPage extends StatelessWidget {
                               fontSize: 16, color: CupertinoColors.white)),
                 ),
               ),
+            ],
           ],
         ),
       ),

@@ -4,6 +4,7 @@ import '../../features/contacts/user_identity.dart';
 import '../../features/moments/moment_models.dart';
 import '../chat/emoji_text.dart';
 import '../components/user_avatar.dart';
+import '../components/wechat_gradient_divider.dart';
 import 'moment_image_provider.dart';
 import 'moment_image_viewer_page.dart';
 import 'moment_reaction_tokens.dart';
@@ -66,11 +67,11 @@ final class WeChatMomentReactions extends StatelessWidget {
                   fontWeight: FontWeight.w600)),
           key);
 
-  Widget _divider(BuildContext context, String key) => Container(
-      key: ValueKey(key),
-      height: 1,
-      color:
-          CupertinoDynamicColor.resolve(MomentReactionTokens.divider, context));
+  /// 需求 1（2026-09-19）：朋友圈互动面板内部的区块分隔线也复用共享渐隐
+  /// 分割线（同一组件、同一套 `WeChatDividerTokens`），不再自行画一条实心
+  /// 1px 线。色源仍是 `divider` token（`MomentReactionTokens.divider` 与
+  /// `WeChatColors.divider` 同值），深浅色在 build 时解析。
+  Widget _divider(String key) => WeChatGradientDivider(key: ValueKey(key));
 
   @override
   Widget build(BuildContext context) {
@@ -115,11 +116,10 @@ final class WeChatMomentReactions extends StatelessWidget {
                                   ]))),
                         ])),
                   if (item.likeUsers.isNotEmpty && item.comments.isNotEmpty)
-                    _divider(context, 'moment-likes-divider'),
+                    _divider('moment-likes-divider'),
                   for (var i = 0; i < item.comments.length; i++) ...[
                     if (i > 0)
-                      _divider(context,
-                          'moment-comment-divider-${item.comments[i].id}'),
+                      _divider('moment-comment-divider-${item.comments[i].id}'),
                     _comment(context, item.comments[i]),
                   ],
                 ])));

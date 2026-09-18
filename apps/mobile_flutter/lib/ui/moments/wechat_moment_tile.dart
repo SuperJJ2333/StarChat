@@ -4,6 +4,7 @@ import '../../features/moments/moment_models.dart';
 import '../../features/matrix/profile_repository.dart';
 import '../../features/contacts/user_identity.dart';
 import '../components/user_avatar.dart';
+import '../components/wechat_gradient_divider.dart';
 import '../foundation/wechat_tokens.dart';
 import 'wechat_moment_image_grid.dart';
 import 'moment_action_menu.dart';
@@ -94,157 +95,163 @@ final class WeChatMomentTile extends StatelessWidget {
                 text: item.text,
                 onDelete: onDelete,
               ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: WeChatColors.elevatedSurface(context),
-          border: Border(
-            bottom: BorderSide(
-              color: WeChatColors.resolve(context, WeChatColors.divider),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: WeChatColors.elevatedSurface(context),
+              boxShadow: const [
+                BoxShadow(
+                  color: MomentReactionTokens.shadow,
+                  offset: Offset(0, 1),
+                  blurRadius: 2,
+                ),
+              ],
             ),
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: MomentReactionTokens.shadow,
-              offset: Offset(0, 1),
-              blurRadius: 2,
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              onTap: isAd
-                  ? null
-                  : onAuthorTap ??
-                      (onPersonTap == null
-                          ? null
-                          : () => onPersonTap!(item.author)),
-              child: UserAvatar(
-                nickname: _identity(item.author).displayName,
-                fallbackSeed: _identity(item.author).cacheKey,
-                avatarUrl: _identity(item.author).avatarUrl,
-                diagnosticSource: 'moments-feed',
-                size: 42,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: isAd
-                        ? null
-                        : onAuthorTap ??
-                            (onPersonTap == null
-                                ? null
-                                : () => onPersonTap!(item.author)),
-                    child: Text(
-                      _identity(item.author).displayName,
-                      key: const Key('moment-author-name'),
-                      style: TextStyle(
-                        color: WeChatColors.resolve(
-                          context,
-                          WeChatColors.socialLink,
-                        ),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: isAd
+                      ? null
+                      : onAuthorTap ??
+                          (onPersonTap == null
+                              ? null
+                              : () => onPersonTap!(item.author)),
+                  child: UserAvatar(
+                    nickname: _identity(item.author).displayName,
+                    fallbackSeed: _identity(item.author).cacheKey,
+                    avatarUrl: _identity(item.author).avatarUrl,
+                    diagnosticSource: 'moments-feed',
+                    size: 42,
                   ),
-                  const SizedBox(height: 4),
-                  Text(item.text),
-                  if (item.images.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: WeChatMomentImageGrid(
-                        imageUrls: item.images,
-                        imageCacheKeys: item.imageCacheKeys,
-                        mediaAccountKey: mediaAccountKey,
-                        mediaOrigin: mediaOrigin,
-                        cacheNamespace: mediaAccountKey ?? cacheNamespace,
-                      ),
-                    ),
-                  Row(
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
+                      GestureDetector(
+                        onTap: isAd
+                            ? null
+                            : onAuthorTap ??
+                                (onPersonTap == null
+                                    ? null
+                                    : () => onPersonTap!(item.author)),
                         child: Text(
-                          formatMomentTime(item.createdAt),
-                          style: const TextStyle(
-                            color: WeChatColors.textSecondary,
-                            fontSize: 13,
+                          _identity(item.author).displayName,
+                          key: const Key('moment-author-name'),
+                          style: TextStyle(
+                            color: WeChatColors.resolve(
+                              context,
+                              WeChatColors.socialLink,
+                            ),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
-                      const Spacer(),
-                      if (isAd)
-                        CupertinoButton(
-                          key: const Key('moment-ad-label'),
-                          padding: EdgeInsets.zero,
-                          onPressed: onAdTap,
-                          child: const Text(
-                            '广告',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: WeChatColors.textSecondary,
+                      const SizedBox(height: 4),
+                      Text(item.text),
+                      if (item.images.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: WeChatMomentImageGrid(
+                            imageUrls: item.images,
+                            imageCacheKeys: item.imageCacheKeys,
+                            mediaAccountKey: mediaAccountKey,
+                            mediaOrigin: mediaOrigin,
+                            cacheNamespace: mediaAccountKey ?? cacheNamespace,
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              formatMomentTime(item.createdAt),
+                              style: const TextStyle(
+                                color: WeChatColors.textSecondary,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
-                        )
-                      else ...[
-                        CupertinoButton(
-                          key: const Key('moment-like-button'),
-                          padding: EdgeInsets.zero,
-                          onPressed: onLike,
-                          child: MomentLikeFeedback(liked: isLiked),
+                          const Spacer(),
+                          if (isAd)
+                            CupertinoButton(
+                              key: const Key('moment-ad-label'),
+                              padding: EdgeInsets.zero,
+                              onPressed: onAdTap,
+                              child: const Text(
+                                '广告',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: WeChatColors.textSecondary,
+                                ),
+                              ),
+                            )
+                          else ...[
+                            CupertinoButton(
+                              key: const Key('moment-like-button'),
+                              padding: EdgeInsets.zero,
+                              onPressed: onLike,
+                              child: MomentLikeFeedback(liked: isLiked),
+                            ),
+                            Text(
+                              '${item.likeCount}',
+                              key: const Key('moment-like-count'),
+                              style: const TextStyle(
+                                color: WeChatColors.textSecondary,
+                                fontSize: 13,
+                              ),
+                            ),
+                            CupertinoButton(
+                              key: const Key('moment-comment-button'),
+                              padding: EdgeInsets.zero,
+                              onPressed: onComment,
+                              child: const Icon(
+                                CupertinoIcons.chat_bubble,
+                                size: 20,
+                              ),
+                            ),
+                            // 删除入口（仅作者可见——页面按作者身份传入 onDelete）。
+                            if (onDelete != null)
+                              CupertinoButton(
+                                key: const Key('moment-delete-button'),
+                                padding: EdgeInsets.zero,
+                                onPressed: onDelete,
+                                child: const Icon(CupertinoIcons.delete, size: 20),
+                              ),
+                          ],
+                        ],
+                      ),
+                      if (!isAd)
+                        WeChatMomentReactions(
+                          item: item,
+                          resolveIdentity: _identity,
+                          onPersonTap: onPersonTap,
+                          onCommentTap: onCommentTap,
+                          onCommentLongPress: onCommentLongPress,
+                          selectedCommentId: selectedCommentId,
+                          detailMode: detailMode,
+                          mediaAccountKey: mediaAccountKey,
+                          mediaOrigin: mediaOrigin,
+                          cacheNamespace: cacheNamespace,
                         ),
-                        Text(
-                          '${item.likeCount}',
-                          key: const Key('moment-like-count'),
-                          style: const TextStyle(
-                            color: WeChatColors.textSecondary,
-                            fontSize: 13,
-                          ),
-                        ),
-                        CupertinoButton(
-                          key: const Key('moment-comment-button'),
-                          padding: EdgeInsets.zero,
-                          onPressed: onComment,
-                          child: const Icon(
-                            CupertinoIcons.chat_bubble,
-                            size: 20,
-                          ),
-                        ),
-                        // 删除入口（仅作者可见——页面按作者身份传入 onDelete）。
-                        if (onDelete != null)
-                          CupertinoButton(
-                            key: const Key('moment-delete-button'),
-                            padding: EdgeInsets.zero,
-                            onPressed: onDelete,
-                            child: const Icon(CupertinoIcons.delete, size: 20),
-                          ),
-                      ],
                     ],
                   ),
-                  if (!isAd)
-                    WeChatMomentReactions(
-                      item: item,
-                      resolveIdentity: _identity,
-                      onPersonTap: onPersonTap,
-                      onCommentTap: onCommentTap,
-                      onCommentLongPress: onCommentLongPress,
-                      selectedCommentId: selectedCommentId,
-                      detailMode: detailMode,
-                      mediaAccountKey: mediaAccountKey,
-                      mediaOrigin: mediaOrigin,
-                      cacheNamespace: cacheNamespace,
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          // 需求 1（2026-09-19）：朋友圈列表与卡片之间的分割线统一使用共享
+          // 渐隐分割线（同一组件 `WeChatGradientDivider`、同一套
+          // `WeChatDividerTokens`），不再自带 `Border(bottom:)` 实心实现；
+          // 线画在行内，行高不因画线改变。
+          const WeChatGradientDivider(key: Key('moment-tile-divider')),
+        ],
       ),
     );
   }
