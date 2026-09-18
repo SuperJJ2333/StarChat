@@ -9,7 +9,12 @@ def test_compatibility_compiles_complete_production_app_without_plugin_exclusion
     production = workflow.split('  production-compile:', 1)[1].split('  simulator:', 1)[0]
     assert 'flutter build ios --release --no-codesign' in production
     assert 'mobile_scanner' not in production
-    assert 'production-compile.log' in production
+    # The compile step retries the CocoaPods-backed build (binary pod downloads intermittently
+    # answer 502/504). The contract is that the full compile log of every attempt is preserved
+    # for diagnosis, so the artifact upload must keep the whole production-compile directory.
+    assert 'production-compile-attempt-${attempt}.log' in production
+    assert 'if: always()' in production
+    assert 'path: ${{ runner.temp }}/production-compile/' in production
 
 
 def test_signed_candidate_can_be_dispatched_on_main_without_publishing() -> None:
