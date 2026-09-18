@@ -1,4 +1,5 @@
 import 'features/contacts/contact_actions.dart';
+import 'features/contacts/friend_acceptance_greeting_ledger.dart';
 import 'features/matrix/direct_chat_failure.dart';
 import 'features/contacts/group_address_list_page.dart';
 import 'dart:async';
@@ -9,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
+import 'core/friend_acceptance_greeting_flow.dart';
 import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
 import 'core/outbox/message_send_scheduler.dart';
@@ -1029,6 +1031,9 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
 
   /// BUG 3：好友接受后的私聊建立与系统招呼（"你已添加了 XXX…"，
   /// ChatFlow 系统消息类型渲染，绝不伪装成对方普通消息）。
+  ///
+  /// BUG-3（2026-09-19）幂等收口：打开会话**每次都执行**，只有一次性系统
+  /// 提示 + 打招呼被持久化账本门控（见 [establishAcceptedFriendChat]）。
   Future<void> _establishDirectChatAndGreet(
     String matrixUserId,
     String friendDisplayName,
@@ -1036,14 +1041,41 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   ) async {
     final cache = await _identityCache();
     await ensureCurrentFriendIdentity(cache, matrixUserId);
-    final reference = await directChats.open(matrixUserId);
-    await widget.matrix.sendFriendAccepted(
-        reference.roomId, matrixUserId, friendDisplayName,
+    final ledger = await _greetingLedger();
+    await establishAcceptedFriendChat(
+      ledger: ledger,
+      acceptingUserId: widget.matrix.userId ?? '',
+      requestId: request['id']?.toString(),
+      openRoom: () async => (await directChats.open(matrixUserId)).roomId,
+      sendGreeting: (roomId) => widget.matrix.sendFriendAccepted(
+        roomId,
+        matrixUserId,
+        friendDisplayName,
         requestId: request['id']?.toString(),
-        requestMessage: request['message']?.toString());
-    // The recipient sees request context before this route exposes a composer.
-    await _openConversationFromNotification(reference.roomId,
-        source: RoomOpenSource.friendAccept);
+        requestMessage: request['message']?.toString(),
+      ),
+      // The recipient sees request context before this route exposes a composer.
+      openConversation: (roomId) => _openConversationFromNotification(roomId,
+          source: RoomOpenSource.friendAccept),
+    );
+  }
+
+  FriendAcceptanceGreetingLedger? _greetingLedgerInstance;
+  String? _greetingLedgerAccount;
+
+  /// 一次性好友接受招呼的幂等账本：**每个 AppHome 实例只建一次**并复用
+  /// （账号切换时按新账号重建），持久化在 SharedPreferences 里，因此进程
+  /// 重启后仍记得"已经发放过"。
+  Future<FriendAcceptanceGreetingLedger> _greetingLedger() async {
+    final account = widget.matrix.userId ?? '';
+    final existing = _greetingLedgerInstance;
+    if (existing != null && _greetingLedgerAccount == account) return existing;
+    final preferences = await SharedPreferences.getInstance();
+    final ledger = FriendAcceptanceGreetingLedger(
+        preferences: preferences, accountKey: account);
+    _greetingLedgerInstance = ledger;
+    _greetingLedgerAccount = account;
+    return ledger;
   }
 
   AppUpdateDeferStore? _deferStore;
