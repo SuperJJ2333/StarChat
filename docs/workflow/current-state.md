@@ -52,7 +52,7 @@ SHA256 `CE52DEC1C9CDCB2EC4C47B1B76A3BDBB606756F2534FD985F93F2929E52AC296`**（�
 设备回读 `base.apk` SHA 与证书（`75b31c66…ba61fff`）均与候选一致。**未 push**；服务端无需改动。
 进入[任务记录](tasks/2026-09-18-chatflow-bug-01-10.md)或[修复报告与真机步骤](../verification/2026-09-18-chatflow-bug-01-10.md)。
 
-## 2026-09-18 Media Engine Production Readiness Validation（**生产候选验证**；结论 PASS，附 1 条强制条件）
+## 2026-09-18 Media Engine Production Readiness Validation（**生产候选验证 + 已部署上线**；结论 PASS，附 1 条治理条件）
 
 用户任务：验证 ChatFlow Media Engine 是否达到**生产候选标准**（正确性 / 安全性 / 一致性 / 性能风险 / Migration 安全）；
 **默认禁止修改代码**，仅在发现明确安全漏洞 / 数据损坏风险 / 生命周期错误 / 权限绕过时修复。
@@ -78,8 +78,31 @@ grant 0.36ms；签名签发 0.012ms / 校验 0.013ms；选档 0.22–0.34ms；GC
 **门禁**：`flutter analyze` 0 issue；`flutter test --concurrency=2` **3143 通过/0 失败**（默认并发下两次各 1 条既有
 实时定时器用例抖动，单独运行通过 —— 本次未改任何 Flutter 代码）；`pytest tests/mobile` 70 通过；
 `npm test` 209 通过；`export_openapi.py --check` PASS；`scripts/verify.ps1` **`Verification: PASS`**。
-进入 [任务记录](tasks/2026-09-18-media-engine-production-readiness.md) 或
-[验证报告](../verification/media-engine-production-readiness-report.md)。
+**验证套件计数更新（部署复验后）**：readiness **62 条**（ADR 24 + 安全 8 + 一致性·并发 13 + 基准 4 + 规模 3 +
+部署兼容 7 + 竞态复现 3），夹具引擎已开启 `PRAGMA foreign_keys=ON`；媒体三套件合计 **141 通过**。
+
+**部署阶段复验（2026-09-18，用户指令"推送 4 个验证提交 + 部署修复"）**：
+已 push `c2c41bf1`/`f0e41306`/`5f65dd2b`/`27a09910`；生产 `business-api` 已切换为
+`starchat-business-api:media-engine-20260918`（运行镜像 `sha256:b3908bac…`，`source_commit=27a09910`），
+生产 schema `0069_media_platform`（7 表 + 4 部分唯一索引）。
+**部署排练又发现并修复 3 类只在真实 PostgreSQL 暴露的缺陷**（单机 SQLite 结构上不可能发现）：
+① **Blocker：外键写入顺序** —— `MediaBlob`/`MediaObject`/`MediaVariant` 无 ORM relationship，
+ORM 先写子行 ⇒ **任何** ingest 都抛 `media_blobs_object_id_fkey`（SQLite 默认不校验外键，故 52 条套件全绿却上线即 500）；
+修为按依赖序显式 flush。② **digest slot 竞态** —— 4 并发同密文上传 3 个抛裸 `IntegrityError`
+（去重查询早于赢家提交）；按 ADR-002 语义收敛为复用赢家对象。③ **引用/grant 竞态** ——
+并发同引用（`uq_media_references_active`）与同 grant（`uq_media_access_grants_subject`）同样抛裸异常；
+均收敛到赢家行 + 3 个竞态计数器 + 3 条确定性竞态回归。
+另修 2 个兼容缺陷：Moments 旧版本模块缺 `IMAGE_SUFFIX_BY_MIME`/`validate_gif`（bridge 导入即崩 → getattr 兜底）、
+`MediaReconciler` 假设 backend 有 `root`（生产只有私有 `_root` 且无 `exists` → 双拼写兜底）。
+**部署证据**：22 个载荷文件在生产容器内**逐文件哈希一致**（`missing/mismatch/extra = 0/0/0`）；
+`MIGRATION_OK` / `SWITCH_OK`；端点 `objects|resolve` 未认证 401、`metrics|gc` 无 token 403、带 token 200、
+`reconcile(dry_run=true)` 在生产返回 `{"scanned_blobs":0,…,"errors":[]}`；`restarts=0`、`health=healthy`、
+30 分钟 0 Traceback；**`business-worker` 等其余容器全部未受影响**。
+独立媒体签名密钥与维护令牌已按服务器侧 `release/api-secrets.json`（`chmod 600`，值不入仓库）配置；
+回退 `release/rollback-api.sh` + 旧镜像 `redpacket-fee-20260917` 在位（迁移 expand-only，回退保留扩展表）。
+进入 [任务记录](tasks/2026-09-18-media-engine-production-readiness.md)、
+[验证报告](../verification/media-engine-production-readiness-report.md)（§12 部署复验）或
+[部署发布记录](../verification/artifacts/2026-09-18/media-engine-phase4/deployment-evidence.md)。
 
 ## 2026-09-18 Media Engine Phase 4 — Full Implementation（服务端 Media Platform；**本地完成，未构建/未真机/未部署**）
 

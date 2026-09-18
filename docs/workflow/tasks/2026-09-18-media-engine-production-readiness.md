@@ -10,16 +10,22 @@
   [Phase 3 设计](../architecture/media-engine-phase3-server-design.md)、
   [Phase 4 实施报告](../verification/media-engine-phase4-implementation.md)、
   **本阶段产物** [`media-engine-production-readiness-report.md`](../verification/media-engine-production-readiness-report.md)。
-- 当前状态：**验证完成；结论 `Media Engine Production Candidate: PASS`（附 1 条强制条件：ADR 修订）**。
+- 当前状态：**验证完成并已发布上线**。结论 `Media Engine Production Candidate: PASS`（附 1 条治理条件：ADR 修订）。
+  用户随后指示“4 个验证提交推送 + 把修复部署到服务器”，已于 2026-09-18 完成：
+  `origin/main` 已含 `c2c41bf1`、`f0e41306`、`5f65dd2b`、`27a09910`；生产 `business-api` 已切换到
+  `starchat-business-api:media-engine-20260918`（`source_commit=27a09910`），
+  部署记录见 [`artifacts/2026-09-18/media-engine-phase4/deployment-evidence.md`](../verification/artifacts/2026-09-18/media-engine-phase4/deployment-evidence.md)，
+  复验结论见报告 §12。
 - 负责人、工作树、文件所有权、源码commit：本地工作树 `D:\pythonProject\outsource\StarChat`，分支 `main`，
-  起点 `61b29917`。本阶段新增：验证套件 `tests/business_api/media_platform_readiness/**`（5 个文件、52 条用例）、
-  修复 `app/modules/media/{audience,reconcile,service,lifecycle,domain,metrics}.py` + `app/main.py` + `app/api/media_platform.py`、
+  起点 `61b29917`。本阶段新增：验证套件 `tests/business_api/media_platform_readiness/**`（7 个文件、62 条用例）、
+  修复 `app/modules/media/{audience,reconcile,service,lifecycle,domain,metrics,repository,references,grants,moments_bridge}.py`
+  + `app/main.py` + `app/api/media_platform.py`、
   更新 `tests/business_api/media_platform/test_media_authorization.py`（2 条用例按收紧规则更新）、
-  重导出 `packages/api-contracts/openapi/liuhetong-v1.yaml`、新增本报告与任务记录。
+  重导出 `packages/api-contracts/openapi/liuhetong-v1.yaml`、新增本报告、发布载荷与部署记录。
 - 最后更新时间（含时区）：2026-09-18（Asia/Hong_Kong）。
-- 下一条具体操作、必要输入、阻断的验收ID：发布前需（1）以 ADR 修订记录 audience 收紧（R1）；
-  （2）预生产环境补多 worker/PostgreSQL 并发验证（R2）；（3）生产配置独立媒体签名密钥与维护令牌。
-  当前**无阻断验证项**。
+- 下一条具体操作、必要输入、阻断的验收ID：上线后仅剩治理/运维项 ——（1）以 ADR 修订记录 audience 收紧（R1）；
+  （2）把 `reconcile`（dry_run）纳入巡检、`metrics` 接入监控并监控 3 个竞态计数器；
+  （3）多 uvicorn worker + 真实负载压测。当前**无阻断验收项**。
 
 ## 验收台账
 
@@ -40,23 +46,34 @@
 | P-PERF | 性能基准（真实测量，未测标注 NOT MEASURED） | 无（验证） | 4 个基准 + 3 个规模模拟，数字见报告 §7 | — | 多 worker/PG **NOT MEASURED** |
 | P-API | OpenAPI 一致 | 重导出合同 | `export_openapi.py --check` PASS；媒体平台 15 条路由在册 | — | — |
 | P-GATE | 自动化门禁 | 无 | flutter analyze/test（3143，`--concurrency=2`）、pytest tests/mobile（70）、npm（209）、verify.ps1 PASS | — | — |
+| P-DEP-COMPAT | 生产旧版本模块兼容 + 备份 backend 兼容 | **修复 High-6 / High-7** | `compat-probe.sh` → `===PROBE_OK===`；`test_deployment_compatibility.py`（7 条）；`moments_bridge` getattr 兜底、`MediaReconciler` root/exists 兜底 | 已上线 | — |
+| P-DEP-REH | 真实 PostgreSQL 排练（恢复生产 dump 的一次性库） | **修复 High-3 / High-4 / High-5** | `0068 → 0069` 迁移演练 + `concurrency_probe.py`：4 线程并发同密文/引用/grant 零异常且收敛为 1；GC 有引用不回收；明文不跨用户共享 → `===REHEARSE_OK===` | 已上线 | 多 uvicorn worker 未测 |
+| P-DEP-MIG | 生产 expand-only 迁移 | 无（数据层扩展） | `===MIGRATION_OK===`：head `0069_media_platform`、7 张表、4 个部分唯一索引；旧代码仍 health 200 | 已上线 | — |
+| P-DEP-SWITCH | 仅替换 business-api 容器 | 无（部署） | `===SWITCH_OK===`：镜像/摘要/env=63/端口/挂载不变；22 个载荷文件逐文件哈希一致；`restarts=0`、`health=healthy`、0 Traceback；worker 未重启 | 已上线 | — |
+| P-DEP-ENDPOINT | 端点与鉴权边界 | 无（部署验证） | `objects/resolve` 未认证 401、`metrics`/`gc` 无 token 403、带 token 200、`reconcile(dry_run)` 200、`moments/feed` 401 | 已上线 | — |
+| P-DEP-SECRET | 生产密钥配置 | 服务器侧 overlay | `release/api-secrets.json`（`chmod 600`，值不入仓库）；实测独立签名密钥与维护令牌均生效 | 已上线 | — |
 
 ## 版本与证据
 
 | 平台/服务 | 实际版本/build/镜像 | 来源commit | 包名/签名渠道 | 文件位置及SHA | 发布观察时间/链接 |
 | --- | --- | --- | --- | --- | --- |
-| 验证环境 | CPython 3.12 / SQLite in-memory / 本地磁盘 / Windows 工作站 / 单进程 | `61b29917` + 本阶段改动 | 无（未构建未部署） | 报告：`docs/verification/media-engine-production-readiness-report.md` | 无 |
+| 验证环境 | CPython 3.12 / SQLite in-memory / 本地磁盘 / Windows 工作站 / 单进程 | `61b29917` + 本阶段改动 | 无（验证） | 报告：`docs/verification/media-engine-production-readiness-report.md` | 无 |
+| 生产 `business-api`（已发布） | 镜像 `starchat-business-api:media-engine-20260918`，运行 ID `sha256:b3908bacebf0a6c17d5b4026ef63ea40df8381922fd3586e244420d060ef1901` | `27a09910`（载荷 22 文件，manifest 逐文件 SHA256） | 容器 `starchat-business-api-1`，端口 `127.0.0.1:8082` | `docs/verification/artifacts/2026-09-18/media-engine-phase4/`（`payload-manifest.json`、`live-hashes.txt`、`deployment-evidence.md`）；服务器 `/opt/starchat/releases/media-engine-20260918/` | 2026-09-18T12:55:34Z 切换，`health=healthy`、`restarts=0` |
+| 生产备份/回退 | 旧镜像 `starchat-business-api:redpacket-fee-20260917`（`sha256:48948fb7…`）；DB dump `backup/20260918T120535Z/business-db.sql.gz`（sha256 `6f5dd822…`） | — | — | 服务器 `/opt/starchat/releases/media-engine-20260918/backup/`、`release/rollback-api.sh` | — |
 
 - 命令与退出码：
-  - `py -3.12 -m pytest tests/business_api/media_platform_readiness -q` → **52 passed**（collected 52）
+  - `py -3.12 -m pytest tests/business_api/media_platform_readiness -q` → **62 passed**（collected 62；含部署兼容 7 + 竞态复现 3）
   - `py -3.12 -m pytest tests/business_api/media_platform -q` → **72 passed**（collected 72）
+  - `py -3.12 -m pytest tests/business_api/media_platform_readiness tests/business_api/media_platform tests/business_api/media -q` → **141 passed**
   - `py -3.12 -m pytest tests/business_api/moments tests/business_api/media -q` → **106 passed**（未改其中任何文件）
   - `flutter analyze` → No issues found；`flutter test --timeout 120s --concurrency=2` → **3143 passed / 0 failed**
   - `py -3.12 -m pytest tests/mobile -q` → **70 passed**
   - `npm test`（frontend）→ **209 passed / 0 failed**
   - `py -3.12 scripts/export_openapi.py --check` → **PASS**
   - `pwsh -NoProfile -File scripts/verify.ps1` → **`Verification: PASS`（退出码 0）**
-- 未执行项：真机、APK/IPA 构建、部署、真实压测（HTTP/PG/多 worker/CDN）。
+  - 部署三闸：`compat-probe.sh` → `===PROBE_OK===`；`rehearse.sh` → `===REHEARSE_OK===`；
+    `migrate-production.sh` → `===MIGRATION_OK===`；`switch-and-verify.sh` → `===SWITCH_OK===`
+- 未执行项：真机、APK/IPA 构建、多 uvicorn worker 压测、CDN/对象存储。
 - 复用依据：Phase 4 的门禁结论在本次代码变更后**不再复用**，全部重跑（本次变更触及服务端代码与合同）。
 
 ## 阶段计时
@@ -71,9 +88,15 @@
 | 基准 001–004（真实测量） | 2026-09-18 | 2026-09-18 | 主动（1 次返工：benchmark 003 造数缺 360p，期望值与实现不符；改按 allow-list 语义断言） | — | 4 passed | 规模 |
 | 规模模拟 001–003 | 2026-09-18 | 2026-09-18 | 工具等待（1,000,000 引用写入 28.1s） | — | 3 passed | 门禁 |
 | 合同重导出 + 自动化门禁 | 2026-09-18 | 2026-09-18 | 工具等待（Flutter 两次抖动 + 一次干净复跑；pytest 9.7 min；verify.ps1 长跑） | 文档撰写与门禁并行 | 见报告 §9 | 交付 |
+| 推送 4 个验证提交 | 2026-09-18 | 2026-09-18 | 外部等待（`git push` 两次 `schannel` TLS 握手失败，第 3 次成功） | — | `origin/main` = `3b9e0f56` | 部署 |
+| 部署：冻结前态 + DB dump + 候选镜像 | 2026-09-18 | 2026-09-18 | 主动（1 次返工：`compat-probe` 命中 Moments 旧版本 `ImportError`，修复并重打包） | — | 备份 14,529,289 bytes；候选镜像构建 OK | 兼容探测 |
+| 部署：兼容探测 + 真实 PG 排练（含 3 个 P0/P1 修复） | 2026-09-18 | 2026-09-18 | 主动 + 返工（`compat-probe` 命中 `root`/`exists`；排练依次命中外键顺序、digest 竞态、引用/grant 竞态、探针自身 3 处缺陷） | — | `PROBE_OK` / `REHEARSE_OK`（四段并发全零异常） | 生产迁移 |
+| 部署：生产迁移 + 切换 + 验证 + 密钥 | 2026-09-18 | 2026-09-18 | 工具等待（容器重建 + health） | — | `MIGRATION_OK` / `SWITCH_OK`；22 文件哈希一致、`restarts=0` | 证据与文档 |
 
-总墙钟：同一工作日内完成。返工：6 次（3 次测试断言自我纠正、1 次转义事故、1 次造数缺档、1 次 Flutter 抖动复跑），
-均记录在报告与本节。
+总墙钟：同一工作日内完成。返工：12 次（3 次测试断言自我纠正、1 次 PowerShell 转义事故、1 次造数缺档、
+1 次 Flutter 抖动复跑、1 次 `Set-Content -NoNewline` 压平测试文件行尾后从 git 恢复、
+1 次发布脚本 CRLF、1 次排练等待竞态——`pg_isready` 在 bootstrap 阶段即返回导致提前连接、
+3 次部署期产品缺陷修复、1 次探针自身清洗顺序修正），均记录在报告与本节。
 
 ## 交接与回退
 
@@ -84,10 +107,13 @@
   - 已确认：ADR-001/002/004/005 无违反（结构 + 行为双证）；无 global plaintext dedup（策略层抛错）。
   - 已排除：Matrix 媒体迁移/重加密（代码级扫描 + 零对象断言）。
   - 已排除：客户端可查摘要（OpenAPI 参数扫描 + 响应体摘要值扫描）。
-- 待办及验收失败项：无失败项。发布前强制条件见报告 §11（ADR 修订、多 worker 并发补测、生产密钥/令牌配置）。
-- 已发布与仅候选的区别：**仅候选**（本地改动，未部署）。旧用户路径未变 ⇒ 新路径可随时停用（strangler）。
-- 生产备份位置、恢复操作、漂移检查、可重试阶段：迁移 0069 expand-only；本次新增的 `audience`/`reconcile`
-  不改变任何既有数据；回退 = 停用新端点（旧路径不受影响）。
-- 运行中CI/命令/自己创建的隧道（无凭据）：无。
-- 下次恢复先检查的事实：① audience 收紧是否已写入 ADR（R1）；② `POST /media/platform/reconcile` 是否纳入巡检；
-  ③ 生产是否配置 `BUSINESS_MEDIA_URL_SIGNING_SECRET` 与 `BUSINESS_MEDIA_MAINTENANCE_TOKEN`。
+- 待办及验收失败项：无失败项。上线后治理/运维项见报告 §11 与 §12.5（ADR 修订、巡检告警、多 worker 压测）。
+- 已发布与仅候选的区别：**已发布**（生产 `business-api` 容器已切换，迁移已应用，密钥已配置）。
+  旧用户路径未变 ⇒ 新路径可随时停用（strangler）；回退只需 `rollback-api.sh`（迁移 expand-only，保留扩展表）。
+- 生产备份位置、恢复操作、漂移检查、可重试阶段：备份 `backup/20260918T120535Z/business-db.sql.gz`（仅灾难恢复）；
+  回退 `release/rollback-api.sh` + 旧镜像 `redpacket-fee-20260917`；
+  漂移检查 = `payload-manifest.json` vs 容器内 `/opt/business-api` 逐文件 SHA256（本次差异为空）。
+- 运行中CI/命令/自己创建的隧道（无凭据）：无（SSH 经既有跳板；媒体密钥仅存服务器 `release/api-secrets.json`，`chmod 600`）。
+- 下次恢复先检查的事实：① audience 收紧是否已写入 ADR（R1）；② `POST /media/platform/reconcile` 是否纳入巡检、
+  3 个竞态计数器是否长期为 0；③ 生产是否仍配置 `BUSINESS_MEDIA_URL_SIGNING_SECRET` 与 `BUSINESS_MEDIA_MAINTENANCE_TOKEN`；
+  ④ 若需回退：`sh /opt/starchat/releases/media-engine-20260918/release/rollback-api.sh`。

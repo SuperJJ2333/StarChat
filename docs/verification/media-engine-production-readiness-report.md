@@ -9,6 +9,8 @@
   [Phase 4 实施报告](media-engine-phase4-implementation.md)
 - **本阶段定位**：**验证**，不是开发。默认不改代码；仅在发现安全漏洞 / 数据损坏风险 / 生命周期错误 /
   权限绕过时修复。本次共发现并修复 **2 个 High**，记录 **3 个 Medium**（见 §10）。
+  随后的**部署阶段复验**（§12，真实 PostgreSQL 排练 + 生产发布）又发现并修复 **1 个 Blocker + 2 个 High**，
+  均已合入并上线；本报告的判定与门禁数字按 §12 更新。
 - **验证环境**：CPython 3.12、SQLite（in-memory，单连接）、本地文件系统、Windows 工作站、
   单进程、无 PostgreSQL / 无 HTTP 服务器 / 无网络 / 无并发负载。
   **所有性能数字均为该环境实测**，不是生产容量结论（§7）。
@@ -31,10 +33,11 @@
 | Security-004 Grant 撤销 | ✅ PASS（撤销即递增版本，已签发 URL 与直读同时失效） |
 | Security-005 受众边界 | ✅ PASS（**修复后**：成员可读；非成员 404；匿名 404；失去成员资格立即 404；不可校验受众拒绝签发） |
 | 数据一致性 Test Data-001/002/003 | ✅ PASS（含引用计数漂移可重算、GC 四类保护、崩溃双向恢复） |
-| 并发 Concurrent-001…004 | ✅ PASS（密文并发单 blob、引用幂等、GC 与读并行、删除/引用竞争最终一致） |
-| Migration 验证 | ✅ PASS（Matrix `mxc://` 与 Moments 旧能力 URL 均可读且不产生平台对象；新上传走平台；新旧并存） |
+| 并发 Concurrent-001…004 | ✅ PASS（单进程语义）；**真实 PostgreSQL 复验见 §12**（排练曾暴露 3 个仅 PostgreSQL 可见的缺陷，全部修复后转绿） |
+| Migration 验证 | ✅ PASS（Matrix `mxc://` 与 Moments 旧能力 URL 均可读且不产生平台对象；新上传走平台；新旧并存）；**生产已实测 expand-only 迁移至 0069**（§12） |
 | OpenAPI / Contract | ✅ PASS（新增 reconcile 路由后重新导出，`--check` PASS） |
 | 自动化门禁 | ✅ PASS（flutter analyze/test、pytest tests/mobile、npm test、scripts/verify.ps1 —— 见 §9） |
+| 部署可用性（§12） | ✅ PASS（生产 api 容器已切换为候选镜像，逐文件哈希一致、`restarts=0`、端点矩阵符合预期、worker 未受影响） |
 
 ### 判定
 
@@ -278,9 +281,10 @@ GC 与查询随 `limit`/索引而非表规模增长。**未测**：真实并发�
 | **Concurrent-003** | 对象被引用时执行 enforce GC，随后读取 | PASS | GC 不收集该对象；读取 200 |
 | **Concurrent-004** | 删除引用与新增引用竞争 | PASS | 释放→`ORPHAN`→晚到的 attach 复活为 `ACTIVE`；若已真正回收，再 attach 会 **404/拒绝**（不会产生指向不存在字节的引用） |
 
-**并发验证的诚实边界**：以上在**单进程、SQLite 单连接**下验证的是**语义正确性**
-（唯一约束、幂等、状态收敛），**不是**多进程竞争压力测试。真正的多 worker 竞争
-（PostgreSQL + 2 个 API worker）**NOT MEASURED**——需在预生产环境按 §11 的建议补测。
+**并发验证的诚实边界（已由 §12 部分关闭）**：以上在**单进程、SQLite 单连接**下验证的是**语义正确性**
+（唯一约束、幂等、状态收敛）。真正的多进程竞争已在**真实 PostgreSQL**（恢复生产 dump 的一次性库）
+上补测：4 线程并发同密文上传 / 同引用 / 同 grant 全部收敛且零异常，GC 在有引用时不回收（§12）。
+**仍未测**：多 uvicorn worker + 真实负载、连接池饱和、长事务与锁等待。
 
 ---
 
@@ -294,8 +298,9 @@ GC 与查询随 `limit`/索引而非表规模增长。**未测**：真实并发�
 | HTML demo | `npm test`（`frontend/`） | ✅ 209 passed / 0 failed |
 | 仓库整体门禁 | `pwsh -NoProfile -File scripts/verify.ps1` | ✅ `Verification: PASS`（退出码 0） |
 | OpenAPI 一致性 | `py -3.12 scripts/export_openapi.py --check` | ✅ PASS（新增 reconcile 路由后重新导出，零漂移） |
-| 本次验证套件 | `py -3.12 -m pytest tests/business_api/media_platform_readiness -q` | ✅ **52 collected / 52 passed**（ADR 24 + 安全 8 + 一致性·并发 13 + 基准 4 + 规模 3） |
+| 本次验证套件 | `py -3.12 -m pytest tests/business_api/media_platform_readiness -q` | ✅ **62 collected / 62 passed**（ADR 24 + 安全 8 + 一致性·并发 13 + 基准 4 + 规模 3 + **部署兼容 7** + **竞态复现 3**；后两类为 §12 新增，夹具引擎已开启 `PRAGMA foreign_keys=ON`） |
 | Phase 4 既有套件（含被收紧规则更新的 2 条） | `py -3.12 -m pytest tests/business_api/media_platform -q` | ✅ **72 collected / 72 passed** |
+| 媒体全量（readiness + media_platform + media） | `py -3.12 -m pytest tests/business_api/media_platform_readiness tests/business_api/media_platform tests/business_api/media -q` | ✅ **141 passed** |
 
 **Flutter 全量测试的抖动记录（如实）**：默认并发下连跑两次，各出现 **1 条不同的既有实时定时器/调度用例**失败
 （第一次 `features/contacts/request_friend_page_test.dart` + `features/matrix/account_client_selection_test.dart`，
@@ -329,6 +334,16 @@ GC 与查询随 `limit`/索引而非表规模增长。**未测**：真实并发�
 | **High-2** | High（生命周期错误） | GC 未保护"变体仍在 `pending/processing`"的对象，可能回收正在产出变体的字节 | `app/modules/media/lifecycle.py`、`domain.py`（新增 `GcSkipReason.VARIANT_PROCESSING`） | GC 增加处理中变体守卫；新增对应用例 |
 | **Bug-1** | Medium（可观测性） | 新增 reconciles 指标未注册，触发计数器时抛 `KeyError` | `app/modules/media/metrics.py` | 注册 `reconcile_rebuilt` / `reconcile_invalidated` |
 
+### 已修复（§12 部署阶段复验，真实 PostgreSQL 排练发现）
+
+| # | 等级 | 问题 | 文件位置 | 修复（提交） |
+| --- | --- | --- | --- | --- |
+| **High-3** | **Blocker**（PostgreSQL 下功能全废） | ingest 先写子行：任何上传都抛 `media_blobs_object_id_fkey`；SQLite 默认不校验外键，单机套件全部掩盖 | `app/modules/media/repository.py` | 显式按依赖序 flush（object → blob → variant）+ 夹具开启外键 + 回归用例（`5f65dd2b`） |
+| **High-4** | High（可用性） | 并发同密文上传输家抛裸 `IntegrityError`（`uq_media_objects_digest_slot`），而非按 ADR-002 复用同一对象 | `app/modules/media/repository.py` | 输家删除未提交文件并回读赢家对象；新增计数器 `ingest_digest_slot_race_reused`（`27a09910`） |
+| **High-5** | High（可用性/幂等） | 并发同引用 / 同 grant 输家抛裸 `IntegrityError`（`uq_media_references_active`、`uq_media_access_grants_subject`） | `app/modules/media/references.py`、`grants.py`、`metrics.py` | 均收敛到赢家行 + 2 个计数器 + 3 条确定性竞态用例（`27a09910`） |
+| **High-6** | High（上线即崩） | 生产 Moments 模块版本较旧（无 `IMAGE_SUFFIX_BY_MIME` / `validate_gif`），bridge 导入即 `ImportError` | `app/modules/media/moments_bridge.py` | `getattr` 兜底 + 3 条兼容用例（`c2c41bf1`） |
+| **High-7** | High（部署兼容） | `MediaReconciler` 假设 backend 暴露 `root`；生产 backend 只有私有 `_root` 且无 `exists` | `app/modules/media/reconcile.py`、`app/main.py` | 显式 root + 双拼写兜底 + 文件系统存在性回落；未知目录抛 `MEDIA_RECONCILE_ROOT_UNKNOWN`（`f0e41306`） |
+
 ### 记录未修复（本阶段禁止新增功能，且不构成数据/安全风险）
 
 | # | 等级 | 问题 | 文件位置 | 建议 |
@@ -337,7 +352,7 @@ GC 与查询随 `limit`/索引而非表规模增长。**未测**：真实并发�
 | **M2** | Medium（体验/接口语义） | Variant Resolver 无"用途"维度：只要 poster 就绪，`prefer=quality`+WiFi 仍返回 poster（选档只能在 `allowed_kinds` 白名单内重排） | `app/modules/media/variants.py`、`policy.variant_preference_order` | 增加 `purpose ∈ {list, playback}`；播放路径传 `allowed_kinds={档位集合}`（现有读取路径已如此使用） |
 | **M3** | Medium（成本/运维） | 重建的 unattached blob（`object_id IS NULL`）不在对象级 GC 视野内，长期会积累 | `app/modules/media/reconcile.py`、`lifecycle.py` | 增加 blob 级 GC 规则：无 `object_id`、超期、无变体引用 → 回收；并在对账报告中给出计数 |
 | **R1** | 记录（治理） | 实现的 audience 规则**严于** Phase 3.1 冻结的 ADR-003 §4.3.3 | `docs/architecture/media-engine-phase3-freeze.md` | 以一次 ADR 修订记录收紧（可校验才签发 + 交付复核），保持"实现与冻结一致"的纪律 |
-| **R2** | 记录（覆盖缺口） | 多进程/多 worker 竞争与 PostgreSQL 计划 **NOT MEASURED** | — | 预生产环境补：2 worker 并发同密文上传、并发引用创建、GC 与读并发 |
+| **R2** | 记录（覆盖缺口） | 多进程/多 worker 竞争与 PostgreSQL 计划：**已在真实 PostgreSQL 补测并转绿**（§12），但**多 uvicorn worker + 真实负载**仍未测 | — | 预生产环境补：2 worker 并发同密文上传/引用/grant、连接池饱和、长事务锁等待 |
 | **R3** | 记录（性能） | 媒体写路径的全局串行锁（Phase 3 审计 A10）与 50 MiB 上传上限仍在 | `third_party/synapse/chatflow_media_dedup.py`、`data/synapse/homeserver.yaml` | 按冻结要求"先测量再分片"；上传上限调整属部署变更 |
 | **R4** | 记录（范围） | 未做真机、CDN、对象存储、Avatar 接入 | — | 均属冻结中的 DEFERRED，不在本次判定范围 |
 
@@ -358,12 +373,17 @@ GC 安全；OpenAPI 一致；自动化门禁全绿。
 
 ### 发布为"生产候选"的强制条件
 
-1. **ADR 修订**：把 audience 收紧规则写入 ADR-003（或新 ADR），消除实现与冻结文档的表述差异（R1）。
-2. **预生产并发补测**：2 worker + PostgreSQL 下重跑 Concurrent-001/002/003/004 与 GC（R2）。
-3. **配置**：生产必须设置独立的 `BUSINESS_MEDIA_URL_SIGNING_SECRET`（未设置时回退到头像签名密钥，
-   会耦合轮换影响面）与 `BUSINESS_MEDIA_MAINTENANCE_TOKEN`（未设置时生产环境对维护端点 503，fail-closed）。
+1. ~~**ADR 修订**：把 audience 收紧规则写入 ADR-003（或新 ADR），消除实现与冻结文档的表述差异（R1）。~~
+   **仍未完成**——仍是上线后的治理项。
+2. ~~**预生产并发补测**：2 worker + PostgreSQL 下重跑 Concurrent-001/002/003/004 与 GC（R2）。~~
+   **已部分完成**（§12：真实 PostgreSQL、恢复生产 dump 的一次性库，4 线程并发同密文/引用/grant + GC 全绿）；
+   **多 uvicorn worker + 真实负载仍未测**。
+3. ~~**配置**：生产必须设置独立的 `BUSINESS_MEDIA_URL_SIGNING_SECRET` 与 `BUSINESS_MEDIA_MAINTENANCE_TOKEN`。~~
+   **已完成**（§12：服务器侧 `release/api-secrets.json`，`chmod 600`，值不入仓库；实测 metrics 403→200、reconcile 200）。
 4. **运维**：把 `POST /media/platform/reconcile`（默认 dry_run）纳入巡检，把 `GET /media/platform/metrics`
-   接入监控；对 `MEDIA_SIGNED_URL_INVALID` / `authorization_denied` 建立告警。
+   接入监控；对 `MEDIA_SIGNED_URL_INVALID` / `authorization_denied` 建立告警，并监控 3 个竞态计数器
+   （`ingest_digest_slot_race_reused` / `reference_attach_race_reused` / `grant_issue_race_reused`，长期应为 0）。
+   **仍未完成**。
 5. **客户端接入**：新端点尚未被客户端调用（当前用户路径仍全部走旧接口，因此**上线风险低**）；
    接入时需按 `prefer`/`allowed_kinds`/501 特性探测实现选档与上传能力协商。
 
@@ -375,8 +395,73 @@ GC 安全；OpenAPI 一致；自动化门禁全绿。
 
 ### 未覆盖声明（拒绝"测试通过所以安全"）
 
-- 未测：真实并发/多 worker、PostgreSQL 执行计划、真机、网络与 CDN、外部攻击者视角、长期运行
-  （磁盘增长、索引膨胀、GC 周期）；
+- 未测：多 uvicorn worker 与真实负载、PostgreSQL 查询计划压力、真机、网络与 CDN、外部攻击者视角、
+  长期运行（磁盘增长、索引膨胀、GC 周期）；
 - 测试覆盖的是**本次列出的**边界与不变量，不是全部可能输入；
   未覆盖的输入空间（畸形容器、超大 GIF、异常 MIME、恶意变体请求）**未被证明安全**，只被证明"未测"；
 - E2EE 协议层（Megolm/Olm 轮换、密钥恢复）与平台无交互，本次未验证，也不应由此报告背书。
+
+---
+
+## 12. 部署阶段复验（真实 PostgreSQL 排练 + 生产发布）
+
+§1–§11 是在**离线工作站 + SQLite**上完成的验证。随后按仓库发布纪律执行了一次真实发布演练，
+并**因此发现 3 个单机套件在结构上不可能发现的缺陷**（1 Blocker + 2 High）。完整记录见
+[`artifacts/2026-09-18/media-engine-phase4/deployment-evidence.md`](artifacts/2026-09-18/media-engine-phase4/deployment-evidence.md)。
+
+### 12.1 三个闸门与它们的产出
+
+| 闸门 | 做法 | 产出 |
+| --- | --- | --- |
+| 兼容探测 `compat-probe.sh` | 把载荷临时叠加进**运行中容器**（不改线上代码）后导入/组装 | 发现 **High-6**（Moments 旧版缺常量 → 启动即 `ImportError`）、**High-7**（reconciler 假设 backend 有 `root`） |
+| 真实 PostgreSQL 排练 `rehearse.sh` | 一次性 postgres 容器恢复生产 dump → 候选代码 `alembic upgrade head` → 并发/GC 探针 | 发现 **High-3**（外键写入顺序：**所有** ingest 失败）、**High-4**（digest slot 竞态）、**High-5**（引用/grant 竞态） |
+| 生产发布 `migrate → switch → verify` | expand-only 迁移 + 仅替换 `business-api` 容器 | 逐文件哈希一致、`restarts=0`、端点矩阵符合预期、worker 未受影响 |
+
+### 12.2 为什么 §8 的并发结论当时不够
+
+`media_blobs.object_id` 等是**真实外键**，而 SQLite 默认**不校验外键**；
+同时 SQLite 单进程套件不会让两个事务同时争抢部分唯一索引。于是：
+“并发语义正确”成立，但“在 PostgreSQL 上可用”**未被证明**——这正是 §1 中
+"未覆盖真实 PostgreSQL 并发"这条边界的实际代价：不是理论风险，而是**上线即 500**。
+
+### 12.3 修复后的实测（真实 PostgreSQL，一次性库）
+
+```json
+{
+  "concurrent_identical_ciphertext": {"threads": 4, "errors": [], "distinct_blobs": 1, "distinct_objects": 1},
+  "concurrent_same_reference":      {"errors": [], "distinct_reference_ids": 1, "active_rows": 1, "ref_count": 1},
+  "concurrent_same_grant":          {"errors": [], "distinct_grant_ids": 1, "grants_for_media": 1},
+  "gc_with_reference":              {"collected": 0, "skipped_has_references": 1, "object_status": "ACTIVE"},
+  "plaintext_isolation":            {"same_blob": false, "scopes_distinct": true}
+}
+```
+
+即：ADR-002 的“同密文收敛为 1 个对象”在真实并发下成立（零异常）；ADR-006 的引用幂等与 grant 唯一性
+在真实并发下成立；明文跨用户**不**共享；GC 不回收仍有引用的对象。
+
+### 12.4 这类缺陷不再可能"静默回归"
+
+- readiness 夹具引擎已开启 `PRAGMA foreign_keys=ON`（与生产同约束行为）；
+- 新增 `test_concurrency_races.py`（3 条）确定性复现“输掉竞态”的交错：
+  `test_ingest_converges_when_it_loses_the_digest_slot_race`、
+  `test_attach_converges_when_it_loses_the_active_reference_race`、
+  `test_grant_issue_converges_when_it_loses_the_active_grant_race`；
+- `test_deployment_compatibility.py`（7 条）覆盖两个旧版本生产模块的兼容面与外键写入顺序；
+- 本地复现脚本 `fk_repro.py`（SQLite + 外键约束）保留为最小复现证据。
+
+### 12.5 上线状态
+
+- 运行镜像 `starchat-business-api:media-engine-20260918`
+  （`sha256:b3908bac…`），`source_commit=27a09910`，22 个载荷文件在生产容器内**逐文件哈希一致**；
+- 生产 schema：`alembic head = 0069_media_platform`，7 张 `media_*` 表、4 个部分唯一索引；
+- 端点：`objects/resolve` 未认证 401；`metrics`/`gc` 无 token 403、带 token 200；
+  `POST reconcile`（`dry_run=true`）在生产返回
+  `{"scanned_blobs":0,"scanned_files":0,"missing_files":0,"orphan_files":0,"errors":[]}`；
+- 影响面：仅 `business-api` 容器被替换，`business-worker` 等其余容器全部维持原状；
+  30 分钟窗口内 0 条 Traceback/CRITICAL，`restarts=0`，`health=healthy`；
+- 回退：`rollback-api.sh` + 旧镜像 `redpacket-fee-20260917` 均在位，迁移为 expand-only（回退保留扩展表）。
+
+**判定不变**：`Media Engine Production Candidate: PASS`；本轮把“PASS 的前提是旧路径未改动、新路径未经真实流量”
+这一边界，推进到“新路径已在生产 PostgreSQL 与生产容器上就位且可对账、可回退”，
+但**仍未经客户端真实流量**，因此不宣称“生产已验证”。
+
