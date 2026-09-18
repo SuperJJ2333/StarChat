@@ -53,7 +53,8 @@ final class FinanceCardState {
       this.error,
       this.updatedAt,
       this.ended = false,
-      this.restricted = false});
+      this.restricted = false,
+      this.stale = false});
   final Map<String, dynamic>? detail;
   final String? viewerId;
   final String? error;
@@ -64,7 +65,16 @@ final class FinanceCardState {
   /// 或指定给他人的专属红包。这不是加载失败——卡片按会话消息里的
   /// 公开信息只读呈现，永不显示错误/重试，也不再轮询。
   final bool restricted;
+
+  /// 已有明细、但最近一次后台刷新失败：数据仍是上一次成功结果。
+  /// 只用于弱提示/角标——绝不据此显示错误、禁用点击或追加「重试」按钮，
+  /// 否则每次进入/轮询失败都会闪一下错误 UI。
+  final bool stale;
   final DateTime? updatedAt;
+
+  /// 是否有可展示的明细。
+  bool get hasData => detail != null;
+
   bool get terminal {
     if (restricted) return true;
     final status = detail?['status'];
@@ -90,6 +100,7 @@ final class FinanceCardState {
           DateTime? updatedAt,
           bool? ended,
           bool? restricted,
+          bool? stale,
           bool keepError = false,
           bool clearDetail = false}) =>
       FinanceCardState(
@@ -100,6 +111,7 @@ final class FinanceCardState {
         updatedAt: updatedAt ?? this.updatedAt,
         ended: ended ?? this.ended,
         restricted: restricted ?? this.restricted,
+        stale: stale ?? this.stale,
       );
 }
 
@@ -323,10 +335,19 @@ final class FinanceCardStore {
           updatedAt: _now());
     } catch (error) {
       if (_live() && generation == entry.generation) {
-        entry.notifier.value = _viewRestricted(error)
-            ? FinanceCardState(restricted: true, updatedAt: _now())
-            : entry.notifier.value
-                .copyWith(loading: false, error: '加载状态失败，请重试');
+        if (_viewRestricted(error)) {
+          entry.notifier.value =
+              FinanceCardState(restricted: true, updatedAt: _now());
+        } else if (entry.notifier.value.detail == null) {
+          // 首次加载失败（没有任何明细可展示）：这才是需要重试的错误。
+          entry.notifier.value = entry.notifier.value
+              .copyWith(loading: false, error: '加载状态失败，请重试');
+        } else {
+          // 已有明细：保留数据、不显示错误/重试按钮（否则每次进入或后台
+          // 刷新失败都会闪一下错误 UI），只留下一个弱失败信号。
+          entry.notifier.value = entry.notifier.value
+              .copyWith(loading: false, keepError: true, stale: true);
+        }
       }
     } finally {
       _active--;

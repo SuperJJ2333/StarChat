@@ -520,6 +520,86 @@ void main() {
     lease.dispose();
     store.dispose();
   });
+
+  test('a forced refresh keeps cached detail while loading without an empty state',
+      () async {
+    final gateway = _Gateway();
+    final store = FinanceCardStore(gateway);
+    final lease = store.lease(FinanceCardKey.transfer('cached-loading'));
+    lease.setVisible(true);
+    await _settle();
+    gateway.complete('cached-loading', value: 'cached');
+    await _settle();
+    await _settle();
+    expect(lease.notifier.value.detail?['value'], 'cached');
+
+    lease.setVisible(true, force: true);
+    await _settle();
+    // 刷新中只叠加 loading 标记，绝不先清空旧数据（否则卡片会闪一下「加载中」）。
+    expect(lease.notifier.value.loading, isTrue);
+    expect(lease.notifier.value.detail?['value'], 'cached');
+    expect(lease.notifier.value.error, isNull);
+    gateway.transferError('cached-loading', StateError('offline'));
+    await _settle();
+    await _settle();
+    expect(lease.notifier.value.loading, isFalse);
+    expect(lease.notifier.value.detail?['value'], 'cached');
+    // 有缓存时刷新失败不得产生 error（否则卡片会禁用点击并闪出「重试」按钮）。
+    expect(lease.notifier.value.error, isNull);
+    expect(lease.notifier.value.hasData, isTrue);
+    // 只保留弱失败信号，供角标/弱提示使用。
+    expect(lease.notifier.value.stale, isTrue);
+    lease.dispose();
+    store.dispose();
+  });
+
+  test('a failed refresh with cache recovers its stale flag on the next success',
+      () async {
+    final gateway = _Gateway();
+    final store = FinanceCardStore(gateway);
+    final lease = store.lease(FinanceCardKey.redPacket('cached-recover'));
+    lease.setVisible(true);
+    await _settle();
+    gateway.complete('cached-recover', value: 'cached');
+    await _settle();
+    await _settle();
+
+    lease.setVisible(true, force: true);
+    await _settle();
+    gateway.redError('cached-recover', StateError('offline'));
+    await _settle();
+    await _settle();
+    expect(lease.notifier.value.stale, isTrue);
+    expect(lease.notifier.value.error, isNull);
+
+    lease.setVisible(true, force: true);
+    await _settle();
+    gateway.complete('cached-recover', value: 'fresh');
+    await _settle();
+    await _settle();
+    expect(lease.notifier.value.detail?['value'], 'fresh');
+    expect(lease.notifier.value.stale, isFalse);
+    expect(lease.notifier.value.error, isNull);
+    lease.dispose();
+    store.dispose();
+  });
+
+  test('a first load failure without any cache still surfaces a retryable error',
+      () async {
+    final gateway = _Gateway();
+    final store = FinanceCardStore(gateway);
+    final lease = store.lease(FinanceCardKey.transfer('no-cache-error'));
+    lease.setVisible(true);
+    await _settle();
+    gateway.transferError('no-cache-error', StateError('offline'));
+    await _settle();
+    await _settle();
+    expect(lease.notifier.value.hasData, isFalse);
+    expect(lease.notifier.value.error, '加载状态失败，请重试');
+    expect(lease.notifier.value.stale, isFalse);
+    lease.dispose();
+    store.dispose();
+  });
 }
 
 Future<void> _settle() => Future<void>.microtask(() {});
