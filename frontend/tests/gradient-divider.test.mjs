@@ -53,6 +53,55 @@ test("list surfaces paint the gradient divider instead of a solid border", async
   }
 });
 
+test("every demo list and card separator uses the shared gradient divider", async () => {
+  const layers = await css("components.css", "primitives.css", "tokens.css");
+  // 需求 1（2026-09-19）：朋友圈卡片/动态行、会话行、账单行与交易行同样统一到
+  // 共享渐隐分割线；Flutter 侧对应 WeChatMomentTile / MomentVisibilityPage。
+  for (const selector of [
+    ".c-conversation-row",
+    ".c-transaction-row",
+    ".c-moment-tile",
+    ".c-moment-card",
+    ".c-ledger-row"
+  ]) {
+    // 同一 class 可能有后续修订块（例如 .c-ledger-row 的金额对齐补丁），
+    // 因此逐个检查：至少一块负责画共享分割线，且任何一块都不得再画实心分隔边。
+    const blocks = [
+      ...layers.matchAll(new RegExp(`\\${selector}\\s*\\{([\\s\\S]*?)\\}`, "gu"))
+    ].map((match) => match[1].replace(/\/\*[\s\S]*?\*\//gu, ""));
+    assert.ok(blocks.length > 0, `${selector} block is missing`);
+    assert.ok(
+      blocks.some((declarations) => /background-image:\s*var\(--divider-fade\);/u.test(declarations)),
+      `${selector} must paint the shared gradient divider`
+    );
+    for (const declarations of blocks) {
+      assert.doesNotMatch(declarations, /border-(bottom|top)/u, `${selector} must not draw a solid separator border`);
+    }
+  }
+
+  // 多选择器规则（底部操作面板的行）与朋友圈互动面板内的区块分隔线。
+  const actionSheetRows = layers.match(/\.c-action-sheet__header,[\s\S]*?\{([\s\S]*?)\}/u);
+  assert.ok(actionSheetRows, "action sheet row rule is missing");
+  assert.match(actionSheetRows[1], /background-image:\s*var\(--divider-fade\);/u);
+  assert.doesNotMatch(actionSheetRows[1], /border-bottom/u);
+
+  const reactionsComment = layers.match(/\.c-moment-reactions__comment\s*\{([\s\S]*?)\}/u);
+  assert.ok(reactionsComment, "moment reactions comment rule is missing");
+  assert.match(reactionsComment[1], /background-image:\s*var\(--divider-fade\);/u);
+  assert.doesNotMatch(reactionsComment[1], /border-top/u);
+});
+
+test("chrome and control edges keep documented solid hairlines", async () => {
+  const layers = await css("components.css", "primitives.css", "tokens.css");
+  // 被刻意保留的实心细线（理由见 UI_DESIGN.md §19 与验证记录）：
+  // 导航栏 / TabBar / 弹窗操作区属于 chrome 与「控件边缘」，不是列表或卡片分隔；
+  // 输入框、按钮、色板等是描边（Border.all），同样不属于列表分隔。
+  assert.match(layers, /\.c-navigation-bar\s*\{[\s\S]*?border-bottom:\s*var\(--size-hairline\)\s*solid\s*var\(--color-divider\);/u);
+  assert.match(layers, /\.c-tab-bar\s*\{[\s\S]*?border-top:\s*var\(--size-hairline\)\s*solid\s*var\(--color-divider\);/u);
+  assert.match(layers, /\.c-dialog__actions\s*\{[\s\S]*?border-top:\s*var\(--size-hairline\)\s*solid\s*var\(--color-divider\);/u);
+  assert.match(layers, /\.c-form-field__input\s*\{[\s\S]*?border:\s*var\(--size-hairline\)\s*solid\s*var\(--color-divider\);/u);
+});
+
 test("divider and brand tint tokens match the Flutter token layer", async () => {
   const tokens = await readFile(new URL("src/styles/tokens.css", root), "utf8");
   const flutter = await readFile(new URL("../apps/mobile_flutter/lib/ui/foundation/wechat_tokens.dart", root), "utf8");

@@ -1,13 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../ui/components/wechat_gradient_divider.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import '../finance/wallet_entry_store.dart';
 
 /// 点钻页（demo 定稿改版）：
 /// - 余额 hero：居中大字余额 + 副说明（无操作按钮——充值/提现入口不保留）；
 /// - 最近 3 条点钻流水预览 + 本月收支汇总行；
 /// - 右上角「全部账单」入口 → 全部账单页；底部「查看全部」同目标。
+///
+/// 进入态（2026-09-18 修复）：三路请求合并为一份 [WalletEntryStore] 快照，
+/// **缓存优先 + 后台刷新**。之前 `FutureBuilder` 每次进入都替换 future，失败
+/// 就用「暂不可用」覆盖上一份好数据，于是余额/流水会闪一下再恢复。
+/// 现在：有缓存时先用缓存渲染（不闪、不空转），刷新失败保留旧值；只有
+/// [WalletEntryState.fatalError]（从未成功过且没有缓存）才显示错误与重试。
 final class CaibiPage extends StatefulWidget {
   const CaibiPage({super.key, this.api, this.onOpenAllBills});
   final BusinessApiClient? api;
@@ -19,31 +29,80 @@ final class CaibiPage extends StatefulWidget {
 }
 
 final class _CaibiPageState extends State<CaibiPage> {
-  Future<Map<String, dynamic>>? balance;
-  Future<Map<String, dynamic>>? recent;
-  Future<Map<String, dynamic>>? monthly;
+  /// 共享进入态 Store（持有者是 WalletEntryStores）：页面只借用、只退订。
+  WalletEntryStore? entry;
+  bool _bootstrapping = false;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
-  }
-
-  void _refresh() {
-    final api = widget.api;
-    if (api == null) return;
-    balance = api.caibiBalance();
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month, 1);
-    recent = api.ledgerTransactions(limit: 3);
-    monthly = api.ledgerTransactions(startAt: monthStart, limit: 100);
+    unawaited(_bootstrap());
   }
 
   @override
   void didUpdateWidget(covariant CaibiPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.api != widget.api) _refresh();
+    if (oldWidget.api != widget.api) unawaited(_bootstrap());
   }
+
+  @override
+  void dispose() {
+    entry?.view.removeListener(_onEntryState);
+    super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    final api = widget.api;
+    entry?.view.removeListener(_onEntryState);
+    entry = null;
+    if (api == null || _bootstrapping) {
+      if (mounted) setState(() {});
+      return;
+    }
+    _bootstrapping = true;
+    try {
+      final scope = await api.walletIntentScope();
+      // 点钻页与钱包页的快照结构不同，作用域必须分开，否则两个页面会共享
+      // 同一个 Store 实例（注册表按 scope + epoch 复用）。
+      final shared = WalletEntryStores.of(
+          scope: '$scope#caibi', gateway: _CaibiEntryGateway(api));
+      if (!mounted || !identical(widget.api, api)) return;
+      entry = shared;
+      shared.view.addListener(_onEntryState);
+      // 有缓存立即返回（先渲染缓存），没有缓存时等待首次加载。
+      await shared.enter();
+    } catch (_) {
+      // 作用域读取异常时保持空态；真正的加载失败由 fatalError 呈现。
+    } finally {
+      _bootstrapping = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _onEntryState() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _retry() async {
+    final shared = entry;
+    if (shared == null) {
+      await _bootstrap();
+      return;
+    }
+    await shared.refresh();
+    if (mounted) setState(() {});
+  }
+
+  /// 快照里的余额文本；没有数据时按阶段给出占位（绝不编造数字）。
+  String get _balanceText {
+    final map = entry?.state.data;
+    if (map != null) return '${map['balance'] ?? '--'}';
+    return (entry?.state.fatalError ?? false) ? '暂不可用' : '--';
+  }
+
+  /// 行间分割线：复用仓库统一的渐隐分割线（§19），行高不变。
+  Widget _rowDivider() => const Padding(
+      padding: EdgeInsets.only(left: 62), child: WeChatGradientDivider());
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +145,12 @@ final class _CaibiPageState extends State<CaibiPage> {
   Widget _balanceHero(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final card = dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
+    final state = entry?.state;
+    final hasData = state?.hasData ?? false;
+    final failed = state?.fatalError ?? false;
+    // 只有「首次加载、还没有任何可展示数据」才显示加载圈：
+    // 有缓存的后台刷新绝不给整页 spinner（缓存优先，不闪）。
+    final firstLoad = !hasData && (state?.refreshing ?? false);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
@@ -98,34 +163,47 @@ final class _CaibiPageState extends State<CaibiPage> {
             style:
                 TextStyle(fontSize: 13, color: WeChatColors.textSecondary)),
         const SizedBox(height: 6),
-        FutureBuilder<Map<String, dynamic>>(
-          future: balance,
-          builder: (_, snapshot) => Text.rich(
-            TextSpan(children: [
-              TextSpan(
-                text: snapshot.hasError
-                    ? '暂不可用'
-                    : '${snapshot.data?['balance'] ?? '--'}',
-                style: TextStyle(
-                  fontSize: 44,
-                  fontWeight: FontWeight.w700,
-                  height: 1.1,
-                  color: WeChatColors.resolveTextPrimary(context),
-                ),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(
+              text: _balanceText,
+              style: TextStyle(
+                fontSize: 44,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                color: WeChatColors.resolveTextPrimary(context),
               ),
-              const TextSpan(
-                text: ' 点钻',
-                style: TextStyle(
-                    fontSize: 15, color: WeChatColors.textSecondary),
-              ),
-            ]),
-            key: const Key('caibi-balance-value'),
-          ),
+            ),
+            const TextSpan(
+              text: ' 点钻',
+              style:
+                  TextStyle(fontSize: 15, color: WeChatColors.textSecondary),
+            ),
+          ]),
+          key: const Key('caibi-balance-value'),
         ),
+        if (firstLoad) ...[
+          const SizedBox(height: 10),
+          const CupertinoActivityIndicator(radius: 8),
+        ],
         const SizedBox(height: 6),
         const Text('充值 · 红包 · 转账通用',
-            style:
-                TextStyle(fontSize: 12, color: WeChatColors.textTertiary)),
+            style: TextStyle(fontSize: 12, color: WeChatColors.textTertiary)),
+        // 只有「从未成功过」的失败才提示 + 重试（有缓存时静默保留旧值）。
+        if (failed && !firstLoad) ...[
+          const SizedBox(height: 10),
+          Text('余额加载失败，请重试',
+              key: const Key('caibi-balance-error'),
+              style: TextStyle(
+                  fontSize: 13,
+                  color: CupertinoColors.systemRed.resolveFrom(context))),
+          CupertinoButton(
+            key: const Key('caibi-balance-retry'),
+            onPressed: () => unawaited(_retry()),
+            child: const Text('重新加载',
+                style: TextStyle(color: WeChatColors.brandPrimary)),
+          ),
+        ],
       ]),
     );
   }
@@ -133,6 +211,10 @@ final class _CaibiPageState extends State<CaibiPage> {
   Widget _recentSection(BuildContext context) {
     final dark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final card = dark ? WeChatColors.darkElevated : WeChatColors.lightElevated;
+    final state = entry?.state;
+    final data = state?.data;
+    final items = (data?['recent'] as Map?)?['items'] as List? ?? const [];
+    final recentFailed = data?['recent_failed'] == true;
     return Container(
       decoration: BoxDecoration(
         color: card,
@@ -141,53 +223,40 @@ final class _CaibiPageState extends State<CaibiPage> {
       clipBehavior: Clip.antiAlias,
       child: Column(children: [
         _monthlyHeader(),
-        FutureBuilder<Map<String, dynamic>>(
-          future: recent,
-          builder: (_, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Padding(
-                padding: EdgeInsets.all(24),
-                child: CupertinoActivityIndicator(),
-              );
-            }
-            if (snapshot.hasError) {
-              return Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(children: [
-                  const Text('流水加载失败',
-                      style: TextStyle(
-                          fontSize: 13, color: WeChatColors.textSecondary)),
-                  CupertinoButton(
-                    key: const Key('caibi-recent-retry'),
-                    onPressed: () => setState(_refresh),
-                    child: const Text('重试',
-                        style: TextStyle(color: WeChatColors.brandPrimary)),
-                  ),
-                ]),
-              );
-            }
-            final items = (snapshot.data?['items'] as List? ?? const []);
-            if (items.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('暂无点钻流水',
-                    style: TextStyle(
-                        fontSize: 14, color: WeChatColors.textTertiary)),
-              );
-            }
-            return Column(children: [
-              for (var i = 0; i < items.length; i++) ...[
-                if (i > 0)
-                  Container(
-                    height: .5,
-                    margin: const EdgeInsets.only(left: 62),
-                    color: WeChatColors.resolve(context, WeChatColors.divider),
-                  ),
-                _ledgerRow(items[i] as Map<String, dynamic>),
-              ],
-            ]);
-          },
-        ),
+        if (data == null && state?.fatalError == true)
+          _recentPlaceholder(
+              key: 'caibi-recent-retry', label: '流水加载失败', retry: true)
+        else if (data == null && (state?.refreshing ?? false))
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: CupertinoActivityIndicator(),
+          )
+        else if (data == null)
+          // 尚未进入（api 为空或本地作用域未就绪）：不显示常驻加载圈。
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('暂无点钻流水',
+                style:
+                    TextStyle(fontSize: 14, color: WeChatColors.textTertiary)),
+          )
+        else if (recentFailed && items.isEmpty)
+          // 流水单独失败：只标记这一块，余额继续展示缓存/最新值。
+          _recentPlaceholder(
+              key: 'caibi-recent-retry', label: '流水加载失败', retry: true)
+        else if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(32),
+            child: Text('暂无点钻流水',
+                style:
+                    TextStyle(fontSize: 14, color: WeChatColors.textTertiary)),
+          )
+        else
+          Column(children: [
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) _rowDivider(),
+              _ledgerRow(items[i] as Map<String, dynamic>),
+            ],
+          ]),
         CupertinoButton(
           key: const Key('caibi-view-all'),
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -200,44 +269,59 @@ final class _CaibiPageState extends State<CaibiPage> {
     );
   }
 
+  Widget _recentPlaceholder(
+          {required String key,
+          required String label,
+          bool retry = false}) =>
+      Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
+          if (retry)
+            CupertinoButton(
+              key: Key(key),
+              onPressed: () => unawaited(_retry()),
+              child: const Text('重试',
+                  style: TextStyle(color: WeChatColors.brandPrimary)),
+            ),
+        ]),
+      );
+
   /// 本月收支汇总行（demo：本月支出 x · 收入 y）。
   Widget _monthlyHeader() {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: monthly,
-      builder: (_, snapshot) {
-        var income = 0.0;
-        var expense = 0.0;
-        if (snapshot.hasData) {
-          for (final entry in (snapshot.data?['items'] as List? ?? const [])) {
-            final amount =
-                double.tryParse('${(entry as Map)['amount'] ?? ''}') ?? 0;
-            if (amount >= 0) {
-              income += amount;
-            } else {
-              expense -= amount;
-            }
-          }
-        }
-        final summary = snapshot.hasData
-            ? '本月支出 ${expense.toStringAsFixed(2)} · 收入 ${income.toStringAsFixed(2)}'
-            : '';
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 13, 16, 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('最近点钻流水',
-                  style: TextStyle(
-                      fontSize: 13, color: WeChatColors.textSecondary)),
-              if (summary.isNotEmpty)
-                Text(summary,
-                    key: const Key('caibi-monthly-summary'),
-                    style: const TextStyle(
-                        fontSize: 13, color: WeChatColors.textSecondary)),
-            ],
-          ),
-        );
-      },
+    final monthly = entry?.state.data?['monthly'] as Map?;
+    final items = (monthly?['items'] as List?) ?? const [];
+    var income = 0.0;
+    var expense = 0.0;
+    for (final row in items) {
+      final amount = double.tryParse('${(row as Map)['amount'] ?? ''}') ?? 0;
+      if (amount >= 0) {
+        income += amount;
+      } else {
+        expense -= amount;
+      }
+    }
+    // 没有快照时不显示汇总（不编造 0）。
+    final summary = monthly == null
+        ? ''
+        : '本月支出 ${expense.toStringAsFixed(2)} · 收入 ${income.toStringAsFixed(2)}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 13, 16, 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text('最近点钻流水',
+              style: TextStyle(
+                  fontSize: 13, color: WeChatColors.textSecondary)),
+          if (summary.isNotEmpty)
+            Text(summary,
+                key: const Key('caibi-monthly-summary'),
+                style: const TextStyle(
+                    fontSize: 13, color: WeChatColors.textSecondary)),
+        ],
+      ),
     );
   }
 
@@ -333,5 +417,58 @@ final class _CaibiPageState extends State<CaibiPage> {
         ]),
       ),
     );
+  }
+}
+
+/// 点钻页进入快照网关：余额 + 最近流水 + 本月汇总合并为一份快照。
+///
+/// 余额是权威读：失败即整份刷新失败（回退缓存，绝不显示半份数据）。流水与
+/// 本月汇总各自失败时用 `recent_failed`/`monthly_failed` 单独标记，**不隐藏
+/// 余额**，也不覆盖上一份好数据。
+final class _CaibiEntryGateway implements WalletEntryGateway {
+  _CaibiEntryGateway(this.api);
+
+  final BusinessApiClient api;
+  Map<String, dynamic>? _recent;
+  Map<String, dynamic>? _monthly;
+
+  @override
+  int get sessionEpoch => api.sessionEpoch;
+
+  @override
+  Future<Map<String, dynamic>> load() async {
+    final scope = await api.walletIntentScope();
+    final balance = await api.caibiBalance();
+    if (await api.walletIntentScope() != scope) {
+      throw StateError('账户已切换，请重新打开点钻页');
+    }
+    final now = DateTime.now();
+    var recentFailed = false;
+    var monthlyFailed = false;
+    _recent = await _keep(api.ledgerTransactions(limit: 3),
+            onError: () => recentFailed = true) ??
+        _recent;
+    _monthly = await _keep(
+            api.ledgerTransactions(
+                startAt: DateTime(now.year, now.month, 1), limit: 100),
+            onError: () => monthlyFailed = true) ??
+        _monthly;
+    return {
+      'balance': balance['balance'],
+      'recent': _recent ?? const <String, dynamic>{},
+      'recent_failed': recentFailed,
+      'monthly': _monthly ?? const <String, dynamic>{},
+      'monthly_failed': monthlyFailed,
+    };
+  }
+
+  Future<Map<String, dynamic>?> _keep(Future<Map<String, dynamic>> read,
+      {required void Function() onError}) async {
+    try {
+      return await read;
+    } catch (_) {
+      onError();
+      return null;
+    }
   }
 }

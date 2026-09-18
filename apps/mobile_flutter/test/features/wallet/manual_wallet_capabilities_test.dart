@@ -4,11 +4,17 @@ import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'manual_wallet_api_test.dart' as fixtures;
 import 'manual_wallet_flow_test.dart' as flow;
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // 进入态 Store 是进程内共享的（键 = 钱包作用域 + 会话 epoch）：用例之间必须
+    // 清空，否则上一个用例的缓存会泄漏到下一个用例的「首次进入」断言。
+    WalletEntryStores.disposeAll();
+  });
   for (final slot in ['deposit', 'payout']) {
     testWidgets('closed gate allows exact persisted $slot recovery',
         (tester) async {
@@ -134,7 +140,10 @@ void main() {
     await flow.tap(tester, find.byKey(const Key('manual-refresh')));
     expect(find.byKey(const Key('manual-deposit-qr')), findsNothing);
     expect(find.text('再次充值'), findsNothing);
-    expect(find.text('查看本次充值'), findsOneWidget);
+    // 需求 1（2026-09-18）：不再有「查看本次充值」按钮——已有申请由页面
+    // 自动恢复展示（状态主卡仍在），不允许换名字变相保留查看入口。
+    expect(find.text('查看本次充值'), findsNothing);
+    expect(find.byKey(const Key('manual-deposit-hero')), findsOneWidget);
     await tester.pumpWidget(const CupertinoApp(home: SizedBox()));
   });
 }

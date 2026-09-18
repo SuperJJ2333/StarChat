@@ -445,6 +445,16 @@
         "dividerCoreStart",
         "dividerCoreEnd",
         "divider"
+      ],
+      "consumers": [
+        "WeChatListTile(showDivider)",
+        "WeChatContactTile(showDivider)",
+        "FriendRequestsPage request rows",
+        "WeChatMomentTile",
+        "WeChatMomentReactions",
+        "MomentVisibilityPage",
+        "ManualWalletPage deposit/payout rows",
+        "CaibiPage ledger rows"
       ]
     },
     {
@@ -766,7 +776,11 @@
           "onPersonTap",
           "onCommentLongPress"
         ],
-        "variants": {},
+        "variants": {
+          "divider": [
+            "gradient"
+          ]
+        },
         "states": [
           "default",
           "liked",
@@ -817,6 +831,9 @@
           "mode": [
             "feed",
             "detail"
+          ],
+          "divider": [
+            "gradient"
           ]
         },
         "states": [
@@ -1166,6 +1183,11 @@
       "category": "dividers",
       "html": "--divider-fade-core-end: 82%",
       "flutter": "static const coreEnd = 0.82;"
+    },
+    {
+      "category": "dividers",
+      "html": "--size-hairline: 1px",
+      "flutter": "static const hairline = 1.0;"
     },
     {
       "category": "colors",
@@ -1641,5 +1663,27 @@
       "WeChatColors.brandTint = --color-brand-tint"
     ],
     "verification": "flutter analyze clean; focused red→green recorded in docs/verification/2026-09-18-ui-review.md; verify_ui_contract PASS (32 components, 372 screens); frontend npm test 214 pass."
+  },
+  "dividerUnification20260919": {
+    "date": "2026-09-19",
+    "scope": "flutter-mobile-and-html-demo-visual-only; no business logic, network, permission or Matrix protocol change",
+    "visualSourceOfRecord": "frontend/index.html HTML design demo (screens moments-timeline-*, moments-visibility-*, contacts-*, caibi-ledger-*)",
+    "requirements": {
+      "momentsDivider": "WeChatMomentTile and WeChatMomentReactions no longer draw a solid Border(bottom:)/Container divider; they consume the shared WeChatGradientDivider (WeChatDividerTokens: hairline 1px, edgeAlpha 0, centerAlpha 0.5, stops 0/0.18/0.82/1, colour resolved from the divider token).",
+      "unifiedCoverage": "Every horizontal list/card separator uses the same shared component or the same --divider-fade token on both sides: Flutter WeChatGradientDivider; HTML .c-list-tile, .c-contact-row, .c-conversation-row, .c-transaction-row, .c-moment-tile, .c-moment-card, .c-ledger-row, .c-action-sheet rows and .c-moment-reactions comment/editor rows.",
+      "documentedSolidExceptions": "Navigation/tab bar chrome, dialog action separators (paired with a vertical line), control outlines (Border.all), the dark floating menu (own dark token), the admin console token system and the image-editor bottom control row keep documented solid hairlines; see UI_DESIGN.md section 19.",
+      "reviewPageSpacing": "FriendRequestReviewPage keeps a WeChatSpacing.md (12dp) gap between the 已添加 badge and the 打开聊天 button without changing the badge styling or the brand-filled 48dp button.",
+      "greetingIdempotency": "The repeated friend-acceptance system message is gated by FriendAcceptanceGreetingLedger (persisted, keyed by the server-authoritative friend-request id); the AppHome call-site change is proposed in docs/verification/2026-09-19-friend-acceptance-greeting-idempotency.md because lib/app_home.dart belongs to another owner."
+    },
+    "newComponents": [],
+    "newScreens": [],
+    "tokens": [
+      "WeChatDividerTokens.hairline = --size-hairline (1px)",
+      "WeChatDividerTokens.centerAlpha = --divider-fade-alpha (0.5)",
+      "WeChatDividerTokens.edgeAlpha = --divider-fade-edge-alpha (0)",
+      "WeChatDividerTokens.coreStart = --divider-fade-core-start (18%)",
+      "WeChatDividerTokens.coreEnd = --divider-fade-core-end (82%)"
+    ],
+    "verification": "flutter analyze lib test clean; focused red→green recorded in docs/verification/2026-09-19-ui-review.md; verify_ui_contract PASS (32 components, 372 screens); frontend npm test 216 pass."
   }
 }

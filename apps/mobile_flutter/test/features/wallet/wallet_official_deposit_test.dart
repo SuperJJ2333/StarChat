@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'package:liuhetong_mobile/core/business_api_client.dart';
 import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
@@ -72,7 +73,12 @@ Future<BusinessApiClient> client(
 }
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // 进入态 Store 是进程内共享的（键 = 钱包作用域 + 会话 epoch）：用例之间必须
+    // 清空，否则上一个用例的缓存会泄漏到下一个用例的「首次进入」断言。
+    WalletEntryStores.disposeAll();
+  });
   test('deposit address uses authenticated read-only official route', () async {
     final api = await client((request) async {
       expect(request.method, 'GET');
@@ -108,7 +114,13 @@ void main() {
     await tester.enterText(
         find.byKey(const Key('manual-deposit-amount')), '10');
     await flow.tap(tester, find.byKey(const Key('manual-deposit-create')));
-    expect(find.text(syntheticAddress()), findsOneWidget);
+    // 需求 2（2026-09-18）：地址改为压缩展示（首 8 位 + … + 末 6 位）并左对齐，
+    // 因此完整 34 位地址不再作为一行文本出现——复制动作仍必须是完整地址（见下）。
+    final official = syntheticAddress();
+    final compact =
+        '${official.substring(0, 8)}…${official.substring(official.length - 6)}';
+    expect(find.text(compact), findsOneWidget);
+    expect(find.text(official), findsNothing);
     final actual = tester
         .widget<CustomPaint>(find.descendant(
             of: find.byKey(const Key('manual-deposit-qr')),

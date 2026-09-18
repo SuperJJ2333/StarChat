@@ -5,13 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 
 import 'manual_wallet_api_test.dart' as fixtures;
 import 'manual_wallet_flow_test.dart' as flow;
 export 'manual_wallet_api_test.dart' show MemoryStore;
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // 进入态 Store 是进程内共享的（键 = 钱包作用域 + 会话 epoch）：用例之间必须
+    // 清空，否则上一个用例的缓存会泄漏到下一个用例的「首次进入」断言。
+    WalletEntryStores.disposeAll();
+  });
 
   testWidgets(
       'acknowledged manual withdrawal survives failed status and restart',

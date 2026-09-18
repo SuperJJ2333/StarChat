@@ -223,8 +223,12 @@ app-transfer-card {
   align-items: center;
   min-height: var(--size-row-conversation);
   padding: var(--space-md) var(--space-lg);
-  border-bottom: var(--size-hairline) solid var(--color-divider);
-  background: var(--color-surface-elevated);
+  /* 共享渐隐分割线：会话列表行分隔线统一使用它，不再画实心 border-bottom。 */
+  background-color: var(--color-surface-elevated);
+  background-image: var(--divider-fade);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% var(--size-hairline);
 }
 
 .c-conversation-row[data-pinned="true"] {
@@ -639,9 +643,13 @@ app-transfer-card {
   display: grid;
   gap: var(--space-sm);
   padding-bottom: var(--space-lg);
-  border-bottom: var(--size-hairline) solid var(--color-divider);
+  /* 共享渐隐分割线：朋友圈卡片分隔线与 Flutter WeChatGradientDivider 同源。 */
+  background-color: var(--color-surface-elevated);
+  background-image: var(--divider-fade);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% var(--size-hairline);
   box-shadow: 0 1px 2px var(--moment-reaction-shadow);
-  background: var(--color-surface-elevated);
 }
 
 .c-moment-card > app-moment-grid,
@@ -862,9 +870,13 @@ app-transfer-card {
   width: 100%;
   padding: var(--space-md);
   border: 0;
-  border-bottom: var(--size-hairline) solid var(--color-divider);
   border-radius: 0;
-  background: var(--color-surface-elevated);
+  /* 共享渐隐分割线：账单行分隔线统一使用它。 */
+  background-color: var(--color-surface-elevated);
+  background-image: var(--divider-fade);
+  background-repeat: no-repeat;
+  background-position: bottom center;
+  background-size: 100% var(--size-hairline);
   color: var(--color-text-primary);
   text-align: start;
 }

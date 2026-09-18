@@ -9,6 +9,7 @@ import 'package:liuhetong_mobile/core/session_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_operation_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 
 import 'manual_wallet_api_test.dart' as fixtures;
 
@@ -61,7 +62,12 @@ Future<void> openPayout(WidgetTester tester) =>
     tap(tester, find.byKey(const Key('manual-payout-open')));
 
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    // 进入态 Store 是进程内共享的（键 = 钱包作用域 + 会话 epoch）：用例之间必须
+    // 清空，否则上一个用例的缓存会泄漏到下一个用例的「首次进入」断言。
+    WalletEntryStores.disposeAll();
+  });
 
   testWidgets('address only mode registers without signature or OTP controls',
       (tester) async {
