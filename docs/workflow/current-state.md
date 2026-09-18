@@ -1,4 +1,33 @@
 # 移动交付恢复索引
+## 2026-09-18 Media Engine Production Readiness Validation（**生产候选验证**；结论 PASS，附 1 条强制条件）
+
+用户任务：验证 ChatFlow Media Engine 是否达到**生产候选标准**（正确性 / 安全性 / 一致性 / 性能风险 / Migration 安全）；
+**默认禁止修改代码**，仅在发现明确安全漏洞 / 数据损坏风险 / 生命周期错误 / 权限绕过时修复。
+**产物**：[`docs/verification/media-engine-production-readiness-report.md`](../verification/media-engine-production-readiness-report.md)（11 节）。
+**结论**：`Media Engine Production Candidate: PASS`，附强制条件：audience 收紧规则需以 ADR 修订记录（实现严于冻结）。
+**发现并修复 2 个 High + 1 个 Medium**：
+① **High-1 权限绕过**——audience 交付不复核受众，非成员甚至匿名调用者可读（实测 200）。修复：新增
+`app/modules/media/audience.py`，**可校验才签发**（`moment:<id>` 之外的受众 → 422 `MEDIA_AUDIENCE_UNVERIFIABLE`，
+房间受众交由 Matrix 自身鉴权端点）+ **每次交付实时复核** Moments 可见性（失去成员资格立即 404，策略异常 fail-closed）。
+② **High-2 生命周期**——GC 未保护"变体仍在 `pending/processing`"的对象。修复：`lifecycle.py` 增加处理中变体守卫
+（新增 `GcSkipReason.VARIANT_PROCESSING`）。③ Medium——reconcile 指标未注册导致计数器抛错，已注册。
+**另新增数据恢复能力**（Data-003 双向）：`app/modules/media/reconcile.py` + 维护门控端点
+`POST /api/v1/media/platform/reconcile`（默认 dry_run）——孤文件按**路径隔离段**决定摘要种类后重建 blob 行
+（`media/e2ee/**`→ciphertext，绝不把 E2EE 字节标为明文），缺文件的行失效以释放摘要槽，旧命名空间不动。
+**验证套件**：`tests/business_api/media_platform_readiness/**` **52 条**（ADR 24 + 安全 8 + 一致性·并发 13 + 基准 4 + 规模 3），
+Phase 4 套件 **72 条**（含 2 条按收紧规则更新的 audience 用例）全通过。
+**ADR 结论**：ADR-001/002/004/005 PASS；ADR-003/006 修复后 PASS；无 global plaintext dedup（策略层抛错）、
+无客户端摘要查询（OpenAPI 参数扫描 + 响应体摘要值扫描）、Matrix 适配器零写路径/零平台行。
+**真实测量**（单进程 SQLite，**非生产容量**）：Media resolve p50 0.44ms/p95 0.78ms；授权 owner 0.005ms、
+grant 0.36ms；签名签发 0.012ms / 校验 0.013ms；选档 0.22–0.34ms；GC（1,000 对象 + 10,000 引用）280ms；
+规模：**1,000,000 引用写入 28.1s**、单对象引用计数查询 0.37ms、热门朋友圈 10,000 次受众授权 0.94ms/次、
+2,000 孤儿回收 8.8s 且第二轮 12.9ms 无操作。**未测**：多 worker/PG 并发、真实压测、真机、CDN → NOT MEASURED。
+**门禁**：`flutter analyze` 0 issue；`flutter test --concurrency=2` **3143 通过/0 失败**（默认并发下两次各 1 条既有
+实时定时器用例抖动，单独运行通过 —— 本次未改任何 Flutter 代码）；`pytest tests/mobile` 70 通过；
+`npm test` 209 通过；`export_openapi.py --check` PASS；`scripts/verify.ps1` **`Verification: PASS`**。
+进入 [任务记录](tasks/2026-09-18-media-engine-production-readiness.md) 或
+[验证报告](../verification/media-engine-production-readiness-report.md)。
+
 
 ## 2026-09-18 Media Engine Phase 4 — Full Implementation（服务端 Media Platform；**本地完成，未构建/未真机/未部署**）
 
