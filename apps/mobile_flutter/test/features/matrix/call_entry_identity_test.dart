@@ -33,6 +33,12 @@ const _staleEntry = ContactDetails(
 );
 
 final class _Gateway implements DirectChatGateway {
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async => null;
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
+
   final opened = <String>[];
   @override
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) async {

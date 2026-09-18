@@ -4,7 +4,11 @@ import '../foundation/wechat_tokens.dart';
 
 enum MessageDirection { incoming, outgoing }
 
-enum MessageDeliveryState { sending, sent, failed }
+/// 气泡右侧的发送状态标识。
+///
+/// [waitingNetwork] 表示「因网络原因暂未发出，等网络恢复后自动重发」——
+/// 弱网/无网绝不显示成红色感叹号（那会让用户以为消息已经彻底失败）。
+enum MessageDeliveryState { sending, sent, waitingNetwork, failed }
 
 final class WeChatMessageBubble extends StatelessWidget {
   const WeChatMessageBubble({
@@ -74,11 +78,42 @@ final class WeChatMessageBubble extends StatelessWidget {
         children: [
           if (state == MessageDeliveryState.failed)
             CupertinoButton(
+              key: const Key('message-delivery-failed'),
               padding: const EdgeInsets.all(4),
               onPressed: onRetry,
               child: const Icon(
                 CupertinoIcons.exclamationmark_circle_fill,
                 color: WeChatColors.danger,
+              ),
+            )
+          else if (state == MessageDeliveryState.waitingNetwork)
+            // 等待发送：小时钟 + 文案，绝不出现红色感叹号；点击立即重试。
+            CupertinoButton(
+              key: const Key('message-delivery-waiting'),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              minimumSize: Size.zero,
+              onPressed: onRetry,
+              child: Semantics(
+                button: true,
+                label: '立即重试',
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      CupertinoIcons.clock,
+                      size: 14,
+                      color: WeChatColors.textSecondary,
+                    ),
+                    SizedBox(width: 4),
+                    Text(
+                      '等待发送',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: WeChatColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           Flexible(

@@ -129,13 +129,47 @@ final class CoordinatedDirectChatGateway implements DirectChatGateway {
   }
 
   DirectChatRoom _safe(DirectChatRoom room, String peer) {
-    if (room.roomId.isEmpty ||
-        !room.encrypted ||
-        room.joinedMemberCount != 2 ||
-        room.participantIds.length != 2 ||
-        !room.participantIds.contains(peer)) {
+    if (!_isSafeLocally(room, peer)) {
       throw StateError('规范私聊成员或加密状态尚未就绪');
     }
     return room;
+  }
+
+  bool _isSafeLocally(DirectChatRoom room, String peer) =>
+      room.roomId.isNotEmpty &&
+      room.encrypted &&
+      room.joinedMemberCount == 2 &&
+      room.participantIds.length == 2 &&
+      room.participantIds.contains(peer);
+
+  /// **Offline First**：只读本地 SDK 快照，零网络、零副作用、不抛错。
+  ///
+  /// 这是「先本地后网络」的入口：命中即立刻进入房间；未命中返回 null，
+  /// 由调用方决定是后台仲裁还是进入 pending conversation——**绝不**因为
+  /// 本地还没有会话就阻塞页面进入或弹错误框。
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async {
+    final lookup = findCached;
+    if (lookup == null) return null;
+    try {
+      final cached = await lookup(matrixUserId);
+      if (cached == null) return null;
+      return _isSafeLocally(cached, matrixUserId) ? cached : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// **Offline First**：本地持久化的房间号提示（协调 intent），零网络。
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async {
+    final peer = businessUserIdOf(matrixUserId);
+    if (peer == null || peer.isEmpty) return null;
+    try {
+      final roomId = (await intents.loadOrCreate(peer)).roomId;
+      return (roomId == null || roomId.isEmpty) ? null : roomId;
+    } catch (_) {
+      return null;
+    }
   }
 }

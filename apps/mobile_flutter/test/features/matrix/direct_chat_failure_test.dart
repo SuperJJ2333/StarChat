@@ -21,11 +21,11 @@ void main() {
     );
   });
 
-  test('a generic timeout does not claim that the room is still syncing', () {
+  test('a generic timeout is a weak-network signal, not sync pending', () {
     final timeout = TimeoutException('request elapsed');
-    expect(classifyDirectChatFailure(timeout),
-        DirectChatFailureKind.requestTimedOut);
-    expect(describeDirectChatFailure(timeout), '打开会话超时，请检查网络后重试。');
+    expect(classifyDirectChatFailure(timeout), DirectChatFailureKind.weak);
+    expect(describeDirectChatFailure(timeout), '网络不稳定，请稍候。');
+    expect(titleDirectChatFailure(timeout), '网络不稳定');
   });
 
   test('好友映射缺失（contact is no longer a current friend）归为 contactUnavailable',
@@ -46,8 +46,43 @@ void main() {
       DirectChatFailureKind.networkOrOther,
     );
     final message = describeDirectChatFailure(Exception('token expired x'));
-    expect(message, '无法打开会话，请稍后重试。');
+    expect(message, '网络不稳定，请稍候。');
     expect(message.contains('token'), isFalse);
+  });
+
+  test('Offline First 分类词表：offline / weak / server / crypto 各自成句', () {
+    expect(
+      describeDirectChatFailure(const SocketException('network unreachable')),
+      '当前没有网络，消息将在恢复后同步。',
+    );
+    expect(titleDirectChatFailure(const SocketException('unreachable')),
+        '当前没有网络');
+    expect(describeDirectChatFailure(TimeoutException('slow')),
+        '网络不稳定，请稍候。');
+    expect(
+      describeDirectChatFailure(const BusinessApiException(
+          statusCode: 503, code: 'UNAVAILABLE', message: 'down')),
+      '服务器连接失败，请稍后重试。',
+    );
+    expect(titleDirectChatFailure(const BusinessApiException(
+        statusCode: 500, code: 'BOOM', message: 'boom')), '服务器连接失败');
+    expect(
+      describeDirectChatFailure(StateError('Direct chat must be encrypted')),
+      '安全会话初始化失败，请稍后重试。',
+    );
+    expect(titleDirectChatFailure(StateError('规范私聊成员或加密状态尚未就绪')),
+        '安全会话初始化失败');
+    // 产品要求：任何分类都不再出现旧的“无法打开加密会话”口径。
+    for (final error in <Object>[
+      const SocketException('x'),
+      TimeoutException('x'),
+      StateError('Direct chat must be encrypted'),
+      const BusinessApiException(statusCode: 500, code: 'X', message: 'x'),
+      Exception('other'),
+    ]) {
+      expect(titleDirectChatFailure(error).contains('无法打开加密会话'), isFalse);
+      expect(describeDirectChatFailure(error).contains('无法打开加密会话'), isFalse);
+    }
   });
 
   test('only transport failures are presented as offline', () {
@@ -57,7 +92,7 @@ void main() {
     );
     expect(
       describeDirectChatFailure(const SocketException('network unreachable')),
-      '当前处于离线状态，请恢复网络后重试。',
+      '当前没有网络，消息将在恢复后同步。',
     );
     expect(
       classifyDirectChatFailure(http.ClientException('connection refused')),
@@ -108,14 +143,39 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    expect(find.text('无法打开加密会话'), findsOneWidget, reason: '保留原错误标题以便用户/客服对齐');
-    expect(find.text('无法打开会话，请稍后重试。'), findsOneWidget);
+    // 加密会话未就绪 → 专门的“安全会话初始化失败”，且不再使用旧口径。
+    expect(find.text('安全会话初始化失败'), findsOneWidget);
+    expect(find.text('安全会话初始化失败，请稍后重试。'), findsOneWidget);
+    expect(find.text('无法打开加密会话'), findsNothing,
+        reason: '产品要求禁止再显示旧标题');
     expect(find.text('重试'), findsOneWidget, reason: '可恢复失败必须提供重试入口');
 
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
     expect(retries, 1, reason: '重试先收起弹窗再重新执行打开流程');
-    expect(find.text('无法打开加密会话'), findsNothing);
+    expect(find.text('安全会话初始化失败'), findsNothing);
+  });
+
+  testWidgets('离线失败给出“等待恢复同步”的说明并保留重试', (tester) async {
+    await tester.pumpWidget(CupertinoApp(
+      home: CupertinoPageScaffold(
+        child: Center(
+          child: CupertinoButton(
+            onPressed: () => showDirectChatFailureDialog(
+              tester.element(find.byType(CupertinoButton)),
+              const SocketException('no route to host'),
+              onRetry: () async {},
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前没有网络'), findsOneWidget);
+    expect(find.text('当前没有网络，消息将在恢复后同步。'), findsOneWidget);
+    expect(find.text('重试'), findsOneWidget);
   });
 
   testWidgets('好友已删除的失败不提供重试（重试必然再失败）', (tester) async {

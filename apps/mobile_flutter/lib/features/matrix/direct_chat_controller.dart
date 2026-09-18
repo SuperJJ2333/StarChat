@@ -37,6 +37,18 @@ abstract interface class DirectChatBackend {
 
 abstract interface class DirectChatGateway {
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId);
+
+  /// **Local-only** fast path for Offline First entry.
+  ///
+  /// Returns the already-safe cached conversation (encrypted, exactly two
+  /// members including the peer, known from the SDK's local database) without
+  /// any network round trip. Returns `null` when nothing is safely cached —
+  /// callers must treat that as "no local room yet", never as an error.
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId);
+
+  /// **Local-only** persisted room id hint for this peer (coordination intent),
+  /// or null. Never performs network I/O and never throws.
+  Future<String?> localRoomHint(String matrixUserId);
 }
 
 final class DirectChatService implements DirectChatGateway {
@@ -73,6 +85,14 @@ final class DirectChatService implements DirectChatGateway {
       String roomId, String matrixUserId) async {
     return _requireSafe(await backend.waitForRoom(roomId), matrixUserId);
   }
+
+  /// LEGACY（生产禁用）：本类没有本地优先语义，由
+  /// `CoordinatedDirectChatGateway` 提供；这里显式返回 null。
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async => null;
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
 
   bool _isSafe(DirectChatRoom room, String matrixUserId) =>
       room.encrypted &&
@@ -151,6 +171,15 @@ final class CanonicalDirectChatGateway implements DirectChatGateway {
     }
     return _forPeer(room, matrixUserId);
   }
+
+  /// LEGACY（生产禁用）：本地优先语义由被包裹的网关上提供。
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) =>
+      _inner.tryLocalDirectChat(matrixUserId);
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) =>
+      _inner.localRoomHint(matrixUserId);
 }
 
 final class DirectChatController extends ChangeNotifier {
@@ -184,6 +213,31 @@ final class DirectChatController extends ChangeNotifier {
       if (identical(_openings[matrixUserId], opening)) {
         _openings.remove(matrixUserId);
       }
+    }
+  }
+
+  /// **Offline First 入口**：只读本地缓存/持久化提示，不做任何网络请求，
+  /// 也不因“本地还没有会话”而抛错。
+  ///
+  /// 返回的 roomId 交给 `RoomOpeningPolicy` 判定：本地已加入 → 立即打开
+  /// （零等待）；本地已知但未加入 → 由策略按来源决定立即打开或短等待。
+  Future<DirectChatRoom?> tryLocal(String matrixUserId) async {
+    if (matrixUserId.trim().isEmpty) return null;
+    try {
+      return await gateway.tryLocalDirectChat(matrixUserId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 本地持久化的房间号提示（协调 intent），用于本地已有会话但 SDK 快照
+  /// 尚未完整时的无网进入。绝不联网、绝不抛错。
+  Future<String?> localRoomHint(String matrixUserId) async {
+    if (matrixUserId.trim().isEmpty) return null;
+    try {
+      return await gateway.localRoomHint(matrixUserId);
+    } catch (_) {
+      return null;
     }
   }
 

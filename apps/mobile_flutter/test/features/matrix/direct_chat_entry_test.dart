@@ -220,7 +220,7 @@ void main() {
     final held = Completer<ContactDetails>();
     var resolutions = 0;
 
-    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+    Future<DirectMessageTarget?> resolve() => gate.run('bob', () async {
           resolutions++;
           final contact = await held.future;
           return DirectMessageTarget(roomId: '!a:test', contact: contact);
@@ -238,7 +238,7 @@ void main() {
     expect(resolutions, 1, reason: '并发两次只解析一次身份');
     expect(identical(first2, second2), isTrue,
         reason: '两个调用拿到同一个 DirectMessageTarget');
-    expect(first2.roomId, '!a:test');
+    expect(first2!.roomId, '!a:test');
     expect(gate.isOpen('bob'), isFalse, reason: 'canonical roomId 解析完成即释放');
   });
 
@@ -246,7 +246,7 @@ void main() {
     final gate = DirectMessageOpenGate();
     var resolutions = 0;
 
-    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+    Future<DirectMessageTarget?> resolve() => gate.run('bob', () async {
           resolutions++;
           return DirectMessageTarget(roomId: '!a:test', contact: _bob);
         });
@@ -258,14 +258,14 @@ void main() {
     // 模拟「Room A 已打开 → 再次进入好友资料 → 再点发消息」。
     final second = await resolve();
     expect(resolutions, 2, reason: '第二次请求必须真的重新进入解析');
-    expect(second.roomId, '!a:test');
+    expect(second!.roomId, '!a:test');
   });
 
   test('解析失败同样释放闸门，弹窗「重试」可以重新进入', () async {
     final gate = DirectMessageOpenGate();
     var attempts = 0;
 
-    Future<DirectMessageTarget> resolve() => gate.run('bob', () async {
+    Future<DirectMessageTarget?> resolve() => gate.run('bob', () async {
           attempts++;
           if (attempts == 1) throw StateError('direct chat open failed');
           return DirectMessageTarget(roomId: '!a:test', contact: _bob);
@@ -275,7 +275,7 @@ void main() {
     expect(gate.isOpen('bob'), isFalse, reason: '失败必须先释放闸门');
 
     final target = await resolve();
-    expect(target.roomId, '!a:test', reason: '重试可重新进入');
+    expect(target!.roomId, '!a:test', reason: '重试可重新进入');
     expect(attempts, 2);
   });
 
@@ -287,7 +287,7 @@ void main() {
 
     final alice = await gate.run(
         'alice', () async => DirectMessageTarget(roomId: '!b:test', contact: _alice));
-    expect(alice.roomId, '!b:test', reason: '不同好友不受同一好友的 flight 影响');
+    expect(alice!.roomId, '!b:test', reason: '不同好友不受同一好友的 flight 影响');
     expect(gate.isOpen('alice'), isFalse);
 
     var emptyKeyRuns = 0;
@@ -296,10 +296,10 @@ void main() {
       return DirectMessageTarget(roomId: '!c:test', contact: _bob);
     });
     expect(emptyKeyRuns, 1, reason: '身份未知不参与去重，由解析给出失败提示');
-    expect(emptyKey.roomId, '!c:test');
+    expect(emptyKey!.roomId, '!c:test');
 
     heldBob.complete(DirectMessageTarget(roomId: '!a:test', contact: _bob));
-    expect((await bob).roomId, '!a:test');
+    expect((await bob)!.roomId, '!a:test');
     expect(gate.isOpen('bob'), isFalse);
   });
 

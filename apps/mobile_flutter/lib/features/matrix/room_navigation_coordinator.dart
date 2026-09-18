@@ -84,6 +84,7 @@ final class RoomOpenRequest {
     this.modeOverride,
     this.onRoomReady,
     this.onRoomClosed,
+    this.outbox = const <String>[],
   });
 
   /// 页面与租约的唯一键：群聊与私聊都用 Matrix roomId，绝不用名称/用户 ID。
@@ -114,6 +115,10 @@ final class RoomOpenRequest {
   /// RoomPage 退出（push 完成）或打开失败后回调一次；未走到 push 的失败
   /// （例如取租约失败）不会回调，因为调用方此时还没有需要收尾的房间态。
   final void Function()? onRoomClosed;
+
+  /// Offline First：pending conversation 期间排队、进入房间后要自动发送的
+  /// 文本（按输入顺序）。只承载数据，不含 SDK 对象。
+  final List<String> outbox;
 }
 
 /// 打开流程与协调器之间的路由登记句柄。

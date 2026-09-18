@@ -121,6 +121,12 @@ final class _Harness {
 
 final class _UnusedGateway implements DirectChatGateway {
   @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async => null;
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
+
+  @override
   Future<DirectChatRoom> openOrCreateDirectChat(String matrixUserId) =>
       throw StateError('统一入口由 AppHome 注入，通讯录不得自行打开房间');
 }

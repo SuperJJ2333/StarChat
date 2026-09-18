@@ -165,6 +165,7 @@ class RoomPage extends StatefulWidget {
     this.onVoice,
     this.onVideo,
     this.initialIdentityCache,
+    this.initialOutbox = const <String>[],
   });
 
   final BusinessApiClient api;
@@ -186,6 +187,11 @@ class RoomPage extends StatefulWidget {
   /// 正式的房间导航契约：全局搜索/深链可携带 anchorEventId 打开房间，
   /// 进入后定位并高亮该消息（不使用全局变量或 SharedPreferences 传参）。
   final String? initialAnchorEventId;
+
+  /// Offline First：pending conversation 期间输入、尚未发送的文本。
+  /// 页面首次加载完成后按顺序自动发送（弱网/无网时由消息状态机进入
+  /// “等待发送”并在网络恢复后重试）。
+  final List<String> initialOutbox;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -908,6 +914,26 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     unawaited(_trackMatrixOperation(_loadEmojiVault()));
     unawaited(_trackMatrixOperation(_loadReminderService()));
     unawaited(_trackMatrixOperation(_loadIdentities()));
+    unawaited(_flushInitialOutbox());
+  }
+
+  /// Offline First：把 pending conversation 期间排队的消息按顺序发出。
+  ///
+  /// 只调用既有发送路径；无网/弱网时消息由状态机保持“等待发送”并在网络
+  /// 恢复后重试，因此这里不需要（也不允许）自行等待网络。
+  Future<void> _flushInitialOutbox() async {
+    if (widget.initialOutbox.isEmpty) return;
+    final pending = List<String>.of(widget.initialOutbox);
+    for (final text in pending) {
+      if (!mounted || widget.roomLease.canceled) return;
+      final trimmed = text.trim();
+      if (trimmed.isEmpty) continue;
+      try {
+        await _trackMatrixOperation(controller!.sendText(trimmed));
+      } catch (_) {
+        // 发送失败由气泡状态呈现（等待发送/失败 + 重试），这里不吞掉信息。
+      }
+    }
   }
 
   Future<void> _loadIdentities() async {
@@ -3534,12 +3560,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       _setComposerText(mentionComposer.text, caret);
     }
 
-    // 即时反馈语义：发送中的消息视觉上等同已发出（无转圈/半透明），
-    // 仅在真正失败时展示红色重试标识。
+    // 即时反馈语义：本地/发送中的消息视觉上等同已发出（无转圈/半透明）；
+    // 网络原因的失败显示「等待发送」（弱网不是硬失败，网络恢复后自动重发，
+    // 点击即立即重试）；仅服务端拒绝/无权限等终局失败显示红色重试标识。
     final deliveryState = switch (message.deliveryState) {
+      RoomDeliveryState.local ||
       RoomDeliveryState.sending ||
       RoomDeliveryState.sent =>
         MessageDeliveryState.sent,
+      RoomDeliveryState.waitingNetwork => MessageDeliveryState.waitingNetwork,
       RoomDeliveryState.failed => MessageDeliveryState.failed,
     };
     final body = Column(

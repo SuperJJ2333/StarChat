@@ -12,6 +12,7 @@ import 'package:liuhetong_mobile/features/contacts/contacts_page.dart';
 import 'package:liuhetong_mobile/features/matrix/matrix_e2ee_client.dart';
 import 'package:liuhetong_mobile/features/matrix/profile_repository.dart';
 import 'package:liuhetong_mobile/features/matrix/room_page.dart';
+import 'package:liuhetong_mobile/features/matrix/pending_conversation_page.dart';
 import 'package:liuhetong_mobile/features/profile/profile_controller.dart';
 import 'package:liuhetong_mobile/ui/theme/theme_controller.dart';
 import 'package:matrix/matrix.dart';
@@ -139,18 +140,27 @@ void main() {
         reason: '复用的 future 必须把结果交给两个调用方，不能吞掉第二次请求');
   });
 
-  testWidgets('Test 5: directChats.open 失败后闸门释放，弹窗「重试」可以重新进入',
+  testWidgets('Test 5: directChats.open 失败不阻塞进入（pending），重试后进入房间',
       (tester) async {
     final harness = await _Harness.start(tester, directChatMetadata: false);
     addTearDown(harness.dispose);
 
     await harness.tapFriendProfileSend(tester);
-    await tester.pumpAndSettle();
+    await tester.pump();
 
-    expect(find.text('无法打开加密会话'), findsOneWidget);
+    // Offline First：本地没有会话时立即进入 pending conversation，不弹旧口径弹窗、
+    // 也不等待网络仲裁完成。
+    expect(find.byType(PendingConversationPage), findsOneWidget,
+        reason: '本地没有会话也必须可以进入会话页面');
+    expect(find.text('无法打开加密会话'), findsNothing,
+        reason: '产品要求禁止旧口径标题');
     expect(find.byType(RoomPage), findsNothing);
+
+    await tester.pumpAndSettle();
     expect(harness.businessHttpRequests, greaterThan(0),
-        reason: '失败来自业务侧 canonical 房间查询');
+        reason: '后台仲裁仍会查询业务侧 canonical 房间');
+    expect(find.text('重试'), findsOneWidget,
+        reason: '后台建立失败必须在页面内可见并可重试');
 
     // 修好本地 canonical 私聊元数据后点「重试」：闸门不得残留 opening。
     harness.publishDirectChatMetadata();
@@ -158,10 +168,10 @@ void main() {
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
 
-    expect(find.text('无法打开加密会话'), findsNothing);
     expect(find.byType(RoomPage), findsOneWidget);
-    expect(harness.canonicalRoomLookups, lookupsBeforeRetry + 1,
-        reason: '重试必须重新进入闸门内的身份 + canonical 解析');
+    expect(find.byType(PendingConversationPage), findsNothing);
+    expect(harness.canonicalRoomLookups, greaterThan(lookupsBeforeRetry),
+        reason: '重试必须重新解析身份 + canonical 房间');
   });
 
   testWidgets('Test 6: Room A 内第二次「发消息」仍用目录里的权威 Matrix ID（过期快照不回归）',

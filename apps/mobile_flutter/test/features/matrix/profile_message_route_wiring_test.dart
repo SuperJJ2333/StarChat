@@ -67,9 +67,9 @@ void main() {
     // 会被闸门吞掉（真机 BUG）。
     final openMessage = root.substring(
       root.indexOf('Future<void> _openMessage(ContactDetails contact)'),
-      root.indexOf('Future<DirectMessageTarget> _resolveDirectMessageTarget'),
+      root.indexOf('Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget('),
     );
-    expect(openMessage, contains('() => _resolveDirectMessageTarget(contact)'),
+    expect(openMessage, contains('() => _resolveLocalDirectMessageTarget(contact)'),
         reason: 'DirectMessageOpenGate 只能持有身份 + canonical 房间解析');
     expect(openMessage, contains('await _openManagedRoom(target.roomId'),
         reason: '_openManagedRoom 必须在闸门之外');

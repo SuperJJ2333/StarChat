@@ -6340,6 +6340,31 @@ final class MatrixSdkE2eeClient
       _withClient((client) =>
           MatrixDirectChatBackend(client).findCachedJoinedDirectRoom(peer));
 
+  /// **Offline First**：只读本地 SDK 库的安全快照，零网络、不抛错。
+  ///
+  /// 命中即立刻进入会话；未命中返回 null（调用方进入 pending conversation
+  /// 或后台仲裁），**绝不**把“本地还没有会话”当成错误。
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async {
+    try {
+      final cached = await findCachedDirectChat(matrixUserId);
+      if (cached == null) return null;
+      final safe = cached.roomId.trim().isNotEmpty &&
+          cached.encrypted &&
+          cached.joinedMemberCount == 2 &&
+          cached.participantIds.length == 2 &&
+          cached.participantIds.contains(matrixUserId);
+      return safe ? cached : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 房间号提示由协调 intent（`DirectRoomIntentStore`）持有，客户端不持有
+  /// 该存储，因此这里没有可返回的本地提示。
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
+
   /// The caller owns one durable creation grant. Never repair an uncertain
   /// existing room or retry a Matrix create inside this operation.
   Future<DirectChatRoom> createDirectChatOnce(String peer) =>

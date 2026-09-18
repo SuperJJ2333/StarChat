@@ -2,11 +2,20 @@ import 'dart:async';
 import 'room_history_date_capability.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import '../../core/network_state_manager.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
 import '../../core/performance_metrics.dart';
 
-enum RoomDeliveryState { sent, sending, failed }
+/// 发出消息的本地投递状态机（离线优先）。
+///
+/// - [local]：乐观行已创建，但派发尚未开始；
+/// - [sending]：已交给传输层，等待服务端确认；
+/// - [waitingNetwork]：因**网络**原因（[defaultNetworkFailureClassifier]）
+///   发送失败，等待网络恢复后自动重发——弱网/无网绝不显示成硬失败；
+/// - [failed]：终局失败（服务端拒绝、无权限、互动门禁等），只能手动重试；
+/// - [sent]：服务端已确认。
+enum RoomDeliveryState { local, sending, waitingNetwork, failed, sent }
 
 enum RoomMessageKind {
   text,
@@ -324,7 +333,10 @@ abstract interface class RoomWindowedTimelineSource {
 
 final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter,
-      {this.canSendNow, bool windowed = false}) {
+      {this.canSendNow,
+      bool windowed = false,
+      NetworkStateManager? networkStateManager})
+      : _injectedNetworkState = networkStateManager {
     if (windowed && adapter is RoomWindowedTimelineSource) {
       _windowSource = adapter as RoomWindowedTimelineSource;
       _windowSource!.enableWindow();
@@ -508,6 +520,97 @@ final class RoomTimelineController extends ChangeNotifier {
   int _sequence = 0;
   bool _disposed = false;
 
+  /// 组合根/测试注入的网络状态源。为 null 时回退到进程级
+  /// [NetworkStateManager.shared]（纯逻辑测试或组合根尚未接线时为 null）。
+  final NetworkStateManager? _injectedNetworkState;
+
+  /// 已挂载恢复监听的网络状态源（[dispose] 时解绑）。
+  NetworkStateManager? _recoveryManager;
+  bool _recoveryAttached = false;
+
+  /// 因**网络**原因发送失败、等待网络恢复后自动重发的行（txid）。
+  /// 只保存本地乐观行，重发复用同一 txid 与捕获的发送回调。
+  final _waitingNetworkIds = <String>{};
+  bool _drainingWaitingNetwork = false;
+
+  NetworkStateManager? get _networkState =>
+      _injectedNetworkState ?? NetworkStateManager.shared;
+
+  bool get _networkIsUsable {
+    final state = _networkState?.current;
+    return state == NetworkState.online || state == NetworkState.recovering;
+  }
+
+  /// 网络失败判定（SocketException / TimeoutException / HttpException /
+  /// ClientException / 5xx）。非网络错误一律不许降级成「等待发送」。
+  bool _isNetworkFailure(Object error) =>
+      defaultNetworkFailureClassifier(error);
+
+  /// 挂载一次网络恢复监听：状态进入 online/recovering 时重发所有
+  /// `waitingNetwork` 行。只挂一次、不创建任何定时器、[dispose] 时解绑。
+  void _attachNetworkRecoveryWatch() {
+    if (_disposed || _recoveryAttached) return;
+    final manager = _networkState;
+    if (manager == null) return;
+    _recoveryAttached = true;
+    _recoveryManager = manager;
+    manager.state.addListener(_handleNetworkStateChanged);
+    // 行进入等待时管理器可能已经认为网络可用（例如失败由别的层上报）。
+    // `whenOnline()` 在此情况下立即完成且不排定时器，因此直接排水一次。
+    if (_networkIsUsable) unawaited(_drainWaitingNetwork());
+  }
+
+  void _handleNetworkStateChanged() {
+    if (_disposed || !_networkIsUsable) return;
+    unawaited(_drainWaitingNetwork());
+  }
+
+  /// 自动重发所有等待网络的消息。
+  ///
+  /// 幂等：并发排水、重复的恢复通知、手动重试在途都不会二次派发同一行；
+  /// 每次派发都复用**同一个** txid（`_senders` 仅在成功后才移除）。
+  Future<void> _drainWaitingNetwork() async {
+    if (_disposed ||
+        _drainingWaitingNetwork ||
+        _waitingNetworkIds.isEmpty ||
+        !(canSendNow?.call() ?? true)) {
+      return;
+    }
+    _drainingWaitingNetwork = true;
+    try {
+      for (final tx in List<String>.of(_waitingNetworkIds)) {
+        if (_disposed) return;
+        // 重发途中再次掉线：余下的行继续等待，不做无谓的失败派发。
+        if (!_networkIsUsable) break;
+        if (!_waitingNetworkIds.contains(tx)) continue;
+        // 已经不在本地乐观行里的 txid（例如已被撤回/清空）不再重发。
+        if (!_localEchoes.containsKey(tx)) {
+          _waitingNetworkIds.remove(tx);
+          continue;
+        }
+        await _retry(tx, rethrowErrors: false);
+      }
+    } finally {
+      _drainingWaitingNetwork = false;
+    }
+  }
+
+  /// 记录一次派发失败并返回该行应处的状态。
+  ///
+  /// 网络失败 → [RoomDeliveryState.waitingNetwork]（并上报给网络状态机，
+  /// 便于恢复时自动重发）；服务端拒绝/权限/互动门禁等非网络失败 →
+  /// 终局 [RoomDeliveryState.failed]。
+  RoomDeliveryState _noteFailure(String tx, Object error) {
+    if (_isNetworkFailure(error)) {
+      _networkState?.reportFailure(error);
+      _waitingNetworkIds.add(tx);
+      _attachNetworkRecoveryWatch();
+      return RoomDeliveryState.waitingNetwork;
+    }
+    _waitingNetworkIds.remove(tx);
+    return RoomDeliveryState.failed;
+  }
+
   List<RoomMessageViewModel> _snapshot() {
     final snapshot = adapter.snapshot();
     // Legacy adapters may return fresh models/lists. Compare before allocating
@@ -690,18 +793,23 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   /// 重建失败消息的本地发送条目；传输事务 ID 由适配器保留以防重复投递。
-  Future<void> retry(String transactionId) async {
-    if (_disposed ||
-        !(canSendNow?.call() ?? true) ||
-        !_retrying.add(transactionId)) {
-      return;
-    }
+  ///
+  /// 手动重试：把 `failed` / `waitingNetwork` 行翻回 [RoomDeliveryState.sending]
+  /// 并复用捕获的发送回调与同一 txid。
+  Future<void> retry(String transactionId) =>
+      _retry(transactionId, rethrowErrors: true);
+
+  Future<void> _retry(String transactionId,
+      {required bool rethrowErrors}) async {
+    if (_disposed || !(canSendNow?.call() ?? true)) return;
+    if (!_retrying.add(transactionId)) return;
     final alias = _eventTransactions[transactionId];
     final tx = _localEchoes.containsKey(transactionId)
         ? transactionId
         : _localEchoes.containsKey(alias)
             ? alias
             : null;
+    if (tx != null) _waitingNetworkIds.remove(tx);
     try {
       if (tx != null) {
         final fresh = _localEchoes[tx]!.copyWith(
@@ -720,13 +828,13 @@ final class RoomTimelineController extends ChangeNotifier {
         }
       }
       await adapter.retry(transactionId);
-    } catch (_) {
+    } catch (error) {
       if (tx != null && _localEchoes.containsKey(tx)) {
         _echoRevision++;
         _localEchoes[tx] =
-            _localEchoes[tx]!.copyWith(deliveryState: RoomDeliveryState.failed);
+            _localEchoes[tx]!.copyWith(deliveryState: _noteFailure(tx, error));
       }
-      rethrow;
+      if (rethrowErrors) rethrow;
     } finally {
       _retrying.remove(transactionId);
       await refresh();
@@ -913,7 +1021,7 @@ final class RoomTimelineController extends ChangeNotifier {
         isOwn: true,
         timestamp: _nextLocalTimestamp(),
         deliveryState:
-            permitted ? RoomDeliveryState.sending : RoomDeliveryState.failed,
+            permitted ? RoomDeliveryState.local : RoomDeliveryState.failed,
         replyToEventId: replyToEventId,
         replyExcerpt: replyExcerpt,
         kind: kind,
@@ -938,22 +1046,37 @@ final class RoomTimelineController extends ChangeNotifier {
   }
 
   Future<void> _dispatch(String tx, RoomMessageViewModel local) async {
+    // 乐观行创建时是 `local`；派发一真正开始就**同步**翻成 `sending`，
+    // 行绝不会停在「未派发」外观上（`sendText` 的调用方无需 await 即可看到）。
+    // `local` 与 `sending` 的呈现完全一致，因此这次内部迁移不再额外通知：
+    // 一条本地消息仍然只产生一次可见发布（性能契约：sendText 只发一次通知）。
+    final inFlight = local.deliveryState == RoomDeliveryState.sending
+        ? local
+        : local.copyWith(deliveryState: RoomDeliveryState.sending);
+    if (!identical(inFlight, local) && _localEchoes.containsKey(tx)) {
+      _echoRevision++;
+      _localEchoes[tx] = inFlight;
+      messages = _snapshot();
+    }
     try {
       final eventId = await _senders[tx]!();
       if (_disposed) return;
       _echoRevision++;
       _eventTransactions[eventId] = tx;
       if (_localEchoes.containsKey(tx)) {
-        _localEchoes[tx] =
-            local.copyWith(id: eventId, deliveryState: RoomDeliveryState.sent);
+        _localEchoes[tx] = inFlight.copyWith(
+            id: eventId, deliveryState: RoomDeliveryState.sent);
       }
+      _waitingNetworkIds.remove(tx);
       _senders.remove(tx);
       NotificationFeedback.shared.play(SoundType.messageSent);
-    } catch (_) {
+    } catch (error) {
       if (_disposed) return;
       _echoRevision++;
+      // 网络失败 → 等待发送（保留 sender/txid 供恢复后自动重发）；
+      // 其余（服务端拒绝、无权限等）→ 终局 failed。
       _localEchoes[tx] =
-          local.copyWith(deliveryState: RoomDeliveryState.failed);
+          inFlight.copyWith(deliveryState: _noteFailure(tx, error));
     }
     messages = _snapshot();
     _publish();
@@ -962,6 +1085,8 @@ final class RoomTimelineController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _recoveryManager?.state.removeListener(_handleNetworkStateChanged);
+    _recoveryManager = null;
     _refreshDeadline?.cancel();
     if (_refreshFrame != null) {
       SchedulerBinding.instance.cancelFrameCallbackWithId(_refreshFrame!);

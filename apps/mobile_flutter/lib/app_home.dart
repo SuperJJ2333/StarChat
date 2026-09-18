@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/business_api_client.dart';
 import 'core/app_connection_status.dart';
+import 'core/network_state_manager.dart';
 import 'core/app_config.dart';
 import 'core/permissions/blocked_contacts.dart';
 import 'core/local_notification_scheduler.dart';
@@ -55,6 +56,7 @@ import 'features/matrix/matrix_sync_watchdog.dart';
 import 'features/matrix/matrix_sync_recovery_controller.dart';
 import 'features/matrix/matrix_home_page.dart' show MatrixHomePage;
 import 'features/matrix/room_page.dart';
+import 'features/matrix/pending_conversation_page.dart';
 import 'features/matrix/profile_repository.dart';
 import 'features/matrix/group_chat_controller.dart';
 import 'features/matrix/call_ui_manager.dart';
@@ -1154,7 +1156,40 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       },
       onRetry: syncWatchdog.retry,
     );
+    _bindNetworkState();
   }
+
+  /// 统一网络状态（Offline First）：把 Matrix 同步看门狗的既有信号投影为
+  /// `online / weak / offline / recovering`，供会话进入与消息发送共用。
+  ///
+  /// 复用既有信号，不新增探针、不新增定时器：watchdog 已经合并了
+  /// connectivity_plus 的传输态、SDK 的 sync 状态与自身的重连序列。
+  void _bindNetworkState() {
+    final manager = NetworkStateManager.shared ??= NetworkStateManager();
+    void listener() {
+      manager.report(
+        transportAvailable: switch (syncWatchdog.connectionStatus.value) {
+          MatrixConnectionStatus.offline => false,
+          MatrixConnectionStatus.unknown => null,
+          _ => true,
+        },
+        serverReachable:
+            syncWatchdog.connectionStatus.value == MatrixConnectionStatus.connected
+                ? true
+                : null,
+        recovering:
+            syncWatchdog.connectionStatus.value == MatrixConnectionStatus.connecting
+                ? true
+                : null,
+      );
+    }
+
+    syncWatchdog.connectionStatus.addListener(listener);
+    _networkStateListener = listener;
+    listener();
+  }
+
+  VoidCallback? _networkStateListener;
 
   void _disposeSyncWatchdog() {
     if (!_syncWatchdogStarted) return;
@@ -1164,6 +1199,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     final owner = _connectionStatusOwner;
     if (owner != null) AppConnectionStatusHub.shared.unbind(owner);
     _connectionStatusOwner = null;
+    final listener = _networkStateListener;
+    if (listener != null) {
+      syncWatchdog.connectionStatus.removeListener(listener);
+      _networkStateListener = null;
+    }
     syncWatchdog.dispose();
     _syncWatchdogStarted = false;
   }
@@ -1571,19 +1611,30 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   /// 即释放；**`_openManagedRoom` 必须在闸门之外**——它 await 到 RoomPage 关闭
   /// 才完成，若置于闸门内，Room A 打开期间同一好友的第二次「发消息」会被吞掉，
   /// 到不了 `RoomNavigationCoordinator` 的 popUntil。
+  /// Offline First（2026-09-18）：进入好友会话**绝不等待网络完成**。
+  ///
+  /// 顺序（与产品要求一致）：
+  /// 1. 只读本地（好友目录 + SDK 本地库 + 持久化房间号提示）解析目标；
+  /// 2. 本地有房间 → 立即进入 RoomPage（策略层零网络等待）；
+  /// 3. 本地还没有房间 → 后台发起真实 Matrix 房间仲裁，**立即**进入
+  ///    pending conversation；房间就绪后自动换成 RoomPage 并发送排队消息。
   Future<void> _openMessage(ContactDetails contact) async {
     try {
       final target = await _directMessageGate.run(
         directMessageOpenKey(contact),
-        () => _resolveDirectMessageTarget(contact),
+        () => _resolveLocalDirectMessageTarget(contact),
       );
       if (!mounted) return;
-      // 闸门已在此释放：下面 await 的是页面生命周期，不是闸门生命周期。
-      // 已打开 → popUntil 回原房间；在打开 → 复用；未打开 → push。
-      await _openManagedRoom(target.roomId,
-          roomName: target.contact.displayName,
-          initialContact: target.contact,
-          source: RoomOpenSource.contactProfile);
+      if (target != null) {
+        // 闸门已在此释放：下面 await 的是页面生命周期，不是闸门生命周期。
+        // 已打开 → popUntil 回原房间；在打开 → 复用；未打开 → push。
+        await _openManagedRoom(target.roomId,
+            roomName: target.contact.displayName,
+            initialContact: target.contact,
+            source: RoomOpenSource.contactProfile);
+        return;
+      }
+      await _openPendingConversation(contact);
     } catch (error) {
       // 失败时闸门已自动释放（见 DirectMessageOpenGate.run），弹窗「重试」
       // 可以重新进入本方法。
@@ -1593,10 +1644,12 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     }
   }
 
-  /// 闸门内的全部工作：权威身份解析 → canonical 私聊房间。
+  /// 本地优先解析（Offline First 第一步）：只读好友目录、SDK 本地库与
+  /// 持久化房间号提示，**不做任何网络请求**；本地还没有会话时返回 null。
   ///
-  /// 只做数据解析，绝不 push 页面、不取租约、不持有 Navigator/Route。
-  Future<DirectMessageTarget> _resolveDirectMessageTarget(
+  /// 仍然保留身份权威解析：好友已不在目录、或拿不到有效 matrixUserId 时
+  /// 照旧抛出（这是终态失败，不是网络问题）。
+  Future<DirectMessageTarget?> _resolveLocalDirectMessageTarget(
       ContactDetails contact) async {
     final cache = await _identityCache();
     final authoritative = await resolveFriendContact(cache, contact);
@@ -1604,9 +1657,50 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     if (matrixUserId.isEmpty) {
       throw StateError('The contact is no longer a current friend');
     }
-    final reference = await directChats.open(matrixUserId);
-    return DirectMessageTarget(
-        roomId: reference.roomId, contact: authoritative);
+    // 1) SDK 本地库里已有安全快照 → 直接用它。
+    final cached = await directChats.tryLocal(matrixUserId);
+    if (cached != null && cached.roomId.trim().isNotEmpty) {
+      return DirectMessageTarget(
+          roomId: cached.roomId.trim(), contact: authoritative);
+    }
+    // 2) 协调 intent 里持久化的房间号 + 本地确实存在该房间 → 直接进入。
+    //    成员/加密状态由 RoomPage 在后台刷新，不阻塞进入。
+    final hint = await directChats.localRoomHint(matrixUserId);
+    if (hint != null && widget.matrix.knowsRoomLocally(hint)) {
+      return DirectMessageTarget(roomId: hint, contact: authoritative);
+    }
+    return null;
+  }
+
+  /// Offline First 第三步：本地没有会话时**立即**进入 pending conversation，
+  /// 并把真实房间仲裁放到后台；房间就绪后换成 RoomPage 并发送排队消息。
+  Future<void> _openPendingConversation(ContactDetails contact) async {
+    final cache = await _identityCache();
+    final authoritative = await resolveFriendContact(cache, contact);
+    final matrixUserId = authoritative.matrixUserId.trim();
+    if (matrixUserId.isEmpty) {
+      throw StateError('The contact is no longer a current friend');
+    }
+    Future<DirectChatRoom> openRoom() => directChats.open(matrixUserId);
+
+    if (!mounted) return;
+    final result = await Navigator.of(context, rootNavigator: true)
+        .push<PendingConversationResult>(MotionPageRoute(
+      builder: (_) => PendingConversationPage(
+        contact: authoritative,
+        openRoom: openRoom,
+        networkState: NetworkStateManager.shared?.state,
+      ),
+    ));
+    if (!mounted || result == null) return;
+    if (result.roomId.isEmpty) return;
+    // 房间就绪：按既有唯一入口进入 RoomPage；排队消息作为初始 outbox 发送
+    // （弱网/无网时由消息状态机继续“等待发送”并在恢复后重试）。
+    await _openManagedRoom(result.roomId,
+        roomName: authoritative.displayName,
+        initialContact: authoritative,
+        source: RoomOpenSource.contactProfile,
+        outbox: result.queued);
   }
 
   /// BUG4：通讯录 → 群聊 → 群聊通讯录列表（已 join + saved=true）。
@@ -1634,12 +1728,14 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openManagedRoom(String roomId,
           {String? roomName,
           ContactDetails? initialContact,
-          RoomOpenSource source = RoomOpenSource.unknown}) =>
+          RoomOpenSource source = RoomOpenSource.unknown,
+          List<String> outbox = const <String>[]}) =>
       _openManagedRoomRequest(RoomOpenRequest(
         roomId: roomId,
         roomName: roomName ?? '',
         initialContact: initialContact,
         source: source,
+        outbox: outbox,
       ));
 
   /// **所有入口进入房间的唯一策略路径**（唯一失败反馈点）。
@@ -1758,6 +1854,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               roomName: name,
               initialContact: request.initialContact,
               initialAnchorEventId: request.anchorEventId,
+              initialOutbox: request.outbox,
               onCreateGroup: _createGroupChat,
               onMessage: _openMessage,
               onVoice: (contact) => _openCall(contact, CallMediaType.audio),

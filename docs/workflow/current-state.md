@@ -1,5 +1,31 @@
 # 移动交付恢复索引
 
+## 2026-09-18 Offline First 聊天：进入好友会话不被网络阻塞（**代码完成，未构建/未发布；待真机**）
+
+用户指令：修复弱网/无网下「无法打开加密会话」——要求审查 `_openManagedRoom*` 链路、把私聊创建改成
+Local First + pending conversation、消息状态加 `local/sending/waitingNetwork/failed/sent` 并在恢复后自动重试、
+新增统一 `NetworkStateManager`、按错误类型改写提示（禁止旧标题）、补 4 条验收测试。
+**明确禁止改 Matrix 加密协议**，只允许动 opening lifecycle / network handling / message retry state / UI error。
+**根因**：`_openMessage → _resolveDirectMessageTarget` **await** `directChats.open`
+（业务目录 canonical + Matrix join/health/claim/publish，弱网下 5–15s 超时/抛错），唯一 catch 点弹
+`direct_chat_failure.dart` 里写死的「无法打开加密会话」；而 RoomPage 硬绑定 `MatrixRoomLease`
+（本地无 room 即 `Matrix room is unavailable`），所以必须补一个不依赖真实 room 的 pending 页面。
+**改动**：`app_home.dart`（本地优先解析 + pending 分支 + 网络状态接线 + `RoomOpenRequest.outbox`）、
+`room_opening_policy.dart`（**本地已知即 `openNow('local_known')`，零等待**；仅本地完全未知才有界等待）、
+`direct_chat_controller/coordinated_direct_chat/direct_chat_entry/matrix_e2ee_client`（新增**零网络零抛错**的
+`tryLocalDirectChat`/`localRoomHint`，gate 结果可空）、新增 `pending_conversation_page.dart`（首帧即进入、
+排队消息显示「等待发送」、后台仲裁就绪后回传 roomId+queued 并由 RoomPage `initialOutbox` 自动发送）、
+新增 `core/network_state_manager.dart`（online/weak/offline/recovering，复用 MatrixSyncWatchdog 信号，
+不新增探针/定时器）、`direct_chat_failure.dart`（offline/weak/server/crypto 四类标题+文案，删除旧口径）。
+消息状态机（`waitingNetwork` + 恢复自动重试）由并行子任务实现于 `room_timeline_controller.dart` /
+`wechat_message_bubble.dart` / `super_emoji_message.dart`（含 `offline_send_state_test.dart`）。
+**证据**：`flutter analyze lib` 无问题；新增 `offline_first_opening_test.dart` **+9 全通过**；
+`network_state_manager_test.dart` **+25 全通过**；受影响既有套件（policy/failure/entry/controller/
+coordinated/cached-local）全绿；契约变更（本地已知即打开、gate 可空、网关新增方法）已同步测试并记录在
+[验证文档](../verification/2026-09-18-offline-first-chat-opening.md) 与
+[任务记录](tasks/2026-09-18-offline-first-chat.md)。
+**限制**：pending 队列仅内存（重启丢失）；未做真机弱网验收；`weak` 阈值未在真机标定；未构建未发布。
+
 ## 2026-09-18 Android 0.3.96/2134 正式发布 + iOS 0.3.96/2134 企业签名分发（**双端均已上线；下载页改为“正式版”**）
 
 用户指令：推送**最新版本**的 Android 更新弹窗，并提供同源 iOS 更新包供企业签名后回传分发。

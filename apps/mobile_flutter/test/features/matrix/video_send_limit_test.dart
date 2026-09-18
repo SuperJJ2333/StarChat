@@ -158,7 +158,10 @@ void main() {
       if (sends == 1) throw const SocketException('offline');
       return 'event';
     });
-    expect(timeline.messages.single.deliveryState, RoomDeliveryState.failed);
+    // 离线优先：SocketException 属于网络失败，不是终局失败——行进入
+    // 「等待发送」（弱网/无网绝不显示成红色感叹号），手动重试仍立即生效。
+    expect(timeline.messages.single.deliveryState,
+        RoomDeliveryState.waitingNetwork);
     await timeline.retry(timeline.messages.single.stableId);
     expect(sends, 2);
     expect(timeline.messages.single.deliveryState, RoomDeliveryState.sent);

@@ -120,6 +120,12 @@ void main() {
 }
 
 final class _FakeInnerGateway implements DirectChatGateway {
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async => null;
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
+
   _FakeInnerGateway(this.open);
   final Future<DirectChatRoom> Function() open;
 

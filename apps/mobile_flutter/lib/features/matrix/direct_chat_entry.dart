@@ -143,14 +143,17 @@ final class DirectMessageTarget {
 /// [DirectMessageTarget]，不重复解析身份、不重复查询 canonical 房间，也不再
 /// 丢弃第二次请求。房间页面级的去重由 `RoomNavigationCoordinator` 按 roomId 负责，
 /// 两者分工不重叠。
+///
+/// 2026-09-18 Offline First：解析结果可为 null（本地优先路径下“本地还没有会话”
+/// 是正常结果，不是失败）；单飞语义不变。
 final class DirectMessageOpenGate {
-  final _flights = <String, Future<DirectMessageTarget>>{};
+  final _flights = <String, Future<DirectMessageTarget?>>{};
 
   /// 认领该键并发起 [operation]；同键在途时返回**同一个** Future。
   /// 空键（身份未知）不参与去重，交由身份解析给出失败提示。
-  Future<DirectMessageTarget> run(
+  Future<DirectMessageTarget?> run(
     String key,
-    Future<DirectMessageTarget> Function() operation,
+    Future<DirectMessageTarget?> Function() operation,
   ) {
     if (key.isEmpty) return operation();
     final existing = _flights[key];
@@ -158,10 +161,10 @@ final class DirectMessageOpenGate {
 
     // 先登记 flight 再启动解析：operation 在第一个 await 之前可能是同步的，
     // 必须先占位才能被同一帧内的第二次点击合并。
-    final completer = Completer<DirectMessageTarget>();
+    final completer = Completer<DirectMessageTarget?>();
     final pending = completer.future;
     _flights[key] = pending;
-    unawaited(Future<DirectMessageTarget>.sync(operation).then((target) {
+    unawaited(Future<DirectMessageTarget?>.sync(operation).then((target) {
       if (identical(_flights[key], pending)) _flights.remove(key);
       if (!completer.isCompleted) completer.complete(target);
     }, onError: (Object error, StackTrace stackTrace) {

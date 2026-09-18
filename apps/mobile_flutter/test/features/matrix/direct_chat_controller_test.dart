@@ -210,6 +210,12 @@ final class PerContactGateway implements DirectChatGateway {
     return (pending[matrixUserId] = Completer<DirectChatRoom>()).future;
   }
 
+  @override
+  Future<DirectChatRoom?> tryLocalDirectChat(String matrixUserId) async => null;
+
+  @override
+  Future<String?> localRoomHint(String matrixUserId) async => null;
+
   void complete(String matrixUserId) {
     final localpart = matrixUserId.substring(1, matrixUserId.indexOf(':'));
     pending[matrixUserId]!.complete(DirectChatRoom(

@@ -247,7 +247,7 @@ void main() {
       expect(recorder.navigated.single.source, RoomOpenSource.search);
     });
 
-    test('本地未加入（仅已知）→ 允许一次有界网络回退', () async {
+    test('本地未加入（仅已知）→ 立即打开，不再等一次网络同步', () async {
       final probe = _Probe(known: {'!group:test'});
       final policy = RoomOpeningPolicy(probe: probe);
       final recorder = _Recorder();
@@ -258,8 +258,10 @@ void main() {
         awaitLocalRoom: recorder.awaitLocalRoom,
       );
 
-      expect(recorder.awaited, ['!group:test'],
-          reason: '只有本地不存在/未加入时才允许 network fallback');
+      // Offline First（2026-09-18）：房间已在本地库 → 零网络等待立即进入；
+      // 成员/加密状态由页面在后台刷新。有界等待只保留给本地完全未知的房间。
+      expect(recorder.awaited, isEmpty,
+          reason: '本地已知的房间绝不等待网络同步');
       expect(recorder.navigated, hasLength(1));
     });
   });

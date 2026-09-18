@@ -253,8 +253,14 @@ final class RoomOpeningPolicy {
         known ? 'local_not_joined' : 'local_missing_requires_network',
       );
     }
-    return RoomOpenVerdict.awaitLocalRoom(
-        known ? 'local_not_joined' : 'local_missing');
+    if (known) {
+      // Offline First（2026-09-18）：房间**已在本地库**就立即进入，不再等一次
+      // 网络同步。房间的成员/加密状态由 RoomPage 在后台刷新，页面对离线状态
+      // 自愈；把用户挡在会话外的“有界等待 → 失败弹窗”只保留给本地完全未知
+      // 的房间（那种情况下没有可渲染的 room object）。
+      return const RoomOpenVerdict.openNow('local_known');
+    }
+    return const RoomOpenVerdict.awaitLocalRoom('local_missing');
   }
 
   /// 统一打开：判定 →（必要时）有界等待 → 委托导航。
