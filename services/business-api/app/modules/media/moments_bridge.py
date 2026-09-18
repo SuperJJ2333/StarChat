@@ -43,13 +43,27 @@ from app.modules.media.domain import (
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import MediaBlob
 from app.modules.media.repository import utcnow
-from app.modules.moments.media import (
-    ALLOWED_IMAGE_MIME,
-    IMAGE_SUFFIX_BY_MIME,
-    MAX_IMAGE_BYTES,
-    MomentMediaUpload,
-    validate_gif,
+from app.modules.moments import media as moments_media
+
+# Deployment compatibility (found by the production readiness rehearsal): the MIME→suffix map
+# and the GIF container validator were added to the Moments module *after* the revision that is
+# running in production. Prefer the module's own values when present so behaviour can never
+# drift from Moments, and fall back to the local equivalents so the bridge also imports against
+# the older deployed revision (without the fallback the whole API fails to start).
+ALLOWED_IMAGE_MIME = moments_media.ALLOWED_IMAGE_MIME
+MAX_IMAGE_BYTES = moments_media.MAX_IMAGE_BYTES
+MomentMediaUpload = moments_media.MomentMediaUpload
+
+_FALLBACK_IMAGE_SUFFIX_BY_MIME = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+IMAGE_SUFFIX_BY_MIME = getattr(
+    moments_media, "IMAGE_SUFFIX_BY_MIME", _FALLBACK_IMAGE_SUFFIX_BY_MIME
 )
+_validate_gif_container = getattr(moments_media, "validate_gif", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,8 +194,12 @@ class MomentsMediaBridge:
                 message="媒体格式与声明不一致",
                 status_code=422,
             )
-        if mime == "image/gif":
-            validate_gif(content)
+        if mime == "image/gif" and _validate_gif_container is not None:
+            # On a deployment whose Moments module predates GIF container validation this check
+            # is unavailable. The running baseline's own Moments upload path has exactly the
+            # same coverage, so the bridge is never weaker than production; the mime allowlist,
+            # the size cap and the format-vs-declared-mime check below always apply.
+            _validate_gif_container(content)
         if purpose not in ("MOMENT_IMAGE", "MOMENT_COVER"):
             raise AppError(
                 code="MOMENT_MEDIA_INVALID",
