@@ -171,6 +171,25 @@ CREATE INDEX        outbox_messages_room    ON outbox_messages (room_id, status,
 全量结果：`C:/src/flutter/bin/flutter.bat test --timeout 120s` →
 `02:43 +3294: All tests passed!`（退出码 0）。
 
+**并发工作树说明（重要）**：提交后再次全量运行（02:02，输出存档
+`docs/verification/artifacts/2026-09-18/outbox/flutter-full-outbox.txt`）为
+`+3319 -16`，其中**全部 16 条失败都在 `test/features/wallet/**`**（另一条线的
+钱包重构正在同一工作树内进行：`lib/features/finance/finance_card_store.dart` /
+`lib/features/wallet/manual_wallet_page.dart` / 钱包 UI 测试均处于编辑中，
+该目录下测试用例的期望与实现尚未同步）。逐条分类后**没有任何一条失败落在线程
+归属范围（`lib/core/**`、`lib/features/matrix/**`、contacts 编排）内**；
+本线相关目录单独运行均为绿色：
+
+| 命令 | 结果 |
+| --- | --- |
+| `flutter test test/features/matrix test/core` | `01:04 +2022: All tests passed!` |
+| `flutter test test/features/contacts test/features/matrix`（含好友接受门控 6 条） | `00:51 +1793: All tests passed!` |
+| `flutter analyze`（本线文件范围） | `No issues found!` |
+
+同一时刻的 `flutter analyze lib test` 有 2 条错误位于
+`test/features/wallet/wallet_withdraw_ui_test.dart`（同一并发线的编辑中文件），
+与本改动无关。
+
 `scripts/verify.ps1` 仍在**既有的、与本改动无关**的
 `tests/mobile/test_android_ci_workflow.py`（对 commit `bd28dbff` 的断言）处停止；本记录
 不改动该测试，按其既有说明处理。

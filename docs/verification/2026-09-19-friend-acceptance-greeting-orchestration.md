@@ -63,7 +63,23 @@ Future<void> establishAcceptedFriendChat({
 UI 线账本单测（7 条）继续覆盖账本自身语义，未改动。
 
 红→绿：把门控短路成"总是发送"（`gateAvailable = false`）后运行本文件 →
-`Some tests failed`（`sendGreeting` 计数断言失败）；恢复实现 → `00:00 +6: All tests passed!`。
+`00:00 +0 -6: Some tests failed`（6 条全部因发放次数断言失败，实际次数分别为
+4/3/3/2/「req-a 重复」/2）；恢复实现 → `00:00 +6: All tests passed!`。
+
+聚焦门禁（真实输出）：
+
+| 命令 | 结果 |
+| --- | --- |
+| `C:/src/flutter/bin/flutter.bat test test/features/contacts test/features/matrix` | `00:51 +1793: All tests passed!` |
+| `C:/src/flutter/bin/flutter.bat analyze`（本线文件范围 + 本文件相关测试） | `No issues found!` |
+
+注意：编排函数刻意放在 `lib/core/friend_acceptance_greeting_flow.dart`（本线拥有）
+而不是 `app_home.dart` 内部，`app_home.dart` 只做接线。原因是 `app_home.dart`
+的依赖图覆盖几乎整个 App：把它 import 进测试会让本用例在**任何**无关文件处于
+编辑中间态时无法编译（本次实测：并发钱包重构期间 `lib/features/wallet/manual_wallet_page.dart`
+语法不完整导致 import `app_home.dart` 的测试全部 `Compilation failed`）。
+抽到 core 后本用例只依赖账本与其 Matrix 常量，稳定可跑，且 `AppHome` 执行的
+仍是同一份实现。
 
 ## 3. 剩余风险（不由本文件解决）
 
