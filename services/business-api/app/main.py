@@ -133,11 +133,24 @@ def create_app(
             settings,
             session_factory,
             service=_build_media_platform_service(settings, session_factory, avatar_storage),
+            bridge=_build_moments_bridge(settings, session_factory, avatar_storage),
         ),
         prefix="/api/v1",
     )
     app.include_router(create_admin_router(settings, session_factory, manual_runtime=manual_wallet_runtime), prefix="/api/v1")
     return app
+
+
+def _build_moments_bridge(settings: Settings, session_factory, storage):
+    """The Moments bridge reuses the platform service and the existing Moments validators."""
+
+    from app.modules.media.moments_bridge import MomentsMediaBridge
+
+    return MomentsMediaBridge(
+        service=_build_media_platform_service(settings, session_factory, storage),
+        session_factory=session_factory,
+        storage=storage,
+    )
 
 
 def _build_media_platform_service(settings: Settings, session_factory, storage):

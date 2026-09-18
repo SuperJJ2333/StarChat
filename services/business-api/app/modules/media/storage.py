@@ -117,19 +117,41 @@ def storage_key_for(
     blob_id: str,
     mime: str,
     kind: MediaKind,
+    namespace: str | None = None,
 ) -> str:
-    """Build the only legal key shape for a blob in the given isolation domain."""
+    """Build the only legal key shape for a blob in the given isolation domain.
+
+    ``namespace`` exists for one reason: some legacy readers recognise a key by its prefix
+    (the Moments reader only resolves ``media://moments/...``). Prefixing keeps the isolation
+    segment intact — the domain and scope hash are still in the path — while letting an
+    existing reader accept platform-managed bytes without being modified.
+    """
 
     segment = _DOMAIN_SEGMENT[isolation_domain]
-    return f"media/{segment}/{scope_hash(scope_key)}/{blob_id}{suffix_for_mime(mime, kind=kind)}"
+    address = f"media/{segment}/{scope_hash(scope_key)}/{blob_id}{suffix_for_mime(mime, kind=kind)}"
+    if namespace:
+        _assert_namespace(namespace)
+        return f"{namespace}/{address}"
+    return address
+
+
+def _assert_namespace(namespace: str) -> None:
+    # A namespace is a fixed, code-owned literal, never user input.
+    allowed = {"moments", "avatars", "files", "system"}
+    if namespace not in allowed:
+        raise AppError(
+            code="MEDIA_STORAGE_KEY_INVALID",
+            message="媒体存储命名空间无效",
+            status_code=500,
+        )
 
 
 def key_belongs_to_domain(key: str, *, digest_kind, owner_scope: str) -> bool:
     """Guard used before writing: a key may only live in its own isolation domain.
 
-    Verifies both the address (scope hash) and the segment, so a bug that mixes a
-    plaintext digest with the E2EE scope fails loudly instead of writing per-user bytes
-    into the shared namespace (ADR-001).
+    The domain/scope address must appear as a contiguous pair, so a bug that mixes a
+    plaintext digest with the E2EE scope fails loudly instead of writing per-user bytes into
+    the shared namespace (ADR-001).
     """
 
     from app.modules.media.domain import DigestKind
@@ -138,9 +160,7 @@ def key_belongs_to_domain(key: str, *, digest_kind, owner_scope: str) -> bool:
         return False
     domain = assert_object_domain(digest_kind, owner_scope)
     parts = key.split("/")
-    return (
-        len(parts) >= 4
-        and parts[0] == "media"
-        and parts[1] == _DOMAIN_SEGMENT[domain]
-        and parts[2] == scope_hash(owner_scope)
-    )
+    if len(parts) < 2:
+        return False
+    address = f"{_DOMAIN_SEGMENT[domain]}/{scope_hash(owner_scope)}"
+    return any("/".join(parts[index : index + 2]) == address for index in range(len(parts) - 1))

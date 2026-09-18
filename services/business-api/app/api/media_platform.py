@@ -87,11 +87,19 @@ class SignedUrlRequest(BaseModel):
     audience: str | None = Field(default=None, max_length=160)
 
 
+class BusinessReleaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    business_type: str = Field(min_length=3, max_length=32)
+    business_id: str = Field(min_length=1, max_length=160)
+
+
 def create_media_platform_router(
     settings: Settings,
     session_factory,
     *,
     service: MediaPlatformService,
+    bridge=None,
 ) -> APIRouter:
     router = APIRouter(tags=["media-platform"])
     tokens = TokenService(
@@ -553,6 +561,89 @@ def create_media_platform_router(
                 "Content-Disposition": "inline",
             },
         )
+
+    # ------------------------------------------------------------------ #
+    # Moments integration (Phase 4.7): new upload path, legacy readers intact
+    # ------------------------------------------------------------------ #
+    @router.post("/media/platform/moments/attachments", status_code=201)
+    async def attach_moment_media(
+        request: Request,
+        idempotency_key: Annotated[
+            str, Header(alias="Idempotency-Key", min_length=1, max_length=128)
+        ],
+        file_name: Annotated[str, Query(max_length=255)] = "",
+        mime: Annotated[str, Query(min_length=3, max_length=120)] = "image/jpeg",
+        purpose: Annotated[str, Query(max_length=30)] = "MOMENT_IMAGE",
+        claims: dict = Depends(current_claims),
+    ) -> dict:
+        if bridge is None:  # pragma: no cover - wiring guard
+            raise AppError(
+                code="MEDIA_MOMENTS_BRIDGE_UNAVAILABLE",
+                message="朋友圈媒体桥不可用",
+                status_code=503,
+            )
+        content = await request.body()
+        attachment = bridge.attach(
+            actor_id=claims["sub"],
+            file_name=file_name,
+            mime=(request.headers.get("content-type") or mime).split(";")[0].strip() or mime,
+            content=content,
+            idempotency_key=idempotency_key,
+            purpose=purpose,
+        )
+        return {
+            "media_id": attachment.media_id,
+            "blob_id": attachment.blob_id,
+            "upload_id": attachment.upload_id,
+            "reference_id": attachment.reference_id,
+            # The existing Moments publish endpoint accepts exactly this shape, so the
+            # unchanged legacy path can carry platform-managed bytes.
+            "capability_url": attachment.capability_url,
+            "byte_size": attachment.byte_size,
+            "mime": attachment.mime,
+            "purpose": attachment.purpose,
+            "reused": attachment.reused,
+        }
+
+    @router.post("/media/platform/releases")
+    async def release_business_references(
+        body: "BusinessReleaseRequest",
+        claims: dict = Depends(current_claims),
+        reason: Annotated[str, Query(max_length=32)] = ReleaseReason.MOMENT_DELETED.value,
+    ) -> dict:
+        """Release every platform reference of one business object owned by the caller.
+
+        Used when a Moment (or a comment) is deleted: the bytes survive until the collector
+        confirms nothing references them, so a delete can never take another reference's
+        media with it.
+        """
+
+        try:
+            business_type = BusinessType(body.business_type)
+            parsed_reason = ReleaseReason(reason)
+        except ValueError:
+            raise AppError(
+                code="MEDIA_REFERENCE_INVALID",
+                message="业务引用不合法",
+                status_code=422,
+            ) from None
+        released = service.references.release_for_business(
+            business_type=business_type,
+            business_id=body.business_id,
+            reason=parsed_reason,
+            actor_id=claims["sub"],
+        )
+        return {
+            "released": [
+                {
+                    "reference_id": view.reference_id,
+                    "media_id": view.media_id,
+                    "business_type": view.business_type,
+                    "business_id": view.business_id,
+                }
+                for view in released
+            ]
+        }
 
     # ------------------------------------------------------------------ #
     # Diagnostics (maintenance gated)

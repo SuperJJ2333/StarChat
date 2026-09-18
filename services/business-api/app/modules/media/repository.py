@@ -91,6 +91,8 @@ class IngestRequest:
     #: Optional client claim. Verified for transport digests only; never authoritative.
     transport_claim: Digest | None = None
     max_bytes: int | None = None
+    #: Optional legacy-recognised prefix (e.g. `moments`) kept out of the domain address.
+    key_namespace: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,6 +464,7 @@ class MediaRepository:
             blob_id=blob_id,
             mime=request.mime,
             kind=request.kind,
+            namespace=request.key_namespace,
         )
         if not key_belongs_to_domain(key, digest_kind=digest.kind, owner_scope=scope_key):
             raise AppError(

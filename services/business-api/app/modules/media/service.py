@@ -108,6 +108,7 @@ class MediaPlatformService:
         height: int | None = None,
         duration_ms: int | None = None,
         max_bytes: int | None = None,
+        key_namespace: str | None = None,
     ) -> IngestResult:
         return self._registry.business.ingest(
             IngestRequest(
@@ -124,6 +125,7 @@ class MediaPlatformService:
                 height=height,
                 duration_ms=duration_ms,
                 max_bytes=max_bytes,
+                key_namespace=key_namespace,
             )
         )
 
@@ -394,6 +396,11 @@ class MediaPlatformService:
     @property
     def policy(self) -> MediaPlatformPolicy:
         return self._policy
+
+    def blob(self, blob_id: str):
+        """Blob accessor used by the Moments bridge to learn a blob's storage key."""
+
+        return self._repository.get_blob(blob_id)
 
     @property
     def origin_for_reference(self, reference: str) -> MediaOrigin:  # pragma: no cover
