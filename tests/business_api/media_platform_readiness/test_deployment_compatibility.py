@@ -119,6 +119,28 @@ def test_reconciler_accepts_the_deployed_avatar_backend(platform) -> None:
     assert after.errors == ()
 
 
+def test_ingest_writes_parent_rows_before_children_under_foreign_keys(platform) -> None:
+    """PostgreSQL enforces these foreign keys; the SQLite suites did not.
+
+    The real-PostgreSQL rehearsal restored the production dump and failed **every** ingest with
+    ``media_blobs_object_id_fkey``: the ORM has no relationship between ``MediaBlob``,
+    ``MediaObject`` and ``MediaVariant``, so it wrote the child rows first. The readiness
+    fixture now enforces foreign keys, and this asserts the whole chain lands.
+    """
+
+    from app.modules.media.models import MediaBlob, MediaObject, MediaVariant
+
+    result = platform.ingest(content=b"fk-order" * 128)
+    with platform.factory() as session:
+        media = session.get(MediaObject, result.media_id)
+        blob = session.get(MediaBlob, result.blob_id)
+        variant = session.get(MediaVariant, result.variant_id)
+    assert media is not None and media.media_id == result.media_id
+    assert blob is not None and blob.object_id == result.media_id
+    assert variant is not None and variant.blob_id == result.blob_id
+    assert variant.media_id == result.media_id
+
+
 def test_reconciler_refuses_a_backend_without_a_known_directory() -> None:
     """No directory at all is a configuration error, not a silent no-op."""
 

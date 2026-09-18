@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from httpx import ASGITransport, AsyncClient
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
@@ -47,13 +47,33 @@ def _create_user(session, user_id: str, username: str, now: datetime) -> None:
     )
 
 
-@pytest.fixture()
-def platform(tmp_path):
+def media_test_engine():
+    """SQLite, in memory, **with foreign keys enforced**.
+
+    SQLite ignores foreign keys unless ``PRAGMA foreign_keys=ON`` is set per connection, and
+    production is PostgreSQL where they are always enforced. The deployment rehearsal found an
+    insert-order bug (`media_blobs_object_id_fkey`) that every SQLite suite had been hiding;
+    the readiness instrument therefore runs with the same constraint behaviour as production.
+    """
+
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def _enforce_foreign_keys(dbapi_connection, _record):  # pragma: no cover - plumbing
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    return engine
+
+
+@pytest.fixture()
+def platform(tmp_path):
+    engine = media_test_engine()
     Base.metadata.create_all(engine)
     factory = create_session_factory(engine)
     now = datetime.now(timezone.utc)

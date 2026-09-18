@@ -251,6 +251,14 @@ class MediaRepository:
                 unreferenced_at=now,
             )
             session.add(media)
+            # ``media_blobs.object_id``, ``media_variants.media_id`` and
+            # ``media_variants.blob_id`` are real foreign keys on PostgreSQL, and the three
+            # mappers share no relationship the unit of work could sort them by: it emitted
+            # the blob insert first and the deployment rehearsal failed every ingest with
+            # ``media_blobs_object_id_fkey``. The dependency order is therefore written out
+            # explicitly — parent object, then blob, then variant. (The SQLite suites never
+            # saw this because SQLite ignores foreign keys unless they are switched on.)
+            session.flush(objects=[media])
 
             variant = MediaVariantRow(
                 variant_id=new_variant_id(),
@@ -269,9 +277,12 @@ class MediaRepository:
                 created_at=now,
                 ready_at=now,
             )
-            session.add(variant)
             if blob.object_id is None:
                 blob.object_id = media.media_id
+            # The variant points at both the object and the blob, so the blob row must be
+            # written before it.
+            session.flush(objects=[blob])
+            session.add(variant)
 
             media_platform_metrics.increment("object_created")
             return IngestResult(
