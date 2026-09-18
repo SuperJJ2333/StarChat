@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from coincurve import PrivateKey
@@ -73,6 +73,37 @@ def test_runtime_wires_single_source_real_mfa_and_server_limits():
     finally:
         runtime.close()
         engine.dispose()
+
+
+def test_default_manual_quote_window_is_24_hours():
+    from app.modules.wallet.runtime import create_manual_wallet_runtime
+    assert Settings(_env_file=None).wallet_manual_quote_ttl_seconds == 86400
+    assert configured().wallet_manual_quote_ttl_seconds == 86400
+    engine = create_engine('sqlite://')
+    runtime = create_manual_wallet_runtime(configured(), create_session_factory(engine), NoopRateLimiter())
+    try:
+        assert runtime.payouts.policy.quote_ttl == timedelta(hours=24)
+    finally:
+        runtime.close()
+        engine.dispose()
+
+
+def test_manual_quote_window_stays_configurable_below_maximum():
+    from app.modules.wallet.runtime import create_manual_wallet_runtime
+    engine = create_engine('sqlite://')
+    runtime = create_manual_wallet_runtime(configured(wallet_manual_quote_ttl_seconds=600),
+        create_session_factory(engine), NoopRateLimiter())
+    try:
+        assert runtime.payouts.policy.quote_ttl == timedelta(seconds=600)
+    finally:
+        runtime.close()
+        engine.dispose()
+
+
+def test_manual_quote_window_maximum_is_24_hours():
+    assert configured(wallet_manual_quote_ttl_seconds=86400).wallet_manual_quote_ttl_seconds == 86400
+    for value in (0, -1, 86401, 172800):
+        with pytest.raises(ValueError): configured(wallet_manual_quote_ttl_seconds=value)
 
 
 @pytest.mark.parametrize('value', ['9.999999','1e5','100000.0000001','NaN',100000.0])

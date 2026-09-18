@@ -179,6 +179,52 @@ def test_expiry_mfa_and_digest(core):
         request(core, q)
 
 
+def test_default_setting_issues_24_hour_quote_window(core):
+    from app.core.config import Settings
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy
+    from app.modules.wallet.manual_payout_models import ManualPayoutQuote
+    policy = core[0].policy
+    core[0].policy = ManualPayoutPolicy(policy.version,
+        timedelta(seconds=Settings(_env_file=None).wallet_manual_quote_ttl_seconds),
+        policy.max_per, policy.user_24h, policy.global_24h)
+    assert core[0].policy.quote_ttl == timedelta(hours=24)
+    q = quote(core, idempotency_key='window-default')
+    assert datetime.fromisoformat(q['expires_at'])-datetime.fromisoformat(q['created_at']) == timedelta(hours=24)
+    assert q['expires_at'] == (core[2][0]+timedelta(hours=24)).isoformat()
+    with core[1]() as session:
+        row = session.get(ManualPayoutQuote, q['id'])
+        created = row.created_at.replace(tzinfo=row.created_at.tzinfo or timezone.utc)
+        expires = row.expires_at.replace(tzinfo=row.expires_at.tzinfo or timezone.utc)
+        assert expires-created == timedelta(hours=24)
+
+
+def test_policy_rejects_quote_window_longer_than_24_hours(core):
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy
+    policy = core[0].policy
+    ManualPayoutPolicy(policy.version, timedelta(hours=24), policy.max_per, policy.user_24h, policy.global_24h)
+    with pytest.raises(ValueError):
+        ManualPayoutPolicy(policy.version, timedelta(hours=24, seconds=1),
+            policy.max_per, policy.user_24h, policy.global_24h)
+
+
+def test_confirmation_after_24_hour_window_is_rejected(core):
+    from app.modules.wallet.manual_payouts import ManualPayoutPolicy
+    policy = core[0].policy
+    core[0].policy = ManualPayoutPolicy(policy.version, timedelta(hours=24),
+        policy.max_per, policy.user_24h, policy.global_24h)
+    q = quote(core, idempotency_key='window-expiry')
+    core[2][0] += timedelta(hours=24, seconds=1)
+    # The window is the only thing under test: keep the session/ticket valid so
+    # the rejection can only come from the server-side quote expiry check.
+    core[0].fixture_claims['exp'] = int((core[2][0]+timedelta(hours=2)).timestamp())
+    core[0].fixture_tickets.clear()
+    with core[1].begin() as session:
+        session.get(RedeemabilityReserve, 'global').observed_at = core[2][0]
+    with pytest.raises(AppError, match='WALLET_PAYOUT_QUOTE_EXPIRED'):
+        request(core, q, idempotency_key='window-expiry-request')
+    assert core[5].balance('HOLD:alice') == Decimal('0')
+
+
 def test_claim_requires_admin_and_preserves_freeze(core):
     o = request(core)
     with pytest.raises(AppError):

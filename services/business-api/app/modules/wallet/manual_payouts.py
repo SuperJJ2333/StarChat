@@ -66,7 +66,7 @@ class ManualPayoutPolicy:
     global_24h: Decimal
 
     def __post_init__(self):
-        if not self.version or not isinstance(self.quote_ttl, timedelta) or not timedelta(0) < self.quote_ttl <= timedelta(hours=1):
+        if not self.version or not isinstance(self.quote_ttl, timedelta) or not timedelta(0) < self.quote_ttl <= timedelta(hours=24):
             raise ValueError('explicit payout policy and bounded quote TTL required')
         for value in (self.max_per, self.user_24h, self.global_24h):
             if (not isinstance(value, Decimal) or not value.is_finite() or value < Decimal('10')

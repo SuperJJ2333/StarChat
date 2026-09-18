@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     wallet_manual_max_per: str | None = None
     wallet_manual_user_24h: str | None = None
     wallet_manual_global_24h: str | None = None
-    wallet_manual_quote_ttl_seconds: int = 300
+    wallet_manual_quote_ttl_seconds: int = 86400
     wallet_manual_stale_resample_budget_seconds: int = 60
 
     @field_validator('wallet_manual_stale_resample_budget_seconds', mode='before')
@@ -136,7 +136,7 @@ class Settings(BaseSettings):
             raise ValueError('manual TRON baseline must include timezone')
         if self.wallet_funding_baseline_height is None or self.wallet_funding_baseline_height < 0:
             raise ValueError('manual TRON baseline height required')
-        if not 1 <= self.wallet_manual_quote_ttl_seconds <= 3600 or not 1 <= self.wallet_deposit_intent_ttl_seconds <= 86400:
+        if not 1 <= self.wallet_manual_quote_ttl_seconds <= 86400 or not 1 <= self.wallet_deposit_intent_ttl_seconds <= 86400:
             raise ValueError('manual TRON quote/intent expiry out of bounds')
         return self
 

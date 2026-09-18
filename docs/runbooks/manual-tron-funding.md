@@ -18,7 +18,7 @@
 
 新增配置使用 `BUSINESS_` 前缀：`WALLET_REAL_MODE=manual_tron` 选择真实适配器，`WALLET_REAL_FUNDS_ENABLED=false` 保留资金关闭。还必须设置 `WALLET_TOTP_ENCRYPTION_KEY`（Fernet 密钥）、`TOTP_ISSUER`、`WALLET_BINDING_DOMAIN`、`WALLET_OFFICIAL_ADDRESS`、`WALLET_OFFICIAL_CONFIG_VERSION`、`WALLET_MANUAL_OWNER_ADMIN_ID`、`WALLET_MANUAL_POLICY_VERSION`、`WALLET_FUNDING_BASELINE_AT`（带时区）和 `WALLET_FUNDING_BASELINE_HEIGHT`。TronGrid API 密钥通过 `WALLET_TRONGRID_API_KEY` 提供。密钥必须稳定保存并纳入受保护的恢复配置，不能在每次重启时生成。
 
-三个限额配置 `WALLET_MANUAL_MAX_PER`、`WALLET_MANUAL_USER_24H`、`WALLET_MANUAL_GLOBAL_24H` 分别使用精确字符串 `100000.000000`、`100000.000000`、`10000000.000000`。服务端报价有效期默认 300 秒，充值意图默认 1200 秒，分别由 `WALLET_MANUAL_QUOTE_TTL_SECONDS` 与 `WALLET_DEPOSIT_INTENT_TTL_SECONDS` 配置；这些时间快照固定在已创建订单中。
+三个限额配置 `WALLET_MANUAL_MAX_PER`、`WALLET_MANUAL_USER_24H`、`WALLET_MANUAL_GLOBAL_24H` 分别使用精确字符串 `100000.000000`、`100000.000000`、`10000000.000000`。服务端报价有效期默认 86400 秒（24 小时），充值意图默认 1200 秒，分别由 `WALLET_MANUAL_QUOTE_TTL_SECONDS` 与 `WALLET_DEPOSIT_INTENT_TTL_SECONDS` 配置；这些时间快照固定在已创建订单中。
 
 MFA 注册接口位于 `/api/v1/security/mfa`：查询状态、`/enroll` 注册、`/enable` 启用与 `/abort-pending` 取消尚未启用的配置。注册和取消待启用配置需要当前密码及五分钟内的新登录会话；启用要求同一配置 ID 和真实动态验证码，并消耗当前时间步。已有启用配置不能经上述接口覆盖或删除。会话撤销在授权时检查，不承诺撤销会回滚已完成授权的并发操作。
 
