@@ -539,6 +539,104 @@ void main() {
     });
   });
 
+  group('同库并发初始化必须串行（CI box_client 写入竞态回归）', () {
+    /// 复现依据：`MatrixClientFactory.create()` 原先没有序列化，同一进程里两次
+    /// 并发 `create()` 会同时打开**同一个** SQLite/SQLCipher 文件并各自执行
+    /// SDK 初始化（含 `box_client` 的 token/credentials 写入）。这正是 CI 上
+    /// `3169 passed, 1 failed`、报 `constraint failed (code 1811)` +
+    /// `INSERT OR REPLACE INTO box_client (k, v)` 的形态。
+    ///
+    /// 本测试不依赖真实 SQLite：注入的 opener 覆盖「打开数据库 + SDK 初始化 +
+    /// 持久化凭据」的窗口，若两次 create 重叠即可确定性捕获。
+    test('两次并发 create 不得重叠执行 opener', () async {
+      var inFlight = 0;
+      var maxConcurrent = 0;
+
+      Future<Client> slowOpener({
+        required String clientName,
+        required String databasePath,
+        required String cipher,
+      }) async {
+        inFlight++;
+        if (inFlight > maxConcurrent) maxConcurrent = inFlight;
+        // 模拟 SDK 初始化 + 凭据写入的耗时窗口。
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+        inFlight--;
+        return LogoutTrackingClient('client');
+      }
+
+      final factory = MatrixClientFactory(
+        sessionStore: SecureSessionStore(MemoryStore()),
+        homeserver: Uri.parse('https://matrix.test'),
+        supportDirectoryPath: () async => _matrixTestDirectory.path,
+        opener: slowOpener,
+        disposer: (_) async {},
+      );
+
+      final clients = await Future.wait([factory.create(), factory.create()]);
+
+      expect(clients, hasLength(2), reason: '两次初始化都必须成功返回');
+      expect(maxConcurrent, 1,
+          reason: '同一个数据库路径上的初始化必须串行；重叠会让两个 client 同时写 box_client');
+    });
+
+    test('多路并发 create 全部串行完成，且队列排空后不残留', () async {
+      var inFlight = 0;
+      var maxConcurrent = 0;
+      var completed = 0;
+
+      Future<Client> slowOpener({
+        required String clientName,
+        required String databasePath,
+        required String cipher,
+      }) async {
+        inFlight++;
+        if (inFlight > maxConcurrent) maxConcurrent = inFlight;
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        inFlight--;
+        completed++;
+        return LogoutTrackingClient('client');
+      }
+
+      final factory = MatrixClientFactory(
+        sessionStore: SecureSessionStore(MemoryStore()),
+        homeserver: Uri.parse('https://matrix.test'),
+        supportDirectoryPath: () async => _matrixTestDirectory.path,
+        opener: slowOpener,
+        disposer: (_) async {},
+      );
+
+      final clients = await Future.wait(
+          List<Future<Client>>.generate(8, (_) => factory.create()));
+
+      expect(clients, hasLength(8));
+      expect(completed, 8, reason: '每一路都必须真正完成初始化');
+      expect(maxConcurrent, 1, reason: '8 路并发也必须完全串行');
+      expect(MatrixClientFactory.debugPendingInitLockCount, 0,
+          reason: '队列排空后不得残留锁条目（否则 Map 会无限增长）');
+    });
+
+    test('串行 create 仍然各自成功（锁不破坏正常路径）', () async {
+      final factory = MatrixClientFactory(
+        sessionStore: SecureSessionStore(MemoryStore()),
+        homeserver: Uri.parse('https://matrix.test'),
+        supportDirectoryPath: () async => _matrixTestDirectory.path,
+        opener: ({
+          required String clientName,
+          required String databasePath,
+          required String cipher,
+        }) async =>
+            LogoutTrackingClient('serial'),
+        disposer: (_) async {},
+      );
+
+      final first = await factory.create();
+      final second = await factory.create();
+      expect(first.clientName, 'serial');
+      expect(second.clientName, 'serial');
+    });
+  });
+
   test('normal sync cannot adopt a fresh client after explicit clear',
       () async {
     final fresh = LogoutTrackingClient('fresh');

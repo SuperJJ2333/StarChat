@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,44 @@ typedef MatrixClientDisposer = Future<void> Function(Client client);
 typedef MatrixDatabaseDeleter = Future<void> Function(String path);
 typedef MatrixClientMigrator = Future<void> Function(
     Client client, Uri homeserver);
+
+/// 同一数据库路径上的初始化串行化（按路径加锁，而非一把全局锁）。
+///
+/// **为什么必须有**：`Client.init()` 会打开 SQLite/SQLCipher 库并写入
+/// `box_client`（token/credentials）。同一进程里若两个工厂并发对**同一个**
+/// 文件执行「打开 + SDK 初始化 + 持久化凭据」，两个连接会互相踩到对方的
+/// 写入事务，表现为
+/// `constraint failed (code 1811)` + `INSERT OR REPLACE INTO box_client (k, v)`
+/// 这类非确定性失败。
+///
+/// 锁覆盖**整段**序列（打开数据库 → SDK 初始化 → 凭据持久化 → 返回 client），
+/// 只锁路径生成是不够的。不同数据库路径之间互不阻塞；队列排空后条目会被移除，
+/// 不会无限增长。
+final class _DatabaseInitLocks {
+  _DatabaseInitLocks._();
+
+  static final Map<String, Future<void>> _tails = <String, Future<void>>{};
+
+  static Future<T> run<T>(String path, Future<T> Function() operation) {
+    final previous = _tails[path] ?? Future<void>.value();
+    final completer = Completer<void>();
+    final tail = completer.future;
+    _tails[path] = tail;
+
+    return previous.then((_) async {
+      try {
+        return await operation();
+      } finally {
+        if (!completer.isCompleted) completer.complete();
+        // 只有仍是队尾时才清理，避免移除后来者排上的新尾巴。
+        if (identical(_tails[path], tail)) _tails.remove(path);
+      }
+    });
+  }
+
+  @visibleForTesting
+  static int get pendingPathCount => _tails.length;
+}
 
 final class MatrixClientFactory {
   MatrixClientFactory({
@@ -49,6 +88,12 @@ final class MatrixClientFactory {
 
   static const clientName = 'liuhetong_mobile';
   static const databaseFileName = 'liuhetong_matrix.sqlite';
+
+  /// 当前仍有初始化队列的数据库路径数（仅测试观察：证明确实按路径串行，
+  /// 且队列排空后不残留条目）。
+  @visibleForTesting
+  static int get debugPendingInitLockCount =>
+      _DatabaseInitLocks.pendingPathCount;
 
   final SecureSessionStore sessionStore;
   final Uri homeserver;
@@ -95,22 +140,26 @@ final class MatrixClientFactory {
   Future<Client> create() async {
     final directory = await supportDirectoryPath();
     final databasePath = await _databasePath(directory);
-    if (await sessionStore.matrixClearPending()) {
-      await _completePendingClear(databasePath);
-    }
-    final cipher = await sessionStore.matrixDatabaseKey();
-    final client = await opener(
-      clientName: clientName,
-      databasePath: databasePath,
-      cipher: cipher,
-    );
-    try {
-      await clientMigrator(client, homeserver);
-      return client;
-    } catch (_) {
-      await disposer(client);
-      rethrow;
-    }
+    // 串行化必须在路径确定之后、打开数据库之前开始，并覆盖「打开 +
+    // SDK 初始化（含 box_client 凭据写入）+ 迁移」的完整窗口。
+    return _DatabaseInitLocks.run(databasePath, () async {
+      if (await sessionStore.matrixClearPending()) {
+        await _completePendingClear(databasePath);
+      }
+      final cipher = await sessionStore.matrixDatabaseKey();
+      final client = await opener(
+        clientName: clientName,
+        databasePath: databasePath,
+        cipher: cipher,
+      );
+      try {
+        await clientMigrator(client, homeserver);
+        return client;
+      } catch (_) {
+        await disposer(client);
+        rethrow;
+      }
+    });
   }
 
   Future<MatrixClientContinuityMetadata> continuityMetadata(
@@ -133,8 +182,8 @@ final class MatrixClientFactory {
         userId: null,
         deviceId: null,
         ed25519Fingerprint: null,
-        databaseGeneration:
-            _unboundDatabaseGeneration ??= databaseGenerationFactory(),
+        databaseGeneration: _unboundDatabaseGeneration ??=
+            databaseGenerationFactory(),
       );
     }
     final userId = client.userID;
