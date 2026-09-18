@@ -5,6 +5,7 @@
 # 产生整文件 diff（内容相同却因行尾不同而全量变更）。
 *.dart text eol=lf
 *.md text eol=lf
+*.py text eol=lf
 
 # Preserve SDK provenance hashes.
 apps/mobile_flutter/third_party/matrix/** -text
