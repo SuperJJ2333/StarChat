@@ -7,6 +7,7 @@ import '../matrix/gallery_media_payload.dart';
 import '../matrix/image_picker_page.dart';
 import '../matrix/profile_repository.dart';
 import 'moment_models.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 相册选择结果。字段必须与 `ImagePickerPage` 的出栈记录**完全一致**——
 /// 记录是结构类型，字段不一致会让路由无法完成出栈，表现为相册页卡死。
@@ -115,7 +116,7 @@ class _CommentComposerState extends State<_CommentComposer> {
       final maxCount = 9 - images.length;
       final selected = await (widget.galleryPicker?.call(context, maxCount) ??
           Navigator.of(context, rootNavigator: true)
-              .push<MomentGallerySelection>(CupertinoPageRoute(
+              .push<MomentGallerySelection>(MotionPageRoute(
                   builder: (_) => ImagePickerPage(
                       photosOnly: true, maxCount: maxCount))));
       if (!mounted || selected == null) return;

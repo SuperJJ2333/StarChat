@@ -146,6 +146,13 @@ abstract final class WeChatDimensions {
   static const contactAvatar = 40.0;
   static const contactDividerIndent = 68.0;
   static const contactIndexFeedback = 64.0;
+
+  /// 右侧字母索引列宽 / 单个字母高度。与设计契约一致
+  /// （frontend/src/styles/components.css `.c-contact-index`：宽
+  /// `--size-contact-index: 20px`、字母 `--size-contact-index-letter: 18px`
+  /// 且 `align-content: center`），字母不随屏幕高度被拉伸（BUG-03）。
+  static const contactIndexWidth = 20.0;
+  static const contactIndexLetterHeight = 18.0;
   static const conversationAvatar = 48.0;
   static const messageAvatar = 40.0;
   static const composerMinHeight = 56.0;

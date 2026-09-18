@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// Only explicitly safe, user-facing server messages belong here.
 class PaymentPinException implements Exception {
@@ -15,7 +16,7 @@ Future<bool> showPaymentPinSetup(
   Future<bool> Function()? isScopeCurrent,
 }) async =>
     await Navigator.of(context, rootNavigator: true).push<bool>(
-      CupertinoPageRoute(
+      MotionPageRoute(
           builder: (_) => PaymentPinPage.setup(
               onSetup: onSetup, isScopeCurrent: isScopeCurrent),
           fullscreenDialog: true),
@@ -32,7 +33,7 @@ Future<String?> showPaymentPinAuthorization(
   Future<bool> Function()? isScopeCurrent,
 }) =>
     Navigator.of(context, rootNavigator: true).push<String>(
-      CupertinoPageRoute(
+      MotionPageRoute(
           builder: (_) => PaymentPinPage.authorize(
               title: title,
               recipient: recipient,

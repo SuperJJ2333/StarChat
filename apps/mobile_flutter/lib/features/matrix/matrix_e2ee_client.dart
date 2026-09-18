@@ -1305,23 +1305,15 @@ final class MatrixRoomLease
   Future<List<MatrixForwardDestinationSnapshot>> forwardingDestinations() =>
       _withLeaseOperation((room) async {
         final client = room.client;
-        final vaultRoomId = client
-            .accountData[emojiVaultAccountDataType]?.content['room_id']
-            ?.toString();
-        final reminderRoomId = client
-            .accountData[messageReminderAccountDataType]?.content['room_id']
-            ?.toString();
+        // 控制房间过滤统一走 RoomVisibilityPolicy（accountData + roomId），
+        // 不再按展示名判定。
+        final visibility = roomVisibilityFromAccountData(client);
         return [
           for (final target in client.rooms)
             if (target.encrypted &&
                 target.membership == Membership.join &&
                 target.canSendDefaultMessages &&
-                !isMatrixControlRoom(
-                  roomId: target.id,
-                  displayName: room_names.roomDisplayName(target),
-                  vaultRoomId: vaultRoomId,
-                  reminderRoomId: reminderRoomId,
-                ))
+                visibility.isVisible(target.id))
               MatrixForwardDestinationSnapshot(
                 id: target.id,
                 displayName: room_names.roomDisplayName(target),
@@ -6297,6 +6289,26 @@ final class MatrixSdkE2eeClient
     return !_accessRevoked &&
         room != null &&
         RoomMentionStore.shared.hasPending(room);
+  }
+
+  /// **本地只读**：本机 SDK store 是否已知该房间（任意 membership）。
+  ///
+  /// 供 `RoomOpeningPolicy` 的离线优先判定使用：不触发 `/sync`、不等待同步、
+  /// 不发起任何网络请求（与 `waitForRoom` 的区别就在于此）。
+  bool knowsRoomLocally(String roomId) =>
+      _client?.getRoomById(roomId) != null;
+
+  /// **本地只读**：该房间在本机 SDK store 中是否为我方已加入。
+  bool isRoomJoinedLocally(String roomId) =>
+      _client?.getRoomById(roomId)?.membership == Membership.join;
+
+  /// **本地只读**：accountData 引用的控制房间（表情仓库 / 提醒同步）。
+  ///
+  /// 身份来自 accountData 的 `room_id` 与房间号本身，**不依赖展示名**。
+  Set<String> get controlRoomIds {
+    final client = _client;
+    if (client == null) return const <String>{};
+    return roomVisibilityFromAccountData(client).controlRoomIds;
   }
 
   Future<void> scanMentions() => _withClient((client) async {

@@ -302,7 +302,9 @@ void main() {
                 icon: Icon(CupertinoIcons.compass), label: '发现')
           ]),
           tabBuilder: (_, index) =>
-              CupertinoTabView(builder: (_) => DiscoveryPage(api: api)),
+              CupertinoTabView(
+                  builder: (_) => DiscoveryPage(
+                      api: api, onOpenRoom: (_, {anchorEventId}) async {})),
         )));
     await tester.tap(find.byKey(const Key('discovery-scan-entry')));
     await advance(tester);

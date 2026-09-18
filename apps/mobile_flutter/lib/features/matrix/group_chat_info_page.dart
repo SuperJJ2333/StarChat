@@ -16,6 +16,7 @@ import 'matrix_user_avatar.dart';
 import '../contacts/member_directory_service.dart';
 import '../../ui/components/wechat_date_picker.dart';
 import '../../ui/notification/conversation_notification_mode_tile.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 成员展示名：备注（查看者本人可见）→ 控制器解析名（Matrix 昵称）。
 String _resolvedMemberName(ProfileRepository? cache, GroupChatMember member) =>
@@ -121,7 +122,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
   }) async {
     final result = await Navigator.push<String>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => _GroupTextEditPage(
           title: title,
           initialValue: initialValue,
@@ -195,7 +196,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                 padding: EdgeInsets.zero,
                 onPressed: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => GroupMemberSearchPage(
                       snapshot: snapshot,
                       identityCache: widget.identityCache,
@@ -228,7 +229,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     onRemove: snapshot.canManage
                         ? () => Navigator.push(
                               context,
-                              CupertinoPageRoute(
+                              MotionPageRoute(
                                 builder: (_) => GroupMemberRemovalPage(
                                   controller: widget.controller,
                                   identityCache: widget.identityCache,
@@ -276,7 +277,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                       if (gateway is GroupAnnouncementGateway) {
                         Navigator.push(
                             context,
-                            CupertinoPageRoute<void>(
+                            MotionPageRoute<void>(
                                 builder: (_) => GroupAnnouncementPage(
                                     service:
                                         (gateway as GroupAnnouncementGateway)
@@ -300,7 +301,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                     snapshot.qrJoinEnabled ? '扫一扫加入群聊' : '已关闭',
                     () => Navigator.push(
                       context,
-                      CupertinoPageRoute(
+                      MotionPageRoute(
                         builder: (_) => GroupQrCodePage(
                           snapshot: snapshot,
                           api: widget.api,
@@ -314,7 +315,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                       trailing: const CupertinoListTileChevron(),
                       onTap: () => Navigator.push(
                         context,
-                        CupertinoPageRoute(
+                        MotionPageRoute(
                           builder: (_) => GroupManagementPage(
                             identityCache: widget.identityCache,
                             controller: widget.controller,
@@ -364,7 +365,7 @@ final class _GroupChatInfoPageState extends State<GroupChatInfoPage> {
                             trailing: const CupertinoListTileChevron(),
                             onTap: () => Navigator.push(
                               context,
-                              CupertinoPageRoute(
+                              MotionPageRoute(
                                 builder: (_) => MuteExceptionSettingsPage(
                                   controller: widget.controller,
                                   identityCache: widget.identityCache,
@@ -516,7 +517,7 @@ final class MuteExceptionSettingsPage extends StatelessWidget {
             ]),
             onTap: () => Navigator.push(
               context,
-              CupertinoPageRoute(
+              MotionPageRoute(
                 builder: (_) => FollowedGroupMemberPickerPage(
                   controller: controller,
                   identityCache: identityCache,
@@ -784,7 +785,7 @@ final class GroupManagementPage extends StatelessWidget {
   Future<void> _pick(BuildContext context, {required bool transfer}) =>
       Navigator.push(
           context,
-          CupertinoPageRoute<void>(
+          MotionPageRoute<void>(
               builder: (_) => _GroupRolePicker(
                   controller: controller,
                   transfer: transfer,

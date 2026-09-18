@@ -33,11 +33,12 @@ export 'conversation_presentation.dart'
 export 'room_page.dart' show RoomPage;
 import '../search/global_search_page.dart';
 import 'room_navigation_coordinator.dart';
+import 'room_visibility_policy.dart';
 import 'room_mention_store.dart';
-import 'matrix_control_rooms.dart';
 import 'message_reminder_service.dart';
 import '../statistics/statistics_state_store.dart';
 import 'nudge_service.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class _RoomAvatarSnapshot {
   const _RoomAvatarSnapshot(
@@ -757,7 +758,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
       onCreateGroup: widget.onCreateGroup,
       onAddFriend: () => Navigator.push(
           context,
-          CupertinoPageRoute(
+          MotionPageRoute(
               builder: (_) => AddFriendPage(
                   contactActions: ContactActions(
                     onMessage: widget.onMessage,
@@ -767,25 +768,44 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                   api: widget.api,
                   identityCache: _identityCache))),
       onScan: () => Navigator.of(context, rootNavigator: true).push(
-          CupertinoPageRoute(
+          MotionPageRoute(
               fullscreenDialog: true,
               builder: (_) => ScanQrPage(
                   api: widget.api,
                   groupJoinApi: widget.api,
-                  onGroupJoined: (roomId) =>
-                      unawaited(_openRoomById(roomId))))),
+                  onGroupJoined: (roomId) => unawaited(
+                      _openRoomById(roomId, source: RoomOpenSource.scan))))),
       onAppearance: () => showThemePickerSheet(context, widget.themeController),
       appearanceKey: const Key('messages-appearance'));
-  Future<void> _openRoomById(String roomId, {String? anchorEventId}) async {
+  Future<void> _openRoomById(
+    String roomId, {
+    String? roomName,
+    String? anchorEventId,
+    RoomOpenSource source = RoomOpenSource.search,
+  }) async {
     if (roomId.isEmpty || widget.previewOnly) return;
-    try {
-      await widget.matrix.conversations.waitForJoinedRoom(roomId);
-      await _refreshClientSnapshot();
-      final matches = _rooms.where((room) => room.id == roomId);
-      if (mounted && matches.isNotEmpty) {
-        await _openRoom(matches.first, anchorEventId: anchorEventId);
-      }
-    } catch (_) {/* The next sync makes the room available in the list. */}
+    // 离线优先：本地会话列表里已经有这个房间时**立即**走统一入口打开，
+    // 不再先 `waitForJoinedRoom`（旧实现在离线/弱网下让用户点了没反应，
+    // 并且是最长 12 秒的静默等待）。
+    final matches = _rooms.where((room) => room.id == roomId);
+    final local = matches.isEmpty ? null : matches.first;
+    if (local != null) {
+      await _openRoom(local, anchorEventId: anchorEventId, source: source);
+      return;
+    }
+    // 本地未知（刚入群 / 冷启动尚未同步）：交给组合根的 RoomOpeningPolicy
+    // 做有界网络等待；失败由组合根统一提示，这里绝不静默吞错。
+    final openRoom = widget.onOpenRoom;
+    if (openRoom == null) return;
+    await openRoom(RoomOpenRequest(
+      roomId: roomId,
+      roomName: roomName ?? '',
+      anchorEventId: anchorEventId,
+      source: source,
+      onRoomClosed: () {
+        if (mounted) unawaited(_refreshClientSnapshot());
+      },
+    ));
   }
 
   Future<void> _warmChatIdentity(
@@ -810,7 +830,9 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
     }
   }
 
-  Future<void> _openRoom(_RoomSnapshot snapshot, {String? anchorEventId}) async {
+  Future<void> _openRoom(_RoomSnapshot snapshot,
+      {String? anchorEventId,
+      RoomOpenSource source = RoomOpenSource.conversationList}) async {
     // 只读占位页（启动期缓存列表）与未注入统一导航时不打开房间。
     final openRoom = widget.onOpenRoom;
     if (widget.previewOnly || openRoom == null) return;
@@ -847,6 +869,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             : groupRoomNavigationTitle(
                 snapshot.groupName, snapshot.memberCount),
         anchorEventId: anchorEventId,
+        source: source,
         // 租约已取、页面尚未 push：先收起等待动画，再完成本房间的
         // 已读/未读收尾。
         onRoomReady: () {
@@ -1013,15 +1036,12 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 控制房间过滤统一走 RoomVisibilityPolicy（accountData 引用的 roomId），
+    // 不再按展示名判定；同一条规则也用于"是否允许打开"。
+    final roomVisibility =
+        RoomVisibilityPolicy.forRoomIds([_vaultRoomId, _reminderRoomId]);
     final visibleRooms = _rooms
-        .where(
-          (room) => !isMatrixControlRoom(
-            roomId: room.id,
-            displayName: room.displayName,
-            vaultRoomId: _vaultRoomId,
-            reminderRoomId: _reminderRoomId,
-          ),
-        )
+        .where((room) => roomVisibility.isVisible(room.id))
         .toList(growable: false);
     final roomById = {for (final room in visibleRooms) room.id: room};
     final ordered = orderConversations([
@@ -1059,7 +1079,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
             padding: EdgeInsets.zero,
             onPressed: () => Navigator.push(
                 context,
-                CupertinoPageRoute(
+                MotionPageRoute(
                     builder: (_) => GlobalSearchPage(
                           contactActions: ContactActions(
                             onMessage: widget.onMessage,
@@ -1070,10 +1090,14 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                           matrix: widget.matrix,
                           identityCache: _identityCache,
                           // 房间打开复用消息列表既有的 RoomLease/RoomPage 生命周期
-                          // （含 anchor 定位），搜索页不复制一套开会话实现。
+                          // （含 anchor 定位），搜索页不复制一套开会话实现；
+                          // 网络姿态由 RoomOpeningPolicy 按 source=search 决定
+                          // （离线优先：本地已知的会话不再等待同步）。
                           onOpenRoom: (room, {anchorEventId}) =>
                               _openRoomById(room.roomId,
-                                  anchorEventId: anchorEventId),
+                                  roomName: room.displayName,
+                                  anchorEventId: anchorEventId,
+                                  source: RoomOpenSource.search),
                         ))),
             child: const Icon(CupertinoIcons.search, size: 22),
           ),
@@ -1136,7 +1160,7 @@ class _MatrixHomePageState extends State<MatrixHomePage> {
                         ),
                         onTap: () => Navigator.push<void>(
                           context,
-                          CupertinoPageRoute(
+                          MotionPageRoute(
                             builder: (_) => _FoldedGroupChatsPage(
                               hasPendingMention:
                                   widget.matrix.hasPendingMentions,

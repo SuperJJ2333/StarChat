@@ -40,6 +40,11 @@ final class FakeContactsGateway implements ContactsGateway {
 
   @override
   Future<void> blockContact(String userId) async {}
+  @override
+  Future<Map<String, dynamic>> blockList() async => {'items': []};
+
+  @override
+  Future<void> unblockContact(String userId) async {}
 
   @override
   Future<void> deleteContact(String userId) async {}

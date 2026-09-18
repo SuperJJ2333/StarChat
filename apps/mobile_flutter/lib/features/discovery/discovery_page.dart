@@ -16,11 +16,13 @@ import '../../ui/chat/wechat_unread_badge.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../search/global_search_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class DiscoveryPage extends StatelessWidget {
   const DiscoveryPage(
       {super.key,
       required this.api,
+      required this.onOpenRoom,
       this.matrix,
       this.identityCache,
       this.contactActions,
@@ -32,6 +34,10 @@ final class DiscoveryPage extends StatelessWidget {
 
   final BusinessApiClient api;
   final ContactActions? contactActions;
+
+  /// 打开房间（必填）：发现 Tab 的搜索与消息 Tab 拥有完全相同的打开能力。
+  final GlobalSearchRoomOpenCallback onOpenRoom;
+
   final MatrixSdkE2eeClient? matrix;
   final ProfileRepository? identityCache;
   final MomentsUnreadController? unreadController;
@@ -52,12 +58,14 @@ final class DiscoveryPage extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 onPressed: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                       builder: (_) => GlobalSearchPage(
                       contactActions: contactActions,
                       api: api,
                           matrix: matrix,
-                          identityCache: identityCache)),
+                          identityCache: identityCache,
+                          // 必填：与消息/通讯录 Tab 完全一致（群聊 + 聊天记录可用）。
+                          onOpenRoom: onOpenRoom)),
                 ),
                 child: const Icon(CupertinoIcons.search, size: 22),
               ),
@@ -68,13 +76,13 @@ final class DiscoveryPage extends StatelessWidget {
                     onCreateGroup: () => onCreateGroup?.call(),
                     onAddFriend: onAddFriend ??
                         () => Navigator.of(context, rootNavigator: true).push(
-                            CupertinoPageRoute(
+                            MotionPageRoute(
                                 builder: (_) => AddFriendPage(
                                 contactActions: contactActions,
                                 api: api, identityCache: identityCache))),
                     onScan: onScan ??
                         () => Navigator.of(context, rootNavigator: true).push(
-                            CupertinoPageRoute(
+                            MotionPageRoute(
                                 builder: (_) =>
                                     ScanQrPage(api: api, groupJoinApi: api))),
                     onAppearance: () => onAppearance?.call()),
@@ -125,7 +133,7 @@ final class DiscoveryPage extends StatelessWidget {
                   );
                   if (!context.mounted) return;
                   Navigator.of(context, rootNavigator: true).push(
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       fullscreenDialog: true,
                       builder: (_) => page,
                     ),
@@ -146,7 +154,7 @@ final class DiscoveryPage extends StatelessWidget {
                 ),
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
                 onTap: () => Navigator.of(context, rootNavigator: true).push(
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     fullscreenDialog: true,
                     builder: (_) => ScanQrPage(
                       api: api,
@@ -173,7 +181,7 @@ final class DiscoveryPage extends StatelessWidget {
                 trailing: const Icon(CupertinoIcons.chevron_right, size: 12),
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => const _RecommendedContentPage(),
                   ),
                 ),

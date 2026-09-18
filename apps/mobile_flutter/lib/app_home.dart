@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/business_api_client.dart';
 import 'core/app_connection_status.dart';
 import 'core/app_config.dart';
+import 'core/permissions/blocked_contacts.dart';
 import 'core/local_notification_scheduler.dart';
 import 'core/notification/app_state_manager.dart';
 import 'core/notification/badge_service.dart';
@@ -40,6 +41,10 @@ import 'features/matrix/matrix_security_logger.dart';
 import 'features/matrix/direct_chat_controller.dart';
 import 'features/matrix/direct_chat_entry.dart';
 import 'features/matrix/room_navigation_coordinator.dart';
+import 'features/matrix/room_opening_policy.dart';
+import 'features/matrix/room_open_failure_feedback.dart';
+import 'features/search/global_search_models.dart';
+import 'features/search/global_search_page.dart' show GlobalSearchRoomOpenCallback;
 import 'features/matrix/coordinated_direct_chat.dart';
 import 'features/moments/moment_preview_cache.dart';
 import 'features/ledger/ledger_pages.dart';
@@ -85,6 +90,7 @@ import 'features/wallet/wallet_page.dart';
 import 'ui/components/wechat_list_tile.dart';
 import 'ui/components/messages_tab_icon.dart';
 import 'ui/foundation/changliao_icons.dart';
+import 'ui/motion/motion_preferences.dart';
 import 'ui/foundation/wechat_tokens.dart';
 import 'ui/theme/theme_controller.dart';
 import 'ui/theme/theme_picker_sheet.dart';
@@ -102,6 +108,7 @@ import 'features/update/update_integrity.dart';
 import 'features/update/app_update_dialog.dart';
 import 'ui/notification/in_app_banner_overlay.dart';
 import 'ui/notification/notification_readiness_banner.dart';
+import './ui/motion/motion_page_route.dart';
 
 /// Owns asynchronous initialization for one managed Matrix home generation.
 /// A replacement generation cannot install platform handlers until old work drains.
@@ -205,6 +212,17 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       RoomNavigationCoordinator(
     openRoom: _openManagedRoomRoute,
     navigatorOf: _rootNavigatorOrNull,
+  );
+
+  /// **Room Opening Policy Engine**：所有入口进入 [_roomNavigation] 之前的
+  /// 唯一策略层。职责只有"打开前判断 + 失败分类"，不创建页面、不管理租约
+  /// ——导航职责仍完整属于 [RoomNavigationCoordinator]。
+  ///
+  /// 离线优先的关键：本地已 joined 的房间由策略直接放行，**绝不**先
+  /// `waitForRoom`/`waitForJoinedRoom`；只有本地不存在才允许有界网络回退。
+  late final RoomOpeningPolicy _roomOpening = RoomOpeningPolicy(
+    probe: _MatrixRoomOpenProbe(widget.matrix),
+    diagnostics: (diagnostic) => debugPrint('[room-open] ${diagnostic.line}'),
   );
 
   NavigatorState? _rootNavigatorOrNull() =>
@@ -420,9 +438,26 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     _matrixResourceSetup = _initializeMatrixResources();
     unawaited(_matrixResourceSetup);
     unawaited(_identityCache());
+    unawaited(_hydrateBlockedContacts());
     _unreadSubscription = widget.matrix.syncEvents.listen((_) {
       unawaited(_refreshUnreadCount());
     });
+  }
+
+  /// BUG-10：登录后同步一次拉黑名单。「聊天发送门」读取同一份投影，
+  /// 因此重开 App / 冷启动后拉黑状态依旧生效（服务端 `GET /blocks` 为权威）。
+  Future<void> _hydrateBlockedContacts() async {
+    try {
+      final body = await widget.api.blockList();
+      final items = (body['items'] as List?) ?? const [];
+      blockedContacts.replaceAll([
+        for (final item in items)
+          if (item is Map && item['user_id'] != null)
+            item['user_id'].toString(),
+      ]);
+    } catch (_) {
+      // 网络失败保持上次已知状态；好友设置页仍会以服务端结果刷新。
+    }
   }
 
   void _startHomeResources() {
@@ -957,7 +992,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _openFriendRequests() {
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => FriendRequestsPage(
           api: widget.api,
           pendingRequests: pendingFriendRequests,
@@ -989,7 +1024,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         requestId: request['id']?.toString(),
         requestMessage: request['message']?.toString());
     // The recipient sees request context before this route exposes a composer.
-    await _openConversationFromNotification(reference.roomId);
+    await _openConversationFromNotification(reference.roomId,
+        source: RoomOpenSource.friendAccept);
   }
 
   AppUpdateDeferStore? _deferStore;
@@ -1468,7 +1504,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       callUi.registerOutgoingCall();
       final navigation = Navigator.push(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (pageContext) => CallPage(
             controller: calls,
             // 通话页展示信息同样取自权威联系人：不允许「房间用新身份、
@@ -1536,7 +1572,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       // 已打开 → popUntil 回原房间；在打开 → 复用；未打开 → push。
       await _openManagedRoom(target.roomId,
           roomName: target.contact.displayName,
-          initialContact: target.contact);
+          initialContact: target.contact,
+          source: RoomOpenSource.contactProfile);
     } catch (error) {
       // 失败时闸门已自动释放（见 DirectMessageOpenGate.run），弹窗「重试」
       // 可以重新进入本方法。
@@ -1566,7 +1603,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   Future<void> _openGroupAddressList() async {
     await Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => GroupAddressListPage(
           matrix: widget.matrix,
           identityCache: _chatIdentityCache,
@@ -1580,22 +1617,69 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openRoomFromAddressList(String roomId) =>
-      _openManagedRoom(roomId);
+      _openManagedRoom(roomId, source: RoomOpenSource.groupAddressList);
 
   /// 房间页面打开的唯一入口：由 [RoomNavigationCoordinator] 按 roomId 去重，
   /// 同一房间已打开时回到既有页面而不是叠加新页面。
   Future<void> _openManagedRoom(String roomId,
-          {String? roomName, ContactDetails? initialContact}) =>
-      _roomNavigation.open(RoomOpenRequest(
+          {String? roomName,
+          ContactDetails? initialContact,
+          RoomOpenSource source = RoomOpenSource.unknown}) =>
+      _openManagedRoomRequest(RoomOpenRequest(
         roomId: roomId,
         roomName: roomName ?? '',
         initialContact: initialContact,
+        source: source,
       ));
 
-  /// 消息列表（MatrixHomePage）委托的房间打开入口：展示数据由列表提供，
-  /// 租约/路由/去重仍由本协调器持有。
-  Future<void> _openManagedRoomRequest(RoomOpenRequest request) =>
-      _roomNavigation.open(request);
+  /// **所有入口进入房间的唯一策略路径**（唯一失败反馈点）。
+  ///
+  /// 流程：RoomOpenRequest → `RoomOpeningPolicy`（打开前判定 + 有界网络等待
+  /// + 失败分类）→ `RoomNavigationCoordinator`（去重/复用/页面+租约）。
+  /// 失败一律以 [RoomOpenFailure] 抛出并由这里转成用户可见提示——
+  /// **不再有任何 `catch (_) {}` 让打开失败静默消失**。
+  Future<void> _openManagedRoomRequest(RoomOpenRequest request) async {
+    try {
+      await _roomOpening.open(
+        request,
+        navigate: _roomNavigation.open,
+        awaitLocalRoom: _awaitLocalRoom,
+      );
+    } on RoomOpenFailure catch (failure) {
+      if (!mounted) return;
+      await _showRoomOpenFailure(failure);
+    }
+  }
+
+  /// 有界网络等待：只有策略判定"本地没有这个房间"时才会被调用。
+  ///
+  /// 返回 false（而不是抛错）表示"等待窗口内没等到"，由策略统一转成
+  /// 可重试的 [RoomOpenFailureKind.temporaryFailure] 并给出可见提示。
+  Future<bool> _awaitLocalRoom(String roomId) async {
+    try {
+      await widget.matrix
+          .waitForRoom(roomId)
+          .timeout(const Duration(seconds: 12));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 打开失败的**唯一**用户反馈点（文案来自 `RoomOpenFailure.userMessage`）。
+  Future<void> _showRoomOpenFailure(RoomOpenFailure failure) =>
+      showRoomOpenFailureDialog(context, failure);
+
+  /// 通讯录 / 发现 Tab 的搜索入口：与消息 Tab 的搜索**同一条策略路径**
+  /// （`source = search`，离线优先）。三处注入同一个回调，能力不再分叉。
+  Future<void> _openSearchRoom(GlobalSearchRoomResult room,
+          {String? anchorEventId}) =>
+      _openManagedRoomRequest(RoomOpenRequest(
+        roomId: room.roomId,
+        roomName: room.displayName,
+        anchorEventId: anchorEventId,
+        source: RoomOpenSource.search,
+      ));
 
   /// 打开流程（协调器持有 registry）：取租约 → RoomPage → 登记路由 →
   /// revoke 绑定 → push → 页面退出后释放租约。
@@ -1623,7 +1707,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       return;
     }
     final navigator = Navigator.of(context, rootNavigator: true);
-    final route = CupertinoPageRoute<void>(
+    final route = MotionPageRoute<void>(
         builder: (_) => RoomPage(
               api: widget.api,
               roomLease: lease,
@@ -1655,18 +1739,19 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   }
 
   void _scanFromTab() {
-    Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+    Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
       fullscreenDialog: true,
       builder: (_) => ScanQrPage(
           api: widget.api,
           groupJoinApi: widget.api,
-          onGroupJoined: (roomId) =>
-              unawaited(_openConversationFromNotification(roomId))),
+          onGroupJoined: (roomId) => unawaited(
+              _openConversationFromNotification(roomId,
+                  source: RoomOpenSource.scan))),
     ));
   }
 
   void _addFriendFromTab() {
-    Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+    Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
       builder: (_) => AddFriendPage(
         api: widget.api,
         identityCache: _chatIdentityCache,
@@ -1702,7 +1787,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
     final roomId = await Navigator.push<String>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (pageContext) => GroupChatPage(
           controller: controller,
           onCreated: (createdRoomId) =>
@@ -1730,7 +1815,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         }
       } catch (_) {}
     }());
-    await _openManagedRoom(roomId);
+    await _openManagedRoom(roomId, source: RoomOpenSource.groupCreated);
   }
 
   @override
@@ -1869,23 +1954,28 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     );
   }
 
-  /// 横幅/通知/推送点击进入会话（PRD §7）：优先复用本地身份缓存与既有的
-  /// RoomPage 组装路径，头像未就绪先用占位，不为导航等待网络。
+  /// 横幅/通知/推送点击进入会话（PRD §7）。
   ///
-  /// 冷启动（推送点击拉起进程）：房间可能尚未进入首次同步——短暂等待
-  /// 房间就绪后再进入，避免点击"无反应"。
-  Future<void> _openConversationFromNotification(String roomId) async {
-    try {
-      await widget.matrix
-          .waitForRoom(roomId)
-          .timeout(const Duration(seconds: 10));
-      if (!mounted) return;
-      unawaited(const SharedPreferencesNotificationUsageRecorder()
-          .count(NotificationUsageEvents.opened));
-      await _openManagedRoom(roomId);
-    } catch (_) {
-      // Preserve the current route when a pushed room has not synced yet.
-    }
+  /// 策略化改造（**不再静默失败**）：网络姿态由 `RoomOpeningPolicy` 按
+  /// [source] 决定（通知 = `localThenNetwork`）——
+  /// - 本地已有该房间 → **零等待立即打开**（离线也能进，旧实现会先等 10 秒）；
+  /// - 本地没有 → 交给策略做一次有界等待；等不到时抛出 [RoomOpenFailure]，
+  ///   由 [_openManagedRoomRequest] 统一显示"无法打开会话，请检查网络"，
+  ///   取代原来的 `catch (_) {}`（用户看到的是"点了没反应"）。
+  Future<void> _openConversationFromNotification(
+    String roomId, {
+    RoomOpenSource source = RoomOpenSource.notification,
+  }) async {
+    if (!mounted) return;
+    await _openManagedRoomRequest(RoomOpenRequest(
+      roomId: roomId,
+      roomName: '',
+      source: source,
+      // 真的进到房间（租约已取、页面即将 push）才记为"打开通知"，
+      // 失败不会留下虚假的 opened 统计。
+      onRoomReady: () => unawaited(const SharedPreferencesNotificationUsageRecorder()
+          .count(NotificationUsageEvents.opened)),
+    ));
   }
 
   Widget _contactsBadge(Widget icon) => ValueListenableBuilder<int>(
@@ -2018,8 +2108,11 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
                             context, widget.themeController),
                         onGroupAddressList: _openGroupAddressList,
                         identityCache: _chatIdentityCache,
+                        // 搜索（群聊/聊天记录）三 Tab 能力一致：同一个回调。
+                        onOpenRoom: _openSearchRoom,
                       ),
                 2 => DiscoveryPage(
+                    onOpenRoom: _openSearchRoom,
                     contactActions: ContactActions(
                       onMessage: _openMessage,
                       onVoice: (contact) =>
@@ -2070,6 +2163,25 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       );
 }
 
+/// `RoomOpenLocalProbe` 的 Matrix 实现。
+///
+/// **只读本机事实**：SDK 本地库的房间 membership 与 accountData 引用的控制
+/// 房间。绝不发起网络请求——这是 `RoomOpeningPolicy` 离线优先的前提。
+final class _MatrixRoomOpenProbe implements RoomOpenLocalProbe {
+  const _MatrixRoomOpenProbe(this.matrix);
+
+  final MatrixSdkE2eeClient matrix;
+
+  @override
+  bool knowsRoom(String roomId) => matrix.knowsRoomLocally(roomId);
+
+  @override
+  bool isJoined(String roomId) => matrix.isRoomJoinedLocally(roomId);
+
+  @override
+  Set<String> get controlRoomIds => matrix.controlRoomIds;
+}
+
 /// 轻量后台加载占位：小号指示器+次级说明文案，不阻塞其余 Tab 与操作。
 final class _HomeWarmupPane extends StatelessWidget {
   const _HomeWarmupPane({super.key, required this.message});
@@ -2104,6 +2216,7 @@ final class ContactsTabPage extends StatefulWidget {
     required this.onVoice,
     required this.onVideo,
     required this.onGroupChat,
+    required this.onOpenRoom,
     this.onScan,
     this.onAppearance,
     this.onGroupAddressList,
@@ -2129,6 +2242,10 @@ final class ContactsTabPage extends StatefulWidget {
   final ValueNotifier<int> pendingFriendRequests;
   final ProfileRepository? identityCache;
 
+  /// 房间打开（必填）：本 Tab 搜索与消息 Tab 搜索共用的统一打开回调
+  /// （RoomOpeningPolicy → RoomNavigationCoordinator）。
+  final GlobalSearchRoomOpenCallback onOpenRoom;
+
   @override
   State<ContactsTabPage> createState() => _ContactsTabPageState();
 }
@@ -2138,6 +2255,7 @@ final class _ContactsTabPageState extends State<ContactsTabPage> {
   Widget build(BuildContext context) => ContactsPage(
         api: widget.api,
         matrix: widget.matrix,
+        onOpenRoom: widget.onOpenRoom,
         pendingFriendRequests: widget.pendingFriendRequests,
         directChats: widget.directChats,
         onFriendRequests: widget.onFriendRequests,
@@ -2174,7 +2292,7 @@ final class ProfileTabPage extends StatefulWidget {
 void _openLedgerAllBills(BuildContext context, BusinessApiClient? api,
     ProfileRepository? identityCache) {
   if (api == null) return;
-  Navigator.of(context).push(CupertinoPageRoute<void>(
+  Navigator.of(context).push(MotionPageRoute<void>(
       builder: (_) => LedgerListPage(
           gateway: BusinessLedgerGateway(api), identityCache: identityCache)));
 }
@@ -2260,33 +2378,33 @@ final class _ProfileTabPageState extends State<ProfileTabPage> {
         );
         if (!context.mounted) return;
         Navigator.of(context, rootNavigator: true).push(
-            CupertinoPageRoute(fullscreenDialog: true, builder: (_) => page));
+            MotionPageRoute(fullscreenDialog: true, builder: (_) => page));
       },
       onCaibi: () => Navigator.push(
           context,
-          CupertinoPageRoute(
+          MotionPageRoute(
               builder: (_) => CaibiPage(
                   api: widget.api,
                   onOpenAllBills: () => _openLedgerAllBills(
                       context, widget.api, widget.identityCache)))),
       onWallet: () => Navigator.push(
           context,
-          CupertinoPageRoute(builder: (_) => WalletPage(api: widget.api))),
+          MotionPageRoute(builder: (_) => WalletPage(api: widget.api))),
       inviteGateway: widget.api,
       onInvite: () => Navigator.push(
           context,
-          CupertinoPageRoute(
+          MotionPageRoute(
               builder: (_) => InviteCodePage(
                   controller: InviteCodeController(gateway: widget.api)))),
       onQrCode: () {
         final profile = controller.state.profile;
         if (profile == null) return;
         Navigator.push(context,
-            CupertinoPageRoute(builder: (_) => MyQrCodePage(profile: profile)));
+            MotionPageRoute(builder: (_) => MyQrCodePage(profile: profile)));
       },
       onSettings: () => Navigator.push(
           context,
-          CupertinoPageRoute(
+          MotionPageRoute(
               builder: (_) => SettingsPage(
                   api: widget.api,
                   onLogout: widget.onLogout,
@@ -2320,7 +2438,7 @@ final class ProfilePage extends StatelessWidget {
                 title: const Text('点钻'),
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => CaibiPage(
                       api: api,
                       onOpenAllBills: () => _openLedgerAllBills(
@@ -2334,7 +2452,7 @@ final class ProfilePage extends StatelessWidget {
                 title: const Text('钱包'),
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => WalletPage(api: api),
                   ),
                 ),
@@ -2344,7 +2462,7 @@ final class ProfilePage extends StatelessWidget {
                 title: const Text('设置'),
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => SettingsPage(api: api, onLogout: onLogout),
                   ),
                 ),
@@ -2478,7 +2596,7 @@ final class _SettingsPageState extends State<SettingsPage> {
                 label: '账号与隐私',
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => AccountPrivacyPage(api: widget.api),
                   ),
                 ),
@@ -2489,26 +2607,21 @@ final class _SettingsPageState extends State<SettingsPage> {
                 detail: '通知与声音',
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => NotificationSettingsPage(
                       coordinator: NotificationSystemHandle.coordinator,
                     ),
                   ),
                 ),
               ),
-              _SettingsTile(
-                icon: CupertinoIcons.wind,
-                label: '减少动态效果',
-                detail: '跟随系统',
-                onTap: () {},
-              ),
+              const _MotionSettingsTile(),
               _SettingsTile(
                 icon: CupertinoIcons.info,
                 label: '关于畅聊',
                 detail: 'V${AppConfig.appVersionName}',
                 onTap: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => AboutChangliaoPage(api: widget.api),
                   ),
                 ),
@@ -2556,12 +2669,14 @@ final class _SettingsTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.detail,
+    this.trailing,
   });
 
   final IconData icon;
   final String label;
   final String? detail;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -2605,16 +2720,47 @@ final class _SettingsTile extends StatelessWidget {
                 ),
               ),
             const SizedBox(width: 4),
-            const Icon(
-              CupertinoIcons.chevron_right,
-              size: 12,
-              color: WeChatColors.textSecondary,
-            ),
+            if (trailing != null)
+              trailing!
+            else
+              const Icon(
+                CupertinoIcons.chevron_right,
+                size: 12,
+                color: WeChatColors.textSecondary,
+              ),
           ],
         ),
       ),
     );
   }
+}
+
+/// BUG-08：「减少动态效果」开关（此前是不可点击的占位行，
+/// 文案固定「跟随系统」，开启后对动画没有任何影响）。
+///
+/// 开关写入本地设置；应用根据此覆盖 `MediaQuery.disableAnimations`，
+/// 所有动效组件（菜单/点赞/按钮/图片帧）与页面转场（[MotionPageRoute]）
+/// 立即跟随。
+final class _MotionSettingsTile extends StatelessWidget {
+  const _MotionSettingsTile();
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: motionPreferences,
+        builder: (context, _) => _SettingsTile(
+          icon: CupertinoIcons.wind,
+          label: '减少动态效果',
+          detail: motionPreferences.reduceMotion ? '已开启' : '跟随系统',
+          trailing: CupertinoSwitch(
+            key: const Key('settings-reduce-motion-switch'),
+            value: motionPreferences.reduceMotion,
+            onChanged: (value) =>
+                unawaited(motionPreferences.setReduceMotion(value)),
+          ),
+          onTap: () => unawaited(motionPreferences
+              .setReduceMotion(!motionPreferences.reduceMotion)),
+        ),
+      );
 }
 
 final class AccountPrivacyPage extends StatefulWidget {

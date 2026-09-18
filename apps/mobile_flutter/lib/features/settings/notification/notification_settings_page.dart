@@ -13,6 +13,26 @@ import '../../../ui/components/wechat_scaffold.dart';
 import '../../../ui/foundation/wechat_tokens.dart';
 import 'notification_diagnostics_page.dart';
 import 'call_permission_checklist.dart';
+import '../../../ui/motion/motion_page_route.dart';
+
+/// 通知设置分区标题（用户可见文案）。
+///
+/// BUG-07：这里只允许出现用户能理解的中文文案；内部需求编号（如
+/// 「PRD §30」）曾被当成标题直接展示给用户，属实现细节外泄。
+const notificationSettingsNewMessagesSection = '新消息';
+const notificationSettingsImportantSection = '重要提醒';
+const notificationSettingsCallSection = '通话';
+const notificationSettingsDndSection = '勿扰模式';
+const notificationSettingsOtherSection = '其他';
+
+/// 供回归用例断言「没有任何分区标题泄露内部编号」。
+const notificationSettingsSectionTitles = <String>[
+  notificationSettingsNewMessagesSection,
+  notificationSettingsImportantSection,
+  notificationSettingsCallSection,
+  notificationSettingsDndSection,
+  notificationSettingsOtherSection,
+];
 
 /// 通知与声音设置页（PRD §43/§67）。
 final class NotificationSettingsPage extends StatefulWidget {
@@ -90,7 +110,7 @@ final class _NotificationSettingsPageState
             children: [
               if (_permission == NotificationAuthorizationStatus.denied)
                 _permissionWarning(context),
-              _section(context, '新消息', [
+              _section(context, notificationSettingsNewMessagesSection, [
                 _switchTile(
                     '消息通知',
                     _values.messageNotificationEnabled,
@@ -108,13 +128,13 @@ final class _NotificationSettingsPageState
                 _switchTile('桌面角标', _values.badgeEnabled,
                     (v) => _update(_values.copyWith(badgeEnabled: v))),
               ]),
-              _section(context, '重要提醒', [
+              _section(context, notificationSettingsImportantSection, [
                 _switchTile('特别关注提醒', _values.attentionEnabled,
                     (v) => _update(_values.copyWith(attentionEnabled: v))),
                 _switchTile('@我提醒', _values.mentionEnabled,
                     (v) => _update(_values.copyWith(mentionEnabled: v))),
               ]),
-              _section(context, '通话', [
+              _section(context, notificationSettingsCallSection, [
                 _switchTile(
                     '语音/视频通话通知',
                     _values.callNotificationEnabled,
@@ -122,7 +142,7 @@ final class _NotificationSettingsPageState
                         _update(_values.copyWith(callNotificationEnabled: v))),
               ]),
               const CallPermissionChecklist(),
-              _section(context, '勿扰模式（PRD §30）', [
+              _section(context, notificationSettingsDndSection, [
                 _switchTile('勿扰模式', _values.dndEnabled,
                     (v) => _update(_values.copyWith(dndEnabled: v))),
                 if (_values.dndEnabled) ...[
@@ -140,7 +160,7 @@ final class _NotificationSettingsPageState
                       (v) => _update(_values.copyWith(dndAllowAttention: v))),
                 ],
               ]),
-              _section(context, '其他', [
+              _section(context, notificationSettingsOtherSection, [
                 _switchTile(
                     '静音会话计入桌面角标',
                     _values.mutedConversationsInBadge,
@@ -228,7 +248,7 @@ final class _NotificationSettingsPageState
 
   Future<void> _openDiagnostics() async {
     await Navigator.of(context).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => const NotificationDiagnosticsPage(),
       ),
     );

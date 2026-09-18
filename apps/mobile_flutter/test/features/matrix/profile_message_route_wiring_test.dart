@@ -36,15 +36,19 @@ void main() {
         reason: '全局 _openingRoom 会吞掉其它房间的打开请求');
   });
 
-  test('AppHome 通过协调器按 roomId 去重打开房间', () {
+  test('AppHome 通过策略层 + 协调器按 roomId 去重打开房间', () {
     final source = File('lib/app_home.dart').readAsStringSync();
     expect(source, contains('RoomNavigationCoordinator('));
-    expect(source, contains('_roomNavigation.open(RoomOpenRequest('));
+    // 打开前策略：RoomOpenRequest → RoomOpeningPolicy → 协调器。
+    expect(source, contains('RoomOpeningPolicy('));
+    expect(source, contains('_roomOpening.open('));
+    expect(source, contains('navigate: _roomNavigation.open'));
+    expect(source, contains('_openManagedRoomRequest(RoomOpenRequest('));
     expect(source, contains('onOpenRoom: _openManagedRoomRequest'));
     // 账号切换/退出登录清理登记。
     expect(source, contains('_roomNavigation.dispose();'));
     // 建群成功后复用统一房间导航（不再自建 RoomPage/租约）。
-    expect(source, contains('await _openManagedRoom(roomId);'));
+    expect(source, contains('RoomOpenSource.groupCreated'));
   });
 
   test('好友资料「发消息」仍走单一权威身份入口', () {

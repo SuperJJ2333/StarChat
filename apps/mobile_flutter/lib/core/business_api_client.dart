@@ -13,6 +13,7 @@ import '../features/contacts/contact_models.dart';
 import '../features/profile/complaint_models.dart';
 import '../features/redpacket/red_packet_controller.dart';
 import '../features/moments/moments_privacy_changes.dart';
+import 'permissions/blocked_contacts.dart';
 import 'support_identity_repository.dart';
 
 export 'business_api_error.dart';
@@ -1045,8 +1046,27 @@ final class BusinessApiClient
   Future<Map<String, dynamic>> blockUser(String id) async {
     final result = await postJson('/blocks', {'user_id': id},
         idempotencyKey: newIdempotencyKey());
+    // BUG-10：拉黑后立即生效（聊天的发送门与本投影读同一份状态），
+    // 并在服务端持久化后刷新好友朋友圈权限投影。
+    blockedContacts.markBlocked(id);
     momentsPrivacyChanges.changed();
     return result;
+  }
+
+  @override
+  Future<Map<String, dynamic>> blockList() => blocks();
+
+  @override
+  Future<void> unblockContact(String userId) async {
+    final response = await _authorized(
+      (headers) => _client.delete(
+        _uri('/blocks/$userId'),
+        headers: {...headers, 'Idempotency-Key': newIdempotencyKey()},
+      ),
+    );
+    if (response.statusCode >= 400) _decode(response);
+    blockedContacts.markUnblocked(userId);
+    momentsPrivacyChanges.changed();
   }
 
   @override

@@ -7,6 +7,7 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../update/app_update.dart';
 import '../update/app_update_dialog.dart';
 import 'complaint_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 「关于畅聊」入口页：品牌信息 + 当前版本行。
 /// 点击当前版本号进入「关于」页，提供投诉与版本更新。
@@ -66,7 +67,7 @@ final class AboutChangliaoPage extends StatelessWidget {
                   trailing: const CupertinoListTileChevron(),
                   onTap: () => Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       builder: (_) => AboutDetailPage(api: api),
                     ),
                   ),
@@ -150,7 +151,7 @@ final class _AboutDetailPageState extends State<AboutDetailPage> {
   Future<void> _openComplaint() async {
     await Navigator.push(
       context,
-      CupertinoPageRoute(builder: (_) => ComplaintPage(api: widget.api)),
+      MotionPageRoute(builder: (_) => ComplaintPage(api: widget.api)),
     );
   }
 

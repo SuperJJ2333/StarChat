@@ -7,7 +7,10 @@ import '../../ui/components/immersive_auth_scaffold.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
+import 'legal_document_page.dart';
+import 'legal_documents.dart';
 import 'login_controller.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class LoginPage extends StatefulWidget {
   const LoginPage({
@@ -103,10 +106,10 @@ final class _LoginPageState extends State<LoginPage>
         if (widget.destination != null && mounted) {
           Navigator.of(
             context,
-          ).pushReplacement(CupertinoPageRoute(builder: widget.destination!));
+          ).pushReplacement(MotionPageRoute(builder: widget.destination!));
         } else if (widget.onAuthenticated == null && mounted) {
           Navigator.of(context).pushReplacement(
-            CupertinoPageRoute(builder: (_) => const _LoginSuccessPage()),
+            MotionPageRoute(builder: (_) => const _LoginSuccessPage()),
           );
         }
       }
@@ -251,8 +254,12 @@ final class _LoginPageState extends State<LoginPage>
                 onChanged: (value) => setState(
                   () => _agreementAccepted = value,
                 ),
-                onUserAgreement: widget.onUserAgreement,
-                onPrivacyPolicy: widget.onPrivacyPolicy,
+                // BUG-02：入口必须有真实实现——调用方未注入回调时打开
+                // 应用内置正文，保证点击一定打开而不是静默无响应。
+                onUserAgreement: widget.onUserAgreement ??
+                    () => openLegalDocument(context, userAgreement),
+                onPrivacyPolicy: widget.onPrivacyPolicy ??
+                    () => openLegalDocument(context, privacyPolicy),
               ),
               if (_error != null) ...[
                 const SizedBox(height: WeChatSpacing.md),

@@ -11,6 +11,7 @@ import 'manual_mfa_page.dart';
 import 'manual_operation_store.dart';
 import 'manual_wallet_api.dart';
 import 'wallet_payment_flow.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 enum ManualWalletSection { overview, binding, deposit, payout }
 
@@ -324,7 +325,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       if (section == ManualWalletSection.payout && !canWithdraw) return;
     }
     if (busy || !ready) return;
-    await Navigator.of(context).push(CupertinoPageRoute<void>(
+    await Navigator.of(context).push(MotionPageRoute<void>(
         builder: (_) => ManualWalletPage(
             client: widget.client, clock: widget.clock, section: section)));
     if (mounted) await run(refresh);
@@ -948,7 +949,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
     final data = await widget.client.walletHistory();
     if (!mounted) return;
     final rows = (data['items'] as List?) ?? [];
-    await Navigator.of(context).push(CupertinoPageRoute<void>(
+    await Navigator.of(context).push(MotionPageRoute<void>(
         builder: (context) => WeChatPageScaffold.navigation(
             navigationBar: const CupertinoNavigationBar(middle: Text('钱包记录')),
             child: SafeArea(
@@ -1149,7 +1150,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
                       onPressed: busy
                           ? null
                           : () => Navigator.of(context).push(
-                              CupertinoPageRoute<void>(
+                              MotionPageRoute<void>(
                                   builder: (_) =>
                                       ManualMfaPage(client: widget.client))),
                       child: const Text('设置身份验证器')),

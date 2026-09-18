@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import '../foundation/wechat_tokens.dart';
 import 'moment_image_viewer_page.dart';
 import 'moment_media_cache.dart';
+import '../motion/motion_page_route.dart';
 
 final class WeChatMomentImageGrid extends StatefulWidget {
   const WeChatMomentImageGrid(
@@ -52,7 +53,7 @@ final class _WeChatMomentImageGridState extends State<WeChatMomentImageGrid> {
             // 点击朋友圈图片 → 全屏查看大图（支持双指缩放）。
             onTap: () => Navigator.push(
                 context,
-                CupertinoPageRoute(
+                MotionPageRoute(
                   fullscreenDialog: true,
                   builder: (_) => MomentImageViewerPage(
                       imageUrls: imageUrls,

@@ -209,6 +209,20 @@ final class RegistrationController extends ChangeNotifier {
         fieldErrors: fieldErrors));
   }
 
+  /// BUG-01：注册页把「邀请码」提示统一交给邀请码状态行展示。
+  /// 提交失败后 controller 会写入 invitation_code 字段错误；页面消费（或
+  /// 用户重新编辑邀请码）时清除它，避免同一字段同时出现两条提示。
+  void clearInvitationCodeError() {
+    if (!state.fieldErrors.containsKey('invitation_code')) return;
+    final fieldErrors = Map<String, String>.from(state.fieldErrors)
+      ..remove('invitation_code');
+    _set(RegistrationState(state.status,
+        registrationSession: state.registrationSession,
+        resendAfterSeconds: state.resendAfterSeconds,
+        message: state.message,
+        fieldErrors: fieldErrors));
+  }
+
   Future<void> _verify({String? code, String? token}) async {
     final session = state.registrationSession;
     if (session == null) throw StateError('registration session is missing');

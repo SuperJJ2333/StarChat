@@ -14,6 +14,7 @@ import '../ledger/ledger_gateway.dart';
 import '../ledger/ledger_pages.dart';
 import 'chat_transfer_detail_controller.dart';
 import '../matrix/profile_repository.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 String chatTransferStatusLabel(String? status) => switch (status) {
       'ACCEPTED' => '对方已收款',
@@ -393,7 +394,7 @@ final class _ChatTransferDetailSheetState
     if (!mounted || !_controller.isAlive) return;
     final gateway = _ledgerGateway;
     if (gateway == null) return;
-    Navigator.of(context).push(CupertinoPageRoute<void>(
+    Navigator.of(context).push(MotionPageRoute<void>(
         builder: (_) => LedgerDetailPage(
               gateway: gateway,
               transactionId: billId,
@@ -405,7 +406,7 @@ final class _ChatTransferDetailSheetState
     if (!mounted || !_controller.isAlive) return;
     final gateway = _ledgerGateway;
     if (gateway == null) return;
-    Navigator.of(context).push(CupertinoPageRoute<void>(
+    Navigator.of(context).push(MotionPageRoute<void>(
         builder: (_) => LedgerListPage(
               gateway: gateway, identityCache: widget.identityCache)));
   }

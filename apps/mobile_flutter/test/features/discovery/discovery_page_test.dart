@@ -23,7 +23,10 @@ void main() {
         baseUri: Uri.parse('https://example.test'),
         sessionStore: SecureSessionStore());
     await tester.pumpWidget(CupertinoApp(
-        home: DiscoveryPage(api: api, unreadController: controller)));
+        home: DiscoveryPage(
+            api: api,
+            onOpenRoom: (_, {anchorEventId}) async {},
+            unreadController: controller)));
     expect(find.byKey(const Key('moments-new-posts-badge')), findsNothing);
     count = 101;
     await controller.refresh();
@@ -42,7 +45,9 @@ void main() {
       baseUri: Uri.parse('https://example.test'),
       sessionStore: SecureSessionStore(),
     );
-    await tester.pumpWidget(CupertinoApp(home: DiscoveryPage(api: api)));
+    await tester.pumpWidget(CupertinoApp(
+        home: DiscoveryPage(
+            api: api, onOpenRoom: (_, {anchorEventId}) async {})));
     expect(find.byKey(const Key('discovery-search')), findsOneWidget);
     expect(find.byKey(const Key('discovery-more')), findsOneWidget);
     expect(tester.getTopLeft(find.text('朋友圈')).dy,

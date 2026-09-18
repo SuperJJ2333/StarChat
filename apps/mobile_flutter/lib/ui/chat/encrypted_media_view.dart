@@ -15,6 +15,7 @@ import '../components/wechat_scaffold.dart';
 import 'chat_forward_picker_page.dart';
 import 'wechat_image_editor.dart';
 import '../../core/gallery_save_access.dart';
+import '../motion/motion_page_route.dart';
 
 /// 原图大小展示格式：≥1MB 用 MB（10MB 以上取整），否则用 KB。
 /// 大小由每次加载到的真实字节数动态计算，不使用事件元数据。
@@ -115,7 +116,7 @@ final class _EncryptedImageMessageState extends State<EncryptedImageMessage> {
           }
           return GestureDetector(
             onTap: () => Navigator.of(context, rootNavigator: true).push(
-              CupertinoPageRoute(
+              MotionPageRoute(
                 builder: (_) => ImageViewerPage(
                   previewBytes: snapshot.data!,
                   originalSizeHint: widget.originalSizeHint,
@@ -245,7 +246,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
       final editForward = widget.onForwardEdited;
       final editFavorite = widget.onFavorite;
       await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => WeChatImageEditorPage(
             bytes: editBytes,
             onForward: editForward,
@@ -453,7 +454,7 @@ final class _ImageViewerPageState extends State<ImageViewerPage> {
         await widget.onForward!();
       } else if (widget.forwardTo != null) {
         await Navigator.of(context, rootNavigator: true)
-            .push(CupertinoPageRoute(
+            .push(MotionPageRoute(
           builder: (_) => ChatForwardPickerPage(
             contentPreview: '[图片]',
             candidates: [

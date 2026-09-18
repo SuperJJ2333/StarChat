@@ -104,7 +104,8 @@ void main() {
       expect(home.indexOf('unawaited(_warmChatIdentity('), greaterThan(0));
       final openRoomStart =
           home.indexOf('Future<void> _openRoom(_RoomSnapshot snapshot');
-      expect(openRoomStart, greaterThan(0));
+      expect(openRoomStart, greaterThan(0),
+          reason: '_openRoom 仍以 _RoomSnapshot 为入参（可加命名参数，见 RoomOpeningPolicy）');
       final delegated =
           home.indexOf('await openRoom(RoomOpenRequest(', openRoomStart);
       expect(delegated, greaterThan(openRoomStart));

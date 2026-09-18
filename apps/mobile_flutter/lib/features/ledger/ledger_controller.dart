@@ -155,6 +155,26 @@ final class LedgerController extends ChangeNotifier {
     unawaited(load(refresh: true));
   }
 
+  /// 是否存在任何筛选条件（展示层据此区分「没有账单」与「没有符合条件的账单」）。
+  bool get hasFilters =>
+      _kind != null || _startAt != null || _endAt != null ||
+      (_query != null && _query!.trim().isNotEmpty);
+
+  /// 一次清空全部筛选（类型/时间/关键词），只发一次列表请求。
+  /// 展示层的「重置筛选」入口使用；不改变查询语义与分页规则。
+  void clearFilters() {
+    if (_disposed || sessionEnded) return;
+    _kind = null;
+    _startAt = null;
+    _endAt = null;
+    _query = null;
+    _invalidatePending();
+    _items.clear();
+    _nextCursor = null;
+    _notify();
+    unawaited(load(refresh: true));
+  }
+
   Future<void> retry() => load(refresh: !_retryPage);
   @override
   void dispose() {

@@ -7,6 +7,7 @@ import '../components/user_avatar.dart';
 import 'moment_image_provider.dart';
 import 'moment_image_viewer_page.dart';
 import 'moment_reaction_tokens.dart';
+import '../motion/motion_page_route.dart';
 
 final class WeChatMomentReactions extends StatelessWidget {
   const WeChatMomentReactions(
@@ -202,7 +203,7 @@ final class WeChatMomentReactions extends StatelessWidget {
                                   child: GestureDetector(
                                       onTap: () => Navigator.push(
                                           context,
-                                          CupertinoPageRoute(
+                                          MotionPageRoute(
                                               builder: (_) => MomentImageViewerPage(
                                                   imageUrls: comment.images,
                                                   initialIndex: i,

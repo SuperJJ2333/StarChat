@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../ui/foundation/avatar_cache.dart';
@@ -80,6 +82,21 @@ final class ProfileState {
   final String? message;
 }
 
+/// BUG-05：资料保存结果事件。Controller 只负责发布结果，展示由 UI 监听
+/// （Controller 不直接 Toast，避免与页面反馈重复或丢失）。
+sealed class ProfileSaveEvent {
+  const ProfileSaveEvent();
+}
+
+final class ProfileSaveSuccess extends ProfileSaveEvent {
+  const ProfileSaveSuccess();
+}
+
+final class ProfileSaveFailure extends ProfileSaveEvent {
+  const ProfileSaveFailure(this.message);
+  final String message;
+}
+
 final class ProfileController extends ChangeNotifier {
   ProfileController({
     required this.gateway,
@@ -108,6 +125,17 @@ final class ProfileController extends ChangeNotifier {
   Future<void>? _loadFlight;
   int _generation = 0;
   bool _disposed = false;
+
+  final StreamController<ProfileSaveEvent> _saveEvents =
+      StreamController<ProfileSaveEvent>.broadcast();
+
+  /// 保存结果事件流（成功/失败各一次，见 [ProfileSaveEvent]）。
+  Stream<ProfileSaveEvent> get saveEvents => _saveEvents.stream;
+
+  void _emitSaveEvent(ProfileSaveEvent event) {
+    if (_disposed || _saveEvents.isClosed) return;
+    _saveEvents.add(event);
+  }
 
   Future<void> load() {
     if (_disposed) return Future.value();
@@ -184,10 +212,13 @@ final class ProfileController extends ChangeNotifier {
         profile: next,
       ));
       await _persist(next, generation);
+      if (_isCurrent(generation)) _emitSaveEvent(const ProfileSaveSuccess());
     } catch (_) {
       if (!_isCurrent(generation)) return;
-      _set(ProfileState(ProfileStatus.failed,
-          profile: state.profile, message: '资料保存失败，请重试'));
+      // BUG-05：保存失败文案只走事件通道（UI 一次性提示），不再同时写入
+      // state.message，避免同一失败既内联又浮层地重复展示。
+      _set(ProfileState(ProfileStatus.failed, profile: state.profile));
+      _emitSaveEvent(const ProfileSaveFailure('资料保存失败，请重试'));
     }
   }
 
@@ -294,6 +325,7 @@ final class ProfileController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _generation++;
+    unawaited(_saveEvents.close());
     super.dispose();
   }
 }

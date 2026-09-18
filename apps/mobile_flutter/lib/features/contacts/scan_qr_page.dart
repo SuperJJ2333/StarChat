@@ -18,6 +18,7 @@ import '../../core/notification/sound_type.dart';
 import '../matrix/image_picker_page.dart';
 import '../profile/profile_controller.dart';
 import '../profile/my_qr_code_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 「扫一扫」页（微信式）：识别好友二维码 → 进入「申请添加朋友」页。
 ///
@@ -171,7 +172,7 @@ final class _ScanQrPageState extends State<ScanQrPage>
       }
       // 识别成功：预填用户信息进入「申请添加朋友」页（不自动发送）。
       await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
+        MotionPageRoute(
           fullscreenDialog: true,
           builder: (_) => RequestFriendPage(
             api: widget.api,
@@ -199,7 +200,7 @@ final class _ScanQrPageState extends State<ScanQrPage>
       return;
     }
     await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         fullscreenDialog: true,
         builder: (_) => GroupJoinConfirmPage(
           api: api,
@@ -222,7 +223,7 @@ final class _ScanQrPageState extends State<ScanQrPage>
       if (gateway is! ProfileGateway) throw StateError('Profile unavailable');
       final profile = await (gateway as ProfileGateway).loadProfile();
       if (!mounted) return;
-      await Navigator.of(context, rootNavigator: true).push(CupertinoPageRoute(
+      await Navigator.of(context, rootNavigator: true).push(MotionPageRoute(
         builder: (_) => MyQrCodePage(profile: profile),
       ));
     } catch (_) {
@@ -246,7 +247,7 @@ final class _ScanQrPageState extends State<ScanQrPage>
       if (!mounted) return;
       final picked = await Navigator.of(context, rootNavigator: true)
           .push<({List<GalleryPhoto> photos, bool original, bool flash})>(
-        CupertinoPageRoute(
+        MotionPageRoute(
             builder: (_) => const ImagePickerPage(
                   photosOnly: true,
                   maxCount: 1,

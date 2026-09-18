@@ -11,6 +11,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
 import 'moment_comment_interaction.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 enum MomentDetailChange { likes, comments }
 
@@ -253,7 +254,7 @@ class _MomentDetailState extends State<MomentDetailPage> {
     if (current == null || widget.viewerUserId != item.author.userId) return;
     final selection = await Navigator.push<MomentVisibilitySelection>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => MomentVisibilityPage(
           api: widget.api,
           initialSelection: current,

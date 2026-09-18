@@ -11,6 +11,7 @@ import '../features/matrix/matrix_security_logger.dart';
 import 'business_api_client.dart';
 import 'business_auth_contracts.dart';
 import 'cache/cache_repository.dart';
+import 'permissions/blocked_contacts.dart';
 
 enum SessionBootstrapStatus {
   loading,
@@ -292,6 +293,8 @@ final class SessionBootstrapController extends ChangeNotifier {
 
   Future<void> logout() async {
     clearMediaMemoryCaches();
+    // 拉黑名单是账号级关系，登出即清空本地投影，避免影响下一个账号。
+    blockedContacts.clear();
     _generation++;
     _bootstrapFlight = null;
     canShowCachedMessages = false;

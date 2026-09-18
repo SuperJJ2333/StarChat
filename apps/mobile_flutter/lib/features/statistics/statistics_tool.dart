@@ -5,6 +5,7 @@ import '../matrix/call_ui_manager.dart' show callNavigatorKey;
 import '../../ui/chat/chat_tools.dart';
 import 'statistics_assistant_page.dart';
 import 'statistics_room_scope.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 根导航键已统一为 callNavigatorKey（规格 §二：全局唯一根 Navigator，
 /// 来电页/统计助手共用）；旧名保留兼容引用。
@@ -25,7 +26,7 @@ void _openStatisticsAssistant() {
   final roomId = StatisticsRoomScope.current;
   if (roomId == null) return; // 工具面板只在会话页内出现，理论不会走到
   statisticsNavigatorKey.currentState?.push(
-    CupertinoPageRoute<void>(
+    MotionPageRoute<void>(
       builder: (_) => StatisticsAssistantPage(roomId: roomId),
     ),
   );

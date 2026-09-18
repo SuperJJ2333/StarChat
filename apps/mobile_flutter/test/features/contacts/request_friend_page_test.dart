@@ -44,6 +44,14 @@ final class FakeGateway implements AddFriendGateway, ProfileGateway {
           {'id': 't2', 'name': '球友'},
         ],
       };
+
+  /// BUG-09：新建标签必须先在服务端落库，这里记录调用供断言。
+  final createdTags = <String>[];
+  @override
+  Future<Map<String, dynamic>> createContactTag(String name) async {
+    createdTags.add(name);
+    return {'id': 'tag-$name', 'name': name};
+  }
 }
 
 final class FakeAddRequestRecorder {
@@ -212,6 +220,9 @@ void main() {
     await tester.tap(find.byKey(const Key('request-friend-add-tag')));
     await _settle(tester);
 
+    // BUG-09：不仅要出现在本页可选列表里，还必须已经创建到服务端标签表，
+    // 否则通讯录「标签」页永远看不到这个标签。
+    expect(gateway.createdTags, ['客户']);
     expect(find.byKey(const Key('request-friend-tag-客户')), findsOneWidget);
   });
 }

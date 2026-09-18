@@ -19,7 +19,8 @@ void main() {
       const [],
     ]);
     await tester.pumpWidget(CupertinoApp(home: ContactsPage(
-      api: api, pendingFriendRequests: ValueNotifier(0),
+      api: api, onOpenRoom: (_, {anchorEventId}) async {},
+      pendingFriendRequests: ValueNotifier(0),
     )));
     await tester.pump();
     expect(find.text('@官方客服'), findsOneWidget);
@@ -65,6 +66,8 @@ final class _Api implements ContactsGateway, SupportIdentityGateway {
   @override Future<void> deleteContactTag(String id) async {}
   @override Future<void> deleteContactTags(List<String> ids) async {}
   @override Future<void> blockContact(String id) async {}
+  @override Future<Map<String, dynamic>> blockList() async => {'items': []};
+  @override Future<void> unblockContact(String id) async {}
   @override Future<void> deleteContact(String id) async {}
   @override Future<ContactDetails> updateContactDetails(ContactDetails c,{required String? remark,required List<String> tags,required String momentsPermission}) async => c;
 }

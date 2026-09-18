@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../matrix/matrix_e2ee_client.dart';
 import '../../ui/components/modern_action_button.dart';
@@ -26,6 +27,7 @@ import '../search/global_search_page.dart';
 import '../friendship/friend_acceptance_coordinator.dart';
 import '../matrix/profile_repository.dart';
 import '../matrix/direct_chat_controller.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 typedef ContactAction = Future<void> Function(ContactDetails contact);
 
@@ -65,6 +67,7 @@ final class ContactsPage extends StatefulWidget {
   const ContactsPage({
     super.key,
     required this.api,
+    required this.onOpenRoom,
     this.matrix,
     required this.pendingFriendRequests,
     this.directChats,
@@ -83,6 +86,10 @@ final class ContactsPage extends StatefulWidget {
 
   final ContactsGateway api;
   final MatrixSdkE2eeClient? matrix;
+
+  /// 打开房间（必填）：本页搜索入口把结果交给组合根的统一策略路径。
+  final GlobalSearchRoomOpenCallback onOpenRoom;
+
   final ValueNotifier<int> pendingFriendRequests;
   final DirectChatController? directChats;
   final VoidCallback? onRequestsChanged;
@@ -265,7 +272,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                   padding: EdgeInsets.zero,
                   onPressed: () => Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       builder: (_) => GlobalSearchPage(
                         contactActions: ContactActions(
                           onMessage: widget.onMessage,
@@ -275,6 +282,9 @@ final class _ContactsPageState extends State<ContactsPage> {
                         identityCache: widget.identityCache,
                         api: businessApi,
                         matrix: widget.matrix,
+                        // 必填：通讯录 Tab 的搜索与消息 Tab 拥有完全相同的
+                        // 打开能力（同一条 RoomOpeningPolicy 路径）。
+                        onOpenRoom: widget.onOpenRoom,
                       ),
                     ),
                   ),
@@ -289,7 +299,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                     onAddFriend: () {
                       Navigator.push(
                           context,
-                          CupertinoPageRoute(
+                          MotionPageRoute(
                               builder: (_) => AddFriendPage(
                                   contactActions: ContactActions(
                                     onMessage: widget.onMessage,
@@ -301,7 +311,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                     },
                     onScan: widget.onScan ??
                         () => Navigator.of(context, rootNavigator: true).push(
-                            CupertinoPageRoute(
+                            MotionPageRoute(
                                 builder: (_) => ScanQrPage(
                                     api: businessApi,
                                     groupJoinApi: businessApi))),
@@ -319,13 +329,20 @@ final class _ContactsPageState extends State<ContactsPage> {
             final grouped = _groupContacts(
               snapshot.data ?? const <ContactSummary>[],
             );
-            var sectionOffset = businessApi == null ? 0.0 : 56.0 * 3;
+            // BUG-03：字母跳转偏移量必须与真实行高一致。三个入口行与联系人
+            // 行都固定为 contactTileHeight，分组标题固定为 25，因此这里的
+            // 算式与实际布局逐项对应（入口行也用 SizedBox 固定高度）。
+            var sectionOffset = businessApi == null
+                ? 0.0
+                : _ContactSectionHeader.leadingEntryCount *
+                    WeChatDimensions.contactTileHeight;
             sectionOffsets.clear();
             for (final label in ContactIndex.labels) {
               final contacts = grouped[label];
               if (contacts == null || contacts.isEmpty) continue;
               sectionOffsets[label] = sectionOffset;
-              sectionOffset += 25 + contacts.length * 56;
+              sectionOffset += _ContactSectionHeader.height +
+                  contacts.length * WeChatDimensions.contactTileHeight;
             }
             return Stack(
               children: [
@@ -334,64 +351,77 @@ final class _ContactsPageState extends State<ContactsPage> {
                   physics: const BouncingScrollPhysics(
                     parent: AlwaysScrollableScrollPhysics(),
                   ),
-                  padding: const EdgeInsets.only(right: 20),
+                  padding: const EdgeInsets.only(
+                      right: WeChatDimensions.contactIndexWidth),
                   children: [
                     if (businessApi != null) ...[
-                      WeChatListTile(
-                        leading: const Icon(CupertinoIcons.person_add_solid),
-                        title: const Text('新的朋友'),
-                        trailing: ValueListenableBuilder<int>(
-                          valueListenable: widget.pendingFriendRequests,
-                          builder: (_, count, __) => count > 0
-                              ? Container(
-                                  key: const Key('friend-request-badge'),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 2),
-                                  decoration: const BoxDecoration(
-                                    color: WeChatColors.danger,
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(10)),
-                                  ),
-                                  child: Text(
-                                    count > 99 ? '99+' : '$count',
-                                    style: const TextStyle(
-                                        color: CupertinoColors.white,
-                                        fontSize: 11),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        onTap: () async {
-                          if (widget.onFriendRequests != null) {
-                            widget.onFriendRequests!();
-                            return;
-                          }
-                          await Navigator.push(
-                            context,
-                            CupertinoPageRoute(
-                              builder: (_) => FriendRequestsPage(
-                                api: businessApi,
-                                pendingRequests: widget.pendingFriendRequests,
-                                directChats: widget.directChats,
-                                onRequestsChanged: widget.onRequestsChanged,
+                      // BUG-03：入口行高度固定为 contactTileHeight，
+                      // 使字母索引的偏移量与实际布局严格一致。
+                      SizedBox(
+                        height: WeChatDimensions.contactTileHeight,
+                        child: WeChatListTile(
+                          leading: const Icon(CupertinoIcons.person_add_solid),
+                          title: const Text('新的朋友'),
+                          trailing: ValueListenableBuilder<int>(
+                            valueListenable: widget.pendingFriendRequests,
+                            builder: (_, count, __) => count > 0
+                                ? Container(
+                                    key: const Key('friend-request-badge'),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 2),
+                                    decoration: const BoxDecoration(
+                                      color: WeChatColors.danger,
+                                      borderRadius:
+                                          BorderRadius.all(Radius.circular(10)),
+                                    ),
+                                    child: Text(
+                                      count > 99 ? '99+' : '$count',
+                                      style: const TextStyle(
+                                          color: CupertinoColors.white,
+                                          fontSize: 11),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                          onTap: () async {
+                            if (widget.onFriendRequests != null) {
+                              widget.onFriendRequests!();
+                              return;
+                            }
+                            await Navigator.push(
+                              context,
+                              MotionPageRoute(
+                                builder: (_) => FriendRequestsPage(
+                                  api: businessApi,
+                                  pendingRequests: widget.pendingFriendRequests,
+                                  directChats: widget.directChats,
+                                  onRequestsChanged: widget.onRequestsChanged,
+                                ),
                               ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(
+                        height: WeChatDimensions.contactTileHeight,
+                        child: WeChatListTile(
+                          key: const Key('contacts-group-address-entry'),
+                          leading: const Icon(CupertinoIcons.person_3_fill),
+                          title: const Text('群聊'),
+                          onTap:
+                              widget.onGroupAddressList ?? widget.onGroupChat,
+                        ),
+                      ),
+                      SizedBox(
+                        height: WeChatDimensions.contactTileHeight,
+                        child: WeChatListTile(
+                          leading: const Icon(CupertinoIcons.tag_fill),
+                          title: const Text('标签'),
+                          onTap: () => Navigator.push(
+                            context,
+                            MotionPageRoute(
+                              builder: (_) => ContactTagsPage(api: businessApi),
                             ),
-                          );
-                        },
-                      ),
-                      WeChatListTile(
-                        key: const Key('contacts-group-address-entry'),
-                        leading: const Icon(CupertinoIcons.person_3_fill),
-                        title: const Text('群聊'),
-                        onTap: widget.onGroupAddressList ?? widget.onGroupChat,
-                      ),
-                      WeChatListTile(
-                        leading: const Icon(CupertinoIcons.tag_fill),
-                        title: const Text('标签'),
-                        onTap: () => Navigator.push(
-                          context,
-                          CupertinoPageRoute(
-                            builder: (_) => ContactTagsPage(api: businessApi),
                           ),
                         ),
                       ),
@@ -416,7 +446,7 @@ final class _ContactsPageState extends State<ContactsPage> {
                               final changed = await Navigator.of(context,
                                       rootNavigator: true)
                                   .push<bool>(
-                                CupertinoPageRoute(
+                                MotionPageRoute(
                                   builder: (_) => ContactProfilePage(
                                     identityCache: widget.identityCache,
                                     supportIdentities: _support,
@@ -444,11 +474,13 @@ final class _ContactsPageState extends State<ContactsPage> {
                       ],
                   ],
                 ),
+                // BUG-03：索引列宽度取设计 token，且整列留白后垂直居中，
+                // 不覆盖顶部导航/底部安全区（SafeArea 已由外层保证）。
                 Positioned(
                   top: 0,
                   right: 0,
                   bottom: 0,
-                  width: 20,
+                  width: WeChatDimensions.contactIndexWidth,
                   child: AnimatedBuilder(
                     animation: scrollController,
                     child: WeChatContactIndex(
@@ -476,6 +508,13 @@ final class _ContactsPageState extends State<ContactsPage> {
 
 final class _ContactSectionHeader extends StatelessWidget {
   const _ContactSectionHeader({required this.label});
+
+  /// 分组标题固定高度（字母索引跳转偏移量按它计算）。
+  static const height = 25.0;
+
+  /// 分组之前的固定入口行数（新的朋友 / 群聊 / 标签）。
+  static const leadingEntryCount = 3;
+
   final String label;
 
   @override
@@ -483,7 +522,7 @@ final class _ContactSectionHeader extends StatelessWidget {
         color: CupertinoTheme.of(context).scaffoldBackgroundColor,
         child: SizedBox(
           key: Key('contact-section-$label'),
-          height: 25,
+          height: height,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Text(
@@ -745,7 +784,7 @@ final class _ContactProfilePageState extends State<ContactProfilePage> {
   Future<void> _openMore() async {
     final result = await Navigator.push<ContactMoreResult>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => ContactMorePage(
           api: widget.api,
           contact: contact,
@@ -842,9 +881,39 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   late final tags = TextEditingController(text: widget.contact.tags.join(','));
   late String permission = widget.contact.momentsPermission;
   late ContactDetails current = widget.contact;
-  bool blocked = false;
+
+  /// 黑名单真实状态：null = 尚未从服务端读到（开关禁用），
+  /// 避免用「默认 false」冒充已知状态（BUG-10）。
+  bool? blocked;
+  bool blocking = false;
   bool saving = false;
   String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadBlockState());
+  }
+
+  /// 从权威接口读回拉黑状态（服务端持久化 → 重开 App 仍然是拉黑）。
+  Future<void> _loadBlockState() async {
+    try {
+      final body = await widget.api.blockList();
+      final items = (body['items'] as List?) ?? const [];
+      final ids = <String>{
+        for (final item in items)
+          if (item is Map && item['user_id'] != null)
+            item['user_id'].toString(),
+      };
+      blockedContacts.replaceAll(ids);
+      if (mounted) setState(() => blocked = ids.contains(widget.contact.userId));
+    } catch (_) {
+      if (mounted) {
+        setState(() =>
+            blocked = blockedContacts.isBlocked(widget.contact.userId));
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -853,7 +922,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     super.dispose();
   }
 
-  Future<bool> _confirm(String title, String content) async =>
+  Future<bool> _confirm(String title, String content, {String confirmLabel = '删除'}) async =>
       await showCupertinoDialog<bool>(
         context: context,
         builder: (dialogContext) => CupertinoAlertDialog(
@@ -867,7 +936,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
             CupertinoDialogAction(
               isDestructiveAction: true,
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('删除'),
+              child: Text(confirmLabel),
             ),
           ],
         ),
@@ -935,7 +1004,7 @@ final class _ContactMorePageState extends State<ContactMorePage> {
   Future<void> _pickTags() async {
     final updated = await Navigator.push<ContactDetails>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => ContactTagPickerPage(
           api: widget.api,
           contact: current,
@@ -979,13 +1048,46 @@ final class _ContactMorePageState extends State<ContactMorePage> {
     await _persist();
   }
 
+  /// 黑名单开关：双向可用——加入走 `POST /blocks`，移出走
+  /// `DELETE /blocks/{id}`；服务端成功后同步本地投影，聊天发送门立刻生效。
   Future<void> _setBlocked(bool value) async {
-    if (!value || blocked) {
-      return;
+    if (blocking || blocked == null || blocked == value) return;
+    if (value) {
+      final confirmed = await _confirm(
+        '加入黑名单',
+        '加入后将不再接收对方的好友互动，聊天中也将无法继续发送消息。',
+        confirmLabel: '加入',
+      );
+      if (!confirmed) return;
     }
-    if (!await _confirm('加入黑名单', '加入后将不再接收对方的好友互动。')) return;
-    await widget.api.blockContact(widget.contact.userId);
-    if (mounted) setState(() => blocked = true);
+    setState(() {
+      blocking = true;
+      errorMessage = null;
+    });
+    try {
+      if (value) {
+        await widget.api.blockContact(widget.contact.userId);
+      } else {
+        await widget.api.unblockContact(widget.contact.userId);
+      }
+      if (!mounted) return;
+      // 立即生效：本地投影与聊天发送门读同一份状态，不必等下一次整表刷新。
+      if (value) {
+        blockedContacts.markBlocked(widget.contact.userId);
+      } else {
+        blockedContacts.markUnblocked(widget.contact.userId);
+      }
+      setState(() => blocked = value);
+      // 好友列表/会话气泡的权限投影与设置页保持一致。
+      await widget.onContactUpdated?.call(current);
+    } catch (_) {
+      if (mounted) {
+        setState(() => errorMessage =
+            value ? '加入黑名单失败，请重试' : '移出黑名单失败，请重试');
+      }
+    } finally {
+      if (mounted) setState(() => blocking = false);
+    }
   }
 
   Future<void> _delete() async {
@@ -1065,10 +1167,13 @@ final class _ContactMorePageState extends State<ContactMorePage> {
                   ),
                   CupertinoListTile(
                     title: const Text('黑名单'),
-                    trailing: CupertinoSwitch(
-                      value: blocked,
-                      onChanged: _setBlocked,
-                    ),
+                    trailing: blocking
+                        ? const CupertinoActivityIndicator()
+                        : CupertinoSwitch(
+                            key: const Key('contact-block-switch'),
+                            value: blocked ?? false,
+                            onChanged: blocked == null ? null : _setBlocked,
+                          ),
                   ),
                 ],
               ),
@@ -1410,7 +1515,7 @@ final class _AddFriendState extends State<AddFriendPage> {
     final nickname = user['nickname']?.toString();
     Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => AddFriendProfilePage(
           contactActions: widget.contactActions,
           identityCache: widget.identityCache,
@@ -1564,7 +1669,7 @@ final class _FriendRequestsPageState extends State<FriendRequestsPage> {
   Future<void> _openReview(Map request) async {
     await Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => FriendRequestReviewPage(
           request: request,
           onAccept: () => _resolve(request, true),

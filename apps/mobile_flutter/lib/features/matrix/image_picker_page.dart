@@ -15,6 +15,7 @@ import 'gallery_video_preview.dart';
 
 export 'device_gallery_source.dart' show GalleryPhoto;
 import '../../ui/foundation/wechat_tokens.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 选择逻辑（纯逻辑，可测）：有序多选、上限 9 张、可取消勾选。
 final class GallerySelection extends ChangeNotifier {
@@ -124,7 +125,7 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
       }
       final edited =
           await Navigator.of(context, rootNavigator: true).push<Uint8List>(
-        CupertinoPageRoute(
+        MotionPageRoute(
           fullscreenDialog: true,
           builder: (_) => WeChatImageEditorPage(
             bytes: source,
@@ -998,7 +999,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       final previewFile = photo.compressedPreviewFile;
       if (previewFile != null) {
         await Navigator.of(context, rootNavigator: true).push(
-          CupertinoPageRoute(
+          MotionPageRoute(
             fullscreenDialog: true,
             builder: (_) => GalleryVideoPreviewPage(
               loadRendition: previewFile,
@@ -1018,7 +1019,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
     if (!mounted) return;
     _editedFromPreview = null;
     await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         fullscreenDialog: true,
         builder: (_) => _GalleryPreviewPage(
           photo: photo,

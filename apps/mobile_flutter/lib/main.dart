@@ -27,6 +27,7 @@ import 'features/matrix/matrix_home_page.dart';
 import 'ui/foundation/changliao_icons.dart';
 import 'features/matrix/matrix_recovery_service.dart';
 import 'session_gate.dart';
+import 'ui/motion/motion_preferences.dart';
 import 'ui/theme/wechat_theme.dart';
 import 'ui/theme/theme_controller.dart';
 
@@ -41,6 +42,12 @@ Future<void> main() async {
     ),
   );
   await themeController.load();
+  // BUG-08：「减少动态效果」是本地设置，启动即读取，并由根组件投影到
+  // MediaQuery，使所有动效组件与页面转场在首帧就遵循该设置。
+  motionPreferences.attachStore(SharedPreferencesMotionPreferenceStore(
+    await SharedPreferences.getInstance(),
+  ));
+  await motionPreferences.load();
   final store = SecureSessionStore();
   final installationReconciler = InstallationReconciler(
     marker: SharedPreferencesInstallationMarker(
@@ -205,7 +212,7 @@ final class _LiuhetongAppState extends State<LiuhetongApp>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: widget.themeController,
+        animation: Listenable.merge([widget.themeController, motionPreferences]),
         builder: (context, _) => CupertinoApp(
           navigatorKey: callNavigatorKey,
           title: '畅聊 ChatFlow',
@@ -217,6 +224,19 @@ final class _LiuhetongAppState extends State<LiuhetongApp>
               WidgetsBinding.instance.platformDispatcher.platformBrightness,
             ),
           ),
+          // 「减少动态效果」投影：动效组件（菜单/点赞/按钮/图片帧）读
+          // MediaQuery.disableAnimations；页面转场由 MotionPageRoute 读取
+          // 同一份 MediaQuery。系统开关为真时保持为真，不会反向关闭。
+          builder: (context, child) {
+            final data = MediaQuery.of(context);
+            if (!motionPreferences.reduceMotion || data.disableAnimations) {
+              return child!;
+            }
+            return MediaQuery(
+              data: data.copyWith(disableAnimations: true),
+              child: child!,
+            );
+          },
           home: widget.home,
         ),
       );

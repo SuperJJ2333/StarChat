@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/notification/call_permission_readiness.dart';
 import 'call_permission_checklist.dart';
+import '../../../ui/motion/motion_page_route.dart';
 
 const backgroundCallReminderKey =
     'chatflow.background_call_permissions.explained.v1';
@@ -50,7 +51,7 @@ Future<bool> maybePromptBackgroundCallPermissions(
     await prefs.setBool(backgroundCallReminderKey, true);
     if (openSettings && context.mounted) {
       await Navigator.of(context, rootNavigator: true)
-          .push(CupertinoPageRoute<void>(
+          .push(MotionPageRoute<void>(
         builder: (_) => CallPermissionSettingsPage(gateway: gateway),
       ));
     }

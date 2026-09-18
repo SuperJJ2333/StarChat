@@ -26,6 +26,7 @@ import 'moment_detail_page.dart';
 import 'moment_comment_interaction.dart';
 import 'moment_composer_page.dart';
 import '../matrix/profile_repository.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class MomentsPage extends StatefulWidget {
   /// BUG 1：朋友圈不再自建资料缓存——必须注入全局唯一 ProfileRepository。
@@ -783,7 +784,7 @@ final class _MomentsPageState extends State<MomentsPage> {
     final epoch = _accountEpoch;
     await Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => MomentDetailPage(
           contactActions: widget.contactActions,
           identityCache: _identityCache,
@@ -857,7 +858,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                 padding: EdgeInsets.zero,
                 onPressed: () => Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  MotionPageRoute(
                     builder: (_) => MomentsSettingsPage(api: widget.api),
                   ),
                 ),
@@ -868,7 +869,7 @@ final class _MomentsPageState extends State<MomentsPage> {
                 onPressed: () async {
                   final didPublish = await Navigator.push<bool>(
                     context,
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       builder: (_) => MomentComposerPage(api: widget.api),
                     ),
                   );
@@ -1094,7 +1095,7 @@ final class _MomentsPageState extends State<MomentsPage> {
   void _openCover() {
     Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => WeChatMomentCoverViewer(
           url: _coverUrl,
           cacheKey: _coverCacheKey,

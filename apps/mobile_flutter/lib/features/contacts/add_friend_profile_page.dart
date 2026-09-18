@@ -9,6 +9,7 @@ import '../matrix/profile_repository.dart';
 import 'request_friend_page.dart';
 import '../../core/business_api_client.dart';
 import '../moments/moment_profile_preview.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 用户资料页（BUG 2 流程：搜索 → 用户资料 → 添加到通讯录 → 申请页）。
 ///
@@ -53,7 +54,7 @@ final class AddFriendProfilePage extends StatelessWidget {
   void _openRequestPage(BuildContext context) {
     Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => RequestFriendPage(
           api: api,
           userId: userId,

@@ -6,6 +6,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import 'profile_controller.dart';
 import 'profile_avatar_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 微信式「个人信息」页：头像 / 昵称 / 性别 / 地区 / 畅聊号 / 邮箱 / 拍一拍。
 /// 性别与地区当前为客户端本地资料（v1），昵称走业务 API 保存。
@@ -164,7 +165,7 @@ final class _PersonalProfilePageState extends State<PersonalProfilePage> {
                   ),
                   onTap: () => Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       builder: (_) =>
                           ProfileAvatarPage(controller: widget.controller),
                     ),

@@ -7,12 +7,14 @@ import 'package:flutter/services.dart';
 import '../../ui/components/modern_action_button.dart';
 import '../../ui/components/user_avatar.dart';
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/components/wechat_toast.dart';
 import '../../ui/components/wechat_nav_title.dart';
 import '../../ui/foundation/changliao_icons.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'profile_controller.dart';
 import 'invite_controller.dart';
 import 'profile_avatar_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class ProfileExperiencePage extends StatefulWidget {
   const ProfileExperiencePage({
@@ -67,7 +69,7 @@ final class _ProfileExperiencePageState extends State<ProfileExperiencePage> {
 
   void _openDetails() => Navigator.push(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => ProfileDetailsPage(
             controller: widget.controller,
             onInvite: widget.onInvite,
@@ -344,6 +346,7 @@ final class ProfileDetailsPage extends StatefulWidget {
 
 final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   InviteCodeController? _inviteController;
+  StreamSubscription<ProfileSaveEvent>? _saveEvents;
 
   late final nickname = TextEditingController(
     text: widget.controller.state.profile?.nickname ?? '',
@@ -356,6 +359,8 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
   void initState() {
     super.initState();
     widget.controller.addListener(_change);
+    // BUG-05：保存结果由 Controller 事件驱动，页面只负责一次性提示。
+    _saveEvents = widget.controller.saveEvents.listen(_onSaveEvent);
     nickname.addListener(_change);
     signature.addListener(_change);
     final gateway = widget.inviteGateway;
@@ -369,6 +374,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
 
   @override
   void dispose() {
+    _saveEvents?.cancel();
     widget.controller.removeListener(_change);
     _inviteController?.removeListener(_change);
     _inviteController?.dispose();
@@ -379,6 +385,18 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
 
   void _change() {
     if (mounted) setState(() {});
+  }
+
+  void _onSaveEvent(ProfileSaveEvent event) {
+    if (!mounted) return;
+    switch (event) {
+      case ProfileSaveSuccess():
+        showWeChatToast(context, '保存成功',
+            semanticType: WeChatToastSemanticType.success);
+      case ProfileSaveFailure(:final message):
+        showWeChatToast(context, message,
+            semanticType: WeChatToastSemanticType.error);
+    }
   }
 
   @override
@@ -418,7 +436,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                   ),
                   onTap: () => Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    MotionPageRoute(
                       builder: (_) => ProfileAvatarPage(
                         controller: widget.controller,
                       ),
@@ -441,7 +459,7 @@ final class _ProfileDetailsPageState extends State<ProfileDetailsPage> {
                   onTap: () async {
                     await Navigator.push<void>(
                       context,
-                      CupertinoPageRoute(
+                      MotionPageRoute(
                         builder: (_) => _ProfileNudgePage(
                           controller: widget.controller,
                         ),

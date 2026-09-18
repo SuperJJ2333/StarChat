@@ -5,6 +5,7 @@ import '../../ui/components/user_avatar.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import 'moments_privacy_changes.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 class MomentsSettingsPage extends StatefulWidget {
   const MomentsSettingsPage({super.key, required this.api});
@@ -64,7 +65,7 @@ class _MomentsSettingsState extends State<MomentsSettingsPage> {
   Future<void> _choosePeople() async {
     final selected = await Navigator.push<List<String>>(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
             builder: (_) =>
                 _ExcludedPeoplePage(api: widget.api, initial: _excluded)));
     if (!mounted || selected == null) return;

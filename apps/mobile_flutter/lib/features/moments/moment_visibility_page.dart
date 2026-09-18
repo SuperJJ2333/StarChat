@@ -6,6 +6,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'moment_visibility_people_page.dart';
 import 'moment_visibility_selection.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 export 'moment_visibility_selection.dart';
 
@@ -32,7 +33,7 @@ final class _MomentVisibilityPageState extends State<MomentVisibilityPage> {
         : MomentVisibilitySelection(visibility: mode);
     final result = await Navigator.push<MomentVisibilitySelection>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => MomentVisibilityPeoplePage(
           api: widget.api,
           mode: mode,

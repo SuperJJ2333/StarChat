@@ -10,6 +10,7 @@ import '../contacts/user_display_name_resolver.dart';
 import 'incoming_call_overlay_state.dart';
 import 'matrix_call_adapter.dart';
 import '../../ui/components/modern_action_button.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 全局根导航键（规格 §二）：由 main.dart 挂载到 CupertinoApp。
 /// CallUiManager 用它在任意页面/路由之上推来电页；统计助手等
@@ -346,7 +347,7 @@ final class CallUiManager {
     // Task L：来电页必须与主叫页使用同一套身份呈现（名称 + 头像 + 授权头）。
     // 此前只传 displayName/fallbackSeed，来电头像因此始终缺失。
     final identity = state.identity;
-    _incomingRoute = CupertinoPageRoute<void>(
+    _incomingRoute = MotionPageRoute<void>(
       fullscreenDialog: true,
       builder: (_) => FutureBuilder<String>(
         future:

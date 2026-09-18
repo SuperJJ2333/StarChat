@@ -9,6 +9,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/chat/contain_image_bubble.dart' show boundedChatImageProvider;
 import '../../ui/foundation/wechat_tokens.dart';
 import 'group_announcement_service.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class GroupAnnouncementPage extends StatefulWidget {
   const GroupAnnouncementPage(
@@ -415,7 +416,7 @@ final class _GroupAnnouncementBannerState
           onPressed: () async {
             await Navigator.push(
                 context,
-                CupertinoPageRoute<void>(
+                MotionPageRoute<void>(
                     builder: (_) =>
                         GroupAnnouncementPage(service: widget.service)));
             await _load();

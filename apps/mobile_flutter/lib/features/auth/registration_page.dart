@@ -70,6 +70,9 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   /// 输入防抖 600ms 后自动校验邀请码（避免每个字符都打接口）。
   void _scheduleInvitationCheck() {
     _inviteDebounce?.cancel();
+    // BUG-01：用户重新编辑邀请码后，旧的提交期字段错误立即失效，
+    // 否则内联状态行被压制、字段错误行显示的是上一轮的结论。
+    widget.controller.clearInvitationCodeError();
     final code = invitation.text.trim();
     if (code.isEmpty) {
       setState(() {
@@ -113,8 +116,13 @@ final class _RegistrationPageState extends State<RegistrationPage> {
   }
 
   /// 邀请码校验状态行：加载中/可用/各失效形态 + 失败可重试。
+  ///
+  /// BUG-01：邀请码提示只有一个出口。提交（或重发）后 controller 会写入
+  /// `invitation_code` 字段错误，此时由字段错误行负责展示，本状态行让位，
+  /// 保证一次失败只出现一条提示。
   Widget _inviteStatusRow() {
-    if (_inviteState == InvitationValidationState.initial) {
+    if (_inviteState == InvitationValidationState.initial ||
+        widget.controller.state.fieldErrors.containsKey('invitation_code')) {
       return const SizedBox.shrink();
     }
     final color = switch (_inviteState) {

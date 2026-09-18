@@ -102,6 +102,7 @@ final class _Harness {
       api: api,
       matrix: matrix,
       directChats: direct,
+      onOpenRoom: (_, {anchorEventId}) async {},
       onMessage: lastOnMessage!,
       onVoice: lastOnVoice!,
       onVideo: lastOnVideo!,

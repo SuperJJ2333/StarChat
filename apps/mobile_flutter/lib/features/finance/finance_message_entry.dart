@@ -7,6 +7,7 @@ import '../transfer/chat_transfer_detail_sheet.dart';
 import '../matrix/profile_repository.dart';
 import 'finance_card_store.dart';
 import 'finance_message_card.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// The real message-timeline entry for a business-authoritative finance card.
 ///
@@ -104,7 +105,7 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
         if (detail['viewer_claim'] != null || ownPrivatePacket) {
           if (!mounted) return;
           if (!live()) return;
-          await Navigator.of(context).push<void>(CupertinoPageRoute<void>(
+          await Navigator.of(context).push<void>(MotionPageRoute<void>(
             builder: (_) => RedPacketClaimDetailPage(api: api, packetId: id),
           ));
         } else {
@@ -126,7 +127,7 @@ final class _FinanceMessageEntryState extends State<FinanceMessageEntry> {
         final viewerId = state.viewerId;
         if (viewerId == null || viewerId.isEmpty || !mounted) return;
         if (!live()) return;
-        await Navigator.of(context).push<void>(CupertinoPageRoute<void>(
+        await Navigator.of(context).push<void>(MotionPageRoute<void>(
           builder: (_) => ChatTransferDetailSheet(
             api: api,
             transferId: id,

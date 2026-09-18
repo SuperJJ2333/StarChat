@@ -5,6 +5,7 @@ import '../contacts/contacts_page.dart';
 import '../contacts/add_friend_profile_page.dart';
 import '../matrix/profile_repository.dart';
 import 'moment_models.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 Future<void> openMomentPerson(
   BuildContext context, {
@@ -33,7 +34,7 @@ Future<void> openMomentPerson(
   if (!context.mounted) return;
   await Navigator.push(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
           builder: (_) => contact != null
               ? ContactProfilePage(
               onMessage: contactActions?.onMessage,

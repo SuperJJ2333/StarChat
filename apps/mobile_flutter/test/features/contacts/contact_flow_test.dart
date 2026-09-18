@@ -74,6 +74,11 @@ final class FakeContactsGateway implements ContactsGateway {
 
   @override
   Future<void> blockContact(String userId) async => blocked = true;
+  @override
+  Future<Map<String, dynamic>> blockList() async => {'items': []};
+
+  @override
+  Future<void> unblockContact(String userId) async {}
 
   @override
   Future<void> deleteContact(String userId) async {
@@ -184,6 +189,7 @@ void main() {
     final friend = cache.contacts.single;
     await tester.pumpWidget(CupertinoApp(
         home: ContactsPage(
+      onOpenRoom: (_, {anchorEventId}) async {},
       api: api,
       identityCache: cache,
       pendingFriendRequests: ValueNotifier(0),
@@ -238,6 +244,7 @@ void main() {
     await cache.hydrate();
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
+        onOpenRoom: (_, {anchorEventId}) async {},
         pendingFriendRequests: ValueNotifier<int>(0),
         api: FakeContactsGateway(),
         identityCache: cache,
@@ -270,6 +277,7 @@ void main() {
     await tester.pumpWidget(
       CupertinoApp(
           home: ContactsPage(
+              onOpenRoom: (_, {anchorEventId}) async {},
               pendingFriendRequests: ValueNotifier<int>(0),
               api: IndexedContactsGateway())),
     );
@@ -311,6 +319,7 @@ void main() {
     await tester.pumpWidget(
       CupertinoApp(
           home: ContactsPage(
+              onOpenRoom: (_, {anchorEventId}) async {},
               pendingFriendRequests: ValueNotifier<int>(0),
               api: IndexedContactsGateway())),
     );
@@ -398,6 +407,7 @@ void main() {
     final gateway = FakeContactsGateway();
     await tester.pumpWidget(CupertinoApp(
         home: ContactsPage(
+            onOpenRoom: (_, {anchorEventId}) async {},
             pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
@@ -555,6 +565,7 @@ void main() {
           ),
           tabBuilder: (_, __) => CupertinoTabView(
             builder: (_) => ContactsPage(
+                onOpenRoom: (_, {anchorEventId}) async {},
                 pendingFriendRequests: ValueNotifier<int>(0), api: gateway),
           ),
         ),
@@ -578,6 +589,7 @@ void main() {
     final gateway = FakeContactsGateway();
     await tester.pumpWidget(CupertinoApp(
         home: ContactsPage(
+            onOpenRoom: (_, {anchorEventId}) async {},
             pendingFriendRequests: ValueNotifier<int>(0), api: gateway)));
     await tester.pumpAndSettle();
 
@@ -592,6 +604,7 @@ void main() {
     var messageRequests = 0;
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
+        onOpenRoom: (_, {anchorEventId}) async {},
         pendingFriendRequests: ValueNotifier<int>(0),
         api: FakeContactsGateway(),
         onMessage: (_) async => messageRequests++,
@@ -620,6 +633,7 @@ void main() {
     );
     await tester.pumpWidget(CupertinoApp(
         home: ContactsPage(
+            onOpenRoom: (_, {anchorEventId}) async {},
             pendingFriendRequests: ValueNotifier<int>(0), api: api)));
     await tester.pump();
     expect(find.byKey(const Key('contacts-search')), findsOneWidget);

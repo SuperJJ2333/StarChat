@@ -89,7 +89,10 @@ Widget _page({
         debounce: debounce,
         contactsLoader: () async => contacts,
         roomsLoader: () async => rooms,
-        onOpenRoom: nav?.open,
+        onOpenRoom: nav == null
+            ? (_, {anchorEventId}) async {}
+            : (room, {anchorEventId}) =>
+                nav.open(room, anchorEventId: anchorEventId),
       ),
     );
 
@@ -293,6 +296,7 @@ void main() {
         api: api,
         index: _index([]),
         debounce: Duration.zero,
+        onOpenRoom: (_, {anchorEventId}) async {},
         contactsLoader: () async => throw StateError('matrix unavailable'),
       ),
     ));
@@ -301,19 +305,24 @@ void main() {
     expect(find.byKey(const Key('global-search-error')), findsOneWidget);
   });
 
-  testWidgets('without an injected room navigator only contacts are offered',
+  testWidgets('search always offers openable rooms (onOpenRoom is required)',
       (tester) async {
     final api = await _api();
     await tester.pumpWidget(_page(
       api: api,
-      nav: null,
       index: _index([_record(r'$hit', '项目文件')]),
     ));
+    // 架构改造：onOpenRoom 必填（非 optional），因此三个 Tab 都具备
+    // 群聊/聊天记录打开能力，不再出现"未注入就不展示分组"的能力分叉。
+    await _search(tester, '数智');
+    expect(find.byKey(const Key('global-search-section-群聊')), findsOneWidget,
+        reason: '群聊分组必须可用（打开能力必填）');
+
     await _search(tester, '项目');
     expect(find.byKey(const Key('global-search-section-联系人')), findsOneWidget);
-    expect(find.byKey(const Key('global-search-section-群聊')), findsNothing,
-        reason: '无房间导航能力时不展示无法打开的群聊/聊天记录分组');
-    expect(find.byKey(const Key('global-search-section-聊天记录')), findsNothing);
+    expect(
+        find.byKey(const Key('global-search-section-聊天记录')), findsOneWidget,
+        reason: '聊天记录分组必须可用（打开能力必填）');
   });
 
   testWidgets('unified search bar renders the shared nav title without hero',
@@ -334,6 +343,7 @@ void main() {
         api: api,
         index: _index([_record(r'$hit', '项目文件')]),
         debounce: const Duration(milliseconds: 250),
+        onOpenRoom: (_, {anchorEventId}) async {},
         contactsLoader: () async => const [],
         roomsLoader: () async {
           roomsLoaded++;

@@ -76,6 +76,11 @@ final class _HeldWriteStore implements ProfileStore {
 final class _ContactsApi implements ContactsGateway {
   @override
   Future<void> blockContact(String userId) async {}
+  @override
+  Future<Map<String, dynamic>> blockList() async => {'items': []};
+
+  @override
+  Future<void> unblockContact(String userId) async {}
 
   @override
   Future<Map<String, dynamic>> contactTags() async => const {'items': []};

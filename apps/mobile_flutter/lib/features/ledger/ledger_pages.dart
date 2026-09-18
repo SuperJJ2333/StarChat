@@ -4,11 +4,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
 import '../../ui/components/wechat_date_picker.dart';
+import '../../ui/components/wechat_empty_state.dart';
 import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'ledger_controller.dart';
 import '../matrix/profile_repository.dart';
 import 'ledger_gateway.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 const _kinds = <String?, String>{
   null: '全部',
@@ -73,6 +75,36 @@ String _time(Object? value) {
       '${two(date.hour)}:${two(date.minute)}:${two(date.second)}';
 }
 
+/// 筛选条上的日期：只需要到「日」，不再显示 `00:00:00`（BUG-06 展示优化）。
+String formatLedgerFilterDate(DateTime value) {
+  String two(int part) => part.toString().padLeft(2, '0');
+  return '${value.year}-${two(value.month)}-${two(value.day)}';
+}
+
+/// 列表日期分组标题：今天/昨天/M月d日（跨年补年份）。
+String formatLedgerDayLabel(DateTime value, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  final date = DateTime(value.year, value.month, value.day);
+  final reference = DateTime(today.year, today.month, today.day);
+  final difference = reference.difference(date).inDays;
+  if (difference == 0) return '今天';
+  if (difference == 1) return '昨天';
+  final base = '${value.month}月${value.day}日';
+  return value.year == today.year ? base : '${value.year}年$base';
+}
+
+/// 列表行的本地自然日（用于分组）。
+DateTime? ledgerRowDay(Object? createdAt) {
+  final parsed = switch (createdAt) {
+    DateTime() => createdAt,
+    String() => DateTime.tryParse(createdAt),
+    _ => null,
+  };
+  if (parsed == null) return null;
+  final local = parsed.toLocal();
+  return DateTime(local.year, local.month, local.day);
+}
+
 String _transferStatus(Object? value) => switch (value) {
       'ACCEPTED' => '已收款',
       'DECLINED' => '已拒收',
@@ -80,6 +112,21 @@ String _transferStatus(Object? value) => switch (value) {
       'PENDING' => '待收款',
       _ => '状态未知',
     };
+
+/// 列表条目：日期分组标题或一行账单（仅用于展示层分组）。
+sealed class _LedgerEntry {
+  const _LedgerEntry();
+}
+
+final class _LedgerDayHeader extends _LedgerEntry {
+  const _LedgerDayHeader(this.label);
+  final String label;
+}
+
+final class _LedgerRowEntry extends _LedgerEntry {
+  const _LedgerRowEntry(this.row);
+  final Map<String, dynamic> row;
+}
 
 final class LedgerListPage extends StatefulWidget {
   const LedgerListPage({super.key, required this.gateway, this.identityCache});
@@ -152,6 +199,53 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                   Expanded(child: _body()),
                 ])),
       );
+
+  bool get _hasFilters => _controller.hasFilters;
+
+  void _clearFilters() {
+    _search.clear();
+    _controller.clearFilters();
+  }
+
+  /// 筛选摘要 + 重置入口：只在存在筛选条件时出现，
+  /// 不占用默认状态的空间，也不与导航栏标题重复。
+  Widget _filterSummary() {
+    if (!_hasFilters) return const SizedBox.shrink();
+    final parts = <String>[
+      if (_controller.kind != null) _kinds[_controller.kind] ?? '其他',
+      if (_controller.startAt != null || _controller.endAt != null)
+        '${_controller.startAt == null ? '不限' : formatLedgerFilterDate(_controller.startAt!)}'
+            ' 至 '
+            '${_controller.endAt == null ? '不限' : formatLedgerFilterDate(DateTime(_controller.endAt!.year, _controller.endAt!.month, _controller.endAt!.day - 1))}',
+      if ((_controller.query ?? '').trim().isNotEmpty)
+        '“${_controller.query!.trim()}”',
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: WeChatSpacing.sm),
+      child: Row(children: [
+        const Icon(CupertinoIcons.line_horizontal_3_decrease,
+            size: 14, color: WeChatColors.textTertiary),
+        const SizedBox(width: WeChatSpacing.xs),
+        Expanded(
+          child: Text(
+            '已筛选：${parts.join(' · ')}',
+            key: const Key('ledger-filter-summary'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontSize: 12, color: WeChatColors.textTertiary),
+          ),
+        ),
+        CupertinoButton(
+            key: const Key('ledger-filter-reset'),
+            padding: const EdgeInsets.symmetric(horizontal: WeChatSpacing.sm),
+            minimumSize: const Size(0, 28),
+            onPressed: _clearFilters,
+            child: const Text('重置', style: TextStyle(fontSize: 13))),
+      ]),
+    );
+  }
+
   Widget _filters() => Padding(
         padding: const EdgeInsets.all(WeChatSpacing.md),
         child: Column(children: [
@@ -167,8 +261,16 @@ final class _LedgerListPageState extends State<LedgerListPage> {
             CupertinoButton(
                 key: const Key('ledger-clear-date'),
                 padding: EdgeInsets.zero,
-                onPressed: () => _controller.setDateRange(null, null),
-                child: const Icon(CupertinoIcons.clear)),
+                onPressed: _controller.hasFilters &&
+                        (_controller.startAt != null ||
+                            _controller.endAt != null)
+                    ? () => _controller.setDateRange(null, null)
+                    : null,
+                child: Icon(CupertinoIcons.clear,
+                    color: _controller.startAt != null ||
+                            _controller.endAt != null
+                        ? WeChatColors.textSecondary
+                        : WeChatColors.textTertiary)),
           ]),
           SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -203,6 +305,8 @@ final class _LedgerListPageState extends State<LedgerListPage> {
                         );
                       })
                       .toList())),
+          const SizedBox(height: WeChatSpacing.sm),
+          _filterSummary(),
         ]),
       );
 
@@ -240,7 +344,10 @@ final class _LedgerListPageState extends State<LedgerListPage> {
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-                shown == null ? (isEnd ? '结束日期' : '开始日期') : _time(shown),
+                // 只显示到日；带时分秒的筛选胶囊在移动端不可读（BUG-06）。
+                shown == null
+                    ? (isEnd ? '结束日期' : '开始日期')
+                    : formatLedgerFilterDate(shown),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -264,17 +371,67 @@ final class _LedgerListPageState extends State<LedgerListPage> {
         return const Center(child: CupertinoActivityIndicator());
       }
       if (_controller.error != null) return _retry(_controller.error!);
-      return const Center(child: Text('暂无点钻流水'));
+      return _emptyState();
     }
-    final rows = _controller.items;
+    final entries = _listEntries(_controller.items);
     return ListView.builder(
         controller: _scroll,
-        itemCount: rows.length + 1,
+        itemCount: entries.length + 1,
         itemBuilder: (context, index) {
-          if (index == rows.length) return _tail();
-          return _row(rows[index]);
+          if (index == entries.length) return _tail();
+          final entry = entries[index];
+          return switch (entry) {
+            _LedgerDayHeader(:final label) => _dayHeader(label),
+            _LedgerRowEntry(:final row) => _row(row),
+          };
         });
   }
+
+  /// 空状态：区分「一条账单都没有」与「当前筛选没有结果」，
+  /// 后者给出一键清除筛选（BUG-06）。
+  Widget _emptyState() {
+    if (_hasFilters) {
+      return WeChatEmptyState(
+        key: const Key('ledger-empty-filtered'),
+        icon: CupertinoIcons.line_horizontal_3_decrease,
+        title: '没有符合条件的账单',
+        description: '试试调整时间范围、账单类型或关键词',
+        actionLabel: '清除筛选',
+        onAction: _clearFilters,
+      );
+    }
+    return const WeChatEmptyState(
+      key: Key('ledger-empty'),
+      icon: CupertinoIcons.doc_text,
+      title: '暂无账单',
+      description: '转账、红包、充值、提现记录都会显示在这里',
+    );
+  }
+
+  /// 列表布局：按自然日分组，插入日期标题（今天/昨天/M月d日）。
+  List<_LedgerEntry> _listEntries(List<Map<String, dynamic>> rows) {
+    final entries = <_LedgerEntry>[];
+    DateTime? currentDay;
+    for (final row in rows) {
+      final day = ledgerRowDay(row['created_at']);
+      if (day != null && day != currentDay) {
+        currentDay = day;
+        entries.add(_LedgerDayHeader(formatLedgerDayLabel(day)));
+      }
+      entries.add(_LedgerRowEntry(row));
+    }
+    return entries;
+  }
+
+  Widget _dayHeader(String label) => Container(
+        key: Key('ledger-day-$label'),
+        color: WeChatColors.pageBackground(context),
+        padding: const EdgeInsets.fromLTRB(
+            WeChatSpacing.lg, WeChatSpacing.md, WeChatSpacing.lg, WeChatSpacing.xs),
+        child: Text(label,
+            style: const TextStyle(
+                fontSize: 12, color: WeChatColors.textTertiary)),
+      );
 
   Widget _row(Map<String, dynamic> row) {
     final kind = '${row['kind'] ?? ''}';
@@ -299,7 +456,7 @@ final class _LedgerListPageState extends State<LedgerListPage> {
       key: Key('ledger-row-${row['id']}'),
       padding: const EdgeInsets.symmetric(
           horizontal: WeChatSpacing.lg, vertical: WeChatSpacing.md),
-      onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+      onPressed: () => Navigator.of(context).push(MotionPageRoute<void>(
           builder: (_) => LedgerDetailPage(
               gateway: widget.gateway,
               transactionId: row['id'] as String,
@@ -808,7 +965,7 @@ final class _LedgerDetailPageState extends State<LedgerDetailPage> {
       Navigator.of(context).pop();
       return;
     }
-    Navigator.of(context).pushReplacement(CupertinoPageRoute<void>(
+    Navigator.of(context).pushReplacement(MotionPageRoute<void>(
         builder: (_) => LedgerListPage(
             gateway: widget.gateway, identityCache: widget.identityCache)));
   }

@@ -1,4 +1,35 @@
 # 移动交付恢复索引
+
+## 2026-09-18 ChatFlow BUG-01～BUG-10 源码级修复 + Mi 6 debug 2133 交付（**已装真机，待用户自测**；未 push）
+
+用户任务：按《畅聊缺陷清单-0917.xlsx》修复 BUG-01～BUG-10（BUG-04 已废弃），只做**源码级根因修复**
+（禁止 Toast 掩盖、UI 强制刷新、写死数据、删功能绕过），完成后构建 debug 包覆盖安装 Mi 6 供用户自测。
+**10 项结论**：① **BUG-01** 邀请码提示有两个出口 → 内联状态行在 controller 持有
+`invitation_code` 字段错误时让位 + 新增 `clearInvitationCodeError()`（改输入即失效），一次失败一次反馈；
+② **BUG-02** `onUserAgreement/onPrivacyPolicy` 是可选回调、生产调用方从未传入且无协议页可开 →
+新增内置正文 `legal_documents.dart` + 原生页 `legal_document_page.dart`，登录页默认打开（无外部 URL/WebView）；
+③ **BUG-03** 字母索引用 `Expanded` 撑满整列（与设计契约 20×18/居中不符）→ 固定 18pt + 垂直居中 + 呼吸间距，
+跳转偏移改由 `contactTileHeight`/分组标题高度计算、入口行固定高度；④ **BUG-04** 未改代码；
+⑤ **BUG-05** `save()` 成功无结果信号 → 新增 `ProfileSaveSuccess/ProfileSaveFailure` 事件流 + UI 一次性浮层
+（失败文案不再同时写 `state.message`）；⑥ **BUG-06** 仅展示层：筛选日期只到日、按自然日分组、两种空状态 +
+「清除筛选」、筛选摘要 + 「重置」（未动转账/钱包/模型）；⑦ **BUG-07** 分区标题写死内部编号「PRD §30」→
+改纯用户文案并抽常量；⑧ **BUG-08** 「减少动态效果」是不可点击占位且无任何组件读取 → 真实开关 + 持久化 +
+根级 `MediaQuery.disableAnimations` 投影 + `MotionPageRoute`（开启时转场 5%≈25ms，42 文件机械同义替换）；
+⑨ **BUG-09** 申请好友页新建标签只写本地列表、**从未调用 `POST /contact-tags`** → 先落库再刷新选中，失败可读报错；
+⑩ **BUG-10** 开关恒为 false、不读 `GET /blocks`、只能开不能关、`RoomPage.canSendNow` 把 `isBlocked` 写死 false →
+新增 `BlockedContacts` 进程投影 + `blockList()/unblockContact()`，设置页读回真实状态并双向操作、启动同步、
+发送门读投影（立即生效且重开 App 仍生效）。
+**门禁**：`flutter analyze` 0 issue；全量 `flutter test --timeout 120s` **3143 通过 / 0 失败（退出码 0）**；
+新增回归 23 条（auth 3 / profile 4 / contacts 5 / settings 6 / ledger 5）；mobile 契约逐文件 **63 通过**
+（`test_getui_privacy.py` 因全仓密钥扫描在本机巨大 artifacts 树上超时，与本改动无关）。
+**真机交付**：固定流程（源码 ARM64 debug + 三项 HTTPS dart-define → Apktool 2.12.1 → zipalign 36.0.0 `-P 16 -f 4`
+→ 固定身份签名）产出 **`ChatFlow-0.3.95-debug-2133-arm64-rebuilt.apk`
+SHA256 `CE52DEC1C9CDCB2EC4C47B1B76A3BDBB606756F2534FD985F93F2929E52AC296`**（源码包 `48525EC8…`）；
+类 27317/27317、原生/Flutter 资产 336 项零变化、清单语义一致、v2+v3 签名、zipalign 通过；
+**覆盖安装 Mi 6（`cbd0156b`）2131→2133，`firstInstallTime` 2026-09-11 00:42:05 未变（数据保留）**，
+设备回读 `base.apk` SHA 与证书（`75b31c66…ba61fff`）均与候选一致。**未 push**；服务端无需改动。
+进入[任务记录](tasks/2026-09-18-chatflow-bug-01-10.md)或[修复报告与真机步骤](../verification/2026-09-18-chatflow-bug-01-10.md)。
+
 ## 2026-09-18 Media Engine Production Readiness Validation（**生产候选验证**；结论 PASS，附 1 条强制条件）
 
 用户任务：验证 ChatFlow Media Engine 是否达到**生产候选标准**（正确性 / 安全性 / 一致性 / 性能风险 / Migration 安全）；
@@ -27,7 +58,6 @@ grant 0.36ms；签名签发 0.012ms / 校验 0.013ms；选档 0.22–0.34ms；GC
 `npm test` 209 通过；`export_openapi.py --check` PASS；`scripts/verify.ps1` **`Verification: PASS`**。
 进入 [任务记录](tasks/2026-09-18-media-engine-production-readiness.md) 或
 [验证报告](../verification/media-engine-production-readiness-report.md)。
-
 
 ## 2026-09-18 Media Engine Phase 4 — Full Implementation（服务端 Media Platform；**本地完成，未构建/未真机/未部署**）
 

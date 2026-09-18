@@ -8,6 +8,7 @@ import 'moment_models.dart';
 import 'moment_preview_cache.dart';
 import 'personal_moments_page.dart';
 import 'moments_privacy_changes.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// Only server-authorized previews may render a profile entrance.
 class MomentProfilePreview extends StatefulWidget {
@@ -119,7 +120,7 @@ class _MomentProfilePreviewState extends State<MomentProfilePreview> {
                 onPressed: () async {
                   await Navigator.push(
                       context,
-                      CupertinoPageRoute(
+                      MotionPageRoute(
                           builder: (_) => PersonalMomentsPage(
                       contactActions: widget.contactActions,
                       identityCache: widget.identityCache,

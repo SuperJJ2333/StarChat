@@ -10,6 +10,7 @@ import '../../ui/moments/wechat_moment_tile.dart';
 import 'moment_models.dart';
 import 'moment_detail_page.dart';
 import 'moments_privacy_changes.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 class PersonalMomentsPage extends StatefulWidget {
   const PersonalMomentsPage(
@@ -124,7 +125,7 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   Future<void> _open(MomentItem item) async {
     await Navigator.push(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
             builder: (_) => MomentDetailPage(
           contactActions: widget.contactActions,
           identityCache: widget.identityCache,

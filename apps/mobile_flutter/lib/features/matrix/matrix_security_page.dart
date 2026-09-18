@@ -5,6 +5,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'matrix_e2ee_client.dart';
 import 'matrix_verification_page.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class MatrixSecurityPage extends StatefulWidget {
   const MatrixSecurityPage({super.key, required this.matrix});
@@ -51,7 +52,7 @@ final class _MatrixSecurityPageState extends State<MatrixSecurityPage> {
               CupertinoListTile(
                   leading: const Icon(CupertinoIcons.checkmark_seal),
                   title: const Text('SAS 交互式验证'),
-                  onTap: () => Navigator.of(context).push(CupertinoPageRoute(
+                  onTap: () => Navigator.of(context).push(MotionPageRoute(
                       builder: (_) =>
                           MatrixVerificationPage(matrix: widget.matrix))))
             ]),

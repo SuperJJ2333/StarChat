@@ -8,6 +8,7 @@ import '../../features/matrix/chat_search_query_controller.dart';
 
 import '../../ui/foundation/wechat_tokens.dart';
 import '../components/user_avatar.dart';
+import '../motion/motion_page_route.dart';
 
 /// The result of an explicit date query. An incomplete bounded scan must not
 /// be presented as a confirmed empty day.
@@ -271,7 +272,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     Widget picker() => MemberPickerPage(
         entries: memberEntries, avatarBuilder: widget.memberAvatarBuilder);
     final picked = await Navigator.of(context).push<MemberDirectoryEntry>(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => widget.identityChanges == null
             ? picker()
             : ListenableBuilder(
@@ -290,7 +291,7 @@ final class _ChatSearchPageState extends State<ChatSearchPage> {
     // 最早月份缺失时不伪造 1970，交由 room 侧索引/创建时间决定。
     final now = logic.CalendarMonth.of(DateTime.now());
     final picked = await Navigator.of(context).push<DateTime>(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => CalendarPickerPage(
           earliest: widget.earliestMonth,
           latest: widget.latestMonth ?? now,

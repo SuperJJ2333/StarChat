@@ -13,6 +13,7 @@ import 'call_controller.dart';
 import 'matrix_call_adapter.dart';
 import 'media_renderer_binding.dart';
 import '../settings/notification/call_permission_checklist.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// 加密语音/视频通话页（微信式）：
 /// - **语音**：深色背景 + 对方头像/昵称 + 状态（等待接听/通话时长）；
@@ -460,7 +461,7 @@ final class _CallPageState extends State<CallPage> {
       return Column(children: [
         CupertinoButton(
           key: const Key('call-permission-settings'),
-          onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+          onPressed: () => Navigator.of(context).push(MotionPageRoute<void>(
             builder: (_) => const CallPermissionSettingsPage(),
           )),
           child: const Text('检查通话权限'),
@@ -508,7 +509,7 @@ final class _CallPageState extends State<CallPage> {
       if (widget.controller.state.message != null)
         CupertinoButton(
           key: const Key('call-permission-settings'),
-          onPressed: () => Navigator.of(context).push(CupertinoPageRoute<void>(
+          onPressed: () => Navigator.of(context).push(MotionPageRoute<void>(
             builder: (_) => const CallPermissionSettingsPage(),
           )),
           child: const Text('检查通话权限'),

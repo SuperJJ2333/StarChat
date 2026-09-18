@@ -236,6 +236,11 @@ abstract interface class AddFriendGateway {
     String momentsPermission,
   });
   Future<Map<String, dynamic>> contactTags();
+
+  /// BUG-09：申请好友时新建的标签必须先落到服务端标签表
+  /// （`POST /contact-tags`），否则该标签不会出现在通讯录「标签」列表，
+  /// 也无法参与按标签的朋友圈可见范围。
+  Future<Map<String, dynamic>> createContactTag(String name);
 }
 
 abstract interface class ContactsGateway {
@@ -256,5 +261,13 @@ abstract interface class ContactsGateway {
     required String momentsPermission,
   });
   Future<void> blockContact(String userId);
+
+  /// 解除拉黑（`DELETE /blocks/{user_id}`）。与 [blockContact] 成对，
+  /// 保证「好友设置 → 黑名单」开关可双向操作且状态可持久。
+  Future<void> unblockContact(String userId);
+
+  /// 当前账号的拉黑名单（`GET /blocks`，权威持久状态）。
+  Future<Map<String, dynamic>> blockList();
+
   Future<void> deleteContact(String userId);
 }

@@ -33,6 +33,7 @@ void main() {
             api: api,
             matrix: matrix,
             directChats: direct,
+            onOpenRoom: (_, {anchorEventId}) async {},
             onMessage: (_) async {},
             onVoice: (_) async {},
             onVideo: (_) async {},
@@ -68,6 +69,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
         api: client,
+        onOpenRoom: (_, {anchorEventId}) async {},
         pendingFriendRequests: ValueNotifier<int>(0),
         onGroupAddressList: () => addressListOpened++,
         onGroupChat: () => createGroupOpened++,
@@ -90,6 +92,7 @@ void main() {
     await tester.pumpWidget(CupertinoApp(
       home: ContactsPage(
         api: client,
+        onOpenRoom: (_, {anchorEventId}) async {},
         pendingFriendRequests: ValueNotifier<int>(0),
         onGroupChat: () => createGroupOpened++,
       ),

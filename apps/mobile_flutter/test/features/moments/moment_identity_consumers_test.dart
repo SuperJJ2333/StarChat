@@ -118,8 +118,11 @@ void main() {
     await cache.preload();
     final api = await fixtures.momentsApi((_) async => http.Response('{}', 200,
         headers: {'content-type': 'application/json'}));
-    await tester.pumpWidget(
-        CupertinoApp(home: GlobalSearchPage(api: api, identityCache: cache)));
+    await tester.pumpWidget(CupertinoApp(
+        home: GlobalSearchPage(
+            api: api,
+            identityCache: cache,
+            onOpenRoom: (_, {anchorEventId}) async {})));
     await tester.pumpAndSettle();
     // Task B：空查询是空态（旧实现会把全部联系人与聊天记录平铺），
     // 因此先输入命中该联系人的关键词。

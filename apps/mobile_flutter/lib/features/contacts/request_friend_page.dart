@@ -59,6 +59,7 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
                   ? 'HIDE_THEIRS'
                   : 'DEFAULT';
   bool submitting = false;
+  bool creatingTag = false;
   String? error;
 
   @override
@@ -119,7 +120,11 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
     });
   }
 
-  void _createTag() {
+  /// 新建标签：必须先在服务端落库（POST /contact-tags），再以上一次
+  /// 服务端返回的标签列表刷新可选标签，最后自动选中。
+  /// 只改本地列表会出现「申请里带了标签名，但通讯录标签页看不到」。
+  Future<void> _createTag() async {
+    if (creatingTag) return;
     final name = newTag.text.trim();
     if (name.isEmpty) return;
     if (name.length > 64) {
@@ -131,11 +136,29 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
       return;
     }
     setState(() {
+      creatingTag = true;
       error = null;
-      allTags = [...allTags, name];
-      newTag.clear();
     });
-    _toggleTag(name);
+    try {
+      await widget.api.createContactTag(name);
+      if (!mounted) return;
+      await _loadTags();
+      if (!mounted) return;
+      setState(() {
+        // 服务端标签表是权威来源；名称可能已被规范化，仍按名称选中。
+        if (!allTags.contains(name)) allTags = [...allTags, name];
+        newTag.clear();
+      });
+      _toggleTag(name);
+    } on BusinessApiException catch (failure) {
+      if (!mounted) return;
+      setState(() => error = failure.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => error = '标签创建失败，请重试');
+    } finally {
+      if (mounted) setState(() => creatingTag = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -300,9 +323,9 @@ final class _RequestFriendPageState extends State<RequestFriendPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   color: WeChatColors.brandPrimary,
                   minimumSize: const Size(0, 36),
-                  onPressed: _createTag,
-                  child: const Text(
-                    '添加',
+                  onPressed: creatingTag ? null : _createTag,
+                  child: Text(
+                    creatingTag ? '添加中' : '添加',
                     style:
                         TextStyle(color: CupertinoColors.white, fontSize: 14),
                   ),

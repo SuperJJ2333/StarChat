@@ -10,6 +10,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'moment_visibility_page.dart';
 import 'moment_image_preprocessor.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class MomentComposerPage extends StatefulWidget {
   const MomentComposerPage({
@@ -257,7 +258,7 @@ final class _MomentComposerPageState extends State<MomentComposerPage> {
   Future<void> _openVisibility() async {
     final selected = await Navigator.push<MomentVisibilitySelection>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => MomentVisibilityPage(
           api: widget.api,
           initialSelection: visibility,

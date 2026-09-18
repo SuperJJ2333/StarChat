@@ -14,12 +14,24 @@ import '../../ui/foundation/wechat_tokens.dart';
 import '../contacts/contact_models.dart';
 import '../contacts/contacts_page.dart';
 import '../matrix/profile_repository.dart';
+import '../matrix/room_visibility_policy.dart';
 import 'global_search_controller.dart';
 import 'global_search_index.dart';
 import 'global_search_models.dart';
 import 'local_message_search_repository.dart';
 import '../matrix/chat_search_query_controller.dart'
     show buildHighlightSnippet, formatSearchResultTime;
+import '../../ui/motion/motion_page_route.dart';
+
+/// 打开房间的统一回调：由组合根注入（RoomOpeningPolicy → 协调器）。
+///
+/// **必填**（非 optional）：搜索结果里的"群聊/聊天记录"必须能打开，且三个
+/// Tab（消息 / 通讯录 / 发现）能力完全一致——架构审计发现通讯录与发现 Tab
+/// 未注入该回调，同一功能在不同 Tab 行为分叉。
+typedef GlobalSearchRoomOpenCallback = Future<void> Function(
+  GlobalSearchRoomResult room, {
+  String? anchorEventId,
+});
 
 /// 全局搜索（device-side，typed results）：
 /// - 联系人：本机身份缓存投影（备注/昵称优先）；
@@ -34,6 +46,7 @@ final class GlobalSearchPage extends StatefulWidget {
   const GlobalSearchPage({
     super.key,
     required this.api,
+    required this.onOpenRoom,
     this.matrix,
     this.identityCache,
     this.contactActions,
@@ -41,7 +54,7 @@ final class GlobalSearchPage extends StatefulWidget {
     this.roomsLoader,
     this.index,
     this.repository,
-    this.onOpenRoom,
+    this.visibility,
     this.debounce = const Duration(milliseconds: 250),
     this.sectionLimit = 3,
   });
@@ -63,11 +76,14 @@ final class GlobalSearchPage extends StatefulWidget {
   /// 显式传入 [index] 时不再使用共享仓库，保持既有调用方语义）。
   final LocalMessageSearchRepository? repository;
 
-  /// 打开房间（含 anchor 定位）。由持有房间生命周期的一方注入
-  /// （MatrixHomePage → RoomLease/RoomPage 统一导航）；为空时不展示
-  /// 群聊/聊天记录分组（避免在搜索页复制一套不完整的开会话实现）。
-  final Future<void> Function(GlobalSearchRoomResult room,
-      {String? anchorEventId})? onOpenRoom;
+  /// 打开房间（含 anchor 定位）——**必填**。消息 / 通讯录 / 发现三个 Tab
+  /// 统一注入组合根的打开实现（RoomOpeningPolicy → 协调器）；
+  /// 搜索页自身不复制一套开会话逻辑。
+  final GlobalSearchRoomOpenCallback onOpenRoom;
+
+  /// 可见性策略（可选注入，测试用）。默认为空 → 从 Matrix accountData 解析
+  /// 控制房间，见 [roomVisibility]。生产不注入即走权威来源。
+  final RoomVisibilityPolicy? visibility;
 
   final Duration debounce;
   final int sectionLimit;
@@ -84,6 +100,13 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   LocalMessageSearchRepository? get _repository =>
       widget.repository ??
       (widget.index == null ? LocalMessageSearchRepository.shared : null);
+
+  /// 生效的可见性策略：注入优先，否则从 Matrix accountData 解析
+  /// （roomId + accountData，不用展示名）。
+  RoomVisibilityPolicy get _visibility =>
+      widget.visibility ??
+      RoomVisibilityPolicy.forRoomIds(
+          widget.matrix?.controlRoomIds ?? const <String>{});
 
   @override
   void initState() {
@@ -167,8 +190,24 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   /// 群聊结果来自本机会话快照（typed；私聊不进入群聊分组）。
+  ///
+  /// 控制房间（表情仓库 / 提醒同步）在此按 [RoomVisibilityPolicy] 过滤：
+  /// 审计发现"过滤只在消息列表发生"，搜索页会把账号级系统房间当成群聊
+  /// 展示并允许打开。判定只用 roomId + accountData，不用展示名；
+  /// **注入的 roomsLoader 也走同一条过滤**（否则测试/未来数据源会绕过策略）。
   Future<List<GlobalSearchRoomResult>> _loadRooms() async {
-    if (widget.roomsLoader != null) return widget.roomsLoader!();
+    final visibility = _visibility;
+    final loader = widget.roomsLoader;
+    final rooms = loader != null
+        ? await loader()
+        : await _roomsFromLocalSnapshot();
+    return [
+      for (final room in rooms)
+        if (visibility.isVisible(room.roomId)) room,
+    ];
+  }
+
+  Future<List<GlobalSearchRoomResult>> _roomsFromLocalSnapshot() async {
     final matrix = widget.matrix;
     if (matrix == null) return const [];
     final snapshot = await matrix.conversations.snapshot();
@@ -190,15 +229,14 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
 
   Future<void> _openRoom(GlobalSearchRoomResult room,
       {String? anchorEventId}) async {
-    final open = widget.onOpenRoom;
-    if (open == null) return;
-    await open(room, anchorEventId: anchorEventId);
+    // 打开一律经组合根注入的统一入口（必填，不再有"未注入就静默不响应"）。
+    await widget.onOpenRoom(room, anchorEventId: anchorEventId);
   }
 
   void _openConversation(GlobalSearchConversationHit conversation) {
     Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => GlobalSearchConversationRecordsPage(
           conversation: conversation,
           query: controller.query,
@@ -257,7 +295,6 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
     final contacts = controller.visibleContacts;
     final rooms = controller.visibleRooms;
     final conversations = controller.visibleConversations;
-    final canOpenRoom = widget.onOpenRoom != null;
     return ListView(children: [
       if (contacts.isNotEmpty) ...[
         const _Section('联系人'),
@@ -266,7 +303,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
             contact: contact,
             onTap: () => Navigator.push(
                 context,
-                CupertinoPageRoute(
+                MotionPageRoute(
                     builder: (_) => ContactProfilePage(
                           onMessage: widget.contactActions?.onMessage,
                           onVoice: widget.contactActions?.onVoice,
@@ -288,7 +325,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
                     contact: contact,
                     onTap: () => Navigator.push(
                         context,
-                        CupertinoPageRoute(
+                        MotionPageRoute(
                             builder: (_) => ContactProfilePage(
                                   onMessage: widget.contactActions?.onMessage,
                                   onVoice: widget.contactActions?.onVoice,
@@ -302,7 +339,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
             ),
           ),
       ],
-      if (canOpenRoom && rooms.isNotEmpty) ...[
+      if (rooms.isNotEmpty) ...[
         const _Section('群聊'),
         for (final room in rooms)
           _RoomRow(
@@ -325,7 +362,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
             ),
           ),
       ],
-      if (canOpenRoom && conversations.isNotEmpty) ...[
+      if (conversations.isNotEmpty) ...[
         const _Section('聊天记录'),
         for (final conversation in conversations)
           _ConversationRow(
@@ -372,7 +409,7 @@ final class _GlobalSearchPageState extends State<GlobalSearchPage> {
   void _openMore({required String title, required List<Widget> children}) {
     Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => WeChatPageScaffold.navigation(
           navigationBar: CupertinoNavigationBar(
             automaticBackgroundVisibility: false,

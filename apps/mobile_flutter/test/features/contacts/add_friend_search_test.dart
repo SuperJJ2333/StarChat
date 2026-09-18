@@ -19,6 +19,10 @@ final class FakeAddFriendGateway implements AddFriendGateway {
   Future<Map<String, dynamic>> contactTags() async => {'items': []};
 
   @override
+  Future<Map<String, dynamic>> createContactTag(String name) async =>
+      {'id': 'tag-$name', 'name': name};
+
+  @override
   Future<Map<String, dynamic>> requestFriend(String userId,
       {String message = '',
       String? remark,

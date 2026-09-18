@@ -7,6 +7,7 @@ import 'red_packet_claim_detail_page.dart';
 import 'red_packet_controller.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// WeChat-style centered red-packet claim dialog:
 /// scales out from the center (250ms ease-out) over a frosted-glass backdrop,
@@ -157,7 +158,7 @@ final class _RedPacketClaimDialogState extends State<RedPacketClaimDialog> {
     final navigator = Navigator.of(context);
     navigator.pop();
     navigator.push(
-      CupertinoPageRoute<void>(
+      MotionPageRoute<void>(
         builder: (_) => RedPacketClaimDetailPage(
           api: widget.api,
           packetId: widget.packetId,

@@ -14,6 +14,7 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../../ui/chat/flash_photo.dart';
 import '../../core/performance_metrics.dart';
@@ -132,6 +133,7 @@ import '../finance/finance_message_presentation.dart';
 import 'media_message_access_policy.dart';
 import 'room_media_gallery_projection.dart';
 import '../search/local_message_search_repository.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 /// Counts the authoritative joined snapshot exactly once per Matrix member.
 /// The local account must be present in that snapshot; callers must not infer
@@ -214,7 +216,7 @@ Future<void> openGroupMemberProfile(
     final profile = await lookupByMatrixId(member.matrixUserId);
     if (!context.mounted) return;
     await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => AddFriendProfilePage(
           api: api,
           identityCache: identityCache,
@@ -865,10 +867,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       controller = RoomTimelineController(
         windowed: true,
         // 规格§二：服务层权威权限门（UI 之外的第二道，删除好友/拉黑后
-        // 发送必失败，消息进入本地 failed 状态）。
+        // 发送必失败，消息进入本地 failed 状态）。拉黑状态取自业务 API
+        // 投影（GET /blocks + 本地立即更新），不做写死放行。
         canSendNow: () => InteractionPermission.resolve(
           isFriend: _peerIsFriend(),
-          isBlocked: false, // 拉黑名单接口接入前保守值（服务侧已隔离）
+          isBlocked: blockedContacts.isBlocked(_peerUserId()),
         ).canSendMessage(),
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
@@ -1453,6 +1456,15 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     return _identityCache.contactsByMatrixId[peers.first.id] != null;
   }
 
+  /// 单聊对端的业务 userId（拉黑状态以业务 userId 为键；群聊返回 null）。
+  String? _peerUserId() {
+    final selfId = roomInfo.currentUserId;
+    final peers =
+        roomInfo.members.where((m) => m.id != selfId).toList(growable: false);
+    if (peers.length != 1) return null;
+    return _identityCache.contactsByMatrixId[peers.first.id]?.userId;
+  }
+
   /// 规格§八：聊天详情页头像 → APP 自己的好友/用户资料页（禁止打开
   /// Matrix Profile）。好友直开；非好友走业务检索（同一 APP 页面）。
   Future<void> _openPeerProfile(String matrixUserId) {
@@ -1496,7 +1508,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
     try {
       await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
+        MotionPageRoute(
           fullscreenDialog: true,
           builder: (_) => VideoViewerPage(
             loadFile: loadPlaybackFile,
@@ -1728,7 +1740,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final targetRoomId = roomInfo.id;
     final timeline = controller;
     final result = await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => ImagePickerPage(isGroup: isGroup),
       ),
     ) as ({List<GalleryPhoto> photos, bool original, bool flash})?;
@@ -2321,7 +2333,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     try {
       await Navigator.push<void>(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (pageContext) => ListenableBuilder(
             listenable: _identityCache,
             builder: (context, child) => ChatRedPacketSheet(
@@ -2373,7 +2385,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     );
     await Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (pageContext) => ChatTransferSheet(
           controller: transferController,
           isGroup: isGroup,
@@ -2423,7 +2435,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
   Future<void> _openContact(ContactDetails contact) => Navigator.push(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => ContactProfilePage(
             api: widget.api,
             identityCache: _identityCache,
@@ -2467,7 +2479,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       };
       await Navigator.push<void>(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => GroupChatInfoPage(
             avatarMedia: widget.roomLease,
             api: widget.api,
@@ -2515,7 +2527,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final avatarUrl = contact?.avatarUrl ?? member?.avatarUri?.toString();
     await Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => DirectChatInfoPage(
           // 规格§八：头像点击 → APP 好友资料页（非 Matrix Profile）。
           onTapPerson: (matrixUserId) =>
@@ -2548,7 +2560,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           <String>{};
       await Navigator.push<void>(
         context,
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => GroupMemberPickerPage(
             contacts: contacts,
             identityCache: _identityCache,
@@ -2682,7 +2694,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
 
     Navigator.push<void>(
       context,
-      CupertinoPageRoute(
+      MotionPageRoute(
         builder: (_) => ChatSearchPage(
           isGroup: isGroup,
           identityChanges: _identityCache,
@@ -3027,7 +3039,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       return;
     }
     await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute<void>(
+      MotionPageRoute<void>(
         fullscreenDialog: true,
         builder: (_) => FlashPhotoViewerPage(
           loadOriginal: () => imageMemoryCache.putIfAbsent(
@@ -3056,7 +3068,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       final images = _galleryImages();
       if (!mounted || !images.any((image) => image.id == message.id)) return;
       await Navigator.of(context, rootNavigator: true).push(
-        CupertinoPageRoute(
+        MotionPageRoute(
           builder: (_) => RoomImageGalleryPage(
             images: images,
             initialId: message.id,
@@ -3182,7 +3194,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final transaction = 'image-edit-${DateTime.now().microsecondsSinceEpoch}';
     // 选择器先开（无导出等待）；PNG 编码挪到确认后的发送态内完成。
     return await Navigator.of(context, rootNavigator: true).push<bool>(
-          CupertinoPageRoute(
+          MotionPageRoute(
             builder: (_) => ChatForwardPickerPage(
               contentPreview: '[编辑图片]',
               candidates: [
@@ -4109,7 +4121,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     final batchId = 'forward-${DateTime.now().microsecondsSinceEpoch}';
     final forwarded =
         await Navigator.of(context, rootNavigator: true).push<bool>(
-      CupertinoPageRoute<bool>(
+      MotionPageRoute<bool>(
         builder: (_) => ListenableBuilder(
           listenable: _identityCache,
           builder: (context, child) => ChatForwardPickerPage(

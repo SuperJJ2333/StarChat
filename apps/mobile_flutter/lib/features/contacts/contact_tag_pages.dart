@@ -5,6 +5,7 @@ import '../../ui/components/wechat_scaffold.dart';
 import '../../ui/foundation/wechat_tokens.dart';
 import 'contact_models.dart';
 import 'contact_tag_models.dart';
+import '../../ui/motion/motion_page_route.dart';
 
 final class ContactTagsPage extends StatefulWidget {
   const ContactTagsPage({super.key, required this.api});
@@ -108,7 +109,7 @@ final class _ContactTagsPageState extends State<ContactTagsPage> {
                             } else {
                               Navigator.push(
                                   context,
-                                  CupertinoPageRoute(
+                                  MotionPageRoute(
                                       builder: (_) => ContactTagMembersPage(
                                           api: widget.api,
                                           tag: tag))).then((_) => reload());
@@ -286,7 +287,7 @@ final class _ContactTagMembersPageState extends State<ContactTagMembersPage> {
               child: CupertinoButton(
                   onPressed: () => Navigator.push(
                       context,
-                      CupertinoPageRoute(
+                      MotionPageRoute(
                           builder: (_) => ContactTagFriendPickerPage(
                               api: widget.api,
                               tag: widget.tag))).then((_) => reload()),

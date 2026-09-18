@@ -4,17 +4,84 @@ import 'package:flutter/cupertino.dart';
 
 import '../contacts/contact_models.dart';
 
+/// 会话打开入口的来源。
+///
+/// 用途有两个，且只有两个：
+/// 1. **诊断**：把"谁发起这次打开"写进日志/诊断，不改变导航语义；
+/// 2. **默认网络策略**：每个入口声明自己的网络姿态（见 [defaultMode]），
+///    由 `RoomOpeningPolicy` 读取，入口自身不再各自写 `waitForRoom`。
+///
+/// 新增入口必须显式声明来源；未声明时回落到 [RoomOpenSource.unknown]
+/// （最保守的 [RoomOpenMode.localThenNetwork]）。
+enum RoomOpenSource {
+  /// 消息列表点击会话（本地已知的既有会话）。
+  conversationList('conversation_list', RoomOpenMode.offlineFirst),
+
+  /// 本机历史搜索命中（群聊 / 聊天记录，含 anchor 定位）。
+  search('search', RoomOpenMode.offlineFirst),
+
+  /// 好友资料 / 群成员资料「发消息」（已有好友，可能已有 DM）。
+  contactProfile('contact_profile', RoomOpenMode.offlineFirst),
+
+  /// 通讯录 → 群聊通讯录列表。
+  groupAddressList('group_address_list', RoomOpenMode.offlineFirst),
+
+  /// 建群成功后进入新群（房间已由创建流程加入）。
+  groupCreated('group_created', RoomOpenMode.offlineFirst),
+
+  /// 系统通知 / 推送 / 应用内横幅点击（冷启动时房间可能尚未进入本地库）。
+  notification('notification', RoomOpenMode.localThenNetwork),
+
+  /// 好友通过后进入会话（私聊已建立，房间刚加入）。
+  friendAccept('friend_accept', RoomOpenMode.localThenNetwork),
+
+  /// 扫码入群后进入群聊（入群本身已完成，仍需网络确认成员资格）。
+  scan('scan', RoomOpenMode.requireNetwork),
+
+  /// 未声明来源（兜底，禁止新增此来源的生产调用）。
+  unknown('unknown', RoomOpenMode.localThenNetwork);
+
+  const RoomOpenSource(this.wireName, this.defaultMode);
+
+  /// 诊断用稳定标识（不含任何用户内容）。
+  final String wireName;
+
+  /// 该来源的默认网络姿态。
+  final RoomOpenMode defaultMode;
+}
+
+/// 打开会话的网络姿态策略。
+///
+/// 三者都遵守同一条铁律：**本地已加入的房间绝不等待网络**。
+/// 差别只在"本地没有这个房间"时的行为。
+enum RoomOpenMode {
+  /// 离线优先：本地命中立即打开（零网络等待）；本地缺失才允许有界网络回退。
+  /// 用于"用户已经能在本地列表里看到它"的入口（消息列表、搜索、好友资料）。
+  offlineFirst,
+
+  /// 本地优先、缺失即等待：本地命中立即打开；本地缺失时做有界等待
+  /// （通知冷启动、好友通过等"房间可能还没同步进来"的场景）。
+  localThenNetwork,
+
+  /// 需要网络：这类入口的前置步骤（入群）本身已经完成，房间若不在本地
+  /// 说明前提不成立——不做静默等待，直接给出可见失败。
+  requireNetwork,
+}
+
 /// 一次「打开房间页面」请求所需的展示数据。
 ///
 /// 只承载 roomId 与展示信息：**不放** Matrix SDK 对象、RoomLease 或
 /// BuildContext。租约、路由与页面生命周期由 [RoomNavigationCoordinator]
-/// 与 AppHome（composition root）持有。
+/// 与 AppHome（composition root）持有；**打开前的策略判定**由
+/// `RoomOpeningPolicy` 持有（来源 + 网络姿态 + 失败分类）。
 final class RoomOpenRequest {
   const RoomOpenRequest({
     required this.roomId,
     required this.roomName,
     this.initialContact,
     this.anchorEventId,
+    this.source = RoomOpenSource.unknown,
+    this.modeOverride,
     this.onRoomReady,
     this.onRoomClosed,
   });
@@ -29,6 +96,16 @@ final class RoomOpenRequest {
   /// 正式的房间导航 anchor 契约（全局搜索/深链）：进入房间后定位并高亮
   /// 该事件。绝不通过全局变量或 SharedPreferences 传递。
   final String? anchorEventId;
+
+  /// 本次打开的来源（诊断 + 默认网络策略）。见 [RoomOpenSource]。
+  final RoomOpenSource source;
+
+  /// 覆盖来源默认网络姿态（仅当某个入口确有例外时使用；默认 null 表示
+  /// 采用 `source.defaultMode`）。
+  final RoomOpenMode? modeOverride;
+
+  /// 实际生效的网络姿态。
+  RoomOpenMode get mode => modeOverride ?? source.defaultMode;
 
   /// 租约已取、RoomPage 尚未 push 时回调。消息列表在此补完「进入房间」的
   /// 已读/未读收尾（等待动画与身份预热已在调用方完成）。
