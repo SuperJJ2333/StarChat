@@ -1,5 +1,37 @@
 # 移动交付恢复索引
 
+## 2026-09-18 Media Engine Phase 4 — Full Implementation（服务端 Media Platform；**本地完成，未构建/未真机/未部署**）
+
+用户任务：实现 ChatFlow Media Platform（能力完整实现 + **Strangler Pattern** 渐进迁移），严格遵守 Phase 3.1 的
+ADR-001…ADR-006；**5 个可构建提交**；禁止全球明文去重 / E2EE 服务端处理（解密·转码·生成变体）/ 迁移 Matrix 字节 /
+改 Matrix 协议 / Avatar 接入（延期）/ 分片上传实际传输（本阶段只做接口）。
+**提交**：`bf397700` domain core → `88a6b0c7` gateway → `850935e7` reference lifecycle →
+`e8284bbb` authorization → `dfbcf4f6` moments integration。
+**实现**：① **4.1** `MediaObject`/`MediaBlob`/`MediaVariant` + 三种 `digest_kind`
+（`plaintext_digest`/`ciphertext_digest`/`transport_digest`，`Digest.__eq__` 跨类直接抛异常 ⇒ "明文 hash == 密文 hash"
+在类型层不可能）+ 隔离域地址（键含 `media/{user|e2ee|public}/<scope-hash>/…`）+ 策略（去重/ TTL / 选档）+
+指标（`media_resolve_ms`/`variant_resolve_ms`/`authorization_ms`/`cache_hit`/`storage_read_ms`，无 PII）+
+**expand-only 迁移 0069**（7 张新表，含 3 个部分唯一索引；未改任何既有表）。
+② **4.2** `MediaGateway`（`resolve`/`authorize`/`resolve_variant`）+ `BusinessMediaGateway` +
+**`MatrixMediaGateway`（只读：解析 `mxc://` + 授权委派给 Matrix，平台不为 E2EE 字节建身份、不复制不重加密）** +
+Variant Resolver（ready-only，授权范围只收窄）+ **独立 Upload Engine 接口**（会话/续传/abort 可用；
+分片与 commit 返回 501 并在响应中声明 `chunk_upload_supported=false`）。
+③ **4.3/4.6** 引用系统（`observed`/`declared`、幂等 active 唯一、引用计数可重算、按业务释放只作用于调用者自己的引用）
++ 生命周期（`ACTIVE/ORPHAN/DELETING/DELETED`，`QUARANTINED`/`PINNED` 正交）+ `MediaGarbageCollector`
+（dry-run / audit `media_gc_runs` / 恢复 `DELETING` / E2EE 保留下限 / 引用·pin·隔离·在途上传保护）。
+④ **4.4** `AccessGrant`（owner 专属签发、撤销递增版本）+ **Signed URL**（HMAC 绑定
+`media_id+variant+subject+permission+tier+expire+jti+grant_version`；**API 无 `expires_in` 参数**⇒ 服务端唯一决定 TTL；
+**private 要求调用方身份 == subject（转发无效）**，**audience 允许受众内转发但撤销即时生效**；篡改/过期统一 404）。
+⑤ **4.7** Moments 零侵入接入：新上传经平台（对象+blob+变体+引用），既有 `moment_media_uploads` 只增加一行
+**指向平台 blob 键**的 COMPLETED 记账行，返回既有 capability URL ⇒ **未改任何 Moments 代码**，
+既有 `POST /moments` 与 `GET /moments/media/content/{token}` 直接服务平台字节（一份字节、两条读取路径、可回滚）。
+为兼容既有读者，平台键加 `moments/` 命名空间前缀，隔离地址仍保留在路径中。
+**测试**：新增 **71 条**（5 个文件），覆盖任务书 Test 1–8 与 §13 安全要求（越权/转发/TTL/删除隔离）；回归
+`tests/business_api/moments`+`media` **106 条全通过（未改其中任何文件）**，合计 **177 passed**。
+**门禁**：见下方"门禁执行记录"。进入
+[任务记录](tasks/2026-09-18-media-engine-phase4-implementation.md) 或
+[实施报告](../verification/media-engine-phase4-implementation.md)。
+
 ## 2026-09-17 Media Engine Phase 3.1 — Architecture Freeze（**只冻结，不编码**；文档完成）
 
 用户任务：**冻结架构边界**，为 Phase 4 Implementation 提供稳定架构依据；**本阶段只设计，不编码**
