@@ -14,6 +14,9 @@ import '../../ui/chat/group_avatar_mosaic.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/business_api_client.dart';
+import '../../core/outbox/outbox_message.dart';
+import '../../core/outbox/outbox_room_sender_registry.dart';
+import '../../core/outbox/persistent_outbox_manager.dart';
 import '../../core/permissions/blocked_contacts.dart';
 import '../../core/support_identity_repository.dart';
 import '../../ui/chat/flash_photo.dart';
@@ -166,6 +169,7 @@ class RoomPage extends StatefulWidget {
     this.onVideo,
     this.initialIdentityCache,
     this.initialOutbox = const <String>[],
+    this.outbox,
   });
 
   final BusinessApiClient api;
@@ -191,7 +195,13 @@ class RoomPage extends StatefulWidget {
   /// Offline First：pending conversation 期间输入、尚未发送的文本。
   /// 页面首次加载完成后按顺序自动发送（弱网/无网时由消息状态机进入
   /// “等待发送”并在网络恢复后重试）。
+  ///
+  /// 注意：这些原文**只在没有对应持久化 outbox 行时**才会走"新建发送"，
+  /// 已落盘的行由 `outbox`（同一 txid）派发，避免同一条消息发两次。
   final List<String> initialOutbox;
+
+  /// 持久化出站消息管理器；为空时回退 [PersistentOutboxManager.shared]。
+  final PersistentOutboxManager? outbox;
 
   @override
   State<RoomPage> createState() => _RoomPageState();
@@ -540,6 +550,32 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   ProfileData? ownProfile;
   late final ProfileRepository _identityCache =
       widget.initialIdentityCache ?? ProfileRepository(widget.api);
+
+  /// Offline First：本房间的持久化出站队列（可注入；组合根写入 shared）。
+  PersistentOutboxManager? get _outbox =>
+      widget.outbox ?? PersistentOutboxManager.shared;
+
+  /// 本房间的发送日志（房间号 + 接收方在这里绑定一次）。
+  late final OutboxJournal? _outboxJournal = _buildOutboxJournal();
+
+  /// 注册到发送句柄注册表，供调度器在网络恢复时把持久化行交回本会话发送。
+  _RoomOutboxSender? _outboxSender;
+
+  OutboxJournal? _buildOutboxJournal() {
+    final outbox = _outbox;
+    if (outbox == null) return null;
+    return outbox.journalFor(
+        roomId: roomInfo.id, receiverId: _outboxReceiverId);
+  }
+
+  /// 接收方：单聊取对端 Matrix 用户 ID（房间信息 → 身份缓存 → 入口联系人），
+  /// 群聊取房间 ID。入口联系人兜底保证 pending conversation 绑定过的行一定
+  /// 能被本房间认领。
+  String get _outboxReceiverId =>
+      roomInfo.directPeerId ??
+      peer?.matrixUserId ??
+      widget.initialContact?.matrixUserId ??
+      roomInfo.id;
   late SupportIdentityRepository _supportIdentities;
   Timer? _supportTimer;
   late final FinanceCardStore _financeCardStore =
@@ -880,8 +916,14 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
           isFriend: _peerIsFriend(),
           isBlocked: blockedContacts.isBlocked(_peerUserId()),
         ).canSendMessage(),
+        // Offline First：发送前先落盘；重试/重启复用同一 txid。
+        outboxJournal: _outboxJournal,
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
+      // 调度器只有在房间已打开时才允许派发持久化行；句柄随页面销毁注销。
+      final sender = _RoomOutboxSender(this);
+      _outboxSender = sender;
+      OutboxRoomSenderRegistry.shared.register(sender);
       controller!.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
       replyResolver?.dispose();
       replyResolver = ReplyMessageResolver(
@@ -917,21 +959,89 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     unawaited(_flushInitialOutbox());
   }
 
-  /// Offline First：把 pending conversation 期间排队的消息按顺序发出。
+  /// Offline First：把 pending conversation 期间排队 / 上次进程遗留的消息
+  /// 按顺序重新接回发送路径。
   ///
-  /// 只调用既有发送路径；无网/弱网时消息由状态机保持“等待发送”并在网络
-  /// 恢复后重试，因此这里不需要（也不允许）自行等待网络。
+  /// 两点必须同时成立：
+  /// 1. **持久化行优先**：房间号已绑定的 `queued` / `waitingNetwork` 行用
+  ///    行内 txid 派发（幂等，绝不重新生成 txid）；
+  /// 2. **原文兜底且不重复**：`initialOutbox` 里没有对应持久化行的文本
+  ///    （持久层不可用等降级路径）才走"新建发送"，按内容多重集逐个抵扣，
+  ///    不会把同一条消息发两次。
+  ///
+  /// 服务端明确拒绝过的 `failed` 行只恢复展示（红色感叹号 + 点击重试），
+  /// 绝不自动重发。
   Future<void> _flushInitialOutbox() async {
-    if (widget.initialOutbox.isEmpty) return;
-    final pending = List<String>.of(widget.initialOutbox);
-    for (final text in pending) {
+    final outbox = _outbox;
+    final controller = this.controller;
+    if (controller == null) return;
+    if (outbox == null) {
+      await _sendRawOutboxTexts(controller, _trimmedInitialOutbox());
+      return;
+    }
+    // 1) 先把本会话接收方还没有房间号的行绑定到本房间（幂等）：用户可能在
+    //    pending conversation 里离线输入后杀掉进程，重开时由这里接手。
+    await _adoptUnboundOutboxRows(outbox);
+    if (!mounted || widget.roomLease.canceled) return;
+    // 2) 读取本房间所有未送达行（queued / waitingNetwork / failed）。
+    var rows = <OutboxMessage>[];
+    try {
+      rows = await outbox.store.query(
+        unsent: true,
+        roomId: roomInfo.id,
+        accountId: outbox.accountId.isEmpty ? null : outbox.accountId,
+      );
+    } catch (_) {
+      rows = const <OutboxMessage>[];
+    }
+    if (!mounted || widget.roomLease.canceled) return;
+    // 3) 原文兜底：抵扣掉已经由持久化行拥有的内容。
+    final orphaned = textsWithoutOutboxRows(
+        texts: widget.initialOutbox, rows: rows);
+    await _sendRawOutboxTexts(controller, orphaned);
+    if (!mounted || widget.roomLease.canceled) return;
+    // 4) 持久化行：失败的只恢复展示，其余用原 txid 派发。
+    for (final row in rows) {
       if (!mounted || widget.roomLease.canceled) return;
-      final trimmed = text.trim();
-      if (trimmed.isEmpty) continue;
+      if (row.status == OutboxStatus.failed) {
+        controller.restoreOutboxMessage(row);
+        continue;
+      }
       try {
-        await _trackMatrixOperation(controller!.sendText(trimmed));
+        await _trackMatrixOperation(
+          controller.sendText(row.content, outboxRow: row),
+        );
       } catch (_) {
         // 发送失败由气泡状态呈现（等待发送/失败 + 重试），这里不吞掉信息。
+      }
+    }
+  }
+
+  List<String> _trimmedInitialOutbox() => <String>[
+        for (final text in widget.initialOutbox)
+          if (text.trim().isNotEmpty) text.trim(),
+      ];
+
+  /// 认领本会话接收方"还没有房间号"的持久化行（幂等）。
+  Future<void> _adoptUnboundOutboxRows(PersistentOutboxManager outbox) async {
+    final receiverId = _outboxReceiverId;
+    if (receiverId == roomInfo.id) return;
+    try {
+      await outbox.bindRoomForReceiver(receiverId, roomInfo.id);
+    } catch (_) {
+      // 绑定失败不阻塞进入会话；行仍留在 outbox（下次进入再绑）。
+    }
+  }
+
+  /// 降级路径：没有持久化行的原文按顺序新建发送。
+  Future<void> _sendRawOutboxTexts(
+      RoomTimelineController controller, List<String> texts) async {
+    for (final text in texts) {
+      if (!mounted || widget.roomLease.canceled) return;
+      try {
+        await _trackMatrixOperation(controller.sendText(text));
+      } catch (_) {
+        // 同上：状态由气泡呈现。
       }
     }
   }
@@ -4315,6 +4425,11 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         .removeListener(_onTimelineScrollActivityChanged);
     controller?.removeListener(_changed);
     controller?.dispose();
+    final outboxSender = _outboxSender;
+    if (outboxSender != null) {
+      OutboxRoomSenderRegistry.shared.unregister(outboxSender);
+      _outboxSender = null;
+    }
     mediaMessageTimer?.cancel();
     _voiceMaxTimer?.cancel();
     _voiceTicker?.cancel();
@@ -5182,4 +5297,38 @@ final class _RoleBadge extends StatelessWidget {
           ),
         ),
       );
+}
+
+/// 把持久化 outbox 行交回**当前打开的房间会话**发送。
+///
+/// 调度器只在房间已打开时拿到这个句柄；页面销毁/租约取消后 [canSend] 为
+/// false，注册表按"没有句柄"处理，行继续留在 outbox 等下次进入会话。
+final class _RoomOutboxSender implements OutboxSender {
+  _RoomOutboxSender(this._page);
+
+  final _RoomPageState _page;
+
+  @override
+  String get roomId => _page.roomInfo.id;
+
+  @override
+  bool get canSend =>
+      _page.mounted &&
+      !_page._disposing &&
+      !_page.widget.roomLease.canceled &&
+      _page.controller != null;
+
+  @override
+  Future<String> send(OutboxMessage message) async {
+    final controller = _page.controller;
+    if (controller == null) {
+      throw StateError('Room timeline is not ready');
+    }
+    final eventId =
+        await controller.sendText(message.content, outboxRow: message);
+    if (eventId == null || eventId.isEmpty) {
+      throw StateError('Matrix event was not accepted');
+    }
+    return eventId;
+  }
 }

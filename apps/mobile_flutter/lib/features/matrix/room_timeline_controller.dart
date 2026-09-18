@@ -5,6 +5,8 @@ import 'package:flutter/scheduler.dart';
 import '../../core/network_state_manager.dart';
 import '../../core/notification/notification_feedback.dart';
 import '../../core/notification/sound_type.dart';
+import '../../core/outbox/outbox_message.dart';
+import '../../core/outbox/persistent_outbox_manager.dart';
 import '../../core/performance_metrics.dart';
 
 /// 发出消息的本地投递状态机（离线优先）。
@@ -15,7 +17,30 @@ import '../../core/performance_metrics.dart';
 ///   发送失败，等待网络恢复后自动重发——弱网/无网绝不显示成硬失败；
 /// - [failed]：终局失败（服务端拒绝、无权限、互动门禁等），只能手动重试；
 /// - [sent]：服务端已确认。
+///
+/// 与持久化的 [OutboxStatus] 一一对应（`local → queued`、
+/// `sending → sending`、`waitingNetwork → waitingNetwork`、
+/// `failed → failed`、`sent → sent`）；内存里的乐观行负责"当前这一屏"，
+/// outbox 行负责跨进程不丢消息。
 enum RoomDeliveryState { local, sending, waitingNetwork, failed, sent }
+
+/// 内存投递状态 → 持久化 outbox 状态（唯一映射点，避免两套词表漂移）。
+OutboxStatus outboxStatusOf(RoomDeliveryState state) => switch (state) {
+      RoomDeliveryState.local => OutboxStatus.queued,
+      RoomDeliveryState.sending => OutboxStatus.sending,
+      RoomDeliveryState.waitingNetwork => OutboxStatus.waitingNetwork,
+      RoomDeliveryState.failed => OutboxStatus.failed,
+      RoomDeliveryState.sent => OutboxStatus.sent,
+    };
+
+/// 持久化 outbox 状态 → 内存投递状态（恢复历史行时使用）。
+RoomDeliveryState roomDeliveryStateOf(OutboxStatus status) => switch (status) {
+      OutboxStatus.queued => RoomDeliveryState.local,
+      OutboxStatus.sending => RoomDeliveryState.sending,
+      OutboxStatus.waitingNetwork => RoomDeliveryState.waitingNetwork,
+      OutboxStatus.failed => RoomDeliveryState.failed,
+      OutboxStatus.sent => RoomDeliveryState.sent,
+    };
 
 enum RoomMessageKind {
   text,
@@ -335,8 +360,10 @@ final class RoomTimelineController extends ChangeNotifier {
   RoomTimelineController(this.adapter,
       {this.canSendNow,
       bool windowed = false,
-      NetworkStateManager? networkStateManager})
-      : _injectedNetworkState = networkStateManager {
+      NetworkStateManager? networkStateManager,
+      OutboxJournal? outboxJournal})
+      : _injectedNetworkState = networkStateManager,
+        _outboxJournal = outboxJournal {
     if (windowed && adapter is RoomWindowedTimelineSource) {
       _windowSource = adapter as RoomWindowedTimelineSource;
       _windowSource!.enableWindow();
@@ -519,6 +546,19 @@ final class RoomTimelineController extends ChangeNotifier {
   final _senders = <String, Future<String> Function()>{};
   int _sequence = 0;
   bool _disposed = false;
+
+  /// 出站消息持久化日志（`PersistentOutboxManager.journalFor(...)`）。
+  ///
+  /// null = 不落盘（纯逻辑测试、或没有可用持久层），此时行为与旧实现完全
+  /// 一致：乐观行 + 内存重发。非 null 时**先落盘再派发**，且重试/重启
+  /// 一律复用同一 txid。
+  final OutboxJournal? _outboxJournal;
+
+  /// 同一 txid 在途去重：恢复流程与用户点击可能同时命中同一行。
+  final _inFlightTxids = <String>{};
+
+  /// 最近一次 outbox 持久化错误（诊断；不阻断发送）。
+  Object? outboxError;
 
   /// 组合根/测试注入的网络状态源。为 null 时回退到进程级
   /// [NetworkStateManager.shared]（纯逻辑测试或组合根尚未接线时为 null）。
@@ -828,11 +868,20 @@ final class RoomTimelineController extends ChangeNotifier {
         }
       }
       await adapter.retry(transactionId);
+      // 适配器重试成功（SDK 已确认）：outbox 行同样落定，避免重启后再发一次。
+      if (tx != null && _localEchoes.containsKey(tx)) {
+        await _persistOutboxOutcome(
+            tx, _localEchoes[tx]!, RoomDeliveryState.sent,
+            error: null);
+      }
     } catch (error) {
       if (tx != null && _localEchoes.containsKey(tx)) {
         _echoRevision++;
-        _localEchoes[tx] =
-            _localEchoes[tx]!.copyWith(deliveryState: _noteFailure(tx, error));
+        final state = _noteFailure(tx, error);
+        _localEchoes[tx] = _localEchoes[tx]!.copyWith(deliveryState: state);
+        // 手动重试同样要把结果写回 outbox，否则重启后状态会漂移。
+        await _persistOutboxOutcome(tx, _localEchoes[tx]!, state,
+            error: error);
       }
       if (rethrowErrors) rethrow;
     } finally {
@@ -997,7 +1046,17 @@ final class RoomTimelineController extends ChangeNotifier {
       adapter.sendTransferReference(transferId, amount, note,
           receiverId: receiverId, receiverMatrixId: receiverMatrixId);
 
-  Future<void> sendText(
+  /// 发送一条文本消息（用户点击发送 / 恢复流程 / 初始 outbox 共用本路径）。
+  ///
+  /// 顺序**绝不**颠倒：创建乐观行 → **先持久化 outbox 行** → 交给传输层 →
+  /// 按结果更新状态。因此进程在任意时刻死掉，消息都还在本地 outbox 里。
+  ///
+  /// [outboxRow] 由恢复流程传入：复用该行**原有的 txid**（幂等）与状态；
+  /// 为空时按当前时间生成新 txid（只在"新建一条消息"时发生一次）。
+  ///
+  /// 返回服务端 event id（未派发/失败时为 null）。性能契约不变：一条本地
+  /// 消息只产生一次可见发布。
+  Future<String?> sendText(
     String text, {
     Future<String> Function(String transactionId)? send,
     String? replyToEventId,
@@ -1006,12 +1065,16 @@ final class RoomTimelineController extends ChangeNotifier {
     String? mimeType,
     Duration voiceDuration = const Duration(seconds: 1),
     bool isFlashPhoto = false,
+    OutboxMessage? outboxRow,
   }) async {
-    if (_disposed) return;
+    if (_disposed) return null;
     _restoreLatest();
     messages = _snapshot();
     _reindex();
-    final tx = 'local-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
+    final tx = outboxRow?.txid ??
+        'local-${DateTime.now().microsecondsSinceEpoch}-${_sequence++}';
+    // 同一 txid 只允许一次在途派发：恢复流程与用户点击可能同时命中同一行。
+    if (_inFlightTxids.contains(tx)) return null;
     final permitted = canSendNow?.call() ?? true;
     final local = RoomMessageViewModel(
         id: tx,
@@ -1019,7 +1082,9 @@ final class RoomTimelineController extends ChangeNotifier {
         senderId: '',
         text: text,
         isOwn: true,
-        timestamp: _nextLocalTimestamp(),
+        timestamp: outboxRow == null
+            ? _nextLocalTimestamp()
+            : _localTimestampFor(outboxRow.createdAt),
         deliveryState:
             permitted ? RoomDeliveryState.local : RoomDeliveryState.failed,
         replyToEventId: replyToEventId,
@@ -1042,10 +1107,104 @@ final class RoomTimelineController extends ChangeNotifier {
       messages = List.unmodifiable(messages.skip(messages.length - 200));
     }
     _publish();
-    if (permitted) await _dispatch(tx, local);
+    if (!permitted) {
+      await _persistOutboxOutcome(tx, local, RoomDeliveryState.failed,
+          error: null, outboxRow: outboxRow);
+      return null;
+    }
+    return _dispatch(tx, local, outboxRow: outboxRow);
   }
 
-  Future<void> _dispatch(String tx, RoomMessageViewModel local) async {
+  /// 恢复一条持久化的 outbox 行到时间线，但**不派发**（例如服务端已明确
+  /// 拒绝过的 `failed` 行，或还没轮到派发的行）。用户点击重试仍走既有
+  /// [retry] 路径，复用同一 txid。
+  void restoreOutboxMessage(OutboxMessage row) {
+    if (_disposed || row.content.trim().isEmpty) return;
+    final tx = row.txid;
+    if (_localEchoes.containsKey(tx)) return;
+    _restoreLatest();
+    messages = _snapshot();
+    _reindex();
+    final local = RoomMessageViewModel(
+      id: tx,
+      transactionId: tx,
+      senderId: '',
+      text: row.content,
+      isOwn: true,
+      timestamp: _localTimestampFor(row.createdAt),
+      deliveryState: roomDeliveryStateOf(row.status),
+    );
+    final transport = adapter;
+    _senders[tx] = () => transport is RoomOptimisticTextAdapter
+        ? (transport as RoomOptimisticTextAdapter)
+            .sendTextWithTransaction(row.content, tx)
+        : adapter.sendText(row.content);
+    _echoRevision++;
+    _localEchoes[tx] = local;
+    messages = [...messages, local];
+    _publish();
+  }
+
+  /// 本地时间戳（恢复行用它保持原始顺序；不早于窗口内最后一条）。
+  DateTime _localTimestampFor(DateTime createdAt) {
+    final next = createdAt;
+    final newest = newestMessage;
+    if (newest != null && !next.isAfter(newest.timestamp)) {
+      return newest.timestamp.add(const Duration(microseconds: 1));
+    }
+    return next;
+  }
+
+  /// 只有在"文本 + 正文非空 + 有持久化日志"时才进入 outbox。
+  ///
+  /// 图片/视频/语音/红包/转账各自带带外载荷（媒体字节、业务单号），
+  /// 重放正文无法重建，因此不进 outbox；它们继续沿用原来的内存乐观路径。
+  bool _tracksOutbox(RoomMessageViewModel local) =>
+      _outboxJournal != null &&
+      local.kind == RoomMessageKind.text &&
+      !local.isFlashPhoto &&
+      local.text.trim().isNotEmpty;
+
+  /// 把一次派发结果写回 outbox（状态 + 失败原因）。
+  ///
+  /// 行还不存在时（例如互动门禁在建行前就拒绝、或纯内存路径早退）按结果
+  /// **补建**一行：用户的原文不因为在本地被拒就丢失，重进会话仍能看到
+  /// 「发送失败」并可手动重试。
+  Future<void> _persistOutboxOutcome(
+    String tx,
+    RoomMessageViewModel local,
+    RoomDeliveryState state, {
+    required Object? error,
+    OutboxMessage? outboxRow,
+  }) async {
+    final journal = _outboxJournal;
+    if (journal == null || !_tracksOutbox(local)) return;
+    try {
+      final row = outboxRow ??
+          await journal.findByTxid(tx) ??
+          await journal.persist(
+              txid: tx,
+              content: local.text,
+              status: outboxStatusOf(state));
+      if (row == null) return;
+      if (state == RoomDeliveryState.sent) {
+        await journal.complete(row.localId);
+      } else {
+        await journal.settle(row.localId, outboxStatusOf(state),
+            lastError: error?.toString());
+      }
+      outboxError = null;
+    } catch (persistError) {
+      // 持久化故障绝不改变消息的可见结果（可用性优先），但必须可见。
+      outboxError = persistError;
+    }
+  }
+
+  Future<String?> _dispatch(
+    String tx,
+    RoomMessageViewModel local, {
+    OutboxMessage? outboxRow,
+  }) async {
     // 乐观行创建时是 `local`；派发一真正开始就**同步**翻成 `sending`，
     // 行绝不会停在「未派发」外观上（`sendText` 的调用方无需 await 即可看到）。
     // `local` 与 `sending` 的呈现完全一致，因此这次内部迁移不再额外通知：
@@ -1058,9 +1217,41 @@ final class RoomTimelineController extends ChangeNotifier {
       _localEchoes[tx] = inFlight;
       messages = _snapshot();
     }
+    _inFlightTxids.add(tx);
+    final journal = _outboxJournal;
+    final tracks = _tracksOutbox(inFlight);
+    OutboxMessage? row = outboxRow;
     try {
+      // ① 先持久化：没有这一行就绝不派发。
+      if (journal != null && tracks) {
+        row ??= await journal.findByTxid(tx);
+        row ??= await journal.persist(
+            txid: tx,
+            content: inFlight.text,
+            status: OutboxStatus.queued);
+        if (row != null) {
+          // ② 原子认领：认领失败 = 这一行已被（别的派发者）认领或已送达，
+          //    本次绝不再发一遍。
+          final claimed = await journal.claim(row.localId);
+          if (!claimed) {
+            final current = await journal.findByTxid(tx);
+            if (current?.status == OutboxStatus.sent) {
+              _echoRevision++;
+              _eventTransactions[tx] = tx;
+              _localEchoes[tx] =
+                  inFlight.copyWith(deliveryState: RoomDeliveryState.sent);
+              _senders.remove(tx);
+              messages = _snapshot();
+              _publish();
+              return null;
+            }
+            return null;
+          }
+        }
+      }
+      // ③ 派发。
       final eventId = await _senders[tx]!();
-      if (_disposed) return;
+      if (_disposed) return null;
       _echoRevision++;
       _eventTransactions[eventId] = tx;
       if (_localEchoes.containsKey(tx)) {
@@ -1070,21 +1261,33 @@ final class RoomTimelineController extends ChangeNotifier {
       _waitingNetworkIds.remove(tx);
       _senders.remove(tx);
       NotificationFeedback.shared.play(SoundType.messageSent);
+      // ④ 服务端已确认：outbox 行记 sent 并移除（不保留正文副本）。
+      await _persistOutboxOutcome(tx, inFlight, RoomDeliveryState.sent,
+          error: null, outboxRow: row);
+      messages = _snapshot();
+      _publish();
+      return eventId;
     } catch (error) {
-      if (_disposed) return;
+      if (_disposed) return null;
       _echoRevision++;
       // 网络失败 → 等待发送（保留 sender/txid 供恢复后自动重发）；
       // 其余（服务端拒绝、无权限等）→ 终局 failed。
-      _localEchoes[tx] =
-          inFlight.copyWith(deliveryState: _noteFailure(tx, error));
+      final state = _noteFailure(tx, error);
+      _localEchoes[tx] = inFlight.copyWith(deliveryState: state);
+      await _persistOutboxOutcome(tx, inFlight, state,
+          error: error, outboxRow: row);
+    } finally {
+      _inFlightTxids.remove(tx);
     }
     messages = _snapshot();
     _publish();
+    return null;
   }
 
   @override
   void dispose() {
     _disposed = true;
+    _inFlightTxids.clear();
     _recoveryManager?.state.removeListener(_handleNetworkStateChanged);
     _recoveryManager = null;
     _refreshDeadline?.cancel();

@@ -11,6 +11,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/business_api_client.dart';
 import 'core/app_connection_status.dart';
 import 'core/network_state_manager.dart';
+import 'core/outbox/message_send_scheduler.dart';
+import 'core/outbox/outbox_recovery_service.dart';
+import 'core/outbox/outbox_room_sender_registry.dart';
+import 'core/outbox/outbox_store.dart';
+import 'core/outbox/persistent_outbox_manager.dart';
+import 'features/matrix/matrix_room_timeline_adapter.dart';
 import 'core/app_config.dart';
 import 'core/permissions/blocked_contacts.dart';
 import 'core/local_notification_scheduler.dart';
@@ -1187,9 +1193,72 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
     syncWatchdog.connectionStatus.addListener(listener);
     _networkStateListener = listener;
     listener();
+    _bindOutbox(manager);
   }
 
   VoidCallback? _networkStateListener;
+
+  PersistentOutboxManager? _outbox;
+  MessageSendScheduler? _outboxScheduler;
+  OutboxRecoveryService? _outboxRecovery;
+
+  /// 持久化出站消息层（Offline First）：组合根只做接线。
+  ///
+  /// - 账号命名空间用 `matrix.userId`，切号不会把上一账号的消息发出去；
+  /// - 调度器只监听既有网络状态（不新增定时器/探针），房间打开路径不变；
+  /// - 启动即恢复未送达行：房间号已知的立刻尝试（房间没打开时原样保留，
+  ///   等下次进入会话），房间号未知的等 pending conversation 绑定。
+  void _bindOutbox(NetworkStateManager network) {
+    final accountId = widget.matrix.userId ?? '';
+    var outbox = PersistentOutboxManager.shared;
+    if (outbox == null || outbox.accountId != accountId) {
+      outbox = PersistentOutboxManager(SqliteOutboxStore(), accountId: accountId);
+      PersistentOutboxManager.shared = outbox;
+    }
+    _outbox = outbox;
+    final scheduler = MessageSendScheduler(
+      outbox: outbox,
+      networkState: network,
+      senderFor: OutboxRoomSenderRegistry.shared.senderFor,
+      // 房间没有打开时的后台发送路径：临时取租约发送后立即释放，
+      // 不导航、不 push 页面（房间打开路径仍然唯一）。
+      leaseFactory: _openOutboxLease,
+    )..start();
+    _outboxScheduler = scheduler;
+    final recovery = OutboxRecoveryService(outbox: outbox, scheduler: scheduler);
+    _outboxRecovery = recovery;
+    unawaited(recovery.recoverOnStartup());
+  }
+
+  /// 打开一条**只用于发送**的临时房间租约。
+  ///
+  /// 与 `_openManagedRoomRoute` 的区别：不经过 `RoomOpeningPolicy`、不注册
+  /// 路由、不 push 页面；发送完成后由调用方 [OutboxLease.release] 释放
+  /// （timeline.dispose + lease.cancel），因此不会留下资源。
+  Future<OutboxLease> _openOutboxLease(String roomId) async {
+    final lease = await widget.matrix.openRoomLease(roomId);
+    try {
+      final timeline = await lease.openRoomTimeline(onUpdate: () {});
+      return _MatrixOutboxLease(lease, timeline);
+    } catch (error) {
+      // 时间线打不开时也必须释放租约（无泄漏）。
+      try {
+        await lease.cancel();
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  void _disposeOutbox() {
+    _outboxScheduler?.dispose();
+    _outboxScheduler = null;
+    _outboxRecovery = null;
+    // 只解绑监听；数据库里的未送达行留给下次登录继续（账号命名空间隔离）。
+    if (identical(PersistentOutboxManager.shared, _outbox)) {
+      PersistentOutboxManager.shared = null;
+    }
+    _outbox = null;
+  }
 
   void _disposeSyncWatchdog() {
     if (!_syncWatchdogStarted) return;
@@ -1204,6 +1273,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
       syncWatchdog.connectionStatus.removeListener(listener);
       _networkStateListener = null;
     }
+    _disposeOutbox();
     syncWatchdog.dispose();
     _syncWatchdogStarted = false;
   }
@@ -1690,6 +1760,8 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
         contact: authoritative,
         openRoom: openRoom,
         networkState: NetworkStateManager.shared?.state,
+        outbox: _outbox,
+        recovery: _outboxRecovery,
       ),
     ));
     if (!mounted || result == null) return;
@@ -1855,6 +1927,7 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
               initialContact: request.initialContact,
               initialAnchorEventId: request.anchorEventId,
               initialOutbox: request.outbox,
+              outbox: _outbox,
               onCreateGroup: _createGroupChat,
               onMessage: _openMessage,
               onVoice: (contact) => _openCall(contact, CallMediaType.audio),
@@ -2964,4 +3037,37 @@ final class _AccountPrivacyPageState extends State<AccountPrivacyPage> {
                     ],
                   )),
       );
+}
+
+
+/// 临时房间租约（只用于发送）：发送完成后由调度器释放。
+///
+/// 与 `RoomPage` 持有的租约语义一致（同一 SDK 资源管理），区别是这里不挂
+/// 时间线 UI、不注册导航路由；`release()` 幂等，成功/失败/取消三路都调用。
+final class _MatrixOutboxLease implements OutboxLease {
+  _MatrixOutboxLease(this._lease, this._timeline);
+
+  final MatrixRoomLease _lease;
+  final RoomTimelineCapability _timeline;
+  bool _released = false;
+
+  @override
+  Future<String> send(String text, String transactionId) =>
+      _timeline.sendTextWithTransaction(text, transactionId);
+
+  @override
+  Future<void> release() async {
+    if (_released) return;
+    _released = true;
+    try {
+      _timeline.dispose();
+    } catch (_) {
+      // 释放错误不得掩盖发送结果。
+    }
+    try {
+      await _lease.cancel();
+    } catch (_) {
+      // 同上：租约取消失败由 SDK 生命周期兜底。
+    }
+  }
 }
