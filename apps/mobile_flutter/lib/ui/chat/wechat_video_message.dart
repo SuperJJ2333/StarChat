@@ -13,11 +13,29 @@ import '../components/network_status_capsule.dart';
 import 'video_playback_lease_coordinator.dart';
 import 'video_playback_arbiter.dart';
 import 'shared_video_playback.dart';
+import 'media_visibility.dart';
+
+/// 视频封面加载窗口：可见区域上下各外扩 5 行（约 ±790pt）。
+///
+/// 只有「可见 + 即将进入」的行才会请求封面；列表首屏构建/快速滚动时
+/// 离屏很远的行不会触发封面生成（Phase 1：视频列表首屏不触发全部处理）。
+const int kVideoPosterWarmRows = 5;
+
+/// 单行视频消息的标称高度（卡片 150 + 行间距），用于把「±5 行」换算成像素。
+const double kVideoPosterRowExtent = 158;
+
+/// 封面加载的前瞻像素（= ±5 行）。
+const double kVideoPosterWarmExtent =
+    kVideoPosterWarmRows * kVideoPosterRowExtent;
 
 /// 视频消息媒体卡（微信式，无气泡）：封面海报帧 + 播放按钮 + 时长角标。
 /// 海报帧来自发送端附带的加密缩略图（[posterLoader]，≤480px 小图），
 /// 无缩略图（旧消息/生成失败）时回退 videocam 占位底。
 /// 点击触发 [onOpen] 进入全屏播放。
+///
+/// **可见性门控（Phase 1）**：`posterLoader` 只在卡片进入「可见区域
+/// ±[kVideoPosterWarmRows] 行」时才被调用——进入列表/快速滚动不会
+/// 触发全部视频的封面处理。
 final class VideoMessageCard extends StatefulWidget {
   const VideoMessageCard({
     super.key,
@@ -25,6 +43,7 @@ final class VideoMessageCard extends StatefulWidget {
     required this.onOpen,
     this.posterLoader,
     this.posterIdentity,
+    this.posterRevision = 0,
   });
 
   final Duration? duration;
@@ -36,19 +55,37 @@ final class VideoMessageCard extends StatefulWidget {
   /// Changes only when the source event changes, not on every parent build.
   final Object? posterIdentity;
 
+  /// 封面补生成信号：视频播放完成（本地已有文件）后由宿主 +1，
+  /// 卡片重新解析一次封面（可能从「抽帧本地视频」拿到结果）。
+  final int posterRevision;
+
   @override
   State<VideoMessageCard> createState() => _VideoMessageCardState();
 }
 
 final class _VideoMessageCardState extends State<VideoMessageCard> {
   Future<Uint8List?>? _poster;
+  bool _posterWindowOpen = false;
+
   @override
   void initState() {
     super.initState();
-    _load();
+    // 首帧不请求：等可见性窗口报告（帧后回调）再加载。
+  }
+
+  void _onWindowChanged(MediaVisibilityWindow window) {
+    final open = window != MediaVisibilityWindow.hidden;
+    if (open == _posterWindowOpen) return;
+    if (mounted) {
+      setState(() => _posterWindowOpen = open);
+    } else {
+      _posterWindowOpen = open;
+    }
+    if (open) _load();
   }
 
   void _load() {
+    if (!_posterWindowOpen) return;
     final loader = widget.posterLoader;
     _poster = loader == null ? null : Future<Uint8List?>.sync(loader);
   }
@@ -57,6 +94,7 @@ final class _VideoMessageCardState extends State<VideoMessageCard> {
   void didUpdateWidget(covariant VideoMessageCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.posterIdentity != widget.posterIdentity ||
+        oldWidget.posterRevision != widget.posterRevision ||
         (oldWidget.posterLoader == null) != (widget.posterLoader == null)) {
       _load();
     }
@@ -72,74 +110,79 @@ final class _VideoMessageCardState extends State<VideoMessageCard> {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: widget.onOpen,
-        child: SizedBox(
-          width: 200,
-          height: 150,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(WeChatRadius.bubble),
-            child: ColoredBox(
-              color: CupertinoColors.black,
-              child: Stack(fit: StackFit.expand, children: [
-                if (_poster == null)
-                  const Center(
-                    child: Icon(CupertinoIcons.videocam_fill,
-                        size: 34, color: CupertinoColors.systemGrey),
-                  )
-                else
-                  FutureBuilder<Uint8List?>(
-                    future: _poster,
-                    builder: (context, snapshot) {
-                      final poster = snapshot.data;
-                      if (poster != null && poster.isNotEmpty) {
-                        return Image.memory(poster,
-                            fit: BoxFit.cover,
-                            gaplessPlayback: true,
-                            errorBuilder: (_, __, ___) => const Center(
-                                  child: Icon(CupertinoIcons.videocam_fill,
-                                      size: 34,
-                                      color: CupertinoColors.systemGrey),
-                                ));
-                      }
-                      return const Center(
-                        child: Icon(CupertinoIcons.videocam_fill,
-                            size: 34, color: CupertinoColors.systemGrey),
-                      );
-                    },
-                  ),
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: CupertinoColors.black.withValues(alpha: .45),
-                      border: Border.all(
-                        color: CupertinoColors.white,
-                        width: 1.5,
+  Widget build(BuildContext context) => MediaVisibility(
+        warmExtent: kVideoPosterWarmExtent,
+        onChanged: (_) {},
+        onWindowChanged: _onWindowChanged,
+        child: GestureDetector(
+          onTap: widget.onOpen,
+          child: SizedBox(
+            width: 200,
+            height: 150,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(WeChatRadius.bubble),
+              child: ColoredBox(
+                color: CupertinoColors.black,
+                child: Stack(fit: StackFit.expand, children: [
+                  if (_poster == null)
+                    const Center(
+                      child: Icon(CupertinoIcons.videocam_fill,
+                          size: 34, color: CupertinoColors.systemGrey),
+                    )
+                  else
+                    FutureBuilder<Uint8List?>(
+                      future: _poster,
+                      builder: (context, snapshot) {
+                        final poster = snapshot.data;
+                        if (poster != null && poster.isNotEmpty) {
+                          return Image.memory(poster,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(CupertinoIcons.videocam_fill,
+                                        size: 34,
+                                        color: CupertinoColors.systemGrey),
+                                  ));
+                        }
+                        return const Center(
+                          child: Icon(CupertinoIcons.videocam_fill,
+                              size: 34, color: CupertinoColors.systemGrey),
+                        );
+                      },
+                    ),
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: CupertinoColors.black.withValues(alpha: .45),
+                        border: Border.all(
+                          color: CupertinoColors.white,
+                          width: 1.5,
+                        ),
                       ),
+                      child: const Icon(CupertinoIcons.play_arrow_solid,
+                          size: 24, color: CupertinoColors.white),
                     ),
-                    child: const Icon(CupertinoIcons.play_arrow_solid,
-                        size: 24, color: CupertinoColors.white),
                   ),
-                ),
-                Positioned(
-                  right: 6,
-                  bottom: 6,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: CupertinoColors.black.withValues(alpha: .55),
-                      borderRadius: BorderRadius.circular(4),
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.black.withValues(alpha: .55),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(_durationText,
+                          style: const TextStyle(
+                              fontSize: 10, color: CupertinoColors.white)),
                     ),
-                    child: Text(_durationText,
-                        style: const TextStyle(
-                            fontSize: 10, color: CupertinoColors.white)),
                   ),
-                ),
-              ]),
+                ]),
+              ),
             ),
           ),
         ),

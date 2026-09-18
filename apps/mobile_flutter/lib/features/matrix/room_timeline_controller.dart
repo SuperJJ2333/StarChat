@@ -262,6 +262,47 @@ abstract interface class RoomFutureHistoryStatus {
 /// Compatibility name for the single optional date/context capability.
 typedef RoomHistoryDateSource = RoomHistoryDateCapability;
 
+/// 引用原消息解析被服务端**权威拒绝**（无权限：`M_FORBIDDEN`/`M_UNAUTHORIZED`）。
+///
+/// 与网络失败严格区分：无权限是可以直接告诉用户的终局结论，不该被显示成
+/// 「加载失败，点击重试」让用户反复徒劳重试。
+final class ReplyMessageLookupDenied implements Exception {
+  const ReplyMessageLookupDenied([this.detail = '']);
+
+  final String detail;
+
+  @override
+  String toString() => 'ReplyMessageLookupDenied($detail)';
+}
+
+/// 引用原消息解析暂时不可用（网络中断、超时、服务器 5xx）。
+///
+/// 语义是「可重试」，与 [ReplyMessageLookupDenied] 互斥。
+final class ReplyMessageLookupUnavailable implements Exception {
+  const ReplyMessageLookupUnavailable([this.detail = '']);
+
+  final String detail;
+
+  @override
+  String toString() => 'ReplyMessageLookupUnavailable($detail)';
+}
+
+/// 可选能力：按 `event_id` 直接解析**单条**消息。
+///
+/// 引用卡片用它恢复距离过远的原消息，避免为了找到一条消息而从窗口顶端
+/// 逐页加载上千条历史。实现必须遵守：
+/// - 本地加密库优先，未命中才请求服务器（SDK `Room.getEventById` 语义）；
+/// - 返回 `null` 表示服务端权威确认不存在；
+/// - 无权限抛 [ReplyMessageLookupDenied]，暂时不可用抛
+///   [ReplyMessageLookupUnavailable]。
+abstract interface class RoomMessageLookupSource {
+  /// 是否真的支持单事件解析。转发型适配器在底层能力不支持时必须返回
+  /// `false`，让调用方回退到历史分页，而不是把「不支持」误报成「不存在」。
+  bool get supportsMessageLookup;
+
+  Future<RoomMessageViewModel?> lookupMessage(String eventId);
+}
+
 /// Optional SDK-backed viewport. Full history stays queryable without retaining
 /// presentation objects for every event. Legacy adapters remain valid.
 abstract interface class RoomWindowedTimelineSource {
@@ -322,10 +363,72 @@ final class RoomTimelineController extends ChangeNotifier {
     }
   }
 
+  /// 引用目标解析成功后保留的投影，供 [findMessage] 命中（窗口外的消息
+  /// 不在 `messages` 投影里）。容量有界，仅保存引用卡片需要展示的字段。
+  final _resolvedReplyTargets = <String, RoomMessageViewModel>{};
+  static const int _maxResolvedReplyTargets = 128;
+
   RoomMessageViewModel? findMessage(String id) {
     final index = indexOf(id);
-    return index != null ? messages[index] : _windowSource?.findMessage(id);
+    if (index != null) return messages[index];
+    return _windowSource?.findMessage(id) ?? _resolvedReplyTargets[id];
   }
+
+  /// 单条消息的按需解析（引用原消息恢复）。
+  ///
+  /// 适配器实现 [RoomMessageLookupSource] 时走**单事件查询**：本地加密库
+  /// 优先，未命中才请求服务器——远距离原消息一次往返即可恢复，而不是从
+  /// 窗口顶端逐页翻上千条。旧适配器回退到**有界**历史分页
+  /// （[replyHistoryPageBudget] 页），绝不无限拉取历史。
+  Future<RoomMessageViewModel?> lookupReplyMessage(String eventId) async {
+    if (_disposed || eventId.isEmpty) return null;
+    final existing = findMessage(eventId);
+    if (existing != null) return existing;
+    final source = adapter;
+    if (source is RoomMessageLookupSource &&
+        (source as RoomMessageLookupSource).supportsMessageLookup) {
+      final found =
+          await (source as RoomMessageLookupSource).lookupMessage(eventId);
+      if (_disposed) return found;
+      if (found != null) _rememberResolvedReplyTarget(found);
+      await refresh();
+      return found;
+    }
+    return _lookupReplyByHistoryPaging(eventId);
+  }
+
+  /// 旧适配器的兼容回退：分页补齐有界页数，加载过的页仍写入 SDK 本地库。
+  static const int replyHistoryPageBudget = 2;
+
+  Future<RoomMessageViewModel?> _lookupReplyByHistoryPaging(
+      String eventId) async {
+    for (var page = 0; page < replyHistoryPageBudget; page++) {
+      if (_disposed || historyExhausted) return null;
+      final before = messages.length;
+      await loadHistory();
+      if (_disposed) return null;
+      final found = findMessage(eventId);
+      if (found != null) return found;
+      // 本页没有新增（历史取尽或请求被取消）→ 不再空转。
+      if (messages.length <= before) return null;
+    }
+    return null;
+  }
+
+  void _rememberResolvedReplyTarget(RoomMessageViewModel message) {
+    _resolvedReplyTargets.remove(message.id);
+    _resolvedReplyTargets[message.id] = message;
+    while (_resolvedReplyTargets.length > _maxResolvedReplyTargets) {
+      _resolvedReplyTargets.remove(_resolvedReplyTargets.keys.first);
+    }
+  }
+
+  /// 消息撤回/删除或本地历史清空后丢弃对应投影，避免引用卡片展示
+  /// 已经不可见的内容。
+  void forgetResolvedReplyTarget(String eventId) =>
+      _resolvedReplyTargets.remove(eventId);
+
+  void clearResolvedReplyTargets() => _resolvedReplyTargets.clear();
 
   RoomMessageViewModel? get newestMessage => _windowSource != null
       ? _windowSource!.newestMessage

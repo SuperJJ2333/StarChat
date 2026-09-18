@@ -11,13 +11,95 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/performance_metrics.dart';
+import 'media_cache_metrics.dart';
+import 'media_index.dart';
+
+/// 本地媒体磁盘配额策略（Phase 2：账号内软配额 + 设备硬上限）。
+@immutable
+final class MediaQuotaPolicy {
+  const MediaQuotaPolicy({
+    this.accountSoftQuotaBytes = defaultAccountSoftQuotaBytes,
+    this.deviceHardQuotaBytes = defaultDeviceHardQuotaBytes,
+  });
+
+  static const defaultAccountSoftQuotaBytes = 384 * 1024 * 1024;
+  static const defaultDeviceHardQuotaBytes = 1024 * 1024 * 1024;
+
+  final int accountSoftQuotaBytes;
+  final int deviceHardQuotaBytes;
+
+  @override
+  String toString() => 'MediaQuotaPolicy(accountSoft: $accountSoftQuotaBytes, '
+      'deviceHard: $deviceHardQuotaBytes)';
+}
 
 /// Device-only content objects. References and object identities never leave
 /// this device. Each account has a separate namespace, including memory.
+///
+/// Phase 2：两级配额（账号内软配额 + 设备硬上限）、索引加速命中（不再重复
+/// 整文件哈希）、批量 LRU touch、pin/GC。目录保持 `chat-media/v2/<sha256(account)>`
+/// （已账号隔离，不做机械迁移）。
 final class MediaCache {
   MediaCache._();
-  static const diskSoftQuotaBytes = 384 * 1024 * 1024;
-  static const diskHardQuotaBytes = 512 * 1024 * 1024;
+
+  /// 生效配额策略（集中配置；测试可临时覆盖，生产使用默认值）。
+  ///
+  /// - 账号软配额默认 **384 MiB**（沿用线上既有软配额值）：超过只淘汰
+  ///   **本账号**最久未访问对象，直到回到该值；
+  /// - 设备硬上限默认 **1024 MiB**：跨账号兜底。账号隔离后若仍沿用旧的
+  ///   512MiB 全局值，两个账号各用满软配额就会立刻互相驱逐（等于没解决
+  ///   P1），故上限抬到 1GiB 以容纳 2–3 个活跃账号，同时仍约束最坏磁盘占用。
+  static MediaQuotaPolicy quotaPolicy = const MediaQuotaPolicy();
+
+  static int get accountSoftQuotaBytes => quotaPolicy.accountSoftQuotaBytes;
+
+  static int get deviceHardQuotaBytes => quotaPolicy.deviceHardQuotaBytes;
+
+  /// 恢复默认配额（测试收尾用）。
+  static void resetQuotaPolicy() => quotaPolicy = const MediaQuotaPolicy();
+
+  /// 测试：按字节覆盖配额。
+  @visibleForTesting
+  static void useQuotaForTest({int? accountSoft, int? deviceHard}) {
+    quotaPolicy = MediaQuotaPolicy(
+      accountSoftQuotaBytes:
+          accountSoft ?? MediaQuotaPolicy.defaultAccountSoftQuotaBytes,
+      deviceHardQuotaBytes:
+          deviceHard ?? MediaQuotaPolicy.defaultDeviceHardQuotaBytes,
+    );
+  }
+
+  /// 无引用对象的保护期：晚于 `now - gcGracePeriod` 的对象不回收
+  /// （覆盖"对象已写、引用尚未写"的窗口）。
+  static const gcGracePeriod = Duration(seconds: 60);
+
+  /// 廉价完整性校验的 mtime 容差。
+  ///
+  /// 取 0（严格）：已索引对象的 mtime 只在写入时设定（LRU 走索引列，命中
+  /// 不再改写 mtime），因此"mtime 晚于校验时间"必然是校验之后的改动。
+  /// 极少数粗粒度文件系统（FAT32 等）可能出现 mtime 向上取整导致的假阳性，
+  /// 代价只是多一次完整校验并回填索引（自愈），不会误判为损坏。
+  static const _mtimeToleranceMs = 0;
+
+  /// 允许走"廉价元数据"索引路径的最小对象尺寸（P0-1 的收益只在大文件上）。
+  ///
+  /// 小于该尺寸的对象整文件 SHA-256 的成本可忽略（< 1 MiB，亚毫秒级），
+  /// 因此索引命中后仍然做完整校验：Phase 1 已经交付的
+  /// "同尺寸原地篡改必被发现" 保证不因 Phase 2 而退化。
+  /// 只有达到该尺寸的媒体才使用 "精确大小 + mtime 锚点" 的廉价路径。
+  static const _cheapPathMinBytes = 1024 * 1024;
+
+  static int? _cheapPathMinBytesOverride;
+
+  static int get _minCheapPathBytes =>
+      _cheapPathMinBytesOverride ?? _cheapPathMinBytes;
+
+  /// 测试专用：把"廉价路径"门槛调低（或调 0）以便用小对象验证 P0-1 语义。
+  @visibleForTesting
+  static void useCheapPathMinBytesForTest(int? bytes) {
+    _cheapPathMinBytesOverride = bytes;
+  }
+
   static final _storeFlights = <String, Future<File>>{};
   static final _objectFlights = <String, Future<File>>{};
   static final _legacyCleanups = <String, Future<void>>{};
@@ -26,6 +108,12 @@ final class MediaCache {
   static final _storeAccounts = <String, String>{};
   static final _atomicWrites = <String, Future<void>>{};
   static final _accountGenerations = <String, int>{};
+
+  /// 正在使用中的对象路径（播放/解码/上传下载）→ 引用计数。
+  static final _pinned = <String, int>{};
+
+  /// 进程内设备用量估计（null = 未知，需要在下次写入时重新统计一次）。
+  static int? _deviceBytesEstimate;
 
   static int accountGeneration(String accountId) =>
       _accountGenerations[accountId] ?? 0;
@@ -99,6 +187,10 @@ final class MediaCache {
           .map((future) => future.then<void>((_) {}, onError: (Object _) {})));
       final root = Directory(rootPath);
       if (await root.exists()) await root.delete(recursive: true);
+      // 索引行随之清理（对象已删，索引不得继续声称可用）。
+      await MediaIndex.shared.clearAccount(accountId);
+      _deviceBytesEstimate = null;
+      clearPinsForTest();
     } finally {
       if (rootPath != null) _clearingRoots.remove(rootPath);
       _clearingAccounts.remove(accountId);
@@ -157,42 +249,213 @@ final class MediaCache {
 
   static Future<File?> cached(String roomId, String eventId,
       {String accountId = '', String? contentSha256}) async {
-    if (contentSha256 != null) {
-      validateContentSha256(contentSha256);
-      final root = await _root(accountId);
-      for (final suffix in ['', '.mp4', '.mov']) {
-        final file = File('${root.path}/objects/$contentSha256$suffix');
-        if (await _valid(file)) {
-          await file.setLastModified(DateTime.now());
-          PerformanceMetrics.instance
-              .increment(PerformanceCounter.mediaDiskHit);
-          return file;
+    final watch =
+        MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
+    try {
+      // ① 索引快路径：只做廉价校验（命名空间/存在/精确大小），**不重算哈希**。
+      if (contentSha256 != null) {
+        validateContentSha256(contentSha256);
+        final indexed = await _cachedViaIndex(accountId,
+            objectHash: contentSha256, roomId: roomId, eventId: eventId);
+        if (indexed != null) return indexed;
+        // ② legacy：按对象摘要直接定位（一次完整校验后回填索引）。
+        final root = await _root(accountId);
+        for (final suffix in ['', '.mp4', '.mov']) {
+          final file = File('${root.path}/objects/$contentSha256$suffix');
+          if (await _valid(file)) {
+            await _indexVerified(accountId, roomId, eventId, file,
+                objectHash: contentSha256);
+            _touchIndex(accountId, roomId, eventId, file,
+                objectHash: contentSha256);
+            PerformanceMetrics.instance
+                .increment(PerformanceCounter.mediaDiskHit);
+            return file;
+          }
         }
+        return null;
       }
+      final indexed = await _cachedViaIndex(accountId,
+          roomId: roomId, eventId: eventId);
+      if (indexed != null) return indexed;
+      // ② legacy：refs/<digest>.ref → objects/<name>，完整校验后回填索引。
+      final ref = await _reference(accountId, roomId, eventId);
+      try {
+        if (!await ref.exists()) return null;
+        final name = await ref.readAsString();
+        if (!RegExp(r'^[a-f0-9]{64}(\.mp4|\.mov)?$').hasMatch(name)) {
+          return null;
+        }
+        final root = await _root(accountId);
+        final file = File('${root.path}/objects/$name');
+        if (!await _valid(file)) return null;
+        await _indexVerified(accountId, roomId, eventId, file);
+        _touchIndex(accountId, roomId, eventId, file);
+        PerformanceMetrics.instance.increment(PerformanceCounter.mediaDiskHit);
+        return file;
+      } on FileSystemException {
+        return null;
+      }
+    } finally {
+      if (watch != null) MediaCacheMetrics.recordLookup(watch);
+    }
+  }
+
+  /// 索引命中快路径（Phase 2）。
+  ///
+  /// 禁止"信索引不验文件"：索引只替代**重复的整文件哈希**，仍然校验
+  /// 账号命名空间、文件存在与精确大小；任一不符即失效索引行并回退 legacy。
+  static Future<File?> _cachedViaIndex(String accountId,
+      {String? roomId, String? eventId, String? objectHash}) async {
+    final entry = objectHash != null
+        ? await MediaIndex.shared.lookupObject(accountId, objectHash)
+        : await MediaIndex.shared.lookup(accountId, roomId!, eventId!);
+    if (entry == null || !entry.verified) return null;
+    final root = await _root(accountId);
+    final objectsRoot = '${root.path}/objects/';
+    if (!'$objectsRoot${entry.objectName}'.startsWith(objectsRoot)) {
+      // 命名空间/路径不合法：索引行不可信。
+      await MediaIndex.shared.forgetObjects(accountId, {entry.objectName});
       return null;
     }
-    final ref = await _reference(accountId, roomId, eventId);
+    final file = File('$objectsRoot${entry.objectName}');
     try {
+      if (!await file.exists()) {
+        await MediaIndex.shared.forgetObjects(accountId, {entry.objectName});
+        return null;
+      }
+      final stat = await file.stat();
+      if (entry.sizeBytes > 0 && stat.size != entry.sizeBytes) {
+        // 截断/替换：失效索引，交 legacy 处理（legacy 会删除损坏对象）。
+        await MediaIndex.shared.forgetObjects(accountId, {entry.objectName});
+        return null;
+      }
+      // 大对象（≥ 门槛）：廉价完整性锚点为**内容最后修改时间**。已索引对象的
+      // mtime 只在写入时设定（LRU 走索引列，命中不再改写 mtime），因此
+      // "mtime 晚于校验时间" 说明文件在校验之后被改动过 → 失效并回退完整校验。
+      if (stat.size >= _minCheapPathBytes) {
+        if (entry.verifiedAt > 0 &&
+            stat.modified.millisecondsSinceEpoch >
+                entry.verifiedAt + _mtimeToleranceMs) {
+          await MediaIndex.shared.forgetObjects(accountId, {entry.objectName});
+          return null;
+        }
+      } else if (!await _valid(file)) {
+        // 小对象：哈希成本可忽略，直接完整校验，保持"同尺寸篡改必被发现"。
+        await MediaIndex.shared.forgetObjects(accountId, {entry.objectName});
+        return null;
+      }
+    } on FileSystemException {
+      return null;
+    }
+    if (roomId != null && eventId != null) {
+      _touchIndex(accountId, roomId, eventId, file, objectHash: objectHash);
+    } else if (objectHash != null) {
+      MediaIndex.shared.touchObject(accountId, objectHash,
+          objectPath: file.path);
+    }
+    PerformanceMetrics.instance.increment(PerformanceCounter.mediaDiskHit);
+    return file;
+  }
+
+  /// LRU 命中登记：只写内存 pending（同一对象 60s 内至多落库一次）。
+  static void _touchIndex(String accountId, String roomId, String eventId,
+      File file, {String? objectHash}) {
+    if (objectHash != null) {
+      MediaIndex.shared.touchObject(accountId, objectHash,
+          objectPath: file.path);
+      MediaIndex.shared.touch(accountId, roomId, eventId,
+          objectPath: file.path);
+      return;
+    }
+    MediaIndex.shared.touch(accountId, roomId, eventId, objectPath: file.path);
+  }
+
+  /// 内容校验判定损坏：删除对象与长度标记 + 失效索引行。
+  /// 下一次 `cached()` 会重新走"未命中 → 下载/解密 → 落盘"。
+  static Future<void> _discardCorruptObject(MediaCacheKey key, File file) async {
+    await _deleteQuietly(file);
+    await _deleteQuietly(File('${file.path}.len'));
+    await MediaIndex.shared
+        .forgetObjects(key.accountId, {file.uri.pathSegments.last});
+    _deviceBytesEstimate = null;
+  }
+
+  static Future<void> _indexVerified(
+      String accountId, String roomId, String eventId, File file,
+      {String? objectHash,
+      MediaVariantKind variant = MediaVariantKind.unknown,
+      String? familyId,
+      String? mimeType,
+      int? width,
+      int? height,
+      int? durationMs}) async {
+    final name = file.uri.pathSegments.last;
+    final hash = objectHash ?? name.split('.').first;
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) return;
+    int size;
+    try {
+      size = await file.length();
+    } on FileSystemException {
+      return;
+    }
+    if (size <= 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await MediaIndex.shared.put(MediaIndexEntry(
+      accountNamespace: MediaIndex.shared.namespaceFor(accountId),
+      referenceKey: MediaIndex.shared.referenceKeyFor(roomId, eventId),
+      objectHash: hash,
+      objectName: name,
+      sizeBytes: size,
+      createdAt: now,
+      lastAccessAt: now,
+      verifiedAt: now,
+      variant: variant,
+      familyId: familyId,
+      mimeType: mimeType,
+      width: width,
+      height: height,
+      durationMs: durationMs,
+    ));
+  }
+
+  /// 轻量存在性探测：只读引用文件 + 检查对象文件是否存在，
+  /// **不重算哈希**（[cached] 会为完整性校验重算整个文件的 sha256——
+  /// 在 50–500MB 视频上非常昂贵）。
+  ///
+  /// 用途：需要「本地是否已有该媒体的文件」这类廉价判断的场景
+  /// （例如本地视频抽帧封面：有文件才抽帧，绝不为此下载）。
+  /// 需要完整性保证的读取**必须**用 [cached] / [preparePlaybackFile]。
+  static Future<File?> probeCachedObject(String roomId, String eventId,
+      {String accountId = '', String? contentSha256}) async {
+    try {
+      final root = await _root(accountId);
+      if (contentSha256 != null) {
+        validateContentSha256(contentSha256);
+        for (final suffix in ['', '.mp4', '.mov']) {
+          final file = File('${root.path}/objects/$contentSha256$suffix');
+          if (await file.exists()) return file;
+        }
+        return null;
+      }
+      final ref = await _reference(accountId, roomId, eventId);
       if (!await ref.exists()) return null;
       final name = await ref.readAsString();
       if (!RegExp(r'^[a-f0-9]{64}(\.mp4|\.mov)?$').hasMatch(name)) return null;
-      final root = await _root(accountId);
       final file = File('${root.path}/objects/$name');
-      if (!await _valid(file)) return null;
-      await file.setLastModified(DateTime.now());
-      PerformanceMetrics.instance.increment(PerformanceCounter.mediaDiskHit);
-      return file;
+      return await file.exists() ? file : null;
     } on FileSystemException {
       return null;
     }
   }
 
   /// Removes a logical reference without deleting its potentially shared
-  /// account-local content object.
+  /// account-local content object（Phase 2：同时失效对应索引行，避免索引
+  /// 继续声称该引用存在）。
   static Future<void> removeReference(String roomId, String eventId,
       {String accountId = ''}) async {
     final ref = await _reference(accountId, roomId, eventId);
     await _deleteQuietly(ref);
+    await MediaIndex.shared.invalidate(accountId, roomId, eventId);
   }
 
   static Future<bool> _valid(File file) async {
@@ -203,6 +466,9 @@ final class MediaCache {
       if (expected != null && expected == await file.length()) {
         final name = file.uri.pathSegments.last.split('.').first;
         validateContentSha256(name);
+        // 完整性校验的代价（整文件流式哈希）单独计量：索引命中时该计数
+        // 必须零增长（Phase 2 P0-1 验收）。
+        MediaCacheMetrics.recordHash(await file.length());
         await verifyMediaContentStream(file.openRead(), name);
         return true;
       }
@@ -267,7 +533,13 @@ final class MediaCache {
   static Future<File> store(String roomId, String eventId, Uint8List bytes,
       {String accountId = '',
       String? contentSha256,
-      int? expectedAccountGeneration}) async {
+      int? expectedAccountGeneration,
+      MediaVariantKind variant = MediaVariantKind.unknown,
+      String? familyId,
+      String? mimeType,
+      int? width,
+      int? height,
+      int? durationMs}) async {
     if (expectedAccountGeneration != null &&
         expectedAccountGeneration != accountGeneration(accountId)) {
       throw StateError('Media cache account was cleared');
@@ -286,7 +558,13 @@ final class MediaCache {
           expectedAccountGeneration != accountGeneration(accountId)) {
         throw StateError('Media cache account was cleared');
       }
-      return _store(root, accountId, roomId, eventId, bytes);
+      return _store(root, accountId, roomId, eventId, bytes,
+          variant: variant,
+          familyId: familyId,
+          mimeType: mimeType,
+          width: width,
+          height: height,
+          durationMs: durationMs);
     });
     _storeFlights[flightKey] = flight;
     _storeAccounts[flightKey] = accountId;
@@ -299,12 +577,18 @@ final class MediaCache {
   }
 
   static Future<File> _store(Directory root, String accountId, String roomId,
-      String eventId, Uint8List bytes) async {
+      String eventId, Uint8List bytes,
+      {MediaVariantKind variant = MediaVariantKind.unknown,
+      String? familyId,
+      String? mimeType,
+      int? width,
+      int? height,
+      int? durationMs}) async {
     final digest = sha256.convert(bytes).toString();
     final name = '$digest${_videoContainerSuffix(bytes) ?? ''}';
     final objectKey = '${root.path}/objects/$name';
     final existing = _objectFlights[objectKey];
-    final flight = existing ?? _storeObject(File(objectKey), bytes);
+    final flight = existing ?? _storeObject(accountId, File(objectKey), bytes);
     if (existing == null) _objectFlights[objectKey] = flight;
     late File file;
     try {
@@ -312,19 +596,52 @@ final class MediaCache {
     } finally {
       if (existing == null) _objectFlights.remove(objectKey);
     }
+    MediaCacheMetrics.recordWrite(bytes.length);
     final ref = await _reference(accountId, roomId, eventId);
     await _atomicBytes(ref, utf8.encode(name));
-    await _enforceDiskQuota(file);
+    // 对象与引用都落盘成功之后才写索引（崩溃时最多缺索引行，绝不指向坏对象）。
+    await _indexVerified(accountId, roomId, eventId, file,
+        objectHash: digest,
+        variant: variant,
+        familyId: familyId,
+        mimeType: mimeType,
+        width: width,
+        height: height,
+        durationMs: durationMs);
+    await _enforceDiskQuota(accountId, file);
     return file;
   }
 
-  static Future<File> _storeObject(File file, Uint8List bytes) async {
+  static Future<File> _storeObject(
+      String accountId, File file, Uint8List bytes) async {
     await file.parent.create(recursive: true);
-    if (await _valid(file)) return file;
+    if (await _knownObjectValid(accountId, file, bytes.length)) return file;
     await _atomicBytes(
         File('${file.path}.len'), utf8.encode('${bytes.length}'));
     await _atomicBytes(file, bytes);
     return file;
+  }
+
+  /// 已存在同内容对象时的廉价判定（Phase 2）：索引 + 精确大小优先，
+  /// 只有索引不可用时才回退整文件哈希校验。小对象仍强制完整校验，
+  /// 避免把"同尺寸原地篡改"的对象当作已存在内容复用到新引用上。
+  static Future<bool> _knownObjectValid(
+      String accountId, File file, int expectedBytes) async {
+    final hash = file.uri.pathSegments.last.split('.').first;
+    if (RegExp(r'^[a-f0-9]{64}$').hasMatch(hash)) {
+      final entry = await MediaIndex.shared.lookupObject(accountId, hash);
+      if (entry != null && entry.verified) {
+        try {
+          if (await file.exists() && await file.length() == expectedBytes) {
+            if (expectedBytes >= _minCheapPathBytes) return true;
+            if (await _valid(file)) return true;
+          }
+        } on FileSystemException {
+          // 落到完整校验。
+        }
+      }
+    }
+    return _valid(file);
   }
 
   static Future<File> preparePlaybackFile(String roomId, String eventId,
@@ -380,37 +697,358 @@ final class MediaCache {
     return total;
   }
 
-  static Future<void> _enforceDiskQuota(File keep) async {
+  /// 账号内对象（objects/ 下的数据文件 + 大小 + mtime）。
+  static Future<List<_CacheObject>> _accountObjects(String accountRootPath) async {
+    final dir = Directory('$accountRootPath/objects');
+    if (!await dir.exists()) return const [];
+    final objects = <_CacheObject>[];
     try {
-      final files = await _files();
-      var total = 0;
-      for (final file in files) {
-        total += await file.length();
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File || !_isData(entity)) continue;
+        try {
+          final stat = await entity.stat();
+          objects.add(_CacheObject(entity, stat.size, stat.modified));
+        } on FileSystemException {
+          continue;
+        }
       }
-      if (total <= diskHardQuotaBytes) return;
-      files.sort((a, b) =>
-          a.modifiedSyncOrDefault().compareTo(b.modifiedSyncOrDefault()));
-      for (final file in files) {
-        if (total <= diskSoftQuotaBytes) break;
-        if (file.path == keep.path) continue;
-        final size = await file.length();
-        await file.delete();
-        await _deleteQuietly(File('${file.path}.len'));
-        total -= size;
+    } on FileSystemException {
+      return const [];
+    }
+    return objects;
+  }
+
+  /// 两级配额（Phase 2）：
+  /// ① 账号软配额：超限只淘汰**本账号**最久未访问对象；
+  /// ② 设备硬上限：仅当全设备对象总量超过它才跨账号兜底淘汰。
+  ///
+  /// LRU 顺序：已索引对象用索引的 `last_access_at`（准确、批量刷新）；
+  /// 未索引对象退回文件 mtime。
+  static Future<void> _enforceDiskQuota(String accountId, File keep) async {
+    final watch = MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
+    try {
+      final accountRoot = await _root(accountId);
+      final accountObjects = await _accountObjects(accountRoot.path);
+      var accountTotal = 0;
+      for (final object in accountObjects) {
+        accountTotal += object.size;
       }
-    } on FileSystemException {/* Cache quota maintenance is best effort. */}
+      if (accountTotal > accountSoftQuotaBytes) {
+        await MediaIndex.shared.flush();
+        final access = await _indexedLastAccess(accountId);
+        accountTotal = await _evictOldest(accountObjects, accountTotal,
+            accountSoftQuotaBytes, keep.path, access);
+      }
+      // 设备级：用进程内估计避免每次写入都全盘遍历；估计为 null 或超限时
+      // 才做一次真实统计。
+      final estimate = _deviceBytesEstimate;
+      if (estimate == null) {
+        _deviceBytesEstimate = await totalCachedBytes();
+      } else {
+        _deviceBytesEstimate = estimate + await _lengthOf(keep);
+      }
+      if ((_deviceBytesEstimate ?? 0) <= deviceHardQuotaBytes) return;
+      final all = await _files();
+      final objects = <_CacheObject>[];
+      var deviceTotal = 0;
+      for (final file in all) {
+        try {
+          final stat = await file.stat();
+          objects.add(_CacheObject(file, stat.size, stat.modified));
+          deviceTotal += stat.size;
+        } on FileSystemException {
+          continue;
+        }
+      }
+      _deviceBytesEstimate = deviceTotal;
+      if (deviceTotal <= deviceHardQuotaBytes) return;
+      // 设备兜底：先尝试回收无引用对象（GC 比淘汰更安全），再按 LRU 淘汰。
+      await collectGarbage(accountId, triggeredByQuota: true);
+      final access = await _indexedLastAccess(accountId);
+      deviceTotal = await _evictOldest(objects, deviceTotal,
+          deviceHardQuotaBytes, keep.path, access);
+      _deviceBytesEstimate = deviceTotal;
+    } on FileSystemException {
+      /* Cache quota maintenance is best effort. */
+    } finally {
+      if (watch != null) {
+        MediaCacheMetrics.evictionMicros += watch.elapsedMicroseconds;
+      }
+      MediaCacheMetrics.evictions++;
+    }
+  }
+
+  /// 对象名 → 最后访问时间（取该对象所有引用行的最大值）。
+  static Future<Map<String, DateTime>> _indexedLastAccess(
+      String accountId) async {
+    final access = <String, DateTime>{};
+    try {
+      for (final entry in await MediaIndex.shared.entriesForAccount(accountId)) {
+        final at = DateTime.fromMillisecondsSinceEpoch(entry.lastAccessAt);
+        final current = access[entry.objectName];
+        if (current == null || at.isAfter(current)) {
+          access[entry.objectName] = at;
+        }
+      }
+    } on Exception {
+      // 索引不可用：退回 mtime 排序。
+    }
+    return access;
+  }
+
+  /// 按 LRU（索引 last_access → mtime）最旧优先删除，直到回到
+  /// [targetBytes]；返回剩余总字节。跳过：keep、pinned、在途写入。
+  static Future<int> _evictOldest(List<_CacheObject> objects, int total,
+      int targetBytes, String keepPath,
+      [Map<String, DateTime>? indexedAccess]) async {
+    if (total <= targetBytes) return total;
+    DateTime accessOf(_CacheObject object) {
+      final indexed =
+          indexedAccess?[object.file.uri.pathSegments.last];
+      if (indexed == null) return object.modified;
+      return indexed.isAfter(object.modified) ? indexed : object.modified;
+    }
+
+    objects.sort((a, b) => accessOf(a).compareTo(accessOf(b)));
+    final keepKey = _pathKey(keepPath);
+    for (final object in objects) {
+      if (total <= targetBytes) break;
+      if (_pathKey(object.file.path) == keepKey) continue;
+      if (isPinned(object.file.path)) continue;
+      if (_isActiveWrite(object.file.path)) continue;
+      try {
+        await object.file.delete();
+        await _deleteQuietly(File('${object.file.path}.len'));
+      } on FileSystemException {
+        continue;
+      }
+      _deviceBytesEstimate = (_deviceBytesEstimate ?? total) - object.size;
+      MediaCacheMetrics.evictedObjects++;
+      MediaCacheMetrics.evictedBytes += object.size;
+      total -= object.size;
+    }
+    return total;
+  }
+
+  /// 只登记一次本地对象访问（用于未索引/会话外对象，如相册首帧）：
+  /// 批量 LRU，不产生同步落库，也不做任何哈希。
+  static void touchLocalObject(String path) {
+    MediaIndex.shared.touchPath(path);
+  }
+
+  static Future<int> _lengthOf(File file) async {
+    try {
+      return await file.length();
+    } on FileSystemException {
+      return 0;
+    }
+  }
+
+  // —— pin / lease：正在使用的对象不得被淘汰或 GC ——
+
+  /// 路径比较用的规范化键。
+  ///
+  /// 关键：`Directory.list()` 返回的路径分隔符/大小写可能与**构造**出来的
+  /// 路径字符串不同（Windows 上尤其明显），直接字符串比较会把"同一个文件"
+  /// 判成两个，导致 pin/在途写保护失效。这里统一规范化后再比较。
+  static String _pathKey(String path) {
+    if (path.isEmpty) return '';
+    final normalized = path.replaceAll(r'\', '/');
+    return Platform.isWindows ? normalized.toLowerCase() : normalized;
+  }
+
+  static bool _isActiveWrite(String path) {
+    if (_atomicWrites.isEmpty) return false;
+    final key = _pathKey(path);
+    for (final active in _atomicWrites.keys) {
+      if (_pathKey(active) == key) return true;
+    }
+    return false;
+  }
+
+  /// 声明"该对象正在被使用"（视频播放/解码/上传下载）。
+  static MediaCachePin pinPath(String path) {
+    if (path.isEmpty) return MediaCachePin._('');
+    final key = _pathKey(path);
+    _pinned[key] = (_pinned[key] ?? 0) + 1;
+    MediaCacheMetrics.pinnedPaths = _pinned.length;
+    return MediaCachePin._(path);
+  }
+
+  static void unpinPath(String path) {
+    final key = _pathKey(path);
+    final next = (_pinned[key] ?? 0) - 1;
+    if (next <= 0) {
+      _pinned.remove(key);
+    } else {
+      _pinned[key] = next;
+    }
+    MediaCacheMetrics.pinnedPaths = _pinned.length;
+  }
+
+  static bool isPinned(String path) => _pinned.containsKey(_pathKey(path));
+
+  @visibleForTesting
+  static void clearPinsForTest() {
+    _pinned.clear();
+    MediaCacheMetrics.pinnedPaths = 0;
+  }
+
+  /// 垃圾回收：从 `refs/*.ref` **重算**引用数（不依赖计数器），删除
+  /// "无引用 + 未 pin + 无在途写 + 超过保护期"的对象。
+  ///
+  /// [triggeredByQuota] 为真时由配额兜底触发（不影响报告语义）。
+  static Future<MediaGcReport> collectGarbage(String accountId,
+      {bool dryRun = false,
+      Duration gracePeriod = gcGracePeriod,
+      DateTime Function()? clock,
+      bool triggeredByQuota = false}) async {
+    final watch = MediaCacheMetrics.enabled ? (Stopwatch()..start()) : null;
+    MediaCacheMetrics.gcRuns++;
+    var scanned = 0, kept = 0, collected = 0, skippedPinned = 0, skippedYoung = 0;
+    var bytes = 0;
+    final removed = <String>{};
+    try {
+      final root = await _root(accountId);
+      final now = (clock ?? DateTime.now)();
+      // ① 真相源：refs/ 目录重算引用数。
+      final referenced = <String, int>{};
+      final refsDir = Directory('${root.path}/refs');
+      if (await refsDir.exists()) {
+        try {
+          await for (final entity in refsDir.list(followLinks: false)) {
+            if (entity is! File || !entity.path.endsWith('.ref')) continue;
+            try {
+              final name = (await entity.readAsString()).trim();
+              if (name.isEmpty) continue;
+              referenced[name] = (referenced[name] ?? 0) + 1;
+            } on FileSystemException {
+              continue;
+            }
+          }
+        } on FileSystemException {
+          // 引用目录不可读：本次不回收任何对象（保守，避免误删）。
+          return MediaGcReport(
+              scanned: 0,
+              kept: 0,
+              collected: 0,
+              skippedPinned: 0,
+              skippedYoung: 0,
+              collectedBytes: 0,
+              dryRun: dryRun,
+              triggeredByQuota: triggeredByQuota,
+              aborted: true);
+        }
+      }
+      // ② 对象扫描。
+      final objects = await _accountObjects(root.path);
+      for (final object in objects) {
+        scanned++;
+        final name = object.file.uri.pathSegments.last;
+        if ((referenced[name] ?? 0) > 0) {
+          kept++;
+          continue;
+        }
+        if (isPinned(object.file.path) ||
+            _isActiveWrite(object.file.path)) {
+          skippedPinned++;
+          continue;
+        }
+        if (now.difference(object.modified) < gracePeriod) {
+          skippedYoung++;
+          continue;
+        }
+        if (!dryRun) {
+          try {
+            await object.file.delete();
+            await _deleteQuietly(File('${object.file.path}.len'));
+          } on FileSystemException {
+            kept++;
+            continue;
+          }
+        }
+        removed.add(name);
+        collected++;
+        bytes += object.size;
+      }
+      if (!dryRun && removed.isNotEmpty) {
+        await MediaIndex.shared.forgetObjects(accountId, removed);
+        final estimate = _deviceBytesEstimate;
+        if (estimate != null) {
+          _deviceBytesEstimate = (estimate - bytes).clamp(0, 1 << 62);
+        }
+      }
+    } on FileSystemException {
+      /* Best effort. */
+    } finally {
+      if (watch != null) MediaCacheMetrics.gcMicros += watch.elapsedMicroseconds;
+    }
+    MediaCacheMetrics.gcCollectedObjects += collected;
+    MediaCacheMetrics.gcCollectedBytes += bytes;
+    return MediaGcReport(
+      scanned: scanned,
+      kept: kept,
+      collected: collected,
+      skippedPinned: skippedPinned,
+      skippedYoung: skippedYoung,
+      collectedBytes: bytes,
+      dryRun: dryRun,
+      triggeredByQuota: triggeredByQuota,
+    );
   }
 }
 
-extension _FileStatOrNull on File {
-  /// stat 失败（并发删除等）按最旧处理，不中断配额回收。
-  DateTime modifiedSyncOrDefault() {
-    try {
-      return statSync().modified;
-    } catch (_) {
-      return DateTime.fromMillisecondsSinceEpoch(0);
-    }
+/// 一次 GC 的结果（无 PII，只有计数与字节）。
+@immutable
+final class MediaGcReport {
+  const MediaGcReport({
+    required this.scanned,
+    required this.kept,
+    required this.collected,
+    required this.skippedPinned,
+    required this.skippedYoung,
+    required this.collectedBytes,
+    required this.dryRun,
+    this.triggeredByQuota = false,
+    this.aborted = false,
+  });
+
+  final int scanned;
+  final int kept;
+  final int collected;
+  final int skippedPinned;
+  final int skippedYoung;
+  final int collectedBytes;
+  final bool dryRun;
+  final bool triggeredByQuota;
+  final bool aborted;
+
+  @override
+  String toString() => 'MediaGcReport(scanned: $scanned, kept: $kept, '
+      'collected: $collected, pinned: $skippedPinned, young: $skippedYoung, '
+      'bytes: $collectedBytes, dryRun: $dryRun, aborted: $aborted)';
+}
+
+/// pin 凭证：幂等释放，避免重复 unpin 造成计数下溢。
+final class MediaCachePin {
+  MediaCachePin._(this._path);
+  final String _path;
+  bool _released = false;
+
+  String get path => _path;
+
+  void release() {
+    if (_released || _path.isEmpty) return;
+    _released = true;
+    MediaCache.unpinPath(_path);
   }
+}
+
+final class _CacheObject {
+  const _CacheObject(this.file, this.size, this.modified);
+  final File file;
+  final int size;
+  final DateTime modified;
 }
 
 /// Byte-budgeted memory cache. Shared chat media uses account + actual digest;
@@ -622,6 +1260,8 @@ void clearMediaMemoryCaches() {
   videoMemoryCache.clear();
   _mediaLoads.clear();
   mediaLoadScheduler.cancelAll();
+  // 命中登记的 pending LRU touch 落库（不阻塞调用方）。
+  unawaited(MediaIndex.shared.flush());
   for (final clear in _decodedMediaCacheClearers) {
     clear();
   }
@@ -700,7 +1340,10 @@ Future<Uint8List> loadMediaWithCache(
         }
         final file = disk ??
             await MediaCache.store(key.roomId, key.eventId, bytes!,
-                accountId: key.accountId, contentSha256: key.contentSha256);
+                accountId: key.accountId,
+                contentSha256: key.contentSha256,
+                variant: key.variant,
+                familyId: key.familyId);
         if (key.sourceIdentity != null) {
           final ref = await MediaCache._reference(
               key.accountId, 'source', key.sourceIdentity!,
@@ -727,8 +1370,27 @@ Future<Uint8List> loadMediaWithCache(
                 contentSha256: file.uri.pathSegments.last.split('.').first)
             .cacheId;
         return _sharedMediaBytes.putIfAbsent(memoryKey, () async {
-          final result = bytes ?? await file.readAsBytes();
-          verifyMediaContent(result, key.contentSha256);
+          var result = bytes ?? await file.readAsBytes();
+          if (key.contentSha256 != null) {
+            try {
+              verifyMediaContent(result, key.contentSha256);
+            } on FormatException {
+              // 廉价命中路径可能漏掉"同尺寸且未改变 mtime"的极端篡改；
+              // 这里是最后一道内容校验：判定损坏 → 删除对象 + 失效索引 →
+              // 重新解密并落盘（修复，而不是把异常抛给 UI）。
+              await MediaCache._discardCorruptObject(key, file);
+              PerformanceMetrics.instance
+                  .increment(PerformanceCounter.mediaDownload);
+              final fresh = await decrypt();
+              verifyMediaContent(fresh, key.contentSha256);
+              await MediaCache.store(key.roomId, key.eventId, fresh,
+                  accountId: key.accountId,
+                  contentSha256: key.contentSha256,
+                  variant: key.variant,
+                  familyId: key.familyId);
+              result = fresh;
+            }
+          }
           return result;
         });
       });
@@ -849,13 +1511,20 @@ final class MediaCacheKey {
       required this.eventId,
       this.accountId = '',
       this.sourceIdentity,
-      this.contentSha256});
+      this.contentSha256,
+      this.variant = MediaVariantKind.unknown,
+      this.familyId});
   final String accountId;
   final String? contentSha256;
   String get cacheId => identity;
 
   /// Full authenticated source identity, including encryption descriptor.
   final String? sourceIdentity;
+
+  /// 变体标记与媒体族锚点：**仅本地索引 metadata**，不参与身份/键，
+  /// 不改变对象去重语义（同字节仍合并为一个对象）。
+  final MediaVariantKind variant;
+  final String? familyId;
   String get identity {
     final hash = contentSha256;
     if (hash != null) {

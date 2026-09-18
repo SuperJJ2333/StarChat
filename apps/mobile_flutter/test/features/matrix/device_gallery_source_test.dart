@@ -5,7 +5,19 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:photo_manager/photo_manager.dart';
+
+/// Phase 2：首帧缓存并入统一对象库，测试用 PathProvider 注入隔离目录。
+class _VffPaths extends PathProviderPlatform {
+  _VffPaths(this.path);
+  final String path;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+}
 
 /// 相册数据源优化（P1）：
 /// - 首屏只取 12 张（覆盖可见网格），后续页 20；
@@ -614,20 +626,32 @@ void main() {
         durationOverride: const Duration(milliseconds: 600),
       );
       final positions = <int>[];
+      // Phase 2：首帧缓存走统一对象库，用 PathProvider 注入隔离目录。
+      final scratch =
+          (await _galleryFixtureDirectory('vff')).createTempSync('vff-');
+      PathProviderPlatform.instance = _VffPaths(scratch.path);
+      addTearDown(() {
+        if (scratch.existsSync()) scratch.deleteSync(recursive: true);
+      });
       final frame = await loadVideoFirstFrame(
         asset,
         fetch: (path, positionMs) async {
           positions.add(positionMs);
           return whitePng;
         },
-        cacheDir: () async => _galleryFixtureDirectory('vff'),
       );
       expect(frame, isNotNull);
       expect(positions.first, 200, reason: '600ms 视频：从 200ms 开始多点位尝试');
     });
 
-    test('缓存命中不再抽帧；空缓存文件删除后重新抽帧（损坏失效）', () async {
-      final dir = await _galleryFixtureDirectory('vff-corrupt');
+    test('缓存命中不再抽帧；空缓存对象重新抽帧（损坏失效）', () async {
+      final scratch =
+          (await _galleryFixtureDirectory('vff-corrupt')).createTempSync('vff-');
+      PathProviderPlatform.instance = _VffPaths(scratch.path);
+      addTearDown(() {
+        MediaCache.clearPinsForTest();
+        if (scratch.existsSync()) scratch.deleteSync(recursive: true);
+      });
       final file = await realVideoFile('corrupt');
       final asset = _StubVideoAsset('corrupt', path: file.path);
       var extractions = 0;
@@ -637,29 +661,19 @@ void main() {
       }
 
       // 首次：抽取并落盘。
-      expect(
-          await loadVideoFirstFrame(asset,
-              fetch: fetch, cacheDir: () async => dir),
-          isNotNull);
+      expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
       expect(extractions, 1);
-      // 第二次：磁盘缓存命中，不再抽帧。
-      expect(
-          await loadVideoFirstFrame(asset,
-              fetch: fetch, cacheDir: () async => dir),
-          isNotNull);
-      expect(extractions, 1, reason: '成功封面磁盘缓存复用');
+      // 第二次：对象库缓存命中，不再抽帧。
+      expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
+      expect(extractions, 1, reason: '成功封面对象缓存复用');
 
-      // 把缓存文件写空（模拟写入中断/磁盘损坏）→ 不得把空字节当命中。
-      final cacheDir = Directory(
-          '${dir.path}${Platform.pathSeparator}video_first_frame_cache');
-      for (final entry in cacheDir.listSync()) {
-        if (entry is File) await entry.writeAsBytes(const [], flush: true);
-      }
-      expect(
-          await loadVideoFirstFrame(asset,
-              fetch: fetch, cacheDir: () async => dir),
-          isNotNull);
-      expect(extractions, 2, reason: '空缓存文件被删除并重新抽帧，不永远占坑');
+      // 把缓存对象写空（模拟写入中断/磁盘损坏）→ 不得把空字节当命中。
+      final eventId = await videoFirstFrameCacheEventId(asset);
+      final cached = await MediaCache.probeCachedObject(
+          videoFirstFrameRoomId, eventId);
+      await cached!.writeAsBytes(const [], flush: true);
+      expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
+      expect(extractions, 2, reason: '空缓存对象被重新抽帧覆盖，不永远占坑');
     });
   });
 }

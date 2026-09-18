@@ -48,6 +48,29 @@ Future<Color> _pixel(Uint8List bytes, int x, int y) async {
 Finder get _editorCanvas => find.byWidgetPredicate(
     (widget) => widget is CustomPaint && widget.painter is ImageEditorPainter);
 
+ImageEditorPainter _painter(WidgetTester tester) =>
+    tester.widget<CustomPaint>(_editorCanvas).painter! as ImageEditorPainter;
+
+/// 画布现在是整个编辑区域，图片按 contain 居中适配——因此图片坐标必须
+/// 经 [ImageEditorPainter.viewBox] 映射，不能按画布百分比推算。
+Rect _viewBoxGlobal(WidgetTester tester) {
+  final canvas = tester.getRect(_editorCanvas);
+  return _painter(tester).viewBox.shift(canvas.topLeft);
+}
+
+/// 图片内的百分比坐标 → 全局坐标。
+Offset _imagePoint(WidgetTester tester, double x, double y) {
+  final box = _viewBoxGlobal(tester);
+  return Offset(
+      box.left + box.width * x / 100, box.top + box.height * y / 100);
+}
+
+/// 当前裁剪框（全局坐标）。
+Rect _cropFrameGlobal(WidgetTester tester) {
+  final canvas = tester.getRect(_editorCanvas);
+  return _painter(tester).selection!.shift(canvas.topLeft);
+}
+
 Future<void> _draw(WidgetTester tester, Offset start, Offset end) async {
   final gesture = await tester.startGesture(start);
   await gesture.moveTo(end);
@@ -201,11 +224,7 @@ void main() {
     expect(find.byIcon(CupertinoIcons.delete_left), findsNothing,
         reason: 'the eraser uses a drawing icon rather than a backspace glyph');
 
-    Offset point(int x, int y) {
-      final canvas = tester.getRect(_editorCanvas);
-      return Offset(canvas.left + canvas.width * x / 100,
-          canvas.top + canvas.height * y / 100);
-    }
+    Offset point(int x, int y) => _imagePoint(tester, x.toDouble(), y.toDouble());
 
     await _draw(tester, point(25, 50), point(30, 50));
     await _draw(tester, point(72, 50), point(77, 50));
@@ -269,22 +288,19 @@ void main() {
             })));
     await _waitForEditor(tester);
 
-    Offset originalPoint(int x, int y) {
-      final canvas = tester.getRect(_editorCanvas);
-      return Offset(canvas.left + canvas.width * x / 100,
-          canvas.top + canvas.height * y / 100);
-    }
+    Offset originalPoint(int x, int y) =>
+        _imagePoint(tester, x.toDouble(), y.toDouble());
 
+    // 新裁剪交互：裁剪框默认覆盖整张图片，拖动**左上角控制点**收进。
     await tester.tap(find.byKey(const Key('image-editor-crop')));
     await tester.pump();
-    await _draw(tester, originalPoint(20, 20), originalPoint(80, 80));
+    final frame = _cropFrameGlobal(tester);
+    await _draw(tester, frame.topLeft, originalPoint(20, 20));
     await tester.tap(find.byKey(const Key('image-editor-apply-crop')));
     await tester.pump(const Duration(milliseconds: 300));
-    final crop = (tester.widget<CustomPaint>(_editorCanvas).painter
-            as ImageEditorPainter)
-        .document
-        .crop;
+    final crop = _painter(tester).document.crop;
     expect(crop.contains(const Offset(25, 50)), isTrue);
+    expect(crop.width, lessThan(100), reason: '裁剪必须真的收进，而不是整图');
     await _exportThroughForward(tester, exports);
     final croppedX = (25 - crop.left).round();
     final croppedY = (50 - crop.top).round();
@@ -292,9 +308,9 @@ void main() {
         await tester.runAsync(() => _pixel(exports.last, croppedX, croppedY));
 
     Offset croppedPoint(int x, int y) {
-      final canvas = tester.getRect(_editorCanvas);
-      return Offset(canvas.left + canvas.width * (x - crop.left) / crop.width,
-          canvas.top + canvas.height * (y - crop.top) / crop.height);
+      final box = _viewBoxGlobal(tester);
+      return Offset(box.left + box.width * (x - crop.left) / crop.width,
+          box.top + box.height * (y - crop.top) / crop.height);
     }
 
     await tester.tap(find.byKey(const Key('image-editor-brush')));

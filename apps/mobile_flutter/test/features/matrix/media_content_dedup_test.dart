@@ -47,6 +47,11 @@ void main() {
     final file = (await MediaCache.cached('one', 'event',
         accountId: 'alice', contentSha256: hash))!;
     await file.writeAsBytes([3, 2, 1]);
+    // Phase 2：索引命中只做廉价校验（存在 + 精确大小 + mtime 锚点），
+    // 不再每次重算整文件哈希。此处篡改是同尺寸的，因此必须**同时**把
+    // mtime 推到校验时间之后——这正是"校验之后被改写"的真实形态；
+    // 廉价校验会失效索引并回退 legacy 完整校验，由后者拒绝该对象。
+    await file.setLastModified(DateTime.now().add(const Duration(hours: 1)));
     clearMediaMemoryCaches(); // Exercise disk corruption, not verified hot bytes.
     await loadMediaWithCache(key('alice', 'three'), load);
     expect(calls, 3);

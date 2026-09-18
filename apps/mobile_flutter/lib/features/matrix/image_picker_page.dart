@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../ui/components/wechat_scaffold.dart';
+import '../../ui/chat/encrypted_media_view.dart' show ViewerStatusHint;
+import '../../ui/chat/wechat_image_editor.dart';
 import 'device_gallery_source.dart';
 import 'gallery_video_preview.dart';
 
@@ -61,19 +63,25 @@ final class GallerySelection extends ChangeNotifier {
 }
 
 /// 全屏图片预览页：点击缩略图进入，展示高清图（1280px 按需解码）；
-/// 右下角“选择”胶囊与网格左上角圆圈等效，同步选中态。
+/// 底部右下角三枚胶囊按钮——**编辑 / 选择 / 闪照**（与微信一致）。
+/// 「编辑」进入 [WeChatImageEditorPage]：编辑只使用内存临时缓冲，
+/// 设备原图与消息里的原媒体对象都不会被覆盖。
 final class _GalleryPreviewPage extends StatefulWidget {
   const _GalleryPreviewPage({
     required this.photo,
     required this.selected,
     required this.onToggle,
     this.onSendFlash,
+    this.onEditedSend,
   });
 
   final GalleryPhoto photo;
   final bool selected;
   final bool Function() onToggle;
   final VoidCallback? onSendFlash;
+
+  /// 编辑结果（新的媒体对象）交回上层；返回 true 表示已受理并关闭预览。
+  final Future<bool> Function(Uint8List bytes)? onEditedSend;
 
   @override
   State<_GalleryPreviewPage> createState() => _GalleryPreviewPageState();
@@ -82,6 +90,57 @@ final class _GalleryPreviewPage extends StatefulWidget {
 final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
   late bool selected = widget.selected;
   late final Future<Uint8List> _bytes = widget.photo.compressedBytes();
+  bool _editing = false;
+  String? _hint;
+
+  /// 编辑源：优先原图（编辑质量），不可读时回退已展示的预览字节。
+  Future<Uint8List?> _editSource() async {
+    try {
+      final bytes = await widget.photo.originalBytes();
+      if (bytes.isNotEmpty) return bytes;
+    } catch (_) {
+      // 原图不可读（部分媒体源会失败）：回退预览字节，而不是放弃编辑。
+    }
+    try {
+      final bytes = await widget.photo.compressedBytes();
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _edit() async {
+    if (_editing) return;
+    setState(() {
+      _editing = true;
+      _hint = null;
+    });
+    try {
+      final source = await _editSource();
+      if (!mounted) return;
+      if (source == null) {
+        setState(() => _hint = '图片打开失败，请重试');
+        return;
+      }
+      final edited =
+          await Navigator.of(context, rootNavigator: true).push<Uint8List>(
+        CupertinoPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => WeChatImageEditorPage(
+            bytes: source,
+            // 编辑结果作为「新的媒体对象」离开编辑器；原图保持不变。
+            onSend: (result) async => true,
+          ),
+        ),
+      );
+      final send = widget.onEditedSend;
+      if (!mounted || edited == null || send == null) return;
+      final accepted = await send(edited);
+      if (accepted && mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted && _editing) setState(() => _editing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,55 +181,92 @@ final class _GalleryPreviewPageState extends State<_GalleryPreviewPage> {
                   size: 22, color: CupertinoColors.white),
             ),
           ),
-          if (widget.onSendFlash != null)
+          if (_hint != null)
             Positioned(
-              right: 16,
-              bottom: 80,
-              child: CupertinoButton(
-                key: const Key('gallery-preview-flash'),
-                color: const Color(0xCC1B1B1D),
-                borderRadius: BorderRadius.circular(18),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                onPressed: widget.onSendFlash,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(CupertinoIcons.bolt_fill,
-                      size: 14, color: CupertinoColors.systemYellow),
-                  const SizedBox(width: 4),
-                  const Text('闪照',
-                      style: TextStyle(
-                          fontSize: 14, color: CupertinoColors.white)),
-                ]),
-              ),
+              left: 24,
+              right: 24,
+              bottom: 96,
+              child: ViewerStatusHint(message: _hint!),
             ),
           Positioned(
             right: 16,
             bottom: 24,
-            child: CupertinoButton(
-              key: const Key('gallery-preview-select'),
-              color: selected
-                  ? WeChatColors.brandPrimary
-                  : CupertinoColors.systemGrey5.withValues(alpha: .28),
-              borderRadius: BorderRadius.circular(18),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              onPressed: () {
-                if (widget.onToggle()) setState(() => selected = !selected);
-              },
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (selected) ...[
-                  const Icon(CupertinoIcons.check_mark,
-                      size: 14, color: CupertinoColors.white),
-                  const SizedBox(width: 4),
-                ],
-                Text(selected ? '已选择' : '选择',
-                    style: const TextStyle(
-                        fontSize: 14, color: CupertinoColors.white)),
-              ]),
-            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _GalleryPreviewAction(
+                key: const Key('gallery-preview-edit'),
+                icon: CupertinoIcons.pencil,
+                label: '编辑',
+                onPressed: _editing ? null : _edit,
+              ),
+              const SizedBox(width: 8),
+              _GalleryPreviewAction(
+                key: const Key('gallery-preview-select'),
+                icon: selected ? CupertinoIcons.check_mark : null,
+                label: selected ? '已选择' : '选择',
+                highlighted: selected,
+                onPressed: () {
+                  if (widget.onToggle()) setState(() => selected = !selected);
+                },
+              ),
+              if (widget.onSendFlash != null) ...[
+                const SizedBox(width: 8),
+                _GalleryPreviewAction(
+                  key: const Key('gallery-preview-flash'),
+                  icon: CupertinoIcons.bolt_fill,
+                  iconColor: CupertinoColors.systemYellow,
+                  label: '闪照',
+                  onPressed: widget.onSendFlash,
+                ),
+              ],
+            ]),
           ),
         ]),
       ),
     );
   }
+}
+
+/// 预览页底部的胶囊操作（编辑 / 选择 / 闪照同风格，仅选中态用品牌色）。
+final class _GalleryPreviewAction extends StatelessWidget {
+  const _GalleryPreviewAction({
+    super.key,
+    required this.label,
+    this.icon,
+    this.iconColor = CupertinoColors.white,
+    this.highlighted = false,
+    this.onPressed,
+  });
+
+  final String label;
+  final IconData? icon;
+  final Color iconColor;
+  final bool highlighted;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => CupertinoButton(
+        padding: EdgeInsets.zero,
+        minimumSize: Size.zero,
+        onPressed: onPressed,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: highlighted
+                ? WeChatColors.brandPrimary
+                : const Color(0xCC1B1B1D),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: iconColor),
+              const SizedBox(width: 4),
+            ],
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 14, color: CupertinoColors.white)),
+          ]),
+        ),
+      );
 }
 
 /// 相册子列表加载器（顶部“最近图片(↓)”下拉），可注入测试桩。
@@ -920,6 +1016,7 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
       }
     }
     if (!mounted) return;
+    _editedFromPreview = null;
     await Navigator.of(context, rootNavigator: true).push(
       CupertinoPageRoute(
         fullscreenDialog: true,
@@ -935,11 +1032,29 @@ final class _ImagePickerPageState extends State<ImagePickerPage>
                   Navigator.of(context).pop(
                       (photos: [photo], original: true, flash: true));
                 },
+          // 编辑结果作为**新的媒体对象**（`editedGalleryPhoto`）结束选择器：
+          // 设备原照片不被覆盖，也不再需要二次选择。
+          onEditedSend: (bytes) async {
+            if (!mounted) return false;
+            _editedFromPreview = editedGalleryPhoto(bytes);
+            return true;
+          },
         ),
       ),
     );
-    if (mounted) setState(() {});
+    final edited = _editedFromPreview;
+    _editedFromPreview = null;
+    if (!mounted) return;
+    if (edited != null) {
+      Navigator.pop(
+          context, (photos: [edited], original: true, flash: false));
+      return;
+    }
+    setState(() {});
   }
+
+  /// 预览页内编辑完成后待发送的新媒体对象。
+  GalleryPhoto? _editedFromPreview;
 
   String _formatDuration(Duration? duration) {
     if (duration == null) return '0:00';

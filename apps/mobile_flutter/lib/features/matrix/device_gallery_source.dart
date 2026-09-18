@@ -4,9 +4,10 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import 'media_cache.dart';
+import 'media_index.dart' show MediaVariantKind;
 import 'video_poster_extractor.dart';
 import 'gif_image_policy.dart';
 import 'video_transcode.dart';
@@ -73,6 +74,22 @@ final class GalleryPhoto {
   /// before compression, rather than retaining a picker page or its bytes.
   final Future<File?> Function()? localVideoFile;
 }
+
+/// 编辑结果是**新的媒体对象**：设备上的原照片与消息里的原媒体对象都
+/// 不被覆盖，这里只把导出字节包装成一个可发送的相册条目。
+GalleryPhoto editedGalleryPhoto(
+  Uint8List bytes, {
+  String? id,
+  String mimeType = 'image/png',
+}) =>
+    GalleryPhoto(
+      id: id ?? 'edited-${DateTime.now().microsecondsSinceEpoch}',
+      thumbnail: bytes,
+      compressedBytes: () async => bytes,
+      originalBytes: () async => bytes,
+      mimeType: mimeType,
+      originalSizeBytes: () async => bytes.length,
+    );
 
 /// 相册数据源异常分类：用于向用户呈现可操作的引导。
 sealed class GallerySourceError implements Exception {
@@ -694,45 +711,64 @@ List<int> samplePositionsFor(
   return [midpoint];
 }
 
-/// 规格#4：视频首帧懒加载（磁盘缓存 video_first_frame_cache）。
+/// 相册视频首帧缓存命名空间（Phase 2：并入统一对象库）。
 ///
-/// key = sha256(path|id|durationMs|size)：对整文件做 sha256 比抽帧更贵，
-/// 以 路径+时长+大小 组合作内容寻址代理（文件被修改/替换后任一变化
-/// 即得新 key，旧缓存自然失效）。
+/// 素材来自用户**本机相册**（不是 E2EE 聊天媒体），因此默认使用设备共享
+/// 命名空间（`accountId` 为空）；需要账号隔离的调用方可传 [accountId]。
+/// 不再维护独立的 `video_first_frame_cache/` 目录：首帧现在享有对象库的
+/// 配额 LRU、原子写与索引，不再无界增长。
+const String videoFirstFrameRoomId = 'device-gallery';
+
+/// 首帧缓存变体前缀（对象库里的逻辑引用 = `<variant>:<sha256>`）。
+const String videoFirstFrameVariant = 'first-frame-v1';
+
+/// 首帧缓存键：`路径+id+时长+大小` 作为内容寻址代理（整文件 sha256 比抽帧更贵；
+/// 文件被修改/替换后任一变化即得新键，旧缓存自然失效）。
+Future<String> videoFirstFrameCacheEventId(AssetEntity asset) async {
+  final origin = await asset.originFile;
+  if (origin == null) return '';
+  final size = await origin.length();
+  final digest = sha256
+      .convert(utf8.encode(
+          '${origin.path}|${asset.id}|${asset.videoDuration}|$size'))
+      .toString();
+  return '$videoFirstFrameVariant:$digest';
+}
+
+/// 规格#4：视频首帧懒加载（统一对象库缓存）。
 ///
-/// 抽帧复用 [extractVideoPoster] 的多时间点 + 近黑帧跳过能力，采样
-/// 位置由 [samplePositionsFor] 按视频时长选取。
+/// 抽帧复用 [extractVideoPoster] 的多时间点 + 近黑帧跳过能力，采样位置由
+/// [samplePositionsFor] 按视频时长选取。
 /// [fetch] 注入抽帧实现（默认 video_compress），测试替身用。
+/// [ignoreCache] 为字节级损坏恢复：跳过缓存读强制重抽，成功后覆盖缓存对象。
 Future<Uint8List?> loadVideoFirstFrame(
   AssetEntity asset, {
   Future<Uint8List?> Function(String path, int positionMs)? fetch,
-  Future<Directory> Function()? cacheDir,
   List<int> Function(Duration?)? positionsFor,
   bool ignoreCache = false,
+  String accountId = '',
 }) async {
   try {
     final origin = await asset.originFile;
     if (origin == null) return null;
-    final dirFactory = cacheDir ?? getApplicationDocumentsDirectory;
-    final dir = Directory(
-        '${(await dirFactory()).path}${Platform.pathSeparator}video_first_frame_cache');
-    await dir.create(recursive: true);
-    final key = sha256
-        .convert(utf8.encode(
-            '${origin.path}|${asset.id}|${asset.videoDuration}|${await origin.length()}'))
-        .toString();
-    final cacheFile = File('${dir.path}${Platform.pathSeparator}$key.jpg');
-    // ignoreCache：字节级损坏恢复（存在但不可解码）——跳过磁盘读强制
-    // 重抽，成功后覆盖缓存文件。
-    if (!ignoreCache && await cacheFile.exists()) {
-      // 缓存损坏防御：空文件（写入中断/磁盘异常）删除后重新抽帧，
-      // 不得把空字节当命中永远占住。
-      final cached = await cacheFile.readAsBytes();
-      if (cached.isNotEmpty) return cached;
-      try {
-        await cacheFile.delete();
-      } catch (_) {
-        // 删除失败也继续抽帧（写回时覆盖）。
+    final eventId = await videoFirstFrameCacheEventId(asset);
+    if (eventId.isEmpty) return null;
+    // 缓存读：廉价探测（不做整文件哈希），空文件视为损坏并重新抽帧。
+    if (!ignoreCache) {
+      final cached = await MediaCache.probeCachedObject(
+          videoFirstFrameRoomId, eventId,
+          accountId: accountId);
+      if (cached != null) {
+        try {
+          final bytes = await cached.readAsBytes();
+          if (bytes.isNotEmpty) {
+            // LRU：只登记（批量落库），命中路径不产生同步磁盘写。
+            MediaCache.touchLocalObject(cached.path);
+            return bytes;
+          }
+        } on FileSystemException {
+          // 读取失败继续重新抽帧。
+        }
       }
     }
     final positions = (positionsFor ?? samplePositionsFor)(asset.videoDuration);
@@ -742,7 +778,10 @@ Future<Uint8List?> loadVideoFirstFrame(
       positionsMs: positions,
     );
     if (frame == null || frame.isEmpty) return null;
-    await cacheFile.writeAsBytes(frame, flush: true);
+    await MediaCache.store(videoFirstFrameRoomId, eventId, frame,
+        accountId: accountId,
+        variant: MediaVariantKind.poster,
+        mimeType: 'image/jpeg');
     return frame;
   } catch (_) {
     return null; // 首帧失败不阻塞网格（保持占位，由协调器有限重试）。

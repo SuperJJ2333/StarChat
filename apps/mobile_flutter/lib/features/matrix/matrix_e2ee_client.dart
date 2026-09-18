@@ -20,6 +20,7 @@ import 'group_announcement_service.dart';
 import 'group_join_notices.dart';
 import 'dart:async';
 import 'media_cache.dart';
+import 'media_index.dart' show MediaVariantKind;
 import 'local_hidden_events.dart';
 import 'video_transcode.dart'
     show
@@ -61,6 +62,7 @@ import 'matrix_recovery_service.dart';
 import 'matrix_security_logger.dart';
 import 'matrix_user_avatar.dart';
 import 'message_interaction_service.dart';
+import 'message_timeline_cache.dart';
 import 'nudge_service.dart';
 import 'room_timeline_controller.dart';
 import '../search/local_message_search_repository.dart';
@@ -1238,6 +1240,10 @@ final class MatrixRoomLease
         eventId: thumbnail ? 'thumb:$eventId' : eventId,
         contentSha256:
             thumbnail ? hashes?.thumbnailSha256 : hashes?.contentSha256,
+        // Phase 2：本地索引 metadata——变体标记 + 媒体族锚点（正文摘要）。
+        // 两者都不改变键/去重语义，只让索引知道"这些对象属于同一媒体族"。
+        variant: thumbnail ? MediaVariantKind.thumbnail : MediaVariantKind.body,
+        familyId: hashes?.contentSha256,
         sourceIdentity: event == null
             ? null
             : matrixMediaSourceIdentity(event.content, thumbnail: thumbnail));
@@ -1838,6 +1844,7 @@ final class _SdkRoomTimelineCapability
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
+        RoomMessageLookupSource,
         RoomWindowedTimelineSource {
   _SdkRoomTimelineCapability(this._lease, Timeline timeline, this._onUpdate)
       : _liveTimeline = timeline {
@@ -1998,7 +2005,55 @@ final class _SdkRoomTimelineCapability
   Iterable<RoomMessageViewModel> get allMessages =>
       _viewport?.all ?? snapshot();
   @override
-  RoomMessageViewModel? findMessage(String id) => _viewport?.find(id);
+  RoomMessageViewModel? findMessage(String id) =>
+      _viewport?.find(id) ??
+      _resolvedMessages[id] ??
+      MessageTimelineCache.shared
+          .lookup(_lease.owner._client?.userID ?? '', _lease.roomId, id);
+
+  /// 已按 event_id 单独解析出来的消息（窗口之外的引用目标）。
+  ///
+  /// 与 [MessageTimelineCache] 的分工：这里是本会话（同一 RoomLease）
+  /// 的即时投影；进程级缓存负责重新进入会话/切换窗口后的复用。
+  final _resolvedMessages = <String, RoomMessageViewModel>{};
+
+  @override
+  bool get supportsMessageLookup => true;
+
+  @override
+  Future<RoomMessageViewModel?> lookupMessage(String eventId) async {
+    _ensureActive();
+    if (eventId.isEmpty) return null;
+    final accountId = _lease.owner._client?.userID ?? '';
+    final cached = _resolvedMessages[eventId] ??
+        MessageTimelineCache.shared.lookup(accountId, _lease.roomId, eventId);
+    if (cached != null) {
+      _resolvedMessages[eventId] = cached;
+      return cached;
+    }
+    final event = await _withOperation(() async {
+      try {
+        // SDK 语义：本 timeline 事件 → timeline 内缓存 → 本地加密库
+        // （`Room.getEventById`）→ 服务器单事件查询 + 解密。
+        return await _timeline.getEventById(eventId);
+      } on MatrixException catch (error) {
+        if (error.errcode == 'M_FORBIDDEN' ||
+            error.errcode == 'M_UNAUTHORIZED') {
+          throw ReplyMessageLookupDenied(error.errcode);
+        }
+        throw ReplyMessageLookupUnavailable(error.toString());
+      } on TimeoutException catch (error) {
+        throw ReplyMessageLookupUnavailable(error.toString());
+      } on SocketException catch (error) {
+        throw ReplyMessageLookupUnavailable(error.message);
+      }
+    });
+    if (event == null) return null;
+    final message = _cachedMessage(event);
+    _resolvedMessages[eventId] = message;
+    MessageTimelineCache.shared.remember(accountId, _lease.roomId, message);
+    return message;
+  }
   @override
   RoomMessageViewModel? get newestMessage {
     final hidden = _lease.owner._localHistoryStore?.readFilter(_lease.roomId);

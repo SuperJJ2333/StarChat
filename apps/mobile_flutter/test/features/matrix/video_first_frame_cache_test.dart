@@ -4,7 +4,20 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/features/matrix/device_gallery_source.dart';
+import 'package:liuhetong_mobile/features/matrix/media_cache.dart';
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:photo_manager/photo_manager.dart';
+
+/// Phase 2：首帧缓存并入统一对象库（`MediaCache`），不再有独立的
+/// `video_first_frame_cache/` 目录。测试通过 PathProvider 注入隔离目录。
+class _Paths extends PathProviderPlatform {
+  _Paths(this.path);
+  final String path;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => path;
+  @override
+  Future<String?> getApplicationSupportPath() async => path;
+}
 
 final class _FakeVideoAsset extends AssetEntity {
   _FakeVideoAsset() : super(id: 'v1', typeInt: 2, width: 10, height: 10);
@@ -40,9 +53,18 @@ final Uint8List whitePng = Uint8List.fromList(base64Decode(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('首帧缓存：首次抽帧落盘，二次命中零抽帧', () async {
-    final dir = _fixtureDirectory().createTempSync('vff-cache');
-    addTearDown(() => dir.deleteSync(recursive: true));
+  late Directory scratch;
+  setUp(() {
+    clearMediaMemoryCaches();
+    scratch = _fixtureDirectory().createTempSync('vff-cache');
+    PathProviderPlatform.instance = _Paths(scratch.path);
+    addTearDown(() {
+      clearMediaMemoryCaches();
+      if (scratch.existsSync()) scratch.deleteSync(recursive: true);
+    });
+  });
+
+  test('首帧缓存：首次抽帧落盘到统一对象库，二次命中零抽帧', () async {
     var fetches = 0;
     final asset = _FakeVideoAsset();
 
@@ -51,38 +73,67 @@ void main() {
       return whitePng;
     }
 
-    final first = await loadVideoFirstFrame(asset,
-        fetch: fetch, cacheDir: () async => dir);
+    final first = await loadVideoFirstFrame(asset, fetch: fetch);
     expect(first, whitePng);
     expect(fetches, 1);
-    // 缓存文件已写入 video_first_frame_cache。
-    final cacheDir = Directory(
-        '${dir.path}${Platform.pathSeparator}video_first_frame_cache');
-    expect(cacheDir.listSync().length, 1, reason: '首帧必须落盘');
+
+    // 落盘位置：统一对象库（objects/<sha256> + refs/<logical-ref>）。
+    final eventId = await videoFirstFrameCacheEventId(asset);
+    expect(eventId, startsWith(videoFirstFrameVariant));
+    final cached = await MediaCache.probeCachedObject(
+        videoFirstFrameRoomId, eventId);
+    expect(cached, isNotNull, reason: '首帧必须落盘到统一对象库');
+    expect(await cached!.readAsBytes(), whitePng);
+    expect(cached.path.replaceAll(r'\', '/'), contains('/objects/'));
+    expect(
+        Directory('${scratch.path}${Platform.pathSeparator}video_first_frame_cache')
+            .existsSync(),
+        isFalse,
+        reason: '不再维护独立的无配额首帧目录');
 
     // 二次（新 fetch 计数器，命中即不调用）：
     final second = await loadVideoFirstFrame(asset,
         fetch: (p, ms) async {
           fetches += 100;
           return whitePng;
-        },
-        cacheDir: () async => dir);
+        });
     expect(second, whitePng, reason: '命中缓存返回首次字节');
     expect(fetches, 1, reason: '缓存命中不得再抽帧');
   });
 
   test('抽帧失败返回 null 不落盘（占位保持）', () async {
-    final dir = _fixtureDirectory().createTempSync('vff-miss');
-    addTearDown(() => dir.deleteSync(recursive: true));
+    final asset = _FakeVideoAsset();
     final result = await loadVideoFirstFrame(
-      _FakeVideoAsset(),
+      asset,
       fetch: (p, ms) async => null,
-      cacheDir: () async => dir,
     );
     expect(result, isNull);
-    final cacheDir = Directory(
-        '${dir.path}${Platform.pathSeparator}video_first_frame_cache');
-    expect(cacheDir.listSync(), isEmpty);
+    final eventId = await videoFirstFrameCacheEventId(asset);
+    expect(
+        await MediaCache.probeCachedObject(videoFirstFrameRoomId, eventId),
+        isNull,
+        reason: '失败不得留下缓存对象');
+  });
+
+  test('空缓存对象视为损坏：删除后重新抽帧，不永远占坑', () async {
+    var extractions = 0;
+    final asset = _FakeVideoAsset();
+    Future<Uint8List?> fetch(String path, int positionMs) async {
+      extractions++;
+      return whitePng;
+    }
+
+    expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
+    expect(extractions, 1);
+
+    // 模拟写入中断：把对象写成空文件。
+    final eventId = await videoFirstFrameCacheEventId(asset);
+    final cached = await MediaCache.probeCachedObject(
+        videoFirstFrameRoomId, eventId);
+    await cached!.writeAsBytes(const [], flush: true);
+
+    expect(await loadVideoFirstFrame(asset, fetch: fetch), isNotNull);
+    expect(extractions, 2, reason: '空缓存对象被重新抽帧覆盖，不永远占坑');
   });
 
   test(
@@ -126,7 +177,7 @@ void main() {
 }
 
 Directory _fixtureDirectory() => Directory(
-    '../../docs/verification/artifacts/2026-09-06/room-flow/gallery/video-fixtures')
+    '../../docs/verification/artifacts/2026-09-17/gallery/video-fixtures')
   ..createSync(recursive: true);
 
 final class _VideoAlbum extends AssetPathEntity {

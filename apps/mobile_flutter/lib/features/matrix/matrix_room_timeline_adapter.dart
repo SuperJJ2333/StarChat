@@ -77,6 +77,7 @@ final class MatrixRoomTimelineAdapter
         RoomHistoryStatus,
         RoomFutureHistoryStatus,
         RoomHistoryDateCapability,
+        RoomMessageLookupSource,
         RoomWindowedTimelineSource {
   MatrixRoomTimelineAdapter(this._capability);
 
@@ -135,6 +136,21 @@ final class MatrixRoomTimelineAdapter
   @override
   RoomMessageViewModel? findMessage(String id) =>
       _window?.findMessage(id) ?? _fallbackWindow?.find(id);
+
+  /// 引用原消息的按需解析：能力侧实现（本地加密库 → 服务器单事件查询）；
+  /// 未实现该能力时 [supportsMessageLookup] 为 false，控制器回退有界历史分页。
+  @override
+  bool get supportsMessageLookup => _capability is RoomMessageLookupSource;
+
+  @override
+  Future<RoomMessageViewModel?> lookupMessage(String eventId) {
+    final capability = _capability;
+    if (capability is RoomMessageLookupSource) {
+      return (capability as RoomMessageLookupSource).lookupMessage(eventId);
+    }
+    return Future.value(null);
+  }
+
   @override
   RoomMessageViewModel? get newestMessage =>
       _window?.newestMessage ?? _fallbackWindow?.newest;

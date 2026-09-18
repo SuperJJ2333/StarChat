@@ -37,7 +37,9 @@ import '../../ui/chat/emoji_text_controller.dart';
 import '../../ui/chat/message_highlight_pulse.dart';
 import '../../ui/components/wechat_toast.dart';
 import '../../ui/chat/message_text_selection.dart';
+import '../../ui/chat/quote_preview_card.dart';
 import '../../ui/chat/quote_return_banner.dart';
+import 'reply_message_resolution.dart';
 import '../../features/emoji/emoji_shortcode.dart';
 import '../../ui/chat/chat_forward_picker_page.dart';
 import 'recent_forward_store.dart';
@@ -103,7 +105,8 @@ import 'room_mention_store.dart';
 import '../../ui/chat/conversation_mention_banner.dart';
 import 'video_poster_session_cache.dart';
 import 'video_poster_disk_store.dart';
-import 'video_poster_extractor.dart';
+import 'video_poster_diagnostics.dart';
+import 'video_poster_pipeline.dart';
 import 'chat_search_query_controller.dart'
     show ChatSearchMessage, ChatSearchMediaCategory;
 import 'conversation_preferences.dart';
@@ -412,12 +415,36 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   final Map<String, String> _posterKeys = {};
 
   /// Room-instance cache: independent encrypted temporary files, no global LRU.
+  /// （Phase 1 保留：会话级内存 LRU + 单飞 + 临时加密磁盘层，未删除。）
   late final VideoPosterSessionCache videoPosterCache = VideoPosterSessionCache(
     diskRead: _posterDisk.read,
     diskWrite: _posterDisk.write,
     diskDelete: _posterDisk.delete,
     diskListKeys: _posterDisk.keys,
   );
+
+  /// 视频封面脱敏诊断（只记加盐哈希 ID + 来源 + 耗时/字节数）。
+  late final videoPosterDiagnostics = VideoPosterDiagnostics(
+    salt: roomInfo.currentUserId ?? '',
+  );
+
+  /// Phase 1 视频封面流水线：**没有任何视频下载入口**。
+  late final VideoPosterPipeline videoPosterPipeline = VideoPosterPipeline(
+    accountId: roomInfo.currentUserId ?? '',
+    roomId: roomInfo.id,
+    memory: videoPosterCache,
+    loadServerPoster: _loadServerVideoPoster,
+    readCachedPoster: _readCachedVideoPoster,
+    writeCachedPoster: _writeCachedVideoPoster,
+    findLocalVideoFile: _findLocalVideoFile,
+    diagnostics: videoPosterDiagnostics,
+  );
+
+  /// 封面仍缺失的视频消息（播放完成后尝试补生成，避免无意义刷新）。
+  final Set<String> _posterMissing = <String>{};
+
+  /// 封面补生成信号（`message.id` → revision），驱动卡片重新解析。
+  final Map<String, int> _posterRevisions = <String, int>{};
 
   /// R4：未读 @ 跟踪器（账号隔离；会话实例生命周期）。
   UnreadMentionTracker? unreadMentions;
@@ -846,6 +873,12 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
         MatrixRoomTimelineAdapter(timeline),
       )..addListener(_changed);
       controller!.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+      replyResolver?.dispose();
+      replyResolver = ReplyMessageResolver(
+        lookup: (eventId) =>
+            controller?.lookupReplyMessage(eventId) ?? Future.value(null),
+        onChanged: _replyResolutionChanged,
+      );
       await controller!.refresh();
       await _ingestMentions();
       if (!mounted) return;
@@ -1218,6 +1251,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
       if (message.isRecalled) {
         final key = _posterKeys.remove(message.id);
         if (key != null) unawaited(videoPosterCache.evict(key));
+        // 撤回：同时丢弃流水线的来源归属/冷却状态，避免残留影响诊断与重试。
+        videoPosterPipeline.forget(message.id);
       }
     }
     _timelineRevision.value++;
@@ -1445,70 +1480,125 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   Future<void> _openVideoViewer(RoomMessageViewModel message) async {
     final localSent = SentVideoLocalRegistry.shared
         .findByTransactionId(message.transactionId);
-    await Navigator.of(context, rootNavigator: true).push(
-      CupertinoPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => VideoViewerPage(
-          loadFile: localSent != null
-              ? () async {
-                  // 发送方本地回读：压缩产物即发送内容，零下载零等待。
-                  return localSent;
-                }
-              : () => resolveCachedVideoFile(
-                  loaderCachesContent: true,
-                  key: _mediaKey(message.id),
-                  decrypt: () => _downloadMedia(message.id),
-                ),
-          initialDuration: message.videoDuration,
-          onForward: () => _forwardMessages([message]),
+    // Phase 2：播放期间 pin 本地播放文件——配额淘汰与 GC 都不得删除
+    // 正在播放的对象；路由返回后统一释放。
+    final pins = <MediaCachePin>[];
+    Future<File> loadPlaybackFile() async {
+      final file = localSent ??
+          await resolveCachedVideoFile(
+            loaderCachesContent: true,
+            key: _mediaKey(message.id),
+            decrypt: () => _downloadMedia(message.id),
+          );
+      pins.add(MediaCache.pinPath(file.path));
+      return file;
+    }
+
+    try {
+      await Navigator.of(context, rootNavigator: true).push(
+        CupertinoPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => VideoViewerPage(
+            loadFile: loadPlaybackFile,
+            initialDuration: message.videoDuration,
+            onForward: () => _forwardMessages([message]),
+          ),
         ),
-      ),
+      );
+    } finally {
+      for (final pin in pins) {
+        pin.release();
+      }
+    }
+    // 播放后本地已有该视频文件：为之前拿不到封面的消息补一次生成
+    // （「后台生成 poster → 生成后更新缓存」）。
+    if (!mounted || message.kind != RoomMessageKind.video) return;
+    if (!_posterMissing.contains(message.id)) return;
+    setState(() {
+      _posterRevisions[message.id] = (_posterRevisions[message.id] ?? 0) + 1;
+    });
+  }
+
+  /// 视频消息封面帧（Phase 1：**绝不为了封面下载整段视频**）。
+  ///
+  /// 旧实现：事件没有可用缩略图时会 `resolveCachedVideoFile` 把整段视频
+  /// 下载+解密到磁盘再抽帧——首屏慢、流量浪费、低端机卡顿。
+  /// 新实现全部交给 [VideoPosterPipeline]：
+  /// 内存 → 会话磁盘 → 服务端 poster（小图附件）→ 本机持久封面缓存
+  /// → 本地已存在视频文件的抽帧 → 占位图。
+  Future<Uint8List?> _loadVideoPoster(String messageId) async {
+    if (!mounted) return null;
+    // 会话缓存键沿用既有键形状（账号|房间|媒体|版本|规格）。
+    _posterKeys.putIfAbsent(
+        messageId,
+        () => videoPosterPipeline.keyFor(messageId));
+    final outcome = await videoPosterPipeline.resolve(messageId);
+    if (!mounted) return null;
+    if (outcome.hasPoster) {
+      _posterMissing.remove(messageId);
+    } else {
+      _posterMissing.add(messageId);
+    }
+    return outcome.bytes;
+  }
+
+  /// 服务端已有 poster：消息事件自带的加密缩略图附件（≤480px 小图）。
+  ///
+  /// SDK 在事件确实没有缩略图时直接返回 null（不产生网络请求）；
+  /// 事件不在当前 timeline 窗口时抛 StateError，由流水线降级为占位。
+  Future<Uint8List?> _loadServerVideoPoster(String messageId) async {
+    final timeline = controller;
+    if (timeline == null || !mounted) return null;
+    return timeline.loadThumbnail(messageId);
+  }
+
+  /// 本机持久封面缓存（复用 MediaCache：账号命名空间 + 内容寻址 + 配额 LRU）。
+  Future<Uint8List?> _readCachedVideoPoster(String messageId) async {
+    final file = await MediaCache.probeCachedObject(
+      roomInfo.id,
+      videoPosterCacheRefId(messageId),
+      accountId: roomInfo.currentUserId ?? '',
+    );
+    if (file == null) return null;
+    try {
+      final bytes = await file.readAsBytes();
+      // 探测路径不刷新 mtime；这里按 LRU 语义记一次访问。
+      await file.setLastModified(DateTime.now());
+      return bytes;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  Future<void> _writeCachedVideoPoster(String messageId, Uint8List bytes) async {
+    if (bytes.isEmpty) return;
+    await MediaCache.store(
+      roomInfo.id,
+      videoPosterCacheRefId(messageId),
+      bytes,
+      accountId: roomInfo.currentUserId ?? '',
     );
   }
 
-  /// 视频消息封面帧：经 VideoPosterSessionCache（规格#1 会话级缓存，
-  /// 三审接线修复——原走页级 MediaMemoryCache，无磁盘层与会话合并）。
-  /// 发送端加密海报缩略图优先；无缩略图返回 null 走占位底。
-  Future<Uint8List?> _loadVideoPoster(String messageId) async {
-    final timeline = controller;
-    if (timeline == null || !mounted) return null;
+  /// 本地已存在的视频文件（**只探测，绝不下载**）：
+  /// ① 发送方本机产物（相册原片，仅当确实存在）；
+  /// ② MediaCache 中已落盘的视频对象（离线缓存 / 此前播放已缓存）。
+  Future<File?> _findLocalVideoFile(String messageId) async {
+    // O(1) 索引查找：绝不遍历 allMessages（大房间会退化成全量扫描）。
+    final transactionId = controller?.findMessage(messageId)?.transactionId;
+    final sent =
+        SentVideoLocalRegistry.shared.findByTransactionId(transactionId);
+    if (sent != null) return sent;
     final trusted = _mediaHashes(messageId);
-    if (trusted != null) {
-      if (trusted.thumbnailSha256 != null) {
-        return timeline.loadThumbnail(messageId);
-      }
-      final file = await resolveCachedVideoFile(
-          loaderCachesContent: true,
-          key: _mediaKey(messageId),
-          decrypt: () => _downloadMedia(messageId));
-      return extractVideoPoster(file.path);
-    }
-    final key = _posterKeys.putIfAbsent(
-        messageId,
-        () => VideoPosterSessionCache.keyFor(
-              accountId: roomInfo.currentUserId ?? '',
-              roomId: roomInfo.id,
-              mediaId: messageId,
-              mediaVersion:
-                  messageId, // Matrix events are immutable; replacements get new IDs.
-              spec: 'chat-poster-v1',
-            ));
-    final result = await videoPosterCache.load(
-      key,
-      () async {
-        final poster = await timeline.loadThumbnail(messageId);
-        if (poster != null && poster.isNotEmpty) return poster;
-        final file = await resolveCachedVideoFile(
-          loaderCachesContent: true,
-          key: _mediaKey(messageId),
-          decrypt: () => _downloadMedia(messageId),
-        );
-        return extractVideoPoster(file.path);
-      },
+    // 廉价存在性探测：不重算大文件哈希。
+    return MediaCache.probeCachedObject(
+      roomInfo.id,
+      messageId,
+      accountId: roomInfo.currentUserId ?? '',
+      contentSha256: trusted?.contentSha256,
     );
-    if (result.retryable || result.stale || !mounted) return null;
-    return result.bytes;
   }
+
 
   bool _isAnimatedImage(RoomMessageViewModel message) =>
       message.mimeType?.toLowerCase().split(';').first.trim() == 'image/gif' ||
@@ -2790,6 +2880,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     }
     await widget.roomLease.saveMentions();
     controller?.setHiddenFilter(hiddenEvents?.readFilter(roomInfo.id));
+    // 清空本机记录后，之前为引用卡片解析出来的窗口外原消息也必须失效。
+    controller?.clearResolvedReplyTargets();
+    replyResolver?.clear();
     await controller?.refresh();
     if (mounted) setState(() {});
   }
@@ -3484,6 +3577,7 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
             decorateContent: false,
             content: VideoMessageCard(
               posterIdentity: message.id,
+              posterRevision: _posterRevisions[message.id] ?? 0,
               duration: message.videoDuration,
               posterLoader: () => _loadVideoPoster(message.id),
               onOpen: () => unawaited(_openVideoViewer(message)),
@@ -3609,14 +3703,20 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
                 left: message.isOwn ? 0 : WeChatDimensions.messageAvatar + 8,
                 right: message.isOwn ? WeChatDimensions.messageAvatar + 8 : 0,
               ),
-              child: _QuotePreview(
+              child: QuotePreviewCard(
                 message: replied,
                 excerpt: message.replyExcerpt,
                 targetEventId: message.replyToEventId!,
+                resolution: _replyResolution(message.replyToEventId!),
                 displayName: replied == null
                     ? '引用消息'
                     : _displayName(replied.senderId, replied.isOwn),
                 onTap: () => unawaited(_jumpFromQuote(message)),
+                // 失败态点击重试走状态机（清掉终局结果再发一次请求），
+                // 而不是直接调用底层查询（那会被终局缓存挡住）。
+                onRetry: () => unawaited(
+                    replyResolver?.retry(message.replyToEventId!) ??
+                        Future.value()),
               ),
             ),
           ),
@@ -4167,6 +4267,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     unawaited(_trackMatrixOperation(_onVoiceCancel(VoiceArmedTarget.cancel)));
     _timelineRevision.dispose();
     _mentionRevision.dispose();
+    replyResolver?.dispose();
+    replyResolver = null;
     _observedTimelineScrollPosition?.isScrollingNotifier
         .removeListener(_onTimelineScrollActivityChanged);
     controller?.removeListener(_changed);
@@ -4557,9 +4659,21 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
   }
 
   final _timelineRevision = ValueNotifier<int>(0);
+
+  /// 引用原消息的加载状态机（单飞 + 3 秒超时 + 终局缓存 + 点击重试）。
+  ///
+  /// 与 `controller.findMessage` 的分工：本机 timeline 命中的引用直接渲染；
+  /// 窗口外的引用（例如引用了 1000 条以前的消息）在这里按 event_id 解析，
+  /// 成功写入 `MessageTimelineCache`，失败落到可重试的明确状态——绝不留下
+  /// 永久的「原消息加载中」。
+  ReplyMessageResolver? replyResolver;
+
+  /// 本轮已排队的引用解析扫描，避免每帧重复排队。
+  bool _replySweepScheduled = false;
   final _visibleIndex = <String, int>{};
   final _rowCache = <String,
-      (RoomMessageViewModel, DateTime?, RoomMessageViewModel?, Widget)>{};
+      (RoomMessageViewModel, DateTime?, RoomMessageViewModel?, ReplyMessageStatus,
+          Widget)>{};
 
   List<RoomMessageViewModel> _visibleMessages() {
     final all = controller?.messages ?? const <RoomMessageViewModel>[];
@@ -4574,13 +4688,58 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     _rowCache.removeWhere((id, _) => !_visibleIndex.containsKey(id));
     _stableMessageKeys.removeWhere((id, _) => !_visibleIndex.containsKey(id));
     messageKeys.removeWhere((id, _) => !ids.contains(id));
+    _scheduleReplyResolutionSweep(messages);
     return messages;
+  }
+
+  /// 当前引用的加载状态：本机 timeline 命中即成功，否则取状态机结果。
+  ReplyMessageResolution _replyResolution(String targetEventId) {
+    final local = controller?.findMessage(targetEventId);
+    if (local != null) return ReplyMessageResolution.resolved(local);
+    return replyResolver?.stateOf(targetEventId) ??
+        const ReplyMessageResolution.loading();
+  }
+
+  void _replyResolutionChanged() {
+    if (!mounted || _disposing) return;
+    _timelineRevision.value++;
+  }
+
+  /// 为可见消息中尚未命中的引用目标排队一次解析（每帧最多一批）。
+  ///
+  /// 扫描在 build 期间只做只读判定，真正的请求放到帧后执行，避免在
+  /// build 中触发 `_timelineRevision` 变更。
+  void _scheduleReplyResolutionSweep(List<RoomMessageViewModel> messages) {
+    final resolver = replyResolver;
+    if (resolver == null || _replySweepScheduled || _disposing) return;
+    final pending = <String>[];
+    final seen = <String>{};
+    for (final message in messages) {
+      final target = message.replyToEventId;
+      if (target == null || !seen.add(target)) continue;
+      if (controller?.findMessage(target) != null) continue;
+      final state = resolver.stateOf(target);
+      if (state != null && state.isSettled) continue;
+      pending.add(target);
+    }
+    if (pending.isEmpty) return;
+    _replySweepScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _replySweepScheduled = false;
+      if (!mounted || _disposing) return;
+      for (final target in pending) {
+        unawaited(resolver.resolve(target));
+      }
+    });
   }
 
   Widget _cachedMessageRow(RoomMessageViewModel message, DateTime? previous) {
     final reply = message.replyToEventId == null
         ? null
         : controller?.findMessage(message.replyToEventId!);
+    final resolution = message.replyToEventId == null
+        ? const ReplyMessageResolution.loading()
+        : _replyResolution(message.replyToEventId!);
     final cached = _rowCache[message.stableId];
     final sameReply = cached?.$3 == null
         ? reply == null
@@ -4588,8 +4747,9 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
     if (cached != null &&
         identical(cached.$1, message) &&
         cached.$2 == previous &&
+        cached.$4 == resolution.status &&
         sameReply) {
-      return cached.$4;
+      return cached.$5;
     }
     final row = Padding(
         key: ValueKey(message.stableId),
@@ -4620,7 +4780,8 @@ class _RoomPageState extends State<RoomPage> with WidgetsBindingObserver {
               ),
               _messageRow(message, previous),
             ])));
-    _rowCache[message.stableId] = (message, previous, reply, row);
+    _rowCache[message.stableId] =
+        (message, previous, reply, resolution.status, row);
     return row;
   }
 
@@ -4980,76 +5141,4 @@ final class _RoleBadge extends StatelessWidget {
           ),
         ),
       );
-}
-
-final class _QuotePreview extends StatelessWidget {
-  const _QuotePreview({
-    required this.message,
-    this.excerpt,
-    required this.targetEventId,
-    required this.displayName,
-    required this.onTap,
-  });
-
-  final RoomMessageViewModel? message;
-  final String? excerpt;
-  final String targetEventId;
-  final String displayName;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = this.message;
-    final summary = excerpt?.isNotEmpty == true
-        ? _truncateQuoteText(excerpt!)
-        : switch (message?.kind) {
-            RoomMessageKind.image => '图片',
-            RoomMessageKind.voice => '语音 ${message!.voiceDuration.inSeconds}″',
-            RoomMessageKind.file => '文件：${message!.text}',
-            _ => _truncateQuoteText(message?.text ?? '原消息加载中'),
-          };
-    return CupertinoButton(
-      key: Key('reply-preview-$targetEventId'),
-      padding: const EdgeInsets.only(top: 4),
-      minimumSize: Size.zero,
-      onPressed: onTap,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 236),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-        decoration: BoxDecoration(
-          color: WeChatColors.resolve(context, WeChatColors.divider),
-          borderRadius: BorderRadius.circular(WeChatRadius.control),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (message?.kind == RoomMessageKind.image)
-            const Icon(CupertinoIcons.photo,
-                size: 15, color: WeChatColors.textSecondary)
-          else if (message?.kind == RoomMessageKind.voice)
-            const Icon(CupertinoIcons.speaker_2,
-                size: 15, color: WeChatColors.textSecondary),
-          if (message?.kind == RoomMessageKind.image ||
-              message?.kind == RoomMessageKind.voice)
-            const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              '$displayName：$summary',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: WeChatColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-String _truncateQuoteText(String value) {
-  final characters = value.characters;
-  return characters.length > 10
-      ? '${characters.take(10).toString()}...'
-      : value;
 }

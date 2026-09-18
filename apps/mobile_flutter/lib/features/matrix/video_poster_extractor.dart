@@ -10,15 +10,23 @@ typedef VideoFrameFetcher =
 /// 多时间点视频封面抽取 + 近黑帧检测（BUG 修复：视频消息无封面/黑卡）。
 ///
 /// 旧实现单点 `thumbnailDataWithSize` 常取到片头黑帧（大量视频前几百
-/// 毫秒为黑场），接收端整卡黑块。这里依序在 [200, 500, 1000, 2000]ms
-/// 抽帧（video_compress getByteThumbnail 支持毫秒位置），平均亮度
+/// 毫秒为黑场），接收端整卡黑块。这里依序按 [positionsMs] 抽帧
+/// （video_compress getByteThumbnail 支持毫秒位置），平均亮度
 /// < [blackLumaThreshold] 视为近黑帧跳过；全部失败返回 null，调用方
 /// 回退原有 photo_manager 封面或占位图。
+///
+/// 默认 [positionsMs] 保留历史行为（首项 `0ms` 命中即返回，供发送端
+/// 「一定拿到一张封面」）；需要跳过黑场的加载侧调用点请显式传入
+/// `[200, 500, 1000, 2000]`（见 `video_poster_pipeline.dart`）。
+///
+/// [onFrameDecoded] 是**诊断专用**的可选回调：每次近黑帧判定实际解码
+/// 消耗的微秒数（不改变任何行为）。
 Future<Uint8List?> extractVideoPoster(
   String videoPath, {
   VideoFrameFetcher? fetch,
   List<int> positionsMs = const [0, 200, 500, 1000],
   double blackLumaThreshold = 16,
+  void Function(int micros)? onFrameDecoded,
 }) async {
   final getFrame = fetch ??
       (path, positionMs) =>
@@ -28,7 +36,13 @@ Future<Uint8List?> extractVideoPoster(
       final bytes = await getFrame(videoPath, positionMs);
       if (bytes == null || bytes.isEmpty) continue;
       if (positionMs == 0) return bytes;
+      final probe = onFrameDecoded == null ? null : (Stopwatch()..start());
       final luma = await frameAverageLuma(bytes);
+      final report = onFrameDecoded;
+      if (probe != null && report != null) {
+        probe.stop();
+        report(probe.elapsedMicroseconds);
+      }
       if (luma >= blackLumaThreshold) return bytes;
     } catch (error) {
       // 单点失败（解码器不支持/文件忙）继续下一时间点。
