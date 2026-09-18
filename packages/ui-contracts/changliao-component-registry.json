@@ -983,7 +983,8 @@
         "props": [
           "bytes",
           "onForward",
-          "onFavorite"
+          "onFavorite",
+          "onSend"
         ],
         "variants": {},
         "states": [
@@ -992,6 +993,7 @@
           "emoji",
           "text",
           "crop",
+          "crop-reset",
           "mosaic",
           "undo",
           "redo",
