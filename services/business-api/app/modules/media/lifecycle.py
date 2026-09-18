@@ -31,11 +31,13 @@ from app.modules.media.domain import (
     IsolationDomain,
     MediaStatus,
     UploadSessionStatus,
+    VariantStatus,
     new_gc_run_id,
 )
 from app.modules.media.metrics import media_platform_metrics
 from app.modules.media.models import (
     MediaBlob,
+    MediaVariant,
     MediaGcRun,
     MediaObject,
     MediaReference,
@@ -179,6 +181,11 @@ class MediaGarbageCollector:
         if self._has_active_upload(media.media_id):
             return GcDecision(media.media_id, "skip", GcSkipReason.ACTIVE_UPLOAD.value, size)
 
+        if self._has_processing_variant(media.media_id):
+            # A variant that is still being produced (poster, transcode) holds the object:
+            # collecting it would leave the pipeline writing into a deleted blob.
+            return GcDecision(media.media_id, "skip", GcSkipReason.VARIANT_PROCESSING.value, size)
+
         return GcDecision(media.media_id, "collect", "unreferenced", size)
 
     def _grace_seconds(self, media: MediaObject) -> int:
@@ -236,6 +243,18 @@ class MediaGarbageCollector:
                             UploadSessionStatus.ABORTED.value,
                             UploadSessionStatus.EXPIRED.value,
                         ]
+                    ),
+                )
+            ).first()
+            return row is not None
+
+    def _has_processing_variant(self, media_id: str) -> bool:
+        with self._session_factory() as session:
+            row = session.scalars(
+                select(MediaVariant.variant_id).where(
+                    MediaVariant.media_id == media_id,
+                    MediaVariant.status.in_(
+                        [VariantStatus.PENDING.value, VariantStatus.PROCESSING.value]
                     ),
                 )
             ).first()

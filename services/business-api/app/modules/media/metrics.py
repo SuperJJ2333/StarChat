@@ -61,6 +61,8 @@ class MediaPlatformMetrics:
             "gc_bytes_reclaimed": 0,
             "legacy_read_delegated": 0,
             "moments_bridge_attached": 0,
+            "reconcile_rebuilt": 0,
+            "reconcile_invalidated": 0,
             "upload_session_created": 0,
             "upload_session_aborted": 0,
         }

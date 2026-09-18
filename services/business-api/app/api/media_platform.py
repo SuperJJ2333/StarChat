@@ -645,6 +645,20 @@ def create_media_platform_router(
             ]
         }
 
+    @router.post("/media/platform/reconcile")
+    async def reconcile_storage(
+        dry_run: Annotated[bool, Query()] = True,
+        _: None = Depends(require_maintenance),
+    ) -> dict:
+        """Storage/metadata reconciliation (readiness fix).
+
+        Defaults to ``dry_run``: reporting is safe at any time, and enforcement is an explicit
+        maintenance action. It never touches a file whose row is valid.
+        """
+
+        report = service.reconcile_storage(dry_run=dry_run)
+        return report.as_dict()
+
     # ------------------------------------------------------------------ #
     # Diagnostics (maintenance gated)
     # ------------------------------------------------------------------ #

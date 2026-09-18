@@ -160,6 +160,7 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
     owns; it is a new key namespace, not a second storage system and not a second cache.
     """
 
+    from app.modules.media.audience import AudienceRegistry, MomentsAudienceVerifier
     from app.modules.media.authorization import GrantAuthorizer, OwnerOnlyAuthorizer
     from app.modules.media.gateway import (
         BusinessMediaGateway,
@@ -169,6 +170,7 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
     from app.modules.media.grants import MediaGrantService
     from app.modules.media.lifecycle import MediaGarbageCollector
     from app.modules.media.policy import MediaPlatformPolicy, MediaTtlPolicy
+    from app.modules.media.reconcile import MediaReconciler
     from app.modules.media.references import MediaReferenceService
     from app.modules.media.repository import MediaRepository
     from app.modules.media.service import MediaPlatformService
@@ -219,6 +221,8 @@ def _build_media_platform_service(settings: Settings, session_factory, storage):
         references=MediaReferenceService(session_factory),
         collector=MediaGarbageCollector(session_factory, backend=backend, policy=policy),
         grants=grants,
+        audience=AudienceRegistry(verifiers=(MomentsAudienceVerifier(session_factory),)),
+        reconciler=MediaReconciler(session_factory, backend=backend),
         codec=MediaSignedUrlCodec(
             # Prefer a dedicated media secret; fall back to the avatar signing secret so an
             # existing deployment works without a new mandatory secret. Rotating either

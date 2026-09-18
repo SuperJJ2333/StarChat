@@ -615,4 +615,5 @@ class GcSkipReason(StrEnum):
     WITHIN_GRACE = "within_grace"
     QUARANTINED = "quarantined"
     ACTIVE_UPLOAD = "active_upload"
+    VARIANT_PROCESSING = "variant_processing"
     NOT_ORPHAN = "not_orphan"

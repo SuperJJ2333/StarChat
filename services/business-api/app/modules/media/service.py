@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.core.errors import AppError
+from app.modules.media.audience import AudienceRegistry, assert_audience_is_verifiable
 from app.modules.media.authorization import Authorizer, OwnerOnlyAuthorizer
 from app.modules.media.domain import (
     DigestKind,
@@ -48,7 +49,9 @@ from app.modules.media.upload_engine import MediaUploadEngine, UploadSessionView
 from app.modules.media.variants import VariantCandidate, VariantResolver
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.modules.media.audience import AudienceRegistry
     from app.modules.media.grants import GrantView, MediaGrantService
+    from app.modules.media.reconcile import MediaReconciler, ReconcileReport
     from app.modules.media.lifecycle import GcReport, MediaGarbageCollector
     from app.modules.media.signed_urls import MediaSignedUrlCodec, SignedToken
 
@@ -77,6 +80,8 @@ class MediaPlatformService:
         collector: "MediaGarbageCollector | None" = None,
         grants: "MediaGrantService | None" = None,
         codec: "MediaSignedUrlCodec | None" = None,
+        audience: "AudienceRegistry | None" = None,
+        reconciler: "MediaReconciler | None" = None,
     ) -> None:
         self._repository = repository
         self._resolver = resolver
@@ -88,6 +93,8 @@ class MediaPlatformService:
         self._collector = collector
         self._grants = grants
         self._codec = codec or MediaSignedUrlCodec(secret=None)
+        self._audience = audience
+        self._reconciler = reconciler
 
     # ------------------------------------------------------------------ #
     # Ingest (Write New)
@@ -255,6 +262,15 @@ class MediaPlatformService:
             )
         return self._collector.run(mode=mode, owner_id=owner_id, limit=limit)
 
+    def reconcile_storage(self, *, dry_run: bool = True) -> "ReconcileReport":
+        if self._reconciler is None:  # pragma: no cover - wiring guard
+            raise AppError(
+                code="MEDIA_RECONCILE_UNAVAILABLE",
+                message="媒体对账服务不可用",
+                status_code=503,
+            )
+        return self._reconciler.run(dry_run=dry_run)
+
     def pin(self, media_id: str, *, seconds: int) -> None:
         from app.modules.media.lifecycle import pin_object
 
@@ -326,6 +342,15 @@ class MediaPlatformService:
         ttl = decision.ttl_seconds or self._policy.ttl.ttl_seconds(
             visibility=effective_tier, variant_kind=variant_kind
         )
+        if effective_tier is VisibilityTier.AUDIENCE:
+            # Fail closed at mint time: no token for an audience the platform cannot re-check.
+            if self._audience is None:
+                raise AppError(
+                    code="MEDIA_AUDIENCE_UNVERIFIABLE",
+                    message="该受众无法校验，已拒绝签发链接",
+                    status_code=422,
+                )
+            assert_audience_is_verifiable(self._audience, aud_scope)
         token, parsed = self._codec.mint(
             media_id=media_id,
             variant_kind=variant_kind,
@@ -341,6 +366,17 @@ class MediaPlatformService:
 
     def read_via_signed_token(self, token: str, *, caller_id: str | None) -> VariantContent:
         parsed = self._codec.verify(token, caller_id=caller_id)
+        if parsed.tier is VisibilityTier.AUDIENCE:
+            # Membership is re-checked live on every delivery, so a forwarded audience URL
+            # only works for someone who is still in the audience (ADR-003 §4.3.3).
+            if self._audience is None or not self._audience.verify(
+                parsed.aud_scope, caller_id=caller_id
+            ):
+                raise AppError(
+                    code="MEDIA_SIGNED_URL_INVALID",
+                    message="媒体链接无效或已过期",
+                    status_code=404,
+                )
         media = self._repository.get_object(parsed.media_id)
         if media is None:
             raise AppError(
