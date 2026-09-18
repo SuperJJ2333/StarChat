@@ -1,5 +1,151 @@
 # 移动交付恢复索引
 
+## 2026-09-17 Media Engine Phase 3 — 服务端媒体对象基础设施（**只设计，不编码**；本地文档完成）
+
+用户任务：设计未来的**服务端媒体对象基础设施**（Chat / Moments / Avatar / File 共用的
+Media Object / Variant / Reference / Permission / Lifecycle / Storage / CDN），
+目标形态 = Telegram / 微信级的媒体对象体系 + 多版本媒体体系 + 权限体系 + 生命周期体系，
+同时保持 **E2EE 安全 / Matrix 兼容 / 渐进迁移 / 不破坏已有用户数据**。
+**本阶段明确：Architecture Design Only（只设计，不编码）**，禁止修改 Matrix Server / Matrix 协议 / E2EE /
+媒体上传接口 / 朋友圈 API / 数据库 schema / 客户端缓存代码；**不实现**全球媒体去重 / CDN 改造 / 服务端对象迁移。
+**交付物**：① [`docs/architecture/media-engine-phase3-server-audit.md`](../architecture/media-engine-phase3-server-audit.md)
+（只读现状审计：三条上传链路 Chat/Moments/Avatar + File；存储在哪 / 谁管生命周期 / 谁删除 / 谁控权限 / 是否可复用；
+基础设施与容量基线；风险 A1–A18；未确认项）；
+② [`docs/architecture/media-engine-phase3-server-design.md`](../architecture/media-engine-phase3-server-design.md)
+（17 章设计：Current Architecture / Problems / Goals / MediaObject / MediaVariant / MediaReference /
+Encryption Dedup Analysis（方案 A/B/C 技术分析，**不选型**）/ Permission Model / Lifecycle / Upload Protocol /
+Download Protocol / CDN Design / Database Schema / Migration Strategy（Phase A→D）/ Security Analysis /
+Performance Analysis / Phase 4 Roadmap，另附目标架构图、术语表、10 个开放决策）。
+**关键审计结论**：E2EE 链路中**服务器从不收到明文摘要**（`chatflow_media` 在 Megolm 密文内；上传只带密文）；
+Matrix 侧**已存在**可用骨架（密文摘要索引 + 逐用户引用 + 宽限期 + 隔离墓碑 + 崩溃恢复，`third_party/synapse/chatflow_media_dedup.py`）；
+业务侧（Moments/Avatar/压缩演绎版）**零内容寻址、零引用计数、零 GC/配额/计量/指标**，三个读取端点**无鉴权**，
+头像/渲染 TTL 可被客户端拉到 7 天，朋友圈引用写入不校验 TTL（过期链接可"洗白"成永久引用）；
+朋友圈删除**不删字节**、封面替换**不删旧对象**、`SCANNING` 状态**无生产者**；
+客户端**没有任何可续传上传**（失败即整请求重试，60 s / 20 s 总时限），而 Synapse 上传上限 **50 MiB** ⇒ 1GB+ 视频当前不可能。
+**设计要点**：三层 Object/Blob/Variant 拆分 + `digest_kind`（明文/密文摘要**永不混用**，5 条强制规则）+
+`dedup_eligible`（随机信封不参与去重，Emoji 保险库即是实例）+ observed/declared 两级引用（承认 E2EE 引用不可数）+
+fail-closed 授权（Grant + 变体级授权 + 令牌绑定 subject/TTL/次数）+ 三段状态机 + 会话式分片上传（与确定性 CTR 计数器连续性约束）+
+poster→preview→档位→原片的渐进播放（**E2EE 域只能端侧生成**）+ L1/L2/L3 CDN 分级（受众级 URL 换取命中率）+
+7 张表 DDL 草案 + Phase A/B/C/D 迁移（可回退、不搬字节、不重加密、旧数据永远可读）+ 逐项安全分析 + 容量模型与指标。
+**门禁**：本阶段**未改任何代码/配置/schema**，故未运行 Flutter/仓库门禁（按仓库"文档改动只需链接与一致性检查"规则）；
+最后代码门禁 = Phase 2 的全量 3120 通过 + `scripts/verify.ps1` PASS，工作树此后未再变更代码。
+按用户本轮授权，改动已分逻辑提交并推送到 GitHub `main`。进入
+[任务记录](tasks/2026-09-17-media-engine-phase3-server-design.md)。
+
+## 2026-09-17 Media Engine Phase 2（本地媒体索引 / 账号配额隔离 / 缓存生命周期）（本地完成，**未构建/未真机/未部署/未 push**）
+
+用户任务：**建立可靠的本地媒体索引体系，消除大文件缓存命中时重复 SHA-256 计算，修复多账号共享磁盘配额，
+逐步统一 Chat / Moments / Avatar / File 的本地缓存生命周期**（明确**不做 Phase 3**：服务端 SHA 去重 /
+跨用户复用 / 远端内容寻址只设计）。
+**P0-1（大文件命中不重哈希）**：新增 `MediaIndex`（SQLite，表 `media_index`，主键
+`(account_namespace, reference_key)`，schema v1，**懒打开不启动扫描**），`MediaCache.cached()` 增加索引快路径
+`_cachedViaIndex`。**关键自我纠正**：第一版对所有尺寸用"大小 + mtime"放行，导致 3 条既有 Phase 1 完整性用例
+失败（`content_addressed_media`×2、`video_poster_pipeline`×1）——毫秒粒度锚点无法分辨"校验同一毫秒内被同尺寸改写"，
+对小文件等于让"同尺寸篡改必被发现"退化。最终**分级**：< 1 MiB（`_cheapPathMinBytes`）仍**整文件校验**，
+≥ 1 MiB 才用 mtime 锚点（已索引对象 mtime 只在写入时设定，LRU 走索引列，`setLastModified` 只作用于未索引对象）；
+`loadMediaWithCache` 的内容摘要复核作最后兜底（不符 → 删对象 + 失效索引 + 重新解密落盘 = **自愈修复**，不抛异常）。
+`_storeObject` 的 `_knownObjectValid` 同样对小对象强制完整校验。
+**P0-1b（不盲信索引）**：命中仍校验账号命名空间 / 存在 / 精确大小 / `verified_at`，任一不符即失效索引行并回退 legacy。
+**P1（配额隔离）**：`MediaQuotaPolicy` = 账号软配额 **384 MiB**（沿用线上值）+ 设备硬上限 **1024 MiB**
+（集中常量；若设备上限仍是 512MiB，两个账号各 384MiB 会互相驱逐 = 没修 P1）；淘汰只在账号内进行，设备上限兜底。
+**索引体系**：LRU touch **批量去抖**（内存 pending，`maxPendingTouches=32` / `touchDebounce=60s` / 显式 flush，
+滚动不产生逐次落盘）+ 热 LRU 512；`MediaGarbageCollector.collectGarbage`（引用数**从 `refs/*.ref` 重算**，不依赖计数器）
++ **pin/lease**（`pinPath`/`unpinPath`，视频全屏播放接线 `room_page._openVideoViewer`，播放中不被配额/GC 删）；
+崩溃双向恢复；**失败降级**（索引打不开 → 纯 legacy，30s 重试）；`MediaCacheMetrics`（`cache_lookup_ms` /
+`index_lookup_ms` / `hash_bytes_read` / `disk_bytes_read` / `disk_bytes_written` / `eviction_ms` / `gc_ms`，
+**计数器无条件累加**，**无 PII**：账号/引用均 sha256 摘要入库，测试直接扫描 db 文件断言无明文房间/事件/账号 ID）。
+**生命周期统一**：相册视频首帧并入对象库（`roomId='device-gallery'`，删除独立无配额目录的使用）；
+Moments 已经共用对象库 → **自动受益**，HTTP/TTL 层不动；Avatar **明确不改**（只由 `flutter_cache_manager`
+承载，不存在重复落盘；再交给 `MediaCache` 会变两份落盘，真正统一需搬迁 etag/validTill 并改刷新语义 = 禁止 → Phase 3）；
+`SentVideoLocalRegistry` **仍只报告**（压缩产物被 `prepareLocalChatVideo` 的 finally 删除）。
+**未删除任何既有缓存、未清空应用数据、未新增依赖**（复用既有 `sqflite_common_ffi`），目录保持
+`chat-media/v2/<sha256(account)>`（**已**账号隔离，不做机械迁移），旧对象首次访问时惰性校验并回填索引。
+门禁：`flutter analyze` **No issues found**；新增 25 条 Phase 2 测试（`media_index_phase2_test.dart`，含 500MB 稀疏对象
+命中 0 哈希字节、小对象仍完整校验且同尺寸篡改必被发现、账号隔离、LRU、pin/GC、崩溃恢复、并发、无 PII）；
+相关集 75 通过；**全量 `flutter test --timeout 120s` 3120 通过 / 0 失败（退出码 0）**
+（前两次全量各出现 1 条**与本改动无关**的既有实时定时器/调度敏感用例在并行负载下抖动
+——`call_alerts_test.dart` 与 `account_client_selection_test.dart`，均单独重跑通过，第三次全量干净）；
+frontend `npm test` **209 通过**；`py -3.12 scripts/verify_ui_contract.py` **PASS (31 components, 369 screens)**；
+`py -3.12 -m pytest tests/mobile -q` **70 通过**；`scripts/verify.ps1` **`Verification: PASS`（退出码 0）**。
+UI 交付说明：本次是**非视觉**的缓存/索引行为变更（气泡、视频卡片外观、占位底、时长角标未变），
+聊天视频卡片从未纳入 HTML demo → 无 demo/registry 改动；**Figma 已退役**。进入
+[任务记录](tasks/2026-09-17-media-engine-phase2-local-index.md)、
+[Phase 2 报告](../verification/2026-09-17-media-engine-phase2-local-index.md) 或
+[Phase 2 设计与落地说明](../architecture/media-engine-phase2-local-index.md)。
+
+## 2026-09-17 Media Engine Phase 0（设计）+ Phase 1（视频加载优化）（本地完成，**未构建/未真机/未部署/未 push**）
+
+用户两阶段任务：**Phase 0** 建立下一代媒体基础设施方向（**只设计**）+ **Phase 1** 实际编码解决视频加载问题。
+**Phase 0**：新增 `docs/architecture/media-engine-v1.md`——当前链路（聊天图片/聊天视频/朋友圈媒体，
+标注压缩点、缩略图生成点、缓存位置与生命周期；朋友圈**部分共享**缓存：解密对象库与内存预算共享、
+HTTP CacheManager 与键/TTL 独立、演绎版参数不同故内容寻址也命中不了）、目标
+`MediaService`（Chat/Moments/Avatar/Group-File 消费者 + 两个 MediaGateway 出口）、
+核心模型 `MediaObject`/`MediaVariant`（图片 original/thumbnail_small/thumbnail_medium/preview；
+视频 poster/preview_video/compressed_video/original_video）/`MediaReference`（引用计数与引用式回收）、
+与现状的差距表、**明确不做远端去重**（需后端配合；本阶段不改服务端存储/上传协议/加密协议）、
+Phase 2+ 迁移顺序与不变量。
+**Phase 1（已编码）**：根因 = `RoomPage._loadVideoPoster` 在「事件无可用缩略图」时用
+`resolveCachedVideoFile` **下载+解密整段视频**只为抽一帧封面，且触发点是无门控的
+`VideoMessageCard.initState`。修复：新增 `VideoPosterPipeline`（**构造参数里没有任何下载入口**，
+因此「为封面下载完整视频」在类型层面不可能发生，并有源码级防回归测试；优先级 =
+会话内存 LRU → 会话磁盘 → 本机持久封面缓存 → 服务端 poster 缩略图附件（≤480px）→
+**本地抽帧（仅当本地已存在视频文件）** → 占位），新增 `VideoPosterDiagnostics`（白名单字段 +
+加盐哈希 ID + 失败安全），`MediaVisibility` 新增 `warmExtent`（±buffer）与三态
+`MediaVisibilityWindow`（默认 0 时与原实现逐字一致），`VideoMessageCard` 改为**可见性门控**
+（`kVideoPosterWarmRows = 5` ≈ ±790pt：进入窗口才请求封面，路由被覆盖/退后台不请求）+
+`posterRevision`（视频播放后本地已有文件 → 补生成 → 缓存与 UI 更新），`MediaCache` 新增
+`probeCachedObject`（廉价存在性探测，**不重算大文件哈希**；完整性读取仍走 `cached`），
+`video_poster_extractor` 新增可选 `onFrameDecoded` 诊断回调（默认行为不变，含发送侧 `0ms` 语义）。
+缓存：**没有新建第二套系统**——内存/会话磁盘复用 `VideoPosterSessionCache` + `VideoPosterDiskStore`
+（原样保留），持久层复用 `MediaCache` 账号命名空间对象库（`chat-media/v2/<sha256(account)>` +
+内容寻址 + 384/512MiB mtime LRU），元数据映射（`poster_id`=对象名、`size`=`.len`、
+`last_access`=mtime、`media_id`=`refs/<sha256([roomId, '<eventId>#video-poster-v1'])>`）。
+`SentVideoLocalRegistry` **审计确认**（登记的是相册原片而非压缩产物；压缩产物被
+`prepareLocalChatVideo` 的 finally 主动删除，强改需动 outgoing 产物所有权）→ **按要求只报告不强改**。
+门禁：`flutter analyze` **0 issue**；新增 24 条测试（19 流水线 + 5 可见性，含 500MB 不下载、
+100 条视频快速滚动不全量处理、账号隔离、缓存命中、脱敏日志）；要求范围 `test/features/matrix`
++`test/features/moments`+`test/performance` **1718 通过**；`test/ui/chat` 等 **250 通过**；
+全量 `flutter test` **3094 通过 / 0 失败（退出码 0）**。UI 交付说明：本次是**非视觉**的加载行为变更
+（视频卡片外观/占位底/时长角标未变），且聊天视频卡片从未纳入 HTML demo（registry 与
+`frontend/src/components` 无视频组件）→ 无 demo/registry 改动，`verify_ui_contract.py` 保持 PASS；
+**Figma 已退役**。进入
+[任务记录](tasks/2026-09-17-media-engine-v1-phase1.md)、
+[Phase 0-1 报告](../verification/2026-09-17-media-engine-v1-phase1.md) 或
+[Media Engine v1 设计](../architecture/media-engine-v1.md)。
+
+## 2026-09-17 媒体架构审计 + 引用消息跨距离修复 + 相册大图编辑/裁剪重做（本地完成，**未构建/未真机/未部署/未 push**）
+
+用户一条消息三项：① 媒体缓存/加载/存储架构**审计**（明确「本阶段只输出报告+方案+P0/P1/P2，不要一次重构 Media Engine」）；
+② 引用消息「距离过远永久显示原消息加载中」；③ 相册查看大图增加「编辑」，裁剪交互做到**微信级**。
+**① 审计**：新增 `docs/verification/2026-09-17-media-architecture-audit.md`（330 行）：图片链路
+（压缩点 = photo_manager `thumbnailDataWithSize(1280,80)`；缩略图 = `buildChatImageThumbnail` ≤800px/≤100KB；
+正文+缩略图两份上传）、视频链路（**封面缺失时为封面下载整段视频**、无渐进播放、磁盘 384/512MiB LRU 配额）、
+四层缓存表、去重现状（本地 `sha256(bytes)` 对象库跨房间合并；远端聊天走 SDK `sendFileEvent`、朋友圈走业务 API，
+**零远端去重 → 同一文件 ≥3 次上传**；确定性加密使服务端内容寻址在协议上可行，是否真去重**未确认**）、
+目标 `MediaService` 门面与迁移顺序、P0-1（磁盘命中全量重算 SHA-256）/P0-2（封面兜底整文件下载）/P0-3（跨域三份上传）
+与 P1-1..P1-5、P2-1..6 清单及「未确认」附录。**② 引用修复**：新增五态
+（`loading/loaded/notFound/permissionDenied/networkError`）+ `ReplyMessageResolver`（**单飞、3 秒超时、终局缓存、
+只把 Exception 归类成可重试失败、Error 继续抛**）+ 可选能力 `RoomMessageLookupSource`（SDK `Timeline.getEventById`：
+本地加密库 → 服务器单事件查询 + 解密，**一次往返**恢复 1000 条以前的引用，而不是逐页翻历史）+ 仅内存、按账号+房间
+隔离的 `MessageTimelineCache`（不落盘：明文只允许在内存与 SDK 加密库中）+ 公共组件 `QuotePreviewCard`
+（保留 `reply-preview-<id>` 键）；行缓存 key 纳入解析状态，状态变化必定重建；清空聊天记录时丢弃投影。
+**③ 相册编辑**：大图底部改为 **编辑 → 选择 → 闪照** 三枚同风格胶囊（键名不变），编辑取**原图字节**进入
+`WeChatImageEditorPage`，导出后以 `editedGalleryPhoto(bytes)` 作为**新的媒体对象**返回选择器（原图不被覆盖）；
+裁剪重做为微信级：画布占满编辑区 + `BoxFit.contain` 映射、**裁剪框默认覆盖整张图片**、四边四角 8 控制点拖动
+（`image_crop_geometry.dart` 纯函数，角优先命中、最小 56、夹在图片内）、60% 半透明遮罩 + 亮边框 + 三分线 +
+拖动中控制点高亮、双指以焦点为锚缩放（1–8）+ 单指平移、比例预设（自由/1:1/4:5/16:9）、旋转 90°（裁剪框与标注一起
+映射到新文档空间）、**还原**（原始图片状态/默认裁剪框/缩放/旋转）与**应用裁剪**（`ImageEditorActionButton`：等高 44、
+同圆角 8、同 12pt 间距，应用裁剪品牌色填充 + 按压高亮）。UI 按 `ui-demo-delivery` 同步 HTML demo
+（`frontend/src/components/image-editor.js` + `components.css`，screen id `chat/image-editor`，registry 补 `onSend`/`crop-reset`）；
+**Figma 已退役**。门禁：`flutter analyze` **0 issue**；新增 4 个测试文件 **48 通过**；引用链回归 **1576 通过**；
+全量 `flutter test` **3070 通过 / 0 失败（退出码 0）**；`verify_ui_contract.py` **PASS (31/369)**；frontend `npm test` **209 通过**；
+`scripts/verify.ps1` **`Verification: PASS`**（退出码 0）。
+**有意偏离（已记录）**：未把解析结果写回 SDK 事件库——SDK 只有 `storeEventUpdate`（timeline 插到最新/ history 追加到末尾），
+会破坏本地 timeline 顺序且无安全 upsert API；改为「SDK 本地加密库优先读 + 进程级缓存」并把此偏离写入报告 R1。
+**未构建/未真机/未部署/未 push**（用户明确本次不需要）。进入
+[任务记录](tasks/2026-09-17-media-quote-image-editor.md) 或
+[完整报告（含 10 节：审计/问题/引用方案/相册编辑/修改文件/新增测试/analyze/test/性能变化/剩余风险）](../verification/2026-09-17-media-quote-image-editor.md)。
+
 ## 2026-09-17 CI 并发测试失败修复：Matrix 测试存储目录按进程隔离（`0a9e46a3`）
 
 用户报告 `android-ci.yml`（L91-94）Flutter 测试步骤 `3018 通过 / 1 失败`，失败为
