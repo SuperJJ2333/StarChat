@@ -243,3 +243,61 @@ FAILED tests/business_api/wallet/test_manual_runtime.py::test_manual_quote_windo
 
 部署后验证点：新建报价的 `expires_at - created_at == 24h`；`expires_at` 之后确认仍返回
 `WALLET_PAYOUT_QUOTE_EXPIRED`（HTTP 409）。
+
+---
+
+## 9. 生产部署记录（2026-09-19 Asia/Shanghai；UTC 2026-09-18T22:11–22:20Z）
+
+**已上线并验证通过。** 完整证据见
+[`artifacts/2026-09-19/wallet-24h-quote/deployment-evidence.md`](artifacts/2026-09-19/wallet-24h-quote/deployment-evidence.md)
+（含 pre/post 状态、逐项验证原始输出、发布脚本与回退脚本）。
+
+### 9.1 §7 风险 1 的实际结论（与代码作者的推测不同）
+
+- **生产容器根本没有设置 `BUSINESS_WALLET_MANUAL_QUOTE_TTL_SECONDS`。**
+  实测（切换前）：
+  `docker inspect starchat-business-api-1 --format '{{json .Config.Env}}' | tr ',' '\n' | grep WALLET_MANUAL_QUOTE_TTL`
+  → **无输出**；`BUSINESS_WALLET_DEPOSIT_INTENT_TTL_SECONDS` 同样未设置。
+- 生产 compose 层是 ADR-0071 冻结的 `frozen-api.json` + `redpacket-fee-20260917/api-release.json`
+  （加上服务器侧 media secrets 与本次 image-only overlay），**不含** `docker-compose.wallet-manual.yml`。
+  因此那条 `:-300` 的 compose 默认值**从未在生产生效**，生产一直走 in-code 默认值（旧 300 秒 → 新 86400 秒）。
+- 结论：本次发布**不需要**额外注入环境变量；in-code 新默认值 86400 已足够。
+  §7 风险 1 对**未来**的部署仍然有效（仓库默认值修正仍是必要的），只是它没有造成生产 5 分钟窗口。
+
+### 9.2 本次实际部署内容
+
+- 候选镜像 `starchat-business-api:wallet-24h-quote-20260919`
+  （`sha256:026f6dbc1ba307807996865da31bacc6fab03454bca30f636fd085166e038d85`），
+  基于**在线镜像 digest** `sha256:b3908bac…` 用 `--network=none` 增量构建，只叠加 2 个载荷文件。
+- 两个载荷文件在镜像内**两份拷贝**（`/opt/business-api/<path>` 与
+  `/usr/local/lib/python3.12/site-packages/<path>`）哈希均等于 manifest（ADR-0071 r2）：
+  `config.py f4e4909b…`、`manual_payouts.py 4e9458cf…`。
+- 只替换 `business-api`（`--no-deps`）：`business-worker` 镜像 digest 与启动时间**完全未变**，
+  alembic head 仍为 `0069_media_platform`，无迁移、无 OpenAPI 变更、无客户端构建。
+- 运行时断言（新容器内，只读，未创建真实报价）：
+  `settings.wallet_manual_quote_ttl_seconds == 86400`、
+  `runtime.payouts.policy.quote_ttl == timedelta(hours=24)`；
+  越界仍拒绝（`0 / -1 / 86401` 抛 `ValueError`；`timedelta(hours=24, seconds=1)` 策略抛错）。
+- 健康与鉴权边界未变：`health/live=200`、`health/ready=200`（`{"ok":true,…}`）、
+  未认证钱包端点 `401 AUTH_REQUIRED`；公网 TLS 经网关复核同样 200/200/401。
+- 发布目录 `/opt/starchat/releases/wallet-24h-quote-20260919/`（0700），含 `rollback-api.sh`
+  与旧镜像基线 `media-engine-20260918`（`b3908bac…`）。
+
+### 9.3 发布过程中的一次偏差（已修复并复核）
+
+首次切换时只带了 `frozen-api.json` + `redpacket-fee` + 本次 overlay 三层的 compose，
+**漏掉了 media-engine 的服务器侧 secrets overlay**，导致新容器少 2 个环境变量
+（`BUSINESS_MEDIA_URL_SIGNING_SECRET`、`BUSINESS_MEDIA_MAINTENANCE_TOKEN`），
+media 维护端点由 403 变为 **503**。发现后立即用四层 compose 重新切换，
+`env count` 回到与 pre-state 一致的 **63**，media 维护端点回到 403（无 token fail-closed）。
+偏差窗口约 45 秒，期间 API 健康、钱包与媒体用户路径均 200/401 正常；
+**最终状态与 pre-state 环境变量集合逐名一致**。该教训已写入发布脚本：
+`switch.sh` 现在强制要求 secrets overlay 存在，并在切换前用 `docker compose config` 比对
+环境变量名集合（`compose_env_parity=same`）。
+
+### 9.4 未做的事（范围声明）
+
+- 未运行任何客户端/Flutter 构建，未改 `apps/mobile_flutter/**`、`frontend/**`、`packages/**`。
+- 未创建任何真实报价或订单（生产钱包写路径本轮未触碰）；`expires_at - created_at == 24h`
+  由此前的 red/green 用例（§4）与本次运行时策略断言共同覆盖，未用生产数据伪造。
+- 未修改 `business-worker`、postgres、redis、synapse、gateway 等其他容器。
