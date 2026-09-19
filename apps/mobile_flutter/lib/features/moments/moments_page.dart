@@ -901,8 +901,11 @@ final class _MomentsPageState extends State<MomentsPage> {
                         child: Text(
                           _interactionError!,
                           key: const Key('moment-interaction-error'),
-                          style:
-                              const TextStyle(color: CupertinoColors.systemRed),
+                          // 失败不覆盖（微信级加载模型 L4）：动态仍在屏幕上，这里只是
+                          // 「本次刷新/操作没成功」的内联提示，不再用系统红冒充错误条。
+                          style: TextStyle(
+                              color: WeChatColors.resolve(
+                                  context, WeChatColors.textSecondary)),
                         ),
                       ),
                     GestureDetector(

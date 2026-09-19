@@ -90,10 +90,9 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
   }
 
   void _privacyChanged() {
-    setState(() {
-      _items = [];
-      _loading = true;
-    });
+    // 失败不覆盖：可见性变化只需重取，不预先清空已展示的动态（有内容时也不显示
+    // 整页加载圈，避免"切换设置 → 页面闪白"）。
+    setState(() => _loading = _items.isEmpty);
     _reload();
   }
 
@@ -111,8 +110,8 @@ class _PersonalMomentsState extends State<PersonalMomentsPage> {
     } catch (_) {
       if (mounted && generation == _generation) {
         setState(() {
-          _items = [];
-          _error = '朋友圈加载失败，请重试';
+          // 已有动态时保留；只有"从未成功过、没有任何内容"才提示失败。
+          if (_items.isEmpty) _error = '朋友圈加载失败，请重试';
         });
       }
     } finally {

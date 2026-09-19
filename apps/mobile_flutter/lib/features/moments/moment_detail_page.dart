@@ -98,11 +98,10 @@ class _MomentDetailState extends State<MomentDetailPage> {
 
   void privacyChanged() {
     if (!mounted) return;
-    setState(() {
-      unavailable = true;
-      error = '动态暂不可见，请重试';
-      revision++;
-    });
+    // 失败不覆盖：可见性变化只让在途响应失效并重取，**不预先隐藏**已知动态。
+    // 服务端若确实不再可见会在 refresh() 的 401/403/404 分支里定性；若只是
+    // 一次瞬时失败，用户仍能看到这条动态，而不是"动态暂不可见"。
+    setState(() => revision++);
     refresh();
   }
 
