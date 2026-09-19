@@ -1,8 +1,8 @@
 # 移动交付恢复索引
 
-## 2026-09-19 私聊自动恢复（实现与验证中，候选0.3.98/2137未发布）
+## 2026-09-19 私聊自动恢复（服务端及Android0.3.98/2137已发布，iOS候选已验包，待企业签名）
 
-用户确认单好友人工校正后正常发送，要求从根源覆盖其他有效好友。新增权威目标生命周期、固定恢复世代、目录revision防回滚，以及新消息/附件发送前恢复。Flutter全量3604通过、analyze无问题；服务端最终单方退出路径及PostgreSQL并发验证进行中。权威进度见[任务记录](tasks/2026-09-19-direct-conversation-auto-recovery.md)与[ADR](../adr/2026-09-19-direct-destination-lifecycle.md)。生产仍是下述上一轮发布状态；不能把候选实现当成已上线。
+用户确认单好友人工校正后正常发送，要求从根源覆盖其他有效好友。新增权威目标生命周期、固定恢复世代、目录revision防回滚，以及新消息/附件发送前恢复。main742bf4eb已合并推送；Flutter3604、analyze0、完整verify、真实PostgreSQL15情景通过。生产API4996/0071已于22:36+08上线，旧GET实际自动修复另一对符合条件会话且重放零写；无source/单方退出需新版客户端驱动。Android2137固定签名APK及非强制弹窗22:42发布、两侧下载验证完成；iOS2137候选已验包交付企业重签，签名CI、Android CI及iOS18/26兼容性全部通过；线上iOS2134保持原状。权威进度见[任务记录](tasks/2026-09-19-direct-conversation-auto-recovery.md)、[证据](../verification/2026-09-19-direct-conversation-auto-recovery.md)与[ADR](../adr/2026-09-19-direct-destination-lifecycle.md)。
 
 ## 2026-09-19 Android2136 单好友立即发送失败（服务端已校正，用户确认正常发送）
 
