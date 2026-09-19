@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'wallet_entry_snapshot_store.dart';
+
 /// 钱包进入加载阶段。
 ///
 /// 与既有 [FinanceCardState] 的 `loading`/`error` 布尔风格保持一致，但把
@@ -101,14 +103,33 @@ final class WalletEntryStore {
   WalletEntryStore({
     required this.gateway,
     this.scope = '',
+    WalletEntrySnapshotStore? snapshots,
     DateTime Function()? now,
   })  : _now = now ?? DateTime.now,
-        _epoch = gateway.sessionEpoch;
+        _snapshots = snapshots,
+        _epoch = gateway.sessionEpoch {
+    _hydrateFromSnapshot();
+  }
 
   final WalletEntryGateway gateway;
 
   /// 钱包作用域（由页面提供，例如 `walletIntentScope()`），仅用于诊断与注册表分组。
+  /// 同时是本地快照的键：作用域里含账号主体，因此快照天然按账号隔离。
   final String scope;
+
+  final WalletEntrySnapshotStore? _snapshots;
+
+  /// 本地快照 → 首帧数据。**必须同步**：页面在构造 Store 之后立刻 build，
+  /// 异步读取会让首帧又回到「空态 → 有网才恢复」的老问题。
+  void _hydrateFromSnapshot() {
+    final snapshot = _snapshots?.read(scope);
+    if (snapshot == null || snapshot.data.isEmpty) return;
+    _view.value = WalletEntryState(
+      phase: WalletLoadPhase.cached,
+      data: Map<String, dynamic>.unmodifiable(snapshot.data),
+      updatedAt: snapshot.savedAt,
+    );
+  }
 
   final DateTime Function() _now;
   final ValueNotifier<WalletEntryState> _view =
@@ -167,11 +188,28 @@ final class WalletEntryStore {
     try {
       final loaded = await gateway.load();
       if (_disposed || _retired) return;
+      final stamp = _now();
       _emit(WalletEntryState(
         phase: WalletLoadPhase.success,
         data: Map<String, dynamic>.unmodifiable(loaded),
-        updatedAt: _now(),
+        updatedAt: stamp,
       ));
+      // 成功结果落本地：下次启动（或断网）直接有数据可展示。写盘失败不影响本次刷新，
+      // 只影响下一次启动，因此单独吞掉，绝不升级为页面错误。
+      final snapshots = _snapshots;
+      if (snapshots != null) {
+        try {
+          await snapshots.write(
+            scope,
+            WalletEntrySnapshot(
+              data: Map<String, dynamic>.unmodifiable(loaded),
+              savedAt: stamp,
+            ),
+          );
+        } catch (_) {
+          // 本地快照写入失败不是刷新失败。
+        }
+      }
     } catch (error) {
       if (_disposed || _retired) return;
       _emit(cached == null
@@ -187,11 +225,13 @@ final class WalletEntryStore {
     }
   }
 
-  /// 账号切换保护：会话 epoch 变化时立即丢弃上一个账号的缓存。
+  /// 账号切换保护：会话 epoch 变化时立即丢弃上一个账号的缓存**与本地快照**。
   void _dropCacheOnEpochDrift() {
     if (gateway.sessionEpoch == _epoch) return;
     _epoch = gateway.sessionEpoch;
     _emit(const WalletEntryState());
+    final snapshots = _snapshots;
+    if (snapshots != null) unawaited(snapshots.clear(scope));
   }
 
   void _emit(WalletEntryState next) {
@@ -225,6 +265,15 @@ final class WalletEntryStores {
 
   static final Map<String, WalletEntryStore> _stores = {};
 
+  static WalletEntrySnapshotStore? _snapshots;
+
+  /// 页面借用的本地快照存储：显式设置优先（测试），否则用进程级共享实例
+  /// （由启动序列 `WalletEntrySnapshotStores.ensureLoaded()` 装载）。
+  static WalletEntrySnapshotStore? get snapshots =>
+      _snapshots ?? WalletEntrySnapshotStores.shared;
+
+  static set snapshots(WalletEntrySnapshotStore? value) => _snapshots = value;
+
   /// 取得该钱包作用域当前的共享 Store；键包含会话 epoch，账号切换后自然重建。
   static WalletEntryStore of({
     required String scope,
@@ -236,12 +285,19 @@ final class WalletEntryStores {
     if (existing != null && !existing.disposed) return existing;
     // 同一作用域的旧 epoch 实例：从注册表摘除并停用（清空缓存）。不 dispose——
     // 可能仍有页面持有引用，dispose 会让它们的 removeListener 断言失败。
+    // 注意：这里**不删本地快照**——下一个账号的作用域键不同，读不到旧数据；
+    // 而同一账号重新登录时正需要这份快照来立即展示。
     for (final stale in _stores.keys
         .where((candidate) => candidate != key && candidate.startsWith('$scope#'))
         .toList()) {
       _stores.remove(stale)?.retire();
     }
-    final created = WalletEntryStore(gateway: gateway, scope: scope, now: now);
+    final created = WalletEntryStore(
+      gateway: gateway,
+      scope: scope,
+      snapshots: snapshots,
+      now: now,
+    );
     _stores[key] = created;
     return created;
   }
@@ -262,6 +318,8 @@ final class WalletEntryStores {
       store.dispose();
     }
     _stores.clear();
+    final store = snapshots;
+    if (store != null) unawaited(store.clearAll());
   }
 
   @visibleForTesting

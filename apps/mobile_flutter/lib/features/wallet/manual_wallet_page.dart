@@ -46,7 +46,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 
   /// 钱包进入态共享 Store（缓存优先 + 后台刷新）。持有者是会话级
   /// [WalletEntryStores]；页面只借用，[dispose] 里只 removeListener。
-  late final _entryGateway = _WalletEntryGateway(widget.client);
+  late final _entryGateway = _WalletEntryGateway(widget.client, api);
   WalletEntryStore? entry;
 
   /// 申请提醒「不再通知」标记的持久化存储与已忽略的申请身份。
@@ -100,6 +100,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
       payoutEnabled &&
       executionEnabled &&
       pointsPayoutEnabled;
+
+  /// 是否已有可展示的本地数据（进入态快照）。有数据时所有"刷新"都按缓存优先处理：
+  /// 不显示整页 busy、失败不弹错、数据不清空。
+  bool get hasLocalData => entry?.state.hasData ?? false;
   Timer? depositDeadline;
   Timer? bindingCountdown;
   Timer? balanceRefresh;
@@ -254,6 +258,20 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         capabilitiesUnavailable = false;
       }
     }
+    // 绑定状态：本地快照优先。断网时「绑定地址与钱包信息」必须仍可见，且
+    // activeBinding（进而充值/提现入口）不能因为一次网络失败整体失效。
+    if (!bindingFresh && snapshot != null) {
+      final cachedBinding = snapshot['binding'];
+      if (cachedBinding is Map) {
+        try {
+          binding = ManualBindingStatus.fromJson(
+              Map<String, dynamic>.from(cachedBinding));
+          bindingFresh = true;
+        } catch (_) {
+          // 快照损坏：保持未刷新，交给接下来的网络刷新。
+        }
+      }
+    }
     if (mounted) setState(() {});
   }
 
@@ -362,7 +380,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
         ready &&
         !busy &&
         ModalRoute.of(context)?.isCurrent == true) {
-      unawaited(run(refresh));
+      unawaited(run(refresh, cacheFirst: hasLocalData));
     }
   }
 
@@ -446,7 +464,7 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
             clock: widget.clock,
             section: section,
             qrExporter: widget.qrExporter)));
-    if (mounted) await run(refresh);
+    if (mounted) await run(refresh, cacheFirst: hasLocalData);
   }
 
   Future<void> run(Future<void> Function() action,
@@ -1986,9 +2004,10 @@ final class _ManualWalletPageState extends State<ManualWalletPage>
 /// 因此它们的失败语义（会话变化、终局失败）保持不变。金融数据绝不跨账号展示：
 /// 作用域变化时直接抛错，让本次刷新失败而不是返回别的账号的数据。
 final class _WalletEntryGateway implements WalletEntryGateway {
-  _WalletEntryGateway(this.client);
+  _WalletEntryGateway(this.client, this.api);
 
   final BusinessApiClient client;
+  final ManualWalletApi api;
 
   @override
   int get sessionEpoch => client.sessionEpoch;
@@ -1999,9 +2018,16 @@ final class _WalletEntryGateway implements WalletEntryGateway {
     final config = await client.walletConfig();
     final balances =
         await client.getJson('/wallet/balances/me', expectedWalletScope: scope);
+    // 绑定状态一并进快照：断网时"绑定地址与钱包信息"必须仍然可见，且
+    // activeBinding（进而充值/提现入口）不能因为一次网络失败就整体失效。
+    final binding = await api.bindingStatus();
     if (await client.walletIntentScope() != scope) {
       throw StateError('账户已切换，请重新打开钱包');
     }
-    return {'config': config, 'caibi_available': balances['caibi_available']};
+    return {
+      'config': config,
+      'caibi_available': balances['caibi_available'],
+      'binding': binding.toJson(),
+    };
   }
 }

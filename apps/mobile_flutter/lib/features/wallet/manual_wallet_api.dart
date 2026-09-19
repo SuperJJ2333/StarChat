@@ -347,6 +347,25 @@ final class ManualBindingStatus {
           _boolean(json, 'binding_enabled'),
           _strings(json, 'unavailable_dependencies'),
           _fixedInteger(json, 'rebind_interval_days', 30));
+
+  /// 序列化回服务端字段名：本地快照（断网/跨进程）需要原样还原绑定状态，
+  /// 否则无网时看不到已绑定钱包、充值/提现入口也会被判为不可用。
+  Map<String, dynamic> toJson() => {
+        'status': switch (status) {
+          ManualBindingState.active => 'ACTIVE',
+          ManualBindingState.pending => 'PENDING',
+          ManualBindingState.unbound => 'UNBOUND',
+        },
+        'id': id,
+        'version': version,
+        'masked_address': maskedAddress,
+        'address': address,
+        'pending_id': pendingId,
+        'next_rebind_at': nextRebindAt?.toUtc().toIso8601String(),
+        'binding_enabled': bindingEnabled,
+        'unavailable_dependencies': unavailableDependencies,
+        'rebind_interval_days': rebindIntervalDays,
+      };
 }
 
 final class ManualBindingChallenge {

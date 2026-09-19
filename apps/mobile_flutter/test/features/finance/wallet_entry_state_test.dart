@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liuhetong_mobile/core/business_api_error.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_snapshot_store.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 
 /// 钱包进入态：缓存优先 + 后台刷新。
@@ -227,8 +228,7 @@ void main() {
     });
 
     test('9. 只读状态视图：值相等不视为变化，致命错误只属于无缓存的首次失败',
-        () async {
-      expect(
+        () async {      expect(
           const WalletEntryState(
                   phase: WalletLoadPhase.success, data: {'v': '1'})
               ==
@@ -263,6 +263,107 @@ void main() {
       expect(cachedFailure.refreshing, isFalse);
     });
   });
+
+  /// 用户报告（2026-09-19）：「每次进入钱包子页面都会闪烁加载、短暂显示错误警告，
+  /// 然后恢复正常；无网/断网时无法加载绑定钱包，也进不去充值/提现页。」
+  ///
+  /// 这些用例覆盖微信级加载模型的第 1 条（本地优先）与跨进程持久化：
+  /// Store 只活在内存里时，进程重启后每个子页面（钱包/点钻/充值/提现）都必然重走
+  /// 「空态 → 失败弹错 → 有网才恢复」，断网时则完全没有数据可展示、能力位拿不到，
+  /// 于是入口被禁用。快照必须落本地并在**构造 Store 时**就生效。
+  group('钱包进入态：本地快照持久化（跨进程 / 断网）', () {
+    test('10. 新进程构造 Store 时先读本地快照：构造完即 cached，且有数据可渲染', () {
+      final snapshots = _FakeSnapshotStore({
+        's1': WalletEntrySnapshot(
+          data: const {'caibi_available': '10.00'},
+          savedAt: DateTime(2026, 9, 19, 7),
+        ),
+      });
+      final gateway = _FakeWalletGateway();
+      final store = WalletEntryStore(
+          gateway: gateway, scope: 's1', snapshots: snapshots);
+      addTearDown(store.dispose);
+
+      expect(store.state.hasData, isTrue, reason: '首帧就要有数据，不能等网络');
+      expect(store.state.data, {'caibi_available': '10.00'});
+      expect(store.state.phase, WalletLoadPhase.cached);
+      expect(store.state.updatedAt, DateTime(2026, 9, 19, 7));
+      expect(gateway.calls, 0, reason: '构造 Store 本身不得发请求');
+    });
+
+    test('11. 断网进入：本地快照仍在、phase 不为 failed、无致命错误', () async {
+      final snapshots = _FakeSnapshotStore({
+        's1': WalletEntrySnapshot(
+          data: const {
+            'caibi_available': '10.00',
+            'config': {'funding_enabled': true, 'manual_payout_enabled': true},
+          },
+          savedAt: DateTime(2026, 9, 19, 7),
+        ),
+      });
+      final gateway = _FakeWalletGateway();
+      final store = WalletEntryStore(
+          gateway: gateway, scope: 's1', snapshots: snapshots);
+      addTearDown(store.dispose);
+
+      final fatalFlags = <bool>[];
+      store.view.addListener(() => fatalFlags.add(store.state.fatalError));
+
+      final entered = store.enter();
+      gateway.fail(StateError('offline'));
+      await entered;
+
+      expect(store.state.phase, WalletLoadPhase.cached);
+      expect(store.state.data!['caibi_available'], '10.00');
+      expect(store.state.data!['config'],
+          {'funding_enabled': true, 'manual_payout_enabled': true},
+          reason: '能力位也要能从本地快照恢复，否则断网时充值/提现入口不可用');
+      expect(store.state.fatalError, isFalse);
+      expect(fatalFlags.any((fatal) => fatal), isFalse,
+          reason: '有本地快照时任何一次通知都不得要求页面弹错');
+      expect(store.state.hasData, isTrue, reason: '断网全程都不得清空数据');
+    });
+
+    test('12. 刷新成功写入本地快照；账号切换丢弃该作用域快照', () async {
+      final snapshots = _FakeSnapshotStore();
+      final gateway = _FakeWalletGateway();
+      final store = WalletEntryStore(
+          gateway: gateway, scope: 's1', snapshots: snapshots);
+      addTearDown(store.dispose);
+
+      final entered = store.enter();
+      gateway.succeed({'caibi_available': '10.00'});
+      await entered;
+      expect(snapshots.writes, 1, reason: '成功后必须落盘，供下次启动使用');
+      expect(snapshots.read('s1')!.data, {'caibi_available': '10.00'});
+
+      // 账号切换：另一个账号的金融数据绝不能跨账号复用。
+      gateway.sessionEpoch = 2;
+      final refreshed = store.refresh();
+      expect(snapshots.read('s1'), isNull,
+          reason: 'epoch 变化时必须清掉该作用域的本地快照');
+      gateway.succeed({'caibi_available': '0.00'});
+      await refreshed;
+      expect(store.state.data, {'caibi_available': '0.00'});
+    });
+
+    test('13. 注册表把共享快照存储接给页面：页面接线不变也能拿到本地快照', () async {
+      addTearDown(WalletEntryStores.disposeAll);
+      final snapshots = _FakeSnapshotStore({
+        's1': WalletEntrySnapshot(
+          data: const {'caibi_available': '10.00'},
+          savedAt: DateTime(2026, 9, 19, 7),
+        ),
+      });
+      addTearDown(() => WalletEntryStores.snapshots = null);
+      WalletEntryStores.snapshots = snapshots;
+
+      final store = WalletEntryStores.of(scope: 's1', gateway: _FakeWalletGateway());
+      expect(store.state.hasData, isTrue,
+          reason: '页面只调用 of()，共享快照存储必须由注册表补齐');
+      expect(store.state.data, {'caibi_available': '10.00'});
+    });
+  });
 }
 
 Future<void> _primeCache(WalletEntryStore store, _FakeWalletGateway gateway,
@@ -273,8 +374,7 @@ Future<void> _primeCache(WalletEntryStore store, _FakeWalletGateway gateway,
   expect(store.state.hasData, isTrue);
 }
 
-final class _FakeWalletGateway implements WalletEntryGateway {
-  final List<Completer<Map<String, dynamic>>> _pending = [];
+final class _FakeWalletGateway implements WalletEntryGateway {  final List<Completer<Map<String, dynamic>>> _pending = [];
   int calls = 0;
   @override
   int sessionEpoch = 1;
@@ -289,4 +389,34 @@ final class _FakeWalletGateway implements WalletEntryGateway {
 
   void succeed(Map<String, dynamic> data) => _pending.removeAt(0).complete(data);
   void fail(Object error) => _pending.removeAt(0).completeError(error);
+}
+
+final class _FakeSnapshotStore implements WalletEntrySnapshotStore {
+  _FakeSnapshotStore([Map<String, WalletEntrySnapshot>? seed])
+      : _entries = {...?seed};
+
+  final Map<String, WalletEntrySnapshot> _entries;
+  int writes = 0;
+  int clears = 0;
+
+  @override
+  WalletEntrySnapshot? read(String scope) => _entries[scope];
+
+  @override
+  Future<void> write(String scope, WalletEntrySnapshot snapshot) async {
+    writes++;
+    _entries[scope] = snapshot;
+  }
+
+  @override
+  Future<void> clear(String scope) async {
+    clears++;
+    _entries.remove(scope);
+  }
+
+  @override
+  Future<void> clearAll() async {
+    clears++;
+    _entries.clear();
+  }
 }

@@ -38,6 +38,7 @@ import 'core/notification/notification_system_bootstrapper.dart';
 import 'core/notification/notification_usage_recorder.dart';
 import 'core/notification/system_notification_presenter.dart';
 import 'features/caibi/caibi_page.dart';
+import 'features/finance/wallet_entry_snapshot_store.dart';
 import 'features/contacts/contacts_page.dart';
 import 'features/contacts/scan_qr_page.dart';
 import 'features/contacts/contact_models.dart';
@@ -483,6 +484,16 @@ final class _AppHomeState extends State<AppHome> with WidgetsBindingObserver {
   void _startHomeResources() {
     final generation = _startup.generation;
     unawaited(_initializeMomentsUnread().catchError((_) {}));
+    // 钱包进入态本地快照：启动时装一次，之后页面的 read 都是同步命中。
+    // 这是「断网也能看到余额与已绑定钱包、并且进得去充值/提现页」的前提；
+    // 失败不阻塞启动，页面退化为「无本地数据」。
+    unawaited(() async {
+      try {
+        await WalletEntrySnapshotStores.ensureLoaded();
+      } catch (_) {
+        // 本地快照不可用不是启动失败。
+      }
+    }());
     // 规格§三：native_call 通道——Telecom/CallActivity 事件与控制入口。
     // 事件语义严格区分（修复"来电事件即自动接听"）：incomingCall 只登记
     // 呈现；只有 callAccepted/callRejected（用户明确动作）才驱动接听/拒接，

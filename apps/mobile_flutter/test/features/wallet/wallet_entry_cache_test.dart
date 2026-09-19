@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liuhetong_mobile/features/finance/wallet_entry_snapshot_store.dart';
 import 'package:liuhetong_mobile/features/finance/wallet_entry_store.dart';
 import 'package:liuhetong_mobile/features/wallet/manual_wallet_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,10 +69,47 @@ void main() {
     // 失败不静默：页面上必须有可见的重试入口（刷新按钮）。
     expect(find.byKey(const Key('manual-refresh')), findsOneWidget);
   });
+
+  /// 用户报告（2026-09-19）：「无网/断网情况，无法加载绑定钱包，无法进入充值/提现页」。
+  /// 上一版缓存只活在进程内存里，重启即丢；绑定状态更是只走网络（`bindingFresh`
+  /// 只有在 `bindingStatus()` 成功后才为真）。这里验证本地快照把两件事一起解决：
+  /// 断网也能看到已绑定地址与余额，充值入口仍然可用，并且不弹错。
+  testWidgets('断网 + 本地快照：绑定信息与余额可见、充值入口可用、不弹错', (tester) async {
+    final api = await flow.client((request) async {
+      throw StateError('offline');
+    });
+    final scope = await api.walletIntentScope();
+    final snapshots = InMemoryWalletEntrySnapshotStore();
+    await snapshots.write(
+        scope,
+        WalletEntrySnapshot(
+            data: _snapshot('88.88'), savedAt: DateTime(2026, 9, 19, 7)));
+    WalletEntryStores.snapshots = snapshots;
+    addTearDown(() => WalletEntryStores.snapshots = null);
+
+    await tester.pumpWidget(CupertinoApp(home: ManualWalletPage(client: api)));
+    await tester.pumpAndSettle();
+
+    final address = tester
+        .widget<Text>(find.byKey(const Key('manual-wallet-bound-address')));
+    expect(address.data, 'T***123', reason: '断网时必须仍能看到已绑定钱包地址');
+    expect(find.text('已绑定'), findsOneWidget);
+    expect(find.textContaining('88.88'), findsOneWidget);
+
+    // 失败不覆盖、不弹错：余额与绑定都保留，且没有致命错误提示。
+    expect(find.textContaining('功能状态暂不可用'), findsNothing);
+    expect(find.textContaining('点钻余额加载失败'), findsNothing);
+    expect(find.byType(CupertinoAlertDialog), findsNothing);
+
+    // 入口仍可用：断网下点「充值」必须真的进入充值页（步骤指示器出现）。
+    await tester.tap(find.text('充值'));
+    await tester.pumpAndSettle();
+    expect(find.text('填写金额'), findsWidgets,
+        reason: '有本地快照时充值入口不得因为一次网络失败被禁用');
+  });
 }
 
-Map<String, dynamic> _snapshot(String balance) => {
-      'config': const {
+Map<String, dynamic> _snapshot(String balance) => {      'config': const {
         'funding_enabled': true,
         'manual_payout_enabled': true,
         'manual_payout_execution_enabled': true,
@@ -79,6 +117,18 @@ Map<String, dynamic> _snapshot(String balance) => {
         'caibi_payout_enabled': true,
       },
       'caibi_available': balance,
+      'binding': const {
+        'status': 'ACTIVE',
+        'id': 'binding',
+        'version': 1,
+        'masked_address': 'T***123',
+        'address': 'TXk9ztestsnapshotaddress000000000',
+        'pending_id': null,
+        'next_rebind_at': null,
+        'binding_enabled': true,
+        'unavailable_dependencies': <String>[],
+        'rebind_interval_days': 30,
+      },
     };
 
 final class _ScriptedGateway implements WalletEntryGateway {
