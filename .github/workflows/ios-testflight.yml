@@ -27,6 +27,39 @@ jobs:
         working-directory: apps/mobile_flutter
         run: flutter build ios --simulator --no-codesign
 
+  # BUG 交付（企业签名流程）：产出未签名 IPA 供外部企业证书重签。
+  # 不需要任何 Apple secrets；使用 --no-codesign，打包 Payload/<app> 为 IPA。
+  build-unsigned-ipa:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.9"
+          channel: stable
+          cache: true
+      - name: Flutter pub get
+        working-directory: apps/mobile_flutter
+        run: flutter pub get
+      - name: Build unsigned iOS app (device, release)
+        working-directory: apps/mobile_flutter
+        run: flutter build ios --release --no-codesign
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qry liuhetong_mobile_unsigned.ipa Payload
+          mkdir -p build/ios/iphoneos
+          cp liuhetong_mobile_unsigned.ipa build/ios/iphoneos/
+          shasum -a 256 liuhetong_mobile_unsigned.ipa
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: liuhetong-mobile-unsigned-ipa
+          path: liuhetong_mobile_unsigned.ipa
+          if-no-files-found: error
+
   build-upload:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-14
