@@ -4,7 +4,7 @@
 
 User explicitly authorized implementation, necessary ADR decisions and production repair on 2026-09-19. [Approved plan](../../superpowers/plans/2026-09-19-logical-conversation-reliability.md), [ADR](../../adr/2026-09-19-recoverable-direct-room-alias.md).
 
-Baseline 8051edb5; branch codex/conversation-reliability-20260919; worktree D:/pythonProject/outsource/StarChat/.worktrees/conversation-reliability. Root checkout contains unrelated ongoing changes and is preserved. Server agent owns recovery/API/migration; timeline agent owns merged timeline/registry/navigation; outbox agent owns SDK/send/controller; root owns integration and final acceptance. No overlapping concurrent edits.
+Implementation commit e5a85093 (63 task-owned files); baseline 8051edb5; branch codex/conversation-reliability-20260919; worktree D:/pythonProject/outsource/StarChat/.worktrees/conversation-reliability. Root checkout contains unrelated ongoing changes and is preserved. Server agent owns recovery/API/migration; timeline agent owns merged timeline/registry/navigation; outbox agent owns SDK/send/controller; root owns integration and final acceptance. No overlapping concurrent edits.
 
 ## Status
 
@@ -35,4 +35,4 @@ Earlier implementation start was not captured; no invented overall duration. Ful
 
 Protected backup and exact rollback commands are in /opt/starchat/releases/conversation-reliability-20260919 (0700); application rollback preserves additive schema/source/audit data. No room deletion, forced joins, key resets, financial mutation or message plaintext inspection occurred. Task-owned network-none rehearsal containers were stopped after verification; volumes/backup remain. Local verification tunnel closed.
 
-Next executable step: commit this verified isolated branch, then integrate with the separately modified root branch without overwriting its work; build/sign/deliver through the approved mobile workflow and run actual two-device/offline/restart acceptance. Source completion and server deployment do not imply an installed client release.
+Next executable step: integrate implementation commit e5a85093 with the separately modified root branch without overwriting its work; build/sign/deliver through the approved mobile workflow and run actual two-device/offline/restart acceptance. Source completion and server deployment do not imply an installed client release.

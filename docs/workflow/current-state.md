@@ -6,7 +6,7 @@
 [任务记录](tasks/2026-09-19-logical-conversation-reliability.md)，
 [恢复 ADR](../adr/2026-09-19-recoverable-direct-room-alias.md) 和
 [服务端验证](../verification/2026-09-19-direct-room-v2-server.md)。
-客户端在独立 `codex/conversation-reliability-20260919` 分支，不覆盖根工作区并行修改；
+客户端实现提交 `e5a85093` 在独立 `codex/conversation-reliability-20260919` 分支，不覆盖根工作区并行修改；
 保留所有物理房间、合并历史来源、所有入口归一、确认 canonical 后发送、持久化 outbox 原 ID 续发。
 此条取代旧记录中“仅待真机”的整体完成口径；服务器上线与客户端构建安装必须分别验收。
 
