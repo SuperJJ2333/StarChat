@@ -51,7 +51,8 @@ class _CallPermissionChecklistState extends State<CallPermissionChecklist>
 
   Future<void> _refresh() async {
     final state = await widget.gateway.read();
-    if (mounted) setState(() => _state = state);
+    // 失败/不可知的重读不得把已知状态降级成「待检查」：合并而非整体替换。
+    if (mounted) setState(() => _state = state.mergedWith(_state));
   }
 
   Future<void> _act(CallPermissionAction action) async {

@@ -28,6 +28,26 @@ final class CallPermissionReadiness {
   final bool? microphone, camera, notifications, callChannel, ongoingChannel;
   final bool fullScreenRequired;
   final bool? fullScreen, overlay;
+
+  /// 与上一次已知状态合并：**非空值优先，不可知（null）时保留上一次的值**。
+  ///
+  /// 平台查询失败或不可用时会返回 null 字段；整体替换会把已经显示过的
+  /// 「已开启 / 未开启」降级成「待检查」（微信级加载模型 L4：失败不覆盖）。
+  /// `android` 与 `fullScreenRequired` 是设备事实，一旦为真就保持为真。
+  CallPermissionReadiness mergedWith(CallPermissionReadiness? previous) {
+    if (previous == null) return this;
+    return CallPermissionReadiness(
+      android: android || previous.android,
+      microphone: microphone ?? previous.microphone,
+      camera: camera ?? previous.camera,
+      notifications: notifications ?? previous.notifications,
+      callChannel: callChannel ?? previous.callChannel,
+      ongoingChannel: ongoingChannel ?? previous.ongoingChannel,
+      fullScreenRequired: fullScreenRequired || previous.fullScreenRequired,
+      fullScreen: fullScreen ?? previous.fullScreen,
+      overlay: overlay ?? previous.overlay,
+    );
+  }
 }
 
 abstract interface class CallPermissionReadinessGateway {
