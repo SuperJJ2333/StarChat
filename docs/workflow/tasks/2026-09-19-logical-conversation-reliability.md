@@ -36,3 +36,7 @@ Earlier implementation start was not captured; no invented overall duration. Ful
 Protected backup and exact rollback commands are in /opt/starchat/releases/conversation-reliability-20260919 (0700); application rollback preserves additive schema/source/audit data. No room deletion, forced joins, key resets, financial mutation or message plaintext inspection occurred. Task-owned network-none rehearsal containers were stopped after verification; volumes/backup remain. Local verification tunnel closed.
 
 Next executable step: integrate implementation commit e5a85093 with the separately modified root branch without overwriting its work; build/sign/deliver through the approved mobile workflow and run actual two-device/offline/restart acceptance. Source completion and server deployment do not imply an installed client release.
+
+## 后续发布已执行
+
+同日用户授权合main、推GitHub、发布Android并交付iOS重签候选后，已完成合并和0.3.97/2136发布。冻结96637621，Android20:06:52 +08上线，iOS待企业重签IPA已验包；这取代上文历史记录中的尚未集成/打包状态。详细[发布任务](2026-09-19-conversation-mobile-release.md)。设备验收及媒体杀进程恢复等原有限制仍然保留。
